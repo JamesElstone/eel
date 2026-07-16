@@ -108,6 +108,7 @@ final class YearEndAdjustmentService
                 $reversalLines = array_map(static function (array $line): array {
                     return [
                         'nominal_account_id' => (int)$line['nominal_account_id'],
+                        'director_id' => (int)($line['director_id'] ?? 0) ?: null,
                         'debit' => number_format((float)($line['credit'] ?? 0), 2, '.', ''),
                         'credit' => number_format((float)($line['debit'] ?? 0), 2, '.', ''),
                         'line_description' => (string)($line['line_description'] ?? ''),

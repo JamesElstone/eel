@@ -572,6 +572,7 @@ final class TransactionJournalService
                     t.description,
                     t.amount,
                     t.nominal_account_id,
+                    t.director_id,
                     t.transfer_account_id,
                     t.is_internal_transfer,
                     t.category_status,
@@ -756,6 +757,13 @@ final class TransactionJournalService
             ];
         }
 
+        foreach ($lines as &$line) {
+            if ((int)($line['nominal_account_id'] ?? 0) === $nominalAccountId) {
+                $line['director_id'] = (int)($transaction['director_id'] ?? 0) ?: null;
+            }
+        }
+        unset($line);
+
         return [
             'company_id' => (int)$transaction['company_id'],
             'accounting_period_id' => (int)$transaction['accounting_period_id'],
@@ -797,6 +805,7 @@ final class TransactionJournalService
             $lineDescription = trim((string)($line['description'] ?? ''));
             $itemLines[] = [
                 'nominal_account_id' => $nominalAccountId,
+                'director_id' => (int)($line['director_id'] ?? 0) ?: null,
                 'debit' => '0.00',
                 'credit' => '0.00',
                 'line_description' => $lineDescription !== '' ? $lineDescription : $description,
@@ -941,6 +950,7 @@ final class TransactionJournalService
         $stmt = \InterfaceDB::prepare(
             'SELECT jl.id,
                     jl.nominal_account_id,
+                    jl.director_id,
                     jl.company_account_id,
                     jl.debit,
                     jl.credit,
@@ -980,6 +990,7 @@ final class TransactionJournalService
     private function normaliseLineForComparison(array $line): array {
         return [
             'nominal_account_id' => (int)($line['nominal_account_id'] ?? 0),
+            'director_id' => (int)($line['director_id'] ?? 0),
             'company_account_id' => (int)($line['company_account_id'] ?? 0),
             'debit' => number_format((float)($line['debit'] ?? 0), 2, '.', ''),
             'credit' => number_format((float)($line['credit'] ?? 0), 2, '.', ''),
@@ -1047,6 +1058,7 @@ final class TransactionJournalService
             'INSERT INTO journal_lines (
                 journal_id,
                 nominal_account_id,
+                director_id,
                 company_account_id,
                 debit,
                 credit,
@@ -1054,6 +1066,7 @@ final class TransactionJournalService
             ) VALUES (
                 :journal_id,
                 :nominal_account_id,
+                :director_id,
                 :company_account_id,
                 :debit,
                 :credit,
@@ -1063,6 +1076,7 @@ final class TransactionJournalService
         $stmt->execute([
             'journal_id' => $journalId,
             'nominal_account_id' => (int)$line['nominal_account_id'],
+            'director_id' => (int)($line['director_id'] ?? 0) > 0 ? (int)$line['director_id'] : null,
             'company_account_id' => isset($line['company_account_id']) && (int)$line['company_account_id'] > 0
                 ? (int)$line['company_account_id']
                 : null,

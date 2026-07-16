@@ -28,6 +28,7 @@ final class IxbrlAccountsMappingService
             );
         $closingBuckets = (array)($closingMetrics['buckets'] ?? []);
         $closingSources = (array)($closingMetrics['sources'] ?? []);
+        $directorLoanPresentation = (array)($closingMetrics['director_loan_reporting_presentation'] ?? []);
         $buckets = $this->emptyBuckets();
         $sources = $closingSources;
         $income = 0.0;
@@ -80,8 +81,18 @@ final class IxbrlAccountsMappingService
         $assumptions = [
             'Balance sheet facts use closing posted-journal balances up to the period end, including opening and brought-forward journals, plus applicable pending Year End close-preview adjustments.',
             'Fixed assets require a fixed_asset nominal subtype; otherwise asset accounts are treated as current assets.',
-            'All liability accounts are treated as due within one year unless an explicit long-term liability subtype is present.',
+            'Liability accounts are treated as due within one year unless an explicit long-term liability subtype or the period-specific Director Loan reporting presentation applies.',
         ];
+        if (!empty($directorLoanPresentation['applicable'])) {
+            $basis = !empty($directorLoanPresentation['explicit']) ? 'saved choice' : 'default';
+            $nominal = (array)($directorLoanPresentation['liability_nominal'] ?? []);
+            $nominalLabel = trim((string)($nominal['code'] ?? '') . ' ' . (string)($nominal['name'] ?? ''));
+            $assumptions[] = 'Director Loan Liability'
+                . ($nominalLabel !== '' ? ' (' . $nominalLabel . ')' : '')
+                . ' is presented as '
+                . strtolower((string)($directorLoanPresentation['classification_label'] ?? 'due within one year'))
+                . ' for this accounting period using the ' . $basis . '.';
+        }
         if (abs($explicitEquity) >= 0.005 && abs($explicitEquity - $buckets['equity_capital_reserves']) >= 0.005) {
             $assumptions[] = 'Explicit current-period equity movement differs from closing capital and reserves; the closing balance sheet metric is used for accounts facts.';
         }
@@ -103,6 +114,7 @@ final class IxbrlAccountsMappingService
             'is_balance_sheet_balanced' => !empty($closingMetrics['is_balance_sheet_balanced']),
             'reliable_closing_balance' => !empty($closingMetrics['reliable_closing_balance']),
             'prior_period_dependency' => (array)($closingMetrics['prior_period_dependency'] ?? []),
+            'director_loan_reporting_presentation' => $directorLoanPresentation,
             'warnings' => array_values(array_map('strval', (array)($closingMetrics['warnings'] ?? []))),
         ];
     }

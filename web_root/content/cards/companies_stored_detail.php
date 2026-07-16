@@ -29,6 +29,12 @@ final class _companies_stored_detailCard extends CardBaseFramework
                 'method' => 'statusForCompany',
                 'params' => ['companyId' => ':company.id'],
             ],
+            [
+                'key' => 'company_directors',
+                'service' => \eel_accounts\Service\CompanyDirectorService::class,
+                'method' => 'fetchForCompany',
+                'params' => ['companyId' => ':company.id'],
+            ],
         ];
     }
 
@@ -61,12 +67,17 @@ final class _companies_stored_detailCard extends CardBaseFramework
             static fn(mixed $line): string => trim((string)$line),
             (array)($serviceResponse['resolved_sic_code_lines'] ?? [])
         ), static fn(string $line): bool => $line !== ''));
-        $activeDirectorCount = $serviceResponse['companies_house_active_director_count'] ?? null;
-        $activeDirectorLabel = $activeDirectorCount === null || $activeDirectorCount === ''
-            ? 'Not stored yet'
-            : (string)(int)$activeDirectorCount;
+        $structuredDirectors = (array)($context['services']['company_directors'] ?? []);
+        $activeDirectors = array_values(array_filter(
+            $structuredDirectors,
+            static fn(array $director): bool => !empty($director['is_active'])
+        ));
+        $activeDirectorLabel = $structuredDirectors === [] ? 'Not stored yet' : (string)count($activeDirectors);
         $officersLastChecked = (string)($serviceResponse['companies_house_officers_last_checked_at'] ?? '');
-        $directorNames = $this->directorNames((string)($serviceResponse['companies_house_officers_json'] ?? ''));
+        $directorNames = implode(', ', array_values(array_filter(array_map(
+            static fn(array $director): string => trim((string)($director['full_name'] ?? '')),
+            $activeDirectors
+        ))));
         $incorporationDocumentStatus = (array)($context['services']['incorporation_document_status'] ?? []);
         $incorporationDocumentDownloaded = !empty($incorporationDocumentStatus['downloaded']);
         $incorporationDocumentDownloadedAt = (string)($incorporationDocumentStatus['downloaded_at'] ?? '');
@@ -157,37 +168,4 @@ final class _companies_stored_detailCard extends CardBaseFramework
         return (int)$value === 1 ? 'Yes' : 'No';
     }
 
-    private function directorNames(string $json): string
-    {
-        $json = trim($json);
-        if ($json === '') {
-            return '';
-        }
-
-        $decoded = json_decode($json, true);
-        if (!is_array($decoded)) {
-            return '';
-        }
-
-        $names = [];
-        foreach ((array)($decoded['items'] ?? []) as $item) {
-            if (!is_array($item)) {
-                continue;
-            }
-
-            if (
-                strtolower(trim((string)($item['officer_role'] ?? ''))) !== 'director'
-                || trim((string)($item['resigned_on'] ?? '')) !== ''
-            ) {
-                continue;
-            }
-
-            $name = trim((string)($item['name'] ?? ''));
-            if ($name !== '') {
-                $names[] = $name;
-            }
-        }
-
-        return implode(', ', array_values(array_unique($names)));
-    }
 }

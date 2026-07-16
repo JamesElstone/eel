@@ -23,8 +23,14 @@ final class _ixbrl_generationCard extends CardBaseFramework
         $run = (array)($context['ixbrl']['latest_run'] ?? []);
         $readiness = (array)($context['ixbrl']['readiness'] ?? []);
         $canBuild = !empty($readiness['can_build_facts']);
-        $canGenerate = $canBuild && ((int)($run['fact_count'] ?? 0) > 0 || $run === []);
-        $fileExists = trim((string)($run['generated_path'] ?? '')) !== '' && is_file((string)$run['generated_path']);
+        $canGenerate = $canBuild;
+        $runFreshness = (array)($run['run_freshness'] ?? []);
+        $stale = (int)($run['fact_count'] ?? 0) > 0
+            && (string)($runFreshness['state'] ?? '') !== 'current';
+        $displayStatus = $stale ? 'stale' : (string)($run['status'] ?? 'draft');
+        $fileExists = !$stale
+            && trim((string)($run['generated_path'] ?? '')) !== ''
+            && is_file((string)$run['generated_path']);
         $canValidateExternal = $fileExists;
         $download = $fileExists
             ? '<a class="button" href="/outbound/ixbrl/' . rawurlencode((string)$run['generated_filename']) . '">Download Generated File</a>'
@@ -34,7 +40,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             <section class="panel-soft">
                 <div class="status-head">
                     <h3 class="card-title">Latest run</h3>
-                    <span class="badge ' . HelperFramework::escape($this->statusClass((string)($run['status'] ?? 'draft'))) . '">' . HelperFramework::escape(HelperFramework::labelFromKey((string)($run['status'] ?? 'none'), '_')) . '</span>
+                    <span class="badge ' . HelperFramework::escape($this->statusClass($displayStatus)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($displayStatus, '_')) . '</span>
                 </div>
                 <div class="summary-grid">
                     ' . $this->metric('Generated at', (string)($run['generated_at'] ?? 'Not generated')) . '
@@ -47,6 +53,11 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     ' . $this->metric('Arelle validated at', (string)($run['external_validated_at'] ?? '')) . '
                 </div>
                 <div class="helper">' . HelperFramework::escape((string)($run['error_message'] ?? '')) . '</div>
+                ' . ($stale
+                    ? '<div class="helper"><span class="badge warning">Rebuild required</span> '
+                        . HelperFramework::escape((string)($runFreshness['detail'] ?? 'The latest facts are stale.'))
+                        . '</div>'
+                    : '') . '
                 <div class="helper">' . HelperFramework::escape($this->externalSummary($run)) . '</div>
                 <div class="helper">Generated XHTML is an FRS 105 micro-entity accounts iXBRL export for review and validation before filing.</div>
             </section>
@@ -88,6 +99,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
         return match ($status) {
             'ready' => 'warning',
             'generated' => 'success',
+            'stale' => 'warning',
             'failed' => 'danger',
             default => 'muted',
         };
@@ -95,6 +107,11 @@ final class _ixbrl_generationCard extends CardBaseFramework
 
     private function externalSummary(array $run): string
     {
+        $freshness = (array)($run['run_freshness'] ?? []);
+        if ($freshness !== [] && (string)($freshness['state'] ?? '') !== 'current') {
+            return 'External validation is unavailable until the iXBRL facts and filing export are rebuilt.';
+        }
+
         $status = (string)($run['external_validation_status'] ?? 'not_configured');
         $errors = json_decode((string)($run['external_validation_errors_json'] ?? '[]'), true);
         $warnings = json_decode((string)($run['external_validation_warnings_json'] ?? '[]'), true);

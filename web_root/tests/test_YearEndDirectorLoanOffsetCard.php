@@ -10,140 +10,96 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-
 $harness->run(_year_end_director_loan_offsetCard::class, static function (GeneratedServiceClassTestHarness $harness, _year_end_director_loan_offsetCard $card): void {
-    $harness->check(_year_end_director_loan_offsetCard::class, 'uses one confirmation context service', static function () use ($harness, $card): void {
+    $harness->check(_year_end_director_loan_offsetCard::class, 'uses one factual year-end review service', static function () use ($harness, $card): void {
         $services = $card->services();
-
         $harness->assertCount(1, $services);
-        $harness->assertSame('directorLoanOffset', (string)($services[0]['key'] ?? ''));
+        $harness->assertSame('directorLoanReview', (string)($services[0]['key'] ?? ''));
         $harness->assertSame(\eel_accounts\Service\DirectorLoanReconciliationService::class, (string)($services[0]['service'] ?? ''));
         $harness->assertSame('fetchYearEndConfirmationContext', (string)($services[0]['method'] ?? ''));
+        $harness->assertSame('Director Loan Year End Review', $card->title());
     });
 
-    $harness->check(_year_end_director_loan_offsetCard::class, 'renders director loan approval details and revoke action', static function () use ($harness, $card): void {
-        $html = $card->render(yearEndDirectorLoanOffsetCardContext([
+    $harness->check(_year_end_director_loan_offsetCard::class, 'renders one confirmation after the per-director accounting facts', static function () use ($harness, $card): void {
+        $html = $card->render(yearEndDirectorLoanReviewCardContext([
             'available' => true,
-            'accounting_period' => ['id' => 70, 'period_end' => '2025-12-31'],
-            'asset_nominal' => ['id' => 3, 'code' => '1200', 'name' => 'Director Loan Asset'],
-            'liability_nominal' => ['id' => 5, 'code' => '2100', 'name' => 'Director Loan Liability'],
-            'asset_receivable' => 1000,
-            'liability_payable' => 1500,
-            'offset_amount' => 1000,
-            'required_offset_amount' => 1000,
-            'net_position' => 500,
-            'net_position_label' => 'Company owes director',
-            'posted_offset_amount' => 0,
-            'offset_status' => 'missing',
-            'offset_status_label' => 'Missing',
+            'has_activity' => true,
+            'can_confirm' => true,
+            'asset_receivable' => 253.00,
+            'liability_payable' => 1288.63,
+            'desired_reclassification_amount' => 253.00,
+            'posted_reclassification_amount' => 0.00,
+            'pending_adjustment_amount' => 253.00,
+            'potential_s455_exposure' => 0.00,
             'warnings' => [],
-            'can_post' => true,
-            'closing_balance_acknowledged' => true,
-            'closing_balance_acknowledged_at' => '2026-07-06 10:00:00',
-            'closing_balance_acknowledged_by' => 'Alex Example using the web_app',
-        ]));
-
-        $harness->assertSame(true, str_contains($html, 'save_director_loan_offset_acknowledgement'));
-        $harness->assertSame(true, str_contains($html, 'Approved at 2026-07-06 10:00:00 by Alex Example using the web_app.'));
-        $harness->assertSame(true, str_contains($html, 'name="director_loan_offset_acknowledgement" value="0"'));
-        $harness->assertSame(true, str_contains($html, 'Revoke approval'));
-        $harness->assertSame(false, str_contains($html, 'data-chicken-check="true"'));
-        $harness->assertSame(false, str_contains($html, 'checked required'));
-        $harness->assertSame(false, str_contains($html, 'Post Offset Journal'));
-        $harness->assertSame(true, str_contains($html, 'director_loan_legally_enforceable_right'));
-        $harness->assertSame(true, str_contains($html, 'director_loan_net_settlement_intent'));
-        $harness->assertSame(true, str_contains($html, 'director_loan_set_off_evidence_note'));
-        $harness->assertSame(true, str_contains($html, 'FRS 105 presentation remains gross'));
-    });
-
-    $harness->check(_year_end_director_loan_offsetCard::class, 'keeps current set-off evidence visible after the offset is posted', static function () use ($harness, $card): void {
-        $html = $card->render(yearEndDirectorLoanOffsetCardContext([
-            'available' => true,
-            'accounting_period' => ['id' => 70, 'period_end' => '2025-12-31'],
-            'asset_nominal' => ['id' => 3, 'code' => '1200', 'name' => 'Director Loan Asset'],
-            'liability_nominal' => ['id' => 5, 'code' => '2100', 'name' => 'Director Loan Liability'],
-            'asset_receivable' => 1000,
-            'liability_payable' => 1500,
-            'offset_amount' => 0,
-            'required_offset_amount' => 1000,
-            'net_position' => 500,
-            'net_position_label' => 'Company owes director',
-            'posted_offset_amount' => 1000,
-            'offset_status' => 'current',
-            'offset_status_label' => 'Current',
-            'warnings' => [],
-            'can_post' => false,
-            'offset_candidate_available' => false,
-            'offset_journal_posted' => true,
-            'current_offset_journal_posted' => true,
-            'existing_offset_journal' => ['id' => 987, 'is_posted' => 1],
-            'set_off_evidence_current' => true,
-            'set_off_evidence_acknowledgement' => [
-                'note' => 'Executed set-off agreement clause 4.',
+            'per_director' => [[
+                'director_name' => 'James Example',
+                'gross_asset' => 253.00,
+                'gross_liability' => 1288.63,
+                'desired_reclassification' => 253.00,
+                'net_closing_position' => 1035.63,
+                'potential_s455_exposure' => 0.00,
+            ]],
+            'tax_review' => [
+                'director_flags' => [[
+                    'director_name' => 'James Example',
+                    'review_required' => false,
+                    'potential_s455_exposure' => 0.00,
+                ]],
             ],
-            'set_off_evidence_note' => 'Executed set-off agreement clause 4.',
-            'set_off_evidence_acknowledged_at' => '2026-07-06 10:05:00',
-            'set_off_evidence_acknowledged_by' => 'Alex Example using the web_app',
+            'proposed_lines' => [
+                ['line_description' => 'Director loan control reclassification - James Example', 'debit' => 253.00, 'credit' => 0.00],
+                ['line_description' => 'Director loan control reclassification - James Example', 'debit' => 0.00, 'credit' => 253.00],
+            ],
+            'acknowledgement_current' => false,
+            'acknowledgement_state' => 'absent',
+            'acknowledgement' => null,
         ]));
 
-        $harness->assertSame(true, str_contains($html, 'Current'));
-        $harness->assertSame(true, str_contains($html, 'FRS 105 set-off evidence'));
-        $harness->assertSame(true, str_contains($html, 'Executed set-off agreement clause 4.'));
-        $harness->assertSame(true, str_contains($html, 'Approved at 2026-07-06 10:05:00 by Alex Example using the web_app.'));
-        $harness->assertSame(true, str_contains($html, 'cannot be revoked while a director loan offset journal remains posted'));
-        $harness->assertSame(false, str_contains($html, 'name="director_loan_set_off_evidence" value="0"'));
-        $harness->assertSame(false, str_contains($html, 'Revoke set-off evidence'));
+        $confirmation = 'I confirm the directors, attributed entries, per-director balances, tax flags and calculated control-account reclassification shown above are correct for this accounting period.';
+        $harness->assertTrue(str_contains($html, $confirmation));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="save_director_loan_year_end_review"'));
+        $harness->assertTrue(str_contains($html, 'name="director_loan_year_end_review" value="1"'));
+        $harness->assertTrue(str_contains($html, 'James Example'));
+        $harness->assertTrue(str_contains($html, 'Calculated control-account reclassification'));
+        $harness->assertTrue(str_contains($html, 'applied automatically during Year End lock'));
+        $harness->assertSame(false, str_contains($html, 'director_loan_legally_enforceable_right'));
+        $harness->assertSame(false, str_contains($html, 'director_loan_net_settlement_intent'));
+        $harness->assertSame(false, str_contains($html, 'director_loan_set_off_evidence_note'));
+        $harness->assertSame(false, str_contains($html, 'FRS 105'));
+        $harness->assertSame(false, str_contains($html, 'approval_note'));
     });
 
-    $harness->check(_year_end_director_loan_offsetCard::class, 'allows evidence revocation after appended journals reverse the effective offset to zero', static function () use ($harness, $card): void {
-        $html = $card->render(yearEndDirectorLoanOffsetCardContext([
+    $harness->check(_year_end_director_loan_offsetCard::class, 'passes automatically when no director loan activity exists', static function () use ($harness, $card): void {
+        $html = $card->render(yearEndDirectorLoanReviewCardContext([
             'available' => true,
-            'accounting_period' => ['id' => 70, 'period_end' => '2025-12-31'],
-            'asset_nominal' => ['id' => 3, 'code' => '1200', 'name' => 'Director Loan Asset'],
-            'liability_nominal' => ['id' => 5, 'code' => '2100', 'name' => 'Director Loan Liability'],
-            'asset_receivable' => 1000,
-            'liability_payable' => 1500,
-            'offset_amount' => 0,
-            'required_offset_amount' => 1000,
-            'desired_offset_amount' => 0,
+            'has_activity' => false,
+            'can_confirm' => false,
+            'asset_receivable' => 0,
+            'liability_payable' => 0,
+            'desired_reclassification_amount' => 0,
+            'posted_reclassification_amount' => 0,
             'pending_adjustment_amount' => 0,
-            'net_position' => 500,
-            'net_position_label' => 'Company owes director',
-            'posted_offset_amount' => 0,
-            'offset_status' => 'gross_presentation',
-            'offset_status_label' => 'Gross Presentation',
+            'potential_s455_exposure' => 0,
             'warnings' => [],
-            'can_post' => false,
-            'offset_candidate_available' => true,
-            'offset_journal_posted' => false,
-            'current_offset_journal_posted' => true,
-            'existing_offset_journal' => ['id' => 988, 'is_posted' => 1],
-            'set_off_evidence_current' => true,
-            'set_off_evidence_acknowledgement' => [
-                'note' => 'Historic evidence retained after reversal.',
-            ],
-            'set_off_evidence_note' => 'Historic evidence retained after reversal.',
+            'per_director' => [],
+            'tax_review' => ['director_flags' => []],
+            'proposed_lines' => [],
         ]));
 
-        $harness->assertSame(false, str_contains($html, 'cannot be revoked while a director loan offset journal remains posted'));
-        $harness->assertSame(true, str_contains($html, 'name="director_loan_set_off_evidence" value="0"'));
-        $harness->assertSame(true, str_contains($html, 'Revoke set-off evidence'));
+        $harness->assertTrue(str_contains($html, 'passes automatically'));
+        $harness->assertSame(false, str_contains($html, 'save_director_loan_year_end_review'));
     });
 });
 
-function yearEndDirectorLoanOffsetCardContext(array $offset): array
+function yearEndDirectorLoanReviewCardContext(array $review): array
 {
     return [
         'company' => [
             'id' => 33,
-            'name' => 'Director Loan Fixture Limited',
             'accounting_period_id' => 70,
-            'settings' => [
-                'default_currency_symbol' => '&#163;',
-            ],
+            'settings' => ['default_currency_symbol' => '£'],
         ],
-        'services' => [
-            'directorLoanOffset' => $offset,
-        ],
+        'services' => ['directorLoanReview' => $review],
     ];
 }

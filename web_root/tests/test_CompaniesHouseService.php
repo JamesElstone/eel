@@ -52,7 +52,7 @@ $harness->run(\eel_accounts\Service\CompaniesHouseService::class, function (Gene
         $harness->assertSame(1, $result['director_count'] ?? 0);
     });
 
-    $harness->check(\eel_accounts\Service\CompaniesHouseService::class, 'two active directors fail eligibility check', function () use ($harness): void {
+    $harness->check(\eel_accounts\Service\CompaniesHouseService::class, 'two active directors are supported', function () use ($harness): void {
         $service = companiesHouseServiceWithOfficerPages([
             [
                 ['officer_role' => 'director', 'name' => 'First Director'],
@@ -62,9 +62,9 @@ $harness->run(\eel_accounts\Service\CompaniesHouseService::class, function (Gene
 
         $result = $service->checkSingleActiveDirectorByNumber('01234567');
 
-        $harness->assertSame(false, $result['success'] ?? true);
+        $harness->assertSame(true, $result['success'] ?? false);
         $harness->assertSame(2, $result['director_count'] ?? 0);
-        $harness->assertSame(true, str_contains((string)($result['errors'][0] ?? ''), 'exactly 1 active director'));
+        $harness->assertSame([], (array)($result['errors'] ?? []));
     });
 
     $harness->check(\eel_accounts\Service\CompaniesHouseService::class, 'resigned directors are ignored', function () use ($harness): void {
@@ -94,7 +94,7 @@ $harness->run(\eel_accounts\Service\CompaniesHouseService::class, function (Gene
 
         $result = $service->checkSingleActiveDirectorByNumber('01234567');
 
-        $harness->assertSame(false, $result['success'] ?? true);
+        $harness->assertSame(true, $result['success'] ?? false);
         $harness->assertSame(2, $result['director_count'] ?? 0);
     });
 

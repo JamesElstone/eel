@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 final class _year_end_director_loan_offsetCard extends CardBaseFramework
 {
+    private const CONFIRMATION_TEXT = 'I confirm the directors, attributed entries, per-director balances, tax flags and calculated control-account reclassification shown above are correct for this accounting period.';
+
     public function key(): string
     {
         return 'year_end_director_loan_offset';
@@ -16,27 +18,30 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
 
     public function title(): string
     {
-        return 'Director Loan Offset';
+        return 'Director Loan Year End Review';
+    }
+
+    public function helper(array $context): string
+    {
+        return 'This is a factual accounting review. No legal agreement, set-off evidence, settlement declaration, supporting evidence or confirmation note is requested.';
     }
 
     public function services(): array
     {
-        return [
-            [
-                'key' => 'directorLoanOffset',
-                'service' => \eel_accounts\Service\DirectorLoanReconciliationService::class,
-                'method' => 'fetchYearEndConfirmationContext',
-                'params' => [
-                    'companyId' => ':company.id',
-                    'accountingPeriodId' => ':company.accounting_period_id',
-                ],
+        return [[
+            'key' => 'directorLoanReview',
+            'service' => \eel_accounts\Service\DirectorLoanReconciliationService::class,
+            'method' => 'fetchYearEndConfirmationContext',
+            'params' => [
+                'companyId' => ':company.id',
+                'accountingPeriodId' => ':company.accounting_period_id',
             ],
-        ];
+        ]];
     }
 
     protected function additionalInvalidationFacts(): array
     {
-        return ['year.end.state', 'year.end.checklist'];
+        return ['year.end.state', 'year.end.checklist', 'director.loan.state'];
     }
 
     public function handleError(string $serviceKey, array $error, array $context): string
@@ -46,298 +51,156 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $offset = (array)($context['services']['directorLoanOffset'] ?? []);
-        $taxReview = (array)($offset['tax_review'] ?? ($context['services']['directorLoanTaxReview'] ?? []));
-        $company = (array)($context['company'] ?? []);
-        $companyId = (int)($company['id'] ?? 0);
-        $accountingPeriod = (array)($offset['accounting_period'] ?? []);
-        $accountingPeriodId = (int)($accountingPeriod['id'] ?? ($company['accounting_period_id'] ?? 0));
-
-        if (empty($offset['available'])) {
-            return '<section class="settings-stack" id="director-loan-offset">' . $this->renderErrors((array)($offset['errors'] ?? ['Director loan offset review is not available.'])) . '</section>';
+        $review = (array)($context['services']['directorLoanReview'] ?? []);
+        if (empty($review['available'])) {
+            return $this->errors((array)($review['errors'] ?? ['Director Loan Year End Review is unavailable.']));
         }
 
-        $assetNominal = (array)($offset['asset_nominal'] ?? []);
-        $liabilityNominal = (array)($offset['liability_nominal'] ?? []);
-        $companySettings = (array)($company['settings'] ?? []);
-        $warningsHtml = '';
-        foreach ((array)($offset['warnings'] ?? []) as $warning) {
-            $warningsHtml .= '<div class="helper">' . HelperFramework::escape((string)$warning) . '</div>';
-        }
-
-        $status = (string)($offset['offset_status'] ?? '');
-        $acknowledged = !empty($offset['closing_balance_acknowledged']);
-        $offsetCandidateAvailable = array_key_exists('offset_candidate_available', $offset)
-            ? !empty($offset['offset_candidate_available'])
-            : !empty($offset['can_post']);
-        $showSetOffEvidence = $offsetCandidateAvailable
-            || !empty($offset['set_off_evidence_acknowledgement'])
-            || !empty($offset['existing_offset_journal']);
-        $acknowledgementForm = $offsetCandidateAvailable
-            ? \eel_accounts\Renderer\YearEndApprovalRenderer::render([
-                'subject' => 'director loan offset',
-                'companyId' => $companyId,
-                'accountingPeriodId' => $accountingPeriodId,
-                'acknowledged' => $acknowledged,
-                'acknowledgementState' => (string)($offset['closing_balance_acknowledgement_state'] ?? ''),
-                'acknowledgedAt' => (string)($offset['closing_balance_acknowledged_at'] ?? ''),
-                'acknowledgedBy' => (string)($offset['closing_balance_acknowledged_by'] ?? ''),
-                'note' => (string)($offset['director_loan_closing_approval_note'] ?? ''),
-                'intent' => 'save_director_loan_offset_acknowledgement',
-                'revokeIntent' => 'save_director_loan_offset_acknowledgement',
-                'checkboxName' => 'director_loan_offset_acknowledgement',
-                'approveFields' => ['director_loan_offset_acknowledgement' => '1'],
-                'revokeFields' => ['director_loan_offset_acknowledgement' => '0'],
-            ])
-            : '';
-        $setOffEvidenceHtml = $showSetOffEvidence
-            ? $this->setOffEvidenceHtml($offset, $companyId, $accountingPeriodId)
-            : '';
-        $proposedLinesHtml = $this->proposedLinesHtml(
-            $offset,
-            $assetNominal,
-            $liabilityNominal,
-            $companySettings
-        );
-
-        return '<section class="settings-stack" id="director-loan-offset">
-            <div class="status-head">
-                <span class="badge ' . HelperFramework::escape($this->badgeClass($this->offsetBadgeStatus($status))) . '">' . HelperFramework::escape((string)($offset['offset_status_label'] ?? HelperFramework::labelFromKey($status, '_'))) . '</span>
-            </div>
-            <div class="month-grid">
-                ' . $this->summaryCard(FormattingFramework::nominalLabel($assetNominal), $this->money($companySettings, $offset['asset_receivable'] ?? 0)) . '
-                ' . $this->summaryCard(FormattingFramework::nominalLabel($liabilityNominal), $this->money($companySettings, $offset['liability_payable'] ?? 0)) . '
-                ' . $this->summaryCard('Pending adjustment', $this->money($companySettings, $offset['pending_adjustment_amount'] ?? $offset['offset_amount'] ?? 0)) . '
-                ' . $this->summaryCard('Net position', $this->money($companySettings, $offset['net_position'] ?? 0)) . '
-                ' . $this->summaryCard('Net Flow', (string)($offset['net_position_label'] ?? '')) . '
-                ' . $this->summaryCard('Existing posted offset', $this->money($companySettings, $offset['posted_offset_amount'] ?? 0)) . '
-            </div>
-            <div class="table-scroll panel-soft">
-                <table>
-                    <thead><tr><th>Journal line</th><th>Debit</th><th>Credit</th></tr></thead>
-                    <tbody>' . $proposedLinesHtml . '</tbody>
-                </table>
-            </div>
-            <div class="helper">FRS 105 presentation remains gross unless both set-off criteria are evidenced for the current closing balances.</div>
-            ' . $warningsHtml . '
-            ' . $this->taxReviewHtml($taxReview, $companySettings, $companyId, $accountingPeriodId) . '
-            ' . (empty($offset['can_post']) ? '<div class="helper">' . HelperFramework::escape((string)($offset['post_blocked_reason'] ?? '')) . '</div>' : '') . '
-            ' . $acknowledgementForm . '
-            ' . $setOffEvidenceHtml . '
-        </section>';
-    }
-
-    private function setOffEvidenceHtml(array $offset, int $companyId, int $accountingPeriodId): string
-    {
-        $current = !empty($offset['set_off_evidence_current']);
-        $acknowledgement = (array)($offset['set_off_evidence_acknowledgement'] ?? []);
-        $note = trim((string)($offset['set_off_evidence_note'] ?? $acknowledgement['note'] ?? ''));
+        $companyId = (int)($context['company']['id'] ?? 0);
+        $accountingPeriodId = (int)($context['company']['accounting_period_id'] ?? 0);
+        $settings = (array)($context['company']['settings'] ?? []);
         $locked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
-        $existingOffsetJournal = (array)($offset['existing_offset_journal'] ?? []);
-        $offsetJournalPosted = array_key_exists('offset_journal_posted', $offset)
-            ? !empty($offset['offset_journal_posted'])
-            : (
-                !empty($offset['current_offset_journal_posted'])
-                || (
-                    (int)($existingOffsetJournal['id'] ?? 0) > 0
-                    && (int)($existingOffsetJournal['is_posted'] ?? 0) === 1
-                )
-            );
-        $commonFields = '
-            <input type="hidden" name="card_action" value="YearEnd">
-            <input type="hidden" name="intent" value="save_director_loan_set_off_evidence">
-            <input type="hidden" name="company_id" value="' . $companyId . '">
-            <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">';
+        $hasActivity = !empty($review['has_activity']);
+        $acknowledgement = (array)($review['acknowledgement'] ?? []);
+        $acknowledgementCurrent = !empty($review['acknowledgement_current']);
 
-        if ($current) {
-            return '<section class="panel-soft success settings-stack">
-                <div class="eyebrow">FRS 105 set-off evidence</div>
-                <div class="summary-value">' . HelperFramework::escape($note) . '</div>
-                <div class="helper">Legally enforceable right confirmed. Net or simultaneous settlement intent confirmed.</div>
-                <div class="stat-foot">Approved'
-                    . (trim((string)($offset['set_off_evidence_acknowledged_at'] ?? '')) !== ''
-                        ? ' at ' . HelperFramework::escape((string)$offset['set_off_evidence_acknowledged_at'])
-                        : '')
-                    . (trim((string)($offset['set_off_evidence_acknowledged_by'] ?? '')) !== ''
-                        ? ' by ' . HelperFramework::escape((string)$offset['set_off_evidence_acknowledged_by'])
-                        : '')
-                    . '.</div>'
-                . ($locked
-                    ? '<div class="helper">This accounting period is locked, so this evidence cannot be revoked.</div>'
-                    : ($offsetJournalPosted
-                        ? '<div class="helper">This evidence cannot be revoked while a director loan offset journal remains posted. Reverse the journal first.</div>'
-                        : '
-                <form method="post" data-ajax="true">
-                    ' . $commonFields . '
-                    <input type="hidden" name="director_loan_set_off_evidence" value="0">
-                    <button class="button" type="submit">Revoke set-off evidence</button>
-                </form>')) . '
-            </section>';
+        $warnings = '';
+        foreach ((array)($review['warnings'] ?? []) as $warning) {
+            $warnings .= '<div class="panel-soft warn helper">' . HelperFramework::escape((string)$warning) . '</div>';
         }
 
-        $state = (string)($offset['set_off_evidence_state'] ?? 'absent');
-        $staleHtml = in_array($state, ['stale', 'unverifiable'], true)
-            ? '<div class="helper"><span class="badge warning">Review required</span> The balances changed after the previous set-off evidence was recorded.</div>'
-            : '';
+        $confirmation = '';
+        if (!$hasActivity) {
+            $confirmation = '<div class="panel-soft success helper">No Director Loan activity or balance exists for this period, so this check passes automatically.</div>';
+        } elseif ($locked) {
+            $confirmation = $acknowledgement !== []
+                ? '<section class="panel-soft ' . ($acknowledgementCurrent ? 'success' : 'warn') . ' settings-stack">
+                    <div class="eyebrow">Recorded Year End Confirmation</div>
+                    <div class="summary-value">' . HelperFramework::escape($acknowledgementCurrent ? self::CONFIRMATION_TEXT : 'The recorded confirmation is no longer current for the facts shown above.') . '</div>
+                    <div class="stat-foot">Approved'
+                        . (trim((string)($review['acknowledged_at'] ?? '')) !== '' ? ' at ' . HelperFramework::escape((string)$review['acknowledged_at']) : '')
+                        . (trim((string)($review['acknowledged_by'] ?? '')) !== '' ? ' by ' . HelperFramework::escape((string)$review['acknowledged_by']) : '')
+                        . '.</div>
+                </section>'
+                : '<div class="panel-soft warn helper">No Director Loan Year End confirmation was recorded before this period was locked.</div>';
+        } elseif (!empty($review['can_confirm'])) {
+            $confirmation = \eel_accounts\Renderer\YearEndApprovalRenderer::render([
+                'subject' => 'Director Loan Year End facts',
+                'confirmationText' => self::CONFIRMATION_TEXT,
+                'companyId' => $companyId,
+                'accountingPeriodId' => $accountingPeriodId,
+                'acknowledged' => $acknowledgementCurrent,
+                'acknowledgementState' => (string)($review['acknowledgement_state'] ?? ''),
+                'acknowledgedAt' => (string)($review['acknowledged_at'] ?? ''),
+                'acknowledgedBy' => (string)($review['acknowledged_by'] ?? ''),
+                'intent' => 'save_director_loan_year_end_review',
+                'revokeIntent' => 'save_director_loan_year_end_review',
+                'checkboxName' => 'director_loan_year_end_review',
+                'approveFields' => ['director_loan_year_end_review' => '1'],
+                'revokeFields' => ['director_loan_year_end_review' => '0'],
+                'noteMode' => \eel_accounts\Renderer\YearEndApprovalRenderer::NOTE_HIDDEN,
+            ]);
+        } else {
+            $confirmation = '<div class="panel-soft warn helper">Attribute every Director Loan entry on the Summary tab before confirming these facts.</div>';
+        }
 
-        return '<section class="panel-soft warn settings-stack">
-            <div class="eyebrow">FRS 105 set-off evidence</div>
-            ' . $staleHtml . '
-            <form method="post" data-ajax="true" class="form-grid">
-                ' . $commonFields . '
-                <input type="hidden" name="director_loan_set_off_evidence" value="1">
-                <label class="checkbox-row full">
-                    <input type="checkbox" name="director_loan_legally_enforceable_right" value="1" required' . ($locked ? ' disabled' : '') . '>
-                    <span>I confirm the company currently has a legally enforceable right to set off these recognised balances.</span>
-                </label>
-                <label class="checkbox-row full">
-                    <input type="checkbox" name="director_loan_net_settlement_intent" value="1" required' . ($locked ? ' disabled' : '') . '>
-                    <span>I confirm the company intends to settle the balances net, or to realise the asset and settle the liability simultaneously.</span>
-                </label>
-                <div class="form-row full">
-                    <label for="director-loan-set-off-evidence-note">Supporting evidence</label>
-                    <textarea class="input" id="director-loan-set-off-evidence-note" name="director_loan_set_off_evidence_note" rows="3" required' . ($locked ? ' disabled' : '') . '></textarea>
-                    <div class="helper">Identify the agreement, legal right and intended settlement arrangement supporting the set-off.</div>
-                </div>
-                <div class="actions-row"><button class="button primary" type="submit"' . ($locked ? ' disabled' : '') . '>Save set-off evidence</button></div>
-            </form>
+        return '<section class="settings-stack">
+            <div class="month-grid">
+                ' . $this->stat('Gross Director Loan Asset', $this->money($settings, $review['asset_receivable'] ?? 0)) . '
+                ' . $this->stat('Gross Director Loan Liability', $this->money($settings, $review['liability_payable'] ?? 0)) . '
+                ' . $this->stat('Calculated reclassification', $this->money($settings, $review['desired_reclassification_amount'] ?? 0)) . '
+                ' . $this->stat('Already posted', $this->money($settings, $review['posted_reclassification_amount'] ?? 0)) . '
+                ' . $this->stat('Pending at lock', $this->money($settings, $review['pending_adjustment_amount'] ?? 0)) . '
+                ' . $this->stat('Potential s455 exposure', $this->money($settings, $review['potential_s455_exposure'] ?? 0)) . '
+            </div>
+            ' . $warnings . '
+            <div class="eyebrow">Per-director facts</div>
+            ' . $this->positionsTable((array)($review['per_director'] ?? []), $settings) . '
+            <div class="eyebrow">Tax flags</div>
+            ' . $this->taxFlags((array)($review['tax_review'] ?? []), $settings) . '
+            <div class="eyebrow">Calculated control-account reclassification</div>
+            ' . $this->proposedLines((array)($review['proposed_lines'] ?? []), $settings) . '
+            <div class="helper">The calculated reclassification is applied automatically during Year End lock. It only reclassifies overlapping asset and liability balances attributed to the same director.</div>
+            ' . $confirmation . '
         </section>';
     }
 
-    private function summaryCard(string $label, string $value): string
+    private function positionsTable(array $positions, array $settings): string
     {
-        return '<div class="panel-soft"><div class="eyebrow">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+        if ($positions === []) {
+            return '<div class="helper">No per-director balances.</div>';
+        }
+        $rows = '';
+        foreach ($positions as $position) {
+            $rows .= '<tr>
+                <td>' . HelperFramework::escape((string)($position['director_name'] ?? 'Unattributed')) . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['gross_asset'] ?? 0)) . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['gross_liability'] ?? 0)) . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['desired_reclassification'] ?? 0)) . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['net_closing_position'] ?? 0)) . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['potential_s455_exposure'] ?? 0)) . '</td>
+            </tr>';
+        }
+        return '<div class="table-scroll"><table>
+            <thead><tr><th>Director</th><th>Gross asset</th><th>Gross liability</th><th>Reclassification</th><th>Net closing</th><th>Potential s455</th></tr></thead>
+            <tbody>' . $rows . '</tbody>
+        </table></div>';
     }
 
-    private function proposedLinesHtml(
-        array $offset,
-        array $assetNominal,
-        array $liabilityNominal,
-        array $companySettings
-    ): string {
-        $lines = (array)($offset['proposed_lines'] ?? []);
+    private function taxFlags(array $taxReview, array $settings): string
+    {
+        $flags = (array)($taxReview['director_flags'] ?? []);
+        if ($flags === []) {
+            return '<div class="helper">No attributed director balances require a tax flag.</div>';
+        }
+        $rows = '';
+        foreach ($flags as $flag) {
+            $rows .= '<tr>
+                <td>' . HelperFramework::escape((string)($flag['director_name'] ?? '')) . '</td>
+                <td>' . (!empty($flag['review_required']) ? '<span class="badge warning">Review required</span>' : '<span class="badge success">No exposure flagged</span>') . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($settings, $flag['potential_s455_exposure'] ?? 0)) . '</td>
+            </tr>';
+        }
+        return '<div class="table-scroll"><table>
+            <thead><tr><th>Director</th><th>Tax flag</th><th>Potential s455</th></tr></thead>
+            <tbody>' . $rows . '</tbody>
+        </table></div>';
+    }
+
+    private function proposedLines(array $lines, array $settings): string
+    {
         if ($lines === []) {
-            $pendingAdjustment = round((float)($offset['pending_adjustment_amount'] ?? $offset['offset_amount'] ?? 0), 2);
-            $amount = abs($pendingAdjustment);
-            $applyingSetOff = $pendingAdjustment >= 0;
-            $lines = [
-                [
-                    'nominal_account_id' => (int)($applyingSetOff ? ($liabilityNominal['id'] ?? 0) : ($assetNominal['id'] ?? 0)),
-                    'debit' => $amount,
-                    'credit' => 0.0,
-                ],
-                [
-                    'nominal_account_id' => (int)($applyingSetOff ? ($assetNominal['id'] ?? 0) : ($liabilityNominal['id'] ?? 0)),
-                    'debit' => 0.0,
-                    'credit' => $amount,
-                ],
-            ];
+            return '<div class="helper">No additional reclassification journal is currently required.</div>';
         }
-
-        $nominals = [
-            (int)($assetNominal['id'] ?? 0) => $assetNominal,
-            (int)($liabilityNominal['id'] ?? 0) => $liabilityNominal,
-        ];
-        $html = '';
+        $rows = '';
         foreach ($lines as $line) {
-            $nominal = (array)($nominals[(int)($line['nominal_account_id'] ?? 0)] ?? []);
-            $html .= '<tr><td>'
-                . HelperFramework::escape(FormattingFramework::nominalLabel($nominal))
-                . '</td><td>'
-                . HelperFramework::escape($this->money($companySettings, $line['debit'] ?? 0))
-                . '</td><td>'
-                . HelperFramework::escape($this->money($companySettings, $line['credit'] ?? 0))
-                . '</td></tr>';
+            $rows .= '<tr>
+                <td>' . HelperFramework::escape((string)($line['line_description'] ?? '')) . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($settings, $line['debit'] ?? 0)) . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($settings, $line['credit'] ?? 0)) . '</td>
+            </tr>';
         }
-
-        return $html;
+        return '<div class="table-scroll"><table>
+            <thead><tr><th>Attributed line</th><th>Debit</th><th>Credit</th></tr></thead>
+            <tbody>' . $rows . '</tbody>
+        </table></div>';
     }
 
-    private function money(array $companySettings, float|int|string|null $value): string
+    private function stat(string $label, string $value): string
     {
-        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
+        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
     }
 
-    private function taxReviewHtml(array $taxReview, array $companySettings, int $companyId, int $accountingPeriodId): string
+    private function money(array $settings, mixed $value): string
     {
-        if (empty($taxReview['available'])) {
-            $errors = (array)($taxReview['errors'] ?? []);
-            return '<div class="panel-soft stack"><div class="eyebrow">Tax Review</div><div class="helper">' . HelperFramework::escape((string)($errors[0] ?? 'Director loan tax review is not available.')) . '</div></div>';
-        }
-
-        $status = (string)($taxReview['status'] ?? '');
-        $itemsHtml = '';
-        foreach ((array)($taxReview['review_items'] ?? []) as $item) {
-            if (!is_array($item)) {
-                continue;
-            }
-            $itemsHtml .= '<li><strong>' . HelperFramework::escape((string)($item['label'] ?? 'Review item')) . '</strong><br><span class="helper">' . HelperFramework::escape((string)($item['detail'] ?? '')) . '</span></li>';
-        }
-
-        if ($itemsHtml === '') {
-            $itemsHtml = '<li><span class="helper">No director receivable tax review flags are currently raised for this period.</span></li>';
-        }
-
-        $repaymentDate = trim((string)($taxReview['repayment_review_date'] ?? ''));
-        $acknowledgement = (array)($taxReview['acknowledgement'] ?? []);
-        $approvalHtml = !empty($taxReview['review_required']) || $acknowledgement !== []
-            ? \eel_accounts\Renderer\YearEndApprovalRenderer::render([
-                'subject' => 'director loan tax position',
-                'companyId' => $companyId,
-                'accountingPeriodId' => $accountingPeriodId,
-                'acknowledged' => !empty($taxReview['acknowledgement_current']),
-                'acknowledgementState' => (string)($taxReview['acknowledgement_state'] ?? 'absent'),
-                'acknowledgedAt' => (string)($acknowledgement['acknowledged_at'] ?? ''),
-                'acknowledgedBy' => (string)($acknowledgement['acknowledged_by'] ?? ''),
-                'note' => (string)($acknowledgement['note'] ?? ''),
-                'intent' => 'acknowledge_review_check',
-                'revokeIntent' => 'reopen_review_check',
-                'approveFields' => ['check_code' => 'director_loan_tax_review'],
-                'revokeFields' => ['check_code' => 'director_loan_tax_review'],
-                'noteName' => 'review_acknowledgement_note',
-                'noteId' => 'director-loan-tax-review-note',
-            ])
-            : '';
-
-        return '<div class="panel-soft stack">
-            <div class="status-head">
-                <span class="badge ' . HelperFramework::escape($this->badgeClass($status === 'review_required' ? 'warning' : 'pass')) . '">' . HelperFramework::escape((string)($taxReview['status_label'] ?? HelperFramework::labelFromKey($status, '_'))) . '</span>
-            </div>
-            <div class="month-grid">
-                ' . $this->summaryCard('Potential s455 exposure basis', $this->money($companySettings, $taxReview['exposure_amount'] ?? 0)) . '
-                ' . $this->summaryCard('Repayment review date', $repaymentDate !== '' ? HelperFramework::displayDate($repaymentDate) : 'Not applicable') . '
-            </div>
-            <ul class="settings-list">' . $itemsHtml . '</ul>
-            ' . $approvalHtml . '
-        </div>';
+        return (new \eel_accounts\Service\MoneyFormatService())->format($settings, $value);
     }
 
-    private function offsetBadgeStatus(string $status): string
+    private function errors(array $errors): string
     {
-        return match ($status) {
-            'current', 'gross_presentation', 'not_required' => 'pass',
-            'missing', 'stale', 'invalid' => 'warning',
-            default => 'info',
-        };
-    }
-
-    private function badgeClass(string $status): string
-    {
-        return match ($status) {
-            'pass', 'ready', 'locked' => 'success',
-            'fail', 'needs_attention' => 'danger',
-            'warning', 'not_started' => 'warning',
-            default => 'info',
-        };
-    }
-
-    private function renderErrors(array $errors): string
-    {
-        $html = '';
-        foreach ($errors as $error) {
-            $html .= '<div class="helper">' . HelperFramework::escape((string)$error) . '</div>';
-        }
-
-        return $html;
+        return implode('', array_map(
+            static fn(mixed $error): string => '<div class="helper">' . HelperFramework::escape((string)$error) . '</div>',
+            $errors
+        ));
     }
 }

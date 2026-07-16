@@ -11,161 +11,112 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'StandardNominalTestFixture.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-
 $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function (
     GeneratedServiceClassTestHarness $harness,
     \eel_accounts\Service\DirectorLoanService $service
 ): void {
-    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'calculates combined asset liability net position', static function () use ($harness, $service): void {
-        directorLoanStatementTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
-            directorLoanStatementTestInsertSetting($fixture, 'director_loan_asset_nominal_id', (string)$fixture['asset_nominal_id']);
-            directorLoanStatementTestInsertSetting($fixture, 'director_loan_liability_nominal_id', (string)$fixture['liability_nominal_id']);
-            directorLoanStatementTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 1000.00, 0.00, '2025-12-31', 'opening-asset');
-            directorLoanStatementTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 1500.00, '2025-12-31', 'opening-liability');
-            directorLoanStatementTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 250.00, 0.00, '2026-03-01', 'asset-movement');
-            directorLoanStatementTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 400.00, '2026-03-02', 'liability-movement');
+    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'calculates James example by director while preserving Brian as counterparty', static function () use ($harness, $service): void {
+        directorLoanStatementWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            $jamesId = (int)$fixture['james_director_id'];
+            $otherId = (int)$fixture['other_director_id'];
 
-            $result = $service->fetchStatement((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            directorLoanStatementInsertTransactionJournal(
+                $fixture,
+                (int)$fixture['asset_nominal_id'],
+                253.00,
+                $jamesId,
+                'Brian Example'
+            );
+            directorLoanStatementInsertManualLine(
+                $fixture,
+                (int)$fixture['liability_nominal_id'],
+                0.00,
+                1288.63,
+                $jamesId,
+                'James funds introduced'
+            );
+            directorLoanStatementInsertManualLine(
+                $fixture,
+                (int)$fixture['asset_nominal_id'],
+                100.00,
+                0.00,
+                $otherId,
+                'Other director advance'
+            );
 
-            $harness->assertSame(true, (bool)($result['success'] ?? false));
-            $harness->assertSame(1250.00, (float)($result['asset_receivable'] ?? 0));
-            $harness->assertSame(1900.00, (float)($result['liability_payable'] ?? 0));
-            $harness->assertSame(650.00, (float)($result['net_position'] ?? 0));
-            $harness->assertSame(500.00, (float)($result['opening_balance'] ?? 0));
-            $harness->assertSame(150.00, (float)($result['movement_in_period'] ?? 0));
-            $harness->assertSame('Company owes director', (string)($result['net_position_label'] ?? ''));
-            $harness->assertCount(3, (array)($result['statement_rows'] ?? []));
-
-            $rows = (array)($result['statement_rows'] ?? []);
-            $harness->assertSame('Combined', (string)($rows[0]['account_label'] ?? ''));
-            $harness->assertSame(-250.00, (float)($rows[1]['signed_amount'] ?? 0));
-            $harness->assertSame('asset', (string)($rows[1]['nominal_role'] ?? ''));
-            $harness->assertSame(400.00, (float)($rows[2]['signed_amount'] ?? 0));
-            $harness->assertSame('liability', (string)($rows[2]['nominal_role'] ?? ''));
-        });
-    });
-
-    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'uses legacy liability setting when pair setting is missing', static function () use ($harness, $service): void {
-        directorLoanStatementTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
-            directorLoanStatementTestInsertSetting($fixture, 'director_loan_asset_nominal_id', (string)$fixture['asset_nominal_id']);
-            directorLoanStatementTestInsertSetting($fixture, 'director_loan_nominal_id', (string)$fixture['liability_nominal_id']);
-            directorLoanStatementTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 75.00, '2026-01-15', 'legacy-liability');
-
-            $result = $service->fetchStatement((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
-
-            $harness->assertSame(true, (bool)($result['success'] ?? false));
-            $harness->assertSame((int)$fixture['liability_nominal_id'], (int)($result['liability_nominal']['id'] ?? 0));
-            $harness->assertSame(75.00, (float)($result['liability_payable'] ?? 0));
-            $harness->assertSame(75.00, (float)($result['net_position'] ?? 0));
-        });
-    });
-
-    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'falls back to configured chart subtype or code when settings are absent', static function () use ($harness, $service): void {
-        directorLoanStatementTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
-            $initial = $service->fetchStatement((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
-            $harness->assertSame(true, (bool)($initial['success'] ?? false));
-            $assetNominalId = (int)($initial['asset_nominal']['id'] ?? 0);
-            $liabilityNominalId = (int)($initial['liability_nominal']['id'] ?? 0);
-            $harness->assertTrue($assetNominalId > 0);
-            $harness->assertTrue($liabilityNominalId > 0);
-
-            directorLoanStatementTestInsertLineJournal($fixture, $assetNominalId, 60.00, 0.00, '2026-02-01', 'fallback-asset');
-            directorLoanStatementTestInsertLineJournal($fixture, $liabilityNominalId, 0.00, 40.00, '2026-02-02', 'fallback-liability');
-
-            $result = $service->fetchStatement((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
-
-            $harness->assertSame(true, (bool)($result['success'] ?? false));
-            $harness->assertSame('asset', (string)($result['asset_nominal']['account_type'] ?? ''));
-            $harness->assertSame('liability', (string)($result['liability_nominal']['account_type'] ?? ''));
-            $harness->assertSame(-20.00, (float)($result['net_position'] ?? 0));
-            $harness->assertSame('Director owes company', (string)($result['net_position_label'] ?? ''));
-        });
-    });
-
-    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'reports settled when asset and liability normal balances match', static function () use ($harness, $service): void {
-        directorLoanStatementTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
-            directorLoanStatementTestInsertSetting($fixture, 'director_loan_asset_nominal_id', (string)$fixture['asset_nominal_id']);
-            directorLoanStatementTestInsertSetting($fixture, 'director_loan_liability_nominal_id', (string)$fixture['liability_nominal_id']);
-            directorLoanStatementTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 100.00, 0.00, '2026-04-01', 'settled-asset');
-            directorLoanStatementTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 100.00, '2026-04-02', 'settled-liability');
-
-            $result = $service->fetchStatement((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
-
-            $harness->assertSame(true, (bool)($result['success'] ?? false));
-            $harness->assertSame(0.00, (float)($result['net_position'] ?? 1));
-            $harness->assertSame('Settled', (string)($result['net_position_label'] ?? ''));
-        });
-    });
-
-    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'flags director loan tax review when director owes company at year end', static function () use ($harness, $service): void {
-        directorLoanStatementTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
-            directorLoanStatementTestInsertSetting($fixture, 'director_loan_asset_nominal_id', (string)$fixture['asset_nominal_id']);
-            directorLoanStatementTestInsertSetting($fixture, 'director_loan_liability_nominal_id', (string)$fixture['liability_nominal_id']);
-            directorLoanStatementTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 500.00, 0.00, '2026-12-31', 'director-owes-company');
-
-            $review = $service->fetchTaxReview((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
-
-            $harness->assertSame(true, (bool)($review['available'] ?? false));
-            $harness->assertSame('review_required', (string)($review['status'] ?? ''));
-            $harness->assertSame(true, (bool)($review['s455_review_required'] ?? false));
-            $harness->assertSame(true, (bool)($review['beneficial_loan_interest_review_required'] ?? false));
-            $harness->assertSame(true, (bool)($review['write_off_review_required'] ?? false));
-            $harness->assertSame(true, (bool)($review['ct600_supplementary_review_required'] ?? false));
-            $harness->assertSame(500.00, (float)($review['exposure_amount'] ?? 0));
-            $harness->assertSame('2027-10-02', (string)($review['repayment_review_date'] ?? ''));
-            $harness->assertTrue(count((array)($review['review_items'] ?? [])) >= 4);
-        });
-    });
-
-    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'does not offset a gross director receivable against an unresolved director payable', static function () use ($harness, $service): void {
-        directorLoanStatementTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
-            directorLoanStatementTestInsertSetting($fixture, 'director_loan_asset_nominal_id', (string)$fixture['asset_nominal_id']);
-            directorLoanStatementTestInsertSetting($fixture, 'director_loan_liability_nominal_id', (string)$fixture['liability_nominal_id']);
-            directorLoanStatementTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 250.00, 0.00, '2026-03-01', 'gross-receivable');
-            directorLoanStatementTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 1000.00, '2026-03-02', 'unresolved-payable');
-
-            $review = $service->fetchTaxReview((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
-
-            $harness->assertSame(true, (bool)($review['available'] ?? false));
-            $harness->assertSame('review_required', (string)($review['status'] ?? ''));
-            $harness->assertSame(true, (bool)($review['director_owes_company'] ?? false));
-            $harness->assertSame(true, (bool)($review['identity_netting_required'] ?? false));
-            $harness->assertSame('gross_receivable_pending_same_person_review', (string)($review['tax_review_basis'] ?? ''));
-            $harness->assertSame(250.00, (float)($review['gross_director_receivable'] ?? 0));
-            $harness->assertSame(1000.00, (float)($review['gross_director_payable'] ?? 0));
-            $harness->assertSame(250.00, (float)($review['exposure_amount'] ?? 0));
-            $harness->assertTrue(in_array(
-                'same_person_netting',
-                array_map(static fn(array $item): string => (string)($item['key'] ?? ''), (array)($review['review_items'] ?? [])),
-                true
+            $statement = $service->fetchStatement((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $taxReview = $service->fetchTaxReviewSummary((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $positions = [];
+            foreach ((array)($statement['per_director'] ?? []) as $position) {
+                $positions[(int)($position['director_id'] ?? 0)] = $position;
+            }
+            $james = (array)($positions[$jamesId] ?? []);
+            $other = (array)($positions[$otherId] ?? []);
+            $brianEntry = array_values(array_filter(
+                (array)($statement['attribution_entries'] ?? []),
+                static fn(array $entry): bool => (string)($entry['counterparty_name'] ?? '') === 'Brian Example'
             ));
+
+            $harness->assertSame(true, (bool)($statement['success'] ?? false));
+            $harness->assertSame('253.00', directorLoanStatementMoney($james['gross_asset'] ?? 0));
+            $harness->assertSame('1288.63', directorLoanStatementMoney($james['gross_liability'] ?? 0));
+            $harness->assertSame('253.00', directorLoanStatementMoney($james['desired_reclassification'] ?? 0));
+            $harness->assertSame('1035.63', directorLoanStatementMoney($james['net_closing_position'] ?? 0));
+            $harness->assertSame('0.00', directorLoanStatementMoney($james['potential_s455_exposure'] ?? 0));
+            $harness->assertSame('0.00', directorLoanStatementMoney($other['desired_reclassification'] ?? 0));
+            $harness->assertSame('100.00', directorLoanStatementMoney($other['potential_s455_exposure'] ?? 0));
+            $harness->assertSame('253.00', directorLoanStatementMoney($statement['desired_reclassification'] ?? 0));
+            $harness->assertSame('100.00', directorLoanStatementMoney($statement['potential_s455_exposure'] ?? 0));
+            $harness->assertSame('100.00', directorLoanStatementMoney($taxReview['exposure_amount'] ?? 0));
+            $harness->assertCount(1, $brianEntry);
+            $harness->assertSame($jamesId, (int)($brianEntry[0]['director_id'] ?? 0));
+            $harness->assertSame(true, str_contains((string)($brianEntry[0]['source_url'] ?? ''), 'transaction_id='));
         });
     });
 
-    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'tax review summary matches full statement review without statement rows', static function () use ($harness, $service): void {
-        directorLoanStatementTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
-            directorLoanStatementTestInsertSetting($fixture, 'director_loan_asset_nominal_id', (string)$fixture['asset_nominal_id']);
-            directorLoanStatementTestInsertSetting($fixture, 'director_loan_liability_nominal_id', (string)$fixture['liability_nominal_id']);
-            directorLoanStatementTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 200.00, 0.00, '2026-03-01', 'asset-movement');
-            directorLoanStatementTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 50.00, 0.00, '2026-03-02', 'liability-reduction');
+    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'lists unattributed entries and never offsets balances between different directors', static function () use ($harness, $service): void {
+        directorLoanStatementWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            directorLoanStatementInsertManualLine(
+                $fixture,
+                (int)$fixture['asset_nominal_id'],
+                500.00,
+                0.00,
+                (int)$fixture['james_director_id'],
+                'James receivable'
+            );
+            directorLoanStatementInsertManualLine(
+                $fixture,
+                (int)$fixture['liability_nominal_id'],
+                0.00,
+                500.00,
+                (int)$fixture['other_director_id'],
+                'Other director payable'
+            );
+            directorLoanStatementInsertManualLine(
+                $fixture,
+                (int)$fixture['liability_nominal_id'],
+                0.00,
+                25.00,
+                null,
+                'Unattributed legacy line'
+            );
 
-            $full = $service->fetchTaxReview((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
-            $summary = $service->fetchTaxReviewSummary((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $statement = $service->fetchStatement((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
 
-            $harness->assertSame(true, (bool)($summary['available'] ?? false));
-            $harness->assertSame((string)($full['status'] ?? ''), (string)($summary['status'] ?? ''));
-            $harness->assertSame((bool)($full['review_required'] ?? false), (bool)($summary['review_required'] ?? true));
-            $harness->assertSame((float)($full['closing_balance'] ?? 0), (float)($summary['closing_balance'] ?? 0));
-            $harness->assertSame((float)($full['exposure_amount'] ?? 0), (float)($summary['exposure_amount'] ?? 0));
-            $harness->assertSame(false, array_key_exists('statement', $summary));
+            $harness->assertSame('0.00', directorLoanStatementMoney($statement['desired_reclassification'] ?? 0));
+            $harness->assertSame('500.00', directorLoanStatementMoney($statement['potential_s455_exposure'] ?? 0));
+            $harness->assertSame(1, (int)($statement['unattributed_count'] ?? 0));
+            $harness->assertCount(1, (array)($statement['unattributed_entries'] ?? []));
         });
     });
 });
 
-function directorLoanStatementTestWithFixture(GeneratedServiceClassTestHarness $harness, callable $callback): void
+function directorLoanStatementWithFixture(GeneratedServiceClassTestHarness $harness, callable $callback): void
 {
-    if (!InterfaceDB::tableExists('nominal_accounts') || !InterfaceDB::tableExists('journals') || !InterfaceDB::tableExists('journal_lines')) {
-        $harness->skip('Ledger tables are not available on the default InterfaceDB connection.');
+    foreach (['company_directors', 'journal_lines', 'statement_uploads', 'transactions'] as $table) {
+        if (!InterfaceDB::tableExists($table)) {
+            $harness->skip($table . ' schema is not available.');
+        }
     }
 
     InterfaceDB::beginTransaction();
@@ -173,26 +124,55 @@ function directorLoanStatementTestWithFixture(GeneratedServiceClassTestHarness $
         StandardNominalTestFixture::ensureNominals(['1200', '2100']);
         $assetNominalId = StandardNominalTestFixture::id('1200');
         $liabilityNominalId = StandardNominalTestFixture::id('2100');
-
         $marker = substr(hash('sha256', __FILE__ . microtime(true) . random_int(1, PHP_INT_MAX)), 0, 12);
         InterfaceDB::prepareExecute(
             'INSERT INTO companies (company_name, company_number) VALUES (:company_name, :company_number)',
-            ['company_name' => 'Director Loan Statement Fixture Limited', 'company_number' => 'DLS' . $marker]
+            ['company_name' => 'Director Loan Subledger Fixture Limited', 'company_number' => 'DLS' . $marker]
         );
-        $companyId = (int)InterfaceDB::fetchColumn('SELECT id FROM companies WHERE company_number = :company_number', ['company_number' => 'DLS' . $marker]);
+        $companyId = (int)InterfaceDB::fetchColumn(
+            'SELECT id FROM companies WHERE company_number = :company_number',
+            ['company_number' => 'DLS' . $marker]
+        );
+        $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
+        $settings->set('director_loan_asset_nominal_id', $assetNominalId, 'int');
+        $settings->set('director_loan_liability_nominal_id', $liabilityNominalId, 'int');
+        $settings->flush();
         InterfaceDB::prepareExecute(
             'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
              VALUES (:company_id, :label, :period_start, :period_end)',
-            [
-                'company_id' => $companyId,
-                'label' => 'DLS ' . $marker,
-                'period_start' => '2026-01-01',
-                'period_end' => '2026-12-31',
-            ]
+            ['company_id' => $companyId, 'label' => '2025', 'period_start' => '2025-01-01', 'period_end' => '2025-12-31']
         );
         $accountingPeriodId = (int)InterfaceDB::fetchColumn(
-            'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label',
-            ['company_id' => $companyId, 'label' => 'DLS ' . $marker]
+            'SELECT id FROM accounting_periods WHERE company_id = :company_id',
+            ['company_id' => $companyId]
+        );
+        foreach ([
+            ['key' => 'james:' . $marker, 'name' => 'James Example', 'appointed' => '2020-01-01'],
+            ['key' => 'other:' . $marker, 'name' => 'Other Director', 'appointed' => '2021-01-01'],
+        ] as $director) {
+            InterfaceDB::prepareExecute(
+                'INSERT INTO company_directors (
+                    company_id, source, external_key, full_name, officer_role, appointed_on, is_active
+                 ) VALUES (
+                    :company_id, :source, :external_key, :full_name, :officer_role, :appointed_on, 1
+                 )',
+                [
+                    'company_id' => $companyId,
+                    'source' => 'companies_house',
+                    'external_key' => $director['key'],
+                    'full_name' => $director['name'],
+                    'officer_role' => 'director',
+                    'appointed_on' => $director['appointed'],
+                ]
+            );
+        }
+        $jamesId = (int)InterfaceDB::fetchColumn(
+            'SELECT id FROM company_directors WHERE company_id = :company_id AND full_name = :name',
+            ['company_id' => $companyId, 'name' => 'James Example']
+        );
+        $otherId = (int)InterfaceDB::fetchColumn(
+            'SELECT id FROM company_directors WHERE company_id = :company_id AND full_name = :name',
+            ['company_id' => $companyId, 'name' => 'Other Director']
         );
 
         $callback([
@@ -201,6 +181,8 @@ function directorLoanStatementTestWithFixture(GeneratedServiceClassTestHarness $
             'accounting_period_id' => $accountingPeriodId,
             'asset_nominal_id' => $assetNominalId,
             'liability_nominal_id' => $liabilityNominalId,
+            'james_director_id' => $jamesId,
+            'other_director_id' => $otherId,
         ]);
     } finally {
         if (InterfaceDB::inTransaction()) {
@@ -209,52 +191,132 @@ function directorLoanStatementTestWithFixture(GeneratedServiceClassTestHarness $
     }
 }
 
-function directorLoanStatementTestInsertSetting(array $fixture, string $setting, string $value): void
-{
+function directorLoanStatementInsertManualLine(
+    array $fixture,
+    int $nominalId,
+    float $debit,
+    float $credit,
+    ?int $directorId,
+    string $description
+): int {
+    $sourceRef = 'dla-manual:' . $fixture['marker'] . ':' . hash('sha256', $description . microtime(true));
     InterfaceDB::prepareExecute(
-        'INSERT INTO company_settings (company_id, setting, type, value)
-         VALUES (:company_id, :setting, :type, :value)',
+        'INSERT INTO journals (company_id, accounting_period_id, source_type, source_ref, journal_date, description, is_posted)
+         VALUES (:company_id, :period_id, :source_type, :source_ref, :journal_date, :description, 1)',
         [
             'company_id' => (int)$fixture['company_id'],
-            'setting' => $setting,
-            'type' => 'int',
-            'value' => $value,
+            'period_id' => (int)$fixture['accounting_period_id'],
+            'source_type' => 'manual',
+            'source_ref' => $sourceRef,
+            'journal_date' => '2025-12-31',
+            'description' => $description,
+        ]
+    );
+    $journalId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM journals WHERE company_id = :company_id AND source_ref = :source_ref',
+        ['company_id' => (int)$fixture['company_id'], 'source_ref' => $sourceRef]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO journal_lines (journal_id, nominal_account_id, director_id, debit, credit, line_description)
+         VALUES (:journal_id, :nominal_id, :director_id, :debit, :credit, :description)',
+        [
+            'journal_id' => $journalId,
+            'nominal_id' => $nominalId,
+            'director_id' => $directorId,
+            'debit' => number_format($debit, 2, '.', ''),
+            'credit' => number_format($credit, 2, '.', ''),
+            'description' => $description,
+        ]
+    );
+    return (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM journal_lines WHERE journal_id = :journal_id',
+        ['journal_id' => $journalId]
+    );
+}
+
+function directorLoanStatementInsertTransactionJournal(
+    array $fixture,
+    int $nominalId,
+    float $amount,
+    int $directorId,
+    string $counterparty
+): void {
+    $hash = hash('sha256', 'dla-upload:' . $fixture['marker']);
+    InterfaceDB::prepareExecute(
+        'INSERT INTO statement_uploads (
+            company_id, accounting_period_id, statement_month, original_filename, stored_filename, file_sha256
+         ) VALUES (
+            :company_id, :period_id, :statement_month, :original_filename, :stored_filename, :file_sha256
+         )',
+        [
+            'company_id' => (int)$fixture['company_id'],
+            'period_id' => (int)$fixture['accounting_period_id'],
+            'statement_month' => '2025-12-01',
+            'original_filename' => 'dla.csv',
+            'stored_filename' => 'dla-' . $fixture['marker'] . '.csv',
+            'file_sha256' => $hash,
+        ]
+    );
+    $uploadId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM statement_uploads WHERE company_id = :company_id AND file_sha256 = :hash',
+        ['company_id' => (int)$fixture['company_id'], 'hash' => $hash]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO transactions (
+            company_id, accounting_period_id, statement_upload_id, txn_date, description,
+            amount, counterparty_name, dedupe_hash, nominal_account_id, director_id, category_status
+         ) VALUES (
+            :company_id, :period_id, :upload_id, :txn_date, :description,
+            :amount, :counterparty_name, :dedupe_hash, :nominal_id, :director_id, :category_status
+         )',
+        [
+            'company_id' => (int)$fixture['company_id'],
+            'period_id' => (int)$fixture['accounting_period_id'],
+            'upload_id' => $uploadId,
+            'txn_date' => '2025-06-30',
+            'description' => 'Funds advanced on James behalf',
+            'amount' => number_format($amount, 2, '.', ''),
+            'counterparty_name' => $counterparty,
+            'dedupe_hash' => hash('sha256', 'dla-transaction:' . $fixture['marker']),
+            'nominal_id' => $nominalId,
+            'director_id' => $directorId,
+            'category_status' => 'manual',
+        ]
+    );
+    $transactionId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM transactions WHERE company_id = :company_id AND statement_upload_id = :upload_id',
+        ['company_id' => (int)$fixture['company_id'], 'upload_id' => $uploadId]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO journals (company_id, accounting_period_id, source_type, source_ref, journal_date, description, is_posted)
+         VALUES (:company_id, :period_id, :source_type, :source_ref, :journal_date, :description, 1)',
+        [
+            'company_id' => (int)$fixture['company_id'],
+            'period_id' => (int)$fixture['accounting_period_id'],
+            'source_type' => 'bank_csv',
+            'source_ref' => 'transaction:' . $transactionId,
+            'journal_date' => '2025-06-30',
+            'description' => 'Funds advanced on James behalf',
+        ]
+    );
+    $journalId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM journals WHERE company_id = :company_id AND source_ref = :source_ref',
+        ['company_id' => (int)$fixture['company_id'], 'source_ref' => 'transaction:' . $transactionId]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO journal_lines (journal_id, nominal_account_id, director_id, debit, credit, line_description)
+         VALUES (:journal_id, :nominal_id, :director_id, :debit, 0.00, :description)',
+        [
+            'journal_id' => $journalId,
+            'nominal_id' => $nominalId,
+            'director_id' => $directorId,
+            'debit' => number_format($amount, 2, '.', ''),
+            'description' => 'Funds advanced on James behalf',
         ]
     );
 }
 
-function directorLoanStatementTestInsertLineJournal(array $fixture, int $nominalId, float $debit, float $credit, string $date, string $key): void
+function directorLoanStatementMoney(mixed $amount): string
 {
-    $sourceRef = 'test-director-loan-statement:' . $fixture['marker'] . ':' . $key;
-    InterfaceDB::prepareExecute(
-        'INSERT INTO journals (company_id, accounting_period_id, source_type, source_ref, journal_date, description, is_posted)
-         VALUES (:company_id, :accounting_period_id, :source_type, :source_ref, :journal_date, :description, 1)',
-        [
-            'company_id' => (int)$fixture['company_id'],
-            'accounting_period_id' => (int)$fixture['accounting_period_id'],
-            'source_type' => 'manual',
-            'source_ref' => $sourceRef,
-            'journal_date' => $date,
-            'description' => 'Director loan statement fixture ' . $key,
-        ]
-    );
-    $journalId = (int)InterfaceDB::fetchColumn(
-        'SELECT id FROM journals WHERE company_id = :company_id AND source_type = :source_type AND source_ref = :source_ref',
-        [
-            'company_id' => (int)$fixture['company_id'],
-            'source_type' => 'manual',
-            'source_ref' => $sourceRef,
-        ]
-    );
-    InterfaceDB::prepareExecute(
-        'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit, line_description)
-         VALUES (:journal_id, :nominal_account_id, :debit, :credit, :line_description)',
-        [
-            'journal_id' => $journalId,
-            'nominal_account_id' => $nominalId,
-            'debit' => number_format($debit, 2, '.', ''),
-            'credit' => number_format($credit, 2, '.', ''),
-            'line_description' => 'Director loan statement fixture',
-        ]
-    );
+    return number_format(round((float)$amount, 2), 2, '.', '');
 }

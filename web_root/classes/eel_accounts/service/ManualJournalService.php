@@ -388,6 +388,7 @@ final class ManualJournalService
 
             $normalised[] = [
                 'nominal_account_id' => $nominalAccountId,
+                'director_id' => isset($line['director_id']) && (int)$line['director_id'] > 0 ? (int)$line['director_id'] : null,
                 'company_account_id' => isset($line['company_account_id']) ? (int)$line['company_account_id'] : null,
                 'debit' => $debit,
                 'credit' => $credit,
@@ -413,6 +414,7 @@ final class ManualJournalService
     private function fetchJournalLines(int $journalId): array {
         return \InterfaceDB::fetchAll( 'SELECT jl.id,
                     jl.nominal_account_id,
+                    jl.director_id,
                     jl.company_account_id,
                     jl.debit,
                     jl.credit,
@@ -431,6 +433,7 @@ final class ManualJournalService
             'INSERT INTO journal_lines (
                 journal_id,
                 nominal_account_id,
+                director_id,
                 company_account_id,
                 debit,
                 credit,
@@ -438,6 +441,7 @@ final class ManualJournalService
              ) VALUES (
                 :journal_id,
                 :nominal_account_id,
+                :director_id,
                 :company_account_id,
                 :debit,
                 :credit,
@@ -447,6 +451,7 @@ final class ManualJournalService
         $stmt->execute([
             'journal_id' => $journalId,
             'nominal_account_id' => (int)$line['nominal_account_id'],
+            'director_id' => (int)($line['director_id'] ?? 0) > 0 ? (int)$line['director_id'] : null,
             'company_account_id' => isset($line['company_account_id']) && (int)$line['company_account_id'] > 0 ? (int)$line['company_account_id'] : null,
             'debit' => number_format((float)$line['debit'], 2, '.', ''),
             'credit' => number_format((float)$line['credit'], 2, '.', ''),

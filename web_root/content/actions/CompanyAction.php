@@ -141,11 +141,6 @@ final class CompanyAction implements ActionInterfaceFramework
                 return $this->errorResult([(string)($incorporationEligibility['message'] ?? 'This company is not supported.')]);
             }
 
-            $directorEligibility = $this->directorEligibilityService()->assertSingleActiveDirectorByNumber($companyNumber, $environment);
-            if (empty($directorEligibility['success'])) {
-                return $this->errorResult((array)($directorEligibility['errors'] ?? []));
-            }
-
             $this->ensureSicLookupDataForProfile($companiesHouseProfile);
 
             $repository = new \eel_accounts\Repository\CompanyRepository();
@@ -157,14 +152,15 @@ final class CompanyAction implements ActionInterfaceFramework
                 $companiesHouseProfile,
                 $environment
             );
-            $repository->updateCompaniesHouseDirectorCheck($companyId, $directorEligibility);
-
             $flashMessages = [[
                 'type' => 'success',
                 'message' => $existingCompanyId > 0
                     ? 'That company already exists in the database, so ' . $companyName . ' has been selected instead.'
                     : 'Company added successfully: ' . $companyName . '.',
             ]];
+
+            $this->appendDirectorSyncMessages($flashMessages, $repository, $companyId, $companyNumber, $environment);
+            $this->appendDirectorLoanNominalMappingMessages($flashMessages, $companyId);
 
             if (!(new \eel_accounts\Service\FileCheckService())->ensureCompanyUploadDirectories($companyId)) {
                 $flashMessages[] = [
@@ -324,8 +320,6 @@ final class CompanyAction implements ActionInterfaceFramework
             }
 
             $this->ensureSicLookupDataForProfile($profile);
-            $directorEligibility = $this->directorEligibilityService()->assertSingleActiveDirectorByNumber($companyNumber, $environment);
-
             $repository->createCompany(
                 trim((string)($profile['company_name'] ?? $company['company_name'] ?? '')),
                 $companyNumber,
@@ -333,23 +327,12 @@ final class CompanyAction implements ActionInterfaceFramework
                 $profile,
                 $environment
             );
-            $repository->updateCompaniesHouseDirectorCheck($companyId, $directorEligibility);
-
             $flashMessages = [[
                 'type' => 'success',
                 'message' => 'Stored Companies House profile refreshed successfully.',
             ]];
-
-            if (empty($directorEligibility['success'])) {
-                foreach ((array)($directorEligibility['errors'] ?? []) as $error) {
-                    $flashMessages[] = [
-                        'type' => 'error',
-                        'message' => (string)$error,
-                    ];
-                }
-            } else {
-                $flashMessages[] = 'Companies House director information refreshed: 1 active director found.';
-            }
+            $this->appendDirectorSyncMessages($flashMessages, $repository, $companyId, $companyNumber, $environment);
+            $this->appendDirectorLoanNominalMappingMessages($flashMessages, $companyId);
 
             try {
                 $this->appendCompaniesHousePdfDownloadMessages($flashMessages, $companyId, $companyNumber, $environment);
@@ -1098,6 +1081,63 @@ final class CompanyAction implements ActionInterfaceFramework
     private function incorporationEligibilityService(): \eel_accounts\Service\CompanyIncorporationEligibilityService
     {
         return $this->incorporationEligibilityService ?? new \eel_accounts\Service\CompanyIncorporationEligibilityService();
+    }
+
+    private function appendDirectorSyncMessages(
+        array &$flashMessages,
+        \eel_accounts\Repository\CompanyRepository $repository,
+        int $companyId,
+        string $companyNumber,
+        string $environment
+    ): void {
+        try {
+            $result = $this->companiesHouseService($environment)->fetchActiveDirectorCountByNumber($companyNumber);
+            if (empty($result['success'])) {
+                foreach ((array)($result['errors'] ?? ['Companies House directors could not be synchronised.']) as $error) {
+                    $flashMessages[] = ['type' => 'warning', 'message' => (string)$error . ' The company record was still saved.'];
+                }
+                return;
+            }
+
+            $repository->updateCompaniesHouseDirectorCheck($companyId, $result);
+            $sync = (new \eel_accounts\Service\CompanyDirectorService())->syncFromCompaniesHouseResult($companyId, $result);
+            if (empty($sync['success'])) {
+                foreach ((array)($sync['errors'] ?? ['Structured director records could not be synchronised.']) as $error) {
+                    $flashMessages[] = ['type' => 'warning', 'message' => (string)$error . ' The company record was still saved.'];
+                }
+                return;
+            }
+
+            $activeCount = (int)($sync['active_count'] ?? 0);
+            $flashMessages[] = 'Companies House directors synchronised: '
+                . (int)($sync['synced_count'] ?? 0) . ' director record'
+                . ((int)($sync['synced_count'] ?? 0) === 1 ? '' : 's')
+                . ', including ' . $activeCount . ' active.';
+        } catch (\Throwable $exception) {
+            $flashMessages[] = [
+                'type' => 'warning',
+                'message' => 'The company record was saved, but Companies House directors could not be synchronised: ' . $exception->getMessage(),
+            ];
+        }
+    }
+
+    private function appendDirectorLoanNominalMappingMessages(array &$flashMessages, int $companyId): void
+    {
+        try {
+            $result = (new \eel_accounts\Service\DirectorLoanAttributionService())
+                ->mapControlNominalsIfUnambiguous($companyId);
+            if ((array)($result['mapped'] ?? []) !== []) {
+                $flashMessages[] = 'Director Loan Asset and Liability control nominals were mapped where unambiguous.';
+            }
+            foreach ((array)($result['warnings'] ?? []) as $warning) {
+                $flashMessages[] = ['type' => 'warning', 'message' => (string)$warning];
+            }
+        } catch (\Throwable $exception) {
+            $flashMessages[] = [
+                'type' => 'warning',
+                'message' => 'Director loan control nominals could not be mapped automatically: ' . $exception->getMessage(),
+            ];
+        }
     }
 
     private function ensureSicLookupDataForProfile(?array $profile): void

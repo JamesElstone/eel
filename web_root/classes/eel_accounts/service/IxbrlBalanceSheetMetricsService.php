@@ -90,8 +90,15 @@ final class IxbrlBalanceSheetMetricsService
         $buckets = $this->emptyBuckets();
         $sources = [];
         $equity = 0.0;
+        $directorLoanPresentation = $accountingPeriodId !== null && $accountingPeriodId > 0
+            ? (new DirectorLoanReportingPresentationService())->resolveForReporting($companyId, $accountingPeriodId)
+            : [];
+        $directorLoanLiabilityNominalId = !empty($directorLoanPresentation['applicable'])
+            ? (int)($directorLoanPresentation['liability_nominal_account_id'] ?? 0)
+            : 0;
 
         foreach ($rows as $row) {
+            $nominalAccountId = (int)($row['nominal_account_id'] ?? 0);
             $accountType = (string)($row['account_type'] ?? '');
             $subtype = (string)($row['subtype_code'] ?? '');
             $label = trim((string)($row['code'] ?? '') . ' ' . (string)($row['name'] ?? ''));
@@ -114,7 +121,16 @@ final class IxbrlBalanceSheetMetricsService
                     continue;
                 }
 
-                $bucket = $this->isLongTermLiabilitySubtype($subtype) ? 'creditors_after_more_than_one_year' : 'creditors_within_one_year';
+                $isPresentedDirectorLoanLiability = $directorLoanLiabilityNominalId > 0
+                    && $nominalAccountId === $directorLoanLiabilityNominalId;
+                $bucket = $isPresentedDirectorLoanLiability
+                    ? ((string)($directorLoanPresentation['classification'] ?? '')
+                        === DirectorLoanReportingPresentationService::AFTER_MORE_THAN_ONE_YEAR
+                            ? 'creditors_after_more_than_one_year'
+                            : 'creditors_within_one_year')
+                    : ($this->isLongTermLiabilitySubtype($subtype)
+                        ? 'creditors_after_more_than_one_year'
+                        : 'creditors_within_one_year');
                 $buckets[$bucket] += $amount;
                 $this->addSource($sources, $bucket, $label, $amount);
                 continue;
@@ -174,11 +190,12 @@ final class IxbrlBalanceSheetMetricsService
                     'periods' => [],
                 ])
                 : [
-                'adjustments' => [],
-                'reliable' => true,
-                'warnings' => [],
-                'periods' => [],
+                    'adjustments' => [],
+                    'reliable' => true,
+                    'warnings' => [],
+                    'periods' => [],
                 ],
+            'director_loan_reporting_presentation' => $directorLoanPresentation,
             'warnings' => array_values(array_unique($warnings)),
         ];
     }

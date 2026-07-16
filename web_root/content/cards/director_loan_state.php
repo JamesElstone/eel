@@ -9,7 +9,8 @@ declare(strict_types=1);
 
 final class _director_loan_stateCard extends CardBaseFramework
 {
-    private const PAGE_SIZE = 15;
+    private const ATTRIBUTION_TABLE_KEY = 'director_loan_attribution';
+    private const ATTRIBUTION_PAGE_SIZE = 10;
 
     public function key(): string
     {
@@ -28,6 +29,15 @@ final class _director_loan_stateCard extends CardBaseFramework
                     'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
+            [
+                'key' => 'directorLoanReportingPresentation',
+                'service' => \eel_accounts\Service\DirectorLoanReportingPresentationService::class,
+                'method' => 'fetchPresentation',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                ],
+            ],
         ];
     }
 
@@ -38,17 +48,21 @@ final class _director_loan_stateCard extends CardBaseFramework
 
     public function helper(array $context): string
     {
-        return 'Shown below is the Director Loan position. Director Loan entries are categorised on the Transactions page using the row-level Director Loan button.';
-    }
-
-    public function tables(array $context): array
-    {
-        return [$this->configuredStatementTable($context)];
+        return 'Assign each posted Director Loan control-account entry to the director whose loan account it belongs to. The transaction counterparty remains separate.';
     }
 
     protected function additionalInvalidationFacts(): array
     {
-        return [];
+        return [
+            'year.end.director.loan.offset',
+            'year.end.checklist',
+            'companies.house.snapshot',
+            'year.end.companies.house.comparison',
+            'ixbrl.readiness',
+            'ixbrl.accounts.mapping',
+            'ixbrl.facts.preview',
+            'ixbrl.generation',
+        ];
     }
 
     public function handleError(string $serviceKey, array $error, array $context): string
@@ -56,163 +70,359 @@ final class _director_loan_stateCard extends CardBaseFramework
         return '';
     }
 
+    public function tables(array $context): array
+    {
+        return [$this->configuredAttributionTable($context)];
+    }
+
     public function render(array $context): string
     {
         $statement = (array)($context['services']['directorLoanStatement'] ?? []);
-
+        $presentation = (array)($context['services']['directorLoanReportingPresentation'] ?? []);
         if (empty($statement['success'])) {
-            return $this->renderErrors((array)($statement['errors'] ?? ['Director loan statement is not available for the selected period.']));
+            return $this->errors((array)($statement['errors'] ?? ['Director loan statement is unavailable.']));
         }
 
-        $assetNominal = (array)($statement['asset_nominal'] ?? []);
-        $liabilityNominal = (array)($statement['liability_nominal'] ?? []);
-        $hasMovements = !empty($statement['has_movements_in_period']);
-        $statementTable = $this->configuredStatementTable($context);
+        $settings = ['default_currency_symbol' => (string)($statement['default_currency_symbol'] ?? '&#163;')];
+        $companyId = (int)($context['company']['id'] ?? 0);
+        $accountingPeriodId = (int)($context['company']['accounting_period_id'] ?? 0);
+        $unattributedCount = (int)($statement['unattributed_count'] ?? 0);
+        $invalidCount = (int)($statement['invalid_director_count'] ?? 0);
 
         return '
             <div class="month-grid">
-                ' . $this->statCard('Director Loan Asset balance', $this->money($statement, $statement['asset_receivable'] ?? 0)) . '
-                ' . $this->statCard('Director Loan Liability balance', $this->money($statement, $statement['liability_payable'] ?? 0)) . '
-                ' . $this->statCard('Net director loan position', $this->money($statement, $statement['net_position'] ?? $statement['closing_balance'] ?? 0)) . '
-                ' . $this->statCard('Status', (string)($statement['net_position_label'] ?? $statement['balance_direction_label'] ?? '')) . '
+                ' . $this->stat('Gross Director Loan Asset', $this->money($settings, $statement['asset_receivable'] ?? 0)) . '
+                ' . $this->stat('Gross Director Loan Liability', $this->money($settings, $statement['liability_payable'] ?? 0)) . '
+                ' . $this->stat('Calculated reclassification', $this->money($settings, $statement['desired_reclassification'] ?? 0)) . '
+                ' . $this->stat('Net position', $this->money($settings, $statement['net_position'] ?? 0)) . '
+                ' . $this->stat('Potential s455 exposure', $this->money($settings, $statement['potential_s455_exposure'] ?? 0)) . '
+                ' . $this->stat('Unattributed entries', (string)($unattributedCount + $invalidCount)) . '
             </div>
-            <section class="settings-stack director-loan-control-helper">
-                <div class="helper">Using ' . HelperFramework::escape(FormattingFramework::nominalLabel($assetNominal, ' ')) . ' and ' . HelperFramework::escape(FormattingFramework::nominalLabel($liabilityNominal, ' ')) . ' as the Director Loan control accounts.</div>
+            ' . (($unattributedCount + $invalidCount) > 0
+                ? '<div class="panel-soft warn helper">Every Director Loan entry must be attributed before the Year End confirmation can be saved or the period can be locked.</div>'
+                : '<div class="panel-soft success helper">All Director Loan entries relevant to this period have a valid same-company director attribution.</div>') . '
+            ' . $this->reportingPresentation(
+                $presentation,
+                $companyId,
+                $accountingPeriodId
+            ) . '
+            <section class="panel-soft settings-stack">
+                <div class="eyebrow">Per-director position</div>
+                ' . $this->positionsTable((array)($statement['per_director'] ?? []), $settings) . '
             </section>
-            ' . $statementTable->render($context, [
-                'cards[]' => (array)($context['page']['page_cards'] ?? []),
-            ]) . '
-            ' . (!$hasMovements ? '<div class="helper">No Director Loan movements were found for this accounting period.</div>' : '') . '
-        ';
+            <section class="settings-stack">
+                <div class="eyebrow">Director attribution</div>
+                <div class="helper">For example, Brian can remain the counterparty while the Director loan account is James.</div>
+                ' . $this->configuredAttributionTable($context)->render($context, [
+                    'cards[]' => (array)($context['page']['page_cards'] ?? [$this->key()]),
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                ]) . '
+            </section>';
     }
 
-    private function configuredStatementTable(array $context): TableFramework
+    private function reportingPresentation(
+        array $presentation,
+        int $companyId,
+        int $accountingPeriodId
+    ): string {
+        if (empty($presentation['success'])) {
+            return '<section class="panel-soft settings-stack">
+                <div class="eyebrow">Statutory repayment presentation</div>
+                ' . $this->errors((array)($presentation['errors'] ?? ['The Director Loan reporting presentation is unavailable.'])) . '
+            </section>';
+        }
+
+        $classification = (string)($presentation['classification']
+            ?? \eel_accounts\Service\DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR);
+        $withinOneYear = \eel_accounts\Service\DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR;
+        $afterMoreThanOneYear = \eel_accounts\Service\DirectorLoanReportingPresentationService::AFTER_MORE_THAN_ONE_YEAR;
+        $nominal = (array)($presentation['liability_nominal'] ?? []);
+        $nominalLabel = trim((string)($nominal['code'] ?? '') . ' - ' . (string)($nominal['name'] ?? ''), ' -');
+        $schemaReady = !empty($presentation['schema_ready']);
+        $lockedHtml = !empty($presentation['is_locked'])
+            ? '<span class="badge warning">Period locked - reporting choice remains editable</span>'
+            : '';
+        $basisHtml = !empty($presentation['explicit'])
+            ? '<span class="badge success">Saved reporting choice</span>'
+            : '<span class="badge muted">Default: within one year</span>';
+        $schemaHtml = $schemaReady
+            ? ''
+            : '<div class="helper">The reporting-presentation database migration must be applied before this choice can be saved.</div>';
+        $currentNominal = (array)($presentation['current_liability_nominal'] ?? []);
+        $currentNominalLabel = trim(
+            (string)($currentNominal['code'] ?? '') . ' - ' . (string)($currentNominal['name'] ?? ''),
+            ' -'
+        );
+        $mappingHtml = !empty($presentation['nominal_mapping_changed'])
+            ? '<div class="helper"><span class="badge warning">Historic nominal retained</span> This period remains tied to '
+                . HelperFramework::escape($nominalLabel)
+                . ($currentNominalLabel !== ''
+                    ? ', while current Company Nominals points to ' . HelperFramework::escape($currentNominalLabel)
+                    : '')
+                . '. This prevents a later settings change from rewriting the period\'s statutory presentation.</div>'
+            : '';
+
+        return '<section class="panel-soft settings-stack">
+            <div class="status-head">
+                <div>
+                    <div class="eyebrow">Statutory repayment presentation</div>
+                    <h3 class="card-title">When is money lent to the company due back?</h3>
+                </div>
+                <div class="pill-row">' . $basisHtml . $lockedHtml . '</div>
+            </div>
+            <div class="helper">
+                This applies to the full gross balance in '
+                . HelperFramework::escape($nominalLabel !== '' ? $nominalLabel : 'the Director Loan Liability control account')
+                . '. It changes only the Companies House and iXBRL presentation; it does not alter journals, transactions, balances, nominal accounts, or the Year End lock.
+            </div>
+            <form method="post" data-ajax="true" class="settings-stack">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
+                <input type="hidden" name="card_action" value="DirectorLoan">
+                <input type="hidden" name="intent" value="save_director_loan_reporting_presentation">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <div class="segmented-control">
+                    <label class="segmented-option">
+                        <input type="radio" name="classification" value="' . $withinOneYear . '"'
+                            . ($classification === $withinOneYear ? ' checked' : '') . ' required>
+                        <span>Due within one year</span>
+                    </label>
+                    <label class="segmented-option">
+                        <input type="radio" name="classification" value="' . $afterMoreThanOneYear . '"'
+                            . ($classification === $afterMoreThanOneYear ? ' checked' : '') . ' required>
+                        <span>Due after more than one year</span>
+                    </label>
+                </div>
+                <div>
+                    <button class="button primary" type="submit"' . ($schemaReady ? '' : ' disabled') . '>Save reporting presentation</button>
+                </div>
+            </form>
+            ' . $mappingHtml . $schemaHtml . '
+        </section>';
+    }
+
+    private function positionsTable(array $positions, array $settings): string
     {
-        $statement = (array)($context['services']['directorLoanStatement'] ?? []);
-        $table = $this->statementTable((array)($statement['statement_rows'] ?? []), $statement);
-        $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context), self::PAGE_SIZE);
+        if ($positions === []) {
+            return '<div class="helper">No Director Loan activity or balance exists for this period.</div>';
+        }
+
+        $rows = '';
+        foreach ($positions as $position) {
+            $rows .= '<tr>
+                <td>' . HelperFramework::escape((string)($position['director_name'] ?? 'Unattributed')) . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['gross_asset'] ?? 0)) . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['gross_liability'] ?? 0)) . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['desired_reclassification'] ?? 0)) . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['net_closing_position'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape((string)($position['net_position_label'] ?? '')) . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['potential_s455_exposure'] ?? 0)) . '</td>
+            </tr>';
+        }
+
+        return '<div class="table-scroll"><table>
+            <thead><tr>
+                <th>Director loan account</th>
+                <th>Gross asset</th>
+                <th>Gross liability</th>
+                <th>Reclassification</th>
+                <th>Net closing</th>
+                <th>Position</th>
+                <th>Potential s455</th>
+            </tr></thead>
+            <tbody>' . $rows . '</tbody>
+        </table></div>';
+    }
+
+    private function configuredAttributionTable(array $context): TableFramework
+    {
+        $hiddenFields = [
+            'page' => (string)($context['page']['page_id'] ?? 'director_loans'),
+            '_pagination' => '1',
+            '_invalidate_fact' => $this->tableInvalidationFact(),
+            'cards[]' => [$this->key()],
+            'show_card' => $this->key(),
+            'company_id' => (int)($context['company']['id'] ?? 0),
+            'accounting_period_id' => (int)($context['company']['accounting_period_id'] ?? 0),
+        ];
+        $table = $this->attributionTable($context);
+        $pagination = HelperFramework::paginateArray(
+            $table->sortedRows(),
+            $this->paginationPage($context),
+            self::ATTRIBUTION_PAGE_SIZE
+        );
 
         return $table
             ->visibleRows((array)$pagination['items'])
             ->pagination(
                 $pagination,
-                'Director loan rows',
+                'Director attribution',
                 $this->paginationPageField(),
-                [
-                    'page' => (string)($context['page']['page_id'] ?? ''),
-                    '_pagination' => '1',
-                    '_invalidate_fact' => $this->tableInvalidationFact(),
-                    'cards[]' => [$this->key()],
-                ]
+                $hiddenFields
             );
     }
 
-    private function statementTable(array $rows, array $statement): TableFramework
+    private function attributionTable(array $context): TableFramework
     {
-        return TableFramework::make($this->key(), $this->statementTableRows($rows))
-            ->filename('director-loan-statement')
-            ->exportLimit(1000)
-            ->empty('No director loan movements were found for this period.')
-            ->textColumn('date_display', 'Date processed / transaction date')
-            ->textColumn('description', 'Description')
-            ->textColumn('account_display', 'Account')
+        $statement = (array)($context['services']['directorLoanStatement'] ?? []);
+        $entries = array_values(array_filter(
+            (array)($statement['attribution_entries'] ?? []),
+            static fn(mixed $entry): bool => is_array($entry)
+        ));
+        $directors = array_values(array_filter(
+            (array)($statement['directors'] ?? []),
+            static fn(mixed $director): bool => is_array($director)
+        ));
+        $settings = ['default_currency_symbol' => (string)($statement['default_currency_symbol'] ?? '&#163;')];
+        $companyId = (int)($context['company']['id'] ?? 0);
+        $accountingPeriodId = (int)($context['company']['accounting_period_id'] ?? 0);
+
+        return TableFramework::make(self::ATTRIBUTION_TABLE_KEY, $entries)
+            ->filename('director-loan-attribution')
+            ->exportLimit(5000)
+            ->empty('No Director Loan control-account entries were found.')
             ->column(
-                'source_display',
+                'journal_date',
+                'Date',
+                html: static fn(array $row): string => HelperFramework::escape(
+                    HelperFramework::displayDate((string)($row['journal_date'] ?? ''))
+                ),
+                export: static fn(array $row): string => (string)($row['journal_date'] ?? ''),
+                exportType: 'date'
+            )
+            ->textColumn('description', 'Description')
+            ->column(
+                'counterparty_name',
+                'Actual counterparty',
+                html: static function (array $row): string {
+                    $counterparty = trim((string)($row['counterparty_name'] ?? ''));
+
+                    return $counterparty !== ''
+                        ? HelperFramework::escape($counterparty)
+                        : '<span class="helper">Not stated</span>';
+                },
+                export: static fn(array $row): string => trim((string)($row['counterparty_name'] ?? ''))
+            )
+            ->column(
+                'source_label',
                 'Source',
-                html: static fn(array $row): string => !empty($row['is_opening'])
-                    ? '<span class="helper">Opening</span>'
-                    : HelperFramework::escape((string)($row['source_display'] ?? '')),
-                export: static fn(array $row): string => (string)($row['source_display'] ?? '')
+                html: fn(array $row): string => $this->attributionSourceHtml($row),
+                export: static fn(array $row): string => trim(
+                    (string)($row['source_label'] ?? '')
+                    . (!empty($row['is_opening']) ? ' (Opening)' : '')
+                )
             )
             ->column(
                 'signed_amount',
-                'Amount',
-                html: fn(array $row): string => HelperFramework::escape($this->nullableMoney($statement, $row['signed_amount'] ?? null)),
-                export: fn(array $row): string => $this->numberExport($row['signed_amount'] ?? null),
+                'Movement',
+                html: fn(array $row): string => HelperFramework::escape(
+                    $this->money($settings, $this->attributionAmount($row))
+                ),
+                export: fn(array $row): string => number_format($this->attributionAmount($row), 2, '.', ''),
+                headerClass: 'numeric',
                 cellClass: 'numeric',
                 exportType: 'number'
             )
             ->column(
-                'running_balance',
-                'Balance',
-                html: fn(array $row): string => HelperFramework::escape($this->money($statement, $row['running_balance'] ?? 0)),
-                export: fn(array $row): string => $this->numberExport($row['running_balance'] ?? null),
-                cellClass: 'numeric',
-                exportType: 'number'
+                'director_id',
+                'Director loan account',
+                html: fn(array $row): string => $this->attributionForm(
+                    $row,
+                    $directors,
+                    $companyId,
+                    $accountingPeriodId
+                ),
+                export: fn(array $row): string => $this->attributedDirectorLabel($row, $directors)
             );
     }
 
-    private function statementTableRows(array $rows): array
+    private function attributionSourceHtml(array $entry): string
     {
-        $tableRows = [];
+        $sourceLabel = trim((string)($entry['source_label'] ?? ''));
+        $sourceUrl = trim((string)($entry['source_url'] ?? ''));
+        $sourceHtml = $sourceUrl !== ''
+            ? '<a href="' . HelperFramework::escape($sourceUrl) . '">' . HelperFramework::escape($sourceLabel) . '</a>'
+            : HelperFramework::escape($sourceLabel);
 
-        foreach ($rows as $row) {
-            if (!is_array($row)) {
-                continue;
+        return $sourceHtml . (!empty($entry['is_opening']) ? ' <span class="badge">Opening</span>' : '');
+    }
+
+    private function attributionAmount(array $entry): float
+    {
+        return round(
+            (float)($entry['signed_amount']
+                ?? ((float)($entry['credit'] ?? 0) - (float)($entry['debit'] ?? 0))),
+            2
+        );
+    }
+
+    private function attributionForm(
+        array $entry,
+        array $directors,
+        int $companyId,
+        int $accountingPeriodId
+    ): string {
+        $currentDirectorId = (int)($entry['director_id'] ?? 0);
+        $options = '<option value="" disabled' . ($currentDirectorId <= 0 ? ' selected' : '') . '>Choose director</option>';
+        foreach ($directors as $director) {
+            $directorId = (int)($director['id'] ?? 0);
+            $options .= '<option value="' . $directorId . '"'
+                . ($directorId === $currentDirectorId ? ' selected' : '')
+                . '>' . HelperFramework::escape($this->directorLabel($director)) . '</option>';
+        }
+
+        return '<form method="post" data-ajax="true" class="actions-row">
+            ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
+            <input type="hidden" name="card_action" value="YearEnd">
+            <input type="hidden" name="intent" value="set_director_loan_attribution">
+            <input type="hidden" name="company_id" value="' . $companyId . '">
+            <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+            <input type="hidden" name="journal_line_id" value="' . (int)($entry['journal_line_id'] ?? 0) . '">
+            <select class="input" name="director_id" required>' . $options . '</select>
+            <button class="button button-inline" type="submit">Save</button>
+        </form>';
+    }
+
+    private function attributedDirectorLabel(array $entry, array $directors): string
+    {
+        $currentDirectorId = (int)($entry['director_id'] ?? 0);
+        foreach ($directors as $director) {
+            if ((int)($director['id'] ?? 0) === $currentDirectorId) {
+                return $this->directorLabel($director);
             }
-
-            $isOpening = (string)($row['row_type'] ?? '') === 'opening_balance';
-            $accountLabel = (string)($row['account_label'] ?? '');
-            if ($accountLabel === '' && !$isOpening) {
-                $accountLabel = trim((string)($row['nominal_code'] ?? '') . ' - ' . (string)($row['nominal_name'] ?? ''), ' -');
-            }
-
-            $row['date_display'] = HelperFramework::displayDate((string)($row['journal_date'] ?? ''));
-            $row['description'] = (string)($row['description'] ?? '');
-            $row['account_display'] = $isOpening ? 'Combined' : $accountLabel;
-            $row['source_display'] = $isOpening ? 'Opening' : HelperFramework::labelFromKey((string)($row['source_type'] ?? ''), '_');
-            $row['is_opening'] = $isOpening;
-            $tableRows[] = $row;
         }
 
-        return $tableRows;
+        return 'Unattributed';
     }
 
-    private function statCard(string $label, string $value): string
+    private function directorLabel(array $director): string
     {
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
-    }
+        $label = trim((string)($director['full_name'] ?? ''));
 
-    private function money(array $statement, mixed $value): string
-    {
-        return (new \eel_accounts\Service\MoneyFormatService())->format($this->moneySettings($statement), $value);
-    }
-
-    private function nullableMoney(array $statement, mixed $value): string
-    {
-        if ($value === null || $value === '') {
-            return '';
-        }
-
-        return $this->money($statement, $value);
-    }
-
-    private function moneySettings(array $statement): array
-    {
-        return ['default_currency_symbol' => (string)($statement['default_currency_symbol'] ?? '&#163;')];
-    }
-
-    private function numberExport(mixed $value): string
-    {
-        if ($value === null || $value === '') {
-            return '';
-        }
-
-        return number_format((float)$value, 2, '.', '');
-    }
-
-    private function renderErrors(array $errors): string
-    {
-        $html = '';
-        foreach ($errors as $error) {
-            $html .= '<div class="helper">' . HelperFramework::escape((string)$error) . '</div>';
-        }
-
-        return $html;
+        return $label . (empty($director['is_active']) ? ' (former director)' : '');
     }
 
     private function tableInvalidationFact(): string
     {
         return (string)($this->invalidationFacts()[0] ?? 'director.loan.state');
+    }
+
+    private function stat(string $label, string $value): string
+    {
+        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+    }
+
+    private function money(array $settings, mixed $value): string
+    {
+        return (new \eel_accounts\Service\MoneyFormatService())->format($settings, $value);
+    }
+
+    private function errors(array $errors): string
+    {
+        return implode('', array_map(
+            static fn(mixed $error): string => '<div class="helper">' . HelperFramework::escape((string)$error) . '</div>',
+            $errors
+        ));
     }
 }

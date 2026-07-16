@@ -1398,6 +1398,7 @@ final class DividendService
                 'INSERT INTO journal_lines (
                     journal_id,
                     nominal_account_id,
+                    director_id,
                     company_account_id,
                     debit,
                     credit,
@@ -1405,6 +1406,7 @@ final class DividendService
                  ) VALUES (
                     :journal_id,
                     :nominal_account_id,
+                    :director_id,
                     :company_account_id,
                     :debit,
                     :credit,
@@ -1413,6 +1415,7 @@ final class DividendService
                 [
                     'journal_id' => $reversalJournalId,
                     'nominal_account_id' => (int)$line['nominal_account_id'],
+                    'director_id' => (int)($line['director_id'] ?? 0) ?: null,
                     'company_account_id' => $line['company_account_id'] !== null ? (int)$line['company_account_id'] : null,
                     'debit' => number_format((float)$line['credit'], 2, '.', ''),
                     'credit' => number_format((float)$line['debit'], 2, '.', ''),
@@ -1430,6 +1433,7 @@ final class DividendService
             'SELECT id,
                     journal_id,
                     nominal_account_id,
+                    director_id,
                     company_account_id,
                     debit,
                     credit,

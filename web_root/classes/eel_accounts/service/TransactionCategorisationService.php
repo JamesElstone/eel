@@ -409,6 +409,7 @@ final class TransactionCategorisationService
                     t.counterparty_name,
                     t.card,
                     t.nominal_account_id,
+                    t.director_id,
                     t.transfer_account_id,
                     t.is_internal_transfer,
                     t.category_status,
@@ -450,6 +451,7 @@ final class TransactionCategorisationService
                     source_category_value,
                     source_account_value,
                     nominal_account_id,
+                    director_id,
                     is_active
              FROM categorisation_rules
              WHERE company_id = :company_id
@@ -502,6 +504,7 @@ final class TransactionCategorisationService
                     t.accounting_period_id,
                     t.account_id,
                     t.nominal_account_id,
+                    t.director_id,
                     t.transfer_account_id,
                     t.is_internal_transfer,
                     t.category_status,
@@ -542,6 +545,7 @@ final class TransactionCategorisationService
 
             return [
                 'nominal_account_id' => (int)$rule['nominal_account_id'],
+                'director_id' => (int)($rule['director_id'] ?? 0) ?: null,
                 'transfer_account_id' => null,
                 'is_internal_transfer' => (int)($transaction['is_internal_transfer'] ?? 0),
                 'category_status' => 'auto',
@@ -555,6 +559,7 @@ final class TransactionCategorisationService
         if ($reapplyExistingAuto && (string)($transaction['category_status'] ?? '') === 'auto') {
             return [
                 'nominal_account_id' => null,
+                'director_id' => null,
                 'transfer_account_id' => null,
                 'is_internal_transfer' => (int)($transaction['is_internal_transfer'] ?? 0),
                 'category_status' => 'uncategorised',
@@ -574,6 +579,10 @@ final class TransactionCategorisationService
 
         return [
             'nominal_account_id' => $newNominalAccountId,
+            'director_id' => (new DirectorLoanAttributionService())->isDirectorLoanNominal(
+                (int)$transaction['company_id'],
+                $newNominalAccountId
+            ) ? ((int)($transaction['director_id'] ?? 0) ?: null) : null,
             'transfer_account_id' => null,
             'is_internal_transfer' => (int)($transaction['is_internal_transfer'] ?? 0),
             'category_status' => $newStatus,
@@ -589,6 +598,7 @@ final class TransactionCategorisationService
 
         return [
             'nominal_account_id' => null,
+            'director_id' => null,
             'transfer_account_id' => $newTransferAccountId,
             'is_internal_transfer' => 1,
             'category_status' => $newTransferAccountId !== null ? 'manual' : 'uncategorised',
@@ -812,6 +822,7 @@ final class TransactionCategorisationService
             'update' => \InterfaceDB::prepare(
                 'UPDATE transactions
                  SET nominal_account_id = :nominal_account_id,
+                     director_id = :director_id,
                      transfer_account_id = :transfer_account_id,
                      is_internal_transfer = :is_internal_transfer,
                      category_status = :category_status,
@@ -859,6 +870,7 @@ final class TransactionCategorisationService
     ): void {
         $update->execute([
             'nominal_account_id' => $nextState['nominal_account_id'],
+            'director_id' => $nextState['director_id'] ?? null,
             'transfer_account_id' => $nextState['transfer_account_id'],
             'is_internal_transfer' => $nextState['is_internal_transfer'],
             'category_status' => $nextState['category_status'],
@@ -880,6 +892,16 @@ final class TransactionCategorisationService
             'changed_by' => $this->changedByValue($changedBy),
             'reason' => $reason !== null && trim($reason) !== '' ? trim($reason) : null,
         ]);
+
+        (new DirectorLoanAttributionService())->recordChange(
+            (int)$transaction['company_id'],
+            'transaction',
+            (int)$transaction['id'],
+            (int)($transaction['director_id'] ?? 0) ?: null,
+            (int)($nextState['director_id'] ?? 0) ?: null,
+            $changedBy,
+            (string)($reason ?? 'Transaction categorisation changed.')
+        );
 
         if (class_exists(\eel_accounts\Service\VehicleService::class)) {
             (new \eel_accounts\Service\VehicleService())->cleanupVehicleDetailsForTransaction((int)$transaction['id']);
@@ -933,6 +955,8 @@ final class TransactionCategorisationService
 
         $oldNominalAccountId = $transaction['nominal_account_id'] !== null ? (int)$transaction['nominal_account_id'] : null;
         $newNominalAccountId = $nextState['nominal_account_id'] !== null ? (int)$nextState['nominal_account_id'] : null;
+        $oldDirectorId = (int)($transaction['director_id'] ?? 0) ?: null;
+        $newDirectorId = (int)($nextState['director_id'] ?? 0) ?: null;
         $oldStatus = trim((string)($transaction['category_status'] ?? 'uncategorised'));
         $newStatus = trim((string)($nextState['category_status'] ?? 'uncategorised'));
 
@@ -943,7 +967,8 @@ final class TransactionCategorisationService
             return true;
         }
 
-        return $oldNominalAccountId !== $newNominalAccountId;
+        return $oldNominalAccountId !== $newNominalAccountId
+            || $oldDirectorId !== $newDirectorId;
     }
 
     private function categorisationFieldsChanged(array $transaction, array $nextState): bool {
@@ -953,8 +978,11 @@ final class TransactionCategorisationService
         $newTransferAccountId = $nextState['transfer_account_id'] !== null ? (int)$nextState['transfer_account_id'] : null;
         $oldAutoRuleId = $transaction['auto_rule_id'] !== null ? (int)$transaction['auto_rule_id'] : null;
         $newAutoRuleId = $nextState['auto_rule_id'] !== null ? (int)$nextState['auto_rule_id'] : null;
+        $oldDirectorId = (int)($transaction['director_id'] ?? 0) ?: null;
+        $newDirectorId = (int)($nextState['director_id'] ?? 0) ?: null;
 
         return $oldNominalAccountId !== $newNominalAccountId
+            || $oldDirectorId !== $newDirectorId
             || $oldTransferAccountId !== $newTransferAccountId
             || (int)($transaction['is_internal_transfer'] ?? 0) !== (int)($nextState['is_internal_transfer'] ?? 0)
             || trim((string)($transaction['category_status'] ?? '')) !== trim((string)($nextState['category_status'] ?? ''))
@@ -1019,6 +1047,7 @@ final class TransactionCategorisationService
                     t.counterparty_name,
                     t.card,
                     t.nominal_account_id,
+                    t.director_id,
                     t.transfer_account_id,
                     t.is_internal_transfer,
                     t.category_status,

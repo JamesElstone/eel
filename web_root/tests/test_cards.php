@@ -418,7 +418,14 @@ final class TestCardsHarness
             }
         }
 
-        $this->assertPageFinalTabContains(new _director_loans(), 'Year End Confirmation', ['year_end_director_loan_offset']);
+        $directorLoansPage = new _director_loans();
+        $this->assertSame(
+            ['director_loan_state', 'director_loan_directors', 'year_end_director_loan_offset'],
+            $directorLoansPage->cards()
+        );
+        $this->assertPageTabContains($directorLoansPage, 'Statement', ['director_loan_state']);
+        $this->assertPageTabContains($directorLoansPage, 'Directors', ['director_loan_directors']);
+        $this->assertPageFinalTabContains($directorLoansPage, 'Year End Confirmation', ['year_end_director_loan_offset']);
         $this->assertPageFinalTabContains(new _expense_claims(), 'Year End Confirmation', ['year_end_expenses_confirmation']);
         $this->assertPageFinalTabContains(new _companies_house(), 'Year End Confirmation', ['year_end_companies_house_comparison']);
         $this->assertPageFinalTabContains(new _transactions(), 'Year End Confirmation', ['year_end_empty_month_confirmations', 'year_end_transaction_tail']);

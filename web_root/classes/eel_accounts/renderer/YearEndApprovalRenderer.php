@@ -82,6 +82,10 @@ final class YearEndApprovalRenderer
         $buttonAttributes = $disabled
             ? ' disabled' . ($disabledReason !== '' ? ' title="' . \HelperFramework::escape($disabledReason) . '"' : '')
             : ' disabled data-year-end-ack-submit';
+        $confirmationText = trim((string)($options['confirmationText'] ?? ''));
+        if ($confirmationText === '') {
+            $confirmationText = 'I confirm that I have reviewed the ' . $subject . ' shown above and approve it as accurate for Year End.';
+        }
 
         return self::staleEvidence($options) . '<section class="panel-soft warn full settings-stack">
             <div class="eyebrow">Year End Confirmation</div>
@@ -90,7 +94,7 @@ final class YearEndApprovalRenderer
                 ' . self::hiddenFields($approveFields) . '
                 <label class="checkbox-row full">
                     <input type="checkbox" name="' . \HelperFramework::escape($checkboxName) . '" value="1" required data-year-end-ack-checkbox' . ($disabled ? ' disabled' : '') . '>
-                    <span>I confirm that I have reviewed the ' . \HelperFramework::escape($subject) . ' shown above and approve it as accurate for Year End.</span>
+                    <span>' . \HelperFramework::escape($confirmationText) . '</span>
                 </label>
                 ' . self::noteField($options, $noteMode, $disabled) . '
                 ' . ($disabledReason !== '' ? '<div class="helper full">' . \HelperFramework::escape($disabledReason) . '</div>' : '') . '

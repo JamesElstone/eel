@@ -11,171 +11,213 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(_director_loan_stateCard::class, static function (GeneratedServiceClassTestHarness $harness, _director_loan_stateCard $card): void {
-    $harness->check(_director_loan_stateCard::class, 'uses selected company context for statement service', static function () use ($harness, $card): void {
+    $harness->check(_director_loan_stateCard::class, 'uses the selected company and period for the subledger statement', static function () use ($harness, $card): void {
         $services = $card->services();
-        $statementService = (array)($services[0] ?? []);
-        $params = (array)($statementService['params'] ?? []);
-
-        $harness->assertSame(\eel_accounts\Service\DirectorLoanService::class, $statementService['service'] ?? null);
-        $harness->assertSame('fetchStatement', $statementService['method'] ?? null);
-        $harness->assertSame(':company.id', $params['companyId'] ?? null);
-        $harness->assertSame(':company.accounting_period_id', $params['accountingPeriodId'] ?? null);
+        $harness->assertCount(2, $services);
+        $harness->assertSame(\eel_accounts\Service\DirectorLoanService::class, $services[0]['service'] ?? null);
+        $harness->assertSame('fetchStatement', $services[0]['method'] ?? null);
+        $harness->assertSame(':company.id', $services[0]['params']['companyId'] ?? null);
+        $harness->assertSame(':company.accounting_period_id', $services[0]['params']['accountingPeriodId'] ?? null);
+        $harness->assertSame(\eel_accounts\Service\DirectorLoanReportingPresentationService::class, $services[1]['service'] ?? null);
+        $harness->assertSame('fetchPresentation', $services[1]['method'] ?? null);
+        $harness->assertSame(':company.id', $services[1]['params']['companyId'] ?? null);
+        $harness->assertSame(':company.accounting_period_id', $services[1]['params']['accountingPeriodId'] ?? null);
     });
 
-    $harness->check(_director_loan_stateCard::class, 'declares director loan transaction helper text', static function () use ($harness, $card): void {
-        $helper = $card->helper([]);
-
-        $harness->assertSame('Shown below is the Director Loan position. Director Loan entries are categorised on the Transactions page using the row-level Director Loan button.', $helper);
-    });
-
-    $harness->check(_director_loan_stateCard::class, 'renders statement without duplicate context fields', static function () use ($harness, $card): void {
+    $harness->check(_director_loan_stateCard::class, 'is the single attribution workspace and keeps the counterparty separate', static function () use ($harness, $card): void {
         $html = $card->render([
-            'company' => [
-                'id' => 47,
-                'name' => 'Example Company Limited',
-                'accounting_period_id' => 74,
-            ],
+            'company' => ['id' => 47, 'accounting_period_id' => 74],
             'services' => [
                 'directorLoanStatement' => [
                     'success' => true,
-                    'accounting_period' => [
-                        'id' => 74,
-                        'label' => '01/10/2025 to 30/09/2026',
-                    ],
-                    'director_loan_nominal' => [
-                        'code' => '2100',
-                        'name' => 'Director Loan Liability',
-                    ],
-                    'asset_nominal' => [
-                        'code' => '1200',
-                        'name' => 'Director Loan Asset',
-                    ],
-                    'liability_nominal' => [
-                        'code' => '2100',
-                        'name' => 'Director Loan Liability',
-                    ],
-                    'asset_receivable' => 250,
-                    'liability_payable' => 324.5,
-                    'net_position' => 74.5,
-                    'net_position_label' => 'Company owes director',
-                    'opening_balance' => 100,
-                    'movement_in_period' => -25.5,
-                    'closing_balance' => 74.5,
-                    'balance_direction_label' => 'Company owes director',
                     'default_currency_symbol' => '£',
-                    'has_movements_in_period' => true,
-                    'statement_rows' => [
-                        [
-                            'row_type' => 'opening_balance',
-                            'journal_date' => '2025-10-01',
-                            'description' => 'Balance brought forward',
-                            'source_type' => null,
-                            'signed_amount' => null,
-                            'running_balance' => 100,
-                            'account_label' => 'Combined',
-                        ],
-                        [
-                            'row_type' => 'movement',
-                            'journal_date' => '2025-10-15',
-                            'description' => 'Director repayment',
-                            'account_label' => '1200 - Director Loan Asset',
-                            'source_type' => 'manual',
-                            'signed_amount' => -25.5,
-                            'running_balance' => 74.5,
-                        ],
+                    'asset_receivable' => 253.00,
+                    'liability_payable' => 1288.63,
+                    'desired_reclassification' => 253.00,
+                    'net_position' => 1035.63,
+                    'potential_s455_exposure' => 0.00,
+                    'unattributed_count' => 0,
+                    'invalid_director_count' => 0,
+                    'directors' => [
+                        ['id' => 9, 'full_name' => 'James Example', 'is_active' => 1],
+                        ['id' => 10, 'full_name' => 'Former Director', 'is_active' => 0],
                     ],
+                    'per_director' => [[
+                        'director_id' => 9,
+                        'director_name' => 'James Example',
+                        'gross_asset' => 253.00,
+                        'gross_liability' => 1288.63,
+                        'desired_reclassification' => 253.00,
+                        'net_closing_position' => 1035.63,
+                        'net_position_label' => 'Company owes director',
+                        'potential_s455_exposure' => 0.00,
+                    ]],
+                    'attribution_entries' => [[
+                        'journal_line_id' => 123,
+                        'journal_date' => '2025-06-30',
+                        'description' => 'Funds advanced on James behalf',
+                        'counterparty_name' => 'Brian Example',
+                        'source_label' => 'Transaction #456',
+                        'source_url' => '?page=transactions&show_card=transactions_imported&transaction_id=456',
+                        'signed_amount' => -253.00,
+                        'director_id' => 9,
+                    ]],
+                ],
+                'directorLoanReportingPresentation' => [
+                    'success' => true,
+                    'classification' => 'within_one_year',
+                    'classification_label' => 'Due within one year',
+                    'explicit' => false,
+                    'revision' => 0,
+                    'schema_ready' => true,
+                    'is_locked' => true,
+                    'liability_nominal' => ['id' => 5, 'code' => '2100', 'name' => 'Director Loan Liability'],
                 ],
             ],
         ]);
 
-        $harness->assertTrue(!str_contains($html, 'Example Company Limited'));
-        $harness->assertTrue(!str_contains($html, '<label>Company</label>'));
-        $harness->assertTrue(!str_contains($html, '<label>Accounting Period</label>'));
-        $harness->assertTrue(!str_contains($html, '<input class="input"'));
-        $harness->assertTrue(!str_contains($html, '01/10/2025 to 30/09/2026'));
-        $harness->assertTrue(!str_contains($html, '<select'));
-        $harness->assertTrue(str_contains($html, '£ 100.00'));
-        $harness->assertTrue(str_contains($html, '£ 74.50'));
-        $harness->assertTrue(str_contains($html, 'Director repayment'));
-        $harness->assertTrue(str_contains($html, 'Director Loan Asset balance'));
-        $harness->assertTrue(str_contains($html, 'Director Loan Liability balance'));
-        $harness->assertTrue(str_contains($html, 'Net director loan position'));
-        $harness->assertTrue(str_contains($html, 'class="summary-card"'));
-        $harness->assertTrue(str_contains($html, 'class="summary-label"'));
-        $harness->assertTrue(!str_contains($html, 'class="stat-card"'));
-        $harness->assertTrue(str_contains($html, 'director-loan-control-helper'));
-        $harness->assertTrue(str_contains($html, '<th>Account</th>'));
-        $harness->assertTrue(str_contains($html, '1200 - Director Loan Asset'));
-        $harness->assertTrue(str_contains($html, '2100 Director Loan Liability'));
-        $harness->assertTrue(str_contains($html, 'Company owes director'));
+        $harness->assertSame('Assign each posted Director Loan control-account entry to the director whose loan account it belongs to. The transaction counterparty remains separate.', $card->helper([]));
+        $harness->assertTrue(str_contains($html, 'Brian Example'));
+        $harness->assertTrue(str_contains($html, 'James Example'));
+        $harness->assertTrue(str_contains($html, 'Former Director (former director)'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="set_director_loan_attribution"'));
+        $harness->assertTrue(str_contains($html, 'name="journal_line_id" value="123"'));
+        $harness->assertTrue(str_contains($html, '<select class="input" name="director_id" required>'));
+        $harness->assertTrue(str_contains($html, 'value="9" selected'));
+        $harness->assertTrue(str_contains($html, 'Calculated reclassification'));
+        $harness->assertTrue(str_contains($html, 'Potential s455 exposure'));
+        $harness->assertTrue(str_contains($html, 'name="card_action" value="DirectorLoan"'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="save_director_loan_reporting_presentation"'));
+        $harness->assertTrue(str_contains($html, 'name="classification" value="within_one_year" checked required'));
+        $harness->assertTrue(str_contains($html, 'name="classification" value="after_more_than_one_year" required'));
+        $harness->assertTrue(str_contains($html, 'Period locked - reporting choice remains editable'));
+        $harness->assertTrue(str_contains($html, 'does not alter journals, transactions, balances, nominal accounts, or the Year End lock'));
+        $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit">Save reporting presentation</button>'));
+        $harness->assertSame(false, str_contains($html, 'director_loan_state.php'));
     });
 
-    $harness->check(_director_loan_stateCard::class, 'exposes exportable paginated statement table', static function () use ($harness, $card): void {
-        $rows = [];
-        for ($i = 1; $i <= 16; $i++) {
-            $rows[] = [
-                'row_type' => 'movement',
-                'journal_date' => sprintf('2025-10-%02d', $i),
-                'description' => 'Director loan movement ' . $i,
-                'account_label' => '1200 - Director Loan Asset',
-                'source_type' => 'manual',
-                'signed_amount' => $i,
-                'running_balance' => $i,
+    $harness->check(_director_loan_stateCard::class, 'blocks confirmation visibly when entries are unattributed', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => ['id' => 47, 'accounting_period_id' => 74],
+            'services' => [
+                'directorLoanStatement' => [
+                    'success' => true,
+                    'asset_receivable' => 10,
+                    'liability_payable' => 0,
+                    'desired_reclassification' => 0,
+                    'net_position' => -10,
+                    'potential_s455_exposure' => 10,
+                    'unattributed_count' => 1,
+                    'invalid_director_count' => 0,
+                    'directors' => [['id' => 9, 'full_name' => 'James Example', 'is_active' => 1]],
+                    'per_director' => [],
+                    'attribution_entries' => [[
+                        'journal_line_id' => 124,
+                        'journal_date' => '2025-07-01',
+                        'description' => 'Legacy entry',
+                        'source_label' => 'Manual journal #7',
+                        'signed_amount' => -10,
+                        'director_id' => null,
+                    ]],
+                ],
+                'directorLoanReportingPresentation' => [
+                    'success' => true,
+                    'classification' => 'after_more_than_one_year',
+                    'classification_label' => 'Due after more than one year',
+                    'explicit' => true,
+                    'revision' => 1,
+                    'schema_ready' => true,
+                    'is_locked' => false,
+                    'liability_nominal' => ['id' => 5, 'code' => '2100', 'name' => 'Director Loan Liability'],
+                ],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'must be attributed before the Year End confirmation'));
+        $harness->assertTrue(str_contains($html, 'Choose director'));
+        $harness->assertTrue(str_contains($html, 'value="" disabled selected'));
+        $harness->assertTrue(str_contains($html, 'name="classification" value="after_more_than_one_year" checked required'));
+    });
+
+    $harness->check(_director_loan_stateCard::class, 'paginates attribution entries at ten and exports the full table', static function () use ($harness, $card): void {
+        $entries = [];
+        for ($index = 1; $index <= 11; $index++) {
+            $entries[] = [
+                'journal_line_id' => 200 + $index,
+                'journal_date' => '2025-07-' . str_pad((string)$index, 2, '0', STR_PAD_LEFT),
+                'description' => 'Attribution fixture ' . str_pad((string)$index, 2, '0', STR_PAD_LEFT),
+                'counterparty_name' => 'Counterparty ' . str_pad((string)$index, 2, '0', STR_PAD_LEFT),
+                'source_label' => 'Transaction #' . (500 + $index),
+                'source_url' => '?page=transactions&transaction_id=' . (500 + $index),
+                'signed_amount' => 0 - $index,
+                'director_id' => 9,
             ];
         }
 
         $context = [
+            'company' => ['id' => 47, 'accounting_period_id' => 74],
             'page' => [
                 'page_id' => 'director_loans',
                 'page_cards' => ['director_loan_state'],
+                'csrf_token' => 'test-csrf-token',
+                'director_loan_state_page' => 1,
             ],
             'services' => [
                 'directorLoanStatement' => [
                     'success' => true,
-                    'asset_nominal' => ['code' => '1200', 'name' => 'Director Loan Asset'],
-                    'liability_nominal' => ['code' => '2100', 'name' => 'Director Loan Liability'],
-                    'asset_receivable' => 16,
-                    'liability_payable' => 0,
-                    'net_position' => 16,
-                    'net_position_label' => 'Company owes director',
                     'default_currency_symbol' => '£',
-                    'has_movements_in_period' => true,
-                    'statement_rows' => $rows,
+                    'asset_receivable' => 66,
+                    'liability_payable' => 0,
+                    'desired_reclassification' => 0,
+                    'net_position' => -66,
+                    'potential_s455_exposure' => 66,
+                    'unattributed_count' => 0,
+                    'invalid_director_count' => 0,
+                    'directors' => [
+                        ['id' => 9, 'full_name' => 'James Example', 'is_active' => 1],
+                    ],
+                    'per_director' => [],
+                    'attribution_entries' => $entries,
+                ],
+                'directorLoanReportingPresentation' => [
+                    'success' => true,
+                    'classification' => 'within_one_year',
+                    'explicit' => false,
+                    'schema_ready' => true,
+                    'is_locked' => false,
+                    'liability_nominal' => ['id' => 5, 'code' => '2100', 'name' => 'Director Loan Liability'],
                 ],
             ],
         ];
 
-        $harness->assertCount(1, $card->tables($context));
+        $pageOneHtml = $card->render($context);
+        $harness->assertTrue(str_contains($pageOneHtml, 'data-table-key="director_loan_attribution"'));
+        $harness->assertTrue(str_contains($pageOneHtml, 'data-table-pagination-field="director_loan_state_page"'));
+        $harness->assertTrue(str_contains($pageOneHtml, 'Director attribution 1-10 of 11'));
+        $harness->assertTrue(str_contains($pageOneHtml, 'Attribution fixture 10'));
+        $harness->assertSame(false, str_contains($pageOneHtml, 'Attribution fixture 11'));
+        $harness->assertTrue(str_contains($pageOneHtml, 'name="director_loan_state_page" value="2"'));
+        $harness->assertTrue(str_contains($pageOneHtml, 'name="_table_export_prepare" value="csv"'));
+        $harness->assertTrue(str_contains($pageOneHtml, 'name="_table_export_prepare" value="xlsx"'));
 
-        $html = $card->render($context);
+        $pageTwoContext = $context;
+        $pageTwoContext['page']['director_loan_state_page'] = 2;
+        $pageTwoHtml = $card->render($pageTwoContext);
+        $harness->assertTrue(str_contains($pageTwoHtml, 'Director attribution 11 of 11'));
+        $harness->assertTrue(str_contains($pageTwoHtml, 'Attribution fixture 11'));
+        $harness->assertSame(false, str_contains($pageTwoHtml, 'Attribution fixture 10'));
 
-        $harness->assertTrue(str_contains($html, '_table_export_prepare'));
-        $harness->assertTrue(str_contains($html, '>CSV<'));
-        $harness->assertTrue(str_contains($html, 'Director loan rows 1-15 of 16'));
-        $harness->assertTrue(str_contains($html, 'Director loan movement 15'));
-        $harness->assertTrue(!str_contains($html, 'Director loan movement 16'));
-    });
-
-    $harness->check(_director_loan_stateCard::class, 'renders settled status from combined net position', static function () use ($harness, $card): void {
-        $html = $card->render([
-            'services' => [
-                'directorLoanStatement' => [
-                    'success' => true,
-                    'accounting_period' => [],
-                    'asset_nominal' => ['code' => '1200', 'name' => 'Director Loan Asset'],
-                    'liability_nominal' => ['code' => '2100', 'name' => 'Director Loan Liability'],
-                    'asset_receivable' => 100,
-                    'liability_payable' => 100,
-                    'net_position' => 0,
-                    'net_position_label' => 'Settled',
-                    'default_currency_symbol' => '£',
-                    'has_movements_in_period' => false,
-                    'statement_rows' => [],
-                ],
-            ],
-        ]);
-
-        $harness->assertTrue(str_contains($html, 'Settled'));
-        $harness->assertTrue(str_contains($html, 'No director loan movements were found for this period.'));
+        $tables = $card->tables($context);
+        $harness->assertCount(1, $tables);
+        $harness->assertTrue($tables[0] instanceof TableFramework);
+        $export = $tables[0]->exportCsv();
+        $harness->assertTrue(str_contains($export, 'Attribution fixture 01'));
+        $harness->assertTrue(str_contains($export, 'Attribution fixture 11'));
+        $harness->assertTrue(str_contains($export, 'James Example'));
+        $harness->assertTrue(str_contains($export, '-11.00'));
+        $harness->assertSame(false, str_contains($export, '<form'));
+        $harness->assertSame(false, str_contains($export, '<select'));
+        $harness->assertSame(false, str_contains($export, 'set_director_loan_attribution'));
+        $harness->assertSame(false, str_contains($export, 'journal_line_id'));
     });
 });

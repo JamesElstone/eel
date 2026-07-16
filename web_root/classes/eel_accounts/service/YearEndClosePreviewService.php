@@ -205,7 +205,7 @@ final class YearEndClosePreviewService
         $warnings = [];
         $periodContexts = [];
         $reliable = true;
-        $previewedDirectorLoanOffsetAmount = 0.0;
+        $previewedDirectorLoanReclassificationByDirector = [];
 
         foreach ($periods as $period) {
             $periodId = (int)($period['id'] ?? 0);
@@ -271,7 +271,7 @@ final class YearEndClosePreviewService
                 $directorLoanOffset = $this->pendingDirectorLoanOffsetAdjustmentContext(
                     $companyId,
                     $periodId,
-                    $previewedDirectorLoanOffsetAmount
+                    $previewedDirectorLoanReclassificationByDirector
                 );
                 if (empty($directorLoanOffset['reliable'])) {
                     $reliable = false;
@@ -279,11 +279,13 @@ final class YearEndClosePreviewService
                 }
                 $directorLoanAdjustments = (array)($directorLoanOffset['adjustments'] ?? []);
                 $periodHasDirectorLoanOffset = $directorLoanAdjustments !== [];
-                $previewedDirectorLoanOffsetAmount = round(
-                    $previewedDirectorLoanOffsetAmount
-                        + (float)($directorLoanOffset['adjustment_amount'] ?? 0),
-                    2
-                );
+                foreach ((array)($directorLoanOffset['adjustment_by_director'] ?? []) as $directorId => $amount) {
+                    $previewedDirectorLoanReclassificationByDirector[(int)$directorId] = round(
+                        (float)($previewedDirectorLoanReclassificationByDirector[(int)$directorId] ?? 0)
+                            + (float)$amount,
+                        2
+                    );
+                }
                 $periodAdjustments = array_merge($periodAdjustments, $directorLoanAdjustments);
                 $adjustments = array_merge($adjustments, $periodAdjustments);
                 $periodContexts[] = [
@@ -560,7 +562,7 @@ final class YearEndClosePreviewService
     private function pendingDirectorLoanOffsetAdjustmentContext(
         int $companyId,
         int $accountingPeriodId,
-        float $previewedPriorOffsetAmount
+        array $previewedPriorReclassificationByDirector
     ): array
     {
         $context = (new \eel_accounts\Service\DirectorLoanReconciliationService())->fetchContext($companyId, $accountingPeriodId);
@@ -568,37 +570,30 @@ final class YearEndClosePreviewService
             return [
                 'adjustments' => [],
                 'adjustment_amount' => 0.0,
+                'adjustment_by_director' => [],
                 'reliable' => true,
                 'warnings' => [],
             ];
         }
 
         $warnings = (array)($context['warnings'] ?? []);
-        if ($warnings !== [] || empty($context['posted_offset_reliable'])) {
+        if (
+            $warnings !== []
+            || (int)($context['unattributed_count'] ?? 0) > 0
+            || abs((float)($context['legacy_unresolved_reclassification_amount'] ?? 0)) >= 0.005
+        ) {
             return [
                 'adjustments' => [],
                 'adjustment_amount' => 0.0,
+                'adjustment_by_director' => [],
                 'reliable' => false,
                 'warnings' => [
-                    'Pending director loan set-off adjustments could not be calculated reliably for accounting period '
+                    'Pending director loan control reclassification could not be calculated reliably for accounting period '
                         . $accountingPeriodId . ': '
                         . implode(' ', array_map('strval', $warnings !== []
                             ? $warnings
-                            : ['The cumulative posted offset could not be verified.'])),
+                            : ['Every Director Loan entry must have a valid director attribution.'])),
                 ],
-            ];
-        }
-
-        $adjustmentAmount = round(
-            (float)($context['pending_adjustment_amount'] ?? 0) - $previewedPriorOffsetAmount,
-            2
-        );
-        if (abs($adjustmentAmount) < 0.005) {
-            return [
-                'adjustments' => [],
-                'adjustment_amount' => 0.0,
-                'reliable' => true,
-                'warnings' => [],
             ];
         }
 
@@ -608,47 +603,63 @@ final class YearEndClosePreviewService
             return [
                 'adjustments' => [],
                 'adjustment_amount' => 0.0,
+                'adjustment_by_director' => [],
                 'reliable' => false,
-                'warnings' => ['Pending director loan set-off adjustments could not resolve both configured nominals.'],
+                'warnings' => ['Pending director loan control reclassification could not resolve both configured nominals.'],
             ];
         }
 
-        $amount = abs($adjustmentAmount);
-        $applyingSetOff = $adjustmentAmount > 0;
-        $lines = [
-            [
-                'nominal_account_id' => $applyingSetOff ? $liabilityNominalId : $assetNominalId,
-                'debit' => $amount,
-                'credit' => 0.0,
-            ],
-            [
-                'nominal_account_id' => $applyingSetOff ? $assetNominalId : $liabilityNominalId,
-                'debit' => 0.0,
-                'credit' => $amount,
-            ],
-        ];
         $adjustments = [];
-        foreach ($lines as $line) {
-            if (!is_array($line)) {
+        $adjustmentByDirector = [];
+        foreach ((array)($context['per_director'] ?? []) as $position) {
+            $directorId = (int)($position['director_id'] ?? 0);
+            if ($directorId <= 0) {
                 continue;
             }
 
-            $nominalId = (int)($line['nominal_account_id'] ?? 0);
-            $nominal = $nominalId > 0 ? $this->nominalById($nominalId) : null;
-            if ($nominal === null) {
+            $adjustmentAmount = round(
+                (float)($position['desired_reclassification'] ?? 0)
+                    - (float)($position['posted_reclassification'] ?? 0)
+                    - (float)($previewedPriorReclassificationByDirector[$directorId] ?? 0),
+                2
+            );
+            if (abs($adjustmentAmount) < 0.005) {
                 continue;
             }
-
-            $adjustments[] = $nominal + [
-                'debit' => round((float)($line['debit'] ?? 0), 2),
-                'credit' => round((float)($line['credit'] ?? 0), 2),
-                'source' => 'pending_director_loan_offset',
+            $adjustmentByDirector[$directorId] = $adjustmentAmount;
+            $amount = abs($adjustmentAmount);
+            $applyingReclassification = $adjustmentAmount > 0;
+            $lines = [
+                [
+                    'nominal_account_id' => $applyingReclassification ? $liabilityNominalId : $assetNominalId,
+                    'debit' => $amount,
+                    'credit' => 0.0,
+                ],
+                [
+                    'nominal_account_id' => $applyingReclassification ? $assetNominalId : $liabilityNominalId,
+                    'debit' => 0.0,
+                    'credit' => $amount,
+                ],
             ];
+            foreach ($lines as $line) {
+                $nominalId = (int)$line['nominal_account_id'];
+                $nominal = $this->nominalById($nominalId);
+                if ($nominal === null) {
+                    continue;
+                }
+                $adjustments[] = $nominal + [
+                    'director_id' => $directorId,
+                    'debit' => round((float)$line['debit'], 2),
+                    'credit' => round((float)$line['credit'], 2),
+                    'source' => 'pending_director_loan_offset',
+                ];
+            }
         }
 
         return [
             'adjustments' => $adjustments,
-            'adjustment_amount' => $adjustmentAmount,
+            'adjustment_amount' => round(array_sum($adjustmentByDirector), 2),
+            'adjustment_by_director' => $adjustmentByDirector,
             'reliable' => true,
             'warnings' => [],
         ];

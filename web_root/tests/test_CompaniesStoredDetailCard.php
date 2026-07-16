@@ -20,16 +20,11 @@ $harness->run(_companies_stored_detailCard::class, static function (GeneratedSer
             'company_detail' => [
                 'company_status' => 'active',
                 'companies_house_environment' => 'TEST',
-                'companies_house_active_director_count' => 1,
                 'companies_house_officers_last_checked_at' => '2026-07-01 12:34:56',
-                'companies_house_officers_json' => json_encode([
-                    'active_director_count' => 1,
-                    'items' => [
-                        ['officer_role' => 'director', 'name' => 'Example Director'],
-                        ['officer_role' => 'director', 'name' => 'Former Director', 'resigned_on' => '2025-01-01'],
-                        ['officer_role' => 'secretary', 'name' => 'Example Secretary'],
-                    ],
-                ], JSON_UNESCAPED_SLASHES),
+            ],
+            'company_directors' => [
+                ['id' => 1, 'full_name' => 'Example Director', 'is_active' => 1],
+                ['id' => 2, 'full_name' => 'Former Director', 'is_active' => 0, 'resigned_on' => '2025-01-01'],
             ],
             'incorporation_document_status' => [
                 'downloaded' => true,

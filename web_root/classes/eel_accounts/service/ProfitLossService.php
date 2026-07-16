@@ -522,7 +522,7 @@ final class ProfitLossService
         $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
         $sources = [
             'bank_csv' => ['label' => 'Bank CSV journals'],
-            'director_loan_offset' => ['label' => 'Director loan offset journals'],
+            'director_loan_offset' => ['label' => 'Director loan control reclassification journals'],
             'expense_register' => ['label' => 'Expense register journals'],
             'asset_depreciation' => ['label' => 'Asset depreciation journals'],
             'asset_disposal' => ['label' => 'Asset disposal journals'],

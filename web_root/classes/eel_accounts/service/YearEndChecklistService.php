@@ -16,12 +16,11 @@ final class YearEndChecklistService
         'fixed_asset_review_placeholder',
         'cut_off_journals_review',
         'prepayment_approvals',
-        'director_loan_tax_review',
         'companies_house_mismatch_acknowledgement',
     ];
 
     private const ACKNOWLEDGEMENT_CHECKS = [
-        'director_loan_closing_balance',
+        'director_loan_year_end_review',
         'tax_readiness_acknowledgement',
         'expense_position_acknowledgement',
         'retained_earnings_close_confirmation',
@@ -101,8 +100,8 @@ final class YearEndChecklistService
     private function dashboardActionUrl(int $companyId, int $accountingPeriodId): string
     {
         return '?page=year_end&show_card=year_end_checklist';
-
     }
+
     private function buildDashboardLiveChecks(
         int $companyId,
         int $accountingPeriodId,
@@ -635,10 +634,6 @@ final class YearEndChecklistService
         ];
     }
 
-    public function saveDirectorLoanClosingAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
-        return $this->saveAcknowledgement($companyId, $accountingPeriodId, 'director_loan_closing_balance', $acknowledged, $note, $changedBy);
-    }
-
     public function saveTaxReadinessAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
         return $this->saveAcknowledgement($companyId, $accountingPeriodId, 'tax_readiness_acknowledgement', $acknowledged, $note, $changedBy);
     }
@@ -934,8 +929,8 @@ final class YearEndChecklistService
         );
         $duplicateAudit = $metrics->duplicateImportAudit($companyId, $accountingPeriodId);
         $strandedRows = $metrics->strandedCommittedSourceRowsCount($companyId, $accountingPeriodId);
-        $directorLoan = $metrics->directorLoanSummary($companyId, $accountingPeriodId);
-        $directorLoanTaxReview = (new \eel_accounts\Service\DirectorLoanService())->fetchTaxReview($companyId, $accountingPeriodId);
+        $directorLoanReview = (new \eel_accounts\Service\DirectorLoanReconciliationService())
+            ->fetchContext($companyId, $accountingPeriodId);
         $expensePosition = (new \eel_accounts\Service\YearEndExpenseConfirmationService($metrics))->fetchContext($companyId, $accountingPeriodId);
         $transactionTail = (new \eel_accounts\Service\YearEndTransactionTailService($metrics))->fetchContext($companyId, $accountingPeriodId);
         $prepaymentReview = (new \eel_accounts\Service\PrepaymentReviewService($metrics, $lock))->fetchContext($companyId, $accountingPeriodId);
@@ -1118,37 +1113,35 @@ final class YearEndChecklistService
             '?page=uploads'
         );
 
-        $dlaClosing = (float)($directorLoan['closing_balance'] ?? 0);
+        $directorLoanHasActivity = !empty($directorLoanReview['available']) && !empty($directorLoanReview['has_activity']);
+        $directorLoanUnattributedCount = (int)($directorLoanReview['unattributed_count'] ?? 0);
+        $directorLoanCheckStatus = empty($directorLoanReview['available'])
+            ? 'not_applicable'
+            : (!$directorLoanHasActivity
+                ? 'pass'
+                : ($directorLoanUnattributedCount > 0 ? 'fail' : 'warning'));
         $sections['director_loan_expenses'][] = $this->applyReviewAcknowledgement($this->makeCheck(
-            'director_loan_closing_balance',
-            'Director loan closing balance',
-            'warning',
-            empty($directorLoan['available']) ? 'not_applicable' : (abs($dlaClosing) >= 0.005 ? 'warning' : 'pass'),
-            empty($directorLoan['available'])
-                ? (string)($directorLoan['error'] ?? 'Director loan summary unavailable.')
-                : 'Review whether the period-end director loan balance is expected before filing.',
-            empty($directorLoan['available']) ? '' : $this->money($settings, $dlaClosing),
-            '?page=director_loans&show_card=year_end_director_loan_offset',
-            empty($directorLoan['available']) ? null : $this->acknowledgementBasis('director_loan_closing_balance', [
-                'closing_balance' => number_format($dlaClosing, 2, '.', ''),
-            ])
-        ), $reviewAcknowledgements);
-        $directorLoanTaxReviewRequired = !empty($directorLoanTaxReview['available']) && !empty($directorLoanTaxReview['review_required']);
-        $sections['director_loan_expenses'][] = $this->applyReviewAcknowledgement($this->makeCheck(
-            'director_loan_tax_review',
-            'Director loan tax review',
-            'warning',
-            empty($directorLoanTaxReview['available']) ? 'not_applicable' : ($directorLoanTaxReviewRequired ? 'warning' : 'pass'),
-            empty($directorLoanTaxReview['available'])
-                ? (string)(($directorLoanTaxReview['errors'] ?? [])[0] ?? 'Director loan tax review is not available.')
-                : ($directorLoanTaxReviewRequired
-                    ? 'Director owes the company at period end. Review s455, repayment timing, beneficial loan interest/BIK, write-off, and CT600 supplementary treatment before locking.'
-                    : 'No director receivable tax review flags are currently raised for this period.'),
-            empty($directorLoanTaxReview['available'])
+            'director_loan_year_end_review',
+            'Director Loan Year End Review',
+            'fail',
+            $directorLoanCheckStatus,
+            empty($directorLoanReview['available'])
+                ? (string)(($directorLoanReview['errors'] ?? [])[0] ?? 'Director Loan Year End Review is unavailable.')
+                : (!$directorLoanHasActivity
+                    ? 'No Director Loan activity or balance exists, so this check passes automatically.'
+                    : ($directorLoanUnattributedCount > 0
+                        ? 'Attribute every Director Loan control-account entry before confirming or locking the period.'
+                        : ((float)($directorLoanReview['potential_s455_exposure'] ?? 0) >= 0.005
+                            ? 'Potential s455 exposure is ' . $this->money($settings, $directorLoanReview['potential_s455_exposure'])
+                                . '. Confirm the directors, attributed entries, per-director balances, tax flags and calculated control-account reclassification.'
+                            : 'Confirm the directors, attributed entries, per-director balances, tax flags and calculated control-account reclassification.'))),
+            empty($directorLoanReview['available'])
                 ? ''
-                : ($directorLoanTaxReviewRequired ? $this->money($settings, $directorLoanTaxReview['exposure_amount'] ?? 0) : 'No exposure flagged'),
+                : ($directorLoanUnattributedCount > 0
+                    ? $directorLoanUnattributedCount . ' unattributed'
+                    : $this->money($settings, $directorLoanReview['net_position'] ?? 0)),
             '?page=director_loans&show_card=year_end_director_loan_offset',
-            empty($directorLoanTaxReview['available']) ? null : $this->acknowledgementBasis('director_loan_tax_review', $directorLoanTaxReview)
+            $directorLoanHasActivity ? ($directorLoanReview['confirmation_basis'] ?? null) : null
         ), $reviewAcknowledgements);
         $expensePositionBalance = (float)((($expensePosition['totals'] ?? [])['carried_forward'] ?? 0));
         $sections['director_loan_expenses'][] = $this->applyReviewAcknowledgement($this->makeCheck(
@@ -1523,7 +1516,11 @@ final class YearEndChecklistService
             && $taxProvisionCurrent
             && $this->prepaymentSchedulesCurrent($prepaymentRepair)
             && $this->acknowledgementCurrentInSections($sections, 'prepayment_approvals')
-            && (!$directorLoanTaxReviewRequired || $this->acknowledgementCurrentInSections($sections, 'director_loan_tax_review'));
+            && !empty($directorLoanReview['available'])
+            && (!$directorLoanHasActivity || (
+                $directorLoanUnattributedCount === 0
+                && $this->acknowledgementCurrentInSections($sections, 'director_loan_year_end_review')
+            ));
         $sections['final_review_lock'][] = $this->makeCheck(
             'lock_readiness_checklist',
             'Lock readiness checklist',
@@ -2095,6 +2092,7 @@ final class YearEndChecklistService
                 is_array($acknowledgement) ? $acknowledgement : null,
                 is_array($check['basis_data'] ?? null) ? $check['basis_data'] : null,
                 !empty($acknowledgement['_period_locked'])
+                    && $checkCode !== 'director_loan_year_end_review'
             );
         $check['acknowledgement_state'] = (string)($evaluation['state'] ?? 'absent');
         $check['acknowledgement_current'] = !empty($evaluation['current']);

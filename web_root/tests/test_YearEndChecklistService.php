@@ -123,7 +123,7 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
         }
     });
 
-    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'director loan offset before lock requires current set-off evidence', static function () use ($harness): void {
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'director loan reclassification before lock requires the current factual confirmation', static function () use ($harness): void {
         InterfaceDB::beginTransaction();
         try {
             yearEndChecklistServiceRequireDirectorLoanOffsetLockTables($harness);
@@ -133,7 +133,7 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
             $method = new ReflectionMethod($service, 'applyDirectorLoanOffsetBeforeLock');
             $method->setAccessible(true);
 
-            $grossPresentation = $method->invoke(
+            $unconfirmed = $method->invoke(
                 $service,
                 (int)$fixture['company_id'],
                 (int)$fixture['accounting_period_id'],
@@ -141,8 +141,8 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
                 'test'
             );
 
-            $harness->assertSame(true, (bool)($grossPresentation['success'] ?? false));
-            $harness->assertSame(true, (bool)($grossPresentation['skipped'] ?? false));
+            $harness->assertSame(false, (bool)($unconfirmed['success'] ?? true));
+            $harness->assertSame(true, str_contains(implode(' ', (array)($unconfirmed['errors'] ?? [])), 'factual Director Loan Year End Review'));
             $harness->assertSame(0, InterfaceDB::countWhere('journal_entry_metadata', [
                 'company_id' => (int)$fixture['company_id'],
                 'accounting_period_id' => (int)$fixture['accounting_period_id'],
@@ -156,7 +156,7 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
                 (int)$fixture['company_id'],
                 (int)$fixture['accounting_period_id'],
                 ['checks_flat' => [[
-                    'check_code' => 'director_loan_closing_balance',
+                    'check_code' => 'director_loan_year_end_review',
                     'acknowledgement_current' => true,
                 ]]],
                 'test'
@@ -176,7 +176,7 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
         }
     });
 
-    $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'stale director loan evidence is reversed to gross before lock', static function () use ($harness): void {
+    $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'stale director loan facts block lock until reconfirmed and then post the delta', static function () use ($harness): void {
         yearEndChecklistServiceRequireDirectorLoanOffsetLockTables($harness);
 
         InterfaceDB::beginTransaction();
@@ -197,8 +197,8 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
             yearEndChecklistServiceInsertDirectorLoanLineJournal($companyId, $accountingPeriodId, $assetNominalId, 100.00, 0.00, 'asset-extra', (string)$companyId);
 
             $stale = $service->fetchContext($companyId, $accountingPeriodId);
-            $harness->assertSame(false, (bool)($stale['set_off_evidence_current'] ?? true));
-            $harness->assertSame(-1000.00, (float)($stale['pending_adjustment_amount'] ?? 0));
+            $harness->assertSame(false, (bool)($stale['acknowledgement_current'] ?? true));
+            $harness->assertSame(100.00, (float)($stale['pending_adjustment_amount'] ?? 0));
             $checklistService = new \eel_accounts\Service\YearEndChecklistService();
             $applyBeforeLock = new ReflectionMethod($checklistService, 'applyDirectorLoanOffsetBeforeLock');
             $applyBeforeLock->setAccessible(true);
@@ -209,10 +209,19 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
                 ['checks_flat' => []],
                 'test'
             );
-            $harness->assertSame(true, (bool)($lockAttempt['success'] ?? false));
-            $afterReversal = $service->fetchContext($companyId, $accountingPeriodId);
-            $harness->assertSame(0.00, (float)($afterReversal['posted_offset_amount'] ?? -1));
-            $harness->assertSame('gross_presentation', (string)($afterReversal['offset_status'] ?? ''));
+            $harness->assertSame(false, (bool)($lockAttempt['success'] ?? true));
+            yearEndChecklistServiceApproveDirectorLoanOffset($fixture);
+            $postedDelta = $applyBeforeLock->invoke(
+                $checklistService,
+                $companyId,
+                $accountingPeriodId,
+                ['checks_flat' => []],
+                'test'
+            );
+            $harness->assertSame(true, (bool)($postedDelta['success'] ?? false));
+            $afterDelta = $service->fetchContext($companyId, $accountingPeriodId);
+            $harness->assertSame(1100.00, (float)($afterDelta['posted_reclassification_amount'] ?? -1));
+            $harness->assertSame(0.00, (float)($afterDelta['pending_adjustment_amount'] ?? -1));
             $harness->assertSame(2, (int)InterfaceDB::fetchColumn(
                 'SELECT COUNT(*)
                  FROM journal_entry_metadata
@@ -1218,6 +1227,21 @@ function yearEndChecklistServiceCreateDirectorLoanOffsetFixture(): array
             'company_number' => 'YDL' . substr($marker, 0, 5),
         ]
     );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO company_directors (
+            company_id, source, external_key, full_name, officer_role, appointed_on, is_active
+         ) VALUES (
+            :company_id, :source, :external_key, :full_name, :officer_role, :appointed_on, 1
+         )',
+        [
+            'company_id' => $companyId,
+            'source' => 'companies_house',
+            'external_key' => 'year-end-checklist:' . $marker,
+            'full_name' => 'James Example',
+            'officer_role' => 'director',
+            'appointed_on' => '2020-01-01',
+        ]
+    );
     $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
     $settings->set('director_loan_asset_nominal_id', $assetNominalId, 'int');
     $settings->set('director_loan_liability_nominal_id', $liabilityNominalId, 'int');
@@ -1247,29 +1271,15 @@ function yearEndChecklistServiceApproveDirectorLoanOffset(array $fixture): void
 {
     $companyId = (int)$fixture['company_id'];
     $accountingPeriodId = (int)$fixture['accounting_period_id'];
-    $acknowledgements = new \eel_accounts\Service\YearEndAcknowledgementService();
-    $directorLoanSummary = (new \eel_accounts\Service\YearEndMetricsService())
-        ->directorLoanSummary($companyId, $accountingPeriodId);
-    $acknowledgements->save(
-        $companyId,
-        $accountingPeriodId,
-        'director_loan_closing_balance',
-        $acknowledgements->buildBasis('director_loan_closing_balance', [
-            'closing_balance' => number_format((float)($directorLoanSummary['closing_balance'] ?? 0), 2, '.', ''),
-        ]),
-        'test',
-        'Closing balance agreed.'
-    );
-
-    (new \eel_accounts\Service\DirectorLoanReconciliationService())->saveSetOffEvidence(
+    $result = (new \eel_accounts\Service\DirectorLoanReconciliationService())->saveYearEndReview(
         $companyId,
         $accountingPeriodId,
         true,
-        true,
-        true,
-        'Executed agreement clause 4 and simultaneous settlement instruction.',
         'test'
     );
+    if (empty($result['success'])) {
+        throw new RuntimeException(implode(' ', (array)($result['errors'] ?? ['Unable to confirm Director Loan facts.'])));
+    }
 }
 
 function yearEndChecklistServiceCreatePostedSourceWorkFixture(): array
@@ -1564,12 +1574,17 @@ function yearEndChecklistServiceInsertDirectorLoanLineJournal(int $companyId, in
             'source_ref' => $sourceRef,
         ]
     );
+    $directorId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM company_directors WHERE company_id = :company_id ORDER BY id LIMIT 1',
+        ['company_id' => $companyId]
+    );
     InterfaceDB::prepareExecute(
-        'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit, line_description)
-         VALUES (:journal_id, :nominal_account_id, :debit, :credit, :line_description)',
+        'INSERT INTO journal_lines (journal_id, nominal_account_id, director_id, debit, credit, line_description)
+         VALUES (:journal_id, :nominal_account_id, :director_id, :debit, :credit, :line_description)',
         [
             'journal_id' => $journalId,
             'nominal_account_id' => $nominalId,
+            'director_id' => $directorId,
             'debit' => number_format($debit, 2, '.', ''),
             'credit' => number_format($credit, 2, '.', ''),
             'line_description' => 'Year end director loan fixture',

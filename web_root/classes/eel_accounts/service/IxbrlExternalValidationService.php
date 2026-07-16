@@ -26,10 +26,19 @@ final class IxbrlExternalValidationService
 
     public function validateRun(int $runId): array
     {
-        (new \eel_accounts\Service\IxbrlFactBuilderService())->ensureSchema();
+        $builder = new \eel_accounts\Service\IxbrlFactBuilderService();
+        $builder->ensureSchema();
         $run = $this->fetchRun($runId);
         if ($run === null) {
             return ['ok' => false, 'status' => 'error', 'errors' => ['The iXBRL generation run could not be found.']];
+        }
+        $freshness = $builder->getRunFreshness($runId);
+        if ((string)($freshness['state'] ?? '') !== 'current') {
+            return [
+                'ok' => false,
+                'status' => 'stale',
+                'errors' => [(string)($freshness['detail'] ?? 'Rebuild iXBRL facts before external validation.')],
+            ];
         }
 
         $path = (string)($run['generated_path'] ?? '');
@@ -76,6 +85,14 @@ final class IxbrlExternalValidationService
     {
         if (!is_array($run) || $run === []) {
             return ['status' => 'not_configured', 'detail' => 'No generated export exists yet.', 'blocking' => false];
+        }
+        $freshness = (array)($run['run_freshness'] ?? []);
+        if ($freshness !== [] && (string)($freshness['state'] ?? '') !== 'current') {
+            return [
+                'status' => 'stale',
+                'detail' => (string)($freshness['detail'] ?? 'The latest generated export is stale and must be rebuilt.'),
+                'blocking' => false,
+            ];
         }
 
         $status = (string)($run['external_validation_status'] ?? '');

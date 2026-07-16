@@ -169,20 +169,9 @@ final class CompaniesHouseService
 
     public function checkSingleActiveDirectorByNumber(string $companyNumber): array
     {
-        $result = $this->fetchActiveDirectorCountByNumber($companyNumber);
-        if (empty($result['success'])) {
-            return $result;
-        }
-
-        $directorCount = (int)($result['director_count'] ?? 0);
-        if ($directorCount !== 1) {
-            $result['success'] = false;
-            $result['errors'] = [$this->singleDirectorErrorMessage($directorCount)];
-
-            return $result;
-        }
-
-        return $result;
+        // Kept as a compatibility entry point for callers compiled against the
+        // old single-director workflow. Multiple directors are now supported.
+        return $this->fetchActiveDirectorCountByNumber($companyNumber);
     }
 
     public static function storedAddressLines(array $settings): array
@@ -214,7 +203,7 @@ final class CompaniesHouseService
 
     public function singleDirectorErrorMessage(int $directorCount): string
     {
-        return 'This company has ' . $directorCount . ' active director' . ($directorCount === 1 ? '' : 's') . '. eel currently supports companies with exactly 1 active director.';
+        return 'This company has ' . $directorCount . ' active director' . ($directorCount === 1 ? '' : 's') . '.';
     }
 
     private function isActiveDirectorOfficer(array $officer): bool

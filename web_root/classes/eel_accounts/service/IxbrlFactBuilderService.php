@@ -45,8 +45,15 @@ final class IxbrlFactBuilderService
 
             $mapping = (new \eel_accounts\Service\IxbrlAccountsMappingService())->getAccountsMapping($companyId, $accountingPeriodId);
             $bucketValues = (array)($mapping['buckets'] ?? []);
+            $directorLoanPresentation = (array)($mapping['director_loan_reporting_presentation'] ?? []);
             foreach ($this->activeMappings() as $factMapping) {
-                $fact = $this->factFromMapping($factMapping, $company, $accountingPeriod, $bucketValues);
+                $fact = $this->factFromMapping(
+                    $factMapping,
+                    $company,
+                    $accountingPeriod,
+                    $bucketValues,
+                    $directorLoanPresentation
+                );
                 \InterfaceDB::prepareExecute(
                     'INSERT INTO ixbrl_generation_facts (
                         run_id, fact_key, taxonomy_concept, label, value_type,
@@ -120,7 +127,136 @@ final class IxbrlFactBuilderService
             ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
         );
 
-        return is_array($row) ? $row : null;
+        if (!is_array($row)) {
+            return null;
+        }
+
+        $freshness = $this->getRunFreshness((int)$row['id']);
+        $row['run_freshness'] = $freshness;
+        $row['facts_current'] = (string)($freshness['state'] ?? '') === 'current';
+
+        return $row;
+    }
+
+    public function getRunFreshness(int $runId): array
+    {
+        if ($runId <= 0
+            || !\InterfaceDB::tableExists('ixbrl_generation_runs')
+            || !\InterfaceDB::tableExists('ixbrl_generation_facts')) {
+            return [
+                'state' => 'missing',
+                'detail' => 'No iXBRL facts are available for freshness checking.',
+            ];
+        }
+
+        $run = \InterfaceDB::fetchOne(
+            'SELECT id, company_id, accounting_period_id
+             FROM ixbrl_generation_runs
+             WHERE id = :id
+             LIMIT 1',
+            ['id' => $runId]
+        );
+        if (!is_array($run)) {
+            return [
+                'state' => 'missing',
+                'detail' => 'The iXBRL generation run could not be found.',
+            ];
+        }
+
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT fact_key, source_json
+             FROM ixbrl_generation_facts
+             WHERE run_id = :run_id
+               AND fact_key IN (:within_key, :after_key)',
+            [
+                'run_id' => $runId,
+                'within_key' => 'creditors_within_one_year',
+                'after_key' => 'creditors_after_one_year',
+            ]
+        );
+        $sources = [];
+        foreach ($rows as $row) {
+            $sources[(string)($row['fact_key'] ?? '')] = (string)($row['source_json'] ?? '');
+        }
+        foreach (['creditors_within_one_year', 'creditors_after_one_year'] as $requiredKey) {
+            if (!array_key_exists($requiredKey, $sources)) {
+                return [
+                    'state' => 'unverifiable',
+                    'detail' => 'The latest iXBRL run is missing creditor fact provenance and must be rebuilt.',
+                ];
+            }
+        }
+
+        $builtPresentations = [];
+        $legacyCount = 0;
+        foreach ($sources as $sourceJson) {
+            $decoded = json_decode($sourceJson, true);
+            if (!is_array($decoded)) {
+                return [
+                    'state' => 'unverifiable',
+                    'detail' => 'The latest iXBRL creditor fact provenance is malformed and must be rebuilt.',
+                ];
+            }
+
+            if (!array_key_exists('director_loan_reporting_presentation', $decoded)) {
+                $legacyCount++;
+                continue;
+            }
+            $normalised = $this->normalisePresentationProvenance(
+                (array)$decoded['director_loan_reporting_presentation']
+            );
+            if ($normalised === null) {
+                return [
+                    'state' => 'unverifiable',
+                    'detail' => 'The latest iXBRL Director Loan presentation provenance is invalid and must be rebuilt.',
+                ];
+            }
+            $builtPresentations[] = $normalised;
+        }
+
+        $current = $this->presentationProvenance(
+            (new DirectorLoanReportingPresentationService())->resolveForReporting(
+                (int)$run['company_id'],
+                (int)$run['accounting_period_id']
+            )
+        );
+        if ($legacyCount === count($sources)) {
+            return [
+                'state' => 'unverifiable',
+                'detail' => 'The latest iXBRL facts pre-date Director Loan repayment-presentation provenance and must be rebuilt before generating or filing.',
+                'current' => $current,
+            ];
+        } elseif ($legacyCount > 0 || count($builtPresentations) !== count($sources)) {
+            return [
+                'state' => 'unverifiable',
+                'detail' => 'The latest iXBRL creditor facts disagree about Director Loan presentation provenance and must be rebuilt.',
+                'current' => $current,
+            ];
+        } else {
+            $built = $builtPresentations[0];
+            foreach ($builtPresentations as $candidate) {
+                if ($candidate !== $built) {
+                    return [
+                        'state' => 'unverifiable',
+                        'detail' => 'The latest iXBRL creditor facts contain inconsistent Director Loan presentation provenance and must be rebuilt.',
+                        'current' => $current,
+                    ];
+                }
+            }
+        }
+
+        $fresh = (int)$built['revision'] === (int)$current['revision']
+            && (string)$built['classification'] === (string)$current['classification']
+            && (int)$built['liability_nominal_account_id'] === (int)$current['liability_nominal_account_id'];
+
+        return [
+            'state' => $fresh ? 'current' : 'stale',
+            'detail' => $fresh
+                ? 'The iXBRL facts use the current Director Loan repayment presentation.'
+                : 'The Director Loan repayment presentation has changed since these iXBRL facts were built. Rebuild the facts before generating or filing.',
+            'built' => $built,
+            'current' => $current,
+        ];
     }
 
     public function ensureSchema(): void
@@ -259,7 +395,13 @@ final class IxbrlFactBuilderService
         );
     }
 
-    private function factFromMapping(array $mapping, array $company, array $accountingPeriod, array $buckets): array
+    private function factFromMapping(
+        array $mapping,
+        array $company,
+        array $accountingPeriod,
+        array $buckets,
+        array $directorLoanPresentation
+    ): array
     {
         $type = (string)$mapping['value_type'];
         $sourceKey = (string)($mapping['source_key'] ?? '');
@@ -284,6 +426,15 @@ final class IxbrlFactBuilderService
             $text = (string)$value;
         }
 
+        $source = [
+            'calculation_type' => (string)$mapping['calculation_type'],
+            'source_key' => $sourceKey,
+            'export_notice' => 'Generated FRS 105 micro-entity accounts iXBRL export for review and validation before filing.',
+        ];
+        if (in_array((string)$mapping['fact_key'], ['creditors_within_one_year', 'creditors_after_one_year'], true)) {
+            $source['director_loan_reporting_presentation'] = $this->presentationProvenance($directorLoanPresentation);
+        }
+
         return [
             'fact_key' => (string)$mapping['fact_key'],
             'taxonomy_concept' => (string)$mapping['taxonomy_concept'],
@@ -295,11 +446,46 @@ final class IxbrlFactBuilderService
             'unit_ref' => $type === 'numeric' ? 'GBP' : null,
             'decimals_value' => $type === 'numeric' ? '2' : null,
             'context_ref' => $this->contextRef((string)$mapping['fact_key'], $type),
-            'source' => [
-                'calculation_type' => (string)$mapping['calculation_type'],
-                'source_key' => $sourceKey,
-                'export_notice' => 'Generated FRS 105 micro-entity accounts iXBRL export for review and validation before filing.',
-            ],
+            'source' => $source,
+        ];
+    }
+
+    private function presentationProvenance(array $presentation): array
+    {
+        $classification = (string)($presentation['classification']
+            ?? DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR);
+        if (!in_array($classification, [
+            DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR,
+            DirectorLoanReportingPresentationService::AFTER_MORE_THAN_ONE_YEAR,
+        ], true)) {
+            $classification = DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR;
+        }
+
+        return [
+            'provenance_version' => DirectorLoanReportingPresentationService::PROVENANCE_VERSION,
+            'classification' => $classification,
+            'revision' => max(0, (int)($presentation['revision'] ?? 0)),
+            'liability_nominal_account_id' => max(0, (int)($presentation['liability_nominal_account_id'] ?? 0)),
+            'explicit' => !empty($presentation['explicit']),
+        ];
+    }
+
+    private function normalisePresentationProvenance(array $presentation): ?array
+    {
+        $classification = (string)($presentation['classification'] ?? '');
+        if (!in_array($classification, [
+            DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR,
+            DirectorLoanReportingPresentationService::AFTER_MORE_THAN_ONE_YEAR,
+        ], true)) {
+            return null;
+        }
+
+        return [
+            'provenance_version' => max(1, (int)($presentation['provenance_version'] ?? 1)),
+            'classification' => $classification,
+            'revision' => max(0, (int)($presentation['revision'] ?? 0)),
+            'liability_nominal_account_id' => max(0, (int)($presentation['liability_nominal_account_id'] ?? 0)),
+            'explicit' => !empty($presentation['explicit']),
         ];
     }
 

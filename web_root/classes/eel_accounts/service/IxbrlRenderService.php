@@ -28,6 +28,13 @@ final class IxbrlRenderService
         if (!is_array($run) || (int)($run['fact_count'] ?? 0) <= 0) {
             return ['success' => false, 'errors' => ['Build iXBRL facts before generating the preview file.']];
         }
+        $freshness = (array)($run['run_freshness'] ?? $builder->getRunFreshness((int)$run['id']));
+        if ((string)($freshness['state'] ?? '') !== 'current') {
+            return [
+                'success' => false,
+                'errors' => [(string)($freshness['detail'] ?? 'Rebuild iXBRL facts before generating the filing export.')],
+            ];
+        }
 
         try {
             $facts = $builder->getFacts((int)$run['id']);

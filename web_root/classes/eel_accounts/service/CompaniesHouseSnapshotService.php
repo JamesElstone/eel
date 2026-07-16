@@ -76,7 +76,7 @@ final class CompaniesHouseSnapshotService
                 $this->field('creditors_within_one_year', 'Creditors: amounts falling due within one year', $creditorsWithinOneYear, true),
                 $this->field('net_current_assets_liabilities', 'Net current assets / liabilities', $netCurrentAssets, true, 'Current assets less creditors due within one year.'),
                 $this->field('total_assets_less_current_liabilities', 'Total assets less current liabilities', $totalAssetsLessCurrentLiabilities, true, 'Fixed assets plus current assets less creditors due within one year.'),
-                $this->field('creditors_after_more_than_one_year', 'Creditors: amounts falling due after more than one year', $creditorsAfterOneYear, true, 'Only explicit long-term/non-current liability subtypes are included here.'),
+                $this->field('creditors_after_more_than_one_year', 'Creditors: amounts falling due after more than one year', $creditorsAfterOneYear, true, 'Includes explicit long-term/non-current liability subtypes and any period-specific Director Loan repayment presentation.'),
                 $this->field('net_assets_liabilities', 'Total net assets / liabilities', $totalNetAssets, true, 'Total assets less current liabilities less creditors after more than one year.'),
                 $this->field('equity_capital_reserves', 'Capital and reserves', $capitalAndReserves, true),
             ],

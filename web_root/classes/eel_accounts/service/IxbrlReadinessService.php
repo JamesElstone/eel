@@ -90,9 +90,19 @@ final class IxbrlReadinessService
 
         $latestRun = (new \eel_accounts\Service\IxbrlFactBuilderService())->getLatestRun($companyId, $accountingPeriodId);
         $factCount = (int)($latestRun['fact_count'] ?? 0);
-        $this->addCheck($checks, 'facts_generated', 'Facts generated', $factCount > 0, false, $factCount > 0 ? $factCount . ' generated facts available.' : 'Build facts before generating XHTML.');
+        $runFreshness = (array)($latestRun['run_freshness'] ?? []);
+        $factsCurrent = $factCount > 0 && (string)($runFreshness['state'] ?? '') === 'current';
+        $factsDetail = $factCount <= 0
+            ? 'Build facts before generating XHTML.'
+            : ($factsCurrent
+                ? $factCount . ' current generated facts available.'
+                : (string)($runFreshness['detail'] ?? 'The generated facts are not current and must be rebuilt.'));
+        $this->addCheck($checks, 'facts_generated', 'Facts generated and current', $factsCurrent, false, $factsDetail);
 
-        $generated = is_array($latestRun) && (string)($latestRun['status'] ?? '') === 'generated' && (string)($latestRun['generated_path'] ?? '') !== '';
+        $generated = $factsCurrent
+            && is_array($latestRun)
+            && (string)($latestRun['status'] ?? '') === 'generated'
+            && (string)($latestRun['generated_path'] ?? '') !== '';
         $validationPassed = $generated && (string)($latestRun['validation_status'] ?? '') === 'passed';
         $this->addCheck($checks, 'ixbrl_generated', 'iXBRL export generated', $generated, false, $generated ? 'Generated filing export file exists.' : 'No generated export yet.');
         $this->addCheck($checks, 'ixbrl_validation_passed', 'iXBRL structural validation passed', $validationPassed, false, $validationPassed ? 'Latest generated export passed internal structural validation.' : 'No internally validated export yet.');
@@ -117,7 +127,9 @@ final class IxbrlReadinessService
             'blocking_errors' => array_map(static fn(array $check): string => (string)$check['detail'], $blocking),
             'warnings' => array_map(static fn(array $check): string => (string)$check['detail'], $warnings),
             'can_build_facts' => $blocking === [],
-            'can_generate' => $blocking === [] && $factCount > 0,
+            'can_generate' => $blocking === [] && $factsCurrent,
+            'facts_current' => $factsCurrent,
+            'run_freshness' => $runFreshness,
             'latest_run' => $latestRun,
             'closing_balance_metrics' => $balanceMetrics,
             'companies_house_comparison' => $companiesHouseComparison,

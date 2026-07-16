@@ -24,7 +24,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     (int)$fixture['accounting_period_id']
                 );
 
-                $directorLoanAck = (new \eel_accounts\Service\YearEndChecklistService())->saveDirectorLoanClosingAcknowledgement(
+                $directorLoanAck = (new \eel_accounts\Service\DirectorLoanReconciliationService())->saveYearEndReview(
                     (int)$fixture['company_id'],
                     (int)$fixture['accounting_period_id'],
                     true,
@@ -250,7 +250,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             ]));
         });
 
-        $harness->check(\eel_accounts\Service\YearEndClosePreviewService::class, 'previews sequential director loan application and reversal until fresh later-period evidence exists', static function () use ($harness, $service): void {
+        $harness->check(\eel_accounts\Service\YearEndClosePreviewService::class, 'carries cumulative per-director reclassification through sequential open-period previews', static function () use ($harness, $service): void {
             InterfaceDB::beginTransaction();
             try {
                 yearEndClosePreviewRequireSchema($harness);
@@ -281,6 +281,25 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'int'
                 );
                 $settings->flush();
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO company_directors (
+                        company_id, source, external_key, full_name, officer_role, appointed_on, is_active
+                     ) VALUES (
+                        :company_id, :source, :external_key, :full_name, :officer_role, :appointed_on, 1
+                     )',
+                    [
+                        'company_id' => $companyId,
+                        'source' => 'companies_house',
+                        'external_key' => 'sequential-preview:' . $marker,
+                        'full_name' => 'James Example',
+                        'officer_role' => 'director',
+                        'appointed_on' => '2020-01-01',
+                    ]
+                );
+                $directorId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM company_directors WHERE company_id = :company_id',
+                    ['company_id' => $companyId]
+                );
                 foreach ([
                     [$firstPeriodId, '2023-01-01', '2023-12-31'],
                     [$secondPeriodId, '2024-01-01', '2024-12-31'],
@@ -303,83 +322,38 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'sequential-dla-' . $marker,
                     '2023-12-31',
                     [
-                        [yearEndClosePreviewNominalId('1200'), 100.00, 0.00],
-                        [yearEndClosePreviewNominalId('2100'), 0.00, 100.00],
+                        [yearEndClosePreviewNominalId('1200'), 100.00, 0.00, $directorId],
+                        [yearEndClosePreviewNominalId('2100'), 0.00, 100.00, $directorId],
                     ]
                 );
 
                 $dla = new \eel_accounts\Service\DirectorLoanReconciliationService();
-                $acknowledgement = (new \eel_accounts\Service\YearEndChecklistService())
-                    ->saveDirectorLoanClosingAcknowledgement($companyId, $firstPeriodId, true, 'test');
+                $acknowledgement = $dla->saveYearEndReview($companyId, $firstPeriodId, true, 'test');
                 $harness->assertTrue(!empty($acknowledgement['success']));
-                $evidence = $dla->saveSetOffEvidence(
-                    $companyId,
-                    $firstPeriodId,
-                    true,
-                    true,
-                    true,
-                    'Legally enforceable net settlement agreement for sequential preview testing.',
-                    'test'
-                );
-                $harness->assertTrue(!empty($evidence['success']));
 
-                $grossLaterPeriodContext = $service->pendingBalanceSheetAdjustmentContext(
+                $laterPeriodContext = $service->pendingBalanceSheetAdjustmentContext(
                     $companyId,
                     $secondPeriodId,
                     '2024-12-31'
                 );
                 $offsetRows = array_values(array_filter(
-                    (array)($grossLaterPeriodContext['adjustments'] ?? []),
+                    (array)($laterPeriodContext['adjustments'] ?? []),
                     static fn(array $row): bool =>
                         (string)($row['source'] ?? '') === 'pending_director_loan_offset'
                 ));
-                $harness->assertCount(4, $offsetRows);
-                $assetNetAdjustment = 0.0;
+                $harness->assertCount(2, $offsetRows);
                 foreach ($offsetRows as $row) {
-                    if ((int)($row['nominal_account_id'] ?? 0) === StandardNominalTestFixture::id('1200')) {
-                        $assetNetAdjustment += (float)($row['debit'] ?? 0) - (float)($row['credit'] ?? 0);
-                    }
+                    $harness->assertSame($directorId, (int)($row['director_id'] ?? 0));
                 }
-                $harness->assertSame(0.00, round($assetNetAdjustment, 2));
                 $offsetPeriods = array_values(array_filter(
-                    (array)($grossLaterPeriodContext['periods'] ?? []),
+                    (array)($laterPeriodContext['periods'] ?? []),
                     static fn(array $period): bool => !empty($period['director_loan_offset_previewed'])
                 ));
-                $harness->assertCount(2, $offsetPeriods);
+                $harness->assertCount(1, $offsetPeriods);
                 $harness->assertSame($firstPeriodId, (int)($offsetPeriods[0]['accounting_period_id'] ?? 0));
-                $harness->assertSame($secondPeriodId, (int)($offsetPeriods[1]['accounting_period_id'] ?? 0));
 
-                $laterAcknowledgement = (new \eel_accounts\Service\YearEndChecklistService())
-                    ->saveDirectorLoanClosingAcknowledgement($companyId, $secondPeriodId, true, 'test');
+                $laterAcknowledgement = $dla->saveYearEndReview($companyId, $secondPeriodId, true, 'test');
                 $harness->assertTrue(!empty($laterAcknowledgement['success']));
-                $laterEvidence = $dla->saveSetOffEvidence(
-                    $companyId,
-                    $secondPeriodId,
-                    true,
-                    true,
-                    true,
-                    'Fresh legally enforceable net settlement evidence for the later accounting period.',
-                    'test'
-                );
-                $harness->assertTrue(!empty($laterEvidence['success']));
-
-                $freshEvidenceContext = $service->pendingBalanceSheetAdjustmentContext(
-                    $companyId,
-                    $secondPeriodId,
-                    '2024-12-31'
-                );
-                $freshOffsetRows = array_values(array_filter(
-                    (array)($freshEvidenceContext['adjustments'] ?? []),
-                    static fn(array $row): bool =>
-                        (string)($row['source'] ?? '') === 'pending_director_loan_offset'
-                ));
-                $harness->assertCount(2, $freshOffsetRows);
-                $freshOffsetPeriods = array_values(array_filter(
-                    (array)($freshEvidenceContext['periods'] ?? []),
-                    static fn(array $period): bool => !empty($period['director_loan_offset_previewed'])
-                ));
-                $harness->assertCount(1, $freshOffsetPeriods);
-                $harness->assertSame($firstPeriodId, (int)($freshOffsetPeriods[0]['accounting_period_id'] ?? 0));
 
                 $targetOnlyContext = $service->pendingBalanceSheetAdjustmentContext(
                     $companyId,
@@ -396,6 +370,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $secondPeriodId,
                     (int)($targetOnlyPeriods[0]['accounting_period_id'] ?? 0)
                 );
+                $targetOnlyOffsetRows = array_values(array_filter(
+                    (array)($targetOnlyContext['adjustments'] ?? []),
+                    static fn(array $row): bool => (string)($row['source'] ?? '') === 'pending_director_loan_offset'
+                ));
+                $harness->assertCount(2, $targetOnlyOffsetRows);
 
                 $failedDepreciationContext = $service->pendingBalanceSheetAdjustmentContext(
                     $companyId,
@@ -429,6 +408,7 @@ function yearEndClosePreviewRequireSchema(GeneratedServiceClassTestHarness $harn
         'journals',
         'journal_lines',
         'journal_entry_metadata',
+        'company_directors',
         'nominal_accounts',
         'nominal_account_subtypes',
         'asset_register',
@@ -470,6 +450,29 @@ function yearEndClosePreviewCreateFixture(): array
             'period_end' => '2025-12-31',
         ]
     );
+    $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
+    $settings->set('director_loan_asset_nominal_id', yearEndClosePreviewNominalId('1200'), 'int');
+    $settings->set('director_loan_liability_nominal_id', yearEndClosePreviewNominalId('2100'), 'int');
+    $settings->flush();
+    InterfaceDB::prepareExecute(
+        'INSERT INTO company_directors (
+            company_id, source, external_key, full_name, officer_role, appointed_on, is_active
+         ) VALUES (
+            :company_id, :source, :external_key, :full_name, :officer_role, :appointed_on, 1
+         )',
+        [
+            'company_id' => $companyId,
+            'source' => 'companies_house',
+            'external_key' => 'year-end-preview:' . $marker,
+            'full_name' => 'James Example',
+            'officer_role' => 'director',
+            'appointed_on' => '2020-01-01',
+        ]
+    );
+    $directorId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM company_directors WHERE company_id = :company_id',
+        ['company_id' => $companyId]
+    );
 
     yearEndClosePreviewInsertJournal($companyId, $accountingPeriodId, $marker . '-sales', '2025-12-31', [
         [yearEndClosePreviewNominalId('1000'), 1000.00, 0.00],
@@ -480,8 +483,8 @@ function yearEndClosePreviewCreateFixture(): array
         [yearEndClosePreviewNominalId('1000'), 0.00, 457.00],
     ]);
     yearEndClosePreviewInsertJournal($companyId, $accountingPeriodId, $marker . '-director-loan', '2025-12-31', [
-        [yearEndClosePreviewNominalId('1200'), 100.00, 0.00],
-        [yearEndClosePreviewNominalId('2100'), 0.00, 100.00],
+        [yearEndClosePreviewNominalId('1200'), 100.00, 0.00, $directorId],
+        [yearEndClosePreviewNominalId('2100'), 0.00, 100.00, $directorId],
     ]);
 
     InterfaceDB::prepareExecute(
@@ -558,11 +561,12 @@ function yearEndClosePreviewInsertJournal(int $companyId, int $accountingPeriodI
 
     foreach ($lines as $line) {
         InterfaceDB::prepareExecute(
-            'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit, line_description)
-             VALUES (:journal_id, :nominal_account_id, :debit, :credit, :line_description)',
+            'INSERT INTO journal_lines (journal_id, nominal_account_id, director_id, debit, credit, line_description)
+             VALUES (:journal_id, :nominal_account_id, :director_id, :debit, :credit, :line_description)',
             [
                 'journal_id' => $journalId,
                 'nominal_account_id' => (int)$line[0],
+                'director_id' => isset($line[3]) && (int)$line[3] > 0 ? (int)$line[3] : null,
                 'debit' => number_format((float)$line[1], 2, '.', ''),
                 'credit' => number_format((float)$line[2], 2, '.', ''),
                 'line_description' => 'Year-end close preview fixture',

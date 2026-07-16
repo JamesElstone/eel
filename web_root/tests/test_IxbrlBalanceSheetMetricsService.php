@@ -58,6 +58,57 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 }
             }
         });
+
+        $harness->check(\eel_accounts\Service\IxbrlBalanceSheetMetricsService::class, 'moves only the gross Director Loan Liability to creditors after one year for the selected period', static function () use ($harness, $service): void {
+            InterfaceDB::beginTransaction();
+            try {
+                $fixture = ixbrlDirectorLoanPresentationFixture();
+                $companyId = (int)$fixture['company_id'];
+                $periodId = (int)$fixture['accounting_period_id'];
+
+                $default = $service->fetchClosingMetrics($companyId, $periodId);
+                $defaultBuckets = (array)($default['buckets'] ?? []);
+                $harness->assertSame(1509.09, $defaultBuckets['current_assets'] ?? null);
+                $harness->assertSame(1567.63, $defaultBuckets['creditors_within_one_year'] ?? null);
+                $harness->assertSame(0.0, $defaultBuckets['creditors_after_more_than_one_year'] ?? null);
+                $harness->assertSame(372.89, $defaultBuckets['net_assets_liabilities'] ?? null);
+
+                $saved = (new \eel_accounts\Service\DirectorLoanReportingPresentationService())->save(
+                    $companyId,
+                    $periodId,
+                    'after_more_than_one_year',
+                    'test'
+                );
+                $harness->assertSame(true, (bool)($saved['success'] ?? false));
+
+                $metrics = $service->fetchClosingMetrics($companyId, $periodId);
+                $buckets = (array)($metrics['buckets'] ?? []);
+                $harness->assertSame(431.43, $buckets['fixed_assets'] ?? null);
+                $harness->assertSame(1509.09, $buckets['current_assets'] ?? null);
+                $harness->assertSame(279.0, $buckets['creditors_within_one_year'] ?? null);
+                $harness->assertSame(1288.63, $buckets['creditors_after_more_than_one_year'] ?? null);
+                $harness->assertSame(1230.09, $buckets['net_current_assets_liabilities'] ?? null);
+                $harness->assertSame(1661.52, $buckets['total_assets_less_current_liabilities'] ?? null);
+                $harness->assertSame(372.89, $buckets['net_assets_liabilities'] ?? null);
+                $harness->assertSame(true, (bool)($metrics['is_balance_sheet_balanced'] ?? false));
+
+                $currentAssetSources = (array)(($metrics['sources'] ?? [])['current_assets'] ?? []);
+                $directorLoanAssetSources = array_values(array_filter(
+                    $currentAssetSources,
+                    static fn(array $row): bool => str_contains((string)($row['label'] ?? ''), 'Fixture Director Loan Asset')
+                ));
+                $harness->assertCount(1, $directorLoanAssetSources);
+                $harness->assertSame(253.0, (float)($directorLoanAssetSources[0]['amount'] ?? 0));
+                $harness->assertSame(
+                    'after_more_than_one_year',
+                    (string)(($metrics['director_loan_reporting_presentation'] ?? [])['classification'] ?? '')
+                );
+            } finally {
+                if (InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
+                }
+            }
+        });
     }
 );
 
@@ -153,4 +204,94 @@ function ixbrlBalanceSheetLine(int $journalId, int $nominalId, float $debit, flo
          VALUES (:journal_id, :nominal_id, :debit, :credit, :description)',
         ['journal_id' => $journalId, 'nominal_id' => $nominalId, 'debit' => $debit, 'credit' => $credit, 'description' => 'Fixture line']
     );
+}
+
+function ixbrlDirectorLoanPresentationFixture(): array
+{
+    $suffix = substr(hash('sha256', __FILE__ . ':director-loan:' . microtime(true)), 0, 10);
+    $companyNumber = 'DL' . strtoupper(substr($suffix, 0, 8));
+    InterfaceDB::prepareExecute(
+        'INSERT INTO companies (company_name, company_number)
+         VALUES (:company_name, :company_number)',
+        ['company_name' => 'iXBRL Director Loan Fixture Limited', 'company_number' => $companyNumber]
+    );
+    $companyId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM companies WHERE company_number = :company_number',
+        ['company_number' => $companyNumber]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+         VALUES (:company_id, :label, :period_start, :period_end)',
+        [
+            'company_id' => $companyId,
+            'label' => 'AP79-shaped fixture',
+            'period_start' => '2022-09-05',
+            'period_end' => '2023-09-30',
+        ]
+    );
+    $periodId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM accounting_periods WHERE company_id = :company_id',
+        ['company_id' => $companyId]
+    );
+
+    $fixed = ixbrlBalanceSheetNominal(
+        'DF' . $suffix,
+        'Fixture Fixed Assets',
+        'asset',
+        ixbrlBalanceSheetSubtype('fixed_asset', 'Fixed Asset', 'asset')
+    );
+    $bank = ixbrlBalanceSheetNominal(
+        'DB' . $suffix,
+        'Fixture Bank',
+        'asset',
+        ixbrlBalanceSheetSubtype('bank', 'Bank', 'asset')
+    );
+    $directorLoanAsset = ixbrlBalanceSheetNominal(
+        'DA' . $suffix,
+        'Fixture Director Loan Asset',
+        'asset',
+        ixbrlBalanceSheetSubtype('director_loan_asset', 'Director Loan Asset', 'asset')
+    );
+    $otherCreditor = ixbrlBalanceSheetNominal(
+        'DC' . $suffix,
+        'Fixture Other Creditor',
+        'liability',
+        ixbrlBalanceSheetSubtype('trade_creditor', 'Trade Creditor', 'liability')
+    );
+    $directorLoanLiability = ixbrlBalanceSheetNominal(
+        'DL' . $suffix,
+        'Fixture Director Loan Liability',
+        'liability',
+        ixbrlBalanceSheetSubtype('director_loan_liability', 'Director Loan Liability', 'liability')
+    );
+    $equity = ixbrlBalanceSheetNominal(
+        'DE' . $suffix,
+        'Fixture Equity',
+        'equity',
+        ixbrlBalanceSheetSubtype('capital_reserves', 'Capital and Reserves', 'equity')
+    );
+    $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
+    $settings->set('director_loan_asset_nominal_id', $directorLoanAsset, 'int');
+    $settings->set('director_loan_liability_nominal_id', $directorLoanLiability, 'int');
+    $settings->flush();
+
+    $journalId = ixbrlBalanceSheetJournal(
+        $companyId,
+        $periodId,
+        'fixture-director-loan-' . $suffix,
+        '2023-09-30'
+    );
+    ixbrlBalanceSheetLine($journalId, $fixed, 431.43, 0.0);
+    ixbrlBalanceSheetLine($journalId, $bank, 1256.09, 0.0);
+    ixbrlBalanceSheetLine($journalId, $directorLoanAsset, 253.0, 0.0);
+    ixbrlBalanceSheetLine($journalId, $otherCreditor, 0.0, 279.0);
+    ixbrlBalanceSheetLine($journalId, $directorLoanLiability, 0.0, 1288.63);
+    ixbrlBalanceSheetLine($journalId, $equity, 0.0, 372.89);
+
+    return [
+        'company_id' => $companyId,
+        'accounting_period_id' => $periodId,
+        'director_loan_asset_nominal_id' => $directorLoanAsset,
+        'director_loan_liability_nominal_id' => $directorLoanLiability,
+    ];
 }

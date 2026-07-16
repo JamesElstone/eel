@@ -57,6 +57,7 @@ final class CategorisationRuleService
         $stmt = $this->executeQuery(
              'SELECT id,
                     company_id,
+                    director_id,
                     description,
                     reference,
                     source_category,
@@ -85,6 +86,7 @@ final class CategorisationRuleService
             'source_category_value' => '',
             'source_account_value' => '',
             'nominal_account_id' => $nominalAccountId,
+            'director_id' => (int)($transaction['director_id'] ?? 0) ?: null,
             'is_active' => true,
         ];
     }
@@ -115,6 +117,10 @@ final class CategorisationRuleService
 
     public function saveRule(int $companyId, array $input, ?int $ruleId = null): array {
         $normalised = $this->normaliseRuleInput($input);
+        if ($ruleId !== null && $ruleId > 0 && empty($normalised['director_id'])) {
+            $existingRule = $this->fetchRule($companyId, $ruleId);
+            $normalised['director_id'] = (int)($existingRule['director_id'] ?? 0) ?: null;
+        }
         $errors = $this->validateRuleInput($companyId, $normalised, $ruleId);
 
         if ($errors !== []) {
@@ -140,6 +146,7 @@ final class CategorisationRuleService
                 'source_category_value' => $this->nullableString($normalised['source_category_value']),
                 'source_account_value' => $this->nullableString($normalised['source_account_value']),
                 'nominal_account_id' => $normalised['nominal_account_id'],
+                'director_id' => $normalised['director_id'],
                 'updated_at' => $now,
                 'company_id' => $companyId,
                 'id' => $ruleId,
@@ -165,6 +172,7 @@ final class CategorisationRuleService
             'source_category_value' => $this->nullableString($normalised['source_category_value']),
             'source_account_value' => $this->nullableString($normalised['source_account_value']),
             'nominal_account_id' => $normalised['nominal_account_id'],
+            'director_id' => $normalised['director_id'],
             'created_at' => $now,
             'updated_at' => $now,
         ];
@@ -198,6 +206,16 @@ final class CategorisationRuleService
         if ($companyId <= 0 || $ruleId <= 0) {
             return false;
         }
+        if ($isActive) {
+            $rule = $this->fetchRule($companyId, $ruleId);
+            if (
+                is_array($rule)
+                && (new DirectorLoanAttributionService())->isDirectorLoanNominal($companyId, (int)($rule['nominal_account_id'] ?? 0))
+                && (int)($rule['director_id'] ?? 0) <= 0
+            ) {
+                return false;
+            }
+        }
 
         $stmt = $this->executeQuery($this->setRuleActiveSql(), [
             'is_active' => $isActive ? 1 : 0,
@@ -222,6 +240,7 @@ final class CategorisationRuleService
             'source_category_value' => '',
             'source_account_value' => '',
             'nominal_account_id' => '',
+            'director_id' => null,
             'is_active' => true,
         ];
     }
@@ -345,6 +364,7 @@ final class CategorisationRuleService
             'source_category_value' => trim((string)($input['source_category_value'] ?? '')),
             'source_account_value' => trim((string)($input['source_account_value'] ?? '')),
             'nominal_account_id' => preg_match('/^[1-9][0-9]*$/', $nominalAccountId) === 1 ? (int)$nominalAccountId : 0,
+            'director_id' => (int)($input['director_id'] ?? 0) > 0 ? (int)$input['director_id'] : null,
             'is_active' => isset($input['is_active']) ? $this->truthyValue($input['is_active']) : true,
         ];
     }
@@ -376,6 +396,20 @@ final class CategorisationRuleService
             $errors[] = 'Choose the nominal account this rule should assign.';
         } elseif (!$this->nominalBelongsToCompany($companyId, (int)$input['nominal_account_id'])) {
             $errors[] = 'The selected nominal account is not available for the current company.';
+        }
+        if (
+            $input['is_active']
+            && (new DirectorLoanAttributionService())->isDirectorLoanNominal($companyId, (int)$input['nominal_account_id'])
+        ) {
+            if ((int)($input['director_id'] ?? 0) <= 0) {
+                $errors[] = 'Attribute the source transaction to a director on the Director Loan Statement before creating an active Director Loan rule.';
+            } else {
+                try {
+                    (new CompanyDirectorService())->requireForCompany($companyId, (int)$input['director_id']);
+                } catch (\Throwable $exception) {
+                    $errors[] = $exception->getMessage();
+                }
+            }
         }
 
         return $errors;
@@ -635,6 +669,7 @@ final class CategorisationRuleService
                     cr.source_category_value,
                     cr.source_account_value,
                     cr.nominal_account_id,
+                    cr.director_id,
                     cr.created_at,
                     cr.updated_at,
                     COALESCE(na.code, \'\') AS nominal_code,
@@ -660,6 +695,7 @@ final class CategorisationRuleService
                     cr.source_category_value,
                     cr.source_account_value,
                     cr.nominal_account_id,
+                    cr.director_id,
                     cr.created_at,
                     cr.updated_at
              FROM categorisation_rules cr
@@ -681,6 +717,7 @@ final class CategorisationRuleService
                      source_category_value = :source_category_value,
                      source_account_value = :source_account_value,
                      nominal_account_id = :nominal_account_id,
+                     director_id = :director_id,
                      updated_at = :updated_at
                  WHERE id = :id
                    AND company_id = :company_id';
@@ -699,6 +736,7 @@ final class CategorisationRuleService
             source_category_value,
             source_account_value,
             nominal_account_id,
+            director_id,
             created_at,
             updated_at
         ) VALUES (
@@ -713,6 +751,7 @@ final class CategorisationRuleService
             :source_category_value,
             :source_account_value,
             :nominal_account_id,
+            :director_id,
             :created_at,
             :updated_at
         )';

@@ -68,6 +68,41 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertTrue((array)($snapshot['warnings'] ?? []) !== []);
             });
         });
+
+        $harness->check(\eel_accounts\Service\CompaniesHouseSnapshotService::class, 'uses the period-specific Director Loan repayment horizon without moving other creditors', static function () use ($harness, $service): void {
+            companiesHouseSnapshotTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+                companiesHouseSnapshotTestInsertJournal($fixture, [
+                    [$fixture['fixed_asset_nominal_id'], 1000.00, 0.00],
+                    [$fixture['bank_nominal_id'], 5000.00, 0.00],
+                    [$fixture['director_loan_liability_nominal_id'], 0.00, 750.00],
+                    [$fixture['long_term_director_loan_nominal_id'], 0.00, 1250.00],
+                    [$fixture['equity_nominal_id'], 0.00, 4000.00],
+                ]);
+
+                $before = companiesHouseSnapshotTestFields(
+                    $service->fetchSnapshot((int)$fixture['company_id'], (int)$fixture['accounting_period_id'])
+                );
+                $harness->assertSame(750.0, $before['creditors_within_one_year']);
+                $harness->assertSame(1250.0, $before['creditors_after_more_than_one_year']);
+
+                $saved = (new \eel_accounts\Service\DirectorLoanReportingPresentationService())->save(
+                    (int)$fixture['company_id'],
+                    (int)$fixture['accounting_period_id'],
+                    'after_more_than_one_year',
+                    'test'
+                );
+                $harness->assertSame(true, (bool)($saved['success'] ?? false));
+
+                $after = companiesHouseSnapshotTestFields(
+                    $service->fetchSnapshot((int)$fixture['company_id'], (int)$fixture['accounting_period_id'])
+                );
+                $harness->assertSame(0.0, $after['creditors_within_one_year']);
+                $harness->assertSame(2000.0, $after['creditors_after_more_than_one_year']);
+                $harness->assertSame(5000.0, $after['net_current_assets_liabilities']);
+                $harness->assertSame(6000.0, $after['total_assets_less_current_liabilities']);
+                $harness->assertSame(4000.0, $after['net_assets_liabilities']);
+            });
+        });
     }
 );
 
@@ -114,6 +149,13 @@ function companiesHouseSnapshotTestWithFixture(GeneratedServiceClassTestHarness 
             'income_nominal_id' => companiesHouseSnapshotTestNominal($marker, 'turnover', 'income', 'turnover'),
             'expense_nominal_id' => companiesHouseSnapshotTestNominal($marker, 'overhead', 'expense', 'overhead'),
         ];
+        $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
+        $settings->set(
+            'director_loan_liability_nominal_id',
+            (int)$fixture['director_loan_liability_nominal_id'],
+            'int'
+        );
+        $settings->flush();
 
         $callback($fixture);
     } finally {

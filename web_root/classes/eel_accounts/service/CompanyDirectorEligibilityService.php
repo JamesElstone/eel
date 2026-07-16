@@ -45,6 +45,9 @@ final class CompanyDirectorEligibilityService
 
         $result = $this->assertSingleActiveDirectorByNumber($companyNumber, $environment);
         $this->persistDirectorCheck($companyId, $result);
+        if (!empty($result['success'])) {
+            (new CompanyDirectorService())->syncFromCompaniesHouseResult($companyId, $result);
+        }
 
         return $result;
     }
@@ -60,7 +63,7 @@ final class CompanyDirectorEligibilityService
             ];
         }
 
-        return $this->companiesHouseService($environment)->checkSingleActiveDirectorByNumber($companyNumber);
+        return $this->companiesHouseService($environment)->fetchActiveDirectorCountByNumber($companyNumber);
     }
 
     private function companiesHouseService(string $environment): \eel_accounts\Service\CompaniesHouseService

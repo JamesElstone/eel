@@ -19,7 +19,7 @@ final class HmrcSubmissionPackageService
         }
 
         $row = \InterfaceDB::fetchOne(
-            'SELECT generated_path, generated_filename, output_sha256, generated_at
+            'SELECT id, generated_path, generated_filename, output_sha256, generated_at
              FROM ixbrl_generation_runs
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id
@@ -29,6 +29,18 @@ final class HmrcSubmissionPackageService
              LIMIT 1',
             ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'status' => 'generated']
         );
+        if (is_array($row)) {
+            $freshness = (new IxbrlFactBuilderService())->getRunFreshness((int)($row['id'] ?? 0));
+            if ((string)($freshness['state'] ?? '') !== 'current') {
+                return [
+                    'ok' => false,
+                    'path' => null,
+                    'filename' => null,
+                    'warnings' => [],
+                    'errors' => [(string)($freshness['detail'] ?? 'The generated accounts iXBRL is stale and must be rebuilt.')],
+                ];
+            }
+        }
         $path = is_array($row) ? (string)($row['generated_path'] ?? '') : '';
         if ($path === '' || !is_file($path)) {
             return ['ok' => false, 'path' => null, 'filename' => null, 'warnings' => [], 'errors' => ['Generated accounts iXBRL/XHTML file was not found for this period.']];
@@ -82,6 +94,28 @@ final class HmrcSubmissionPackageService
         $scope = (new \eel_accounts\Service\VatSupportScopeService())->fetchForCompany((int)($submission['company_id'] ?? 0));
         if (!empty($scope['tax_year_end_read_only'])) {
             return ['ok' => false, 'path' => null, 'errors' => [(string)($scope['message'] ?? \eel_accounts\Service\VatSupportScopeService::UNSUPPORTED_MESSAGE)]];
+        }
+        $currentAccounts = $this->locateAccountsIxbrl(
+            (int)($submission['company_id'] ?? 0),
+            (int)($submission['accounting_period_id'] ?? 0)
+        );
+        if (empty($currentAccounts['ok'])) {
+            return [
+                'ok' => false,
+                'path' => null,
+                'errors' => (array)($currentAccounts['errors'] ?? ['Current accounts iXBRL could not be located.']),
+            ];
+        }
+        $submissionAccountsPath = (string)($submission['accounts_ixbrl_path'] ?? '');
+        $currentAccountsPath = (string)($currentAccounts['path'] ?? '');
+        if ($submissionAccountsPath === ''
+            || $currentAccountsPath === ''
+            || realpath($submissionAccountsPath) !== realpath($currentAccountsPath)) {
+            return [
+                'ok' => false,
+                'path' => null,
+                'errors' => ['The submission draft references an outdated accounts iXBRL file. Refresh the draft after rebuilding the accounts export.'],
+            ];
         }
         foreach (['ct600_xml_path', 'accounts_ixbrl_path', 'computations_ixbrl_path'] as $field) {
             $path = (string)($submission[$field] ?? '');

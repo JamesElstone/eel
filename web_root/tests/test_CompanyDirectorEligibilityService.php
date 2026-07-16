@@ -30,12 +30,12 @@ $harness->run(\eel_accounts\Service\CompanyDirectorEligibilityService::class, fu
         $harness->assertSame(1, $result['director_count'] ?? 0);
     });
 
-    $harness->check(\eel_accounts\Service\CompanyDirectorEligibilityService::class, 'fails a company with more than one active director', function () use ($harness): void {
+    $harness->check(\eel_accounts\Service\CompanyDirectorEligibilityService::class, 'supports a company with more than one active director', function () use ($harness): void {
         $service = new \eel_accounts\Service\CompanyDirectorEligibilityService(companyDirectorEligibilityTestCompaniesHouseService(2));
 
         $result = $service->assertSingleActiveDirectorByNumber('01234567');
 
-        $harness->assertSame(false, $result['success'] ?? true);
+        $harness->assertSame(true, $result['success'] ?? false);
         $harness->assertSame(2, $result['director_count'] ?? 0);
     });
 

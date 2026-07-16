@@ -1321,6 +1321,10 @@ final class ExpenseClaimService
             : null;
         $receiptReference = trim((string)($payload['receipt_reference'] ?? ''));
         $notes = trim((string)($payload['notes'] ?? ''));
+        $existingLine = $lineId > 0 ? $this->fetchClaimLine($claimId, $lineId) : null;
+        $nextDirectorId = (new DirectorLoanAttributionService())->isDirectorLoanNominal($companyId, $nominalAccountId)
+            ? ((int)($existingLine['director_id'] ?? 0) ?: null)
+            : null;
 
         if ($lineId > 0) {
             \InterfaceDB::prepare(
@@ -1329,6 +1333,7 @@ final class ExpenseClaimService
                      description = :description,
                      amount = :amount,
                      nominal_account_id = :nominal_account_id,
+                     director_id = :director_id,
                      receipt_reference = :receipt_reference,
                      notes = :notes,
                      updated_at = CURRENT_TIMESTAMP
@@ -1339,6 +1344,7 @@ final class ExpenseClaimService
                 'description' => $description,
                 'amount' => $amount,
                 'nominal_account_id' => $nominalAccountId,
+                'director_id' => $nextDirectorId,
                 'receipt_reference' => $receiptReference !== '' ? $receiptReference : null,
                 'notes' => $notes !== '' ? $notes : null,
                 'id' => $lineId,
@@ -1591,17 +1597,31 @@ final class ExpenseClaimService
             return ['success' => false, 'errors' => ['Switch the line back to Expense before choosing an expense charge.']];
         }
 
+        $nextDirectorId = (new DirectorLoanAttributionService())->isDirectorLoanNominal($companyId, $nominalAccountId)
+            ? ((int)($line['director_id'] ?? 0) ?: null)
+            : null;
         \InterfaceDB::prepare(
             'UPDATE expense_claim_lines
              SET nominal_account_id = :nominal_account_id,
+                 director_id = :director_id,
                  updated_at = CURRENT_TIMESTAMP
              WHERE id = :id
                AND expense_claim_id = :expense_claim_id'
         )->execute([
             'nominal_account_id' => $nominalAccountId > 0 ? $nominalAccountId : null,
+            'director_id' => $nextDirectorId,
             'id' => $lineId,
             'expense_claim_id' => $claimId,
         ]);
+        (new DirectorLoanAttributionService())->recordChange(
+            $companyId,
+            'expense_claim_line',
+            $lineId,
+            (int)($line['director_id'] ?? 0) ?: null,
+            $nextDirectorId,
+            'web_app',
+            'Expense claim line nominal changed.'
+        );
         (new \eel_accounts\Service\VehicleService())->cleanupVehicleDetailsForExpenseClaimLine($lineId);
 
         return [
@@ -1868,6 +1888,9 @@ final class ExpenseClaimService
         if ($normalised['errors'] !== []) {
             return ['success' => false, 'errors' => $normalised['errors']];
         }
+        $nextDirectorId = (new DirectorLoanAttributionService())->isDirectorLoanNominal($companyId, $targetNominalId)
+            ? ((int)($line['director_id'] ?? 0) ?: null)
+            : null;
 
         $payableNominalId = $this->payableNominalIdFromJournal($journalId);
         if ($payableNominalId <= 0) {
@@ -1889,14 +1912,25 @@ final class ExpenseClaimService
             \InterfaceDB::prepare(
                 'UPDATE expense_claim_lines
                  SET nominal_account_id = :nominal_account_id,
+                     director_id = :director_id,
                      updated_at = CURRENT_TIMESTAMP
                  WHERE id = :id
                    AND expense_claim_id = :expense_claim_id'
             )->execute([
                 'nominal_account_id' => $targetNominalId,
+                'director_id' => $nextDirectorId,
                 'id' => $lineId,
                 'expense_claim_id' => $claimId,
             ]);
+            (new DirectorLoanAttributionService())->recordChange(
+                $companyId,
+                'expense_claim_line',
+                $lineId,
+                (int)($line['director_id'] ?? 0) ?: null,
+                $nextDirectorId,
+                'web_app',
+                'Expense claim line nominal changed.'
+            );
 
             $this->rebuildPostedClaimJournal($companyId, $claim, $journalId, $payableNominalId);
 
@@ -2254,7 +2288,8 @@ final class ExpenseClaimService
                         (int)$values['nominal_account_id'],
                         round((float)$line['amount'], 2),
                         0.0,
-                        (string)$line['description']
+                        (string)$line['description'],
+                        (int)($line['director_id'] ?? 0) ?: null
                     );
                     $asset = $assetService->createAssetRecordFromValues($values, [
                         'linked_journal_id' => (int)$journal['id'],
@@ -2281,7 +2316,8 @@ final class ExpenseClaimService
                     (int)$line['nominal_account_id'],
                     round((float)$line['amount'], 2),
                     0.0,
-                    (string)$line['description']
+                    (string)$line['description'],
+                    (int)($line['director_id'] ?? 0) ?: null
                 );
             }
 
@@ -2361,6 +2397,7 @@ final class ExpenseClaimService
                     l.description,
                     l.amount,
                     l.nominal_account_id,
+                    l.director_id,
                     l.receipt_reference,
                     l.notes,
                     la.category AS asset_category,
@@ -2387,6 +2424,7 @@ final class ExpenseClaimService
         $row['line_number'] = (int)$row['line_number'];
         $row['amount'] = round((float)$row['amount'], 2);
         $row['nominal_account_id'] = isset($row['nominal_account_id']) ? (int)$row['nominal_account_id'] : null;
+        $row['director_id'] = isset($row['director_id']) ? (int)$row['director_id'] : null;
         $row['generated_asset_id'] = isset($row['generated_asset_id']) ? (int)$row['generated_asset_id'] : null;
 
         return $row;
@@ -2551,6 +2589,7 @@ final class ExpenseClaimService
                     'description' => (string)$row['description'],
                     'amount' => round((float)$row['amount'], 2),
                     'nominal_account_id' => isset($row['nominal_account_id']) ? (int)$row['nominal_account_id'] : null,
+                    'director_id' => isset($row['director_id']) ? (int)$row['director_id'] : null,
                     'line_type' => $assetCategory !== '' ? 'asset' : 'expense',
                     'receipt_reference' => (string)($row['receipt_reference'] ?? ''),
                     'notes' => (string)($row['notes'] ?? ''),
@@ -2574,6 +2613,7 @@ final class ExpenseClaimService
                     l.description,
                     l.amount,
                     l.nominal_account_id,
+                    l.director_id,
                     l.receipt_reference,
                     l.notes,
                     l.created_at,
@@ -3477,17 +3517,19 @@ final class ExpenseClaimService
         );
     }
 
-    private function insertJournalLine(int $journalId, int $nominalAccountId, float $debit, float $credit, string $description): void {
+    private function insertJournalLine(int $journalId, int $nominalAccountId, float $debit, float $credit, string $description, ?int $directorId = null): void {
         \InterfaceDB::prepare(
             'INSERT INTO journal_lines (
                 journal_id,
                 nominal_account_id,
+                director_id,
                 debit,
                 credit,
                 line_description
              ) VALUES (
                 :journal_id,
                 :nominal_account_id,
+                :director_id,
                 :debit,
                 :credit,
                 :line_description
@@ -3495,6 +3537,7 @@ final class ExpenseClaimService
         )->execute([
             'journal_id' => $journalId,
             'nominal_account_id' => $nominalAccountId,
+            'director_id' => (int)$directorId > 0 ? (int)$directorId : null,
             'debit' => round($debit, 2),
             'credit' => round($credit, 2),
             'line_description' => trim($description) !== '' ? $description : null,

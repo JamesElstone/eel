@@ -85,20 +85,17 @@ final class YearEndAction implements ActionInterfaceFramework
                     $this->adjustmentPayload($request),
                     $actor
                 ),
-                'save_director_loan_offset_acknowledgement' => (new \eel_accounts\Service\YearEndChecklistService())->saveDirectorLoanClosingAcknowledgement(
+                'set_director_loan_attribution' => (new \eel_accounts\Service\DirectorLoanAttributionService())->assignJournalLine(
                     $companyId,
-                    $accountingPeriodId,
-                    $this->truthy($request->input('director_loan_offset_acknowledgement', '0')),
+                    (int)$request->input('journal_line_id', 0),
+                    (int)$request->input('director_id', 0) ?: null,
                     $actor,
-                    (string)$request->input('approval_note', '')
+                    (string)$request->input('attribution_reason', 'Director loan statement attribution.')
                 ),
-                'save_director_loan_set_off_evidence' => (new \eel_accounts\Service\DirectorLoanReconciliationService())->saveSetOffEvidence(
+                'save_director_loan_year_end_review' => (new \eel_accounts\Service\DirectorLoanReconciliationService())->saveYearEndReview(
                     $companyId,
                     $accountingPeriodId,
-                    $this->truthy($request->input('director_loan_set_off_evidence', '0')),
-                    $this->truthy($request->input('director_loan_legally_enforceable_right', '0')),
-                    $this->truthy($request->input('director_loan_net_settlement_intent', '0')),
-                    (string)$request->input('director_loan_set_off_evidence_note', ''),
+                    $this->truthy($request->input('director_loan_year_end_review', '0')),
                     $actor
                 ),
                 'save_tax_readiness_acknowledgement' => (new \eel_accounts\Service\YearEndChecklistService())->saveTaxReadinessAcknowledgement(
@@ -233,39 +230,28 @@ final class YearEndAction implements ActionInterfaceFramework
             'revoke_empty_month' => 'Empty month confirmation revoked.',
             'save_opening_balance' => 'Opening balance journal saved.',
             'create_adjustment' => 'Year-end adjustment posted.',
-            'save_director_loan_offset_acknowledgement' => 'Director loan offset approval saved.',
-            'save_director_loan_set_off_evidence' => 'Director loan set-off evidence saved.',
+            'set_director_loan_attribution' => 'Director loan account attribution saved.',
+            'save_director_loan_year_end_review' => 'Director Loan Year End Review saved.',
             'save_tax_readiness_acknowledgement' => 'Tax readiness approval saved.',
             'save_expense_position_acknowledgement' => 'Expense position approval saved.',
             'save_retained_earnings_close_acknowledgement' => 'Retained earnings approval saved.',
             'save_transaction_tail_acknowledgement' => 'Transaction cut-off approval saved.',
             'acknowledge_review_check' => 'Year-end approval saved.',
             'reopen_review_check' => 'Year-end approval revoked.',
-            'post_director_loan_offset' => 'Director loan offset journal posted.',
+            'post_director_loan_offset' => 'Director loan control reclassification journal posted.',
             default => 'Year-end readiness updated.',
         };
     }
 
     private function requiresSingleDirectorCheck(string $intent): bool
     {
-        return in_array($intent, [
-            'recalculate',
-            'lock_period',
-            'save_opening_balance',
-            'create_adjustment',
-            'save_director_loan_offset_acknowledgement',
-            'save_director_loan_set_off_evidence',
-            'save_tax_readiness_acknowledgement',
-            'save_retained_earnings_close_acknowledgement',
-            'save_transaction_tail_acknowledgement',
-            'post_director_loan_offset',
-        ], true);
+        return false;
     }
 
     private function requiresActionVatSupportScopeCheck(string $intent): bool
     {
         // Expense approval performs this guard once at its mutation boundary.
-        return $intent !== 'save_expense_position_acknowledgement';
+        return !in_array($intent, ['save_expense_position_acknowledgement', 'set_director_loan_attribution'], true);
     }
 
     private function requiresUnlockedPeriod(string $intent): bool
@@ -278,8 +264,7 @@ final class YearEndAction implements ActionInterfaceFramework
             'revoke_empty_month',
             'save_opening_balance',
             'create_adjustment',
-            'save_director_loan_offset_acknowledgement',
-            'save_director_loan_set_off_evidence',
+            'save_director_loan_year_end_review',
             'save_tax_readiness_acknowledgement',
             'save_retained_earnings_close_acknowledgement',
             'save_transaction_tail_acknowledgement',

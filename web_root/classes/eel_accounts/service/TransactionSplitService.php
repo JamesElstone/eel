@@ -173,11 +173,16 @@ final class TransactionSplitService
             return ['success' => false, 'errors' => $errors];
         }
 
+        $nextDirectorId = (new DirectorLoanAttributionService())->isDirectorLoanNominal($companyId, $nominalAccountId)
+            ? ((int)($line['director_id'] ?? 0) ?: null)
+            : null;
+
         \InterfaceDB::prepareExecute(
             'UPDATE transaction_split_lines
              SET description = :description,
                  amount = :amount,
                  nominal_account_id = :nominal_account_id,
+                 director_id = :director_id,
                  notes = :notes,
                  is_deferred = 0,
                  updated_at = CURRENT_TIMESTAMP
@@ -186,9 +191,20 @@ final class TransactionSplitService
                 'description' => $description,
                 'amount' => $amount !== null ? number_format($amount, 2, '.', '') : null,
                 'nominal_account_id' => $nominalAccountId > 0 ? $nominalAccountId : null,
+                'director_id' => $nextDirectorId,
                 'notes' => $notes,
                 'id' => $lineId,
             ]
+        );
+
+        (new DirectorLoanAttributionService())->recordChange(
+            $companyId,
+            'transaction_split_line',
+            $lineId,
+            (int)($line['director_id'] ?? 0) ?: null,
+            $nextDirectorId,
+            'web_app',
+            'Transaction split nominal changed.'
         );
 
         $this->refreshTransactionState($line, 'transactions_page_split');
@@ -631,6 +647,7 @@ final class TransactionSplitService
                     tsl.description,
                     tsl.amount,
                     tsl.nominal_account_id,
+                    tsl.director_id,
                     tsl.is_deferred,
                     tsl.notes,
                     ts.transaction_id,

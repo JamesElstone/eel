@@ -72,13 +72,16 @@ CREATE TABLE `categorisation_rules` (
   `source_category_value` varchar(255) DEFAULT NULL,
   `source_account_value` varchar(255) DEFAULT NULL,
   `nominal_account_id` int(11) NOT NULL,
+  `director_id` bigint(20) DEFAULT NULL,
   `is_active` tinyint(1) NOT NULL DEFAULT 1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
   KEY `idx_rules_company_priority` (`company_id`,`is_active`,`priority`),
   KEY `idx_rules_nominal` (`nominal_account_id`),
+  KEY `idx_categorisation_rules_director` (`director_id`),
   CONSTRAINT `fk_categorisation_rules_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_categorisation_rules_director` FOREIGN KEY (`director_id`) REFERENCES `company_directors` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_categorisation_rules_nominal_r` FOREIGN KEY (`nominal_account_id`) REFERENCES `nominal_accounts` (`id`) ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=48 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -139,6 +142,35 @@ CREATE TABLE `companies` (
   KEY `idx_companies_active` (`is_active`),
   KEY `idx_companies_incorporation_date` (`incorporation_date`)
 ) ENGINE=InnoDB AUTO_INCREMENT=27 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `company_directors`
+--
+
+DROP TABLE IF EXISTS `company_directors`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `company_directors` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `source` varchar(50) NOT NULL DEFAULT 'companies_house',
+  `external_key` varchar(255) NOT NULL,
+  `full_name` varchar(255) NOT NULL,
+  `officer_role` varchar(100) NOT NULL DEFAULT 'director',
+  `appointed_on` date DEFAULT NULL,
+  `resigned_on` date DEFAULT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `source_json` longtext DEFAULT NULL,
+  `last_synced_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_company_directors_source_identity` (`company_id`,`source`,`external_key`),
+  KEY `idx_company_directors_company_status` (`company_id`,`is_active`,`full_name`),
+  KEY `idx_company_directors_tenure` (`company_id`,`appointed_on`,`resigned_on`),
+  CONSTRAINT `fk_company_directors_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -362,6 +394,7 @@ CREATE TABLE `expense_claim_lines` (
   `description` varchar(500) NOT NULL,
   `amount` decimal(12,2) NOT NULL,
   `nominal_account_id` int(11) DEFAULT NULL,
+  `director_id` bigint(20) DEFAULT NULL,
   `receipt_reference` varchar(255) DEFAULT NULL,
   `notes` text DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
@@ -369,7 +402,9 @@ CREATE TABLE `expense_claim_lines` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_expense_claim_lines_claim_line` (`expense_claim_id`,`line_number`),
   KEY `idx_expense_claim_lines_nominal` (`nominal_account_id`),
+  KEY `idx_expense_claim_lines_director` (`director_id`),
   CONSTRAINT `fk_expense_claim_lines_claim` FOREIGN KEY (`expense_claim_id`) REFERENCES `expense_claims` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_expense_claim_lines_director` FOREIGN KEY (`director_id`) REFERENCES `company_directors` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_expense_claim_lines_nominal` FOREIGN KEY (`nominal_account_id`) REFERENCES `nominal_accounts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `chk_expense_claim_lines_amount` CHECK (`amount` > 0)
 ) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -508,6 +543,7 @@ CREATE TABLE `journal_lines` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `journal_id` bigint(20) NOT NULL,
   `nominal_account_id` int(11) NOT NULL,
+  `director_id` bigint(20) DEFAULT NULL,
   `company_account_id` int(11) DEFAULT NULL,
   `debit` decimal(12,2) NOT NULL DEFAULT 0.00,
   `credit` decimal(12,2) NOT NULL DEFAULT 0.00,
@@ -515,8 +551,11 @@ CREATE TABLE `journal_lines` (
   PRIMARY KEY (`id`),
   KEY `idx_journal_lines_journal` (`journal_id`),
   KEY `idx_journal_lines_nominal` (`nominal_account_id`),
+  KEY `idx_journal_lines_director` (`director_id`),
+  KEY `idx_journal_lines_nominal_director` (`nominal_account_id`,`director_id`),
   KEY `idx_journal_lines_company_account` (`company_account_id`),
   CONSTRAINT `fk_journal_lines_company_account` FOREIGN KEY (`company_account_id`) REFERENCES `company_accounts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_journal_lines_director` FOREIGN KEY (`director_id`) REFERENCES `company_directors` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_journal_lines_journal` FOREIGN KEY (`journal_id`) REFERENCES `journals` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_journal_lines_nominal_r` FOREIGN KEY (`nominal_account_id`) REFERENCES `nominal_accounts` (`id`) ON UPDATE CASCADE,
   CONSTRAINT `chk_journal_lines_nonnegative` CHECK (`debit` >= 0 and `credit` >= 0),
@@ -570,6 +609,7 @@ CREATE TABLE `dividend_vouchers` (
   `company_name` varchar(255) NOT NULL,
   `shareholder_name` varchar(255) NOT NULL,
   `director_name` varchar(255) NOT NULL,
+  `director_id` bigint(20) DEFAULT NULL,
   `declaration_date` date NOT NULL,
   `payment_date` date NOT NULL,
   `amount` decimal(12,2) NOT NULL,
@@ -587,8 +627,10 @@ CREATE TABLE `dividend_vouchers` (
   UNIQUE KEY `uq_dividend_vouchers_journal` (`journal_id`),
   KEY `idx_dividend_vouchers_company_period` (`company_id`,`accounting_period_id`),
   KEY `idx_dividend_vouchers_transaction` (`transaction_id`),
+  KEY `idx_dividend_vouchers_director` (`director_id`),
   KEY `idx_dividend_vouchers_reversal_journal` (`reversal_journal_id`),
   CONSTRAINT `fk_dividend_vouchers_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_dividend_vouchers_director` FOREIGN KEY (`director_id`) REFERENCES `company_directors` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_dividend_vouchers_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_dividend_vouchers_journal` FOREIGN KEY (`journal_id`) REFERENCES `journals` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_dividend_vouchers_reversal_journal` FOREIGN KEY (`reversal_journal_id`) REFERENCES `journals` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
@@ -1687,6 +1729,7 @@ CREATE TABLE `transactions` (
   `card` varchar(100) DEFAULT NULL,
   `dedupe_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `nominal_account_id` int(11) DEFAULT NULL,
+  `director_id` bigint(20) DEFAULT NULL,
   `transfer_account_id` int(11) DEFAULT NULL,
   `is_internal_transfer` tinyint(1) NOT NULL DEFAULT 0,
   `category_status` enum('uncategorised','auto','manual') NOT NULL DEFAULT 'uncategorised',
@@ -1700,8 +1743,10 @@ CREATE TABLE `transactions` (
   KEY `idx_transactions_accounting_period_date` (`accounting_period_id`,`txn_date`),
   KEY `idx_transactions_upload` (`statement_upload_id`),
   KEY `idx_transactions_nominal` (`nominal_account_id`),
+  KEY `idx_transactions_director` (`director_id`),
   KEY `idx_transactions_category_status` (`category_status`),
   KEY `idx_transactions_company_month` (`company_id`,`txn_date`),
+  CONSTRAINT `fk_transactions_director` FOREIGN KEY (`director_id`) REFERENCES `company_directors` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   KEY `idx_transactions_company_period_date` (`company_id`,`accounting_period_id`,`txn_date`),
   KEY `idx_transactions_company_period_category_status` (`company_id`,`accounting_period_id`,`category_status`),
   KEY `idx_transactions_company_currency` (`company_id`,`accounting_period_id`,`currency`),
@@ -1808,6 +1853,7 @@ CREATE TABLE `transaction_split_lines` (
   `description` varchar(255) DEFAULT NULL,
   `amount` decimal(12,2) DEFAULT NULL,
   `nominal_account_id` int(11) DEFAULT NULL,
+  `director_id` bigint(20) DEFAULT NULL,
   `is_deferred` tinyint(1) NOT NULL DEFAULT 0,
   `notes` text DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
@@ -1815,6 +1861,8 @@ CREATE TABLE `transaction_split_lines` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_transaction_split_lines_number` (`split_id`,`line_number`),
   KEY `idx_transaction_split_lines_nominal` (`nominal_account_id`),
+  KEY `idx_transaction_split_lines_director` (`director_id`),
+  CONSTRAINT `fk_transaction_split_lines_director` FOREIGN KEY (`director_id`) REFERENCES `company_directors` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_transaction_split_lines_split` FOREIGN KEY (`split_id`) REFERENCES `transaction_splits` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_transaction_split_lines_nominal` FOREIGN KEY (`nominal_account_id`) REFERENCES `nominal_accounts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `chk_transaction_split_lines_amount` CHECK (`amount` IS NULL OR `amount` > 0)
@@ -2551,6 +2599,95 @@ CREATE TABLE `year_end_reviews` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `director_loan_attribution_audit`
+--
+
+DROP TABLE IF EXISTS `director_loan_attribution_audit`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `director_loan_attribution_audit` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `source_type` varchar(64) NOT NULL,
+  `source_id` bigint(20) NOT NULL,
+  `old_director_id` bigint(20) DEFAULT NULL,
+  `new_director_id` bigint(20) DEFAULT NULL,
+  `changed_by` varchar(100) NOT NULL,
+  `reason` varchar(255) NOT NULL,
+  `changed_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_dla_attribution_audit_source` (`source_type`,`source_id`,`changed_at`),
+  KEY `idx_dla_attribution_audit_company` (`company_id`,`changed_at`),
+  KEY `idx_dla_attribution_audit_old_director` (`old_director_id`),
+  KEY `idx_dla_attribution_audit_new_director` (`new_director_id`),
+  CONSTRAINT `fk_dla_attribution_audit_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_dla_attribution_audit_old_director` FOREIGN KEY (`old_director_id`) REFERENCES `company_directors` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_dla_attribution_audit_new_director` FOREIGN KEY (`new_director_id`) REFERENCES `company_directors` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `director_loan_reporting_presentations`
+--
+
+DROP TABLE IF EXISTS `director_loan_reporting_presentations`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `director_loan_reporting_presentations` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `liability_nominal_account_id` int(11) NOT NULL,
+  `classification` varchar(40) NOT NULL,
+  `revision` int(10) unsigned NOT NULL DEFAULT 1,
+  `created_by` varchar(100) NOT NULL,
+  `updated_by` varchar(100) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_dla_reporting_presentation_company_period` (`company_id`,`accounting_period_id`),
+  KEY `idx_dla_reporting_presentation_nominal` (`liability_nominal_account_id`),
+  CONSTRAINT `chk_dla_reporting_presentation_classification` CHECK (`classification` in ('within_one_year','after_more_than_one_year')),
+  CONSTRAINT `fk_dla_reporting_presentation_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_dla_reporting_presentation_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_dla_reporting_presentation_nominal` FOREIGN KEY (`liability_nominal_account_id`) REFERENCES `nominal_accounts` (`id`) ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `director_loan_reporting_presentation_audit`
+--
+
+DROP TABLE IF EXISTS `director_loan_reporting_presentation_audit`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `director_loan_reporting_presentation_audit` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `old_liability_nominal_account_id` int(11) DEFAULT NULL,
+  `new_liability_nominal_account_id` int(11) DEFAULT NULL,
+  `old_classification` varchar(40) NOT NULL,
+  `new_classification` varchar(40) NOT NULL,
+  `old_revision` int(10) unsigned NOT NULL,
+  `new_revision` int(10) unsigned NOT NULL,
+  `changed_by` varchar(100) NOT NULL,
+  `reason` varchar(255) NOT NULL,
+  `changed_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_dla_reporting_presentation_audit_scope` (`company_id`,`accounting_period_id`,`changed_at`),
+  KEY `idx_dla_reporting_presentation_audit_old_nominal` (`old_liability_nominal_account_id`),
+  KEY `idx_dla_reporting_presentation_audit_new_nominal` (`new_liability_nominal_account_id`),
+  CONSTRAINT `chk_dla_reporting_presentation_audit_old_classification` CHECK (`old_classification` in ('within_one_year','after_more_than_one_year')),
+  CONSTRAINT `chk_dla_reporting_presentation_audit_new_classification` CHECK (`new_classification` in ('within_one_year','after_more_than_one_year')),
+  CONSTRAINT `fk_dla_reporting_presentation_audit_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_dla_reporting_presentation_audit_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_dla_reporting_presentation_audit_old_nominal` FOREIGN KEY (`old_liability_nominal_account_id`) REFERENCES `nominal_accounts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_dla_reporting_presentation_audit_new_nominal` FOREIGN KEY (`new_liability_nominal_account_id`) REFERENCES `nominal_accounts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `year_end_review_acknowledgements`
 --
 
@@ -2659,7 +2796,9 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_14_004_tax_prepayment_card_permission.sql'),
   ('2026_07_14_005_vat_reference_rates_and_tax_cards.sql'),
   ('2026_07_14_006_hmrc_obligation_evidence.sql'),
-  ('2026_07_15_001_prepayment_schedule_repair.sql');
+  ('2026_07_15_001_prepayment_schedule_repair.sql'),
+  ('2026_07_16_001_director_loan_subledger.sql'),
+  ('2026_07_16_002_director_loan_reporting_presentation.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

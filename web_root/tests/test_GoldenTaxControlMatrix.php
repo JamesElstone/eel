@@ -71,13 +71,15 @@ $harness->check('GoldenTaxControlMatrix', 'raises s455 and lock-readiness review
             ->fetchTaxReviewSummary(GoldenAccountsFixture::GOLDEN_COMPANY_ID, 9114);
         $harness->assertTrue(!empty($review['available']));
         $harness->assertTrue(!empty($review['review_required']));
-        $harness->assertTrue(!empty($review['s455_review_required']));
-        $harness->assertSame('2000.00', goldenTaxControlMoney($review['exposure_amount'] ?? 0));
-        $harness->assertTrue(!empty($review['identity_netting_required']));
+        $harness->assertSame('800.00', goldenTaxControlMoney($review['exposure_amount'] ?? 0));
+        $harness->assertSame(
+            GoldenAccountsFixture::GOLDEN_DIRECTOR_ID,
+            (int)($review['director_flags'][0]['director_id'] ?? 0)
+        );
 
         $checklist = (new \eel_accounts\Service\YearEndChecklistService())
             ->fetchChecklist(GoldenAccountsFixture::GOLDEN_COMPANY_ID, 9114);
-        $taxReview = goldenTaxControlFindCheck($checklist, 'director_loan_tax_review');
+        $taxReview = goldenTaxControlFindCheck($checklist, 'director_loan_year_end_review');
         $lock = goldenTaxControlFindCheck($checklist, 'lock_readiness_checklist');
         $harness->assertSame('warning', (string)($taxReview['status'] ?? ''));
         $harness->assertTrue(str_contains(strtolower((string)($taxReview['detail_text'] ?? '')), 's455'));
@@ -443,8 +445,24 @@ function goldenTaxControlPostJournal(
         $journalDate,
         $description,
         [
-            ['nominal_account_id' => $debitNominalId, 'debit' => $amount, 'credit' => 0.0, 'line_description' => $description],
-            ['nominal_account_id' => $creditNominalId, 'debit' => 0.0, 'credit' => $amount, 'line_description' => $description],
+            [
+                'nominal_account_id' => $debitNominalId,
+                'director_id' => in_array($debitNominalId, [91005, 91006], true)
+                    ? GoldenAccountsFixture::GOLDEN_DIRECTOR_ID
+                    : null,
+                'debit' => $amount,
+                'credit' => 0.0,
+                'line_description' => $description,
+            ],
+            [
+                'nominal_account_id' => $creditNominalId,
+                'director_id' => in_array($creditNominalId, [91005, 91006], true)
+                    ? GoldenAccountsFixture::GOLDEN_DIRECTOR_ID
+                    : null,
+                'debit' => 0.0,
+                'credit' => $amount,
+                'line_description' => $description,
+            ],
         ],
         'manual',
         null,

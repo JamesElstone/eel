@@ -25,15 +25,15 @@ final class _hmrc_obligations_period_checklistCard extends CardBaseFramework
         $html = '';
         foreach ($items as $item) {
             $complete = !empty($item['complete']);
-            $html .= '<section class="panel-soft">
+            $html .= '<div class="summary-card">
                 <div class="status-head">
-                    <h3 class="card-title">' . HelperFramework::escape((string)($item['label'] ?? 'Checklist item')) . '</h3>
+                    <div class="summary-label">' . HelperFramework::escape((string)($item['label'] ?? 'Checklist item')) . '</div>
                     <span class="badge ' . ($complete ? 'success' : 'warning') . '">' . ($complete ? 'Done' : 'Needs work') . '</span>
                 </div>
                 <div class="helper">' . HelperFramework::escape((string)($item['detail'] ?? '')) . '</div>
-            </section>';
+            </div>';
         }
 
-        return '<div class="settings-stack">' . $html . '</div>';
+        return '<div class="summary-grid four">' . $html . '</div>';
     }
 }

@@ -61,22 +61,55 @@ final class _hmrc_obligations extends PageContextFramework
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $filter = trim((string)$request->input('hmrc_filter', 'all'));
         $service = new \eel_accounts\Service\HmrcObligationService();
+        $accountingPeriods = $companyId > 0
+            ? (new \eel_accounts\Repository\AccountingPeriodRepository())->fetchAccountingPeriods($companyId)
+            : [];
         if ($companyId > 0) {
             $service->syncObligationsForCompany($companyId);
         } else {
             $service->ensureSchema();
         }
 
+        $allObligations = $service->listObligations($companyId, ['filter' => 'all']);
+        $timelineObligations = $service->listObligations($companyId, ['filter' => $filter]);
+        $selectedPeriodEnd = trim((string)(($baseContext['accounting_period'] ?? [])['period_end'] ?? ''));
+        $firstPeriodStart = trim((string)($accountingPeriods[0]['period_start'] ?? ''));
+        $scopedObligations = $this->obligationsThroughSelectedPeriod($allObligations, $firstPeriodStart, $selectedPeriodEnd);
+        $scopedTimeline = $this->obligationsThroughSelectedPeriod($timelineObligations, $firstPeriodStart, $selectedPeriodEnd);
+        $laterObligationCount = count(array_filter(
+            $allObligations,
+            static fn(array $item): bool => $selectedPeriodEnd !== ''
+                && (string)($item['period_start'] ?? '') > $selectedPeriodEnd
+        ));
+        $laterObligationWarning = $laterObligationCount === 1
+            ? 'There is 1 additional HMRC obligation in a later accounting period.'
+            : 'There are ' . $laterObligationCount . ' additional HMRC obligations in later accounting periods.';
+
         return [
             'hmrc_obligations' => [
                 'filter' => $filter,
                 'filters' => $service->filters(),
-                'summary' => $service->getOutstandingSummary($companyId),
-                'timeline' => $service->listObligations($companyId, ['filter' => $filter]),
-                'all_obligations' => $service->listObligations($companyId, ['filter' => 'all']),
+                'summary' => $service->getOutstandingSummary($companyId, $scopedObligations),
+                'timeline' => $scopedTimeline,
+                'all_obligations' => $scopedObligations,
+                'later_obligation_count' => $laterObligationCount,
+                'later_obligation_warning' => $laterObligationWarning,
                 'checklist' => $service->periodChecklist($companyId, $accountingPeriodId),
                 'guidance' => $service->getGuidanceState($companyId),
             ],
         ];
+    }
+
+    private function obligationsThroughSelectedPeriod(array $obligations, string $firstPeriodStart, string $selectedPeriodEnd): array
+    {
+        if ($firstPeriodStart === '' || $selectedPeriodEnd === '') {
+            return [];
+        }
+
+        return array_values(array_filter(
+            $obligations,
+            static fn(array $item): bool => (string)($item['period_start'] ?? '') >= $firstPeriodStart
+                && (string)($item['period_end'] ?? '') <= $selectedPeriodEnd
+        ));
     }
 }

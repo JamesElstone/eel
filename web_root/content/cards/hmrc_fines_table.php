@@ -42,6 +42,8 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
     {
         $companyId = (int)($context['company']['id'] ?? 0);
         $accountingPeriodId = (int)($context['company']['accounting_period_id'] ?? 0);
+        $laterObligationCount = (int)($context['hmrc_obligations']['later_obligation_count'] ?? 0);
+        $laterObligationWarning = HelperFramework::escape((string)($context['hmrc_obligations']['later_obligation_warning'] ?? ''));
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
 
         $form = '<section class="panel-soft">
@@ -67,7 +69,11 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
         $summary = $this->summaryHtml($context, $companySettings);
         $table = $this->configuredTable($context, $companySettings);
 
-        return '<div class="settings-stack">' . $summary . $form . $table->render($context, [
+        $laterWarning = $laterObligationCount > 0
+            ? '<div class="panel-soft warn">' . $laterObligationWarning . '</div>'
+            : '';
+
+        return '<div class="settings-stack">' . $laterWarning . $summary . $form . $table->render($context, [
             'cards[]' => (array)($context['page']['page_cards'] ?? []),
             'hmrc_fines_period_scope' => $this->selectedPeriodScope($context),
         ]) . '</div>';

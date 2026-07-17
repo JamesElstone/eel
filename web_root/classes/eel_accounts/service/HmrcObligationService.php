@@ -602,7 +602,7 @@ final class HmrcObligationService
         ];
     }
 
-    public function getOutstandingSummary(int $companyId): array
+    public function getOutstandingSummary(int $companyId, ?array $obligations = null): array
     {
         $this->ensureSchema();
         if ($companyId <= 0) {
@@ -617,7 +617,7 @@ final class HmrcObligationService
             ];
         }
 
-        $obligations = $this->listObligations($companyId, ['filter' => 'all']);
+        $obligations ??= $this->listObligations($companyId, ['filter' => 'all']);
         $today = $this->today();
         $totalOwed = 0.0;
         $totalOverdue = 0.0;

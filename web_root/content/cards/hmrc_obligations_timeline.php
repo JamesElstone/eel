@@ -18,6 +18,8 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
     public function render(array $context): string
     {
         $items = (array)($context['hmrc_obligations']['timeline'] ?? []);
+        $laterObligationCount = (int)($context['hmrc_obligations']['later_obligation_count'] ?? 0);
+        $laterObligationWarning = HelperFramework::escape((string)($context['hmrc_obligations']['later_obligation_warning'] ?? ''));
         $filters = (array)($context['hmrc_obligations']['filters'] ?? []);
         $selected = (string)($context['hmrc_obligations']['filter'] ?? 'all');
         $companyId = (int)($context['company']['id'] ?? 0);
@@ -39,7 +41,7 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
         </form>';
 
         if ($items === []) {
-            return $filterForm . '<div class="helper">No HMRC obligations match the selected filter.</div>';
+            return ($laterObligationCount > 0 ? '<div class="panel-soft warn">' . $laterObligationWarning . '</div>' : '') . $filterForm . '<div class="helper">No HMRC obligations match the selected filter.</div>';
         }
 
         $rows = '';
@@ -55,7 +57,7 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
             </tr>';
         }
 
-        return $filterForm . '<div class="table-scroll"><table>
+        return ($laterObligationCount > 0 ? '<div class="panel-soft warn">' . $laterObligationWarning . '</div>' : '') . $filterForm . '<div class="table-scroll"><table>
             <thead><tr><th>Period</th><th>Obligation</th><th>Due date</th><th>Amount</th><th>Status</th><th>Action needed</th><th>Record evidence</th></tr></thead>
             <tbody>' . $rows . '</tbody>
         </table></div>';

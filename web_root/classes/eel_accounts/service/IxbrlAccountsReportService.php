@@ -81,6 +81,7 @@ final class IxbrlAccountsReportService
         }
         foreach ([
             'has_material_off_balance_sheet_arrangements',
+            'has_director_advances_credits_or_guarantees',
             'has_financial_commitments_guarantees_or_contingencies',
         ] as $unsupportedPositiveDisclosure) {
             if (!array_key_exists($unsupportedPositiveDisclosure, $disclosures)
@@ -89,13 +90,6 @@ final class IxbrlAccountsReportService
                     'The supported simple-note profile requires explicit No answers for material arrangements, director advances and guarantees, and commitments or contingencies.'
                 );
             }
-        }
-        $derivedDirectorAdvance = !empty($directorLoanDisclosure['has_company_to_director_exposure']);
-        $statedDirectorAdvance = (int)($disclosures['has_director_advances_credits_or_guarantees'] ?? 0) === 1;
-        if ($derivedDirectorAdvance !== $statedDirectorAdvance) {
-            throw new \DomainException(
-                'The director advances disclosure answer does not match the chronological Director Loan Statement.'
-            );
         }
         if (!in_array((string)($disclosures['entity_trading_status'] ?? ''), [
             'trading',

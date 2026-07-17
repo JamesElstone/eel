@@ -13,6 +13,11 @@ final class _ixbrl_generationCard extends CardBaseFramework
 
     public function title(): string { return 'iXBRL Generation'; }
 
+    public function helper(array $context): string
+    {
+        return 'Builds the filing facts, generates the iXBRL export, checks it internally and with Arelle, and enables the download when the export is filing-ready.';
+    }
+
     protected function additionalInvalidationFacts(): array { return ['page.context']; }
 
     public function render(array $context): string
@@ -54,18 +59,14 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     <span class="badge ' . HelperFramework::escape($this->statusClass($displayStatus)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($displayStatus, '_')) . '</span>
                 </div>
                 <div class="summary-grid">
-                    ' . $this->metric('Generated at', (string)($run['generated_at'] ?? 'Not generated')) . '
-                    ' . $this->metric('Output filename', (string)($run['generated_filename'] ?? '')) . '
-                    ' . $this->metric('Generated SHA-256', (string)($run['output_sha256'] ?? '')) . '
-                    ' . $this->metric('Validated SHA-256', (string)($run['external_validated_sha256'] ?? '')) . '
+                    ' . $this->metric('Generated At', (string)($run['generated_at'] ?? 'Not Generated')) . '
                     ' . $this->metric('Facts', (string)(int)($run['fact_count'] ?? 0)) . '
-                    ' . $this->metric('Export type', (string)($run['export_type'] ?? '')) . '
-                    ' . $this->metric('Taxonomy profile', (string)($run['taxonomy_profile'] ?? '')) . '
-                    ' . $this->metric('Basis hash', (string)($run['basis_hash'] ?? '')) . '
-                    ' . $this->metric('Validation', (string)($run['validation_status'] ?? '')) . '
-                    ' . $this->metric('Arelle status', !empty($arelleStatus['installed']) ? 'Installed' : 'Not Installed') . '
-                    ' . $this->metric('Arelle validation', $this->validationLabel((string)($run['external_validation_status'] ?? 'not_run'))) . '
-                    ' . $this->metric('Arelle validated at', (string)($run['external_validated_at'] ?? '')) . '
+                    ' . $this->metric('Export Type', $this->exportTypeLabel((string)($run['export_type'] ?? ''))) . '
+                    ' . $this->metric('Taxonomy Profile', (string)($run['taxonomy_profile'] ?? '')) . '
+                    ' . $this->metric('Validation', $this->validationLabel((string)($run['validation_status'] ?? 'not_run'))) . '
+                    ' . $this->metric('Arelle Status', !empty($arelleStatus['installed']) ? 'Installed' : 'Not Installed') . '
+                    ' . $this->metric('Arelle Validation', $this->validationLabel((string)($run['external_validation_status'] ?? 'not_run'))) . '
+                    ' . $this->metric('Arelle Validated At', (string)($run['external_validated_at'] ?? '')) . '
                 </div>
                 <div class="helper">' . HelperFramework::escape((string)($run['error_message'] ?? '')) . '</div>
                 ' . ($stale
@@ -78,7 +79,6 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 ' . (!$readyForFiling && $fileExists
                     ? '<div class="helper"><span class="badge warning">Review draft only</span> The generated file is withheld from filing download until the current file passes every validation and hash check.</div>'
                     : '') . '
-                <div class="helper">Generated XHTML is an FRS 105 micro-entity accounts iXBRL export for review and validation before filing.</div>
             </section>
             <form method="post" action="?page=ixbrl_builder" data-ajax="true" class="actions-row">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
@@ -135,6 +135,14 @@ final class _ixbrl_generationCard extends CardBaseFramework
         };
     }
 
+    private function exportTypeLabel(string $type): string
+    {
+        return match ($type) {
+            'filing_export' => 'Filing Export',
+            default => $type === '' ? 'Not Generated' : HelperFramework::labelFromKey($type, '_'),
+        };
+    }
+
     private function externalSummary(array $run, array $arelleStatus = []): string
     {
         $freshness = (array)($run['run_freshness'] ?? []);
@@ -153,8 +161,8 @@ final class _ixbrl_generationCard extends CardBaseFramework
             return 'Arelle is installed; this export has not been externally validated yet.';
         }
 
-        if ($status === 'passed') {
-            return 'Arelle external validation passed' . ($warningCount > 0 ? ' with ' . $warningCount . ' warning(s).' : '.');
+        if ($status === 'passed' && $warningCount > 0) {
+            return 'Arelle reported ' . $warningCount . ' warning(s).';
         }
         if ($status === 'failed') {
             return 'Arelle external validation failed with ' . $errorCount . ' error(s).';

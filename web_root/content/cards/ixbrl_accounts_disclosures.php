@@ -36,6 +36,14 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                 'companyId' => ':company.id',
                 'accountingPeriodId' => ':company.accounting_period_id',
             ],
+        ], [
+            'key' => 'director_loan_disclosure',
+            'service' => \eel_accounts\Service\DirectorLoanService::class,
+            'method' => 'fetchDisclosureSummary',
+            'params' => [
+                'companyId' => ':company.id',
+                'accountingPeriodId' => ':company.accounting_period_id',
+            ],
         ]];
     }
 
@@ -66,6 +74,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         $disclosures = (array)($result['disclosures'] ?? []);
         $suggestions = (array)($result['suggested_disclosures'] ?? []);
         $suggestionSources = (array)($result['suggestion_sources'] ?? []);
+        $directorLoanDisclosure = (array)($context['services']['director_loan_disclosure'] ?? []);
         foreach (self::EXPLICIT_SIMPLE_NOTE_FIELDS as $field) {
             unset($suggestions[$field], $suggestionSources[$field]);
         }
@@ -229,10 +238,11 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                         ' . $this->yesNo('going_concern_basis_appropriate', 'Is the going-concern basis appropriate for these accounts?', $display['going_concern_basis_appropriate'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
                     </section>
                     <section class="panel-soft">
-                        <h4 class="card-title">FRS 105 simple-note scope</h4>
-                        <div class="helper">Answer each question explicitly. These answers are not inferred or prefilled from Companies House. Director advances are checked against the chronological Director Loan Statement when facts are built; positive director-loan notes are supported. Positive disclosures for the other unsupported categories still block facts and iXBRL generation.</div>
+                        <h4 class="card-title">FRS 105 Notes</h4>
+                        <div class="helper">Answer the manual questions explicitly. Director advances and credits are calculated from the chronological Director Loan Statement; director guarantees are confirmed separately. Positive disclosures for the other unsupported categories still block facts and iXBRL generation.</div>
                         ' . $this->yesNo('has_material_off_balance_sheet_arrangements', 'Are there any material off-balance-sheet arrangements requiring disclosure?', $display['has_material_off_balance_sheet_arrangements'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
-                        ' . $this->yesNo('has_director_advances_credits_or_guarantees', 'Were there any director advances, credits or guarantees requiring disclosure?', $display['has_director_advances_credits_or_guarantees'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
+                        ' . $this->directorLoanDisclosure($directorLoanDisclosure) . '
+                        ' . $this->yesNo('has_director_advances_credits_or_guarantees', 'Were there any director guarantees requiring disclosure?', $display['has_director_advances_credits_or_guarantees'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
                         ' . $this->yesNo('has_financial_commitments_guarantees_or_contingencies', 'Are there any financial commitments, guarantees or contingencies requiring disclosure?', $display['has_financial_commitments_guarantees_or_contingencies'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
                     </section>
                 </div>
@@ -267,6 +277,27 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                 <input type="hidden" name="disclosure_field" value="' . HelperFramework::escape($name) . '">'
             . $fieldset
             . '</form>';
+    }
+
+    private function directorLoanDisclosure(array $summary): string
+    {
+        if (empty($summary['success'])) {
+            return '<section class="panel-soft"><h4 class="card-title">Director advances and credits requiring disclosure</h4><div class="helper">Unable to calculate the chronological Director Loan Statement.</div></section>';
+        }
+
+        $hasExposure = !empty($summary['has_company_to_director_exposure']);
+        $label = $hasExposure ? 'Yes' : 'No';
+        $class = $hasExposure ? 'success' : 'muted';
+        $detail = $hasExposure
+            ? 'Maximum company-to-director exposure: £' . number_format((float)($summary['disclosures'][0]['maximum_company_to_director_exposure'] ?? 0), 2)
+                . '; advances: £' . number_format((float)($summary['total_advances'] ?? 0), 2)
+                . '; settled: £' . number_format((float)($summary['total_repayments'] ?? 0), 2) . '.'
+            : 'The chronological running balance never became negative for any attributed director.';
+
+        return '<section class="panel-soft">
+            <div class="status-head"><h4 class="card-title">Director advances and credits requiring disclosure</h4><span class="badge ' . $class . '">' . $label . '</span></div>
+            <div class="helper">Automatically calculated from the chronological Director Loan Statement. ' . HelperFramework::escape($detail) . '</div>
+        </section>';
     }
 
     private function tradingStatusAnswers(string $status): array

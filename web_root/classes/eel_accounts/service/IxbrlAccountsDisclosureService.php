@@ -39,7 +39,7 @@ final class IxbrlAccountsDisclosureService
         'micro_entity_eligibility_confirmed' => 'micro-entity eligibility',
         'going_concern_basis_appropriate' => 'going-concern basis',
         'has_material_off_balance_sheet_arrangements' => 'material off-balance-sheet arrangements',
-        'has_director_advances_credits_or_guarantees' => 'director advances, credits or guarantees',
+        'has_director_advances_credits_or_guarantees' => 'director guarantees',
         'has_financial_commitments_guarantees_or_contingencies' => 'financial commitments, guarantees or contingencies',
         'accounts_approval_date' => 'accounts approval date',
         'approving_director_name' => 'approving director',

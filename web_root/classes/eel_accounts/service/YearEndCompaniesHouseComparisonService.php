@@ -201,6 +201,7 @@ final class YearEndCompaniesHouseComparisonService
         return [
             'FixedAssets' => 'fixed_assets',
             'CurrentAssets' => 'current_assets',
+            'PrepaymentsAccruedIncome' => 'prepayments_accrued_income',
             'CreditorsDueWithinOneYear' => 'creditors_within_one_year',
             'CreditorsDueAfterOneYear' => 'creditors_after_more_than_one_year',
             'CreditorsDueAfterMoreThanOneYear' => 'creditors_after_more_than_one_year',
@@ -216,6 +217,7 @@ final class YearEndCompaniesHouseComparisonService
         return [
             'fixed_assets' => 'Fixed assets',
             'current_assets' => 'Current assets',
+            'prepayments_accrued_income' => 'Prepayments and accrued income',
             'creditors_within_one_year' => 'Creditors within one year',
             'creditors_after_more_than_one_year' => 'Creditors after more than one year',
             'net_current_assets_liabilities' => 'Net current assets/liabilities',

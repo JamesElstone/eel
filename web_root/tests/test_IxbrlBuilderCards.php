@@ -318,6 +318,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                         'can_generate' => false,
                         'can_validate' => true,
                         'ready_for_filing' => false,
+                        'arelle_status' => ['installed' => true],
                     ],
                     'latest_run' => [
                         'status' => 'generated',
@@ -334,6 +335,8 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $harness->assertTrue(str_contains($draftHtml, 'Generate Filing Export</button>'));
             $harness->assertTrue(str_contains($draftHtml, 'Generate Filing Export</button>') && str_contains($draftHtml, 'disabled'));
             $harness->assertTrue(str_contains($draftHtml, 'Run External Validation'));
+            $harness->assertTrue(str_contains($draftHtml, 'Arelle status') && str_contains($draftHtml, 'Installed'));
+            $harness->assertTrue(str_contains($draftHtml, 'Arelle validation') && str_contains($draftHtml, 'Failed'));
             $harness->assertTrue(str_contains($draftHtml, 'Review draft only'));
             $harness->assertFalse(str_contains($draftHtml, 'Download Filing-ready File'));
 

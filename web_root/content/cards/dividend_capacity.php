@@ -46,13 +46,15 @@ final class _dividend_capacityCard extends CardBaseFramework
         $companySettings = (array)($company['settings'] ?? []);
 
         return '<div class="settings-stack">
-            ' . $this->summaryCard('Capacity date', (string)($capacity['as_at_date'] ?? ''), 'summary-card-fit') . '
-            ' . $this->reliabilityWarningPanels($reliabilityWarnings, (int)($company['id'] ?? 0), (int)($company['accounting_period_id'] ?? 0)) . '
-            <section class="panel-soft settings-stack">
+            <section class="panel-soft dividend-capacity-overview">
+            <div>' . $this->summaryCard('Capacity date', (string)($capacity['as_at_date'] ?? ''), 'summary-card-fit') . '</div>
+            <div>' . $this->reliabilityWarningPanels($reliabilityWarnings, (int)($company['id'] ?? 0), (int)($company['accounting_period_id'] ?? 0), true) . '</div>
+            <div class="dividend-reserve-overview">
                 <div class="summary-label">Distributable reserves</div>
                 <div class="helper">' . HelperFramework::escape($this->reservesEquation($companySettings, $capacity)) . '</div>
-                <div><span class="badge ' . HelperFramework::escape(!empty($capacity['reserves_reliable']) ? 'success' : 'danger') . '">' . HelperFramework::escape(!empty($capacity['reserves_reliable']) ? 'Reserve basis verified' : 'Reserve basis blocked') . '</span></div>
                 <div class="helper">' . HelperFramework::escape((string)($capacity['reserve_basis_detail'] ?? $capacity['retained_earnings_detail'] ?? '')) . '</div>
+                <div class="pill-row"><span class="badge ' . HelperFramework::escape(!empty($capacity['reserves_reliable']) ? 'success' : 'danger') . '">' . HelperFramework::escape(!empty($capacity['reserves_reliable']) ? 'Reserve basis verified' : 'Reserve basis blocked') . '</span></div>
+            </div>
             </section>
             <div class="summary-grid four">
                 ' . $this->summaryCard('Distributable reserves brought forward', $this->money($companySettings, $capacity['distributable_reserves_brought_forward'] ?? $capacity['retained_earnings_brought_forward'] ?? 0)) . '
@@ -143,13 +145,13 @@ final class _dividend_capacityCard extends CardBaseFramework
         return 'Estimated Corporation Tax ' . $estimate . ' - posted Corporation Tax ' . $posted . ' = ' . $unposted;
     }
 
-    private function reliabilityWarningPanels(array $warnings, int $companyId, int $accountingPeriodId): string
+    private function reliabilityWarningPanels(array $warnings, int $companyId, int $accountingPeriodId, bool $inline = false): string
     {
         if ($warnings === []) {
             return '';
         }
 
-        $html = '<div class="settings-stack">';
+        $html = $inline ? '' : '<div class="settings-stack">';
         foreach ($warnings as $warning) {
             if (!is_array($warning)) {
                 continue;
@@ -163,7 +165,7 @@ final class _dividend_capacityCard extends CardBaseFramework
                     'accounting_period_id' => $accountingPeriodId,
                 ]
             );
-            $html .= '<section class="panel-soft settings-stack">
+            $html .= '<section class="panel-soft settings-stack dividend-capacity-warning">
                 <div><span class="badge warning">Warning</span></div>
                 <div class="summary-label">' . HelperFramework::escape((string)($warning['title'] ?? 'Dividend reliability warning')) . '</div>
                 <div class="helper">' . HelperFramework::escape((string)($warning['detail'] ?? '')) . '</div>
@@ -171,7 +173,7 @@ final class _dividend_capacityCard extends CardBaseFramework
             </section>';
         }
 
-        return $html . '</div>';
+        return $inline ? $html : $html . '</div>';
     }
 
     private function money(array $companySettings, float|int|string|null $value): string

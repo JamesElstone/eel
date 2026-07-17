@@ -39,7 +39,7 @@ final class JournalCutOffReviewService
         }
 
         $basis = $this->currentBasis($companyId, $accountingPeriodId, $acknowledgements);
-        $evaluation = $acknowledgements->evaluate($acknowledgement, $basis);
+        $evaluation = $acknowledgements->evaluate($acknowledgement, $basis, !empty($access['is_locked']));
         $acknowledgement['state'] = (string)($evaluation['state'] ?? 'unverifiable');
         $acknowledgement['current'] = !empty($evaluation['current']);
 

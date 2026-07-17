@@ -16,9 +16,20 @@ require_once PROJECT_ROOT . 'third_party' . DIRECTORY_SEPARATOR . 'arelle' . DIR
         $harness->check(ArelleIxbrlValidator::class, 'reports not configured when config is missing', static function () use ($harness): void {
             $fixture = arelleValidatorFixture();
             $validator = new ArelleIxbrlValidator($fixture['missing_config'], $fixture['root']);
+            $configuration = $validator->configurationStatus();
             $result = $validator->validate($fixture['ixbrl']);
 
+            $harness->assertSame(false, $configuration['installed'] ?? true);
             $harness->assertSame('not_configured', $result['status'] ?? '');
+        });
+
+        $harness->check(ArelleIxbrlValidator::class, 'reports installation before validating an artifact', static function () use ($harness): void {
+            $fixture = arelleValidatorFixture('success');
+            $validator = new ArelleIxbrlValidator($fixture['config'], $fixture['root']);
+            $configuration = $validator->configurationStatus();
+
+            $harness->assertSame(true, $configuration['installed'] ?? false);
+            $harness->assertSame('installed', $configuration['status'] ?? '');
         });
 
         $harness->check(ArelleIxbrlValidator::class, 'passes when command exits successfully', static function () use ($harness): void {

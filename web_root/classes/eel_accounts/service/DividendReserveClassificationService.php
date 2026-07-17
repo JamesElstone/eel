@@ -79,9 +79,10 @@ final class DividendReserveClassificationService
         );
         $sourceHash = $this->sourceHash($companyId, $accountingPeriodId, $effectiveDate, $summary, $rows);
         $snapshot = $this->latestSnapshot($companyId, $accountingPeriodId, $effectiveDate);
+        $isLocked = (new YearEndLockService())->isLocked($companyId, $accountingPeriodId);
         $snapshotCurrent = is_array($snapshot)
             && trim((string)($snapshot['as_at_date'] ?? '')) === $effectiveDate
-            && hash_equals((string)($snapshot['source_hash'] ?? ''), $sourceHash);
+            && ($isLocked || hash_equals((string)($snapshot['source_hash'] ?? ''), $sourceHash));
 
         return [
             'available' => true,

@@ -86,6 +86,34 @@ final class ArelleIxbrlValidator
         return $this->result(true, 'passed', [], $warnings, $logPath, $started);
     }
 
+    /** Check installation/configuration without requiring a generated artifact. */
+    public function configurationStatus(): array
+    {
+        $config = $this->loadConfig();
+        if ($config === null || empty($config['enabled'])) {
+            return [
+                'installed' => false,
+                'status' => 'not_configured',
+                'detail' => 'Arelle is not configured. Run third_party/arelle/bin/install_arelle.bat.',
+            ];
+        }
+
+        $command = trim((string)($config['arelle_cmd'] ?? ''));
+        if ($command === '' || !is_file($command)) {
+            return [
+                'installed' => false,
+                'status' => 'not_configured',
+                'detail' => 'The configured Arelle command was not found.',
+            ];
+        }
+
+        return [
+            'installed' => true,
+            'status' => 'installed',
+            'detail' => 'Arelle is installed and configured.',
+        ];
+    }
+
     private function loadConfig(): ?array
     {
         $path = $this->configPath ?? ($this->rootPath() . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'arelle.config.php');

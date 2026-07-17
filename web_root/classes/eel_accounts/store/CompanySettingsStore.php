@@ -26,7 +26,8 @@ final class CompanySettingsStore
 
     public static function definitions(): array {
         return [
-            'utr' => ['type' => 'int', 'default' => ''],
+            // A UTR is an identifier, not a number; preserve any leading zero.
+            'utr' => ['type' => 'char', 'default' => ''],
             'associated_company_count' => ['type' => 'int', 'default' => '0'],
             'qualifying_activity_ceased_on' => ['type' => 'char', 'default' => ''],
             'default_currency' => ['type' => 'char', 'default' => 'GBP'],

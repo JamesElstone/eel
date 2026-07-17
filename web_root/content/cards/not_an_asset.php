@@ -64,7 +64,7 @@ final class _not_an_assetCard extends CardBaseFramework
         $dataEntry = (array)($review['data_entry'] ?? []);
         $threshold = \eel_accounts\Service\AssetService::normalisePotentialAssetThreshold($data['threshold'] ?? ($settings['potential_asset_threshold'] ?? 250));
         $nominalId = (int)($settings['tools_small_equipment_nominal_id'] ?? 0);
-        $dataEntryPermitted = !empty($dataEntry['permitted']);
+        $dataEntryPermitted = !empty($dataEntry['permitted']) && empty($dataEntry['is_locked']);
 
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return '<div class="helper">Select a company and accounting period before reviewing non-assets.</div>';

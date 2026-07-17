@@ -161,7 +161,7 @@ final class CompanySettingsService
 
             $companyRepository->saveCompanySection($settings);
 
-            $settingsStore->set('utr', $settings['utr'], 'int');
+            $settingsStore->set('utr', $settings['utr'], 'char');
             $settingsStore->set('associated_company_count', $settings['associated_company_count'] ?? 0, 'int');
             if ($hasCessationSetting) {
                 $settingsStore->set('qualifying_activity_ceased_on', $cessationDate, 'char');

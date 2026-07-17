@@ -3077,6 +3077,41 @@
     white-space: pre-wrap;
 }
 
+.dividend-capacity-overview {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.7fr) minmax(16rem, 1.5fr) minmax(18rem, 2fr);
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.dividend-capacity-overview > div,
+.dividend-reserve-overview,
+.dividend-capacity-warning {
+  min-width: 0;
+}
+
+.dividend-reserve-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.dividend-reserve-overview .pill-row {
+  margin-top: auto;
+  justify-content: flex-end;
+}
+
+.control-disabled,
+.control-disabled:disabled {
+  cursor: not-allowed;
+}
+
+@media (max-width: 900px) {
+  .dividend-capacity-overview {
+    grid-template-columns: 1fr;
+  }
+}
+
 @-moz-document url-prefix() {
 /*  :root {
     --project-firefox-page-zoom: 0.9;

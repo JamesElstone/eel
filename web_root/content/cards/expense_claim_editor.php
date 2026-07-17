@@ -507,6 +507,10 @@ final class _expense_claim_editorCard extends CardBaseFramework
             'Link repayments from bank transactions in the month they were paid. The selected claim determines the claimant.'
         );
 
+        if ($candidateLinksReadOnly) {
+            return $paymentsPanel;
+        }
+
         return $paymentsPanel . '
             <div class="panel-soft">
                 <div class="status-head"><h4 class="card-title">Candidate Repayments</h4></div>

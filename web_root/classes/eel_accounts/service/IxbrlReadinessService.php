@@ -217,6 +217,15 @@ final class IxbrlReadinessService
         $latestRun = $validSelection && \InterfaceDB::tableExists('ixbrl_generation_runs')
             ? (new \eel_accounts\Service\IxbrlFactBuilderService())->getLatestRun($companyId, $accountingPeriodId)
             : null;
+        $arelleStatus = (new IxbrlExternalValidationService())->configurationStatus();
+        $this->addCheck(
+            $checks,
+            'arelle_installed',
+            'Arelle installed',
+            !empty($arelleStatus['installed']),
+            [],
+            (string)($arelleStatus['detail'] ?? 'Arelle installation could not be checked.')
+        );
         $factCount = (int)($latestRun['fact_count'] ?? 0);
         $runFreshness = (array)($latestRun['run_freshness'] ?? []);
         $factsCurrent = $factCount > 0 && (string)($runFreshness['state'] ?? '') === 'current';
@@ -331,6 +340,7 @@ final class IxbrlReadinessService
             'closing_balance_metrics' => $balanceMetrics,
             'disclosures' => $disclosures,
             'external_validation' => $externalValidation,
+            'arelle_status' => $arelleStatus,
         ];
     }
 

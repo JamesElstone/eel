@@ -22,6 +22,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $run = (array)($context['ixbrl']['latest_run'] ?? []);
         $readiness = (array)($context['ixbrl']['readiness'] ?? []);
+        $arelleStatus = (array)($readiness['arelle_status'] ?? []);
         $canBuild = !empty($readiness['can_build_facts']);
         $canGenerate = !empty($readiness['can_generate']);
         $canValidateExternal = !empty($readiness['can_validate']);
@@ -62,7 +63,8 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     ' . $this->metric('Taxonomy profile', (string)($run['taxonomy_profile'] ?? '')) . '
                     ' . $this->metric('Basis hash', (string)($run['basis_hash'] ?? '')) . '
                     ' . $this->metric('Validation', (string)($run['validation_status'] ?? '')) . '
-                    ' . $this->metric('Arelle status', (string)($run['external_validation_status'] ?? 'not_configured')) . '
+                    ' . $this->metric('Arelle status', !empty($arelleStatus['installed']) ? 'Installed' : 'Not Installed') . '
+                    ' . $this->metric('Arelle validation', $this->validationLabel((string)($run['external_validation_status'] ?? 'not_run'))) . '
                     ' . $this->metric('Arelle validated at', (string)($run['external_validated_at'] ?? '')) . '
                 </div>
                 <div class="helper">' . HelperFramework::escape((string)($run['error_message'] ?? '')) . '</div>
@@ -71,7 +73,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                         . HelperFramework::escape((string)($runFreshness['detail'] ?? 'The latest facts are stale.'))
                         . '</div>'
                     : '') . '
-                <div class="helper">' . HelperFramework::escape($this->externalSummary($run)) . '</div>
+                <div class="helper">' . HelperFramework::escape($this->externalSummary($run, $arelleStatus)) . '</div>
                 ' . $this->validationDetails($run) . '
                 ' . (!$readyForFiling && $fileExists
                     ? '<div class="helper"><span class="badge warning">Review draft only</span> The generated file is withheld from filing download until the current file passes every validation and hash check.</div>'
@@ -123,7 +125,17 @@ final class _ixbrl_generationCard extends CardBaseFramework
         };
     }
 
-    private function externalSummary(array $run): string
+    private function validationLabel(string $status): string
+    {
+        return match ($status) {
+            'passed' => 'Passed',
+            'failed' => 'Failed',
+            'error' => 'Error',
+            default => 'Not Run',
+        };
+    }
+
+    private function externalSummary(array $run, array $arelleStatus = []): string
     {
         $freshness = (array)($run['run_freshness'] ?? []);
         if ($freshness !== [] && (string)($freshness['state'] ?? '') !== 'current') {
@@ -136,6 +148,10 @@ final class _ixbrl_generationCard extends CardBaseFramework
         $errorCount = is_array($errors) ? count($errors) : 0;
         $warningCount = is_array($warnings) ? count($warnings) : 0;
         $logPath = (string)($run['external_validation_log_path'] ?? '');
+
+        if ($status === 'not_configured' && !empty($arelleStatus['installed'])) {
+            return 'Arelle is installed; this export has not been externally validated yet.';
+        }
 
         if ($status === 'passed') {
             return 'Arelle external validation passed' . ($warningCount > 0 ? ' with ' . $warningCount . ' warning(s).' : '.');

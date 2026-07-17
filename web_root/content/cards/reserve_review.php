@@ -70,7 +70,7 @@ final class _reserve_reviewCard extends CardBaseFramework
                 <td>' . HelperFramework::escape($this->money($companySettings, $row['profit_effect'] ?? 0)) . '</td>
                 <td>
                     <span class="badge ' . HelperFramework::escape($badge['class']) . '">' . HelperFramework::escape($badge['label']) . '</span>
-                    <select class="select" name="treatment[' . $nominalId . ']"' . ($isLocked ? ' disabled' : '') . '>
+                    <select class="select' . ($isLocked ? ' control-disabled' : '') . '" name="treatment[' . $nominalId . ']"' . ($isLocked ? ' disabled aria-disabled="true"' : '') . '>
                         ' . $this->treatmentOptions((array)($review['treatments'] ?? []), $treatment) . '
                     </select>
                     <div class="helper">' . HelperFramework::escape($this->treatmentExplanation($treatment)) . '</div>
@@ -110,6 +110,7 @@ final class _reserve_reviewCard extends CardBaseFramework
             </div>
             ' . ($unknownAmount > 0.0 ? '<section class="panel-soft warn settings-stack"><span class="badge warning">Needs review</span><div class="helper">Classify all Unknown amounts before the reserve review can be marked current.</div></section>' : '') . '
             ' . ($isLocked ? '<div class="helper"><span class="badge warning">Period locked</span> Distributable profit classifications are read only.</div>' : '') . '
+            <section class="panel-soft settings-stack">
             <form method="post" action="?page=profit_loss" data-ajax="true" class="settings-stack">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Dividend">
@@ -125,6 +126,7 @@ final class _reserve_reviewCard extends CardBaseFramework
                 </div>
                 <div class="helper">Changes are recorded automatically. Unknown amounts and unreviewed snapshots are excluded from reviewed reserve totals.</div>
             </form>
+            </section>
         </div>';
     }
 

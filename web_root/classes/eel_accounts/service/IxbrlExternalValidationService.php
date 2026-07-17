@@ -30,6 +30,18 @@ final class IxbrlExternalValidationService
         return $this->validateRun((int)$run['id']);
     }
 
+    public function configurationStatus(): array
+    {
+        $adapterPath = PROJECT_ROOT . 'third_party' . DIRECTORY_SEPARATOR . 'arelle' . DIRECTORY_SEPARATOR . 'php' . DIRECTORY_SEPARATOR . 'ArelleIxbrlValidator.php';
+        if (!is_file($adapterPath)) {
+            return ['installed' => false, 'status' => 'not_configured', 'detail' => 'The Arelle adapter is missing.'];
+        }
+
+        require_once $adapterPath;
+        return (new \ArelleIxbrlValidator($this->validatorConfigPath, $this->validatorRootPath))
+            ->configurationStatus();
+    }
+
     public function validateRun(int $runId): array
     {
         $builder = new \eel_accounts\Service\IxbrlFactBuilderService();
@@ -141,7 +153,14 @@ final class IxbrlExternalValidationService
     public function externalStatusForRun(?array $run): array
     {
         if (!is_array($run) || $run === []) {
-            return ['status' => 'not_configured', 'detail' => 'No generated export exists yet.', 'blocking' => false];
+            $configuration = $this->configurationStatus();
+            return [
+                'status' => !empty($configuration['installed']) ? 'not_run' : 'not_configured',
+                'detail' => !empty($configuration['installed'])
+                    ? 'Arelle is installed; generate an export before running external validation.'
+                    : (string)($configuration['detail'] ?? 'Arelle has not been configured.'),
+                'blocking' => false,
+            ];
         }
         $freshness = (array)($run['run_freshness'] ?? []);
         if ($freshness !== [] && (string)($freshness['state'] ?? '') !== 'current') {
@@ -153,8 +172,8 @@ final class IxbrlExternalValidationService
         }
 
         $status = (string)($run['external_validation_status'] ?? '');
-        if ($status === '') {
-            $status = 'not_configured';
+        if ($status === '' || $status === 'not_configured') {
+            $status = !empty($this->configurationStatus()['installed']) ? 'not_run' : 'not_configured';
         }
         if ($status === 'passed' && !$this->runHashesMatch($run)) {
             $status = 'tampered';
@@ -166,8 +185,9 @@ final class IxbrlExternalValidationService
                 'passed' => 'Latest export passed Arelle external validation.',
                 'failed' => 'Latest export failed Arelle external validation.',
                 'error' => 'Arelle external validation could not be completed.',
+                'not_run' => 'Arelle is installed; this export has not been externally validated yet.',
                 'tampered' => 'The generated export no longer matches the file Arelle validated.',
-                default => 'Arelle is not configured or has not been run for this export.',
+                default => 'Arelle is not configured.',
             },
             'blocking' => in_array($status, ['failed', 'error', 'tampered'], true),
         ];

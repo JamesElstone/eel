@@ -196,25 +196,54 @@ final class YearEndLockService
             return ['success' => false, 'errors' => ['Run the Year End review migration before unlocking periods.']];
         }
 
-        $this->ensureReviewRow($companyId, $accountingPeriodId);
-        $existing = $this->fetchReview($companyId, $accountingPeriodId);
-        $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
+        try {
+            return \InterfaceDB::transaction(function () use (
+                $companyId,
+                $accountingPeriodId,
+                $changedBy,
+                $notes
+            ): array {
+            $this->ensureReviewRow($companyId, $accountingPeriodId);
+            $existing = $this->fetchReviewForUpdate($companyId, $accountingPeriodId);
+            $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
 
-        \InterfaceDB::execute(
-            'UPDATE year_end_reviews
-             SET is_locked = 0, locked_at = NULL, locked_by = NULL, updated_at = :updated_at
-             WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
-            ['updated_at' => $now, 'company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
-        );
+            if (\InterfaceDB::tableExists('hmrc_ct600_submissions')) {
+                (new HmrcCtSubmissionRepository())->assertNoActiveRemoteTransactionsForAccountingPeriod(
+                    $companyId,
+                    $accountingPeriodId
+                );
+            }
 
-        $review = $this->fetchReview($companyId, $accountingPeriodId);
-        $this->writeAuditLog($companyId, $accountingPeriodId, 'unlock', $changedBy, $existing, $review, $notes);
+            \InterfaceDB::execute(
+                'UPDATE year_end_reviews
+                 SET is_locked = 0, locked_at = NULL, locked_by = NULL, updated_at = :updated_at
+                 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+                ['updated_at' => $now, 'company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            );
 
-        return [
-            'success' => true,
-            'review' => $review,
-            'retained_earnings_close' => ['success' => true, 'deleted' => false, 'skipped' => true],
-        ];
+            $invalidated = 0;
+            if (\InterfaceDB::tableExists('hmrc_ct600_submissions')) {
+                $invalidated = (new HmrcCtSubmissionRepository())->invalidateUnsubmittedForAccountingPeriod(
+                    $companyId,
+                    $accountingPeriodId,
+                    'Year End was unlocked; the frozen lock-time source contract is no longer valid.',
+                    $changedBy
+                );
+            }
+
+            $review = $this->fetchReview($companyId, $accountingPeriodId);
+            $this->writeAuditLog($companyId, $accountingPeriodId, 'unlock', $changedBy, $existing, $review, $notes);
+
+            return [
+                'success' => true,
+                'review' => $review,
+                'invalidated_ct600_packages' => $invalidated,
+                'retained_earnings_close' => ['success' => true, 'deleted' => false, 'skipped' => true],
+            ];
+            });
+        } catch (\Throwable $exception) {
+            return ['success' => false, 'errors' => [$exception->getMessage()]];
+        }
     }
 
     public function writeAuditLog(
@@ -288,6 +317,26 @@ final class YearEndLockService
                 'updated_at' => $now,
             ]
         );
+    }
+
+    /** @return array<string, mixed>|null */
+    private function fetchReviewForUpdate(int $companyId, int $accountingPeriodId): ?array
+    {
+        $sql = 'SELECT id, company_id, accounting_period_id,
+                       is_locked, locked_at, locked_by, review_notes,
+                       created_at, updated_at
+                FROM year_end_reviews
+                WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id
+                LIMIT 1';
+        if (\InterfaceDB::driverName() !== 'sqlite') {
+            $sql .= ' FOR UPDATE';
+        }
+        $row = \InterfaceDB::fetchOne($sql, [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+        ]);
+
+        return is_array($row) ? $row : null;
     }
 
     private function actorValue(string $value): string

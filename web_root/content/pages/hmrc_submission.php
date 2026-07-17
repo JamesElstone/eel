@@ -13,7 +13,7 @@ final class _hmrc_submission extends PageContextFramework
 
     public function title(): string { return 'HMRC Submission'; }
 
-    public function subtitle(): string { return 'Validate, audit, and submit Corporation Tax packages with a visible diagnostic log.'; }
+    public function subtitle(): string { return 'Prepare, approve, and track Corporation Tax XML submissions from an immutable locked Year End.'; }
 
     public function cards(): array
     {
@@ -33,37 +33,21 @@ final class _hmrc_submission extends PageContextFramework
         ];
     }
 
-    protected function moduleContext(RequestFramework $request, PageServiceFramework $services, ActionResultFramework $actionResult, array $baseContext): array
-    {
-        $company = (array)($baseContext['company'] ?? []);
-        $companyId = (int)($company['id'] ?? 0);
-        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
-        $service = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService();
-        $service->ensureSchema();
-        $mode = $companyId > 0 ? (new \eel_accounts\Service\hmrcService())->resolveHmrcMode($companyId) : 'TEST';
-        $package = new \eel_accounts\Service\HmrcSubmissionPackageService();
-        $settings = $companyId > 0 ? (new \eel_accounts\Store\CompanySettingsStore($companyId))->all() : [];
-        $ctPeriodService = new \eel_accounts\Service\CorporationTaxPeriodService();
-        $sync = $companyId > 0 && $accountingPeriodId > 0
-            ? $ctPeriodService->syncForAccountingPeriod($companyId, $accountingPeriodId)
-            : ['periods' => []];
-        $ctPeriods = (array)($sync['periods'] ?? []);
-        $selectedCtPeriodId = $ctPeriodService->defaultCtPeriodId($companyId, $accountingPeriodId);
+    protected function moduleContext(
+        RequestFramework $request,
+        PageServiceFramework $services,
+        ActionResultFramework $actionResult,
+        array $baseContext
+    ): array {
+        $querySelection = (int)($actionResult->query()['ct_period_id'] ?? 0);
+        $selectedCtPeriodId = (int)$request->input('ct_period_id', $querySelection);
 
+        // The cards resolve the read model declaratively. Keep this page hook
+        // limited to request-local selector state so a GET cannot mutate tax
+        // periods, submission schema, packages, or HMRC state.
         return [
-            'hmrc_submission' => [
-                'mode' => $mode,
-                'settings' => $settings,
-                'ct_periods' => $ctPeriods,
+            'hmrc_submission_selection' => [
                 'selected_ct_period_id' => $selectedCtPeriodId,
-                'accounts_ixbrl' => $package->locateAccountsIxbrl($companyId, $accountingPeriodId),
-                'computations_ixbrl' => $selectedCtPeriodId > 0
-                    ? $package->locateComputationsIxbrlForCtPeriod($companyId, $selectedCtPeriodId)
-                    : ['ok' => false, 'path' => null, 'filename' => null, 'warnings' => [], 'errors' => ['Select a CT period.']],
-                'latest_submission' => $selectedCtPeriodId > 0
-                    ? $service->getLatestSubmissionForCtPeriod($companyId, $selectedCtPeriodId)
-                    : null,
-                'history' => $service->getSubmissionHistory($companyId, null),
             ],
         ];
     }

@@ -130,8 +130,8 @@ final class _director_loan_stateCard extends CardBaseFramework
                     'accounting_period_id' => $accountingPeriodId,
                 ]) . '
             </section>
-            <section class="settings-stack">
-                <div class="eyebrow">Director attribution</div>
+            <section class="panel-soft settings-stack">
+                <div class="eyebrow">Director Attribution</div>
                 ' . $this->configuredAttributionTable($context)->render($context, [
                     'cards[]' => (array)($context['page']['page_cards'] ?? [$this->key()]),
                     'company_id' => $companyId,
@@ -159,8 +159,9 @@ final class _director_loan_stateCard extends CardBaseFramework
         $nominal = (array)($presentation['liability_nominal'] ?? []);
         $nominalLabel = trim((string)($nominal['code'] ?? '') . ' - ' . (string)($nominal['name'] ?? ''), ' -');
         $schemaReady = !empty($presentation['schema_ready']);
-        $lockedHtml = !empty($presentation['is_locked'])
-            ? '<span class="badge warning">Period locked - reporting choice remains editable</span>'
+        $isLocked = !empty($presentation['is_locked']);
+        $lockedHtml = $isLocked
+            ? '<span class="badge warning">Period locked - reporting choice is read only</span>'
             : '';
         $basisHtml = !empty($presentation['explicit'])
             ? '<span class="badge success">Saved reporting choice</span>'
@@ -185,7 +186,7 @@ final class _director_loan_stateCard extends CardBaseFramework
         return '<section class="panel-soft settings-stack">
             <div class="status-head">
                 <div>
-                    <div class="eyebrow">Statutory repayment presentation</div>
+            <div class="eyebrow">Statutory Repayment Presentation</div>
                     <h3 class="card-title">When is money lent to the company due back?</h3>
                 </div>
                 <div class="pill-row">' . $basisHtml . $lockedHtml . '</div>
@@ -204,17 +205,17 @@ final class _director_loan_stateCard extends CardBaseFramework
                 <div class="segmented-control">
                     <label class="segmented-option">
                         <input type="radio" name="classification" value="' . $withinOneYear . '"'
-                            . ($classification === $withinOneYear ? ' checked' : '') . ' required>
+                            . ($classification === $withinOneYear ? ' checked' : '') . ' required' . ($isLocked ? ' disabled' : '') . '>
                         <span>Due within one year</span>
                     </label>
                     <label class="segmented-option">
                         <input type="radio" name="classification" value="' . $afterMoreThanOneYear . '"'
-                            . ($classification === $afterMoreThanOneYear ? ' checked' : '') . ' required>
+                            . ($classification === $afterMoreThanOneYear ? ' checked' : '') . ' required' . ($isLocked ? ' disabled' : '') . '>
                         <span>Due after more than one year</span>
                     </label>
                 </div>
                 <div>
-                    <button class="button primary" type="submit"' . ($schemaReady ? '' : ' disabled') . '>Save reporting presentation</button>
+                    <button class="button primary" type="submit"' . ($schemaReady && !$isLocked ? '' : ' disabled') . '>Save reporting presentation</button>
                 </div>
             </form>
             ' . $mappingHtml . $schemaHtml . '
@@ -445,6 +446,7 @@ final class _director_loan_stateCard extends CardBaseFramework
                 . '>' . HelperFramework::escape($this->directorLabel($director)) . '</option>';
         }
 
+        $isLocked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
         return '<form method="post" data-ajax="true" class="actions-row">
             ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="YearEnd">
@@ -452,7 +454,7 @@ final class _director_loan_stateCard extends CardBaseFramework
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
             <input type="hidden" name="journal_line_id" value="' . (int)($entry['journal_line_id'] ?? 0) . '">
-            <select class="input" name="director_id" required>' . $options . '</select>
+            <select class="input' . ($isLocked ? ' control-disabled' : '') . '" name="director_id" required' . ($isLocked ? ' disabled aria-disabled="true"' : '') . '>' . $options . '</select>
         </form>';
     }
 

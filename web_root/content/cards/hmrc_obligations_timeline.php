@@ -91,7 +91,7 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
             $options .= '<option value="' . HelperFramework::escape((string)$value) . '"' . ((string)$value === $selected ? ' selected' : '') . '>' . HelperFramework::escape((string)$label) . '</option>';
         }
 
-        return '<form method="post" action="?page=hmrc_obligations" data-ajax="true" class="toolbar">'
+        return '<form method="post" action="?page=HMRC" data-ajax="true" class="toolbar">'
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="HmrcObligation">'
             . '<input type="hidden" name="company_id" value="' . $companyId . '">'
@@ -112,7 +112,7 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
             <input type="hidden" name="hmrc_filter" value="' . HelperFramework::escape($filter) . '">';
 
         if ($type === 'ct600_filing') {
-            return '<form method="post" action="?page=hmrc_obligations" data-ajax="true" class="mini-form">
+            return '<form method="post" action="?page=HMRC" data-ajax="true" class="mini-form">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 ' . $common . '
                 <input type="hidden" name="intent" value="mark_filed">
@@ -138,7 +138,7 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
             $options .= '<option value="' . HelperFramework::escape($value) . '">' . HelperFramework::escape($label) . '</option>';
         }
 
-        return $linksHtml . '<form method="post" action="?page=hmrc_obligations" data-ajax="true" class="mini-form">
+        return $linksHtml . '<form method="post" action="?page=HMRC" data-ajax="true" class="mini-form">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             ' . $common . '
             <input type="hidden" name="intent" value="link_payment_evidence">
@@ -158,7 +158,7 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
             $label = HelperFramework::labelFromKey((string)($link['source_type'] ?? ''), '_') . ' | '
                 . (string)($link['evidence_date'] ?? '') . ' | ' . (string)($link['description'] ?? '') . ' | '
                 . number_format((float)($link['allocated_amount'] ?? 0), 2);
-            $html .= '<form method="post" action="?page=hmrc_obligations" data-ajax="true" class="actions-row">'
+            $html .= '<form method="post" action="?page=HMRC" data-ajax="true" class="actions-row">'
                 . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . $common
                 . '<input type="hidden" name="intent" value="unlink_payment_evidence">'
                 . '<input type="hidden" name="evidence_link_id" value="' . (int)($link['id'] ?? 0) . '">'

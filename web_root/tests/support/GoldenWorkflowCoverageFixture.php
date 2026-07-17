@@ -134,7 +134,7 @@ final class GoldenWorkflowCoverageFixture
                 ],
             ],
             'hmrc_obligations_and_submission' => [
-                'pages' => ['hmrc_obligations', 'hmrc_submission'],
+                'pages' => ['HMRC'],
                 'evidence' => [
                     self::evidence('open, overdue and paid obligations', 'SELECT COUNT(*) FROM hmrc_obligations WHERE company_id IN (9100, 9300, 9400)', 4),
                     self::evidence('obligation evidence', 'SELECT COUNT(*) FROM hmrc_obligation_evidence_links WHERE hmrc_obligation_id = 9580', 1),

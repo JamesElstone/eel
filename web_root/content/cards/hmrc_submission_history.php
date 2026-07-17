@@ -96,7 +96,7 @@ final class _hmrc_submission_historyCard extends CardBaseFramework
             if (!$present) {
                 continue;
             }
-            $forms .= '<form method="post" action="?page=hmrc_submission" class="mini-form">'
+            $forms .= '<form method="post" action="?page=HMRC" class="mini-form">'
                 . '<input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrf) . '">'
                 . '<input type="hidden" name="card_action" value="HmrcSubmission">'
                 . '<input type="hidden" name="intent" value="download_ct600_artifact">'

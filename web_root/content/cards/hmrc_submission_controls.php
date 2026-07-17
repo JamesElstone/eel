@@ -49,7 +49,7 @@ final class _hmrc_submission_controlsCard extends CardBaseFramework
             <section class="panel-soft">
                 <h3 class="card-title">1. Select the Corporation Tax return</h3>
                 <form method="get" action="" class="form-grid">
-                    <input type="hidden" name="page" value="hmrc_submission">
+                    <input type="hidden" name="page" value="HMRC">
                     ' . $this->ctPeriodSelect($periods, $selectedCtPeriodId) . '
                     <div class="actions-row"><button class="button" type="submit">View selected return</button></div>
                 </form>
@@ -57,7 +57,7 @@ final class _hmrc_submission_controlsCard extends CardBaseFramework
             <section class="panel-soft">
                 <h3 class="card-title">2. Freeze and validate the return package</h3>
                 <div class="helper">Preparation freezes the CT600 body, accounts iXBRL, period-specific computations iXBRL, source hashes, and IRmark into one auditable package.</div>
-                <form method="post" action="?page=hmrc_submission" data-ajax="true" class="form-grid">
+                <form method="post" action="?page=HMRC" data-ajax="true" class="form-grid">
                     ' . $this->hiddenAction($csrf, 'prepare_ct600', $selectedCtPeriodId, 0) . '
                     <div class="form-row"><label for="hmrc_prepare_declarant_name">Declarant name</label><input class="input" id="hmrc_prepare_declarant_name" name="declarant_name" maxlength="150" required' . $this->disabled($canPrepare) . '></div>
                     <div class="form-row"><label for="hmrc_prepare_declarant_status">Declarant status</label><select class="select" id="hmrc_prepare_declarant_status" name="declarant_status" required' . $this->disabled($canPrepare) . '><option value="proper_officer">Director / proper officer</option><option value="authorised_person">Duly authorised person</option></select></div>
@@ -66,7 +66,7 @@ final class _hmrc_submission_controlsCard extends CardBaseFramework
             </section>
             <section class="panel-soft">
                 <h3 class="card-title">3. Approve the exact frozen package</h3>
-                <form method="post" action="?page=hmrc_submission" data-ajax="true" class="form-grid">
+                <form method="post" action="?page=HMRC" data-ajax="true" class="form-grid">
                     ' . $this->hiddenAction($csrf, 'approve_ct600', $selectedCtPeriodId, $submissionId) . '
                     <input type="hidden" name="declarant_name" value="' . HelperFramework::escape($declarantName) . '">
                     <input type="hidden" name="declarant_status" value="' . HelperFramework::escape($declarantStatus) . '">
@@ -83,7 +83,7 @@ final class _hmrc_submission_controlsCard extends CardBaseFramework
                     <span class="badge ' . $this->environmentBadge($environment) . '">' . HelperFramework::escape($environment) . '</span>
                 </div>
                 <div class="helper">' . HelperFramework::escape((string)($data['environment_notice'] ?? '')) . '</div>
-                <form method="post" action="?page=hmrc_submission" data-ajax="true" class="form-grid">
+                <form method="post" action="?page=HMRC" data-ajax="true" class="form-grid">
                     ' . $this->hiddenAction($csrf, 'submit_ct600', $selectedCtPeriodId, $submissionId) . '
                     ' . $this->confirmation('hmrc_submission_authority', 'authority_confirmed', 'I am authorised to send this Company Tax Return for the company.', $canSubmit) . '
                     ' . ($environment === 'LIVE'
@@ -148,7 +148,7 @@ final class _hmrc_submission_controlsCard extends CardBaseFramework
         string $buttonClass,
         bool $enabled
     ): string {
-        return '<form method="post" action="?page=hmrc_submission" data-ajax="true" class="actions-row">'
+        return '<form method="post" action="?page=HMRC" data-ajax="true" class="actions-row">'
             . $this->hiddenAction($csrf, $intent, $ctPeriodId, $submissionId)
             . '<button class="button ' . HelperFramework::escape($buttonClass) . '" type="submit"' . $this->disabled($enabled) . '>' . HelperFramework::escape($label) . '</button></form>';
     }

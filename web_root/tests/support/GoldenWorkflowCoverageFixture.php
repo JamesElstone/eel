@@ -143,7 +143,7 @@ final class GoldenWorkflowCoverageFixture
                 ],
             ],
             'companies_house_and_ixbrl' => [
-                'pages' => ['companies_house', 'ixbrl_builder'],
+                'pages' => ['companies_house', 'disclosures'],
                 'evidence' => [
                     self::evidence('stored Companies House filing', 'SELECT COUNT(*) FROM companies_house_documents WHERE company_id = 9400', 1),
                     self::evidence('stored filing facts', 'SELECT COUNT(*) FROM companies_house_document_facts WHERE document_fk = 9590', 1),

@@ -7,11 +7,11 @@
  */
 declare(strict_types=1);
 
-final class _ixbrl_builder extends PageContextFramework
+final class _disclosures extends PageContextFramework
 {
     public function id(): string
     {
-        return 'ixbrl_builder';
+        return 'disclosures';
     }
 
     public function title(): string

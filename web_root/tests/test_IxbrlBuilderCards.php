@@ -11,8 +11,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 
-$harness->run(_ixbrl_builder::class, static function (GeneratedServiceClassTestHarness $harness, _ixbrl_builder $page): void {
-    $harness->check(_ixbrl_builder::class, 'keeps the Year End trial balance acknowledgement off the iXBRL page', static function () use ($harness, $page): void {
+$harness->run(_disclosures::class, static function (GeneratedServiceClassTestHarness $harness, _disclosures $page): void {
+    $harness->check(_disclosures::class, 'keeps the Year End trial balance acknowledgement off the disclosures page', static function () use ($harness, $page): void {
         $harness->assertSame([
             'ixbrl_readiness',
             'ixbrl_accounts_disclosures',

@@ -48,7 +48,7 @@ final class _ixbrl_facts_previewCard extends CardBaseFramework
                 <div class="status-head"><h3 class="card-title">Latest fact snapshot</h3><span class="badge ' . HelperFramework::escape($this->freshnessClass($freshnessState)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($freshnessState, '_')) . '</span></div>
                 <div class="helper">' . HelperFramework::escape((string)($freshness['detail'] ?? 'Build facts to create a traceable snapshot of the current accounts report.')) . '</div>
             </section>
-            <form method="post" action="?page=ixbrl_builder" data-ajax="true" class="actions-row">
+            <form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Ixbrl">
                 <input type="hidden" name="intent" value="build_ixbrl_facts">

@@ -146,7 +146,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         }
 
         return '<div class="settings-stack">
-            <form method="post" action="?page=ixbrl_builder" data-ajax="true" data-ixbrl-trading-form="true">
+            <form method="post" action="?page=disclosures" data-ajax="true" data-ixbrl-trading-form="true">
             <input type="hidden" name="card_action" value="Ixbrl">
             ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="intent" value="save_ixbrl_core_details">
@@ -268,7 +268,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
             return $fieldset;
         }
 
-        return '<form method="post" action="?page=ixbrl_builder" data-ajax="true">'
+        return '<form method="post" action="?page=disclosures" data-ajax="true">'
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="Ixbrl">
                 <input type="hidden" name="intent" value="save_ixbrl_disclosure_field">

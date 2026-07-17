@@ -42,7 +42,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             && trim((string)($run['generated_path'] ?? '')) !== ''
             && is_file((string)$run['generated_path']);
         $download = $readyForFiling && $fileExists
-            ? '<form method="post" action="?page=ixbrl_builder" class="actions-row">'
+            ? '<form method="post" action="?page=disclosures" class="actions-row">'
                 . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
                 . '<input type="hidden" name="card_action" value="Ixbrl">'
                 . '<input type="hidden" name="intent" value="download_ixbrl_filing">'
@@ -80,7 +80,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     ? '<div class="helper"><span class="badge warning">Review draft only</span> The generated file is withheld from filing download until the current file passes every validation and hash check.</div>'
                     : '') . '
             </section>
-            <form method="post" action="?page=ixbrl_builder" data-ajax="true" class="actions-row">
+            <form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Ixbrl">
                 <input type="hidden" name="intent" value="build_ixbrl_facts">
@@ -88,7 +88,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <button class="button" type="submit"' . ($canBuild ? '' : ' disabled') . '>Build / Refresh Facts</button>
             </form>
-            <form method="post" action="?page=ixbrl_builder" data-ajax="true" class="actions-row">
+            <form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Ixbrl">
                 <input type="hidden" name="intent" value="generate_ixbrl_preview">
@@ -97,7 +97,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 <button class="button primary" type="submit"' . ($canGenerate ? '' : ' disabled') . '>Generate Filing Export</button>
             </form>
             ' . $download . '
-            <form method="post" action="?page=ixbrl_builder" data-ajax="true" class="actions-row">
+            <form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Ixbrl">
                 <input type="hidden" name="intent" value="validate_ixbrl_external">

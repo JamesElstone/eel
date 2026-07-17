@@ -164,7 +164,8 @@ final class IxbrlAccountsDisclosureService
         int $companyId,
         int $accountingPeriodId,
         array $input,
-        string $changedBy = 'web_app'
+        string $changedBy = 'web_app',
+        bool $allowPartial = false
     ): array {
         if (!\InterfaceDB::tableExists(self::TABLE)) {
             return $this->error('The iXBRL accounts disclosures migration has not been applied.');
@@ -201,7 +202,7 @@ final class IxbrlAccountsDisclosureService
         $tradingEvidence = $this->calculateTradingEvidence($companyId, $period, $dormancy);
         [$tradingStatus, $tradingErrors] = $this->deriveTradingStatus($input, $tradingEvidence);
         $input['entity_trading_status'] = $tradingStatus;
-        [$values, $errors] = $this->validate($input, $period);
+        [$values, $errors] = $this->validate($input, $period, $allowPartial);
         $errors = array_values(array_unique(array_merge($tradingErrors, $errors)));
         if ($errors !== []) {
             return ['success' => false, 'changed' => false, 'errors' => $errors];
@@ -313,6 +314,73 @@ final class IxbrlAccountsDisclosureService
             'changed' => !empty($result['changed']),
             'revision' => (int)($result['revision'] ?? 0),
         ];
+    }
+
+    /** Save only the core details panel, preserving independently saved statements. */
+    public function saveCoreDetails(int $companyId, int $accountingPeriodId, array $input, string $changedBy = 'web_app'): array
+    {
+        $current = $this->get($companyId, $accountingPeriodId) ?? $this->emptyDisclosures();
+        $merged = array_replace($current, $input);
+        $merged['is_still_trading'] = $input['is_still_trading'] ?? null;
+        $merged['has_ever_traded'] = $input['has_ever_traded'] ?? null;
+
+        return $this->save($companyId, $accountingPeriodId, $merged, $changedBy, true);
+    }
+
+    /** Save one independently editable yes/no disclosure without requiring the core panel. */
+    public function saveField(int $companyId, int $accountingPeriodId, string $field, mixed $value, string $changedBy = 'web_app'): array
+    {
+        $allowed = [
+            'micro_entity_eligibility_confirmed',
+            'going_concern_basis_appropriate',
+            'has_material_off_balance_sheet_arrangements',
+            'has_director_advances_credits_or_guarantees',
+            'has_financial_commitments_guarantees_or_contingencies',
+            'audit_exempt_section_477',
+            'directors_acknowledge_responsibilities',
+            'members_have_not_required_audit',
+        ];
+        if (!in_array($field, $allowed, true)) {
+            return $this->error('That disclosure cannot be edited independently.');
+        }
+        try {
+            (new YearEndLockService())->assertLocked($companyId, $accountingPeriodId, 'change the accounts disclosure');
+        } catch (\Throwable $exception) {
+            return $this->error($exception->getMessage());
+        }
+        $normalised = $this->booleanValue($value);
+        if ($normalised === null) {
+            return $this->error('Choose Yes or No before saving this disclosure.');
+        }
+        if (!\InterfaceDB::tableExists(self::TABLE)) {
+            return $this->error('The iXBRL accounts disclosures migration has not been applied.');
+        }
+
+        $existing = $this->get($companyId, $accountingPeriodId);
+        $oldValues = $existing !== null ? $this->disclosureValues($existing) : null;
+        $newValues = $oldValues ?? $this->emptyDisclosures();
+        $newValues[$field] = $normalised;
+        $changedBy = $this->actor($changedBy);
+        try {
+            \InterfaceDB::transaction(function () use ($companyId, $accountingPeriodId, $field, $normalised, $changedBy, $existing, $oldValues, $newValues): void {
+                if ($existing !== null) {
+                    \InterfaceDB::prepareExecute(
+                        'UPDATE ' . self::TABLE . ' SET ' . $field . ' = :value, revision = revision + 1, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id',
+                        ['value' => $normalised, 'updated_by' => $changedBy, 'id' => (int)$existing['id']]
+                    );
+                } else {
+                    \InterfaceDB::prepareExecute(
+                        'INSERT INTO ' . self::TABLE . ' (company_id, accounting_period_id, accounting_standard, ' . $field . ', revision, created_by, updated_by, created_at, updated_at) VALUES (:company_id, :accounting_period_id, :standard, :value, 1, :created_by, :updated_by, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)',
+                        ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'standard' => self::ACCOUNTING_STANDARD_FRS_105, 'value' => $normalised, 'created_by' => $changedBy, 'updated_by' => $changedBy]
+                    );
+                }
+                $this->audit($companyId, $accountingPeriodId, $oldValues, $newValues, $changedBy);
+            });
+        } catch (\Throwable $exception) {
+            return $this->error($exception->getMessage());
+        }
+
+        return $this->fetch($companyId, $accountingPeriodId) + ['changed' => true];
     }
 
     /**
@@ -615,7 +683,7 @@ final class IxbrlAccountsDisclosureService
         }
     }
 
-    private function validate(array $input, array $period): array
+    private function validate(array $input, array $period, bool $allowPartial = false): array
     {
         $errors = [];
         $standard = trim((string)($input['accounting_standard'] ?? self::ACCOUNTING_STANDARD_FRS_105));
@@ -630,16 +698,16 @@ final class IxbrlAccountsDisclosureService
         } elseif (is_string($employeesRaw) && preg_match('/^\d+$/', trim($employeesRaw)) === 1) {
             $employees = (int)trim($employeesRaw);
         }
-        if ($employees === null || $employees < 0 || $employees > 1000000) {
+        if (!$allowPartial && ($employees === null || $employees < 0 || $employees > 1000000)) {
             $errors[] = 'Enter the average number of employees as a whole number from 0 to 1,000,000.';
         }
 
         $approvalDate = trim((string)($input['accounts_approval_date'] ?? ''));
         $date = $approvalDate !== '' ? \DateTimeImmutable::createFromFormat('!Y-m-d', $approvalDate) : false;
         $dateErrors = \DateTimeImmutable::getLastErrors();
-        if ($date === false
+        if (!$allowPartial && ($date === false
             || ($dateErrors !== false && ((int)$dateErrors['warning_count'] > 0 || (int)$dateErrors['error_count'] > 0))
-            || $date->format('Y-m-d') !== $approvalDate) {
+            || $date->format('Y-m-d') !== $approvalDate)) {
             $errors[] = 'Enter a valid accounts approval date.';
         } else {
             $periodEnd = (string)($period['period_end'] ?? '');
@@ -653,7 +721,7 @@ final class IxbrlAccountsDisclosureService
         }
 
         $directorName = trim((string)($input['approving_director_name'] ?? ''));
-        if ($directorName === '') {
+        if (!$allowPartial && $directorName === '') {
             $errors[] = 'Enter the name of the director who approved the accounts.';
         } elseif (mb_strlen($directorName) > 255) {
             $errors[] = 'The approving director name must be 255 characters or fewer.';
@@ -674,7 +742,7 @@ final class IxbrlAccountsDisclosureService
         $booleans = [];
         foreach ($booleanFields as $field) {
             $value = $this->booleanValue($input[$field] ?? null);
-            if ($value === null) {
+            if ($value === null && !$allowPartial) {
                 $errors[] = 'Confirm ' . (self::FIELD_LABELS[$field] ?? $field) . ' with Yes or No.';
             }
             $booleans[$field] = $value;

@@ -35,6 +35,44 @@ final class IxbrlAction implements ActionInterfaceFramework
                     (array)($result['warnings'] ?? [])
                 );
             }
+            if ($intent === 'save_ixbrl_core_details') {
+                $result = (new \eel_accounts\Service\IxbrlAccountsDisclosureService())->saveCoreDetails(
+                    $companyId,
+                    $accountingPeriodId,
+                    [
+                        'accounting_standard' => $request->input('accounting_standard', 'FRS_105'),
+                        'average_number_employees' => $request->input('average_number_employees', null),
+                        'is_still_trading' => $request->input('is_still_trading', null),
+                        'has_ever_traded' => $request->input('has_ever_traded', null),
+                        'accounts_approval_date' => $request->input('accounts_approval_date', null),
+                        'approving_director_name' => $request->input('approving_director_name', null),
+                    ],
+                    $this->actor($request)
+                );
+                return $this->result(
+                    !empty($result['success']),
+                    (array)($result['errors'] ?? []),
+                    $changedFacts,
+                    !empty($result['success']) ? ['Core accounts disclosure details saved.'] : [],
+                    []
+                );
+            }
+            if ($intent === 'save_ixbrl_disclosure_field') {
+                $result = (new \eel_accounts\Service\IxbrlAccountsDisclosureService())->saveField(
+                    $companyId,
+                    $accountingPeriodId,
+                    trim((string)$request->input('disclosure_field', '')),
+                    $request->input(trim((string)$request->input('disclosure_field', '')), null),
+                    $this->actor($request)
+                );
+                return $this->result(
+                    !empty($result['success']),
+                    (array)($result['errors'] ?? []),
+                    $changedFacts,
+                    !empty($result['success']) ? ['Disclosure updated. Rebuild the iXBRL facts before generating or filing.'] : [],
+                    []
+                );
+            }
 
             $readiness = (new \eel_accounts\Service\IxbrlReadinessService())->getReadiness($companyId, $accountingPeriodId);
             $result = match ($intent) {

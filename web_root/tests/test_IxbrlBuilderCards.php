@@ -151,6 +151,7 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         ]);
 
         $harness->assertTrue(str_contains($html, 'Companies House iXBRL filing'));
+        $harness->assertTrue(str_contains($html, 'Review the suggested core details'));
         $harness->assertSame(
             'These values are filing facts, not assumptions. Saving them after Year End is locked is allowed, audited, and makes any earlier iXBRL run stale.',
             $card->helper([])
@@ -174,11 +175,15 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertFalse(str_contains($html, 'name="prepared_under_small_companies_regime"'));
         $harness->assertTrue(str_contains($html, 'value="James Elstone"'));
         $harness->assertTrue(str_contains($html, 'Required'));
-        $harness->assertTrue(str_contains($html, 'Save Accounts Disclosures'));
-        $saveButtonPosition = strpos($html, 'Save Accounts Disclosures');
+        $harness->assertTrue(str_contains($html, 'Save core details'));
+        $harness->assertTrue(str_contains($html, 'data-state-fields="ixbrl_average_number_employees,ixbrl_accounts_approval_date,ixbrl_approving_director_name"'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="save_ixbrl_core_details"'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="save_ixbrl_disclosure_field"'));
+        $harness->assertTrue(str_contains($html, 'data-submit-on-change="true"'));
+        $saveButtonPosition = strpos($html, 'Save core details');
         $corePanelEnd = strpos($html, "</section>\n                <div class=\"settings-stack\">");
         $harness->assertTrue($saveButtonPosition !== false && $corePanelEnd !== false && $saveButtonPosition < $corePanelEnd);
-        $harness->assertTrue(str_contains($html, "<section class=\"panel-soft\">\n                    <div class=\"form-grid\">"));
+        $harness->assertTrue(str_contains($html, "<section class=\"panel-soft\">\n                    <div class=\"form-grid\""));
         $harness->assertTrue(str_contains($html, 'FRS 105 simple-note scope'));
         $harness->assertTrue(str_contains($html, 'not inferred or prefilled from Companies House'));
         foreach ([

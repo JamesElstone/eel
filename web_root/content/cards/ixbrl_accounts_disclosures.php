@@ -82,6 +82,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         $yearEndLocked = !empty($result['year_end_locked']);
         $controlDisabled = !$yearEndLocked;
         $disabledAttribute = $controlDisabled ? ' disabled aria-disabled="true"' : '';
+        $coreButtonDisabled = ' disabled' . ($controlDisabled ? ' aria-disabled="true"' : '');
         $missing = (array)($result['missing_labels'] ?? []);
         $periodEnd = (string)(($result['accounting_period'] ?? [])['period_end'] ?? '');
         $tradingEvidence = (array)($result['trading_status_evidence'] ?? []);
@@ -136,6 +137,13 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         }
 
         return '<div class="settings-stack">
+            <form method="post" action="?page=ixbrl_builder" data-ajax="true" data-ixbrl-trading-form="true">
+            <input type="hidden" name="card_action" value="Ixbrl">
+            ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
+            <input type="hidden" name="intent" value="save_ixbrl_core_details">
+            <input type="hidden" name="company_id" value="' . $companyId . '">
+            <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+            <input type="hidden" name="accounting_standard" value="FRS_105">
             <section class="panel-soft">
                 <div class="status-head">
                     <h3 class="card-title">Period-specific filing statements</h3>
@@ -146,31 +154,22 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                     ? '<div class="helper">Still required: ' . HelperFramework::escape(implode(', ', $missing)) . '.</div>'
                     : '<div class="helper">Last updated ' . HelperFramework::escape((string)($disclosures['updated_at'] ?? '')) . ' by ' . HelperFramework::escape((string)($disclosures['updated_by'] ?? '')) . '.</div>') . '
                 ' . $profileErrors . '
-            </section>
             ' . (!$yearEndLocked
                 ? '<div class="standout helper">Complete and lock Year End before confirming the accounts disclosures.</div>'
                 : '') . '
-            <form method="post" action="?page=ixbrl_builder" data-ajax="true" data-ixbrl-trading-form="true">
-                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-                <input type="hidden" name="card_action" value="Ixbrl">
-                <input type="hidden" name="intent" value="save_ixbrl_disclosures">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <input type="hidden" name="accounting_standard" value="FRS_105">
-                <section class="panel-soft">
-                    <div class="form-grid">
+                    <div class="form-grid" data-state-fields="ixbrl_average_number_employees,ixbrl_accounts_approval_date,ixbrl_approving_director_name" data-state-target="save_ixbrl_core_details">
                     <div class="form-row">
                         <label>Accounting standard</label>
                         <input class="input" value="FRS 105" readonly' . $disabledAttribute . '>
                     </div>
                     <div class="form-row">
                         <label for="ixbrl_average_number_employees">Average number of employees</label>
-                        <input class="input" id="ixbrl_average_number_employees" name="average_number_employees" type="number" min="0" step="1" required value="' . HelperFramework::escape($this->nullableValue($display['average_number_employees'] ?? null)) . '"' . $disabledAttribute . '>
+                        <input class="input" id="ixbrl_average_number_employees" name="average_number_employees" type="number" min="0" step="1" required value="' . HelperFramework::escape($this->nullableValue($display['average_number_employees'] ?? null)) . '" data-state-default="' . HelperFramework::escape($this->nullableValue($display['average_number_employees'] ?? null)) . '"' . $disabledAttribute . '>
                     </div>
                     <div class="form-row">
                         <label for="ixbrl_accounts_approval_date">Accounts approval date</label>
                         <div class="actions-row actions-row-nowrap">
-                            <input class="input" id="ixbrl_accounts_approval_date" name="accounts_approval_date" type="date" required value="' . HelperFramework::escape((string)($display['accounts_approval_date'] ?? '')) . '"' . $disabledAttribute . '>
+                            <input class="input" id="ixbrl_accounts_approval_date" name="accounts_approval_date" type="date" required value="' . HelperFramework::escape((string)($display['accounts_approval_date'] ?? '')) . '" data-state-default="' . HelperFramework::escape((string)($display['accounts_approval_date'] ?? '')) . '"' . $disabledAttribute . '>
                             <button class="button primary" type="button" data-set-today-for="ixbrl_accounts_approval_date"' . $disabledAttribute . '>Today</button>
                         </div>
                     </div>
@@ -195,13 +194,14 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                     </div>
                     <div class="form-row">
                         <label for="ixbrl_approving_director_name">Approving director</label>
-                        <select class="select" id="ixbrl_approving_director_name" name="approving_director_name" required' . $disabledAttribute . '>
+                        <select class="select" id="ixbrl_approving_director_name" name="approving_director_name" required data-state-default="' . HelperFramework::escape((string)($display['approving_director_name'] ?? '')) . '"' . $disabledAttribute . '>
                             ' . $directorOptions . '
                         </select>
                     </div>
                     </div>
-                    <div class="actions-row"><button class="button primary" type="submit"' . $disabledAttribute . '>Save Accounts Disclosures</button></div>
+                    <div class="actions-row"><button class="button primary" id="save_ixbrl_core_details" type="submit"' . $coreButtonDisabled . '>Save core details</button></div>
                 </section>
+            </form>
                 <div class="settings-stack">
                     <section class="panel-soft">
                         <div class="status-head">
@@ -218,41 +218,55 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                         <div class="helper">Calculated from the accounting-period turnover, balance-sheet total, and average employees; all three FRS 105 tests are required. This result is read-only.</div>
                         <div class="helper">' . HelperFramework::escape($smallCompaniesDetail) . '</div>
                         ' . $thresholdMeta . '
-                        ' . $this->yesNo('audit_exempt_section_477', 'Is the company claiming audit exemption under section 477 of the Companies Act 2006?', $display['audit_exempt_section_477'] ?? null, $controlDisabled) . '
-                        ' . $this->yesNo('directors_acknowledge_responsibilities', 'Do the directors acknowledge their Companies Act responsibilities for the records and accounts?', $display['directors_acknowledge_responsibilities'] ?? null, $controlDisabled) . '
-                        ' . $this->yesNo('members_have_not_required_audit', 'Have the members not required an audit under section 476?', $display['members_have_not_required_audit'] ?? null, $controlDisabled) . '
+                        ' . $this->yesNo('audit_exempt_section_477', 'Is the company claiming audit exemption under section 477 of the Companies Act 2006?', $display['audit_exempt_section_477'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
+                        ' . $this->yesNo('directors_acknowledge_responsibilities', 'Do the directors acknowledge their Companies Act responsibilities for the records and accounts?', $display['directors_acknowledge_responsibilities'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
+                        ' . $this->yesNo('members_have_not_required_audit', 'Do the members confirm that no audit is required under section 476?', $display['members_have_not_required_audit'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
                     </section>
                     <section class="panel-soft">
                         <h4 class="card-title">Eligibility and accounting basis</h4>
                         <div class="helper">Confirm both answers directly; they are not inferred or prefilled from Companies House. The current profile requires Yes. A No answer is saved and audited, but blocks the facts build because that accounts profile is not yet supported.</div>
-                        ' . $this->yesNo('micro_entity_eligibility_confirmed', 'Is the company eligible to prepare these accounts as a micro-entity?', $display['micro_entity_eligibility_confirmed'] ?? null, $controlDisabled) . '
-                        ' . $this->yesNo('going_concern_basis_appropriate', 'Is the going-concern basis appropriate for these accounts?', $display['going_concern_basis_appropriate'] ?? null, $controlDisabled) . '
+                        ' . $this->yesNo('micro_entity_eligibility_confirmed', 'Is the company eligible to prepare these accounts as a micro-entity?', $display['micro_entity_eligibility_confirmed'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
+                        ' . $this->yesNo('going_concern_basis_appropriate', 'Is the going-concern basis appropriate for these accounts?', $display['going_concern_basis_appropriate'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
                     </section>
                     <section class="panel-soft">
                         <h4 class="card-title">FRS 105 simple-note scope</h4>
-                        <div class="helper">Answer each question explicitly. These answers are not inferred or prefilled from Companies House. No is supported by the current simple-note profile. Yes is saved, but blocks the facts build until the required note detail and taxonomy tagging are supported.</div>
-                        ' . $this->yesNo('has_material_off_balance_sheet_arrangements', 'Are there any material off-balance-sheet arrangements requiring disclosure?', $display['has_material_off_balance_sheet_arrangements'] ?? null, $controlDisabled) . '
-                        ' . $this->yesNo('has_director_advances_credits_or_guarantees', 'Were there any director advances, credits or guarantees requiring disclosure?', $display['has_director_advances_credits_or_guarantees'] ?? null, $controlDisabled) . '
-                        ' . $this->yesNo('has_financial_commitments_guarantees_or_contingencies', 'Are there any financial commitments, guarantees or contingencies requiring disclosure?', $display['has_financial_commitments_guarantees_or_contingencies'] ?? null, $controlDisabled) . '
+                        <div class="helper">Answer each question explicitly. These answers are not inferred or prefilled from Companies House. No is supported by the current simple-note profile. A Yes answer is saved for audit history, but positive note disclosures are not supported at present and block the facts build and iXBRL generation.</div>
+                        ' . $this->yesNo('has_material_off_balance_sheet_arrangements', 'Are there any material off-balance-sheet arrangements requiring disclosure?', $display['has_material_off_balance_sheet_arrangements'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
+                        ' . $this->yesNo('has_director_advances_credits_or_guarantees', 'Were there any director advances, credits or guarantees requiring disclosure?', $display['has_director_advances_credits_or_guarantees'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
+                        ' . $this->yesNo('has_financial_commitments_guarantees_or_contingencies', 'Are there any financial commitments, guarantees or contingencies requiring disclosure?', $display['has_financial_commitments_guarantees_or_contingencies'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
                     </section>
                 </div>
             </form>
         </div>';
     }
 
-    private function yesNo(string $name, string $label, mixed $value, bool $disabled = false): string
+    private function yesNo(string $name, string $label, mixed $value, bool $disabled = false, bool $ajaxField = false, int $companyId = 0, int $accountingPeriodId = 0): string
     {
         $yesId = 'ixbrl_' . $name . '_yes';
         $noId = 'ixbrl_' . $name . '_no';
         $normalised = $value === null || $value === '' ? null : (int)$value;
+        $submitOnChange = $ajaxField ? ' data-submit-on-change="true"' : '';
 
-        return '<fieldset class="panel-soft">
+        $fieldset = '<fieldset class="panel-soft">
             <legend>' . HelperFramework::escape($label) . '</legend>
             <div class="actions-row">
-                <label for="' . $yesId . '"><input id="' . $yesId . '" type="radio" name="' . HelperFramework::escape($name) . '" value="1" required' . ($normalised === 1 ? ' checked' : '') . ($disabled ? ' disabled aria-disabled="true"' : '') . '> Yes</label>
-                <label for="' . $noId . '"><input id="' . $noId . '" type="radio" name="' . HelperFramework::escape($name) . '" value="0" required' . ($normalised === 0 ? ' checked' : '') . ($disabled ? ' disabled aria-disabled="true"' : '') . '> No</label>
+                <label for="' . $yesId . '"><input id="' . $yesId . '" type="radio" name="' . HelperFramework::escape($name) . '" value="1" required' . ($normalised === 1 ? ' checked' : '') . ($disabled ? ' disabled aria-disabled="true"' : '') . $submitOnChange . '> Yes</label>
+                <label for="' . $noId . '"><input id="' . $noId . '" type="radio" name="' . HelperFramework::escape($name) . '" value="0" required' . ($normalised === 0 ? ' checked' : '') . ($disabled ? ' disabled aria-disabled="true"' : '') . $submitOnChange . '> No</label>
             </div>
         </fieldset>';
+        if (!$ajaxField) {
+            return $fieldset;
+        }
+
+        return '<form method="post" action="?page=ixbrl_builder" data-ajax="true">'
+            . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+            . '<input type="hidden" name="card_action" value="Ixbrl">
+                <input type="hidden" name="intent" value="save_ixbrl_disclosure_field">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <input type="hidden" name="disclosure_field" value="' . HelperFramework::escape($name) . '">'
+            . $fieldset
+            . '</form>';
     }
 
     private function tradingStatusAnswers(string $status): array
@@ -304,6 +318,6 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
 
         return '<div class="helper"><span class="badge info">Suggested</span> The form has been prefilled from the matching stored Companies House iXBRL filing'
             . ($filingDates !== [] ? ' dated ' . HelperFramework::escape(implode(', ', $filingDates)) : '')
-            . '. Review every value and save it explicitly before facts can be built.</div>';
+            . '. Review the suggested core details and save them explicitly before facts can be built.</div>';
     }
 }

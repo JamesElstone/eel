@@ -35,6 +35,7 @@ To use this system, the company must meet the following criteria:
   - An average of no more than 10 employees
 - Have a valid UTR (Unique Taxpayer Reference) issued by HMRC
 - Not be VAT registered and remain below VAT registration thresholds
+- Have no financial commitments, guarantees, or contingent liabilities requiring disclosure. Positive disclosures are not supported by the current FRS 105 iXBRL profile and block facts and filing generation.
 - Have (free) developer API access configured for:
   - HMRC
   - Companies House

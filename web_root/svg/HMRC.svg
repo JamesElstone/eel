@@ -1,0 +1,14 @@
+<svg fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" aria-hidden="true" version="1.1" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+	<defs>
+		<marker id="elstone-a" overflow="visible" markerHeight="0.5" markerWidth="0.5" orient="auto" preserveAspectRatio="xMidYMid" viewBox="0 0 1 1">
+			<path transform="scale(.5)" d="m5 0c0 2.76-2.24 5-5 5s-5-2.24-5-5 2.3-5 5-5c2.76 0 5 2.24 5 5z" fill="context-stroke" fill-rule="evenodd" stroke="none"/>
+		</marker>
+	</defs>
+	<circle cx="12.029" cy="11.941" r="9.25" stroke="#fff"/>
+	<g fill="none" stroke="#fff" stroke-linecap="butt" stroke-linejoin="miter" stroke-width="1.35">
+		<path d="m17.613 16.463h-11.095l-.68468-1.9065c6.206-1.372 6.1752-1.3142 12.465.02913z"/>
+		<path d="m12.056 14.114v-8.6349" marker-end="url(#elstone-a)"/>
+		<path d="m5.8632 14.556c-2.8578-6.9659 3.0371-8.4284 6.1925-5.4515"/>
+		<path d="m18.32 14.567c2.8578-6.9659-3.0959-8.4284-6.2514-5.4515"/>
+	</g>
+</svg>

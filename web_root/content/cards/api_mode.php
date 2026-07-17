@@ -48,6 +48,7 @@ final class _api_modeCard extends CardBaseFramework
                             <option value="TEST"' . ($companiesHouseApiMode === 'TEST' ? ' selected' : '') . '>TEST</option>
                             <option value="LIVE"' . ($companiesHouseApiMode === 'LIVE' ? ' selected' : '') . '>LIVE</option>
                         </select>
+                        <A class="button" href="https://developer.company-information.service.gov.uk/manage-applications" target="_blank" rel="noopener noreferrer" type="button">Companies House Developer Portal</A>
                     </div>
                     <div class="form-row">
                         <label for="hmrc_api_mode">HMRC Environment</label>
@@ -55,6 +56,7 @@ final class _api_modeCard extends CardBaseFramework
                             <option value="TEST"' . ($hmrcApiMode === 'TEST' ? ' selected' : '') . '>TEST</option>
                             <option value="LIVE"' . ($hmrcApiMode === 'LIVE' ? ' selected' : '') . '>LIVE</option>
                         </select>
+                        <A class="button" href="https://developer.service.hmrc.gov.uk/developer/login" target="_blank" rel="noopener noreferrer" type="button">HMRC Developer Portal</A>
                     </div>
                 </div>
             </form>

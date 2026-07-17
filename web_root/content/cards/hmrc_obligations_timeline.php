@@ -24,43 +24,82 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
         $selected = (string)($context['hmrc_obligations']['filter'] ?? 'all');
         $companyId = (int)($context['company']['id'] ?? 0);
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
-        $pageId = (string)(($context['page'] ?? [])['page_id'] ?? 'hmrc_obligations');
 
-        $filterOptions = '';
+        $table = TableFramework::make($this->key(), $items)
+            ->filename('hmrc-obligations-timeline')
+            ->exports(true)
+            ->exportLimit(5000)
+            ->empty('No HMRC obligations match the selected filter.')
+            ->toolbarActions($this->filterToolbarHtml($filters, $selected, $companyId))
+            ->column(
+                'accounting_period_label',
+                'Period',
+                html: static fn(array $item): string => HelperFramework::escape((string)($item['accounting_period_label'] ?? ''))
+                    . '<div class="helper">' . HelperFramework::escape((string)($item['period_start'] ?? '') . ' to ' . (string)($item['period_end'] ?? '')) . '</div>',
+                export: static fn(array $item): string => (string)($item['accounting_period_label'] ?? '') . ' (' . (string)($item['period_start'] ?? '') . ' to ' . (string)($item['period_end'] ?? '') . ')'
+            )
+            ->column(
+                'obligation_type',
+                'Obligation',
+                html: fn(array $item): string => HelperFramework::escape(HelperFramework::labelFromKey((string)($item['obligation_type'] ?? ''), '_')) . $this->chHint((array)($item['companies_house'] ?? [])),
+                export: static fn(array $item): string => HelperFramework::labelFromKey((string)($item['obligation_type'] ?? ''), '_')
+            )
+            ->column(
+                'due_date',
+                'Due date',
+                html: fn(array $item): string => HelperFramework::escape((string)($item['due_date'] ?? '')) . '<div class="helper">' . HelperFramework::escape($this->daysLabel((int)($item['days_delta'] ?? 0))) . '</div>',
+                export: static fn(array $item): string => (string)($item['due_date'] ?? ''),
+                exportType: 'date'
+            )
+            ->column(
+                'amount_due',
+                'Amount',
+                html: fn(array $item): string => HelperFramework::escape($this->amountLabel($item, $companySettings)),
+                export: fn(array $item): string => ($item['amount_due'] ?? null) === null ? '' : number_format((float)$item['amount_due'], 2, '.', ''),
+                exportType: 'number'
+            )
+            ->column(
+                'effective_status',
+                'Status',
+                html: fn(array $item): string => '<span class="badge ' . HelperFramework::escape($this->badgeClass((string)($item['effective_status'] ?? ''))) . '">' . HelperFramework::escape(HelperFramework::labelFromKey((string)($item['effective_status'] ?? ''), '_')) . '</span>',
+                export: static fn(array $item): string => HelperFramework::labelFromKey((string)($item['effective_status'] ?? ''), '_')
+            )
+            ->textColumn('action_needed', 'Action needed')
+            ->column(
+                'actions',
+                'Record evidence',
+                html: fn(array $item): string => $this->actionForms($item, $companyId, $selected),
+                exportable: false,
+                cellClass: 'cell-fit'
+            );
+
+        $warning = $laterObligationCount > 0
+            ? '<div class="panel-soft warn">' . $laterObligationWarning . '</div>'
+            : '';
+
+        return $warning . $table->render($context, [
+            'page' => (string)($context['page']['page_id'] ?? 'hmrc_obligations'),
+            '_invalidate_fact' => (string)($this->invalidationFacts()[0] ?? 'page.context'),
+            'cards[]' => [$this->key()],
+        ]);
+    }
+
+    private function filterToolbarHtml(array $filters, string $selected, int $companyId): string
+    {
+        $options = '';
         foreach ($filters as $value => $label) {
-            $filterOptions .= '<option value="' . HelperFramework::escape((string)$value) . '"' . ((string)$value === $selected ? ' selected' : '') . '>' . HelperFramework::escape((string)$label) . '</option>';
+            $options .= '<option value="' . HelperFramework::escape((string)$value) . '"' . ((string)$value === $selected ? ' selected' : '') . '>' . HelperFramework::escape((string)$label) . '</option>';
         }
 
-        $filterForm = '<form class="toolbar" method="post" action="?page=hmrc_obligations" data-ajax="true">
-                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-            <input type="hidden" name="card_action" value="HmrcObligation">
-            <input type="hidden" name="intent" value="filter_obligations">
-            <input type="hidden" name="company_id" value="' . $companyId . '">
-            <select class="select" name="hmrc_filter">' . $filterOptions . '</select>
-            <button class="button primary" type="submit">Filter</button>
-        </form>';
-
-        if ($items === []) {
-            return ($laterObligationCount > 0 ? '<div class="panel-soft warn">' . $laterObligationWarning . '</div>' : '') . $filterForm . '<div class="helper">No HMRC obligations match the selected filter.</div>';
-        }
-
-        $rows = '';
-        foreach ($items as $item) {
-            $rows .= '<tr>
-                <td>' . HelperFramework::escape((string)($item['accounting_period_label'] ?? '')) . '<div class="helper">' . HelperFramework::escape((string)($item['period_start'] ?? '') . ' to ' . (string)($item['period_end'] ?? '')) . '</div></td>
-                <td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($item['obligation_type'] ?? ''), '_')) . $this->chHint((array)($item['companies_house'] ?? [])) . '</td>
-                <td>' . HelperFramework::escape((string)($item['due_date'] ?? '')) . '<div class="helper">' . HelperFramework::escape($this->daysLabel((int)($item['days_delta'] ?? 0))) . '</div></td>
-                <td>' . HelperFramework::escape($this->amountLabel($item, $companySettings)) . '</td>
-                <td><span class="badge ' . HelperFramework::escape($this->badgeClass((string)($item['effective_status'] ?? ''))) . '">' . HelperFramework::escape(HelperFramework::labelFromKey((string)($item['effective_status'] ?? ''), '_')) . '</span></td>
-                <td>' . HelperFramework::escape((string)($item['action_needed'] ?? '')) . '</td>
-                <td>' . $this->actionForms($item, $companyId, $selected) . '</td>
-            </tr>';
-        }
-
-        return ($laterObligationCount > 0 ? '<div class="panel-soft warn">' . $laterObligationWarning . '</div>' : '') . $filterForm . '<div class="table-scroll"><table>
-            <thead><tr><th>Period</th><th>Obligation</th><th>Due date</th><th>Amount</th><th>Status</th><th>Action needed</th><th>Record evidence</th></tr></thead>
-            <tbody>' . $rows . '</tbody>
-        </table></div>';
+        return '<form method="post" action="?page=hmrc_obligations" data-ajax="true" class="toolbar">'
+            . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+            . '<input type="hidden" name="card_action" value="HmrcObligation">'
+            . '<input type="hidden" name="company_id" value="' . $companyId . '">'
+            . '<input type="hidden" name="intent" value="filter_obligations">'
+            . '<label class="sr-only" for="hmrc_filter">Show</label>'
+            . '<select class="select" id="hmrc_filter" name="hmrc_filter">' . $options . '</select>'
+            . '<button class="button primary" type="submit">Filter</button>'
+            . '</form>';
     }
 
     private function actionForms(array $item, int $companyId, string $filter): string

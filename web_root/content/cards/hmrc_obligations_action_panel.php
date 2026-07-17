@@ -20,7 +20,6 @@ final class _hmrc_obligations_action_panelCard extends CardBaseFramework
         $guidance = (array)($context['hmrc_obligations']['guidance'] ?? []);
         $messages = (array)($guidance['messages'] ?? []);
         $matches = (array)($guidance['suggested_matches'] ?? []);
-        $companyId = (int)($context['company']['id'] ?? 0);
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
 
         $html = '';
@@ -42,15 +41,7 @@ final class _hmrc_obligations_action_panelCard extends CardBaseFramework
             $html .= '<section class="panel-soft"><h3 class="card-title">Possible bank matches</h3><div class="helper">Bank payments are never auto-matched. Confirm them before marking obligations as paid.</div><div class="table-scroll"><table><thead><tr><th>Obligation</th><th>Date</th><th>Transaction</th><th>Amount</th><th>Status</th></tr></thead><tbody>' . $rows . '</tbody></table></div></section>';
         }
 
-        $syncForm = '<form method="post" action="?page=hmrc_obligations" data-ajax="true">
-                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-            <input type="hidden" name="card_action" value="HmrcObligation">
-            <input type="hidden" name="intent" value="sync_hmrc_obligations">
-            <input type="hidden" name="company_id" value="' . $companyId . '">
-            <button class="button primary" type="submit">Sync Calculated Obligations</button>
-        </form>';
-
-        return '<div class="settings-stack">' . ($html !== '' ? $html : '<div class="helper">No HMRC guidance is available yet.</div>') . $syncForm . '</div>';
+        return '<div class="settings-stack">' . ($html !== '' ? $html : '<div class="helper">No HMRC guidance is available yet.</div>') . '</div>';
     }
 
     private function money(array $companySettings, mixed $value): string

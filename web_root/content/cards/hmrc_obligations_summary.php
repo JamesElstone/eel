@@ -32,22 +32,20 @@ final class _hmrc_obligations_summaryCard extends CardBaseFramework
             : 'No upcoming deadline';
 
         return '<div class="settings-stack">
-            ' . ($laterObligationCount > 0 ? '<div class="panel-soft warn">' . HelperFramework::escape($laterObligationWarning) . '</div>' : '') . '
             <div class="actions-row">
                 <a class="button button-inline" href="https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim38515" target="_blank" rel="noopener noreferrer">HMRC - BIM38515: Fines and Penalties</a>
                 <a class="button button-inline" href="https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm92190" target="_blank" rel="noopener noreferrer">HMRC - CTM92190: Late Corporation Tax Interest</a>
                 <a class="button button-inline" href="https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim45740" target="_blank" rel="noopener noreferrer">HMRC - BIM45740: Late-Paid Tax Interest</a>
             </div>
-            <section class="panel-soft">
-                <div class="summary-grid">
-                    ' . $this->metric('Total currently owed', $this->money($companySettings, $summary['total_owed'] ?? 0)) . '
-                    ' . $this->metric('Total overdue', $this->money($companySettings, $summary['total_overdue'] ?? 0)) . '
-                    ' . $this->metric('Next HMRC deadline', $nextLabel) . '
-                    ' . $this->metric('Overdue items', (string)(int)($summary['overdue_count'] ?? 0)) . '
-                    ' . $this->metric('Unresolved previous periods', (string)(int)($summary['unresolved_previous_periods'] ?? 0)) . '
-                    ' . $this->metric('CT600 filed / missing', (int)($summary['ct600_filed_count'] ?? 0) . ' / ' . (int)($summary['ct600_missing_count'] ?? 0)) . '
-                </div>
-            </section>
+            ' . ($laterObligationCount > 0 ? '<div class="panel-soft warn">' . HelperFramework::escape($laterObligationWarning) . '</div>' : '') . '
+            <div class="summary-grid">
+                ' . $this->metric('Total currently owed', $this->money($companySettings, $summary['total_owed'] ?? 0)) . '
+                ' . $this->metric('Total overdue', $this->money($companySettings, $summary['total_overdue'] ?? 0)) . '
+                ' . $this->metric('Next HMRC deadline', $nextLabel) . '
+                ' . $this->metric('Overdue items', (string)(int)($summary['overdue_count'] ?? 0)) . '
+                ' . $this->metric('Unresolved previous periods', (string)(int)($summary['unresolved_previous_periods'] ?? 0)) . '
+                ' . $this->metric('CT600 filed / missing', (int)($summary['ct600_filed_count'] ?? 0) . ' / ' . (int)($summary['ct600_missing_count'] ?? 0)) . '
+            </div>
         </div>';
     }
 

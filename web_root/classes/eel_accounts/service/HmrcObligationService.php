@@ -574,7 +574,10 @@ final class HmrcObligationService
             }
         }
         foreach ($obligations as $item) {
-            if ((string)$item['obligation_type'] === 'ct_payment' && (string)$item['effective_status'] === 'overdue') {
+            if ((string)$item['obligation_type'] === 'ct_payment'
+                && (string)$item['effective_status'] === 'overdue'
+                && (float)($item['outstanding_amount'] ?? 0) > 0
+            ) {
                 $messages[] = 'Corporation Tax payment appears overdue.';
                 break;
             }

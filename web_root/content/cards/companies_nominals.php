@@ -61,7 +61,6 @@ final class _companies_nominalsCard extends CardBaseFramework
         }
         $nominalAccounts = (array)($context['services']['company_nominals'] ?? []);
         $nominalSuggestions = $this->buildNominalDefaultSuggestions($nominalAccounts, $settings);
-        $assetMappingsHtml = $this->renderAssetNominalMappings($nominalAccounts);
 
         $suggestionsHtml = '';
         if ($nominalSuggestions !== []) {
@@ -228,39 +227,9 @@ final class _companies_nominalsCard extends CardBaseFramework
         return '
             <div class="nominals-layout">
                 <div>' . $mainHtml . '</div>
-                <div>' . $suggestionsHtml . $assetMappingsHtml . '</div>
+                <div>' . $suggestionsHtml . '</div>
             </div>
         ';
-    }
-
-    private function renderAssetNominalMappings(array $nominalAccounts): string
-    {
-        $nominalsByCode = [];
-        foreach ($nominalAccounts as $nominal) {
-            $code = trim((string)($nominal['code'] ?? ''));
-            if ($code !== '') {
-                $nominalsByCode[$code] = $nominal;
-            }
-        }
-
-        $items = '';
-        foreach (\eel_accounts\Service\AssetService::assetCategoryOptions() as $category => $label) {
-            $codes = \eel_accounts\Service\AssetService::assetNominalCodesForCategory((string)$category);
-            $costNominal = $nominalsByCode[(string)$codes['cost']] ?? null;
-            $accumNominal = $nominalsByCode[(string)$codes['accum']] ?? null;
-            $status = is_array($costNominal) && is_array($accumNominal) ? 'Ready' : 'Missing setup';
-            $items .= '<div class="list-item"><strong>'
-                . HelperFramework::escape((string)$label)
-                . '</strong><span>'
-                . HelperFramework::escape($status . ': cost ' . $this->mappingNominalLabel($costNominal, (string)$codes['cost']) . ', accumulated depreciation ' . $this->mappingNominalLabel($accumNominal, (string)$codes['accum']))
-                . '</span></div>';
-        }
-
-        return '<div class="panel-soft">
-            <h4 class="card-title">Asset Nominal Mappings</h4>
-            <span class="helper">Asset claim lines use these shared fixed asset mappings automatically.</span>
-            <div class="list">' . $items . '</div>
-        </div>';
     }
 
     private function renderHelperNominalDefaults(array $nominalAccounts, array $settings): string
@@ -283,13 +252,6 @@ final class _companies_nominalsCard extends CardBaseFramework
         }
 
         return $html;
-    }
-
-    private function mappingNominalLabel(mixed $nominal, string $expectedCode): string
-    {
-        return is_array($nominal)
-            ? FormattingFramework::nominalLabel($nominal, ' ')
-            : $expectedCode . ' missing';
     }
 
     private function nominalOptions(array $nominalAccounts, string $selectedId): string

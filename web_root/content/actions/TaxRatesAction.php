@@ -46,7 +46,14 @@ final class TaxRatesAction implements ActionInterfaceFramework
             }
         }
 
-        return new ActionResultFramework(!empty($result['success']), ['tax.rates', 'page.context'], $messages);
+        return new ActionResultFramework(!empty($result['success']), [
+            'tax.rates',
+            'page.context',
+            'ixbrl.readiness',
+            'ixbrl.disclosures',
+            'ixbrl.facts.preview',
+            'ixbrl.generation',
+        ], $messages);
     }
 
     private function toggleTreatmentRule(RequestFramework $request): ActionResultFramework

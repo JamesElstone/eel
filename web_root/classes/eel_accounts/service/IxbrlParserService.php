@@ -172,8 +172,15 @@ final class IxbrlParserService
             }
 
             $isNumeric = strtolower($factNode->localName) === 'nonfraction';
-            $signHint = $isNumeric ? $this->detectNumericSignHint($factNode, $rawValue) : null;
-            $normalisedNumeric = $isNumeric ? $this->normaliseNumericValue($rawValue, $signHint) : null;
+            $presentationSignHint = $isNumeric ? $this->detectNumericSignHint($factNode, $rawValue) : null;
+            $inlineSign = $isNumeric ? trim($factNode->getAttribute('sign')) : '';
+            $scale = $isNumeric ? trim($factNode->getAttribute('scale')) : '';
+            $signHint = $inlineSign === '-'
+                ? ($presentationSignHint === null ? 'ix_sign' : 'ix_sign+' . $presentationSignHint)
+                : $presentationSignHint;
+            $normalisedNumeric = $isNumeric
+                ? $this->normaliseNumericValue($rawValue, $presentationSignHint, $inlineSign, $scale)
+                : null;
             $normalisedDate = !$isNumeric ? $this->normalisePossibleDateValue($rawValue) : null;
             $normalisedText = $isNumeric ? null : ($normalisedDate !== null ? null : $rawValue);
             $shortName = preg_replace('/^.*:/', '', $conceptName) ?? $conceptName;
@@ -186,6 +193,8 @@ final class IxbrlParserService
                 $rawValue,
                 (string)$factNode->getAttribute('unitRef'),
                 (string)$factNode->getAttribute('decimals'),
+                $inlineSign,
+                $scale,
             ]);
 
             if (isset($seen[$dedupeKey])) {
@@ -208,6 +217,8 @@ final class IxbrlParserService
                 'unit_ref' => trim($factNode->getAttribute('unitRef')) ?: null,
                 'decimals_value' => trim($factNode->getAttribute('decimals')) ?: null,
                 'sign_hint' => $signHint,
+                'sign_value' => $inlineSign !== '' ? $inlineSign : null,
+                'scale_value' => $scale !== '' ? $scale : null,
                 'is_numeric' => $isNumeric ? 1 : 0,
                 'is_latest_year_fact' => 1,
             ];
@@ -306,20 +317,25 @@ final class IxbrlParserService
         return trim(implode('', $parts));
     }
 
-    private function normaliseNumericValue(string $rawValue, ?string $signHint): ?string {
+    private function normaliseNumericValue(
+        string $rawValue,
+        ?string $presentationSignHint,
+        string $inlineSign,
+        string $scale
+    ): ?string {
         $value = trim($rawValue);
 
         if ($value === '-') {
             return '0';
         }
 
-        if ($signHint === 'inline_parentheses' && preg_match('/^\(\s*([^)]+?)\s*\)$/', $value, $matches) === 1) {
+        if ($presentationSignHint === 'inline_parentheses' && preg_match('/^\(\s*([^)]+?)\s*\)$/', $value, $matches) === 1) {
             $value = '-' . trim((string)$matches[1]);
         }
 
         $value = str_replace(',', '', $value);
 
-        if ($signHint === 'presentation_parentheses' && $value !== '' && $value[0] !== '-') {
+        if ($presentationSignHint === 'presentation_parentheses' && $value !== '' && $value[0] !== '-') {
             $value = '-' . ltrim($value, '+');
         }
 
@@ -327,7 +343,43 @@ final class IxbrlParserService
             return null;
         }
 
-        return $value;
+        if ($scale !== '' && preg_match('/^[+-]?\d+$/', $scale) !== 1) {
+            return null;
+        }
+        $scaleValue = $scale === '' ? 0 : (int)$scale;
+        if (abs($scaleValue) > 1000) {
+            return null;
+        }
+
+        $negative = str_starts_with($value, '-');
+        $unsignedValue = ltrim($value, '-+');
+        [$whole, $fraction] = array_pad(explode('.', $unsignedValue, 2), 2, '');
+        $digits = $whole . $fraction;
+        $decimalPosition = strlen($whole) + $scaleValue;
+
+        if ($decimalPosition <= 0) {
+            $scaled = '0.' . str_repeat('0', -$decimalPosition) . $digits;
+        } elseif ($decimalPosition >= strlen($digits)) {
+            $scaled = $digits . str_repeat('0', $decimalPosition - strlen($digits));
+        } else {
+            $scaled = substr($digits, 0, $decimalPosition) . '.' . substr($digits, $decimalPosition);
+        }
+
+        [$scaledWhole, $scaledFraction] = array_pad(explode('.', $scaled, 2), 2, '');
+        $scaledWhole = ltrim($scaledWhole, '0');
+        if ($scaledWhole === '') {
+            $scaledWhole = '0';
+        }
+        $scaled = $scaledFraction === '' ? $scaledWhole : $scaledWhole . '.' . $scaledFraction;
+
+        if ($inlineSign === '-') {
+            $negative = !$negative;
+        }
+        if (preg_match('/^0(?:\.0*)?$/', $scaled) === 1) {
+            $negative = false;
+        }
+
+        return $negative ? '-' . $scaled : $scaled;
     }
 
     private function normalisePossibleDateValue(string $rawValue): ?string {

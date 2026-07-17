@@ -69,6 +69,7 @@ final class _companies_nominalsCard extends CardBaseFramework
 
             $suggestionLabels = [
                 'default_bank_nominal_id' => 'Default bank nominal',
+                'default_sales_nominal_id' => 'Default sales nominal',
                 'default_trade_nominal_id' => 'Default trade nominal',
                 'default_expense_nominal_id' => 'Expense claims payable nominal',
                 'tools_small_equipment_nominal_id' => 'Tools & Small Equipment nominal',
@@ -128,13 +129,20 @@ final class _companies_nominalsCard extends CardBaseFramework
                 <input type="hidden" name="intent" value="save_nominals">
                 <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)($context['company']['id'] ?? 0)) . '">
                 <div class="panel-soft">
-                    <section data-state-fields="default_bank_nominal_id,default_trade_nominal_id,default_expense_nominal_id,tools_small_equipment_nominal_id,prepayment_asset_nominal_id,director_loan_asset_nominal_id,director_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id,corporation_tax_expense_nominal_id,corporation_tax_liability_nominal_id,' . HelperFramework::escape($helperStateFields) . '" data-state-target="save_default_nominals">
+                    <section data-state-fields="default_bank_nominal_id,default_sales_nominal_id,default_trade_nominal_id,default_expense_nominal_id,tools_small_equipment_nominal_id,prepayment_asset_nominal_id,director_loan_asset_nominal_id,director_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id,corporation_tax_expense_nominal_id,corporation_tax_liability_nominal_id,' . HelperFramework::escape($helperStateFields) . '" data-state-target="save_default_nominals">
                     <div class="form-flex-flow">
                         <div class="form-row">
                             <label for="default_bank_nominal_id">Default Bank nominal</label>
                             <select class="select" id="default_bank_nominal_id" name="default_bank_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['default_bank_nominal_id'] ?? '')) . '">
                                 <option value="">Select nominal account</option>
                                 ' . $this->nominalOptions($nominalAccounts, (string)($settings['default_bank_nominal_id'] ?? '')) . '
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <label for="default_sales_nominal_id">Default Sales nominal</label>
+                            <select class="select" id="default_sales_nominal_id" name="default_sales_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['default_sales_nominal_id'] ?? '')) . '">
+                                <option value="">Select nominal account</option>
+                                ' . $this->nominalOptions($nominalAccounts, (string)($settings['default_sales_nominal_id'] ?? '')) . '
                             </select>
                         </div>
                         <div class="form-row">
@@ -318,6 +326,14 @@ final class _companies_nominalsCard extends CardBaseFramework
         $suggestions = array_filter([
             'default_bank_nominal_id' => !$this->hasAssignedNominal($settings, 'default_bank_nominal_id')
                 ? $this->firstMatchingNominal($normalised, static fn(array $row): bool => $row['id'] > 0 && ($row['subtype_code'] === 'bank' || $row['code'] === '1200' || str_contains(strtolower($row['name']), 'bank')))
+                : null,
+            'default_sales_nominal_id' => !$this->hasAssignedNominal($settings, 'default_sales_nominal_id')
+                ? $this->firstMatchingNominal($normalised, static function (array $row): bool {
+                    $name = strtolower($row['name']);
+                    return $row['id'] > 0
+                        && $row['account_type'] === 'income'
+                        && ($row['subtype_code'] === 'turnover' || $row['code'] === '4000' || str_contains($name, 'sales'));
+                })
                 : null,
             'default_trade_nominal_id' => !$this->hasAssignedNominal($settings, 'default_trade_nominal_id')
                 ? ($this->firstMatchingNominal($normalised, static fn(array $row): bool => $row['id'] > 0 && $row['code'] === '2300')

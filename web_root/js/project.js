@@ -910,6 +910,43 @@
         });
     }
 
+    function initialiseIxbrlTradingForms(root = document) {
+        const forms = root.querySelectorAll ? root.querySelectorAll('[data-ixbrl-trading-form="true"]') : [];
+
+        forms.forEach((form) => {
+            if (!(form instanceof HTMLFormElement) || form.dataset.ixbrlTradingBound === '1') {
+                return;
+            }
+            const panel = form.querySelector('[data-ixbrl-ever-traded-panel="true"]');
+            const stillTradingControls = Array.from(form.querySelectorAll('input[name="is_still_trading"]'));
+            const everTradedControls = panel
+                ? Array.from(panel.querySelectorAll('input[name="has_ever_traded"]'))
+                : [];
+            if (!(panel instanceof HTMLElement) || stillTradingControls.length === 0) {
+                return;
+            }
+
+            const formLocked = stillTradingControls.every((control) => control instanceof HTMLInputElement && control.disabled);
+            const sync = () => {
+                const selected = stillTradingControls.find((control) => control instanceof HTMLInputElement && control.checked);
+                const showEverTraded = selected instanceof HTMLInputElement && selected.value === '0';
+                panel.classList.toggle('is-hidden', !showEverTraded);
+                panel.setAttribute('aria-hidden', showEverTraded ? 'false' : 'true');
+                everTradedControls.forEach((control) => {
+                    if (!(control instanceof HTMLInputElement)) {
+                        return;
+                    }
+                    control.disabled = formLocked || !showEverTraded;
+                    control.required = !formLocked && showEverTraded;
+                });
+            };
+
+            form.dataset.ixbrlTradingBound = '1';
+            stillTradingControls.forEach((control) => control.addEventListener('change', sync));
+            sync();
+        });
+    }
+
     const cardMaximizedStoragePrefix = 'eel_accounts:card_maximized:';
 
     function cardMaximizedPageKey() {
@@ -1056,6 +1093,21 @@
     }
 
     document.addEventListener('click', (event) => {
+        const todayButton = event.target instanceof Element
+            ? event.target.closest('[data-set-today-for]')
+            : null;
+        if (todayButton instanceof HTMLButtonElement) {
+            const target = document.getElementById(String(todayButton.dataset.setTodayFor || '').trim());
+            if (target instanceof HTMLInputElement && target.type === 'date') {
+                const now = new Date();
+                const pad = (value) => String(value).padStart(2, '0');
+                target.value = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+                target.dispatchEvent(new Event('input', { bubbles: true }));
+                target.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            return;
+        }
+
         const cardSizeToggle = event.target instanceof Element ? event.target.closest('[data-card-size-toggle]') : null;
         if (cardSizeToggle instanceof HTMLButtonElement) {
             window.setTimeout(persistVisibleCardMaximizedStates, 0);
@@ -1106,6 +1158,7 @@
     initialiseTransactionCategorisationAutosave(document);
     initialiseTransactionAutoApprovalControls(document);
     initialiseYearEndStateForms(document);
+    initialiseIxbrlTradingForms(document);
     restoreStoredCardMaximizedStates(document);
     applyVatSupportReadOnlyState();
 
@@ -1124,6 +1177,7 @@
                     initialiseTransactionCategorisationAutosave(node);
                     initialiseTransactionAutoApprovalControls(node);
                     initialiseYearEndStateForms(node);
+                    initialiseIxbrlTradingForms(node);
                     restoreStoredCardMaximizedStates(node);
                     applyVatSupportReadOnlyState();
                 }

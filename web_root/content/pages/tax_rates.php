@@ -16,12 +16,12 @@ final class _tax_rates extends PageContextFramework
 
     public function title(): string
     {
-        return 'Tax Rates';
+        return 'Rates / Thresholds';
     }
 
     public function subtitle(): string
     {
-        return 'Review sourced Corporation Tax rules, VAT rates and VAT registration thresholds.';
+        return 'Review sourced Corporation Tax rules, VAT rates, VAT registration thresholds and FRS 105 size thresholds.';
     }
 
     public function hiddenSiteContextSelectors(): array

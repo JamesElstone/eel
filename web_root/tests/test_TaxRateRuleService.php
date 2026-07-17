@@ -62,6 +62,24 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             </body></html>';
             $aiaRules = $service->parseAnnualInvestmentAllowanceHtml($aiaHtml, 'https://example.test/aia', '2026-07-07');
             $harness->assertSame(true, taxRateRuleTestHasRule($aiaRules, 'capital_allowances', 'plant_machinery', 'aia_annual_limit', 1000000.0, 'amount_value'));
+
+            $frsHtml = '<html><body><p>Micro-entities</p><ul>
+                <li>a turnover of £1 million or less</li>
+                <li>£500,000 or less on its balance sheet</li>
+                <li>10 employees or less</li>
+            </ul></body></html>';
+            $frsRules = $service->parseFrs105ThresholdsHtml($frsHtml, 'https://example.test/frs105', '2026-07-17');
+            $harness->assertSame(3, count($frsRules));
+            $harness->assertSame(true, taxRateRuleTestHasRule($frsRules, 'company_size', 'frs105_micro_entity', 'turnover', 1000000.0, 'amount_value'));
+            $harness->assertSame(true, taxRateRuleTestHasRule($frsRules, 'company_size', 'frs105_micro_entity', 'balance_sheet_total', 500000.0, 'amount_value'));
+            $harness->assertSame(true, taxRateRuleTestHasRule($frsRules, 'company_size', 'frs105_micro_entity', 'employees', 10.0, 'amount_value'));
+            $malformedFailed = false;
+            try {
+                $service->parseFrs105ThresholdsHtml('<p>broken source</p>');
+            } catch (RuntimeException) {
+                $malformedFailed = true;
+            }
+            $harness->assertSame(true, $malformedFailed);
         });
 
         $harness->check(\eel_accounts\Service\TaxRateRuleService::class, 'weighted lookup reads active rule rows', static function () use ($harness, $service): void {

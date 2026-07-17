@@ -103,7 +103,7 @@ final class _tax_vat_thresholdCard extends CardBaseFramework
     private function thresholdImportNotice(): string
     {
         return '<div class="helper"><strong>Threshold unavailable.</strong> '
-            . '<a class="button button-inline" href="?page=tax_rates">Import HMRC VAT thresholds on the Tax Rates page</a>.'
+            . '<a class="button button-inline" href="?page=tax_rates">Import HMRC VAT thresholds on the Rates / Thresholds page</a>.'
             . '</div>';
     }
 

@@ -105,7 +105,11 @@ final class IxbrlBalanceSheetMetricsService
             $balance = round((float)($row['debit_credit_balance'] ?? 0), 2);
 
             if ($accountType === 'asset') {
-                $bucket = $this->isFixedAssetSubtype($subtype) ? 'fixed_assets' : 'current_assets';
+                $bucket = $this->isFixedAssetSubtype($subtype)
+                    ? 'fixed_assets'
+                    : ($this->isPrepaymentsAccruedIncomeSubtype($subtype)
+                        ? 'prepayments_accrued_income'
+                        : 'current_assets');
                 $amount = $balance;
                 $buckets[$bucket] += $amount;
                 $this->addSource($sources, $bucket, $label, $amount);
@@ -145,14 +149,38 @@ final class IxbrlBalanceSheetMetricsService
 
         $buckets['fixed_assets'] = round($buckets['fixed_assets'], 2);
         $buckets['current_assets'] = round($buckets['current_assets'], 2);
+        $buckets['prepayments_accrued_income'] = round($buckets['prepayments_accrued_income'], 2);
         $buckets['creditors_within_one_year'] = round($buckets['creditors_within_one_year'], 2);
         $buckets['creditors_after_more_than_one_year'] = round($buckets['creditors_after_more_than_one_year'], 2);
         $buckets['creditors_after_one_year'] = $buckets['creditors_after_more_than_one_year'];
-        $buckets['net_current_assets_liabilities'] = round($buckets['current_assets'] - $buckets['creditors_within_one_year'], 2);
-        $buckets['total_assets_less_current_liabilities'] = round($buckets['fixed_assets'] + $buckets['current_assets'] - $buckets['creditors_within_one_year'], 2);
+        $buckets['net_current_assets_liabilities'] = round(
+            $buckets['current_assets']
+                + $buckets['prepayments_accrued_income']
+                - $buckets['creditors_within_one_year'],
+            2
+        );
+        $buckets['total_assets_less_current_liabilities'] = round(
+            $buckets['fixed_assets']
+                + $buckets['current_assets']
+                + $buckets['prepayments_accrued_income']
+                - $buckets['creditors_within_one_year'],
+            2
+        );
         $buckets['net_assets_liabilities'] = round($buckets['total_assets_less_current_liabilities'] - $buckets['creditors_after_more_than_one_year'], 2);
         $buckets['equity_capital_reserves'] = round($equity, 2);
         $buckets['equity'] = $buckets['equity_capital_reserves'];
+        $sources['creditors_after_one_year'] = (array)($sources['creditors_after_more_than_one_year'] ?? []);
+        $sources['equity'] = (array)($sources['equity_capital_reserves'] ?? []);
+        $this->addFormulaSource($sources, 'net_current_assets_liabilities', 'Current assets', $buckets['current_assets'], 'current_assets');
+        $this->addFormulaSource($sources, 'net_current_assets_liabilities', 'Prepayments and accrued income', $buckets['prepayments_accrued_income'], 'prepayments_accrued_income');
+        $this->addFormulaSource($sources, 'net_current_assets_liabilities', 'Less: creditors due within one year', -$buckets['creditors_within_one_year'], 'creditors_within_one_year');
+        $this->addFormulaSource($sources, 'total_assets_less_current_liabilities', 'Fixed assets', $buckets['fixed_assets'], 'fixed_assets');
+        $this->addFormulaSource($sources, 'total_assets_less_current_liabilities', 'Current assets', $buckets['current_assets'], 'current_assets');
+        $this->addFormulaSource($sources, 'total_assets_less_current_liabilities', 'Prepayments and accrued income', $buckets['prepayments_accrued_income'], 'prepayments_accrued_income');
+        $this->addFormulaSource($sources, 'total_assets_less_current_liabilities', 'Less: creditors due within one year', -$buckets['creditors_within_one_year'], 'creditors_within_one_year');
+        $this->addFormulaSource($sources, 'net_assets_liabilities', 'Total assets less current liabilities', $buckets['total_assets_less_current_liabilities'], 'total_assets_less_current_liabilities');
+        $this->addFormulaSource($sources, 'net_assets_liabilities', 'Less: creditors due after one year', -$buckets['creditors_after_more_than_one_year'], 'creditors_after_more_than_one_year');
+        $this->assertSourcesReconcile($sources, $buckets);
         $priorPeriodDependency = $this->priorPeriodDependency($companyId, $periodStart);
         $balanceEquationDifference = round($buckets['net_assets_liabilities'] - $buckets['equity_capital_reserves'], 2);
         $warnings = [];
@@ -373,6 +401,7 @@ final class IxbrlBalanceSheetMetricsService
         return [
             'fixed_assets' => 0.0,
             'current_assets' => 0.0,
+            'prepayments_accrued_income' => 0.0,
             'creditors_within_one_year' => 0.0,
             'creditors_after_more_than_one_year' => 0.0,
             'creditors_after_one_year' => 0.0,
@@ -390,18 +419,84 @@ final class IxbrlBalanceSheetMetricsService
             || str_starts_with($subtype, 'fixed_asset_');
     }
 
+    private function isPrepaymentsAccruedIncomeSubtype(string $subtype): bool
+    {
+        $subtype = strtolower(trim($subtype));
+        return in_array($subtype, [
+            'prepayment',
+            'prepayments',
+            'accrued_income',
+            'prepayments_accrued_income',
+        ], true)
+            || str_starts_with($subtype, 'prepayment_')
+            || str_starts_with($subtype, 'accrued_income_');
+    }
+
     private function isLongTermLiabilitySubtype(string $subtype): bool
     {
         return in_array($subtype, ['long_term_liability', 'non_current_liability', 'creditors_after_one_year', 'creditors_after_more_than_one_year', 'director_loan_long_term_liability'], true);
     }
 
-    private function addSource(array &$sources, string $bucket, string $label, float $amount): void
+    private function addSource(
+        array &$sources,
+        string $bucket,
+        string $label,
+        float $amount,
+        array $metadata = []
+    ): void
     {
         $sources[$bucket] ??= [];
-        $sources[$bucket][] = [
+        $sources[$bucket][] = array_merge([
             'label' => $label,
             'amount' => round($amount, 2),
-        ];
+        ], $metadata);
+    }
+
+    private function addFormulaSource(
+        array &$sources,
+        string $bucket,
+        string $label,
+        float $amount,
+        string $component
+    ): void {
+        $this->addSource(
+            $sources,
+            $bucket,
+            $label,
+            $amount,
+            ['source_type' => 'formula', 'formula_component' => $component]
+        );
+    }
+
+    private function assertSourcesReconcile(array $sources, array $buckets): void
+    {
+        foreach ([
+            'fixed_assets',
+            'current_assets',
+            'prepayments_accrued_income',
+            'creditors_within_one_year',
+            'creditors_after_more_than_one_year',
+            'creditors_after_one_year',
+            'net_current_assets_liabilities',
+            'total_assets_less_current_liabilities',
+            'net_assets_liabilities',
+            'equity_capital_reserves',
+            'equity',
+        ] as $bucket) {
+            $sourceTotal = round(array_sum(array_map(
+                static fn(array $row): float => (float)($row['amount'] ?? 0),
+                (array)($sources[$bucket] ?? [])
+            )), 2);
+            $bucketTotal = round((float)($buckets[$bucket] ?? 0), 2);
+            if (abs($sourceTotal - $bucketTotal) >= 0.005) {
+                throw new \LogicException(sprintf(
+                    'iXBRL balance-sheet source rows for %s total %.2f but the bucket total is %.2f.',
+                    $bucket,
+                    $sourceTotal,
+                    $bucketTotal
+                ));
+            }
+        }
     }
 
     private function validDate(string $value): bool

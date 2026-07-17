@@ -58,6 +58,15 @@ final class YearEndLockService
         }
     }
 
+    public function assertLocked(int $companyId, int $accountingPeriodId, string $actionLabel = 'continue'): void
+    {
+        if (!$this->isLocked($companyId, $accountingPeriodId)) {
+            throw new \RuntimeException(
+                'Complete and lock Year End before you can ' . trim($actionLabel) . '.'
+            );
+        }
+    }
+
     public function assertUnlockedForUpdate(int $companyId, int $accountingPeriodId, string $actionLabel = 'change this period'): void
     {
         if (!\InterfaceDB::inTransaction()) {

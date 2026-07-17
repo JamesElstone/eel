@@ -15,6 +15,7 @@ final class TaxRateRuleService
     public const CORPORATION_TAX_SOURCE_URL = \eel_accounts\Service\CorporationTaxRateRuleService::SOURCE_URL;
     public const CAPITAL_ALLOWANCE_WDA_SOURCE_URL = 'https://www.gov.uk/work-out-capital-allowances/rates-and-pools';
     public const CAPITAL_ALLOWANCE_AIA_SOURCE_URL = 'https://www.gov.uk/capital-allowances/annual-investment-allowance';
+    public const FRS105_THRESHOLDS_SOURCE_URL = 'https://www.gov.uk/annual-accounts/microentities-small-and-dormant-companies';
 
     public function ensureSchema(): void
     {
@@ -130,6 +131,12 @@ final class TaxRateRuleService
             $this->parseAnnualInvestmentAllowanceHtml($aiaHtml, self::CAPITAL_ALLOWANCE_AIA_SOURCE_URL, $checkedAt)
         );
 
+        $frs105Html = $this->fetchSourceHtml(self::FRS105_THRESHOLDS_SOURCE_URL);
+        $catalogRules = array_merge(
+            $catalogRules,
+            $this->parseFrs105ThresholdsHtml($frs105Html, self::FRS105_THRESHOLDS_SOURCE_URL, $checkedAt)
+        );
+
         $ownsTransaction = !\InterfaceDB::inTransaction();
         if ($ownsTransaction) {
             \InterfaceDB::beginTransaction();
@@ -159,6 +166,58 @@ final class TaxRateRuleService
             'source_url' => self::HMRC_RATES_COLLECTION_URL,
             'source_checked_at' => $checkedAt,
         ];
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    public function parseFrs105ThresholdsHtml(
+        string $html,
+        string $sourceUrl = self::FRS105_THRESHOLDS_SOURCE_URL,
+        ?string $checkedAt = null
+    ): array {
+        $text = $this->normaliseText(strip_tags($html));
+        $sourceUpdatedAt = $this->extractSourceUpdatedAt($html);
+        $checkedAt = $this->checkedAt($checkedAt);
+        $turnover = $this->thresholdAmount($text, '/turnover\s+of\s+((?:GBP|£)\s*[0-9,.]+\s*(?:million)?)\s+or\s+less/i');
+        $balanceSheet = $this->thresholdAmount($text, '/((?:GBP|£)\s*[0-9,.]+\s*(?:million)?)\s+or\s+less\s+on\s+its\s+balance\s+sheet/i');
+        $employees = null;
+        if (preg_match('/([0-9]+)\s+employees?\s+or\s+less/i', $text, $matches) === 1) {
+            $employees = (float)$matches[1];
+        }
+
+        if ($turnover === null || $balanceSheet === null || $employees === null) {
+            throw new \RuntimeException('The GOV.UK FRS 105 threshold page did not contain all turnover, balance-sheet and employee thresholds.');
+        }
+
+        return [
+            $this->catalogRule('company_size', 'frs105_micro_entity', 'turnover', 'FRS 105 micro-entity turnover threshold', '2025-04-06', null, 'amount', null, $turnover, null, $sourceUrl, $sourceUpdatedAt, $checkedAt, 'Parsed from the GOV.UK micro-entity thresholds page.'),
+            $this->catalogRule('company_size', 'frs105_micro_entity', 'balance_sheet_total', 'FRS 105 micro-entity balance-sheet threshold', '2025-04-06', null, 'amount', null, $balanceSheet, null, $sourceUrl, $sourceUpdatedAt, $checkedAt, 'Parsed from the GOV.UK micro-entity thresholds page.'),
+            $this->catalogRule('company_size', 'frs105_micro_entity', 'employees', 'FRS 105 micro-entity employee threshold', '2025-04-06', null, 'amount', null, $employees, null, $sourceUrl, $sourceUpdatedAt, $checkedAt, 'Parsed from the GOV.UK micro-entity thresholds page.'),
+        ];
+    }
+
+    /** @return array<string, mixed>|null */
+    public function fetchRuleForDate(string $taxDomain, string $regime, string $ruleKey, string $date): ?array
+    {
+        $this->ensureSchema();
+
+        return \InterfaceDB::fetchOne(
+            'SELECT *
+             FROM tax_rate_rules
+             WHERE tax_domain = :tax_domain
+               AND regime = :regime
+               AND rule_key = :rule_key
+               AND is_active = 1
+               AND period_start <= :date
+               AND period_end >= :date
+             ORDER BY period_start DESC, source_checked_at DESC, id DESC
+             LIMIT 1',
+            [
+                'tax_domain' => $taxDomain,
+                'regime' => $regime,
+                'rule_key' => $ruleKey,
+                'date' => $date,
+            ]
+        ) ?: null;
     }
 
     /**
@@ -822,6 +881,15 @@ final class TaxRateRuleService
         return round(((float)$number) * $multiplier, 2);
     }
 
+    private function thresholdAmount(string $text, string $pattern): ?float
+    {
+        if (preg_match($pattern, $text, $matches) !== 1) {
+            return null;
+        }
+
+        return $this->parseMoney($matches[1] ?? null);
+    }
+
     private function parseFraction(mixed $value): ?float
     {
         $text = $this->normaliseText((string)$value);
@@ -872,6 +940,7 @@ final class TaxRateRuleService
         return match ($domain) {
             'corporation_tax' => 'Corporation Tax',
             'capital_allowances' => 'Capital Allowances',
+            'company_size' => 'Company Size / FRS 105',
             default => ucwords(str_replace('_', ' ', $domain)),
         };
     }
@@ -883,6 +952,7 @@ final class TaxRateRuleService
             'ring_fence' => 'Ring fence',
             'special_unit_trust_oeic' => 'Unit trust/OEIC',
             'plant_machinery' => 'Plant and machinery',
+            'frs105_micro_entity' => 'FRS 105 micro-entity',
             default => ucwords(str_replace('_', ' ', $regime)),
         };
     }

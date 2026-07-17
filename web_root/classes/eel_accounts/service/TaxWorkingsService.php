@@ -917,7 +917,7 @@ final class TaxWorkingsService
             return 'Open Vehicles';
         }
         if (str_contains($lower, 'nominal') || str_contains($lower, 'tax treatment') || str_contains($lower, 'rate')) {
-            return 'Open Tax Rates';
+            return 'Open Rates / Thresholds';
         }
         if (str_contains($lower, 'upload') || str_contains($lower, 'csv')) {
             return 'Open Uploads';
@@ -936,7 +936,7 @@ final class TaxWorkingsService
     {
         return match ($this->workflowLabelForWarning($warning)) {
             'Open Vehicles' => '?page=vehicles',
-            'Open Tax Rates' => '?page=tax_rates',
+            'Open Rates / Thresholds' => '?page=tax_rates',
             'Open Uploads' => '?page=uploads',
             'Open Transactions' => '?page=transactions',
             'Open Assets' => '?page=assets',

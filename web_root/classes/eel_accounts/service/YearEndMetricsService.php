@@ -679,6 +679,7 @@ final class YearEndMetricsService
         return [
             'fixed_assets' => round((float)($buckets['fixed_assets'] ?? 0), 2),
             'current_assets' => round((float)($buckets['current_assets'] ?? 0), 2),
+            'prepayments_accrued_income' => round((float)($buckets['prepayments_accrued_income'] ?? 0), 2),
             'creditors_within_one_year' => round((float)($buckets['creditors_within_one_year'] ?? 0), 2),
             'creditors_after_more_than_one_year' => round((float)($buckets['creditors_after_more_than_one_year'] ?? 0), 2),
             'net_current_assets_liabilities' => round((float)($buckets['net_current_assets_liabilities'] ?? 0), 2),

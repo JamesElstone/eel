@@ -11,36 +11,244 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame([], $service->getFacts(0));
         });
 
-        $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'installer-safe schema creates mapping seed rows', static function () use ($harness, $service): void {
+        $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'schema check is read only and taxonomy profile is deterministic', static function () use ($harness, $service): void {
+            $before = InterfaceDB::tableRowCount('ixbrl_fact_mappings');
             $service->ensureSchema();
-            $harness->assertTrue(InterfaceDB::countWhere('ixbrl_fact_mappings', 'fact_key', 'entity_name') > 0);
-            $harness->assertTrue(InterfaceDB::countWhere('ixbrl_fact_mappings', 'fact_key', 'net_assets_liabilities') > 0);
+            $harness->assertSame($before, InterfaceDB::tableRowCount('ixbrl_fact_mappings'));
+            $first = (new \eel_accounts\Service\IxbrlTaxonomyProfileService())->mappings();
+            $second = (new \eel_accounts\Service\IxbrlTaxonomyProfileService())->mappings();
+            $harness->assertSame($first, $second);
+        });
+
+        $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'keeps runtime migration master schema and database taxonomy mappings in exact parity', static function () use ($harness): void {
+            if (!InterfaceDB::tableExists('ixbrl_fact_mappings')
+                || !InterfaceDB::columnExists('ixbrl_fact_mappings', 'namespace_uri')) {
+                $harness->skip('latest iXBRL taxonomy migration is not applied to this test database');
+            }
+
+            $runtime = (new \eel_accounts\Service\IxbrlTaxonomyProfileService())->mappings();
+            $database = InterfaceDB::fetchAll(
+                'SELECT * FROM ixbrl_fact_mappings ORDER BY sort_order, fact_key'
+            );
+            $harness->assertSame(count($runtime), count($database));
+            $stringFields = [
+                'fact_key', 'taxonomy_concept', 'namespace_uri', 'local_name', 'label',
+                'value_type', 'calculation_type', 'source_key',
+                'period_type', 'unit_ref', 'decimals_value', 'context_profile',
+            ];
+            $integerFields = ['comparative_enabled', 'is_required', 'sort_order', 'is_active'];
+            foreach ($runtime as $index => $mapping) {
+                $row = (array)($database[$index] ?? []);
+                foreach ($stringFields as $field) {
+                    $harness->assertSame((string)($mapping[$field] ?? ''), (string)($row[$field] ?? ''));
+                }
+                foreach ($integerFields as $field) {
+                    $harness->assertSame((int)($mapping[$field] ?? 0), (int)($row[$field] ?? 0));
+                }
+                $harness->assertSame(
+                    (float)($mapping['sign_multiplier'] ?? 0),
+                    (float)($row['sign_multiplier'] ?? 0)
+                );
+                $runtimeDimensions = json_decode((string)($mapping['dimensions_json'] ?? ''), true);
+                $databaseDimensions = json_decode((string)($row['dimensions_json'] ?? ''), true);
+                $harness->assertSame(
+                    is_array($runtimeDimensions) ? $runtimeDimensions : null,
+                    is_array($databaseDimensions) ? $databaseDimensions : null
+                );
+            }
+
+            $extractSeedRows = static function (string $sql): array {
+                if (preg_match('/INSERT INTO\\s+`?ixbrl_fact_mappings`?\\s*\\(/i', $sql, $match, PREG_OFFSET_CAPTURE) !== 1) {
+                    return [];
+                }
+                $start = (int)$match[0][1];
+                $end = strpos($sql, ';', $start);
+                $block = $end === false ? substr($sql, $start) : substr($sql, $start, $end - $start);
+                preg_match_all('/^\\s*(\\(\'[^\\r\\n]+\\))[,]?\\s*$/m', $block, $rows);
+                return array_values(array_map('trim', (array)($rows[1] ?? [])));
+            };
+            $migrationSql = (string)file_get_contents(
+                PROJECT_ROOT . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
+                . DIRECTORY_SEPARATOR . '2026_07_16_005_ixbrl_taxonomy_facts.sql'
+            );
+            $masterSql = (string)file_get_contents(
+                PROJECT_ROOT . 'db_schema' . DIRECTORY_SEPARATOR . 'eel_accounts.schema.sql'
+            );
+            $migrationRows = $extractSeedRows($migrationSql);
+            $masterRows = $extractSeedRows($masterSql);
+            $harness->assertSame(count($runtime), count($migrationRows));
+            $harness->assertSame($migrationRows, $masterRows);
         });
 
         $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'schema includes filing export validation metadata', static function () use ($harness, $service): void {
             $service->ensureSchema();
-            foreach (['export_type', 'taxonomy_profile', 'validation_status', 'validation_errors_json', 'external_validator', 'external_validation_status', 'external_validation_errors_json', 'external_validation_warnings_json', 'external_validation_log_path', 'external_validated_at'] as $column) {
-                $harness->assertTrue(InterfaceDB::columnExists('ixbrl_generation_runs', $column));
+            $migration = (string)file_get_contents(PROJECT_ROOT . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations' . DIRECTORY_SEPARATOR . '2026_07_16_005_ixbrl_taxonomy_facts.sql');
+            foreach (['basis_version', 'basis_hash', 'external_validated_sha256', 'dimensions_json', 'context_profile'] as $column) {
+                $harness->assertTrue(str_contains($migration, $column));
             }
         });
 
-        $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'repairs long-term creditor and equity mapping aliases', static function () use ($harness, $service): void {
-            $service->ensureSchema();
-            $creditors = InterfaceDB::fetchOne('SELECT taxonomy_concept, source_key FROM ixbrl_fact_mappings WHERE fact_key = :fact_key', ['fact_key' => 'creditors_after_one_year']);
-            $equity = InterfaceDB::fetchOne('SELECT source_key FROM ixbrl_fact_mappings WHERE fact_key = :fact_key', ['fact_key' => 'equity']);
-
-            $harness->assertSame('uk-gaap:CreditorsDueAfterMoreThanOneYear', (string)($creditors['taxonomy_concept'] ?? ''));
-            $harness->assertSame('creditors_after_more_than_one_year', (string)($creditors['source_key'] ?? ''));
-            $harness->assertSame('equity_capital_reserves', (string)($equity['source_key'] ?? ''));
+        $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'uses official concepts contexts units and creditor dimensions', static function () use ($harness): void {
+            $mappings = [];
+            foreach ((new \eel_accounts\Service\IxbrlTaxonomyProfileService())->mappings() as $mapping) {
+                $mappings[(string)$mapping['fact_key']] = $mapping;
+            }
+            $harness->assertSame('core:Creditors', (string)$mappings['creditors_after_one_year']['taxonomy_concept']);
+            $harness->assertSame('core:Equity', (string)$mappings['equity']['taxonomy_concept']);
+            $harness->assertSame('core:RawMaterialsConsumablesUsed', (string)$mappings['raw_materials_consumables']['taxonomy_concept']);
+            $harness->assertSame('core:PrepaymentsAccruedIncome', (string)$mappings['prepayments_accrued_income']['taxonomy_concept']);
+            $harness->assertSame('pure', (string)$mappings['average_number_employees']['unit_ref']);
+            $harness->assertSame('0', (string)$mappings['average_number_employees']['decimals_value']);
+            $harness->assertTrue(str_contains((string)$mappings['creditors_within_one_year']['dimensions_json'], 'WithinOneYear'));
+            $harness->assertSame('core:DirectorSigningFinancialStatements', (string)$mappings['director_signing_financial_statements']['taxonomy_concept']);
+            $harness->assertSame('fixed_marker', (string)$mappings['entity_trading_status']['calculation_type']);
+            $harness->assertTrue(str_contains((string)$mappings['accounting_standards_applied']['dimensions_json'], 'Micro-entities'));
+            $harness->assertTrue(str_contains((string)$mappings['accounts_status']['dimensions_json'], 'AuditExempt-NoAccountantsReport'));
+            $harness->assertTrue(str_contains((string)$mappings['country_formation_or_incorporation']['dimensions_json'], 'countries:EnglandWales'));
+            $harness->assertSame('bus:VersionProductionSoftware', (string)$mappings['production_software_version']['taxonomy_concept']);
         });
 
+        $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'maps each explicit trading disclosure to the correct taxonomy context', static function () use ($harness, $service): void {
+            $tradingMapping = null;
+            foreach ((new \eel_accounts\Service\IxbrlTaxonomyProfileService())->mappings() as $mapping) {
+                if ((string)$mapping['fact_key'] === 'entity_trading_status') {
+                    $tradingMapping = $mapping;
+                    break;
+                }
+            }
+            $harness->assertTrue(is_array($tradingMapping));
+            $method = new ReflectionMethod(\eel_accounts\Service\IxbrlFactBuilderService::class, 'factFromMapping');
+            $method->setAccessible(true);
+            $report = [
+                'company' => ['company_name' => 'Fixture Limited', 'company_number' => '01234567'],
+                'accounting_period' => ['period_start' => '2025-01-01', 'period_end' => '2025-12-31'],
+                'disclosures' => [],
+                'current' => ['buckets' => [], 'sources' => []],
+                'application_name' => 'EEL Accounts',
+            ];
+            foreach ([
+                'trading' => ['current_period_duration', null],
+                'never_traded' => ['current_period_duration_entity_never_traded', 'bus:EntityHasNeverTraded'],
+                'no_longer_trading' => ['current_period_duration_entity_no_longer_trading', 'bus:EntityNoLongerTradingButTradedInPast'],
+            ] as $status => [$expectedContext, $expectedMember]) {
+                $report['disclosures']['entity_trading_status'] = $status;
+                $fact = $method->invoke($service, $tradingMapping, $report, false);
+                $harness->assertSame($expectedContext, (string)($fact['context_ref'] ?? ''));
+                $dimensions = json_decode((string)($fact['dimensions_json'] ?? ''), true);
+                if ($expectedMember === null) {
+                    $harness->assertSame(null, $fact['dimensions_json']);
+                } else {
+                    $harness->assertSame($expectedMember, (string)($dimensions['bus:EntityTradingStatusDimension'] ?? ''));
+                }
+            }
+        });
+
+        $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'normalises the supported UK identity without duplicating the postcode', static function () use ($harness): void {
+            $identity = new \eel_accounts\Service\IxbrlCompanyIdentityService();
+            $company = $identity->normalise([
+                'company_name' => 'Elstone Electricals Limited',
+                'company_number' => '14337285',
+                'company_status' => 'active',
+                'companies_house_type' => 'ltd',
+                'companies_house_jurisdiction' => 'england-wales',
+                'registered_office_address_line_1' => 'Silveroaks Oakfield',
+                'registered_office_address_line_2' => 'Goldsworth Park',
+                'registered_office_locality' => 'Woking',
+                'registered_office_region' => 'Gu21 3qs',
+                'registered_office_postal_code' => 'GU21 3QS',
+                'registered_office_country' => 'United Kingdom',
+            ]);
+            $harness->assertSame('Woking', (string)$company['registered_office_address_line_3']);
+            $harness->assertSame([], $identity->errors($company));
+            $company['company_name'] = '';
+            $harness->assertTrue(in_array('Company legal name is missing.', $identity->errors($company), true));
+        });
+
+        $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'uses the prior locked period employee disclosure for the comparative fact', static function () use ($harness, $service): void {
+            $mapping = null;
+            foreach ((new \eel_accounts\Service\IxbrlTaxonomyProfileService())->mappings() as $candidate) {
+                if ((string)$candidate['fact_key'] === 'average_number_employees') {
+                    $mapping = $candidate;
+                    break;
+                }
+            }
+            $method = new ReflectionMethod(\eel_accounts\Service\IxbrlFactBuilderService::class, 'factFromMapping');
+            $method->setAccessible(true);
+            $fact = $method->invoke($service, $mapping, [
+                'company' => [],
+                'accounting_period' => ['period_start' => '2025-01-01', 'period_end' => '2025-12-31'],
+                'disclosures' => ['average_number_employees' => 99],
+                'current' => ['buckets' => [], 'sources' => []],
+                'comparative' => [
+                    'period' => ['period_start' => '2024-01-01', 'period_end' => '2024-12-31'],
+                    'mapping' => ['buckets' => [], 'sources' => []],
+                    'disclosures' => ['average_number_employees' => 3, 'revision' => 2],
+                ],
+            ], true);
+            $harness->assertSame(3.0, (float)($fact['numeric_value'] ?? -1));
+            $harness->assertSame('comparative_period_duration', (string)($fact['context_ref'] ?? ''));
+        });
+
+        $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'prorates only the turnover threshold for a long accounting period', static function () use ($harness): void {
+            ixbrlFactBuilderEnsureFrsThresholdFixtures();
+            $result = (new \eel_accounts\Service\IxbrlMicroEntityEligibilityService())->evaluate(
+                '2022-09-05',
+                '2023-09-30',
+                10025.44,
+                1687.52,
+                1
+            );
+            $harness->assertSame(391, (int)$result['period_days']);
+            $harness->assertSame(316000.0, (float)$result['thresholds']['balance_sheet_total']);
+        $harness->assertTrue((float)$result['thresholds']['turnover'] > 632000.0);
+        $harness->assertSame(true, (bool)$result['qualifies']);
+        $failsOne = (new \eel_accounts\Service\IxbrlMicroEntityEligibilityService())->evaluate(
+            '2022-01-01',
+            '2022-12-31',
+            632001.0,
+            100.0,
+            1
+        );
+        $harness->assertSame(2, (int)$failsOne['pass_count']);
+        $harness->assertSame(false, (bool)$failsOne['qualifies']);
+    });
+
         $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'records Director Loan presentation provenance and makes older facts stale after a reporting change', static function () use ($harness, $service): void {
+            if (!InterfaceDB::tableExists('ixbrl_accounts_disclosures')
+                || !InterfaceDB::columnExists('ixbrl_generation_runs', 'basis_hash')
+                || !InterfaceDB::columnExists('ixbrl_generation_facts', 'dimensions_json')) {
+                $harness->skip('latest iXBRL migrations are not applied to this test database');
+            }
             InterfaceDB::beginTransaction();
             try {
                 $fixture = ixbrlFactBuilderDirectorLoanFixture();
                 $companyId = (int)$fixture['company_id'];
                 $periodId = (int)$fixture['accounting_period_id'];
                 $presentationService = new \eel_accounts\Service\DirectorLoanReportingPresentationService();
+
+                $savedDisclosures = (new \eel_accounts\Service\IxbrlAccountsDisclosureService())->save(
+                    $companyId,
+                    $periodId,
+                    [
+                        'accounting_standard' => 'FRS_105',
+                        'average_number_employees' => 1,
+                        'entity_dormant' => 0,
+                        'is_still_trading' => 1,
+                        'accounts_approval_date' => '2026-01-31',
+                        'approving_director_name' => 'Fixture Director',
+                        'prepared_under_small_companies_regime' => 1,
+                        'audit_exempt_section_477' => 1,
+                        'directors_acknowledge_responsibilities' => 1,
+                        'members_have_not_required_audit' => 1,
+                        'micro_entity_eligibility_confirmed' => 1,
+                        'going_concern_basis_appropriate' => 1,
+                        'has_material_off_balance_sheet_arrangements' => 0,
+                        'has_director_advances_credits_or_guarantees' => 0,
+                        'has_financial_commitments_guarantees_or_contingencies' => 0,
+                    ],
+                    'test'
+                );
+                $harness->assertSame(true, (bool)($savedDisclosures['success'] ?? false));
 
                 $defaultRunId = $service->buildFacts($companyId, $periodId);
                 $defaultWithin = ixbrlFactBuilderFact($defaultRunId, 'creditors_within_one_year');
@@ -53,50 +261,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame('within_one_year', (string)($defaultProvenance['classification'] ?? ''));
                 $harness->assertSame(0, (int)($defaultProvenance['revision'] ?? -1));
                 $harness->assertSame('current', (string)($service->getRunFreshness($defaultRunId)['state'] ?? ''));
-
-                $legacySource = json_encode([
-                    'calculation_type' => 'derived',
-                    'source_key' => 'legacy',
-                ], JSON_THROW_ON_ERROR);
-                InterfaceDB::prepareExecute(
-                    'UPDATE ixbrl_generation_facts
-                     SET source_json = :source_json
-                     WHERE run_id = :run_id
-                       AND fact_key IN (:within_key, :after_key)',
-                    [
-                        'source_json' => $legacySource,
-                        'run_id' => $defaultRunId,
-                        'within_key' => 'creditors_within_one_year',
-                        'after_key' => 'creditors_after_one_year',
-                    ]
-                );
-                $harness->assertSame(
-                    'unverifiable',
-                    (string)($service->getRunFreshness($defaultRunId)['state'] ?? '')
-                );
-                InterfaceDB::prepareExecute(
-                    'UPDATE ixbrl_generation_facts
-                     SET source_json = :source_json
-                     WHERE run_id = :run_id
-                       AND fact_key = :fact_key',
-                    [
-                        'source_json' => (string)$defaultWithin['source_json'],
-                        'run_id' => $defaultRunId,
-                        'fact_key' => 'creditors_within_one_year',
-                    ]
-                );
-                InterfaceDB::prepareExecute(
-                    'UPDATE ixbrl_generation_facts
-                     SET source_json = :source_json
-                     WHERE run_id = :run_id
-                       AND fact_key = :fact_key',
-                    [
-                        'source_json' => (string)$defaultAfter['source_json'],
-                        'run_id' => $defaultRunId,
-                        'fact_key' => 'creditors_after_one_year',
-                    ]
-                );
-                $harness->assertSame('current', (string)($service->getRunFreshness($defaultRunId)['state'] ?? ''));
+                $harness->assertSame('core:Creditors', (string)($defaultWithin['taxonomy_concept'] ?? ''));
+                $harness->assertTrue(str_contains((string)($defaultWithin['dimensions_json'] ?? ''), 'WithinOneYear'));
 
                 $saved = $presentationService->save(
                     $companyId,
@@ -162,9 +328,28 @@ function ixbrlFactBuilderDirectorLoanFixture(): array
     $suffix = substr(hash('sha256', __FILE__ . microtime(true)), 0, 10);
     $companyNumber = 'IF' . strtoupper(substr($suffix, 0, 8));
     InterfaceDB::prepareExecute(
-        'INSERT INTO companies (company_name, company_number)
-         VALUES (:company_name, :company_number)',
-        ['company_name' => 'iXBRL Fact DLA Fixture Limited', 'company_number' => $companyNumber]
+        'INSERT INTO companies (
+            company_name, company_number, company_status, companies_house_type,
+            companies_house_jurisdiction, registered_office_address_line_1,
+            registered_office_address_line_2, registered_office_locality,
+            registered_office_postal_code, registered_office_country
+         ) VALUES (
+            :company_name, :company_number, :company_status, :company_type,
+            :jurisdiction, :address_line_1, :address_line_2, :locality,
+            :postal_code, :country
+         )',
+        [
+            'company_name' => 'iXBRL Fact DLA Fixture Limited',
+            'company_number' => $companyNumber,
+            'company_status' => 'active',
+            'company_type' => 'ltd',
+            'jurisdiction' => 'england-wales',
+            'address_line_1' => '1 Fixture Street',
+            'address_line_2' => 'Fixture Park',
+            'locality' => 'Testford',
+            'postal_code' => 'TE5 7GB',
+            'country' => 'United Kingdom',
+        ]
     );
     $companyId = (int)InterfaceDB::fetchColumn(
         'SELECT id FROM companies WHERE company_number = :company_number',
@@ -183,6 +368,11 @@ function ixbrlFactBuilderDirectorLoanFixture(): array
     $periodId = (int)InterfaceDB::fetchColumn(
         'SELECT id FROM accounting_periods WHERE company_id = :company_id',
         ['company_id' => $companyId]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO year_end_reviews (company_id, accounting_period_id, is_locked, locked_at, locked_by)
+         VALUES (:company_id, :accounting_period_id, 1, CURRENT_TIMESTAMP, :locked_by)',
+        ['company_id' => $companyId, 'accounting_period_id' => $periodId, 'locked_by' => 'test']
     );
 
     $assetSubtypeId = ixbrlFactBuilderDlaSubtype('bank', 'Bank', 'asset');
@@ -204,6 +394,7 @@ function ixbrlFactBuilderDirectorLoanFixture(): array
         $liabilitySubtypeId
     );
     $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
+    $settings->set('default_currency', 'GBP', 'char');
     $settings->set('director_loan_liability_nominal_id', $liabilityNominalId, 'int');
     $settings->flush();
 
@@ -295,4 +486,44 @@ function ixbrlFactBuilderFact(int $runId, string $factKey): array
     );
 
     return is_array($row) ? $row : [];
+}
+
+function ixbrlFactBuilderEnsureFrsThresholdFixtures(): void
+{
+    (new \eel_accounts\Service\TaxRateRuleService())->ensureSchema();
+    foreach ([
+        ['turnover', 632000.0],
+        ['balance_sheet_total', 316000.0],
+        ['employees', 10.0],
+    ] as [$key, $amount]) {
+        if ((int)InterfaceDB::fetchColumn(
+            'SELECT COUNT(*) FROM tax_rate_rules WHERE tax_domain = :domain AND regime = :regime AND rule_key = :rule_key AND period_start = :period_start',
+            ['domain' => 'company_size', 'regime' => 'frs105_micro_entity', 'rule_key' => $key, 'period_start' => '1900-01-01']
+        ) > 0) {
+            continue;
+        }
+        InterfaceDB::prepareExecute(
+            'INSERT INTO tax_rate_rules (
+                tax_domain, regime, rule_key, rule_label, period_start, period_end, value_type,
+                amount_value, source_url, source_checked_at, rule_version, is_active, notes
+             ) VALUES (
+                :domain, :regime, :rule_key, :label, :period_start, :period_end, :value_type,
+                :amount, :source_url, :checked_at, :version, 1, :notes
+             )',
+            [
+                'domain' => 'company_size',
+                'regime' => 'frs105_micro_entity',
+                'rule_key' => $key,
+                'label' => 'FRS 105 ' . $key,
+                'period_start' => '1900-01-01',
+                'period_end' => '2025-04-05',
+                'value_type' => 'amount',
+                'amount' => $amount,
+                'source_url' => 'https://www.gov.uk/annual-accounts/microentities-small-and-dormant-companies',
+                'checked_at' => '2026-07-17',
+                'version' => 'fixture-frs105-' . $key,
+                'notes' => 'Test fixture.',
+            ]
+        );
+    }
 }

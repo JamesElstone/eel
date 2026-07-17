@@ -153,6 +153,7 @@ final class SetupHealthService
     {
         $requiredKeys = [
             'default_bank_nominal_id' => 'Default bank',
+            'default_sales_nominal_id' => 'Default sales',
             'default_trade_nominal_id' => 'Default trade',
             'default_expense_nominal_id' => 'Expense claims payable',
             'director_loan_asset_nominal_id' => 'Director loan asset',

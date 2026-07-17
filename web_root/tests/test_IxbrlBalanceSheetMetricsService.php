@@ -28,6 +28,92 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('prior_period_unlocked', (string)(($metrics['prior_period_dependency'] ?? [])['status'] ?? ''));
         });
 
+        $harness->check(\eel_accounts\Service\IxbrlBalanceSheetMetricsService::class, 'splits prepayments from current assets without changing balance-sheet subtotals', static function () use ($harness, $service): void {
+            InterfaceDB::beginTransaction();
+            try {
+                $suffix = substr(hash('sha256', __FILE__ . ':prepayments:' . microtime(true)), 0, 10);
+                $companyNumber = 'IP' . strtoupper(substr($suffix, 0, 8));
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO companies (company_name, company_number) VALUES (:company_name, :company_number)',
+                    ['company_name' => 'iXBRL Prepayment Split Limited', 'company_number' => $companyNumber]
+                );
+                $companyId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM companies WHERE company_number = :company_number',
+                    ['company_number' => $companyNumber]
+                );
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO accounting_periods (company_id, label, period_start, period_end) VALUES (:company_id, :label, :period_start, :period_end)',
+                    ['company_id' => $companyId, 'label' => 'Prepayment Split FY', 'period_start' => '2026-01-01', 'period_end' => '2026-12-31']
+                );
+                $periodId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM accounting_periods WHERE company_id = :company_id',
+                    ['company_id' => $companyId]
+                );
+                $bank = ixbrlBalanceSheetNominal(
+                    'PB' . $suffix,
+                    'Fixture Bank',
+                    'asset',
+                    ixbrlBalanceSheetSubtype('bank', 'Bank', 'asset')
+                );
+                $prepayment = ixbrlBalanceSheetNominal(
+                    'PP' . $suffix,
+                    'Fixture Prepayments',
+                    'asset',
+                    ixbrlBalanceSheetSubtype('prepayments', 'Prepayments', 'asset')
+                );
+                $creditor = ixbrlBalanceSheetNominal(
+                    'PC' . $suffix,
+                    'Fixture Creditor',
+                    'liability',
+                    ixbrlBalanceSheetSubtype('trade_creditor', 'Trade Creditor', 'liability')
+                );
+                $equity = ixbrlBalanceSheetNominal(
+                    'PE' . $suffix,
+                    'Fixture Equity',
+                    'equity',
+                    ixbrlBalanceSheetSubtype('capital_reserves', 'Capital and Reserves', 'equity')
+                );
+                $journalId = ixbrlBalanceSheetJournal(
+                    $companyId,
+                    $periodId,
+                    'fixture-prepayment-split-' . $suffix,
+                    '2026-12-31'
+                );
+                ixbrlBalanceSheetLine($journalId, $bank, 500.0, 0.0);
+                ixbrlBalanceSheetLine($journalId, $prepayment, 75.0, 0.0);
+                ixbrlBalanceSheetLine($journalId, $creditor, 0.0, 50.0);
+                ixbrlBalanceSheetLine($journalId, $equity, 0.0, 525.0);
+
+                $metrics = $service->fetchClosingMetrics($companyId, $periodId);
+                $buckets = (array)($metrics['buckets'] ?? []);
+                $sources = (array)($metrics['sources'] ?? []);
+                $harness->assertSame(500.0, (float)($buckets['current_assets'] ?? 0));
+                $harness->assertSame(75.0, (float)($buckets['prepayments_accrued_income'] ?? 0));
+                $harness->assertSame(525.0, (float)($buckets['net_current_assets_liabilities'] ?? 0));
+                $harness->assertSame(525.0, (float)($buckets['total_assets_less_current_liabilities'] ?? 0));
+                $harness->assertSame(525.0, (float)($buckets['net_assets_liabilities'] ?? 0));
+                foreach ([
+                    'current_assets',
+                    'prepayments_accrued_income',
+                    'net_current_assets_liabilities',
+                    'total_assets_less_current_liabilities',
+                    'net_assets_liabilities',
+                ] as $bucket) {
+                    $harness->assertSame(
+                        number_format((float)($buckets[$bucket] ?? 0), 2, '.', ''),
+                        number_format(ixbrlBalanceSourceTotal((array)($sources[$bucket] ?? [])), 2, '.', '')
+                    );
+                }
+                $harness->assertSame(3, count((array)($sources['net_current_assets_liabilities'] ?? [])));
+                $harness->assertSame(4, count((array)($sources['total_assets_less_current_liabilities'] ?? [])));
+                $harness->assertSame(2, count((array)($sources['net_assets_liabilities'] ?? [])));
+            } finally {
+                if (InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
+                }
+            }
+        });
+
         $harness->check(\eel_accounts\Service\IxbrlBalanceSheetMetricsService::class, 'does not synthesise equity to hide a balance sheet difference', static function () use ($harness, $service): void {
             InterfaceDB::beginTransaction();
             try {
@@ -204,6 +290,15 @@ function ixbrlBalanceSheetLine(int $journalId, int $nominalId, float $debit, flo
          VALUES (:journal_id, :nominal_id, :debit, :credit, :description)',
         ['journal_id' => $journalId, 'nominal_id' => $nominalId, 'debit' => $debit, 'credit' => $credit, 'description' => 'Fixture line']
     );
+}
+
+/** @param list<array<string, mixed>> $rows */
+function ixbrlBalanceSourceTotal(array $rows): float
+{
+    return round(array_sum(array_map(
+        static fn(array $row): float => (float)($row['amount'] ?? 0),
+        $rows
+    )), 2);
 }
 
 function ixbrlDirectorLoanPresentationFixture(): array

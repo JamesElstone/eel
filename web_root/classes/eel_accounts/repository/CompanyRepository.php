@@ -14,6 +14,7 @@ final class CompanyRepository
 {
     private const NOMINAL_SETTING_KEYS = [
         'default_bank_nominal_id',
+        'default_sales_nominal_id',
         'default_trade_nominal_id',
         'default_expense_nominal_id',
         'tools_small_equipment_nominal_id',

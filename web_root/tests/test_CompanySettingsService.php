@@ -200,12 +200,14 @@ $harness->run(\eel_accounts\Service\CompanySettingsService::class, static functi
 
         $suggestions = $method->invoke($service, [
             ['id' => 10, 'code' => '1200', 'name' => 'Bank', 'account_type' => 'asset', 'subtype_code' => 'bank'],
+            ['id' => 11, 'code' => '4000', 'name' => 'Sales', 'account_type' => 'income', 'subtype_code' => 'turnover'],
             ['id' => 14, 'code' => '2110', 'name' => 'Expense Claims Payable', 'account_type' => 'liability', 'subtype_code' => 'expense_payable'],
             ['id' => 15, 'code' => '2300', 'name' => 'Trade Creditors', 'account_type' => 'liability', 'subtype_code' => 'trade_creditor'],
             ['id' => 20, 'code' => '5000', 'name' => 'Materials', 'account_type' => 'expense', 'subtype_code' => ''],
         ]);
 
         $harness->assertSame(15, (int)($suggestions['default_trade_nominal_id']['id'] ?? 0));
+        $harness->assertSame(11, (int)($suggestions['default_sales_nominal_id']['id'] ?? 0));
     });
 
     $harness->check(\eel_accounts\Service\CompanySettingsService::class, 'suggests expense claims payable as the default expense nominal', static function () use ($harness, $service): void {

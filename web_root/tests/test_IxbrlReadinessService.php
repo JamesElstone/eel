@@ -9,7 +9,79 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $harness->check(\eel_accounts\Service\IxbrlReadinessService::class, 'blocks generation when company and period are missing', static function () use ($harness, $service): void {
             $readiness = $service->getReadiness(0, 0);
             $harness->assertSame(false, $readiness['can_build_facts']);
+            $harness->assertSame(false, $readiness['can_generate']);
+            $harness->assertSame(false, $readiness['can_validate']);
+            $harness->assertSame(false, $readiness['ready_for_filing']);
             $harness->assertTrue(count($readiness['blocking_errors']) > 0);
+        });
+
+        $harness->check(\eel_accounts\Service\IxbrlReadinessService::class, 'keeps filing-only failures out of the fact-build gate', static function () use ($harness, $service): void {
+            $addCheck = new ReflectionMethod(\eel_accounts\Service\IxbrlReadinessService::class, 'addCheck');
+            $addCheck->setAccessible(true);
+            $forStage = new ReflectionMethod(\eel_accounts\Service\IxbrlReadinessService::class, 'incompleteForStage');
+            $forStage->setAccessible(true);
+            $checks = [];
+
+            $arguments = [&$checks, 'external', 'Arelle', false, ['filing'], 'Arelle failed.'];
+            $addCheck->invokeArgs($service, $arguments);
+
+            $harness->assertSame([], $forStage->invoke($service, $checks, 'build'));
+            $harness->assertCount(1, $forStage->invoke($service, $checks, 'filing'));
+            $harness->assertSame('Filing blocked', (string)($checks[0]['status_label'] ?? ''));
+        });
+
+        $harness->check(\eel_accounts\Service\IxbrlReadinessService::class, 'treats the Year End lock as a fact-build prerequisite', static function () use ($harness, $service): void {
+            $addCheck = new ReflectionMethod(\eel_accounts\Service\IxbrlReadinessService::class, 'addCheck');
+            $addCheck->setAccessible(true);
+            $forStage = new ReflectionMethod(\eel_accounts\Service\IxbrlReadinessService::class, 'incompleteForStage');
+            $forStage->setAccessible(true);
+            $checks = [];
+
+            $arguments = [&$checks, 'year_end_locked', 'Year End finalised', false, ['build', 'generate', 'filing'], 'Complete and lock Year End.'];
+            $addCheck->invokeArgs($service, $arguments);
+
+            $harness->assertCount(1, $forStage->invoke($service, $checks, 'build'));
+            $harness->assertSame('Build blocked', (string)($checks[0]['status_label'] ?? ''));
+        });
+
+        $harness->check(\eel_accounts\Service\IxbrlReadinessService::class, 'requires every statutory profile fact before generation', static function () use ($harness, $service): void {
+            $method = new ReflectionMethod(\eel_accounts\Service\IxbrlReadinessService::class, 'requiredProfileFactKeys');
+            $method->setAccessible(true);
+            $keys = $method->invoke($service);
+
+            $profileKeys = [];
+            foreach ((new \eel_accounts\Service\IxbrlTaxonomyProfileService())->mappings() as $mapping) {
+                if (!empty($mapping['is_active']) && !empty($mapping['is_required'])) {
+                    $profileKeys[] = (string)$mapping['fact_key'];
+                }
+            }
+            $harness->assertSame(array_values(array_unique($profileKeys)), $keys);
+
+            foreach ([
+                'accounts_approval_date',
+                'approving_director_name',
+                'average_number_employees',
+                'entity_dormant',
+                'entity_trading_status',
+                'director_signing_financial_statements',
+                'accounting_standards_applied',
+                'accounts_status',
+                'small_companies_regime_statement',
+                'audit_exemption_statement',
+                'directors_responsibility_statement',
+                'members_no_audit_statement',
+            ] as $required) {
+                $harness->assertTrue(in_array($required, $keys, true));
+            }
+        });
+
+        $harness->check(\eel_accounts\Service\IxbrlReadinessService::class, 'requires comparative-enabled facts when a prior locked period exists', static function () use ($harness, $service): void {
+            $method = new ReflectionMethod(\eel_accounts\Service\IxbrlReadinessService::class, 'missingRequiredProfileFacts');
+            $method->setAccessible(true);
+            $missing = $method->invoke($service, 0, true);
+            $harness->assertTrue(in_array('comparative:turnover', $missing, true));
+            $harness->assertTrue(in_array('comparative:average_number_employees', $missing, true));
+            $harness->assertFalse(in_array('comparative:entity_name', $missing, true));
         });
 
         $harness->check(\eel_accounts\Service\IxbrlReadinessService::class, 'requires both director loan nominal settings', static function () use ($harness, $service): void {

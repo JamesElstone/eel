@@ -19,7 +19,7 @@ final class _tax_rates_ctCard extends CardBaseFramework
 
     public function title(): string
     {
-        return 'Corporation Tax and Allowance Rates';
+        return 'Corporation Tax, Allowance and FRS 105 Thresholds';
     }
 
     protected function additionalInvalidationFacts(): array
@@ -168,7 +168,7 @@ final class _tax_rates_ctCard extends CardBaseFramework
     private function refreshRatesAction(string $statusFilter, bool $isEmpty): string
     {
         $buttonClass = $isEmpty ? 'button danger' : 'button primary';
-        $buttonLabel = $isEmpty ? 'Import Live His Majesty\'s Revenue and Customs (HMRC) Rates' : 'Refresh HMRC CT Rates';
+        $buttonLabel = $isEmpty ? 'Import Live His Majesty\'s Revenue and Customs (HMRC) Rates and FRS 105 thresholds' : 'Refresh HMRC Rates and FRS 105 thresholds';
 
         return '<form method="post" action="?page=tax_rates" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '

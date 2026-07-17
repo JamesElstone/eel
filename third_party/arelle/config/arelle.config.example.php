@@ -14,6 +14,8 @@ return [
     'arelle_cmd' => $root . DIRECTORY_SEPARATOR . 'runtime' . DIRECTORY_SEPARATOR . 'venv' . DIRECTORY_SEPARATOR . 'Scripts' . DIRECTORY_SEPARATOR . 'arelleCmdLine.exe',
     'timeout_seconds' => 180,
     'logs_path' => $root . DIRECTORY_SEPARATOR . 'logs',
-    'packages' => [],
-    'flags' => ['--validate'],
+    'cache_path' => $root . DIRECTORY_SEPARATOR . 'runtime' . DIRECTORY_SEPARATOR . 'cache',
+    'packages' => [$root . DIRECTORY_SEPARATOR . 'taxonomies'],
+    'offline' => true,
+    'flags' => ['--validate', '--validationExitCode'],
 ];

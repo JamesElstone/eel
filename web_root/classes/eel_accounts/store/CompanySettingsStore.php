@@ -32,6 +32,7 @@ final class CompanySettingsStore
             'default_currency' => ['type' => 'char', 'default' => 'GBP'],
             'default_currency_symbol' => ['type' => 'char', 'default' => '&#163;'],
             'default_bank_nominal_id' => ['type' => 'int', 'default' => ''],
+            'default_sales_nominal_id' => ['type' => 'int', 'default' => ''],
             'default_trade_nominal_id' => ['type' => 'int', 'default' => ''],
             'default_expense_nominal_id' => ['type' => 'int', 'default' => ''],
             'tools_small_equipment_nominal_id' => ['type' => 'int', 'default' => ''],

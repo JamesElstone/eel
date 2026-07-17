@@ -104,13 +104,14 @@ final class PreTaxProfitLossService
                 (array)($prepaymentContext['errors'] ?? [])
             )));
         }
-        foreach ($closePreview->prepaymentExpenseRowsForPeriod(
+        $prepaymentExpenseRows = $closePreview->prepaymentExpenseRowsForPeriod(
             $companyId,
             $accountingPeriodId,
             $scope->periodStart,
             $scope->asAtDate,
             $prepaymentPreview
-        ) as $row) {
+        );
+        foreach ($prepaymentExpenseRows as $row) {
             $amount = (float)($row['amount'] ?? 0);
             $prepaymentExpenseAdjustment += $amount;
             if ((string)($row['account_type'] ?? '') === 'cost_of_sales') {
@@ -131,13 +132,18 @@ final class PreTaxProfitLossService
             }
         }
         $depreciationPreview ??= (new AssetService())->previewDepreciationRun($companyId, $accountingPeriodId);
-        $depreciation = $closePreview->depreciationExpenseForPeriod(
+        $depreciationExpenseRows = $closePreview->depreciationRowsForPeriod(
             $companyId,
             $accountingPeriodId,
             $scope->periodStart,
             $scope->asAtDate,
             $depreciationPreview
         );
+        $depreciation = 0.0;
+        foreach ($depreciationExpenseRows as $row) {
+            $depreciation = round($depreciation + (float)($row['amount'] ?? 0), 2);
+        }
+        $depreciation = round(max(0.0, $depreciation), 2);
         $operatingExpenses = round($operatingExpenses + $depreciation, 2);
         $income = round($income, 2);
         $costOfSales = round($costOfSales, 2);
@@ -152,9 +158,11 @@ final class PreTaxProfitLossService
             'gross_profit' => $grossProfit,
             'posted_operating_expense_total' => round($postedOperatingExpenses, 2),
             'prepayment_expense_adjustment' => round($prepaymentExpenseAdjustment, 2),
+            'prepayment_expense_rows' => $prepaymentExpenseRows,
             'prepayment_preview_reliable' => $prepaymentPreviewReliable,
             'prepayment_preview_warnings' => $prepaymentPreviewWarnings,
             'depreciation_expense' => round($depreciation, 2),
+            'depreciation_expense_rows' => $depreciationExpenseRows,
             'depreciation_preview' => $depreciationPreview,
             'operating_expense_total' => $operatingExpenses,
             'posted_corporation_tax_charge' => round($postedCt, 2),

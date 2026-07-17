@@ -23,17 +23,27 @@ final class _ixbrl_generationCard extends CardBaseFramework
         $run = (array)($context['ixbrl']['latest_run'] ?? []);
         $readiness = (array)($context['ixbrl']['readiness'] ?? []);
         $canBuild = !empty($readiness['can_build_facts']);
-        $canGenerate = $canBuild;
+        $canGenerate = !empty($readiness['can_generate']);
+        $canValidateExternal = !empty($readiness['can_validate']);
+        $readyForFiling = !empty($readiness['ready_for_filing']);
         $runFreshness = (array)($run['run_freshness'] ?? []);
         $stale = (int)($run['fact_count'] ?? 0) > 0
             && (string)($runFreshness['state'] ?? '') !== 'current';
-        $displayStatus = $stale ? 'stale' : (string)($run['status'] ?? 'draft');
+        $displayStatus = $readyForFiling
+            ? 'filing_ready'
+            : ($stale ? 'stale' : (string)($run['status'] ?? 'draft'));
         $fileExists = !$stale
             && trim((string)($run['generated_path'] ?? '')) !== ''
             && is_file((string)$run['generated_path']);
-        $canValidateExternal = $fileExists;
-        $download = $fileExists
-            ? '<a class="button" href="/outbound/ixbrl/' . rawurlencode((string)$run['generated_filename']) . '">Download Generated File</a>'
+        $download = $readyForFiling && $fileExists
+            ? '<form method="post" action="?page=ixbrl_builder" class="actions-row">'
+                . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+                . '<input type="hidden" name="card_action" value="Ixbrl">'
+                . '<input type="hidden" name="intent" value="download_ixbrl_filing">'
+                . '<input type="hidden" name="company_id" value="' . $companyId . '">'
+                . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
+                . '<button class="button primary" type="submit">Download Filing-ready File</button>'
+                . '</form>'
             : '';
 
         return '<div class="settings-stack">
@@ -45,9 +55,12 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 <div class="summary-grid">
                     ' . $this->metric('Generated at', (string)($run['generated_at'] ?? 'Not generated')) . '
                     ' . $this->metric('Output filename', (string)($run['generated_filename'] ?? '')) . '
-                    ' . $this->metric('SHA-256', (string)($run['output_sha256'] ?? '')) . '
+                    ' . $this->metric('Generated SHA-256', (string)($run['output_sha256'] ?? '')) . '
+                    ' . $this->metric('Validated SHA-256', (string)($run['external_validated_sha256'] ?? '')) . '
                     ' . $this->metric('Facts', (string)(int)($run['fact_count'] ?? 0)) . '
                     ' . $this->metric('Export type', (string)($run['export_type'] ?? '')) . '
+                    ' . $this->metric('Taxonomy profile', (string)($run['taxonomy_profile'] ?? '')) . '
+                    ' . $this->metric('Basis hash', (string)($run['basis_hash'] ?? '')) . '
                     ' . $this->metric('Validation', (string)($run['validation_status'] ?? '')) . '
                     ' . $this->metric('Arelle status', (string)($run['external_validation_status'] ?? 'not_configured')) . '
                     ' . $this->metric('Arelle validated at', (string)($run['external_validated_at'] ?? '')) . '
@@ -59,6 +72,10 @@ final class _ixbrl_generationCard extends CardBaseFramework
                         . '</div>'
                     : '') . '
                 <div class="helper">' . HelperFramework::escape($this->externalSummary($run)) . '</div>
+                ' . $this->validationDetails($run) . '
+                ' . (!$readyForFiling && $fileExists
+                    ? '<div class="helper"><span class="badge warning">Review draft only</span> The generated file is withheld from filing download until the current file passes every validation and hash check.</div>'
+                    : '') . '
                 <div class="helper">Generated XHTML is an FRS 105 micro-entity accounts iXBRL export for review and validation before filing.</div>
             </section>
             <form method="post" action="?page=ixbrl_builder" data-ajax="true" class="actions-row">
@@ -76,8 +93,8 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <button class="button primary" type="submit"' . ($canGenerate ? '' : ' disabled') . '>Generate Filing Export</button>
-                ' . $download . '
             </form>
+            ' . $download . '
             <form method="post" action="?page=ixbrl_builder" data-ajax="true" class="actions-row">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Ixbrl">
@@ -99,6 +116,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
         return match ($status) {
             'ready' => 'warning',
             'generated' => 'success',
+            'filing_ready' => 'success',
             'stale' => 'warning',
             'failed' => 'danger',
             default => 'muted',
@@ -123,12 +141,37 @@ final class _ixbrl_generationCard extends CardBaseFramework
             return 'Arelle external validation passed' . ($warningCount > 0 ? ' with ' . $warningCount . ' warning(s).' : '.');
         }
         if ($status === 'failed') {
-            return 'Arelle external validation failed with ' . $errorCount . ' error(s)' . ($logPath !== '' ? '. Log: ' . $logPath : '.');
+            return 'Arelle external validation failed with ' . $errorCount . ' error(s).';
         }
         if ($status === 'error') {
-            return 'Arelle external validation could not be completed' . ($logPath !== '' ? '. Log: ' . $logPath : '.');
+            return 'Arelle external validation could not be completed.';
         }
 
         return 'Arelle external validation has not been configured or run.';
+    }
+
+    private function validationDetails(array $run): string
+    {
+        $internalErrors = json_decode((string)($run['validation_errors_json'] ?? '[]'), true);
+        $externalErrors = json_decode((string)($run['external_validation_errors_json'] ?? '[]'), true);
+        $externalWarnings = json_decode((string)($run['external_validation_warnings_json'] ?? '[]'), true);
+        $groups = [
+            'Internal errors' => is_array($internalErrors) ? $internalErrors : [],
+            'Arelle errors' => is_array($externalErrors) ? $externalErrors : [],
+            'Arelle warnings' => is_array($externalWarnings) ? $externalWarnings : [],
+        ];
+        $html = '';
+        foreach ($groups as $label => $messages) {
+            if ($messages === []) {
+                continue;
+            }
+            $items = '';
+            foreach (array_slice($messages, 0, 20) as $message) {
+                $items .= '<li>' . HelperFramework::escape(is_scalar($message) ? (string)$message : (string)json_encode($message)) . '</li>';
+            }
+            $html .= '<section class="panel-soft"><h4>' . HelperFramework::escape($label) . '</h4><ul>' . $items . '</ul></section>';
+        }
+
+        return $html;
     }
 }

@@ -17,12 +17,14 @@ $harness->run(_companies_nominalsCard::class, static function (GeneratedServiceC
             'id' => 27,
             'settings' => [
                 'default_bank_nominal_id' => '10',
+                'default_sales_nominal_id' => '23',
                 'default_trade_nominal_id' => '15',
             ],
         ],
         'services' => [
             'company_nominals' => [
                 ['id' => 10, 'code' => '1000', 'name' => 'Bank', 'account_type' => 'asset', 'subtype_code' => 'bank'],
+                ['id' => 23, 'code' => '4000', 'name' => 'Sales', 'account_type' => 'income', 'subtype_code' => 'turnover'],
                 ['id' => 12, 'code' => '1200', 'name' => 'Director Loan Asset', 'account_type' => 'asset', 'subtype_code' => 'director_loan_asset'],
                 ['id' => 13, 'code' => '2100', 'name' => 'Director Loan Liability', 'account_type' => 'liability', 'subtype_code' => 'director_loan_liability'],
                 ['id' => 14, 'code' => '2110', 'name' => 'Expense Claims Payable', 'account_type' => 'liability', 'subtype_code' => 'expense_payable'],
@@ -42,11 +44,13 @@ $harness->run(_companies_nominalsCard::class, static function (GeneratedServiceC
 
     $harness->check(_companies_nominalsCard::class, 'renders default trade nominal field', static function () use ($harness, $html): void {
         $harness->assertTrue(str_contains($html, 'default_trade_nominal_id'));
+        $harness->assertTrue(str_contains($html, '<label for="default_sales_nominal_id">Default Sales nominal</label>'));
         $harness->assertTrue(str_contains($html, '<label for="default_trade_nominal_id">Default Trade nominal</label>'));
         preg_match('/data-state-fields="([^"]+)"/', $html, $stateFieldMatch);
         $stateFields = explode(',', (string)($stateFieldMatch[1] ?? ''));
         foreach ([
             'default_bank_nominal_id',
+            'default_sales_nominal_id',
             'default_trade_nominal_id',
             'default_expense_nominal_id',
             'tools_small_equipment_nominal_id',

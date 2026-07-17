@@ -14,39 +14,7 @@ final class HmrcSubmissionPackageService
 {
     public function locateAccountsIxbrl(int $companyId, int $accountingPeriodId): array
     {
-        if (!\InterfaceDB::tableExists('ixbrl_generation_runs')) {
-            return ['ok' => false, 'path' => null, 'filename' => null, 'warnings' => [], 'errors' => ['Accounts iXBRL generation table is missing.']];
-        }
-
-        $row = \InterfaceDB::fetchOne(
-            'SELECT id, generated_path, generated_filename, output_sha256, generated_at
-             FROM ixbrl_generation_runs
-             WHERE company_id = :company_id
-               AND accounting_period_id = :accounting_period_id
-               AND status = :status
-               AND generated_path IS NOT NULL
-             ORDER BY id DESC
-             LIMIT 1',
-            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'status' => 'generated']
-        );
-        if (is_array($row)) {
-            $freshness = (new IxbrlFactBuilderService())->getRunFreshness((int)($row['id'] ?? 0));
-            if ((string)($freshness['state'] ?? '') !== 'current') {
-                return [
-                    'ok' => false,
-                    'path' => null,
-                    'filename' => null,
-                    'warnings' => [],
-                    'errors' => [(string)($freshness['detail'] ?? 'The generated accounts iXBRL is stale and must be rebuilt.')],
-                ];
-            }
-        }
-        $path = is_array($row) ? (string)($row['generated_path'] ?? '') : '';
-        if ($path === '' || !is_file($path)) {
-            return ['ok' => false, 'path' => null, 'filename' => null, 'warnings' => [], 'errors' => ['Generated accounts iXBRL/XHTML file was not found for this period.']];
-        }
-
-        return ['ok' => true, 'path' => $path, 'filename' => basename($path), 'warnings' => [], 'errors' => [], 'hash' => (string)($row['output_sha256'] ?? '')];
+        return (new IxbrlFilingArtifactService())->locate($companyId, $accountingPeriodId);
     }
 
     public function locateComputationsIxbrl(int $companyId, int $accountingPeriodId): array
@@ -161,6 +129,20 @@ final class HmrcSubmissionPackageService
         $row = \InterfaceDB::fetchOne('SELECT * FROM hmrc_ct600_submissions WHERE id = :id LIMIT 1', ['id' => $submissionId]);
 
         return is_array($row) ? $row : null;
+    }
+
+    private function accountsFailure(string $state, string $message, int $runId = 0): array
+    {
+        return [
+            'ok' => false,
+            'state' => $state,
+            'run_id' => $runId > 0 ? $runId : null,
+            'path' => null,
+            'filename' => null,
+            'warnings' => [],
+            'errors' => [$message],
+            'hash' => null,
+        ];
     }
 
     private function e(string $value): string

@@ -41,13 +41,34 @@ final class ArelleIxbrlValidator
             return $this->result(false, 'error', ['Could not create Arelle log directory.'], [], '', $started);
         }
 
+        $cachePath = trim((string)($config['cache_path'] ?? ''));
+        if ($cachePath === '') {
+            $cachePath = $this->rootPath() . DIRECTORY_SEPARATOR . 'runtime' . DIRECTORY_SEPARATOR . 'cache';
+        }
+        if (!is_dir($cachePath) && !mkdir($cachePath, 0775, true) && !is_dir($cachePath)) {
+            return $this->result(false, 'error', ['Could not create Arelle cache directory.'], [], '', $started);
+        }
+
         $timeout = max(1, (int)($config['timeout_seconds'] ?? 180));
-        $command = $this->buildCommand($arelleCommand, $ixbrlPath, (array)($config['flags'] ?? ['--validate']), (array)($config['packages'] ?? []));
+        $command = $this->buildCommand(
+            $arelleCommand,
+            $ixbrlPath,
+            (array)($config['flags'] ?? ['--validate']),
+            $this->configuredPackages((array)($config['packages'] ?? [])),
+            $cachePath,
+            !array_key_exists('offline', $config) || !empty($config['offline'])
+        );
         $execution = $this->runCommand($command, $timeout);
         $logPath = $this->writeLog($logsPath, $command, $execution);
         $output = trim((string)$execution['stdout'] . "\n" . (string)$execution['stderr']);
-        $errors = $this->matchingLines($output, '/(?:^|\s)(error|exception|traceback|critical)(?:\s|:|$)/i');
-        $warnings = $this->matchingLines($output, '/(?:^|\s)(warning|warn)(?:\s|:|$)/i');
+        $errors = $this->matchingLines(
+            $output,
+            '/(?:^|[\s\[])(?:error|exception|traceback|critical)(?=$|[\s:\]])/i'
+        );
+        $warnings = $this->matchingLines(
+            $output,
+            '/(?:^|[\s\[])(?:warning|warn)(?=$|[\s:\]])/i'
+        );
 
         if (!empty($execution['timed_out'])) {
             return $this->result(false, 'error', ['Arelle validation timed out after ' . $timeout . ' seconds.'], $warnings, $logPath, $started);
@@ -82,14 +103,66 @@ final class ArelleIxbrlValidator
         return rtrim((string)($this->rootPath ?? dirname(__DIR__)), '\\/');
     }
 
-    private function buildCommand(string $arelleCommand, string $ixbrlPath, array $flags, array $packages): string
+    private function configuredPackages(array $configuredPackages): array
+    {
+        if ($configuredPackages === []) {
+            $configuredPackages = [$this->rootPath() . DIRECTORY_SEPARATOR . 'taxonomies'];
+        }
+
+        $packages = [];
+        foreach ($configuredPackages as $configuredPackage) {
+            $configuredPackage = trim((string)$configuredPackage);
+            if ($configuredPackage === '') {
+                continue;
+            }
+            if (!$this->isAbsolutePath($configuredPackage)) {
+                $configuredPackage = $this->rootPath() . DIRECTORY_SEPARATOR . $configuredPackage;
+            }
+
+            if (is_dir($configuredPackage)) {
+                $zipFiles = glob(rtrim($configuredPackage, '\\/') . DIRECTORY_SEPARATOR . '*.zip') ?: [];
+                sort($zipFiles, SORT_STRING);
+                foreach ($zipFiles as $zipFile) {
+                    $packages[] = $zipFile;
+                }
+                continue;
+            }
+
+            $packages[] = $configuredPackage;
+        }
+
+        return array_values(array_unique($packages));
+    }
+
+    private function isAbsolutePath(string $path): bool
+    {
+        return preg_match('/^(?:[A-Za-z]:[\\\\\/]|[\\\\\/]{2}|\/)/', $path) === 1;
+    }
+
+    private function buildCommand(
+        string $arelleCommand,
+        string $ixbrlPath,
+        array $flags,
+        array $packages,
+        string $cachePath,
+        bool $offline
+    ): string
     {
         $parts = [escapeshellarg($arelleCommand)];
-        foreach ($flags !== [] ? $flags : ['--validate'] as $flag) {
+        $flags = $flags !== [] ? $flags : ['--validate'];
+        if (!in_array('--validationExitCode', $flags, true)) {
+            $flags[] = '--validationExitCode';
+        }
+        foreach ($flags as $flag) {
             $flag = trim((string)$flag);
             if ($flag !== '') {
                 $parts[] = escapeshellarg($flag);
             }
+        }
+        $parts[] = escapeshellarg('--cacheDirectory');
+        $parts[] = escapeshellarg($cachePath);
+        if ($offline) {
+            $parts[] = escapeshellarg('--internetConnectivity=offline');
         }
         foreach ($packages as $package) {
             $package = trim((string)$package);

@@ -5,10 +5,12 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $Logs = Join-Path $Root "logs"
+$Cache = Join-Path $Root "runtime\cache"
+$Taxonomies = Join-Path $Root "taxonomies"
 $ArelleCmd = Join-Path $Root "runtime\venv\Scripts\arelleCmdLine.exe"
 $Sample = Join-Path $Root "samples\smoke_inline_xbrl.xhtml"
 
-New-Item -ItemType Directory -Force -Path $Logs | Out-Null
+New-Item -ItemType Directory -Force -Path $Logs, $Cache, $Taxonomies | Out-Null
 
 if (!(Test-Path $ArelleCmd)) {
     throw "Arelle command not found at $ArelleCmd. Run install_arelle.bat first."
@@ -27,7 +29,18 @@ if (!(Test-Path $Sample)) {
     throw "Smoke sample not found at $Sample"
 }
 
-& $ArelleCmd --validate --file $Sample *> $sampleLog
+$ArelleArguments = @(
+    "--validate",
+    "--validationExitCode",
+    "--cacheDirectory", $Cache,
+    "--internetConnectivity=offline"
+)
+foreach ($Package in @(Get-ChildItem -LiteralPath $Taxonomies -Filter "*.zip" -File | Sort-Object FullName)) {
+    $ArelleArguments += @("--package", $Package.FullName)
+}
+$ArelleArguments += @("--file", $Sample)
+
+& $ArelleCmd @ArelleArguments *> $sampleLog
 $sampleExit = $LASTEXITCODE
 
 Write-Host "[Arelle] Help log: $helpLog"

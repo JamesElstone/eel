@@ -354,6 +354,7 @@ final class GoldenWorkflowCoverageFixture
             'associated_company_count' => ['int', '0'],
             'default_currency' => ['char', 'GBP'],
             'default_bank_nominal_id' => ['int', '91001'],
+            'default_sales_nominal_id' => ['int', '91002'],
             'default_trade_nominal_id' => ['int', '91021'],
             'default_expense_nominal_id' => ['int', '91004'],
             'tools_small_equipment_nominal_id' => ['int', '91004'],

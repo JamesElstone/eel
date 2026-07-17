@@ -1,6 +1,7 @@
 param(
     [string]$Version = "2.41.6",
     [string]$Python = "python",
+    [string]$TaxonomyPackage = "",
     [switch]$SkipSmokeTest
 )
 
@@ -9,10 +10,12 @@ $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $Runtime = Join-Path $Root "runtime"
 $Venv = Join-Path $Runtime "venv"
 $Logs = Join-Path $Root "logs"
+$Taxonomies = Join-Path $Root "taxonomies"
 $ConfigDir = Join-Path $Root "config"
 $ConfigPath = Join-Path $ConfigDir "arelle.config.php"
+$Cache = Join-Path $Runtime "cache"
 
-New-Item -ItemType Directory -Force -Path $Runtime, $Logs, $ConfigDir | Out-Null
+New-Item -ItemType Directory -Force -Path $Runtime, $Cache, $Logs, $Taxonomies, $ConfigDir | Out-Null
 
 function Write-Step([string]$Message) {
     Write-Host "[Arelle] $Message"
@@ -64,8 +67,27 @@ if (!(Test-Path $ArelleCmd)) {
     throw "Arelle command was not found at $ArelleCmd"
 }
 
+if ($TaxonomyPackage.Trim() -ne "") {
+    $SourceTaxonomyPackage = Resolve-Path $TaxonomyPackage -ErrorAction Stop
+    if ([System.IO.Path]::GetExtension($SourceTaxonomyPackage.Path).ToLowerInvariant() -ne ".zip") {
+        throw "TaxonomyPackage must be an official taxonomy package ZIP."
+    }
+    $DestinationTaxonomyPackage = Join-Path $Taxonomies ([System.IO.Path]::GetFileName($SourceTaxonomyPackage.Path))
+    if ($SourceTaxonomyPackage.Path -ne $DestinationTaxonomyPackage) {
+        Copy-Item -LiteralPath $SourceTaxonomyPackage.Path -Destination $DestinationTaxonomyPackage -Force
+    }
+    Write-Step "Installed taxonomy package at $DestinationTaxonomyPackage"
+}
+
+$InstalledTaxonomyPackages = @(Get-ChildItem -LiteralPath $Taxonomies -Filter "*.zip" -File)
+if ($InstalledTaxonomyPackages.Count -eq 0) {
+    Write-Warning "No taxonomy package ZIP is installed. Re-run with -TaxonomyPackage <official-package.zip> before filing validation."
+}
+
 $escapedArelle = $ArelleCmd.Replace("\", "\\")
 $escapedLogs = $Logs.Replace("\", "\\")
+$escapedCache = $Cache.Replace("\", "\\")
+$escapedTaxonomies = $Taxonomies.Replace("\", "\\")
 $config = @"
 <?php
 /**
@@ -79,8 +101,10 @@ return [
     'arelle_cmd' => '$escapedArelle',
     'timeout_seconds' => 180,
     'logs_path' => '$escapedLogs',
-    'packages' => [],
-    'flags' => ['--validate'],
+    'cache_path' => '$escapedCache',
+    'packages' => ['$escapedTaxonomies'],
+    'offline' => true,
+    'flags' => ['--validate', '--validationExitCode'],
 ];
 "@
 Set-Content -Path $ConfigPath -Value $config -Encoding ASCII

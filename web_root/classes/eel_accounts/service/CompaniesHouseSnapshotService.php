@@ -38,10 +38,11 @@ final class CompaniesHouseSnapshotService
 
         $fixedAssets = $this->money($buckets['fixed_assets'] ?? 0);
         $currentAssets = $this->money($buckets['current_assets'] ?? 0);
+        $prepaymentsAccruedIncome = $this->money($buckets['prepayments_accrued_income'] ?? 0);
         $creditorsWithinOneYear = $this->money($buckets['creditors_within_one_year'] ?? 0);
         $creditorsAfterOneYear = $this->money($buckets['creditors_after_more_than_one_year'] ?? 0);
-        $netCurrentAssets = $this->money($currentAssets - $creditorsWithinOneYear);
-        $totalAssetsLessCurrentLiabilities = $this->money($fixedAssets + $currentAssets - $creditorsWithinOneYear);
+        $netCurrentAssets = $this->money($currentAssets + $prepaymentsAccruedIncome - $creditorsWithinOneYear);
+        $totalAssetsLessCurrentLiabilities = $this->money($fixedAssets + $currentAssets + $prepaymentsAccruedIncome - $creditorsWithinOneYear);
         $totalNetAssets = $this->money($totalAssetsLessCurrentLiabilities - $creditorsAfterOneYear);
         $capitalAndReserves = $this->money($buckets['equity_capital_reserves'] ?? 0);
         $balanceEquationDifference = $this->money($totalNetAssets - $capitalAndReserves);
@@ -73,15 +74,16 @@ final class CompaniesHouseSnapshotService
                 $this->field('balance_sheet_date', 'Balance sheet date', (string)($period['period_end'] ?? ''), false),
                 $this->field('fixed_assets', 'Fixed assets', $fixedAssets, true, 'Fixed-asset subtype ledger balances.'),
                 $this->field('current_assets', 'Current assets', $currentAssets, true, 'Current assets exclude fixed assets. Bank balances sit here.'),
+                $this->field('prepayments_accrued_income', 'Prepayments and accrued income', $prepaymentsAccruedIncome, true, 'Prepayment and accrued-income asset subtypes shown separately from current assets.'),
                 $this->field('creditors_within_one_year', 'Creditors: amounts falling due within one year', $creditorsWithinOneYear, true),
-                $this->field('net_current_assets_liabilities', 'Net current assets / liabilities', $netCurrentAssets, true, 'Current assets less creditors due within one year.'),
-                $this->field('total_assets_less_current_liabilities', 'Total assets less current liabilities', $totalAssetsLessCurrentLiabilities, true, 'Fixed assets plus current assets less creditors due within one year.'),
+                $this->field('net_current_assets_liabilities', 'Net current assets / liabilities', $netCurrentAssets, true, 'Current assets plus prepayments and accrued income less creditors due within one year.'),
+                $this->field('total_assets_less_current_liabilities', 'Total assets less current liabilities', $totalAssetsLessCurrentLiabilities, true, 'Fixed assets plus current assets plus prepayments and accrued income less creditors due within one year.'),
                 $this->field('creditors_after_more_than_one_year', 'Creditors: amounts falling due after more than one year', $creditorsAfterOneYear, true, 'Includes explicit long-term/non-current liability subtypes and any period-specific Director Loan repayment presentation.'),
                 $this->field('net_assets_liabilities', 'Total net assets / liabilities', $totalNetAssets, true, 'Total assets less current liabilities less creditors after more than one year.'),
                 $this->field('equity_capital_reserves', 'Capital and reserves', $capitalAndReserves, true),
             ],
             'checks' => [
-                $this->check('Micro-entity balance sheet total', $this->money($fixedAssets + $currentAssets), 'Fixed assets plus current assets.'),
+                $this->check('Micro-entity balance sheet total', $this->money($fixedAssets + $currentAssets + $prepaymentsAccruedIncome), 'Fixed assets plus current assets plus prepayments and accrued income.'),
                 $this->check('Balance equation check', $balanceEquationDifference, 'Total net assets less capital and reserves.'),
                 $this->check(
                     'Balance sheet balanced',
@@ -152,6 +154,7 @@ final class CompaniesHouseSnapshotService
         return [
             'fixed_assets',
             'current_assets',
+            'prepayments_accrued_income',
             'creditors_within_one_year',
             'creditors_after_more_than_one_year',
             'equity_capital_reserves',

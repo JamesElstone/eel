@@ -143,7 +143,12 @@ final class RetainedEarningsCloseService
             self::JOURNAL_TAG,
             self::JOURNAL_KEY
         );
-        $assets = round((float)($balanceSheet['fixed_assets'] ?? 0) + (float)($balanceSheet['current_assets'] ?? 0), 2);
+        $assets = round(
+            (float)($balanceSheet['fixed_assets'] ?? 0)
+                + (float)($balanceSheet['current_assets'] ?? 0)
+                + (float)($balanceSheet['prepayments_accrued_income'] ?? 0),
+            2
+        );
         $liabilities = round((float)($balanceSheet['creditors_within_one_year'] ?? 0) + (float)($balanceSheet['creditors_after_more_than_one_year'] ?? 0), 2);
         $equity = round((float)($balanceSheet['equity_capital_reserves'] ?? 0), 2);
         $balanceEquationDifference = round($assets - $liabilities - $equity, 2);

@@ -282,6 +282,7 @@ final class NominalsAction implements ActionInterfaceFramework
             }
             $settings = [
                 'default_bank_nominal_id' => trim((string)$request->post('default_bank_nominal_id', '')),
+                'default_sales_nominal_id' => trim((string)$request->post('default_sales_nominal_id', '')),
                 'default_trade_nominal_id' => trim((string)$request->post('default_trade_nominal_id', '')),
                 'default_expense_nominal_id' => trim((string)$request->post('default_expense_nominal_id', '')),
                 'tools_small_equipment_nominal_id' => trim((string)$request->post('tools_small_equipment_nominal_id', '')),
@@ -302,7 +303,7 @@ final class NominalsAction implements ActionInterfaceFramework
             $nominalAccounts = (new \eel_accounts\Repository\NominalAccountRepository())->fetchNominalAccounts($companyId);
 
             return ActionResultFramework::success(
-                ['page.context'],
+                ['page.context', 'ixbrl.readiness', 'ixbrl.disclosures', 'ixbrl.facts.preview', 'ixbrl.generation'],
                 [[
                     'type' => 'success',
                     'message_html' => $this->savedNominalsMessageHtml($settings, $nominalAccounts),
@@ -332,7 +333,7 @@ final class NominalsAction implements ActionInterfaceFramework
             }
 
             return ActionResultFramework::success(
-                ['page.context'],
+                ['page.context', 'ixbrl.readiness', 'ixbrl.disclosures', 'ixbrl.facts.preview', 'ixbrl.generation'],
                 [[
                     'type' => 'success',
                     'message' => 'Suggested nominal assignments applied successfully.',
@@ -359,6 +360,7 @@ final class NominalsAction implements ActionInterfaceFramework
     {
         $labels = [
             'default_bank_nominal_id' => 'Default bank',
+            'default_sales_nominal_id' => 'Default sales',
             'default_trade_nominal_id' => 'Default trade',
             'default_expense_nominal_id' => 'Expense claims payable',
             'tools_small_equipment_nominal_id' => 'Tools & Small Equipment',

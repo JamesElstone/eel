@@ -16,7 +16,7 @@ final class _ixbrl_builder extends PageContextFramework
 
     public function title(): string
     {
-        return 'FRS 105 Accounts / iXBRL Export';
+        return 'Digital Data Export';
     }
 
     public function subtitle(): string
@@ -33,7 +33,7 @@ final class _ixbrl_builder extends PageContextFramework
     {
         return [
             'ixbrl_readiness',
-            'ixbrl_trial_balance',
+            'ixbrl_accounts_disclosures',
             'ixbrl_accounts_mapping',
             'ixbrl_facts_preview',
             'ixbrl_generation',
@@ -48,8 +48,12 @@ final class _ixbrl_builder extends PageContextFramework
                 'cards' => ['ixbrl_readiness'],
             ],
             [
-                'tab' => 'Trial Balance',
-                'cards' => ['ixbrl_trial_balance', 'ixbrl_accounts_mapping'],
+                'tab' => 'Disclosures',
+                'cards' => ['ixbrl_accounts_disclosures'],
+            ],
+            [
+                'tab' => 'Accounts Mapping',
+                'cards' => ['ixbrl_accounts_mapping'],
             ],
             [
                 'tab' => 'Facts',
@@ -73,17 +77,47 @@ final class _ixbrl_builder extends PageContextFramework
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
 
         $builder = new \eel_accounts\Service\IxbrlFactBuilderService();
-        $builder->ensureSchema();
-        $readiness = (new \eel_accounts\Service\IxbrlReadinessService())->getReadiness($companyId, $accountingPeriodId);
+        try {
+            $readiness = (new \eel_accounts\Service\IxbrlReadinessService())
+                ->getReadiness($companyId, $accountingPeriodId);
+        } catch (Throwable $exception) {
+            $readiness = [
+                'company' => $company,
+                'accounting_period' => [],
+                'checks' => [[
+                    'key' => 'ixbrl_read_model_error',
+                    'label' => 'iXBRL source data reconciles',
+                    'complete' => false,
+                    'blocking' => true,
+                    'blocking_stages' => ['build', 'generate', 'filing'],
+                    'status' => 'danger',
+                    'status_label' => 'Build blocked',
+                    'detail' => $exception->getMessage(),
+                ]],
+                'blocking_errors' => [$exception->getMessage()],
+                'generation_errors' => [$exception->getMessage()],
+                'filing_errors' => [$exception->getMessage()],
+                'can_build_facts' => false,
+                'can_generate' => false,
+                'can_validate' => false,
+                'ready_for_filing' => false,
+                'disclosures' => [],
+            ];
+        }
         $latestRun = $builder->getLatestRun($companyId, $accountingPeriodId);
         $facts = is_array($latestRun) ? $builder->getFacts((int)$latestRun['id']) : [];
+        try {
+            $accountsMapping = (new \eel_accounts\Service\IxbrlAccountsMappingService())
+                ->getAccountsMapping($companyId, $accountingPeriodId);
+        } catch (Throwable $exception) {
+            $accountsMapping = ['errors' => [$exception->getMessage()]];
+        }
 
         return [
             'ixbrl' => [
                 'readiness' => $readiness,
-                'trial_balance' => (new \eel_accounts\Service\IxbrlTrialBalanceService())->getTrialBalance($companyId, $accountingPeriodId),
-                'trial_balance_totals' => (new \eel_accounts\Service\IxbrlTrialBalanceService())->getTotals($companyId, $accountingPeriodId),
-                'accounts_mapping' => (new \eel_accounts\Service\IxbrlAccountsMappingService())->getAccountsMapping($companyId, $accountingPeriodId),
+                'disclosures' => (array)($readiness['disclosures'] ?? []),
+                'accounts_mapping' => $accountsMapping,
                 'latest_run' => $latestRun,
                 'facts' => $facts,
             ],

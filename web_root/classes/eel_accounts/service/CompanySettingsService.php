@@ -321,6 +321,7 @@ final class CompanySettingsService
 
         try {
             $settingsStore->set('default_bank_nominal_id', $settings['default_bank_nominal_id'] ?? '', 'int');
+            $settingsStore->set('default_sales_nominal_id', $settings['default_sales_nominal_id'] ?? '', 'int');
             $settingsStore->set('default_trade_nominal_id', $settings['default_trade_nominal_id'] ?? '', 'int');
             $settingsStore->set('default_expense_nominal_id', $settings['default_expense_nominal_id'] ?? '', 'int');
             $settingsStore->set('tools_small_equipment_nominal_id', $settings['tools_small_equipment_nominal_id'] ?? '', 'int');
@@ -371,6 +372,7 @@ final class CompanySettingsService
 
         foreach ([
             'default_bank_nominal_id',
+            'default_sales_nominal_id',
             'default_trade_nominal_id',
             'default_expense_nominal_id',
             'tools_small_equipment_nominal_id',
@@ -521,6 +523,15 @@ final class CompanySettingsService
                     && ($row['subtype_code'] === 'bank'
                         || $row['code'] === '1200'
                         || str_contains(strtolower($row['name']), 'bank'));
+            }),
+            'default_sales_nominal_id' => $this->firstMatchingNominal($normalised, static function (array $row): bool {
+                $name = strtolower($row['name']);
+
+                return $row['id'] > 0
+                    && $row['account_type'] === 'income'
+                    && ($row['subtype_code'] === 'turnover'
+                        || $row['code'] === '4000'
+                        || str_contains($name, 'sales'));
             }),
             'default_trade_nominal_id' => $this->firstMatchingNominal($normalised, static fn(array $row): bool => $row['id'] > 0 && $row['code'] === '2300')
                 ?? $this->firstMatchingNominal($normalised, static function (array $row): bool {

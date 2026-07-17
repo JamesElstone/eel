@@ -18,6 +18,10 @@ final class _ixbrl_accounts_mappingCard extends CardBaseFramework
     public function render(array $context): string
     {
         $mapping = (array)($context['ixbrl']['accounts_mapping'] ?? []);
+        $errors = (array)($mapping['errors'] ?? []);
+        if ($errors !== []) {
+            return '<div class="settings-stack">' . $this->renderErrors($errors) . '</div>';
+        }
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
         $buckets = (array)($mapping['buckets'] ?? []);
         $sources = (array)($mapping['sources'] ?? []);

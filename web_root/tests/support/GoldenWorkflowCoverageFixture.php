@@ -116,7 +116,7 @@ final class GoldenWorkflowCoverageFixture
                 ],
             ],
             'reporting_and_tax' => [
-                'pages' => ['trial_balance', 'profit_loss', 'tax', 'tax_rates'],
+                'pages' => ['trial_balance', 'profit_loss', 'corporation_tax', 'tax_rates'],
                 'evidence' => [
                     self::evidence('corporation-tax periods', 'SELECT COUNT(*) FROM corporation_tax_periods WHERE company_id IN (9100, 9400)', 2),
                     self::evidence('persisted computation runs', 'SELECT COUNT(*) FROM corporation_tax_computation_runs WHERE company_id = 9400', 2),

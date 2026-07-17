@@ -433,7 +433,7 @@ final class TestCardsHarness
         $this->assertPageFinalTabContains(new _journal(), 'Year End Confirmation', ['journal_cut_off_confirmation']);
         $this->assertPageTabContains(new _profit_loss(), 'Reserve Review', ['reserve_review']);
         $this->assertPageFinalTabContains(new _profit_loss(), 'Year End Confirmation', ['year_end_retained_earnings']);
-        $this->assertPageFinalTabContains(new _tax(), 'Year End Review', ['year_end_tax_readiness']);
+        $this->assertPageFinalTabContains(new _corporation_tax(), 'Year End Review', ['year_end_tax_readiness']);
 
         test_output_line('Cards: year-end confirmation cards live on their related workflow pages.');
     }

@@ -83,7 +83,7 @@ $harness->run(\eel_accounts\Service\TaxWorkingsService::class, static function (
         }
     });
 
-    $harness->check(_tax::class, 'GET context derives and selects transient CT periods without synchronising metadata', static function () use ($harness): void {
+    $harness->check(_corporation_tax::class, 'GET context derives and selects transient CT periods without synchronising metadata', static function () use ($harness): void {
         $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
         $accountingPeriodId = 9111;
         $transientCtPeriodId = \eel_accounts\Service\CorporationTaxPeriodService::transientReferenceId(
@@ -114,7 +114,7 @@ $harness->run(\eel_accounts\Service\TaxWorkingsService::class, static function (
                 ['company_id' => $companyId]
             );
 
-            $page = new _tax();
+            $page = new _corporation_tax();
             $method = new ReflectionMethod($page, 'moduleContext');
             $method->setAccessible(true);
             $context = $method->invoke(
@@ -200,7 +200,7 @@ $harness->run(\eel_accounts\Service\TaxWorkingsService::class, static function (
         );
     });
 
-    $harness->check(_tax::class, 'read-only LIVE VAT context defaults to the first persisted CT snapshot', static function () use ($harness): void {
+    $harness->check(_corporation_tax::class, 'read-only LIVE VAT context defaults to the first persisted CT snapshot', static function () use ($harness): void {
         InterfaceDB::beginTransaction();
         try {
             $marker = (string)random_int(100000, 999999);
@@ -330,7 +330,7 @@ $harness->run(\eel_accounts\Service\TaxWorkingsService::class, static function (
                 ]
             );
 
-            $page = new _tax();
+            $page = new _corporation_tax();
             $method = new ReflectionMethod($page, 'moduleContext');
             $method->setAccessible(true);
             $context = $method->invoke(

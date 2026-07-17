@@ -163,7 +163,7 @@ $harness->run(_tax_prepayment_treatmentCard::class, static function (
             ];
         }
         $context = [
-            'page' => ['page_id' => 'tax', 'page_cards' => ['tax_prepayment_treatment'], 'csrf_token' => 'test-token'],
+            'page' => ['page_id' => 'corporation_tax', 'page_cards' => ['tax_prepayment_treatment'], 'csrf_token' => 'test-token'],
             'company' => ['settings' => ['default_currency' => 'GBP']],
             'services' => ['prepayment_period_context' => [
                 'available' => true,

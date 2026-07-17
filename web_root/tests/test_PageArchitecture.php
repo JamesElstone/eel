@@ -133,10 +133,10 @@ final class TestPageArchitectureHarness
 
     private function testTaxPageResolvesTaxWorkingsCards(): void
     {
-        $page = $this->loadPageCards('tax');
+        $page = $this->loadPageCards('corporation_tax');
 
-        $this->assertSame(_tax::class, $page::class);
-        $this->assertSame('tax', $page->id());
+        $this->assertSame(_corporation_tax::class, $page::class);
+        $this->assertSame('corporation_tax', $page->id());
         $this->assertSame('Tax', $page->title());
         $this->assertSame(
             [

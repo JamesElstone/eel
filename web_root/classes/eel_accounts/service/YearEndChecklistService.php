@@ -1378,7 +1378,7 @@ final class YearEndChecklistService
             !empty($taxReadiness['available'])
                 ? ('Tax ' . $this->money($settings, $taxReadiness['estimated_corporation_tax'] ?? 0))
                 : '',
-            '?page=tax'
+            '?page=corporation_tax'
         );
         if ($taxPeriodDisplay !== '') {
             $taxEstimateCheck['formula_text'] = 'CT periods: ' . $taxPeriodDisplay;
@@ -1408,7 +1408,7 @@ final class YearEndChecklistService
                 ? ''
                 : ('Posted ' . $this->money($settings, $taxProvision['posted_corporation_tax_charge'] ?? 0)
                     . ' / estimate ' . $this->money($settings, $taxProvision['estimated_corporation_tax'] ?? 0)),
-            '?page=tax&show_card=year_end_tax_readiness#tax-readiness'
+            '?page=corporation_tax&show_card=year_end_tax_readiness#tax-readiness'
         );
         $taxConfidenceStatus = (string)($taxReadiness['confidence_status'] ?? 'review_required');
         $taxWarningCount = count((array)($taxReadiness['warnings'] ?? []));
@@ -1423,7 +1423,7 @@ final class YearEndChecklistService
                     ? 'No scope warnings are currently attached to the corporation tax estimates for any CT period.'
                     : 'Review the estimate warnings before relying on the corporation tax numbers.'),
             empty($taxReadiness['available']) ? '' : ($taxWarningCount . ' warning' . ($taxWarningCount === 1 ? '' : 's')),
-            '?page=tax'
+            '?page=corporation_tax'
         );
         $sections['corporation_tax_readiness'][] = $this->makeCheck(
             'losses_carried_forward',
@@ -1432,7 +1432,7 @@ final class YearEndChecklistService
             !empty($taxReadiness['available']) ? 'pass' : 'not_applicable',
             'Losses brought forward, used, and carried forward are shown across all CT periods in this accounting period.',
             !empty($taxReadiness['available']) ? $this->money($settings, $taxReadiness['losses_carried_forward'] ?? 0) : '',
-            '?page=tax'
+            '?page=corporation_tax'
         );
         $sections['corporation_tax_readiness'][] = $this->applyReviewAcknowledgement($this->makeCheck(
             'tax_readiness_acknowledgement',
@@ -1443,7 +1443,7 @@ final class YearEndChecklistService
                 ? 'Tax readiness must be available before this review can be acknowledged.'
                 : 'Review the corporation tax workings for every CT period before closing this accounting period.',
             empty($taxReadiness['available']) ? '' : 'Pending',
-            '?page=tax&show_card=year_end_tax_readiness#tax-readiness',
+            '?page=corporation_tax&show_card=year_end_tax_readiness#tax-readiness',
             empty($taxReadiness['available']) ? null : $this->acknowledgementBasis('tax_readiness_acknowledgement', $taxReadiness)
         ), $reviewAcknowledgements);
         $sections['corporation_tax_readiness'][] = $this->applyReviewAcknowledgement($this->makeCheck(
@@ -1453,7 +1453,7 @@ final class YearEndChecklistService
             'info',
             'Year-end lock finalises the app ledger. Statutory accounts, iXBRL, and tax filing outputs should still be reviewed separately before submission.',
             '',
-            '?page=tax&show_card=year_end_tax_readiness'
+            '?page=corporation_tax&show_card=year_end_tax_readiness'
         ), $reviewAcknowledgements);
 
         $comparisonFailures = 0;

@@ -34,11 +34,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
     $harness->check(\eel_accounts\Renderer\WorkflowHandoffRenderer::class, 'normalises URL and workflow handoffs with explicit-field precedence', static function () use ($harness): void {
         $fromUrl = \eel_accounts\Renderer\WorkflowHandoffRenderer::fromUrl(
-            '?page=tax&show_card=tax_workings&company_id=4',
+            '?page=corporation_tax&show_card=tax_workings&company_id=4',
             'Open tax',
             ['company_id' => 9]
         );
-        $harness->assertTrue(str_contains($fromUrl, 'action="?page=tax"'));
+        $harness->assertTrue(str_contains($fromUrl, 'action="?page=corporation_tax"'));
         $harness->assertTrue(str_contains($fromUrl, 'name="show_card" value="tax_workings"'));
         $harness->assertTrue(str_contains($fromUrl, 'name="company_id" value="9"'));
         $harness->assertFalse(str_contains($fromUrl, 'name="company_id" value="4"'));

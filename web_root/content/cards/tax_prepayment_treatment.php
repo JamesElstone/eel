@@ -98,7 +98,7 @@ final class _tax_prepayment_treatmentCard extends CardBaseFramework
         $rows = $this->tableRows($context);
         $pagination = HelperFramework::paginateArray($rows, $this->paginationPage($context), self::PAGE_SIZE);
         $hiddenFields = [
-            'page' => (string)($context['page']['page_id'] ?? 'tax'),
+            'page' => (string)($context['page']['page_id'] ?? 'corporation_tax'),
             '_pagination' => '1',
             '_invalidate_fact' => 'prepayments.state',
             'cards[]' => [$this->key()],

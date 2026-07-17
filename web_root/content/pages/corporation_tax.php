@@ -7,11 +7,11 @@
  */
 declare(strict_types=1);
 
-final class _tax extends PageContextFramework
+final class _corporation_tax extends PageContextFramework
 {
     public function id(): string
     {
-        return 'tax';
+        return 'corporation_tax';
     }
 
     public function title(): string

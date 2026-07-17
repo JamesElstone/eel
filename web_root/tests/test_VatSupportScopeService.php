@@ -133,7 +133,7 @@ $harness->run(\eel_accounts\Service\VatSupportScopeService::class, static functi
                 ]
             );
 
-            $page = new _tax();
+            $page = new _corporation_tax();
             $method = new ReflectionMethod($page, 'moduleContext');
             $method->setAccessible(true);
             $context = $method->invoke(

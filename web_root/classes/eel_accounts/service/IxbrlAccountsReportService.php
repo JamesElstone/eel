@@ -59,6 +59,12 @@ final class IxbrlAccountsReportService
             );
         }
         $disclosures = (array)($disclosureContext['disclosures'] ?? []);
+        $directorLoanDisclosure = (new DirectorLoanService())->fetchDisclosureSummary($companyId, $accountingPeriodId);
+        if (empty($directorLoanDisclosure['success'])) {
+            throw new \DomainException(
+                'The Director Loan Statement could not be read before building iXBRL facts.'
+            );
+        }
         foreach ([
             'prepared_under_small_companies_regime',
             'audit_exempt_section_477',
@@ -75,7 +81,6 @@ final class IxbrlAccountsReportService
         }
         foreach ([
             'has_material_off_balance_sheet_arrangements',
-            'has_director_advances_credits_or_guarantees',
             'has_financial_commitments_guarantees_or_contingencies',
         ] as $unsupportedPositiveDisclosure) {
             if (!array_key_exists($unsupportedPositiveDisclosure, $disclosures)
@@ -84,6 +89,13 @@ final class IxbrlAccountsReportService
                     'The supported simple-note profile requires explicit No answers for material arrangements, director advances and guarantees, and commitments or contingencies.'
                 );
             }
+        }
+        $derivedDirectorAdvance = !empty($directorLoanDisclosure['has_company_to_director_exposure']);
+        $statedDirectorAdvance = (int)($disclosures['has_director_advances_credits_or_guarantees'] ?? 0) === 1;
+        if ($derivedDirectorAdvance !== $statedDirectorAdvance) {
+            throw new \DomainException(
+                'The director advances disclosure answer does not match the chronological Director Loan Statement.'
+            );
         }
         if (!in_array((string)($disclosures['entity_trading_status'] ?? ''), [
             'trading',
@@ -118,6 +130,15 @@ final class IxbrlAccountsReportService
         if ($comparativePeriod !== null) {
             $comparativeDisclosureContext = $disclosureService->fetch($companyId, (int)$comparativePeriod['id']);
             $comparativeDisclosures = (array)($comparativeDisclosureContext['disclosures'] ?? []);
+            $comparativeDirectorLoanDisclosure = (new DirectorLoanService())->fetchDisclosureSummary(
+                $companyId,
+                (int)$comparativePeriod['id']
+            );
+            if (empty($comparativeDirectorLoanDisclosure['success'])) {
+                throw new \DomainException(
+                    'The comparative Director Loan Statement could not be read before building iXBRL facts.'
+                );
+            }
             $comparativeEmployees = $comparativeDisclosures['average_number_employees'] ?? null;
             if ($comparativeEmployees === null || $comparativeEmployees === '' || !is_numeric($comparativeEmployees)) {
                 throw new \DomainException(
@@ -131,6 +152,7 @@ final class IxbrlAccountsReportService
                     'average_number_employees' => (int)$comparativeEmployees,
                     'revision' => (int)($comparativeDisclosures['revision'] ?? 0),
                 ],
+                'director_loan_disclosure' => $comparativeDirectorLoanDisclosure,
             ];
         }
 
@@ -159,6 +181,7 @@ final class IxbrlAccountsReportService
             ],
             'year_end' => $yearEnd,
             'disclosures' => $this->disclosureBasis($disclosures),
+            'director_loan_disclosure' => $directorLoanDisclosure,
             'current_mapping' => $this->mappingBasis($current),
             'micro_entity_eligibility' => $eligibility,
             'presentation_currency' => $presentationCurrency,
@@ -180,6 +203,7 @@ final class IxbrlAccountsReportService
             'company' => $company,
             'accounting_period' => $period,
             'disclosures' => $disclosures,
+            'director_loan_disclosure' => $directorLoanDisclosure,
             'current' => $current,
             'comparative' => $comparative,
             'application_name' => $basis['application_name'],

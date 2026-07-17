@@ -106,7 +106,7 @@ final class IxbrlTaxonomyProfileService
             $this->mapping('directors_responsibility_statement', 'direp', 'StatementThatDirectorsAcknowledgeTheirResponsibilitiesUnderCompaniesAct', 'Directors responsibilities statement', 'text', 'disclosure_statement', 'directors_acknowledge_responsibilities', 'duration', null, null, null, false, 340),
             $this->mapping('members_no_audit_statement', 'direp', 'StatementThatMembersHaveNotRequiredCompanyToObtainAnAudit', 'Members have not required an audit statement', 'text', 'disclosure_statement', 'members_have_not_required_audit', 'duration', null, null, null, false, 350),
             $this->mapping('no_material_off_balance_sheet_arrangements', 'core', 'GeneralDescriptionAnyOff-balanceSheetArrangementsIncludingNaturePurposeFinancialImpactOnEntity', 'No material off-balance sheet arrangements', 'text', 'absence_statement', 'has_material_off_balance_sheet_arrangements', 'duration', null, null, null, false, 360),
-            $this->mapping('no_director_advances_or_credits', 'direp', 'GeneralDescriptionAdvancesCreditsToDirectorsIncludingTermsInterestRates', 'No advances or credits to directors', 'text', 'absence_statement', 'has_director_advances_credits_or_guarantees', 'duration', null, null, null, false, 361),
+            $this->mapping('no_director_advances_or_credits', 'direp', 'GeneralDescriptionAdvancesCreditsToDirectorsIncludingTermsInterestRates', 'Director advances and credits to directors', 'text', 'director_loan_statement', 'has_director_advances_credits_or_guarantees', 'duration', null, null, null, false, 361),
             $this->mapping('no_director_guarantees', 'direp', 'GeneralDescriptionGuaranteesTheirTermsDirectors', 'No guarantees on behalf of directors', 'text', 'absence_statement', 'has_director_advances_credits_or_guarantees', 'duration', null, null, null, false, 362),
             $this->mapping('no_capital_commitments', 'core', 'DescriptionCapitalCommitments', 'No capital commitments', 'text', 'absence_statement', 'has_financial_commitments_guarantees_or_contingencies', 'duration', null, null, null, false, 363),
             $this->mapping('no_financial_commitments', 'core', 'DescriptionFinancialCommitmentsOtherThanCapitalCommitments', 'No other financial commitments', 'text', 'absence_statement', 'has_financial_commitments_guarantees_or_contingencies', 'duration', null, null, null, false, 364),
@@ -130,14 +130,30 @@ final class IxbrlTaxonomyProfileService
     public function absenceStatementText(string $factKey): string
     {
         return match ($factKey) {
-            'no_material_off_balance_sheet_arrangements' => 'None. The company had no material off-balance sheet arrangements.',
-            'no_director_advances_or_credits' => 'None. The company made no advances or credits to directors.',
-            'no_director_guarantees' => 'None. The company entered into no guarantees on behalf of directors.',
-            'no_capital_commitments' => 'None. The company had no capital commitments.',
-            'no_financial_commitments' => 'None. The company had no other financial commitments or guarantees.',
-            'no_contingent_liabilities' => 'None. The company had no contingent liabilities.',
+            'no_material_off_balance_sheet_arrangements' => 'The company had no material off-balance sheet arrangements.',
+            'no_director_advances_or_credits' => 'The company made no advances or credits to directors.',
+            'no_director_guarantees' => 'The company entered into no guarantees on behalf of directors.',
+            'no_capital_commitments' => 'The company had no capital commitments.',
+            'no_financial_commitments' => 'The company had no other financial commitments or guarantees.',
+            'no_contingent_liabilities' => 'The company had no contingent liabilities.',
             default => '',
         };
+    }
+
+    public function directorLoanStatementText(array $summary): string
+    {
+        $paragraphs = [];
+        foreach ((array)($summary['disclosures'] ?? []) as $disclosure) {
+            $name = trim((string)($disclosure['director_name'] ?? 'the director'));
+            $advance = number_format((float)($disclosure['advances'] ?? 0), 2);
+            $repayment = number_format((float)($disclosure['repayments'] ?? 0), 2);
+            $closing = number_format((float)($disclosure['closing_company_to_director_balance'] ?? 0), 2);
+            $paragraphs[] = 'The company advanced £' . $advance . ' to ' . $name
+                . ' during the period and £' . $repayment . ' was repaid or settled during the period.'
+                . ' The closing amount due from the director was £' . $closing . '.'
+                . ' The advance was ' . (string)($disclosure['main_conditions'] ?? 'interest-free and repayable on demand');
+        }
+        return implode(' ', $paragraphs);
     }
 
     /** @return array<string, mixed> */

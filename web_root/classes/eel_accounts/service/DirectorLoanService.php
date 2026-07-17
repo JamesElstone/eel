@@ -247,6 +247,91 @@ final class DirectorLoanService
         return $statement + ['summary_only' => true];
     }
 
+    /**
+     * Return the note-only director-loan disclosure derived from the signed
+     * running account. This deliberately does not change ledger or balance
+     * sheet values.
+     */
+    public function fetchDisclosureSummary(int $companyId, int $accountingPeriodId): array
+    {
+        $statement = $this->fetchStatement($companyId, $accountingPeriodId);
+        if (empty($statement['success'])) {
+            return $statement + ['available' => false];
+        }
+
+        $rowsByDirector = [];
+        foreach ((array)($statement['statement_rows'] ?? []) as $row) {
+            $key = (string)($row['director_id'] ?? 'unattributed');
+            $rowsByDirector[$key][] = $row;
+        }
+
+        $disclosures = [];
+        foreach ((array)($statement['per_director'] ?? []) as $position) {
+            $key = (string)($position['director_id'] ?? 'unattributed');
+            $running = round(
+                (float)($position['opening_liability'] ?? 0)
+                - (float)($position['opening_asset'] ?? 0),
+                2
+            );
+            $minimum = $running;
+            $advances = 0.0;
+            $repayments = 0.0;
+            $directorFunding = 0.0;
+
+            foreach ((array)($rowsByDirector[$key] ?? []) as $row) {
+                $signed = round((float)($row['signed_amount'] ?? 0), 2);
+                $before = $running;
+                $running = round($running + $signed, 2);
+                $minimum = min($minimum, $running);
+
+                if ($signed < 0) {
+                    $advances += $before < 0
+                        ? abs($signed)
+                        : max(0.0, -$running);
+                } elseif ($signed > 0) {
+                    $settlement = $before < 0
+                        ? min($signed, abs($before))
+                        : 0.0;
+                    $repayments += $settlement;
+                    $directorFunding += $signed - $settlement;
+                }
+            }
+
+            $exposure = round(max(0.0, -$minimum), 2);
+            if ($exposure < 0.005) {
+                continue;
+            }
+
+            $disclosures[] = [
+                'director_id' => $position['director_id'] ?? null,
+                'director_name' => (string)($position['director_name'] ?? 'Unattributed'),
+                'opening_balance' => round(
+                    (float)($position['opening_liability'] ?? 0)
+                    - (float)($position['opening_asset'] ?? 0),
+                    2
+                ),
+                'maximum_company_to_director_exposure' => $exposure,
+                'advances' => round($advances, 2),
+                'repayments' => round($repayments, 2),
+                'director_funding' => round($directorFunding, 2),
+                'closing_company_to_director_balance' => round(max(0.0, -$running), 2),
+                'closing_company_liability' => round(max(0.0, $running), 2),
+                'interest_rate' => '0%',
+                'main_conditions' => 'Interest-free and repayable on demand.',
+            ];
+        }
+
+        return [
+            'success' => true,
+            'available' => true,
+            'has_company_to_director_exposure' => $disclosures !== [],
+            'disclosures' => $disclosures,
+            'total_advances' => round(array_sum(array_column($disclosures, 'advances')), 2),
+            'total_repayments' => round(array_sum(array_column($disclosures, 'repayments')), 2),
+            'total_director_funding' => round(array_sum(array_column($disclosures, 'director_funding')), 2),
+        ];
+    }
+
     public function fetchTaxReview(int $companyId, int $accountingPeriodId): array
     {
         return $this->taxReview($this->fetchStatement($companyId, $accountingPeriodId), true);

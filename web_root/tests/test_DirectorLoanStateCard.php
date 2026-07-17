@@ -78,6 +78,8 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
 
         $harness->assertSame('Assign each posted Director Loan control-account entry to the director whose loan account it belongs to. The transaction counterparty remains separate.', $card->helper([]));
         $harness->assertTrue(str_contains($html, 'External Counterparty'));
+        $harness->assertTrue(str_contains($html, 'https://www.gov.uk/hmrc-internal-manuals/employment-income-manual/eim26198'));
+        $harness->assertTrue(str_contains($html, 'target="_blank" rel="noopener noreferrer"'));
         $harness->assertTrue(str_contains($html, 'Primary Director'));
         $harness->assertSame(false, str_contains($html, 'For example,'));
         $harness->assertTrue(str_contains($html, 'Former Director (former director)'));

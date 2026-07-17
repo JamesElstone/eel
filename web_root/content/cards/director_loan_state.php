@@ -106,6 +106,9 @@ final class _director_loan_stateCard extends CardBaseFramework
         $invalidCount = (int)($statement['invalid_director_count'] ?? 0);
 
         return '
+            <div class="actions-row">
+                <a class="button" href="https://www.gov.uk/hmrc-internal-manuals/employment-income-manual/eim26198" target="_blank" rel="noopener noreferrer">HMRC guidance on netting director loan balances</a>
+            </div>
             <div class="month-grid">
                 ' . $this->stat('Gross Director Loan Asset', $this->money($settings, $statement['asset_receivable'] ?? 0)) . '
                 ' . $this->stat('Gross Director Loan Liability', $this->money($settings, $statement['liability_payable'] ?? 0)) . '

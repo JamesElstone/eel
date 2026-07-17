@@ -261,6 +261,9 @@ final class IxbrlFactBuilderService
         $buckets = (array)($accountsMapping['buckets'] ?? []);
         $sourceKey = (string)($mapping['source_key'] ?? '');
         $calculationType = (string)$mapping['calculation_type'];
+        $directorLoanDisclosure = $comparative
+            ? (array)($report['comparative']['director_loan_disclosure'] ?? [])
+            : (array)($report['director_loan_disclosure'] ?? []);
 
         $value = match ($calculationType) {
             'company_field' => $company[$sourceKey] ?? '',
@@ -278,6 +281,13 @@ final class IxbrlFactBuilderService
                 && (int)$disclosures[$sourceKey] === 0
                     ? (new IxbrlTaxonomyProfileService())->absenceStatementText((string)$mapping['fact_key'])
                     : null,
+            'director_loan_statement' => !empty(($directorLoanDisclosure['has_company_to_director_exposure'] ?? false))
+                ? (new IxbrlTaxonomyProfileService())->directorLoanStatementText(
+                    $directorLoanDisclosure
+                )
+                : (array_key_exists($sourceKey, $disclosures) && (int)$disclosures[$sourceKey] === 0
+                    ? (new IxbrlTaxonomyProfileService())->absenceStatementText((string)$mapping['fact_key'])
+                    : null),
             default => null,
         };
         if ($value === null) {

@@ -111,7 +111,7 @@ final class NavigationFramework
     {
         $basename = pathinfo($filename, PATHINFO_FILENAME);
 
-        return preg_match('/^[A-Za-z][A-Za-z0-9_]*$/', $basename) === 1 ? $basename : '';
+        return preg_match('/^[A-Za-z][A-Za-z0-9_]*$/', $basename) === 1 ? strtolower($basename) : '';
     }
 
     private function labelFromPageKey(string $pageKey): string

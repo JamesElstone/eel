@@ -129,4 +129,15 @@ $harness->check(NavigationFramework::class, 'discovers only regular page PHP fil
     );
 });
 
+$harness->check(NavigationFramework::class, 'normalises page keys from mixed-case filenames', function () use ($harness, $withPageFiles): void {
+    $withPageFiles(
+        ['HMRC.php' => '<?php'],
+        function (string $directory) use ($harness): void {
+            $pageKeys = (new NavigationFramework($directory, 'settings', '/?page='))->pageKeys();
+
+            $harness->assertSame(['hmrc'], $pageKeys);
+        }
+    );
+});
+
 $setConfig($baseConfig);

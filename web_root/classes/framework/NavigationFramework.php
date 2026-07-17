@@ -24,13 +24,14 @@ final class NavigationFramework
     public function build(): array
     {
         $items = [];
+        $pageLabels = $this->pageLabels();
 
         foreach ($this->pageKeys() as $pageKey) {
             if (!PageAccessFramework::isPageAvailable($pageKey)) {
                 continue;
             }
 
-            $label = $this->labelFromPageKey($pageKey);
+            $label = $pageLabels[$pageKey] ?? $this->labelFromPageKey($pageKey);
             $items[] = [
                 'key' => $pageKey,
                 'label' => $label,
@@ -112,6 +113,41 @@ final class NavigationFramework
         $basename = pathinfo($filename, PATHINFO_FILENAME);
 
         return preg_match('/^[A-Za-z][A-Za-z0-9_]*$/', $basename) === 1 ? strtolower($basename) : '';
+    }
+
+    private function pageLabels(): array
+    {
+        $labels = [];
+
+        foreach ($this->pageFiles() as $filename) {
+            $pageKey = $this->pageKeyFromFilename($filename);
+            if ($pageKey === '') {
+                continue;
+            }
+
+            $basename = pathinfo($filename, PATHINFO_FILENAME);
+            $label = preg_replace('/(?<=\p{Ll}|\d)(\p{Lu})/u', ' $1', $basename);
+            $label = preg_replace('/[_\-]+/', ' ', (string)$label);
+            $label = trim((string)$label);
+
+            $labels[$pageKey] = $label === '' ? $basename : ucwords($label);
+        }
+
+        return $labels;
+    }
+
+    private function pageFiles(): array
+    {
+        if (!is_dir($this->pagesDirectory)) {
+            return [];
+        }
+
+        $entries = scandir($this->pagesDirectory);
+        if (!is_array($entries)) {
+            return [];
+        }
+
+        return array_values(array_filter($entries, fn (mixed $filename): bool => is_string($filename) && $this->isPageFile($filename)));
     }
 
     private function labelFromPageKey(string $pageKey): string

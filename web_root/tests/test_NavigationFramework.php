@@ -140,4 +140,20 @@ $harness->check(NavigationFramework::class, 'normalises page keys from mixed-cas
     );
 });
 
+$harness->check(NavigationFramework::class, 'preserves acronym casing in navigation labels', function () use ($harness, $withPageFiles): void {
+    $withPageFiles(
+        [
+            'HMRC.php' => '<?php',
+            'HMRC_this.php' => '<?php',
+        ],
+        function (string $directory) use ($harness): void {
+            $items = (new NavigationFramework($directory, 'hmrc', '/?page='))->build();
+            $labels = array_column($items, 'label', 'key');
+
+            $harness->assertSame('HMRC', $labels['hmrc'] ?? null);
+            $harness->assertSame('HMRC This', $labels['hmrc_this'] ?? null);
+        }
+    );
+});
+
 $setConfig($baseConfig);

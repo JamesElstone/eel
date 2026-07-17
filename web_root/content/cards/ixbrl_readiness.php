@@ -18,7 +18,7 @@ final class _ixbrl_readinessCard extends CardBaseFramework
         return 'This builder creates a generated FRS 105 micro-entity accounts iXBRL export for review and validation before filing.';
     }
 
-    protected function additionalInvalidationFacts(): array { return ['page.context']; }
+    protected function additionalInvalidationFacts(): array { return ['ixbrl.readiness', 'page.context']; }
 
     public function render(array $context): string
     {

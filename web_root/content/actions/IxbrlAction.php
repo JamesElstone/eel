@@ -65,10 +65,11 @@ final class IxbrlAction implements ActionInterfaceFramework
                     $request->input(trim((string)$request->input('disclosure_field', '')), null),
                     $this->actor($request)
                 );
+                $fieldChangedFacts = ['ixbrl.readiness', 'ixbrl.disclosures'];
                 return $this->result(
                     !empty($result['success']),
                     (array)($result['errors'] ?? []),
-                    $changedFacts,
+                    $fieldChangedFacts,
                     !empty($result['success']) ? ['Disclosure updated. Rebuild the iXBRL facts before generating or filing.'] : [],
                     []
                 );

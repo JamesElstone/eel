@@ -380,7 +380,7 @@ final class IxbrlAccountsDisclosureService
             return $this->error($exception->getMessage());
         }
 
-        return $this->fetch($companyId, $accountingPeriodId) + ['changed' => true];
+        return ['success' => true, 'changed' => true];
     }
 
     /**

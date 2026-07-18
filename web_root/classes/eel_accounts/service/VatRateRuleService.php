@@ -107,8 +107,8 @@ final class VatRateRuleService
                     updated_at
              FROM vat_rate_rules
              ORDER BY is_active DESC,
-                      rate_type ASC,
                       effective_from DESC,
+                      rate_type ASC,
                       source_checked_at DESC,
                       id DESC'
         );

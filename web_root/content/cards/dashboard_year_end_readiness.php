@@ -88,13 +88,23 @@ final class _dashboard_year_end_readinessCard extends CardBaseFramework
         }
 
         if ($topIssues === []) {
+            $nextStep = match ($status) {
+                'locked' => 'Locked',
+                'ready_for_review' => 'Close and lock',
+                default => 'Review',
+            };
+            $nextStepFoot = match ($status) {
+                'locked' => 'This accounting period is closed and locked; no further year-end action is required.',
+                'ready_for_review' => 'Open Year End to run the close tasks and lock this accounting period.',
+                default => 'Open Year End to refresh the detailed checklist.',
+            };
+            $nextStepState = in_array($status, ['locked', 'ready_for_review'], true) ? 'ok' : 'warn';
+
             $statsHtml .= $this->statCard(
                 'Next step',
-                $status === 'ready_for_review' ? 'Close and lock' : 'Review',
-                $status === 'ready_for_review'
-                    ? 'Open Year End to run the close tasks and lock this accounting period.'
-                    : 'Open Year End to refresh the detailed checklist.',
-                'warn'
+                $nextStep,
+                $nextStepFoot,
+                $nextStepState
             );
         }
 

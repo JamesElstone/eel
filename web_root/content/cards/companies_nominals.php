@@ -127,9 +127,8 @@ final class _companies_nominalsCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="Nominals">
                 <input type="hidden" name="intent" value="save_nominals">
                 <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)($context['company']['id'] ?? 0)) . '">
-                <div class="panel-soft">
-                    <section data-state-fields="default_bank_nominal_id,default_sales_nominal_id,default_trade_nominal_id,default_expense_nominal_id,tools_small_equipment_nominal_id,prepayment_asset_nominal_id,director_loan_asset_nominal_id,director_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id,corporation_tax_expense_nominal_id,corporation_tax_liability_nominal_id,' . HelperFramework::escape($helperStateFields) . '" data-state-target="save_default_nominals">
-                    <div class="form-flex-flow">
+                <section data-state-fields="default_bank_nominal_id,default_sales_nominal_id,default_trade_nominal_id,default_expense_nominal_id,tools_small_equipment_nominal_id,prepayment_asset_nominal_id,director_loan_asset_nominal_id,director_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id,corporation_tax_expense_nominal_id,corporation_tax_liability_nominal_id,' . HelperFramework::escape($helperStateFields) . '" data-state-target="save_default_nominals">
+                    <div class="form-grid">
                         <div class="form-row">
                             <label for="default_bank_nominal_id">Default Bank nominal</label>
                             <select class="select" id="default_bank_nominal_id" name="default_bank_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['default_bank_nominal_id'] ?? '')) . '">
@@ -219,8 +218,7 @@ final class _companies_nominalsCard extends CardBaseFramework
                     <div>
                         <button class="button primary" id="save_default_nominals" type="submit" disabled>Save Nominals Defaults</button>
                     </div>
-                    </section>
-                </div>
+                </section>
             </form>
         ';
 

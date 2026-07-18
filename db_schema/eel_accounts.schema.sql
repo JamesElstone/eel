@@ -2807,7 +2807,10 @@ CREATE TABLE `year_end_audit_log` (
   `notes` text DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_year_end_audit_log_company_period` (`company_id`,`accounting_period_id`),
-  KEY `idx_year_end_audit_log_action_at` (`action_at`)
+  KEY `idx_year_end_audit_log_accounting_period` (`accounting_period_id`),
+  KEY `idx_year_end_audit_log_action_at` (`action_at`),
+  CONSTRAINT `fk_year_end_audit_log_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_year_end_audit_log_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -2901,7 +2904,9 @@ CREATE TABLE `year_end_reviews` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_year_end_reviews_company_period` (`company_id`,`accounting_period_id`),
   KEY `idx_year_end_reviews_company` (`company_id`),
-  KEY `idx_year_end_reviews_accounting_period` (`accounting_period_id`)
+  KEY `idx_year_end_reviews_accounting_period` (`accounting_period_id`),
+  CONSTRAINT `fk_year_end_reviews_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_year_end_reviews_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -3017,7 +3022,10 @@ CREATE TABLE `year_end_review_acknowledgements` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_year_end_review_ack_company_period_check` (`company_id`,`accounting_period_id`,`check_code`),
   KEY `idx_year_end_review_ack_company_period` (`company_id`,`accounting_period_id`),
-  KEY `idx_year_end_review_ack_check_code` (`check_code`)
+  KEY `idx_year_end_review_ack_accounting_period` (`accounting_period_id`),
+  KEY `idx_year_end_review_ack_check_code` (`check_code`),
+  CONSTRAINT `fk_year_end_review_ack_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_year_end_review_ack_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 

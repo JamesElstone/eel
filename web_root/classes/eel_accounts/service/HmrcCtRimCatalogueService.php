@@ -11,10 +11,12 @@ final class HmrcCtRimCatalogueService
 
     /** @var null|callable(string): mixed */
     private $fetcher;
+    private HmrcCtRimApplicabilityService $applicabilityService;
 
-    public function __construct(?callable $fetcher = null)
+    public function __construct(?callable $fetcher = null, ?HmrcCtRimApplicabilityService $applicabilityService = null)
     {
         $this->fetcher = $fetcher;
+        $this->applicabilityService = $applicabilityService ?? new HmrcCtRimApplicabilityService();
     }
 
     public function fetchPackages(): array
@@ -46,10 +48,9 @@ final class HmrcCtRimCatalogueService
         foreach ($attachmentRows as $attachment) {
             $formVersion = (string)$attachment['form_version'];
             $artifactVersion = (string)$attachment['artifact_version'];
-            // Newly discovered form versions are deliberately not applicable until
-            // their cutover date is confirmed and recorded by the application.
-            $applicableFrom = $formVersion === 'V2' ? '1900-01-01' : ($formVersion === 'V3' ? '2015-04-01' : null);
-            $applicableTo = $formVersion === 'V2' ? '2015-03-31' : null;
+            $applicability = $this->applicabilityService->forFormVersion($formVersion);
+            $applicableFrom = $applicability['applicable_from'];
+            $applicableTo = $applicability['applicable_to'];
             $liveFrom = $latestChangeAt !== null && strtolower((string)$attachment['status']) === 'live' ? $latestChangeAt : null;
             $existing = \InterfaceDB::fetchOne(
                 'SELECT id, local_path, sha256, package_state FROM hmrc_ct_rim_packages WHERE form_version = :form_version AND artifact_version = :artifact_version LIMIT 1',

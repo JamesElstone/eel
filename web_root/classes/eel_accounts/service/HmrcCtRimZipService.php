@@ -59,6 +59,21 @@ final class HmrcCtRimZipService
         }
     }
 
+    public function ensureExtracted(string $path): bool
+    {
+        if (!is_file($path)) { throw new \RuntimeException('The stored HMRC CT600 RIM ZIP file was not found.'); }
+        $directory = $this->extractionDirectory($path);
+        $entries = is_dir($directory) ? glob($directory . DIRECTORY_SEPARATOR . '*') : [];
+        if (is_array($entries) && $entries !== []) { return false; }
+        $this->extract($path, $directory);
+        return true;
+    }
+
+    public function extractionDirectory(string $path): string
+    {
+        return dirname($path) . DIRECTORY_SEPARATOR . substr(basename($path), 0, -4);
+    }
+
     private function readArchive(string $path): string
     {
         $content = @file_get_contents($path);

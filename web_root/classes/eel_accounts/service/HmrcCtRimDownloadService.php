@@ -23,8 +23,7 @@ final class HmrcCtRimDownloadService
             $sha256 = hash_file('sha256', $temporary); $filename = 'ct600-' . strtolower((string)$row['form_version']) . '-artefacts-' . strtolower((string)$row['artifact_version']) . '.zip'; $path = $directory . DIRECTORY_SEPARATOR . preg_replace('/[^A-Za-z0-9._-]+/', '-', $filename);
             if (is_file($path)) { @unlink($path); }
             if (!rename($temporary, $path)) { throw new \RuntimeException('The verified HMRC CT600 RIM file could not be stored.'); }
-            $extractDirectory = $directory . DIRECTORY_SEPARATOR . substr(basename($path), 0, -4);
-            $zipService->extract($path, $extractDirectory);
+            $zipService->extract($path, $zipService->extractionDirectory($path));
             \InterfaceDB::prepareExecute('UPDATE hmrc_ct_rim_packages SET local_path = :local_path, sha256 = :sha256, xsd_count = :xsd_count, package_state = \'verified\', verification_error = NULL, checked_at = :checked_at WHERE id = :id', ['local_path' => $path, 'sha256' => $sha256, 'xsd_count' => $xsdCount, 'checked_at' => gmdate('Y-m-d H:i:s'), 'id' => $packageId]);
             return ['success' => true, 'filename' => basename($path), 'path' => $path, 'sha256' => $sha256, 'xsd_count' => $xsdCount];
         } catch (\Throwable $exception) {

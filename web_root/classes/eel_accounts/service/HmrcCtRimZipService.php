@@ -29,8 +29,16 @@ final class HmrcCtRimZipService
         }
         $offset = (int)$endRecord['central_offset'];
         $totalEntries = (int)$endRecord['entries_total'];
+        $entries = [];
         for ($index = 0; $index < $totalEntries; $index++) {
             [$header, $entryName, $nextOffset] = $this->centralEntry($content, $offset, $contentLength);
+            $entries[] = [$header, $entryName];
+            $offset = $nextOffset;
+        }
+        $topLevelPrefix = $this->commonTopLevelPrefix($entries);
+        foreach ($entries as [$header, $archiveEntryName]) {
+            $entryName = $topLevelPrefix !== null ? substr($archiveEntryName, strlen($topLevelPrefix)) : $archiveEntryName;
+            if ($entryName === '') { continue; }
             $target = $this->safeTarget($directory, $entryName);
             $localOffset = (int)$header['local_offset'];
             if ($localOffset < 0 || $localOffset + 30 > $contentLength || substr($content, $localOffset, 4) !== "PK\x03\x04") {
@@ -55,8 +63,24 @@ final class HmrcCtRimZipService
                 if (!is_dir($parent) && !mkdir($parent, 0775, true) && !is_dir($parent)) { throw new \RuntimeException('The HMRC CT600 RIM archive directory could not be created.'); }
                 if (@file_put_contents($target, $data) === false) { throw new \RuntimeException('The HMRC CT600 RIM archive file could not be extracted.'); }
             }
-            $offset = $nextOffset;
         }
+    }
+
+    private function commonTopLevelPrefix(array $entries): ?string
+    {
+        $topLevel = null;
+        foreach ($entries as [, $entryName]) {
+            $trimmed = rtrim($entryName, '/');
+            if ($trimmed === '') { continue; }
+            $parts = explode('/', $trimmed);
+            if (count($parts) < 2) {
+                if (str_ends_with($entryName, '/')) { continue; }
+                return null;
+            }
+            if ($topLevel === null) { $topLevel = $parts[0]; continue; }
+            if ($topLevel !== $parts[0]) { return null; }
+        }
+        return $topLevel === null ? null : $topLevel . '/';
     }
 
     public function ensureExtracted(string $path): bool

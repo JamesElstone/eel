@@ -37,7 +37,7 @@ return array (
   ),
   'uploads' => 
   array (
-    'upload_base_dir' => dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'files',
+    'upload_base_dir' => 'C:\\Users\\James\\Documents\\elstone electricals limited\\eel_accounts\\files',
     'export_key' => '3KwECjQFlWmpTztcBAuviitPhE8uAJFL',
   ),
   'site_context' => 

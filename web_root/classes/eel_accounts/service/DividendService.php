@@ -911,9 +911,7 @@ final class DividendService
     {
         $warnings = [];
         $latestBankDate = $this->latestBankSourceDate($companyId, $accountingPeriodId, $periodStart, $asAtDate);
-        $lockedTailAcknowledged = (new YearEndLockService())->isLocked($companyId, $accountingPeriodId)
-            && is_array((new YearEndAcknowledgementService())->fetch($companyId, $accountingPeriodId, 'transaction_tail_review'));
-        if (($latestBankDate === '' || $latestBankDate < $asAtDate) && !$lockedTailAcknowledged) {
+        if ($latestBankDate === '' || $latestBankDate < $asAtDate) {
             $warnings[] = [
                 'severity' => 'warning',
                 'title' => 'Bank CSV coverage may be incomplete',

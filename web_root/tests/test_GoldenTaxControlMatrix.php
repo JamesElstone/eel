@@ -251,7 +251,7 @@ $harness->check('GoldenTaxControlMatrix', 'persists the exact loss checkpoint us
     }
 });
 
-$harness->check('GoldenTaxControlMatrix', 'blocks submission for both unpersisted and stale CT computations', static function () use ($harness): void {
+$harness->check('GoldenTaxControlMatrix', 'keeps CT600 submission disabled for an unpersisted computation', static function () use ($harness): void {
     InterfaceDB::beginTransaction();
     try {
         $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
@@ -265,58 +265,9 @@ $harness->check('GoldenTaxControlMatrix', 'blocks submission for both unpersiste
         $harness->assertSame('not_persisted', (string)($summary['computation_persistence']['status'] ?? ''));
 
         $submissions = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService();
-        $draft = $submissions->createSubmissionDraft($companyId, $ctPeriodId, 'TEST');
-        goldenTaxControlRequireSuccess($draft);
-        $ctPeriodId = (int)($draft['ct_period_id'] ?? 0);
-        $harness->assertTrue($ctPeriodId > 0);
-        $notPersisted = $submissions->submit(
-            (int)$draft['submission_id'],
-            static function (string $level, string $message): void {
-            }
-        );
-        $harness->assertFalse((bool)($notPersisted['success'] ?? true));
-        $harness->assertTrue(goldenTaxControlErrorsContain($notPersisted, 'final Year End close persists'));
-
-        $staleHash = hash('sha256', 'GOLDEN-TEST deliberately stale CT computation');
-        InterfaceDB::prepareExecute(
-            'INSERT INTO corporation_tax_computation_runs
-                (company_id, accounting_period_id, ct_period_id, period_start, period_end, status, computation_hash, summary_json)
-             VALUES
-                (:company_id, :accounting_period_id, :ct_period_id, :period_start, :period_end, :status, :computation_hash, :summary_json)',
-            [
-                'company_id' => $companyId,
-                'accounting_period_id' => $accountingPeriodId,
-                'ct_period_id' => $ctPeriodId,
-                'period_start' => (string)($ctPeriod['period_start'] ?? ''),
-                'period_end' => (string)($ctPeriod['period_end'] ?? ''),
-                'status' => 'generated',
-                'computation_hash' => $staleHash,
-                'summary_json' => json_encode($summary, JSON_UNESCAPED_SLASHES),
-            ]
-        );
-        $runId = (int)InterfaceDB::fetchColumn(
-            'SELECT id FROM corporation_tax_computation_runs WHERE computation_hash = :computation_hash ORDER BY id DESC LIMIT 1',
-            ['computation_hash' => $staleHash]
-        );
-        InterfaceDB::prepareExecute(
-            'UPDATE corporation_tax_periods SET latest_computation_run_id = :run_id WHERE id = :id',
-            ['run_id' => $runId, 'id' => $ctPeriodId]
-        );
-
-        $staleSummary = (new \eel_accounts\Service\CorporationTaxComputationService())
-            ->fetchSummaryForCtPeriodId($companyId, $ctPeriodId);
-        $harness->assertSame('stale', (string)($staleSummary['computation_persistence']['status'] ?? ''));
-        $harness->assertFalse((bool)($staleSummary['computation_persistence']['current'] ?? true));
-
-        $staleDraft = $submissions->createSubmissionDraft($companyId, $ctPeriodId, 'TEST');
-        goldenTaxControlRequireSuccess($staleDraft);
-        $stale = $submissions->submit(
-            (int)$staleDraft['submission_id'],
-            static function (string $level, string $message): void {
-            }
-        );
-        $harness->assertFalse((bool)($stale['success'] ?? true));
-        $harness->assertTrue(goldenTaxControlErrorsContain($stale, 'persisted CT computation is stale'));
+        $disabled = $submissions->validatePackage($companyId, $ctPeriodId, 'TEST');
+        $harness->assertFalse((bool)($disabled['success'] ?? true));
+        $harness->assertSame('CT600 submission is not implemented.', (string)($disabled['errors'][0] ?? ''));
     } finally {
         if (InterfaceDB::inTransaction()) {
             InterfaceDB::rollBack();
@@ -324,7 +275,7 @@ $harness->check('GoldenTaxControlMatrix', 'blocks submission for both unpersiste
     }
 });
 
-$harness->check('GoldenTaxControlMatrix', 'enforces CT submission order while allowing a rejected period to be retried', static function () use ($harness): void {
+$harness->check('GoldenTaxControlMatrix', 'enforces CT period sequence while CT600 submission remains disabled', static function () use ($harness): void {
     InterfaceDB::beginTransaction();
     try {
         $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
@@ -354,13 +305,9 @@ $harness->check('GoldenTaxControlMatrix', 'enforces CT submission order while al
         $harness->assertTrue((bool)($periodService->canSubmit($companyId, $firstId)['ok'] ?? false));
 
         $submissions = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService();
-        $retryOne = $submissions->createSubmissionDraft($companyId, $firstId, 'TEST');
-        $retryTwo = $submissions->createSubmissionDraft($companyId, $firstId, 'TEST');
-        goldenTaxControlRequireSuccess($retryOne);
-        goldenTaxControlRequireSuccess($retryTwo);
-        $harness->assertTrue((int)($retryOne['submission_id'] ?? 0) > 0);
-        $harness->assertTrue((int)($retryTwo['submission_id'] ?? 0) > 0);
-        $harness->assertFalse((int)$retryOne['submission_id'] === (int)$retryTwo['submission_id']);
+        $disabled = $submissions->createSubmissionDraft($companyId, $firstId, 'TEST');
+        $harness->assertFalse((bool)($disabled['success'] ?? true));
+        $harness->assertSame('CT600 submission is not implemented.', (string)($disabled['errors'][0] ?? ''));
     } finally {
         if (InterfaceDB::inTransaction()) {
             InterfaceDB::rollBack();
@@ -368,7 +315,7 @@ $harness->check('GoldenTaxControlMatrix', 'enforces CT submission order while al
     }
 });
 
-$harness->check('GoldenTaxControlMatrix', 'reports missing submission artefacts for an incomplete package', static function () use ($harness): void {
+$harness->check('GoldenTaxControlMatrix', 'keeps an incomplete CT600 package disabled', static function () use ($harness): void {
     InterfaceDB::beginTransaction();
     try {
         $companyId = GoldenAccountsFixture::EMPTY_COMPANY_ID;
@@ -404,11 +351,7 @@ $harness->check('GoldenTaxControlMatrix', 'reports missing submission artefacts 
         $result = (new \eel_accounts\Service\HmrcCorporationTaxSubmissionService())
             ->validatePackage($companyId, $ctPeriodId, 'TEST');
         $harness->assertFalse((bool)($result['success'] ?? true));
-        $harness->assertTrue(goldenTaxControlErrorsContain($result, 'UTR'));
-        $harness->assertTrue(goldenTaxControlErrorsContain($result, 'accounts iXBRL'));
-        $harness->assertTrue(goldenTaxControlErrorsContain($result, 'computations iXBRL'));
-        $harness->assertFalse((bool)($result['validation']['ct600']['ok'] ?? true));
-        $harness->assertSame(null, $result['validation']['ct600']['path'] ?? null);
+        $harness->assertSame('CT600 submission is not implemented.', (string)($result['errors'][0] ?? ''));
     } finally {
         if (InterfaceDB::inTransaction()) {
             InterfaceDB::rollBack();

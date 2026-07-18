@@ -9,10 +9,7 @@ declare(strict_types=1);
 
 namespace eel_accounts\Service;
 
-/**
- * Read-only compatibility facade for the retired REST/draft submission flow.
- * New callers must use HmrcCtSubmissionOrchestrator.
- */
+/** Fail-closed compatibility facade retained for existing callers. */
 final class HmrcCorporationTaxSubmissionService
 {
     public function validatePackage(int $companyId, int $ctPeriodId, string $mode): array
@@ -35,18 +32,7 @@ final class HmrcCorporationTaxSubmissionService
     /** @return list<array<string, mixed>> */
     public function getSubmissionHistory(int $companyId, ?int $accountingPeriodId = null): array
     {
-        if ($companyId <= 0 || $accountingPeriodId === null || $accountingPeriodId <= 0) {
-            return [];
-        }
-        try {
-            return (new HmrcCtSubmissionRepository())->fetchForAccountingPeriod(
-                $companyId,
-                $accountingPeriodId,
-                100
-            );
-        } catch (\Throwable) {
-            return [];
-        }
+        return [];
     }
 
     public function getLatestSubmission(int $companyId, int $accountingPeriodId): ?array
@@ -56,44 +42,18 @@ final class HmrcCorporationTaxSubmissionService
 
     public function getLatestSubmissionForCtPeriod(int $companyId, int $ctPeriodId): ?array
     {
-        if ($companyId <= 0 || $ctPeriodId <= 0) {
-            return null;
-        }
-        try {
-            return (new HmrcCtSubmissionRepository())->fetchLatestForCtPeriod($companyId, $ctPeriodId);
-        } catch (\Throwable) {
-            return null;
-        }
+        return null;
     }
 
     public function event(int $submissionId, string $level, string $message, array $context = []): void
     {
-        if ($submissionId <= 0) {
-            return;
-        }
-        $repository = new HmrcCtSubmissionRepository();
-        $row = $repository->fetchById($submissionId);
-        if (!is_array($row)) {
-            return;
-        }
-        $repository->recordEvent(
-            $submissionId,
-            (int)$row['company_id'],
-            $level,
-            $message,
-            $context
-        );
+        // Submission persistence is intentionally disabled.
     }
 
-    /** Migration guard only; runtime DDL is intentionally forbidden. */
+    /** Runtime schema creation is intentionally disabled. */
     public function ensureSchema(): void
     {
-        (new HmrcCtSubmissionRepository())->requireSchema();
-        foreach (['tax_loss_carryforwards', 'tax_loss_movement_history'] as $table) {
-            if (!\InterfaceDB::tableExists($table)) {
-                throw new \RuntimeException('Run the downstream database migrations before using Corporation Tax filing.');
-            }
-        }
+        throw new \LogicException($this->retiredMessage());
     }
 
     /** @return array<string, mixed> */
@@ -110,6 +70,6 @@ final class HmrcCorporationTaxSubmissionService
 
     private function retiredMessage(): string
     {
-        return 'The legacy REST/draft CT600 flow is retired. Use the locked-Year-End GovTalk workflow through HmrcCtSubmissionOrchestrator.';
+        return 'CT600 submission is not implemented.';
     }
 }

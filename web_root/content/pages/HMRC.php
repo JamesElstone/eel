@@ -21,8 +21,7 @@ final class _hmrc extends PageContextFramework
     {
         return [
             'hmrc_obligations_summary', 'hmrc_obligations_timeline', 'hmrc_obligations_period_checklist',
-            'hmrc_obligations_action_panel', 'hmrc_fines_table', 'hmrc_submission_overview',
-            'hmrc_submission_controls', 'hmrc_submission_log', 'hmrc_submission_history',
+            'hmrc_obligations_action_panel', 'hmrc_fines_table', 'hmrc_submission_unavailable',
         ];
     }
 
@@ -33,8 +32,7 @@ final class _hmrc extends PageContextFramework
             ['tab' => 'Timeline', 'cards' => ['hmrc_obligations_timeline']],
             ['tab' => 'Selected Period', 'cards' => ['hmrc_obligations_period_checklist']],
             ['tab' => 'Fines & Interest', 'cards' => ['hmrc_fines_table']],
-            ['tab' => 'Submit', 'cards' => ['hmrc_submission_overview', 'hmrc_submission_controls', 'hmrc_submission_log']],
-            ['tab' => 'History', 'cards' => ['hmrc_submission_history']],
+            ['tab' => 'Submit', 'cards' => ['hmrc_submission_unavailable']],
         ];
     }
 
@@ -72,10 +70,6 @@ final class _hmrc extends PageContextFramework
         $laterObligationWarning = $laterObligationCount === 1
             ? 'There is 1 additional HMRC obligation in a later accounting period.'
             : 'There are ' . $laterObligationCount . ' additional HMRC obligations in later accounting periods.';
-
-        $querySelection = (int)($actionResult->query()['ct_period_id'] ?? 0);
-        $selectedCtPeriodId = (int)$request->input('ct_period_id', $querySelection);
-
         return [
             'hmrc_obligations' => [
                 'filter' => $filter, 'filters' => $service->filters(),
@@ -86,7 +80,6 @@ final class _hmrc extends PageContextFramework
                 'checklist' => $service->periodChecklist($companyId, $accountingPeriodId),
                 'guidance' => $service->getGuidanceState($companyId),
             ],
-            'hmrc_submission_selection' => ['selected_ct_period_id' => $selectedCtPeriodId],
         ];
     }
 

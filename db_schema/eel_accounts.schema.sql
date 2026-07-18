@@ -934,60 +934,6 @@ CREATE TABLE `corporation_tax_computation_runs` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Table structure for table `ct600_supplement_assessments`
---
-
-DROP TABLE IF EXISTS `ct600_supplement_assessments`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `ct600_supplement_assessments` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `company_id` int(11) NOT NULL,
-  `accounting_period_id` int(11) NOT NULL,
-  `ct_period_id` int(11) NOT NULL,
-  `computation_run_id` int(11) NOT NULL,
-  `year_end_locked_at` datetime NOT NULL,
-  `assessment_hash` char(64) NOT NULL,
-  `approved_by` varchar(255) NOT NULL,
-  `approved_at` datetime NOT NULL,
-  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_ct600_supplement_assessment_hash` (`assessment_hash`),
-  KEY `idx_ct600_supplement_assessment_current` (`company_id`,`accounting_period_id`,`ct_period_id`,`computation_run_id`,`year_end_locked_at`,`approved_at`),
-  CONSTRAINT `fk_ct600_supplement_assessment_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_ct600_supplement_assessment_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_ct600_supplement_assessment_ct_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_ct600_supplement_assessment_computation_run` FOREIGN KEY (`computation_run_id`) REFERENCES `corporation_tax_computation_runs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `ct600_supplement_assessment_rows`
---
-
-DROP TABLE IF EXISTS `ct600_supplement_assessment_rows`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `ct600_supplement_assessment_rows` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `assessment_id` bigint(20) NOT NULL,
-  `row_order` smallint(5) unsigned NOT NULL,
-  `contract_key` varchar(64) NOT NULL,
-  `page` varchar(16) DEFAULT NULL,
-  `label` varchar(255) NOT NULL,
-  `status` enum('required','not_required','unknown') NOT NULL,
-  `evidence_source` varchar(100) NOT NULL,
-  `evidence_ref` varchar(1000) NOT NULL DEFAULT '',
-  `detail` text NOT NULL,
-  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_ct600_supplement_assessment_row_key` (`assessment_id`,`contract_key`),
-  UNIQUE KEY `uq_ct600_supplement_assessment_row_order` (`assessment_id`,`row_order`),
-  CONSTRAINT `fk_ct600_supplement_assessment_row_assessment` FOREIGN KEY (`assessment_id`) REFERENCES `ct600_supplement_assessments` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
 -- Table structure for table `hmrc_ct600_submissions`
 --
 
@@ -1004,9 +950,6 @@ CREATE TABLE `hmrc_ct600_submissions` (
   `status` enum('draft','validating','validation_failed','ready','submitting','accepted','rejected','failed') NOT NULL,
   `protocol_state` enum('prepared','validation_failed','ready','submitting','awaiting_poll','final_received','delete_pending','closed','transport_uncertain','invalidated') NOT NULL DEFAULT 'prepared',
   `business_outcome` enum('none','sandbox_passed','til_validated','live_accepted','rejected','error') NOT NULL DEFAULT 'none',
-  `statutory_sync_state` enum('not_applicable','pending','applied','failed') NOT NULL DEFAULT 'not_applicable',
-  `statutory_sync_error` text DEFAULT NULL,
-  `statutory_synced_at` datetime DEFAULT NULL,
   `submission_type` enum('original','amendment') NOT NULL DEFAULT 'original',
   `ct600_xml_path` varchar(1000) DEFAULT NULL,
   `accounts_ixbrl_path` varchar(1000) DEFAULT NULL,
@@ -1068,7 +1011,6 @@ CREATE TABLE `hmrc_ct600_submissions` (
   UNIQUE KEY `uq_hmrc_ct600_idempotency` (`idempotency_key`),
   KEY `idx_hmrc_ct600_environment_outcome` (`environment`,`business_outcome`),
   KEY `idx_hmrc_ct600_poll_due` (`protocol_state`,`next_poll_at`),
-  KEY `idx_hmrc_ct600_statutory_sync` (`statutory_sync_state`,`environment`,`business_outcome`),
   CONSTRAINT `fk_hmrc_ct600_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_hmrc_ct600_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_hmrc_ct600_ct_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE SET NULL ON UPDATE CASCADE

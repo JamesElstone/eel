@@ -1,22 +1,28 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+require_once dirname(__DIR__) . DIRECTORY_SEPARATOR . 'classes' . DIRECTORY_SEPARATOR
+    . 'eel_accounts' . DIRECTORY_SEPARATOR . 'service' . DIRECTORY_SEPARATOR
+    . 'HmrcCorporationTaxSubmissionService.php';
 
-(new GeneratedServiceClassTestHarness())->run(
-    \eel_accounts\Service\HmrcCorporationTaxSubmissionService::class,
-    static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\HmrcCorporationTaxSubmissionService $service): void {
-        $harness->check(\eel_accounts\Service\HmrcCorporationTaxSubmissionService::class, 'installer-safe schema creates audit tables', static function () use ($harness, $service): void {
-            $service->ensureSchema();
-            $harness->assertTrue(InterfaceDB::tableExists('hmrc_ct600_submissions'));
-            $harness->assertTrue(InterfaceDB::tableExists('hmrc_submission_events'));
-            $harness->assertTrue(InterfaceDB::tableExists('tax_loss_carryforwards'));
-            $harness->assertTrue(InterfaceDB::tableExists('tax_loss_movement_history'));
-        });
-
-        $harness->check(\eel_accounts\Service\HmrcCorporationTaxSubmissionService::class, 'validation fails cleanly with missing selection', static function () use ($harness, $service): void {
-            $result = $service->validatePackage(0, 0, 'TEST');
-            $harness->assertSame(false, $result['success']);
-        });
+$service = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService();
+$result = $service->validatePackage(49, 6, 'TEST');
+if (($result['success'] ?? true) !== false
+    || ($result['errors'][0] ?? '') !== 'CT600 submission is not implemented.') {
+    throw new RuntimeException('CT600 validation did not fail closed.');
+}
+if ($service->getSubmissionHistory(49, 79) !== []
+    || $service->getLatestSubmission(49, 79) !== null
+    || $service->getLatestSubmissionForCtPeriod(49, 6) !== null) {
+    throw new RuntimeException('Disabled CT600 history access returned submission data.');
+}
+try {
+    $service->ensureSchema();
+    throw new RuntimeException('Disabled CT600 schema guard did not fail closed.');
+} catch (LogicException $exception) {
+    if ($exception->getMessage() !== 'CT600 submission is not implemented.') {
+        throw $exception;
     }
-);
+}
+
+echo "PASS HmrcCorporationTaxSubmissionService fails closed without database access.\n";

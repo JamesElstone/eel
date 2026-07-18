@@ -43,8 +43,7 @@ final class NonAssetReviewService
                 $candidates,
                 $normalisedThreshold,
                 $toolsSmallEquipmentNominalId
-            ),
-            !empty($dataEntry['is_locked'])
+            )
         );
         $acknowledgement = $evaluation['acknowledgement'] ?? null;
         if (is_array($acknowledgement)) {

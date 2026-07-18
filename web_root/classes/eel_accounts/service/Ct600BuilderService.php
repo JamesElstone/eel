@@ -10,12 +10,7 @@ declare(strict_types=1);
 namespace eel_accounts\Service;
 
 /**
- * Retired compatibility facade.
- *
- * The old API could not accept the declaration, validated accounts artifact,
- * period-specific computations artifact, RIM validation result, or immutable
- * source manifest required for a lawful return. It must therefore fail closed
- * instead of creating the former internal <CT600Draft> document.
+ * Fail-closed compatibility facade retained for existing callers.
  */
 final class Ct600BuilderService
 {
@@ -37,7 +32,7 @@ final class Ct600BuilderService
             'path' => null,
             'warnings' => [],
             'errors' => [
-                'The legacy CT600 draft builder is retired. Prepare a typed, validated, immutable CT/5 package through HmrcCtSubmissionOrchestrator.',
+                'CT600 submission is not implemented.',
             ],
         ];
     }

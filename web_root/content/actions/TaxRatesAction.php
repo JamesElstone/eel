@@ -36,7 +36,7 @@ final class TaxRatesAction implements ActionInterfaceFramework
             $downloaded = 0;
             $downloadErrors = [];
             foreach ((array)($result['packages'] ?? []) as $package) {
-                if (!is_array($package) || (string)($package['package_state'] ?? '') !== 'not_downloaded') {
+                if (!is_array($package) || !in_array((string)($package['package_state'] ?? ''), ['not_downloaded', 'failed'], true)) {
                     continue;
                 }
                 $download = (new \eel_accounts\Service\HmrcCtRimDownloadService())->download((int)($package['id'] ?? 0));
@@ -51,7 +51,7 @@ final class TaxRatesAction implements ActionInterfaceFramework
 
             $messages = [[
                 'type' => 'success',
-                'message' => 'HMRC CT600 RIM catalogue refreshed: ' . (int)($result['updated_count'] ?? 0) . ' package(s) checked and ' . $downloaded . ' new package(s) downloaded and verified.',
+                'message' => 'HMRC CT600 RIM catalogue refreshed: ' . (int)($result['updated_count'] ?? 0) . ' package(s) checked and ' . $downloaded . ' package(s) downloaded and verified.',
             ]];
             foreach ($downloadErrors as $error) {
                 $messages[] = ['type' => 'error', 'message' => $error];

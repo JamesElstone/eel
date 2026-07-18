@@ -25,10 +25,12 @@ final class HmrcCtRimDownloadService
             if (!rename($temporary, $path)) { throw new \RuntimeException('The verified HMRC CT600 RIM file could not be stored.'); }
             $zipService->extract($path, $zipService->extractionDirectory($path));
             $schemaService = new HmrcCtRimSchemaService();
-            $applicableFrom = $schemaService->applicableFrom($zipService->extractionDirectory($path), (string)$row['form_version']);
-            \InterfaceDB::prepareExecute('UPDATE hmrc_ct_rim_packages SET applicable_from = :applicable_from WHERE id = :id', ['applicable_from' => $applicableFrom, 'id' => $packageId]);
-            $schemaService->recalculateWindows();
             \InterfaceDB::prepareExecute('UPDATE hmrc_ct_rim_packages SET local_path = :local_path, sha256 = :sha256, xsd_count = :xsd_count, package_state = \'verified\', verification_error = NULL, checked_at = :checked_at WHERE id = :id', ['local_path' => $path, 'sha256' => $sha256, 'xsd_count' => $xsdCount, 'checked_at' => gmdate('Y-m-d H:i:s'), 'id' => $packageId]);
+            $analysis = $schemaService->applyApplicability($packageId, $zipService->extractionDirectory($path), (string)$row['form_version']);
+            if (in_array((string)($analysis['status'] ?? ''), ['failed', 'ambiguous'], true)) {
+                throw new \RuntimeException((string)($analysis['error'] ?? 'The HMRC CT600 applicability could not be determined.'));
+            }
+            $schemaService->recalculateWindows();
             return ['success' => true, 'filename' => basename($path), 'path' => $path, 'sha256' => $sha256, 'xsd_count' => $xsdCount];
         } catch (\Throwable $exception) {
             @unlink($temporary); \InterfaceDB::prepareExecute('UPDATE hmrc_ct_rim_packages SET package_state = \'failed\', verification_error = :error, checked_at = :checked_at WHERE id = :id', ['error' => $exception->getMessage(), 'checked_at' => gmdate('Y-m-d H:i:s'), 'id' => $packageId]);

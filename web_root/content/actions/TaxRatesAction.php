@@ -37,6 +37,7 @@ final class TaxRatesAction implements ActionInterfaceFramework
             $expanded = 0;
             $downloadErrors = [];
             $zipService = new \eel_accounts\Service\HmrcCtRimZipService();
+            $schemaService = new \eel_accounts\Service\HmrcCtRimSchemaService();
             foreach ((array)($result['packages'] ?? []) as $package) {
                 if (!is_array($package) || !in_array((string)($package['package_state'] ?? ''), ['not_downloaded', 'failed'], true)) {
                     continue;
@@ -58,8 +59,12 @@ final class TaxRatesAction implements ActionInterfaceFramework
                 if ($path === '') { continue; }
                 try {
                     if ($zipService->ensureExtracted($path)) { $expanded++; }
-                    $applicableFrom = (new \eel_accounts\Service\HmrcCtRimSchemaService())->applicableFrom($zipService->extractionDirectory($path), (string)($package['form_version'] ?? ''));
-                    \InterfaceDB::prepareExecute('UPDATE hmrc_ct_rim_packages SET applicable_from = :applicable_from WHERE id = :id', ['applicable_from' => $applicableFrom, 'id' => (int)($package['id'] ?? 0)]);
+                    $analysis = $schemaService->applyApplicability((int)($package['id'] ?? 0), $zipService->extractionDirectory($path), (string)($package['form_version'] ?? ''));
+                    if (in_array((string)($analysis['status'] ?? ''), ['failed', 'ambiguous'], true)) {
+                        $error = (string)($analysis['error'] ?? 'The HMRC CT600 applicability could not be determined.');
+                        \InterfaceDB::prepareExecute('UPDATE hmrc_ct_rim_packages SET package_state = \'failed\', verification_error = :error WHERE id = :id', ['error' => $error, 'id' => (int)($package['id'] ?? 0)]);
+                        $downloadErrors[] = $error;
+                    }
                 } catch (Throwable $exception) {
                     $downloadErrors[] = $exception->getMessage();
                 }

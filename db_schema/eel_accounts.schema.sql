@@ -3053,6 +3053,10 @@ CREATE TABLE `hmrc_ct_rim_packages` (
   `latest_change_note` text DEFAULT NULL,
   `package_state` varchar(32) NOT NULL DEFAULT 'not_downloaded',
   `xsd_count` int(11) NOT NULL DEFAULT 0,
+  `applicability_source_file_id` bigint(20) DEFAULT NULL,
+  `applicability_xpath` varchar(500) DEFAULT NULL,
+  `applicability_extracted_at` datetime DEFAULT NULL,
+  `applicability_status` varchar(32) NOT NULL DEFAULT 'pending',
   `verification_error` text DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
@@ -3061,7 +3065,27 @@ CREATE TABLE `hmrc_ct_rim_packages` (
   KEY `idx_hmrc_ct_rim_applicability` (`form_version`,`applicable_from`,`applicable_to`),
   KEY `idx_hmrc_ct_rim_live` (`form_version`,`live_from`,`live_to`,`hmrc_status`),
   CONSTRAINT `chk_hmrc_ct_rim_dates` CHECK (`applicable_to` IS NULL OR `applicable_from` IS NULL OR `applicable_from` <= `applicable_to`),
+  CONSTRAINT `chk_hmrc_ct_rim_applicability_status` CHECK (`applicability_status` in ('pending','confirmed','open_start','ambiguous','failed')),
   CONSTRAINT `chk_hmrc_ct_rim_state` CHECK (`package_state` in ('not_downloaded','downloaded','verified','stale','failed'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `hmrc_ct_rim_files`;
+CREATE TABLE `hmrc_ct_rim_files` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `package_id` bigint(20) NOT NULL,
+  `archive_path` varchar(1000) NOT NULL,
+  `extracted_path` varchar(1000) NOT NULL,
+  `file_type` varchar(16) NOT NULL,
+  `file_size` bigint(20) NOT NULL DEFAULT 0,
+  `sha256` char(64) DEFAULT NULL,
+  `file_role` varchar(64) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_hmrc_ct_rim_file` (`package_id`,`archive_path`),
+  KEY `idx_hmrc_ct_rim_file_package` (`package_id`),
+  KEY `idx_hmrc_ct_rim_file_role` (`package_id`,`file_role`)
+  ,CONSTRAINT `chk_hmrc_ct_rim_file_type` CHECK (`file_type` in ('xsd','sch','xslt'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT IGNORE INTO `hmrc_ct_rim_packages` (`form_version`,`artifact_version`,`applicable_from`,`applicable_to`,`live_from`,`hmrc_status`,`source_url`) VALUES
@@ -3160,6 +3184,8 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_17_002_frs105_thresholds.sql'),
   ('2026_07_17_004_hmrc_ct600_govtalk.sql'),
   ('2026_07_18_002_hmrc_ct_rim_catalogue.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_18_004_hmrc_ct_rim_files.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

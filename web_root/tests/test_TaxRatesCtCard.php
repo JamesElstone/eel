@@ -70,7 +70,7 @@ $harness->run(_tax_rates_ctCard::class, static function (GeneratedServiceClassTe
             [],
             []
         );
-        $services = new PageServiceFramework(new AppService(APP_ROOT . 'uploads'));
+        $services = new PageServiceFramework(new AppService(test_tmp_directory()));
         $handled = $card->handle($request, $services, $context, ActionResultFramework::none());
 
         $harness->assertSame('all', (string)$handled['tax_rates_ct']['status_filter']);

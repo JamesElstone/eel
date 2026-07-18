@@ -12,13 +12,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->run(\eel_accounts\Service\CompaniesHouseIncorporationDocumentStatusService::class, function (GeneratedServiceClassTestHarness $harness): void {
-    $baseDirectory = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'companies-house-incorporation-status';
+    $baseDirectory = test_tmp_directory() . DIRECTORY_SEPARATOR . 'companies-house-incorporation-status';
     companiesHouseIncorporationStatusRemoveDirectory($baseDirectory);
     companiesHouseIncorporationStatusEnsureDirectory($baseDirectory . DIRECTORY_SEPARATOR . '12344321' . DIRECTORY_SEPARATOR . 'companies_house');
 
     $fileCheckService = new \eel_accounts\Service\FileCheckService([
         'upload_base_dir' => $baseDirectory,
-    ], null, static fn(int $companyId): string => $companyId === 7 ? '12344321' : '');
+    ], null, static fn(int $companyId): string => $companyId === 7 ? '12344321' : '', static fn(int $companyId): string => $baseDirectory);
     $service = new \eel_accounts\Service\CompaniesHouseIncorporationDocumentStatusService($fileCheckService);
 
     try {

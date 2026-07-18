@@ -192,7 +192,7 @@ function uploadMappingInvokeModuleContext(
     return (array)$method->invoke(
         $page,
         $request,
-        new PageServiceFramework(new AppService(APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp')),
+        new PageServiceFramework(new AppService(test_tmp_directory())),
         $actionResult,
         [
             'page' => ['page_id' => $page->id()],
@@ -212,7 +212,7 @@ function uploadMappingBuildCardContext(CardInterfaceFramework $card, array $page
     return $renderer->buildContextForCard(
         $card,
         $pageContext,
-        new PageServiceFramework(new AppService(APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp'))
+        new PageServiceFramework(new AppService(test_tmp_directory()))
     );
 }
 

@@ -19,7 +19,7 @@ $harness->run(ActivityAction::class, function (GeneratedServiceClassTestHarness 
             [],
             []
         );
-        $services = new PageServiceFramework(new AppService(APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp'));
+        $services = new PageServiceFramework(new AppService(test_tmp_directory()));
         $result = $action->handle($request, $services);
 
         $harness->assertSame(['dashboard.feed'], $result->changedFacts());

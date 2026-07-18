@@ -12,7 +12,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(RoleAssignmentService::class);
 
-$roleAssignmentTempDirectory = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp';
+$roleAssignmentTempDirectory = test_tmp_directory();
 if (!is_dir($roleAssignmentTempDirectory)) {
     mkdir($roleAssignmentTempDirectory, 0777, true);
 }

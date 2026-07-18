@@ -17,7 +17,7 @@ $harness->run('eel_accounts\Service\FileCheckService', function (GeneratedServic
     }
 
     $uploads = [
-        'upload_base_dir' => APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'uploads-root',
+        'upload_base_dir' => test_tmp_directory() . DIRECTORY_SEPARATOR . 'uploads-root',
         'statement_relative_path' => './statements/',
         'expense_receipts_relative_path' => './expense_receipts/',
         'transaction_receipts_relative_path' => './transaction_receipts/',
@@ -32,9 +32,10 @@ $harness->run('eel_accounts\Service\FileCheckService', function (GeneratedServic
     $service = new \eel_accounts\Service\FileCheckService(
         $uploads,
         null,
-        static fn(int $companyId): string => (string)($companyNumbersById[$companyId] ?? '')
+        static fn(int $companyId): string => (string)($companyNumbersById[$companyId] ?? ''),
+        static fn(int $companyId): string => $uploads['upload_base_dir']
     );
-    $testRoot = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'file-check-service';
+    $testRoot = test_tmp_directory() . DIRECTORY_SEPARATOR . 'file-check-service';
     $existingDirectory = $testRoot . DIRECTORY_SEPARATOR . 'existing';
     $existingFile = $existingDirectory . DIRECTORY_SEPARATOR . 'probe.txt';
     $creatableDirectory = $testRoot . DIRECTORY_SEPARATOR . 'created-by-service';
@@ -193,7 +194,7 @@ $harness->run('eel_accounts\Service\FileCheckService', function (GeneratedServic
             $service = new \eel_accounts\Service\FileCheckService([
                 'upload_base_dir' => $missingBase,
                 'statement_relative_path' => './statements/',
-            ], null, static fn(int $companyId): string => $companyId === 42 ? '12345678' : '');
+            ], null, static fn(int $companyId): string => $companyId === 42 ? '12345678' : '', static fn(int $companyId): string => $missingBase);
 
             $thrown = false;
 
@@ -205,6 +206,25 @@ $harness->run('eel_accounts\Service\FileCheckService', function (GeneratedServic
 
             $harness->assertTrue($thrown);
             $harness->assertSame(false, is_dir($missingBase));
+        });
+
+        $harness->check('eel_accounts\Service\FileCheckService', 'company base resolution uses the configured master upload directory', function () use ($harness): void {
+            $service = new \eel_accounts\Service\FileCheckService();
+
+            $harness->assertSame(
+                test_upload_base_directory(),
+                $service->getUploadBaseDirectoryForCompany(42)
+            );
+        });
+
+        $harness->check('eel_accounts\Service\FileCheckService', 'company-relative stored path resolution rejects absolute and traversal references', function () use ($harness, $service): void {
+            $harness->assertSame(
+                $service->getUpload() . DIRECTORY_SEPARATOR . '12345678' . DIRECTORY_SEPARATOR . 'transaction_receipts' . DIRECTORY_SEPARATOR . 'receipt.pdf',
+                $service->resolveCompanyRelativePath(42, '12345678/transaction_receipts/receipt.pdf')
+            );
+            $harness->assertSame(null, $service->resolveCompanyRelativePath(42, '../outside/receipt.pdf'));
+            $harness->assertSame(null, $service->resolveCompanyRelativePath(42, 'C:/outside/receipt.pdf'));
+            $harness->assertSame(null, $service->resolveCompanyRelativePath(42, '/outside/receipt.pdf'));
         });
     } finally {
         removeFileCheckDirectory($testRoot);

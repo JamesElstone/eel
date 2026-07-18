@@ -304,14 +304,7 @@ final class CompanyOrphanedFileCleanupService
 
     private function defaultUploadsRoot(): string
     {
-        $config = \AppConfigurationStore::config();
-        $configuredPath = trim((string)($config['uploads']['upload_base_dir'] ?? ''));
-
-        if ($configuredPath !== '') {
-            return $configuredPath;
-        }
-
-        return dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'uploads';
+        return \eel_accounts\Service\FileCheckService::defaultUploadBaseDirectory();
     }
 }
 

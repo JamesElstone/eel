@@ -13,7 +13,7 @@ $harness = new GeneratedServiceClassTestHarness();
 $harness->run(_uploads_detailsCard::class, static function (GeneratedServiceClassTestHarness $harness, _uploads_detailsCard $card): void {
     $harness->check(_uploads_detailsCard::class, 'defaults upload history filter to ready to import', static function () use ($harness, $card): void {
         $request = new RequestFramework([], [], ['REQUEST_METHOD' => 'GET'], [], []);
-        $services = new PageServiceFramework(new AppService(APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp'));
+        $services = new PageServiceFramework(new AppService(test_tmp_directory()));
 
         $context = $card->handle($request, $services, ['page' => []], ActionResultFramework::none());
         $harness->assertSame('ready', $context['uploads']['filter'] ?? null);

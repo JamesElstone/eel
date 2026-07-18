@@ -132,13 +132,7 @@ final class ManualAssetEvidenceStorageService
 
     private function defaultUploadsRoot(): string
     {
-        $config = \AppConfigurationStore::config();
-        $configuredPath = trim((string)($config['uploads']['upload_base_dir'] ?? ''));
-        if ($configuredPath !== '') {
-            return $configuredPath;
-        }
-
-        return dirname(__DIR__) . DIRECTORY_SEPARATOR . 'uploads';
+        return \eel_accounts\Service\FileCheckService::defaultUploadBaseDirectory();
     }
 
     private function uploadsConfig(): array

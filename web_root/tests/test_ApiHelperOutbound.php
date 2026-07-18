@@ -10,7 +10,7 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 (new GeneratedServiceClassTestHarness())->run(\ApiHelperOutbound::class, static function (GeneratedServiceClassTestHarness $harness): void {
-    $tempPath = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'outbound-helper-commented-api-keys.csv';
+    $tempPath = test_tmp_directory() . DIRECTORY_SEPARATOR . 'outbound-helper-commented-api-keys.csv';
 
     if (!is_dir(dirname($tempPath))) {
         mkdir(dirname($tempPath), 0777, true);

@@ -73,6 +73,27 @@ defined('APP_ACTIONS') || define('APP_ACTIONS', APP_CONTENT . 'actions' . DIRECT
 defined('APP_JS') || define('APP_JS', APP_ROOT . 'js' . DIRECTORY_SEPARATOR);
 defined('APP_CSS') || define('APP_CSS', APP_ROOT . 'css' . DIRECTORY_SEPARATOR);
 
+if (!function_exists('test_upload_base_directory')) {
+    function test_upload_base_directory(): string
+    {
+        $configuredPath = trim((string)\AppConfigurationStore::get('uploads.upload_base_dir', ''));
+        if ($configuredPath === '') {
+            $configuredPath = rtrim((string)PROJECT_ROOT, '\\/') . DIRECTORY_SEPARATOR . 'files';
+        }
+
+        return rtrim($configuredPath, '\\/');
+    }
+}
+
+if (!function_exists('test_tmp_directory')) {
+    function test_tmp_directory(): string
+    {
+        return test_upload_base_directory()
+            . DIRECTORY_SEPARATOR . 'tests'
+            . DIRECTORY_SEPARATOR . 'tmp';
+    }
+}
+
 defined('AF_HEADER_PREFIX') || define('AF_HEADER_PREFIX', 'X-AntiFraud-');
 defined('AF_COOKIE_PREFIX') || define('AF_COOKIE_PREFIX', 'af_');
 

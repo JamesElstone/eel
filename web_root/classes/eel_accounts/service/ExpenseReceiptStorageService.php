@@ -241,52 +241,31 @@ final class ExpenseReceiptStorageService
     }
 
     private function absolutePathFromStoredReference(int $companyId, string $storedReference): ?string {
-        $normalisedReference = trim(str_replace(['/', '\\'], '/', $storedReference), '/');
-
-        if ($normalisedReference === '') {
+        $candidate = $this->fileCheckService->resolveCompanyRelativePath($companyId, $storedReference);
+        if ($candidate === null) {
             return null;
         }
 
-        $candidates = [];
-        $allowedRoots = [];
+        $realFile = realpath($candidate);
+        $realAllowedRoot = realpath($this->receiptDirectoryForCompany($companyId));
 
-        if ($companyId > 0) {
-            $candidates[] = $this->uploadsRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $normalisedReference);
-            $allowedRoots[] = $this->receiptDirectoryForCompany($companyId);
+        if ($realFile === false || $realAllowedRoot === false) {
+            return null;
         }
 
-        foreach ($candidates as $candidate) {
-            $realFile = realpath($candidate);
+        $realFile = rtrim($realFile, '\\/');
+        $realAllowedRoot = rtrim($realAllowedRoot, '\\/');
+        $basePrefix = $realAllowedRoot . DIRECTORY_SEPARATOR;
 
-            if ($realFile === false) {
-                continue;
-            }
-
-            foreach ($allowedRoots as $allowedRoot) {
-                $realAllowedRoot = realpath($allowedRoot);
-
-                if ($realAllowedRoot === false) {
-                    continue;
-                }
-
-                $basePrefix = rtrim($realAllowedRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
-                if (str_starts_with($realFile, $basePrefix)) {
-                    return $realFile;
-                }
-            }
+        if (strcasecmp($realFile, $realAllowedRoot) === 0 || str_starts_with(strtolower($realFile), strtolower($basePrefix))) {
+            return $realFile;
         }
 
         return null;
     }
 
     private function defaultUploadsRoot(): string {
-        $config = \AppConfigurationStore::config();
-        $configuredPath = trim((string)($config['uploads']['upload_base_dir'] ?? ''));
-        if ($configuredPath !== '') {
-            return $configuredPath;
-        }
-
-        return dirname(__DIR__) . DIRECTORY_SEPARATOR . 'uploads';
+        return \eel_accounts\Service\FileCheckService::defaultUploadBaseDirectory();
     }
 
     private function uploadsConfig(): array

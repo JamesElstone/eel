@@ -12,7 +12,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(LoginService::class);
 
-$loginTempDirectory = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp';
+$loginTempDirectory = test_tmp_directory();
 if (!is_dir($loginTempDirectory)) {
     mkdir($loginTempDirectory, 0777, true);
 }

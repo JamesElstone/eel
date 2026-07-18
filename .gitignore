@@ -2,9 +2,10 @@
 !/secure/README.md
 /file_logs/*
 !/file_logs/README.md
-/uploads/*
-!/uploads/README.md
+/files/*
+!/files/README.md
 /sqldump
+/tests/tmp
 /web_root/tests/tmp
 /notes
 /example_data
@@ -14,4 +15,3 @@
 /audit
 /outbound/
 /third_party/hmrc/ct600-rim/
-/files

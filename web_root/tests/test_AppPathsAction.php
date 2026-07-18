@@ -16,8 +16,8 @@ $harness->run(AppPathsAction::class, function (GeneratedServiceClassTestHarness 
         throw new RuntimeException('Unexpected AppPathsAction instance.');
     }
 
-    $testRoot = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'app-paths-action';
-    $baseDirectory = $testRoot . DIRECTORY_SEPARATOR . 'uploads';
+    $testRoot = test_tmp_directory() . DIRECTORY_SEPARATOR . 'app-paths-action';
+    $baseDirectory = $testRoot . DIRECTORY_SEPARATOR . 'files';
     $companyId = 12345678;
     $companyDirectory = $baseDirectory . DIRECTORY_SEPARATOR . (string)$companyId;
     $statementDirectory = $companyDirectory . DIRECTORY_SEPARATOR . 'statements';
@@ -35,7 +35,7 @@ $harness->run(AppPathsAction::class, function (GeneratedServiceClassTestHarness 
         'expense_receipts_relative_path' => './expense_receipts/',
         'transaction_receipts_relative_path' => './transaction_receipts/',
         'show_base_path_details' => true,
-    ], null, $companyNumberResolver);
+    ], null, $companyNumberResolver, static fn(int $companyId): string => $baseDirectory);
 
     try {
         $calculatePathItems = new ReflectionMethod(AppPathsAction::class, 'CalculatePathItems');
@@ -67,8 +67,8 @@ $harness->run(AppPathsAction::class, function (GeneratedServiceClassTestHarness 
             $companyId,
             $companyNumberResolver
         ): void {
-            $missingRoot = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'app-paths-action-missing';
-            $missingBaseDirectory = $missingRoot . DIRECTORY_SEPARATOR . 'uploads';
+            $missingRoot = test_tmp_directory() . DIRECTORY_SEPARATOR . 'app-paths-action-missing';
+            $missingBaseDirectory = $missingRoot . DIRECTORY_SEPARATOR . 'files';
             ensureAppPathsDirectory($missingBaseDirectory);
 
             try {
@@ -78,7 +78,7 @@ $harness->run(AppPathsAction::class, function (GeneratedServiceClassTestHarness 
                     'expense_receipts_relative_path' => './expense_receipts/',
                     'transaction_receipts_relative_path' => './transaction_receipts/',
                     'show_base_path_details' => true,
-                ], null, $companyNumberResolver);
+                ], null, $companyNumberResolver, static fn(int $resolvedCompanyId): string => $missingBaseDirectory);
 
                 $items = $calculatePathItems->invoke($instance, $service, $companyId);
 
@@ -103,8 +103,8 @@ $harness->run(AppPathsAction::class, function (GeneratedServiceClassTestHarness 
             $companyId,
             $companyNumberResolver
         ): void {
-            $createRoot = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'app-paths-action-create';
-            $createBaseDirectory = $createRoot . DIRECTORY_SEPARATOR . 'uploads';
+            $createRoot = test_tmp_directory() . DIRECTORY_SEPARATOR . 'app-paths-action-create';
+            $createBaseDirectory = $createRoot . DIRECTORY_SEPARATOR . 'files';
             ensureAppPathsDirectory($createBaseDirectory);
 
             try {
@@ -114,7 +114,7 @@ $harness->run(AppPathsAction::class, function (GeneratedServiceClassTestHarness 
                     'expense_receipts_relative_path' => './expense_receipts/',
                     'transaction_receipts_relative_path' => './transaction_receipts/',
                     'show_base_path_details' => true,
-                ], null, $companyNumberResolver);
+                ], null, $companyNumberResolver, static fn(int $resolvedCompanyId): string => $createBaseDirectory);
 
                 $items = $calculatePathItems->invoke($instance, $service, $companyId, true);
 

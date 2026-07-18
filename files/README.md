@@ -36,7 +36,7 @@ Company folders are created under the upload base directory using the selected
 company's company number. The usual layout is:
 
 ```text
-uploads/
+files/
   {company-number}/
     statements/
     expense_receipts/

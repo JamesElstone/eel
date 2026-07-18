@@ -142,7 +142,7 @@ $harness->run(\eel_accounts\Outbound\HmrcOutbound::class, function (GeneratedSer
     });
 
     $harness->check(\eel_accounts\Outbound\HmrcOutbound::class, 'reports anti-fraud credentials with missing tag details', function () use ($harness): void {
-        $tempPath = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'hmrc-antifraud-api-keys.csv';
+        $tempPath = test_tmp_directory() . DIRECTORY_SEPARATOR . 'hmrc-antifraud-api-keys.csv';
 
         if (!is_dir(dirname($tempPath))) {
             mkdir(dirname($tempPath), 0777, true);

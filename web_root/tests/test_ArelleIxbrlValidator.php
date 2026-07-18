@@ -81,7 +81,7 @@ require_once PROJECT_ROOT . 'third_party' . DIRECTORY_SEPARATOR . 'arelle' . DIR
 
 function arelleValidatorFixture(string $mode = 'success'): array
 {
-    $root = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'arelle_' . $mode . '_' . bin2hex(random_bytes(3));
+    $root = test_tmp_directory() . DIRECTORY_SEPARATOR . 'arelle_' . $mode . '_' . bin2hex(random_bytes(3));
     $logs = $root . DIRECTORY_SEPARATOR . 'logs';
     $cache = $root . DIRECTORY_SEPARATOR . 'runtime' . DIRECTORY_SEPARATOR . 'cache';
     $taxonomies = $root . DIRECTORY_SEPARATOR . 'taxonomies';

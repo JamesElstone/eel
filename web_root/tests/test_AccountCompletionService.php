@@ -12,7 +12,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(AccountCompletionService::class);
 
-$completionTempDirectory = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp';
+$completionTempDirectory = test_tmp_directory();
 if (!is_dir($completionTempDirectory)) {
     mkdir($completionTempDirectory, 0777, true);
 }

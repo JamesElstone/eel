@@ -12,7 +12,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(\eel_accounts\Service\StatementCsvExportService::class, static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\StatementCsvExportService $service): void {
     $harness->check(\eel_accounts\Service\StatementCsvExportService::class, 'exports every mapping column with blanks for unmapped fields', static function () use ($harness, $service): void {
-        $directory = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp';
+        $directory = test_tmp_directory();
         if (!is_dir($directory)) {
             mkdir($directory, 0777, true);
         }
@@ -35,7 +35,7 @@ $harness->run(\eel_accounts\Service\StatementCsvExportService::class, static fun
     });
 
     $harness->check(\eel_accounts\Service\StatementCsvExportService::class, 'committed transaction values override source CSV values', static function () use ($harness, $service): void {
-        $directory = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp';
+        $directory = test_tmp_directory();
         if (!is_dir($directory)) {
             mkdir($directory, 0777, true);
         }
@@ -64,7 +64,7 @@ $harness->run(\eel_accounts\Service\StatementCsvExportService::class, static fun
     });
 
     $harness->check(\eel_accounts\Service\StatementCsvExportService::class, 'monthly export only includes rows for the selected transaction month', static function () use ($harness, $service): void {
-        $directory = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp';
+        $directory = test_tmp_directory();
         if (!is_dir($directory)) {
             mkdir($directory, 0777, true);
         }

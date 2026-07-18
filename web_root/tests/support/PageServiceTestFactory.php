@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 function testPageServiceUploadBasePath(): string
 {
-    $path = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp';
+    $path = test_tmp_directory();
 
     if (!is_dir($path) && !mkdir($path, 0777, true) && !is_dir($path)) {
         throw new RuntimeException('Unable to create the shared test upload base path.');

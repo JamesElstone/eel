@@ -178,7 +178,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
             [],
             []
         );
-        $services = new PageServiceFramework(new AppService(APP_ROOT . 'uploads'));
+        $services = new PageServiceFramework(new AppService(test_tmp_directory()));
         $handled = $card->handle($request, $services, $context, ActionResultFramework::none());
 
         $harness->assertSame('Northstar', (string)$handled['transaction_search']['keyword']);
@@ -204,7 +204,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
             [],
             []
         );
-        $services = new PageServiceFramework(new AppService(APP_ROOT . 'uploads'));
+        $services = new PageServiceFramework(new AppService(test_tmp_directory()));
         $handled = $card->handle($request, $services, $context, ActionResultFramework::none());
 
         $harness->assertSame('post_pending', (string)$handled['transaction_search']['auto_approval_filter']);
@@ -242,7 +242,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
                 [],
                 []
             );
-            $services = new PageServiceFramework(new AppService(APP_ROOT . 'uploads'));
+            $services = new PageServiceFramework(new AppService(test_tmp_directory()));
             $handled = $card->handle($request, $services, $context, ActionResultFramework::none());
 
             $harness->assertSame($expectedAmount, (string)$handled['transaction_search']['amount']);

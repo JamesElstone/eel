@@ -15,8 +15,14 @@ final class FileCheckService
     private array $uploads;
     private ?\eel_accounts\Repository\CompanyRepository $companyRepository;
     private ?\Closure $companyNumberResolver;
+    private ?\Closure $companyUploadBaseResolver;
 
-    public function __construct(?array $uploads = null, ?\eel_accounts\Repository\CompanyRepository $companyRepository = null, ?\Closure $companyNumberResolver = null)
+    public function __construct(
+        ?array $uploads = null,
+        ?\eel_accounts\Repository\CompanyRepository $companyRepository = null,
+        ?\Closure $companyNumberResolver = null,
+        ?\Closure $companyUploadBaseResolver = null
+    )
     {
         if ($uploads === null) {
             $config = \AppConfigurationStore::config();
@@ -26,6 +32,7 @@ final class FileCheckService
         $this->uploads = $uploads;
         $this->companyRepository = $companyRepository;
         $this->companyNumberResolver = $companyNumberResolver;
+        $this->companyUploadBaseResolver = $companyUploadBaseResolver;
     }
 
     private function directoryExists(string $directoryPath): bool
@@ -118,6 +125,82 @@ final class FileCheckService
         return trim((string)($this->uploads['upload_base_dir'] ?? ''));
     }
 
+    public static function defaultUploadBaseDirectory(): string
+    {
+        try {
+            $configuredPath = trim((string)\AppConfigurationStore::get('uploads.upload_base_dir', ''));
+        } catch (\Throwable) {
+            $configuredPath = '';
+        }
+
+        if ($configuredPath !== '' && is_dir($configuredPath)) {
+            return rtrim($configuredPath, '\\/');
+        }
+
+        $projectRoot = defined('PROJECT_ROOT')
+            ? (string)PROJECT_ROOT
+            : dirname(__DIR__, 4) . DIRECTORY_SEPARATOR;
+
+        return rtrim($projectRoot, '\\/') . DIRECTORY_SEPARATOR . 'files';
+    }
+
+    public function getUploadBaseDirectoryForCompany(int $companyId): string
+    {
+        if ($companyId <= 0) {
+            throw new \InvalidArgumentException('Company id must be greater than zero.');
+        }
+
+        $resolvedBase = '';
+
+        if ($this->companyUploadBaseResolver !== null) {
+            $resolvedBase = trim((string)($this->companyUploadBaseResolver)($companyId));
+        } else {
+            $resolvedBase = $this->getUpload();
+
+            if ($resolvedBase === '' || !is_dir($resolvedBase)) {
+                $resolvedBase = self::defaultUploadBaseDirectory();
+            }
+        }
+
+        return rtrim($resolvedBase, '\\/');
+    }
+
+    public function resolveCompanyRelativePath(int $companyId, string $relativePath): ?string
+    {
+        $relativePath = trim(str_replace(['\\', '/'], '/', $relativePath));
+
+        if ($relativePath === '' || str_contains($relativePath, "\0") || $this->isAbsolutePath($relativePath)) {
+            return null;
+        }
+
+        $segments = [];
+        foreach (explode('/', $relativePath) as $segment) {
+            $segment = trim($segment);
+
+            if ($segment === '' || $segment === '.') {
+                continue;
+            }
+
+            if ($segment === '..' || str_contains($segment, ':')) {
+                return null;
+            }
+
+            $segments[] = $segment;
+        }
+
+        if ($segments === []) {
+            return null;
+        }
+
+        $baseDirectory = $this->getUploadBaseDirectoryForCompany($companyId);
+
+        if ($baseDirectory === '') {
+            return null;
+        }
+
+        return $this->joinPath($baseDirectory, implode(DIRECTORY_SEPARATOR, $segments));
+    }
+
     public function getPathDebug(): bool
     {
         return (bool)($this->uploads['show_base_path_details'] ?? false);
@@ -177,32 +260,44 @@ final class FileCheckService
 
     public function getCompanyUpload(int $companyId): string
     {
-        return $this->companyUploadForResolvedPathSegment($this->companyPathSegment($companyId));
+        $baseDirectory = $this->getUploadBaseDirectoryForCompany($companyId);
+
+        return $this->companyUploadForResolvedPathSegment($baseDirectory, $this->companyPathSegment($companyId));
     }
 
     public function getStatementDirectory(int $companyId): string
     {
-        return $this->categoryUploadForResolvedPathSegment($this->companyPathSegment($companyId), 'statements');
+        $baseDirectory = $this->getUploadBaseDirectoryForCompany($companyId);
+
+        return $this->categoryUploadForResolvedPathSegment($baseDirectory, $this->companyPathSegment($companyId), 'statements');
     }
 
     public function getExpenseReceiptDirectory(int $companyId): string
     {
-        return $this->categoryUploadForResolvedPathSegment($this->companyPathSegment($companyId), 'expense_receipts');
+        $baseDirectory = $this->getUploadBaseDirectoryForCompany($companyId);
+
+        return $this->categoryUploadForResolvedPathSegment($baseDirectory, $this->companyPathSegment($companyId), 'expense_receipts');
     }
 
     public function getTransactionReceiptDirectory(int $companyId): string
     {
-        return $this->categoryUploadForResolvedPathSegment($this->companyPathSegment($companyId), 'transaction_receipts');
+        $baseDirectory = $this->getUploadBaseDirectoryForCompany($companyId);
+
+        return $this->categoryUploadForResolvedPathSegment($baseDirectory, $this->companyPathSegment($companyId), 'transaction_receipts');
     }
 
     public function getManualAssetEvidenceDirectory(int $companyId): string
     {
-        return $this->categoryUploadForResolvedPathSegment($this->companyPathSegment($companyId), 'manual_asset_evidence');
+        $baseDirectory = $this->getUploadBaseDirectoryForCompany($companyId);
+
+        return $this->categoryUploadForResolvedPathSegment($baseDirectory, $this->companyPathSegment($companyId), 'manual_asset_evidence');
     }
 
     public function getCompaniesHouseDirectory(int $companyId): string
     {
-        return $this->categoryUploadForResolvedPathSegment($this->companyPathSegment($companyId), 'companies_house');
+        $baseDirectory = $this->getUploadBaseDirectoryForCompany($companyId);
+
+        return $this->categoryUploadForResolvedPathSegment($baseDirectory, $this->companyPathSegment($companyId), 'companies_house');
     }
 
     public function getStatementRelativePath(int $companyId, string $filename): string
@@ -227,60 +322,95 @@ final class FileCheckService
 
     public function ensureCompanyUploadDirectory(int $companyId): string
     {
-        return $this->ensureManagedUploadDirectory($this->getCompanyUpload($companyId));
+        $baseDirectory = $this->getUploadBaseDirectoryForCompany($companyId);
+
+        return $this->ensureManagedUploadDirectory(
+            $this->companyUploadForResolvedPathSegment($baseDirectory, $this->companyPathSegment($companyId)),
+            $baseDirectory
+        );
     }
 
     public function ensureStatementDirectory(int $companyId): string
     {
-        return $this->ensureManagedUploadDirectory($this->getStatementDirectory($companyId));
+        $baseDirectory = $this->getUploadBaseDirectoryForCompany($companyId);
+
+        return $this->ensureManagedUploadDirectory(
+            $this->categoryUploadForResolvedPathSegment($baseDirectory, $this->companyPathSegment($companyId), 'statements'),
+            $baseDirectory
+        );
     }
 
     public function ensureExpenseReceiptDirectory(int $companyId): string
     {
-        return $this->ensureManagedUploadDirectory($this->getExpenseReceiptDirectory($companyId));
+        $baseDirectory = $this->getUploadBaseDirectoryForCompany($companyId);
+
+        return $this->ensureManagedUploadDirectory(
+            $this->categoryUploadForResolvedPathSegment($baseDirectory, $this->companyPathSegment($companyId), 'expense_receipts'),
+            $baseDirectory
+        );
     }
 
     public function ensureTransactionReceiptDirectory(int $companyId): string
     {
-        return $this->ensureManagedUploadDirectory($this->getTransactionReceiptDirectory($companyId));
+        $baseDirectory = $this->getUploadBaseDirectoryForCompany($companyId);
+
+        return $this->ensureManagedUploadDirectory(
+            $this->categoryUploadForResolvedPathSegment($baseDirectory, $this->companyPathSegment($companyId), 'transaction_receipts'),
+            $baseDirectory
+        );
     }
 
     public function ensureManualAssetEvidenceDirectory(int $companyId): string
     {
-        return $this->ensureManagedUploadDirectory($this->getManualAssetEvidenceDirectory($companyId));
+        $baseDirectory = $this->getUploadBaseDirectoryForCompany($companyId);
+
+        return $this->ensureManagedUploadDirectory(
+            $this->categoryUploadForResolvedPathSegment($baseDirectory, $this->companyPathSegment($companyId), 'manual_asset_evidence'),
+            $baseDirectory
+        );
     }
 
     public function ensureCompaniesHouseDirectory(int $companyId): string
     {
-        return $this->ensureManagedUploadDirectory($this->getCompaniesHouseDirectory($companyId));
+        $baseDirectory = $this->getUploadBaseDirectoryForCompany($companyId);
+
+        return $this->ensureManagedUploadDirectory(
+            $this->categoryUploadForResolvedPathSegment($baseDirectory, $this->companyPathSegment($companyId), 'companies_house'),
+            $baseDirectory
+        );
     }
 
     public function getCompanyUploadDirectories(int $companyId): array
     {
+        $baseDirectory = $this->getUploadBaseDirectoryForCompany($companyId);
         $companyPathSegment = $this->companyPathSegment($companyId);
 
         return [
-            'company' => $this->companyUploadForResolvedPathSegment($companyPathSegment),
-            'statement' => $this->categoryUploadForResolvedPathSegment($companyPathSegment, 'statements'),
-            'expense' => $this->categoryUploadForResolvedPathSegment($companyPathSegment, 'expense_receipts'),
-            'receipt' => $this->categoryUploadForResolvedPathSegment($companyPathSegment, 'transaction_receipts'),
-            'manual_asset_evidence' => $this->categoryUploadForResolvedPathSegment($companyPathSegment, 'manual_asset_evidence'),
-            'companies_house' => $this->categoryUploadForResolvedPathSegment($companyPathSegment, 'companies_house'),
+            'company' => $this->companyUploadForResolvedPathSegment($baseDirectory, $companyPathSegment),
+            'statement' => $this->categoryUploadForResolvedPathSegment($baseDirectory, $companyPathSegment, 'statements'),
+            'expense' => $this->categoryUploadForResolvedPathSegment($baseDirectory, $companyPathSegment, 'expense_receipts'),
+            'receipt' => $this->categoryUploadForResolvedPathSegment($baseDirectory, $companyPathSegment, 'transaction_receipts'),
+            'manual_asset_evidence' => $this->categoryUploadForResolvedPathSegment($baseDirectory, $companyPathSegment, 'manual_asset_evidence'),
+            'companies_house' => $this->categoryUploadForResolvedPathSegment($baseDirectory, $companyPathSegment, 'companies_house'),
         ];
     }
 
     public function ensureCompanyUploadDirectories(int $companyId): bool
     {
+        $baseDirectory = $this->getUploadBaseDirectoryForCompany($companyId);
+
         foreach ($this->getCompanyUploadDirectories($companyId) as $directoryPath) {
-            $this->ensureManagedUploadDirectory($directoryPath);
+            $this->ensureManagedUploadDirectory($directoryPath, $baseDirectory);
         }
 
         return true;
     }
 
-    private function ensureManagedUploadDirectory(string $directoryPath): string
+    private function ensureManagedUploadDirectory(string $directoryPath, ?string $companyBaseDirectory = null): string
     {
-        $baseDirectory = $this->ensureUploadBaseDirectoryExists();
+        $baseDirectory = $companyBaseDirectory === null
+            ? $this->ensureUploadBaseDirectoryExists()
+            : $this->ensureExistingUploadBaseDirectory($companyBaseDirectory);
         $normalisedDirectory = rtrim($this->joinPath($directoryPath), '\\/');
 
         if ($normalisedDirectory === '') {
@@ -307,18 +437,41 @@ final class FileCheckService
         return $normalisedDirectory;
     }
 
-    private function companyUploadForResolvedPathSegment(string $companyPathSegment): string
+    private function companyUploadForResolvedPathSegment(string $baseDirectory, string $companyPathSegment): string
     {
-        return $this->joinPath($this->getUpload(), $this->normaliseCompanyPathSegment($companyPathSegment)) . DIRECTORY_SEPARATOR;
+        return $this->joinPath($baseDirectory, $this->normaliseCompanyPathSegment($companyPathSegment)) . DIRECTORY_SEPARATOR;
     }
 
-    private function categoryUploadForResolvedPathSegment(string $companyPathSegment, string $category): string
+    private function categoryUploadForResolvedPathSegment(string $baseDirectory, string $companyPathSegment, string $category): string
     {
         return $this->joinPath(
-            $this->getUpload(),
+            $baseDirectory,
             $this->normaliseCompanyPathSegment($companyPathSegment),
             $this->relativeDirectoryForCategory($category)
         ) . DIRECTORY_SEPARATOR;
+    }
+
+    private function ensureExistingUploadBaseDirectory(string $baseDirectory): string
+    {
+        $baseDirectory = rtrim(trim($baseDirectory), '\\/');
+
+        if ($baseDirectory === '') {
+            throw new \RuntimeException('The configured upload base directory is empty.');
+        }
+
+        if (!is_dir($baseDirectory)) {
+            throw new \RuntimeException('The configured upload base directory does not exist: ' . $baseDirectory);
+        }
+
+        if (!is_readable($baseDirectory)) {
+            throw new \RuntimeException('The configured upload base directory is not readable: ' . $baseDirectory);
+        }
+
+        if (!$this->canWriteTemporaryFile($baseDirectory) && !$this->canWriteTemporaryDirectory($baseDirectory)) {
+            throw new \RuntimeException('The configured upload base directory is not writable: ' . $baseDirectory);
+        }
+
+        return $baseDirectory;
     }
 
     private function categoryRelativePathForResolvedPathSegment(string $companyPathSegment, string $category, string $filename): string
@@ -430,5 +583,11 @@ final class FileCheckService
         }
 
         return implode(\DIRECTORY_SEPARATOR, $parts);
+    }
+
+    private function isAbsolutePath(string $path): bool
+    {
+        return preg_match('/^(?:[A-Za-z]:[\\\\\/]|[\\\\\/]{1,2})/', $path) === 1
+            || preg_match('/^[A-Za-z]:/', $path) === 1;
     }
 }

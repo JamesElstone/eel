@@ -163,7 +163,7 @@ function ixbrlExternalValidationFixture(): array
     $basisHash = (string)(new \eel_accounts\Service\IxbrlAccountsReportService())
         ->build($companyId, $periodId)['basis_hash'];
 
-    $fixtureRoot = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'external_validation_' . $token;
+    $fixtureRoot = test_tmp_directory() . DIRECTORY_SEPARATOR . 'external_validation_' . $token;
     $logs = $fixtureRoot . DIRECTORY_SEPARATOR . 'logs';
     $cache = $fixtureRoot . DIRECTORY_SEPARATOR . 'runtime' . DIRECTORY_SEPARATOR . 'cache';
     mkdir($logs, 0775, true);

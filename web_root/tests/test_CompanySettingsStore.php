@@ -17,7 +17,7 @@ $harness->run(\eel_accounts\Store\CompanySettingsStore::class, function (Generat
         $harness->assertSame('GBP', $defaults['default_currency'] ?? null);
         $harness->assertSame('d/m/Y', $defaults['date_format'] ?? null);
         $harness->assertSame('TEST', $defaults['hmrc_mode'] ?? null);
-        $harness->assertSame('/var/eel_accounts/uploads', $defaults['uploads_path'] ?? null);
+        $harness->assertSame(false, array_key_exists('uploads_path', $defaults));
         $harness->assertSame('', $defaults['tools_small_equipment_nominal_id'] ?? null);
         $harness->assertSame('250', $defaults['potential_asset_threshold'] ?? null);
         $harness->assertSame('', $defaults['qualifying_activity_ceased_on'] ?? null);
@@ -30,5 +30,9 @@ $harness->run(\eel_accounts\Store\CompanySettingsStore::class, function (Generat
         $harness->assertSame('int', (string)($definitions['tools_small_equipment_nominal_id']['type'] ?? ''));
         $harness->assertSame('int', (string)($definitions['potential_asset_threshold']['type'] ?? ''));
         $harness->assertSame('char', (string)($definitions['qualifying_activity_ceased_on']['type'] ?? ''));
+    });
+
+    $harness->check(\eel_accounts\Store\CompanySettingsStore::class, 'does not define company-specific upload storage', function () use ($harness): void {
+        $harness->assertSame(null, (new \eel_accounts\Store\CompanySettingsStore(0))->get('uploads_path'));
     });
 });

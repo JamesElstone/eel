@@ -20,11 +20,11 @@ $harness->run(\eel_accounts\Service\StatementUploadService::class, function (Gen
     });
 
     $harness->check(\eel_accounts\Service\StatementUploadService::class, 'resolveUploadDirectory uses the shared statement directory helper', function () use ($harness): void {
-        $baseDirectory = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'statement-upload-service';
+        $baseDirectory = test_tmp_directory() . DIRECTORY_SEPARATOR . 'statement-upload-service';
         $fileCheckService = new \eel_accounts\Service\FileCheckService([
             'upload_base_dir' => $baseDirectory,
             'statement_relative_path' => './statements/',
-        ], null, static fn(int $companyId): string => $companyId === 42 ? '12345678' : '');
+        ], null, static fn(int $companyId): string => $companyId === 42 ? '12345678' : '', static fn(int $companyId): string => $baseDirectory);
         $service = new \eel_accounts\Service\StatementUploadService($baseDirectory, null, null, $fileCheckService);
         $reflection = new ReflectionClass($service);
         $method = $reflection->getMethod('resolveUploadDirectory');

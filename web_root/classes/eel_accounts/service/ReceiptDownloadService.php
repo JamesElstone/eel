@@ -64,7 +64,7 @@ final class ReceiptDownloadService
 
         $existingLocalPath = trim((string)($transaction['local_document_path'] ?? ''));
 
-        if ($existingLocalPath !== '' && is_file($this->absolutePathFromRelative($existingLocalPath))) {
+        if ($existingLocalPath !== '' && is_file($this->absolutePathFromRelative((int)$transaction['company_id'], $existingLocalPath) ?? '')) {
             $this->updateTransactionDocumentState($transactionId, [
                 'document_download_status' => 'success',
                 'document_error' => null,
@@ -334,9 +334,9 @@ final class ReceiptDownloadService
             return null;
         }
 
-        $absolutePath = $this->absolutePathFromRelative($path);
+        $absolutePath = $this->absolutePathFromRelative($companyId, $path);
 
-        return is_file($absolutePath) ? trim($path) : null;
+        return $absolutePath !== null && is_file($absolutePath) ? trim($path) : null;
     }
 
     private function downloadUrlToTemporaryFile(string $url): array {
@@ -460,18 +460,28 @@ final class ReceiptDownloadService
         return $this->fileCheckService->getTransactionReceiptRelativePath($companyId, $filename);
     }
 
-    private function absolutePathFromRelative(string $relativePath): string {
-        $normalisedRelativePath = ltrim(str_replace(['/', '\\'], '/', $relativePath), '/');
-
-        if (str_starts_with($normalisedRelativePath, 'uploads/')) {
-            return dirname($this->baseDirectory)
-                . DIRECTORY_SEPARATOR
-                . str_replace('/', DIRECTORY_SEPARATOR, $normalisedRelativePath);
+    private function absolutePathFromRelative(int $companyId, string $relativePath): ?string {
+        $candidate = $this->fileCheckService->resolveCompanyRelativePath($companyId, $relativePath);
+        if ($candidate === null) {
+            return null;
         }
 
-        return $this->baseDirectory
-            . DIRECTORY_SEPARATOR
-            . str_replace('/', DIRECTORY_SEPARATOR, $normalisedRelativePath);
+        $realFile = realpath($candidate);
+        $realAllowedRoot = realpath($this->receiptDirectoryForCompany($companyId));
+
+        if ($realFile === false || $realAllowedRoot === false) {
+            return null;
+        }
+
+        $realFile = rtrim($realFile, '\\/');
+        $realAllowedRoot = rtrim($realAllowedRoot, '\\/');
+        $basePrefix = $realAllowedRoot . DIRECTORY_SEPARATOR;
+
+        if (strcasecmp($realFile, $realAllowedRoot) === 0 || str_starts_with(strtolower($realFile), strtolower($basePrefix))) {
+            return $realFile;
+        }
+
+        return null;
     }
 
     private function uploadsConfig(): array

@@ -37,6 +37,7 @@ return array (
   ),
   'uploads' => 
   array (
+    'upload_base_dir' => dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'files',
     'export_key' => '3KwECjQFlWmpTztcBAuviitPhE8uAJFL',
   ),
   'site_context' => 

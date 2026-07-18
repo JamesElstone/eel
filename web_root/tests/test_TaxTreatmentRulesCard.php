@@ -86,7 +86,7 @@ $harness->run(_tax_treatment_rulesCard::class, static function (GeneratedService
             [],
             []
         );
-        $services = new PageServiceFramework(new AppService(APP_ROOT . 'uploads'));
+        $services = new PageServiceFramework(new AppService(test_tmp_directory()));
         $handled = $card->handle($request, $services, $context, ActionResultFramework::none());
 
         $harness->assertSame('all', (string)$handled['tax_treatment_rules']['status_filter']);

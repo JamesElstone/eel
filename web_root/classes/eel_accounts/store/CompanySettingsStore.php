@@ -58,7 +58,6 @@ final class CompanySettingsStore
             'car_asset_cost_nominal_id' => ['type' => 'int', 'default' => ''],
             'car_accum_dep_nominal_id' => ['type' => 'int', 'default' => ''],
             'potential_asset_threshold' => ['type' => 'int', 'default' => '250'],
-            'uploads_path' => ['type' => 'char', 'default' => '/var/eel_accounts/uploads'],
             'date_format' => ['type' => 'char', 'default' => 'd/m/Y'],
             'hmrc_mode' => ['type' => 'char', 'default' => 'TEST'],
             'enable_duplicate_file_check' => ['type' => 'bool', 'default' => true],
@@ -231,6 +230,7 @@ final class CompanySettingsStore
         }
 
         $this->loadKeyValueRows();
+
     }
 
     private function resolveType(string $setting, ?string $type = null): string {
@@ -326,6 +326,12 @@ final class CompanySettingsStore
             $type = strtolower(trim((string)($row['type'] ?? 'char')));
 
             if ($setting === '') {
+                continue;
+            }
+
+            // Storage is controlled by the master uploads.upload_base_dir
+            // configuration, not by the obsolete company-specific setting.
+            if ($setting === 'uploads_path') {
                 continue;
             }
 

@@ -189,7 +189,7 @@ $harness->run(_journals_listCard::class, static function (GeneratedServiceClassT
             [],
             []
         );
-        $services = new PageServiceFramework(new AppService(APP_ROOT . 'uploads'));
+        $services = new PageServiceFramework(new AppService(test_tmp_directory()));
         $handled = $card->handle($request, $services, [
             'page' => [
                 'page_id' => 'journals',

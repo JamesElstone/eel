@@ -12,7 +12,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(UserManagementService::class);
 
-$userManagementTempDirectory = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp';
+$userManagementTempDirectory = test_tmp_directory();
 if (!is_dir($userManagementTempDirectory)) {
     mkdir($userManagementTempDirectory, 0777, true);
 }

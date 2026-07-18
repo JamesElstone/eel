@@ -12,7 +12,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->run(\eel_accounts\Service\CompaniesHouseInitialShareholdingExtractionService::class, function (GeneratedServiceClassTestHarness $harness): void {
-    $baseDirectory = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'companies-house-initial-shareholdings';
+    $baseDirectory = test_tmp_directory() . DIRECTORY_SEPARATOR . 'companies-house-initial-shareholdings';
     companiesHouseInitialShareholdingRemoveDirectory($baseDirectory);
     companiesHouseInitialShareholdingEnsureDirectory($baseDirectory . DIRECTORY_SEPARATOR . '12344321' . DIRECTORY_SEPARATOR . 'companies_house');
 
@@ -22,7 +22,7 @@ $harness->run(\eel_accounts\Service\CompaniesHouseInitialShareholdingExtractionS
 
     $fileCheckService = new \eel_accounts\Service\FileCheckService([
         'upload_base_dir' => $baseDirectory,
-    ], null, static fn(int $companyId): string => $companyId === 7 ? '12344321' : '');
+    ], null, static fn(int $companyId): string => $companyId === 7 ? '12344321' : '', static fn(int $companyId): string => $baseDirectory);
     $sampleText = <<<TEXT
          Initial Shareholdings
 

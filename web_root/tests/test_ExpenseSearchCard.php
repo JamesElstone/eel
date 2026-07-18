@@ -66,7 +66,7 @@ $harness->run(_expense_searchCard::class, static function (GeneratedServiceClass
             [],
             []
         );
-        $services = new PageServiceFramework(new AppService(APP_ROOT . 'uploads'));
+        $services = new PageServiceFramework(new AppService(test_tmp_directory()));
         $handled = $card->handle($request, $services, $context, ActionResultFramework::none());
 
         $harness->assertSame('cable', (string)$handled['expense_search']['keyword']);

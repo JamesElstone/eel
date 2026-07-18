@@ -222,7 +222,7 @@ final class _tax_treatment_rulesCard extends CardBaseFramework
             return '';
         }
 
-        return '<a class="text-link" href="' . HelperFramework::escape($url) . '" target="_blank" rel="noopener noreferrer">'
+        return '<a class="button" href="' . HelperFramework::escape($url) . '" target="_blank" rel="noopener noreferrer">'
             . HelperFramework::escape($this->sourceLabel($url))
             . '</a>';
     }

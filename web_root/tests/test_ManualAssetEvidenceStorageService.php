@@ -8,10 +8,23 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'UploadedFileTestFixture.php';
 
 (new GeneratedServiceClassTestHarness())->run(
     \eel_accounts\Service\ManualAssetEvidenceStorageService::class,
     static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\ManualAssetEvidenceStorageService $service): void {
+        $harness->check(\eel_accounts\Service\ManualAssetEvidenceStorageService::class, 'detects the real MIME type of uploaded evidence content', static function () use ($harness, $service): void {
+            $upload = UploadedFileTestFixture::jpegUpload('evidence-with-misleading-extension.txt');
+            $upload['type'] = 'text/plain';
+
+            $method = (new ReflectionClass($service))->getMethod('validateUploadedFile');
+            $method->setAccessible(true);
+            $result = $method->invoke($service, $upload);
+
+            $harness->assertSame([], $result['errors'] ?? null);
+            $harness->assertSame('image/jpeg', $result['content_type'] ?? null);
+        });
+
         $harness->check(\eel_accounts\Service\ManualAssetEvidenceStorageService::class, 'rejects missing company or asset code', static function () use ($harness, $service): void {
             $result = $service->storeEvidence(0, '', []);
 

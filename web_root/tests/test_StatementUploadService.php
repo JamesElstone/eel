@@ -19,6 +19,30 @@ $harness->run(\eel_accounts\Service\StatementUploadService::class, function (Gen
         $harness->assertSame(null, $method->invoke($service, APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'missing-file.bin'));
     });
 
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'detects MIME type from real statement file content', function () use ($harness, $service): void {
+        $path = tempnam(sys_get_temp_dir(), 'statement-mime-');
+        if (!is_string($path) || $path === '') {
+            $harness->skip('Unable to create a temporary statement file.');
+        }
+
+        try {
+            if (file_put_contents($path, "Date,Description,Amount\n2026-07-18,Fixture,10.00\n") === false) {
+                throw new RuntimeException('Unable to write the temporary statement file.');
+            }
+
+            $method = (new ReflectionClass($service))->getMethod('detectMimeType');
+            $method->setAccessible(true);
+            $mimeType = $method->invoke($service, $path);
+
+            $harness->assertTrue(is_string($mimeType));
+            $harness->assertTrue($mimeType !== '');
+        } finally {
+            if (is_file($path)) {
+                unlink($path);
+            }
+        }
+    });
+
     $harness->check(\eel_accounts\Service\StatementUploadService::class, 'resolveUploadDirectory uses the shared statement directory helper', function () use ($harness): void {
         $baseDirectory = test_tmp_directory() . DIRECTORY_SEPARATOR . 'statement-upload-service';
         $fileCheckService = new \eel_accounts\Service\FileCheckService([

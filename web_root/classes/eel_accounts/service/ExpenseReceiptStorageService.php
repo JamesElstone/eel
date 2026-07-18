@@ -209,7 +209,7 @@ final class ExpenseReceiptStorageService
             return ['errors' => ['The uploaded receipt file exceeds the 10MB size limit.']];
         }
 
-        $finfo = new finfo(\FILEINFO_MIME_TYPE);
+        $finfo = new \finfo(\FILEINFO_MIME_TYPE);
         $contentType = (string)($finfo->file($tmpName) ?: '');
         if (!isset(self::ALLOWED_CONTENT_TYPES[$contentType])) {
             $errors[] = 'Only PDF, JPG, PNG, and WEBP receipt files are allowed.';
@@ -282,7 +282,7 @@ final class ExpenseReceiptStorageService
     }
 
     private function detectContentType(string $absolutePath): string {
-        $finfo = new finfo(\FILEINFO_MIME_TYPE);
+        $finfo = new \finfo(\FILEINFO_MIME_TYPE);
         return (string)($finfo->file($absolutePath) ?: 'application/octet-stream');
     }
 
@@ -305,5 +305,4 @@ final class ExpenseReceiptStorageService
         exit;
     }
 }
-
 

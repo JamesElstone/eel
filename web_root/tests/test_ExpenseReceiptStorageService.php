@@ -8,10 +8,23 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'UploadedFileTestFixture.php';
 
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->run(\eel_accounts\Service\ExpenseReceiptStorageService::class, function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\ExpenseReceiptStorageService $service): void {
+    $harness->check(\eel_accounts\Service\ExpenseReceiptStorageService::class, 'detects the real MIME type of uploaded receipt content', function () use ($harness, $service): void {
+        $upload = UploadedFileTestFixture::jpegUpload('receipt-with-misleading-extension.txt');
+        $upload['type'] = 'text/plain';
+
+        $method = (new ReflectionClass($service))->getMethod('validateUploadedFile');
+        $method->setAccessible(true);
+        $result = $method->invoke($service, $upload);
+
+        $harness->assertSame([], $result['errors'] ?? null);
+        $harness->assertSame('image/jpeg', $result['content_type'] ?? null);
+    });
+
     $harness->check(\eel_accounts\Service\ExpenseReceiptStorageService::class, 'receipt path helpers use the shared expense receipt helpers', function () use ($harness): void {
         $baseDirectory = test_tmp_directory() . DIRECTORY_SEPARATOR . 'expense-receipt-storage-service';
         $fileCheckService = new \eel_accounts\Service\FileCheckService([

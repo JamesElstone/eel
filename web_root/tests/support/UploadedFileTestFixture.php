@@ -8,24 +8,6 @@
 declare(strict_types=1);
 
 namespace {
-    if (!defined('FILEINFO_MIME_TYPE')) {
-        define('FILEINFO_MIME_TYPE', 16);
-    }
-
-    if (!class_exists('finfo')) {
-        final class finfo
-        {
-            public function __construct(int $flags = 0)
-            {
-            }
-
-            public function file(string $filename): string|false
-            {
-                return UploadedFileTestFixture::isRegistered($filename) ? 'image/jpeg' : false;
-            }
-        }
-    }
-
     final class UploadedFileTestFixture
     {
         /** @var array<string, true> */

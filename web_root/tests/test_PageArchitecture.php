@@ -111,7 +111,7 @@ final class TestPageArchitectureHarness
                     ],
                 ],
                 [
-                    'tab' => 'Non-Assets',
+                'tab' => 'Year End Actions',
                     'cards' => [
                         'not_an_asset',
                     ],
@@ -559,9 +559,9 @@ final class TestPageArchitectureHarness
 
         $items = (new NavigationFramework(self::NAVIGATION_FIXTURES_DIRECTORY, 'trialBalance'))->build();
 
-        $this->assertSame(['directorLoan', 'trialBalance', 'uploads', 'zebra'], array_column($items, 'key'));
+        $this->assertSame(['directorloan', 'trialbalance', 'uploads', 'zebra'], array_column($items, 'key'));
         $this->assertSame('Director Loan', $items[0]['label']);
-        $this->assertSame('/?page=trialBalance', $items[1]['url']);
+        $this->assertSame('/?page=trialbalance', $items[1]['url']);
         $this->assertSame('/tests/fixtures/navigation_pages/trialBalance.svg', $items[1]['icon_path']);
         $this->assertTrue($items[1]['is_active']);
         $this->assertSame(1000, $items[3]['order']);

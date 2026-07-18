@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'IxbrlTestFixture.php';
 
 (new GeneratedServiceClassTestHarness())->run(
     \eel_accounts\Service\IxbrlExternalValidationService::class,
@@ -19,7 +20,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(\eel_accounts\Service\IxbrlExternalValidationService::class, 'summarises missing external validation as not configured', static function () use ($harness, $service): void {
             $status = $service->externalStatusForRun([]);
-            $harness->assertSame('not_configured', $status['status'] ?? '');
+            $configuration = $service->configurationStatus();
+            $harness->assertSame(!empty($configuration['installed']) ? 'not_run' : 'not_configured', $status['status'] ?? '');
             $harness->assertSame(false, $status['blocking'] ?? true);
         });
 
@@ -77,6 +79,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 function ixbrlExternalValidationFixture(): array
 {
     (new \eel_accounts\Service\IxbrlFactBuilderService())->ensureSchema();
+    ixbrl_test_ensure_frs105_thresholds();
     $token = bin2hex(random_bytes(5));
     $companyName = 'External iXBRL ' . $token;
     InterfaceDB::prepareExecute(
@@ -132,6 +135,8 @@ function ixbrlExternalValidationFixture(): array
     $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
     $settings->set('default_currency', 'GBP', 'char');
     $settings->flush();
+    ixbrl_test_assign_sales_nominal($companyId);
+    ixbrl_test_assign_director_loan_nominals($companyId);
     $savedDisclosures = (new \eel_accounts\Service\IxbrlAccountsDisclosureService())->save(
         $companyId,
         $periodId,

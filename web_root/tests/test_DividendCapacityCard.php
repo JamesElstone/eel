@@ -54,7 +54,7 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
             ],
         ]);
 
-        $harness->assertTrue(str_contains($html, '<section class="panel-soft settings-stack">'));
+        $harness->assertTrue(str_contains($html, '<section class="panel-soft settings-stack dividend-capacity-warning">'));
         $harness->assertTrue(str_contains($html, '<span class="badge warning">Warning</span>'));
         $harness->assertTrue(str_contains($html, 'Bank CSV coverage may be incomplete'));
         $harness->assertTrue(str_contains($html, 'Open Related Workflow'));

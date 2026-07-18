@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARATOR . 'TestOutput.php';
+
 require_once dirname(__DIR__) . DIRECTORY_SEPARATOR . 'classes' . DIRECTORY_SEPARATOR
     . 'eel_accounts' . DIRECTORY_SEPARATOR . 'service' . DIRECTORY_SEPARATOR
     . 'HmrcSubmissionPackageService.php';
@@ -20,4 +22,4 @@ if ($service->hashPackage(1) !== '') {
     throw new RuntimeException('Disabled CT600 package hashing returned a value.');
 }
 
-echo "PASS HmrcSubmissionPackageService fails closed without database access.\n";
+test_output_line('HmrcSubmissionPackageService: fails closed without database access.');

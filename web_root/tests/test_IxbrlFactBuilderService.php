@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'IxbrlTestFixture.php';
 
 (new GeneratedServiceClassTestHarness())->run(
     \eel_accounts\Service\IxbrlFactBuilderService::class,
@@ -325,6 +326,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 function ixbrlFactBuilderDirectorLoanFixture(): array
 {
+    ixbrl_test_ensure_frs105_thresholds();
     $suffix = substr(hash('sha256', __FILE__ . microtime(true)), 0, 10);
     $companyNumber = 'IF' . strtoupper(substr($suffix, 0, 8));
     InterfaceDB::prepareExecute(
@@ -397,6 +399,8 @@ function ixbrlFactBuilderDirectorLoanFixture(): array
     $settings->set('default_currency', 'GBP', 'char');
     $settings->set('director_loan_liability_nominal_id', $liabilityNominalId, 'int');
     $settings->flush();
+    ixbrl_test_assign_sales_nominal($companyId);
+    ixbrl_test_assign_director_loan_nominals($companyId, 0, $liabilityNominalId);
 
     InterfaceDB::prepareExecute(
         'INSERT INTO journals (

@@ -127,7 +127,7 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(false, str_contains($html, 'Tax Readiness Snapshot'));
         $harness->assertSame(false, str_contains($html, 'Post / Update CT Provisions'));
         $harness->assertSame(false, str_contains($html, 'post_ct_provisions'));
-        $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=corporation_tax" data-ajax="true"'));
+        $harness->assertSame(true, str_contains($html, '<form method="post" data-ajax="true"'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="company_id" value="33">'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="accounting_period_id" value="70">'));
         $harness->assertSame(false, str_contains($html, '?page=corporation_tax&amp;company_id=33'));

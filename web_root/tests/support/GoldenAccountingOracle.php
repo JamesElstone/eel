@@ -133,9 +133,9 @@ final class GoldenAccountingOracle
         $fixedAssets = round((float)($closingAccounts['fixed_assets']['net'] ?? 0) - $cumulativeDepreciation, 2);
         $hmrcPayable = (float)($closingAccounts['hmrc_payable']['net'] ?? 0);
         $directorLoan = (float)($closingAccounts['director_loan']['net'] ?? 0);
+        $prepaymentsAccruedIncome = round((float)($closingAccounts['prepaid_expenses']['net'] ?? 0), 2);
         $currentAssets = round(
             (float)($closingAccounts['bank']['net'] ?? 0)
-            + (float)($closingAccounts['prepaid_expenses']['net'] ?? 0)
             + max(0, $hmrcPayable)
             + max(0, $directorLoan),
             2
@@ -147,7 +147,7 @@ final class GoldenAccountingOracle
             2
         );
         $creditorsAfterOneYear = 0.00;
-        $netCurrentAssets = round($currentAssets - $creditorsWithinOneYear, 2);
+        $netCurrentAssets = round($currentAssets + $prepaymentsAccruedIncome - $creditorsWithinOneYear, 2);
         $totalAssetsLessCurrentLiabilities = round($fixedAssets + $netCurrentAssets, 2);
         $totalNetAssets = round($totalAssetsLessCurrentLiabilities - $creditorsAfterOneYear, 2);
         $explicitEquity = round(-(float)($closingAccounts['equity']['net'] ?? 0), 2);
@@ -228,6 +228,7 @@ final class GoldenAccountingOracle
                 'company_number' => 'T9100',
                 'fixed_assets' => $fixedAssets,
                 'current_assets' => $currentAssets,
+                'prepayments_accrued_income' => $prepaymentsAccruedIncome,
                 'creditors_within_one_year' => $creditorsWithinOneYear,
                 'creditors_after_more_than_one_year' => $creditorsAfterOneYear,
                 'net_current_assets_liabilities' => $netCurrentAssets,

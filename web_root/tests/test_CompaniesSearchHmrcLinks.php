@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARATOR . 'TestOutput.php';
+
 $cardFile = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content' . DIRECTORY_SEPARATOR . 'cards' . DIRECTORY_SEPARATOR . 'companies_search.php';
 $source = file_get_contents($cardFile);
 if (!is_string($source)) {
@@ -20,4 +22,4 @@ foreach ([
     }
 }
 
-echo "Companies Search HMRC link checks passed.\n";
+test_output_line('CompaniesSearchHmrcLinks: contains the expected HMRC guidance links.');

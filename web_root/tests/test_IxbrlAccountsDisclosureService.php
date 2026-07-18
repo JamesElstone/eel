@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'IxbrlTestFixture.php';
 
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(\eel_accounts\Service\IxbrlAccountsDisclosureService::class, static function (
@@ -63,7 +64,7 @@ $harness->run(\eel_accounts\Service\IxbrlAccountsDisclosureService::class, stati
             [, $missingErrors] = $validate->invoke($service, $missingAnswer, $period);
             $harness->assertTrue(str_contains(
                 implode(' ', $missingErrors),
-                'Confirm director advances, credits or guarantees with Yes or No.'
+                'Confirm director guarantees with Yes or No.'
             ));
 
             $positiveAnswer = $noAnswers;
@@ -243,18 +244,12 @@ $harness->run(\eel_accounts\Service\IxbrlAccountsDisclosureService::class, stati
                 $fixture = ixbrlDisclosureFixture(false);
                 $companyId = (int)$fixture['company_id'];
                 $periodId = (int)$fixture['accounting_period_id'];
-                $salesId = (int)InterfaceDB::fetchColumn(
-                    'SELECT value FROM company_settings WHERE company_id = :company_id AND setting = :setting',
-                    ['company_id' => $companyId, 'setting' => 'default_sales_nominal_id']
-                );
-                $bankId = (int)InterfaceDB::fetchColumn(
-                    'SELECT id FROM nominal_accounts WHERE code = :code LIMIT 1',
-                    ['code' => '1200']
-                );
-                if ($salesId <= 0 || $bankId <= 0) {
-                    $harness->skip('Sales and bank nominal fixtures are not available.');
-                }
+                $salesId = (int)$fixture['sales_nominal_id'];
+                $bankId = (int)$fixture['bank_nominal_id'];
+                $harness->assertTrue($salesId > 0);
+                $harness->assertTrue($bankId > 0);
 
+                $sourceRef = 'ixbrl-sales-' . bin2hex(random_bytes(4));
                 InterfaceDB::prepareExecute(
                     'INSERT INTO journals (company_id, accounting_period_id, source_type, source_ref, journal_date, description, is_posted)
                      VALUES (:company_id, :accounting_period_id, :source_type, :source_ref, :journal_date, :description, 1)',
@@ -262,12 +257,18 @@ $harness->run(\eel_accounts\Service\IxbrlAccountsDisclosureService::class, stati
                         'company_id' => $companyId,
                         'accounting_period_id' => $periodId,
                         'source_type' => 'manual',
-                        'source_ref' => 'ixbrl-sales-' . bin2hex(random_bytes(4)),
+                        'source_ref' => $sourceRef,
                         'journal_date' => '2025-06-30',
                         'description' => 'Sales activity fixture',
                     ]
                 );
-                $journalId = (int)InterfaceDB::fetchColumn('SELECT LAST_INSERT_ID()');
+                $journalId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM journals
+                     WHERE company_id = :company_id AND source_type = :source_type AND source_ref = :source_ref
+                     LIMIT 1',
+                    ['company_id' => $companyId, 'source_type' => 'manual', 'source_ref' => $sourceRef]
+                );
+                $harness->assertTrue($journalId > 0);
                 InterfaceDB::prepareExecute(
                     'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit, line_description)
                      VALUES (:journal_id, :nominal_account_id, 0, :credit, :line_description),
@@ -434,6 +435,7 @@ function ixbrlDisclosureInput(): array
 
 function ixbrlDisclosureFixture(bool $withFiledSuggestions): array
 {
+    ixbrl_test_ensure_frs105_thresholds();
     $marker = strtoupper(substr(hash('sha256', __FILE__ . microtime(true) . random_int(1, PHP_INT_MAX)), 0, 8));
     $companyNumber = 'IX' . $marker;
     InterfaceDB::prepareExecute(
@@ -458,24 +460,9 @@ function ixbrlDisclosureFixture(bool $withFiledSuggestions): array
         'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label',
         ['company_id' => $companyId, 'label' => 'Disclosure AP ' . $marker]
     );
-    $salesNominalId = (int)InterfaceDB::fetchColumn(
-        'SELECT id FROM nominal_accounts WHERE code = :code LIMIT 1',
-        ['code' => '4000']
-    );
-    if ($salesNominalId <= 0) {
-        InterfaceDB::prepareExecute(
-            'INSERT INTO nominal_accounts (code, name, account_type, tax_treatment, is_active, sort_order)
-             VALUES (:code, :name, :account_type, :tax_treatment, 1, :sort_order)',
-            ['code' => '4000', 'name' => 'Sales', 'account_type' => 'income', 'tax_treatment' => 'other', 'sort_order' => 4000]
-        );
-        $salesNominalId = (int)InterfaceDB::fetchColumn(
-            'SELECT id FROM nominal_accounts WHERE code = :code LIMIT 1',
-            ['code' => '4000']
-        );
-    }
-    $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
-    $settings->set('default_sales_nominal_id', $salesNominalId, 'int');
-    $settings->flush();
+    $salesNominalId = ixbrl_test_assign_sales_nominal($companyId);
+    StandardNominalTestFixture::ensureNominals(['1000']);
+    $bankNominalId = StandardNominalTestFixture::id('1000');
     InterfaceDB::prepareExecute(
         'INSERT INTO year_end_reviews (company_id, accounting_period_id, is_locked, locked_at, locked_by)
          VALUES (:company_id, :accounting_period_id, 1, CURRENT_TIMESTAMP, :locked_by)',
@@ -486,7 +473,12 @@ function ixbrlDisclosureFixture(bool $withFiledSuggestions): array
         ixbrlDisclosureFiledSuggestions($companyId, $companyNumber, $marker);
     }
 
-    return ['company_id' => $companyId, 'accounting_period_id' => $periodId];
+    return [
+        'company_id' => $companyId,
+        'accounting_period_id' => $periodId,
+        'sales_nominal_id' => $salesNominalId,
+        'bank_nominal_id' => $bankNominalId,
+    ];
 }
 
 function ixbrlDisclosureFiledSuggestions(int $companyId, string $companyNumber, string $marker): void

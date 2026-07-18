@@ -31,8 +31,6 @@ $harness->run(
                 $harness->skip('Year End acknowledgement basis storage is not available.');
             }
 
-            $companyId = random_int(700000000, 799999999);
-            $accountingPeriodId = random_int(800000000, 899999999);
             $acknowledgements = new \eel_accounts\Service\YearEndAcknowledgementService();
             $emptyCandidates = ['available' => true, 'threshold' => 250, 'rows' => [], 'count' => 0];
             $basis = $service->buildAcknowledgementBasis($emptyCandidates, 250, 0);
@@ -43,6 +41,29 @@ $harness->run(
 
             InterfaceDB::beginTransaction();
             try {
+                $marker = strtoupper(substr(hash('sha256', __FILE__ . microtime(true)), 0, 10));
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO companies (company_name, company_number) VALUES (:company_name, :company_number)',
+                    ['company_name' => 'Non Asset Review Fixture Limited', 'company_number' => 'NA' . $marker]
+                );
+                $companyId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM companies WHERE company_number = :company_number',
+                    ['company_number' => 'NA' . $marker]
+                );
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+                     VALUES (:company_id, :label, :period_start, :period_end)',
+                    [
+                        'company_id' => $companyId,
+                        'label' => 'Non Asset Review Fixture',
+                        'period_start' => '2025-01-01',
+                        'period_end' => '2025-12-31',
+                    ]
+                );
+                $accountingPeriodId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label',
+                    ['company_id' => $companyId, 'label' => 'Non Asset Review Fixture']
+                );
                 $saved = $acknowledgements->save(
                     $companyId,
                     $accountingPeriodId,

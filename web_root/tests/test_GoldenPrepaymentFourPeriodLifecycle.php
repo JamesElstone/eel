@@ -44,7 +44,9 @@ $harness->check('GoldenPrepaymentFourPeriodLifecycle', 'posts the complete four-
         $harness->assertSame((int)$oraclePeriod['prepayment_asset_pence'], (int)$allocation['closing_deferred_pence']);
         $harness->assertSame((string)$expected['posting_type'], (string)$allocation['posting_role']);
         $harness->assertSame((int)$expected['posting_pence'], (int)$allocation['posting_target_pence']);
-        $harness->assertSame(1, (int)$evidence[$periodId]['posted_count']);
+        if ((int)$evidence[$periodId]['posted_count'] !== 1) {
+            throw new RuntimeException('AP ' . $periodId . ' should create exactly one initial prepayment posting.');
+        }
         $harness->assertSame(0, (int)$evidence[$periodId]['retry_posted_count']);
         $harness->assertSame(
             number_format((float)$evidence[$periodId]['preview_profit_before_tax'], 2, '.', ''),
@@ -81,7 +83,9 @@ $harness->check('GoldenPrepaymentFourPeriodLifecycle', 'posts the complete four-
         $harness->assertSame((int)$expected['posting_pence'], (int)$posting['target_pence']);
         $harness->assertSame($expectedDate, (string)$posting['journal_date']);
         $harness->assertSame('manual', (string)$posting['source_type']);
-        $harness->assertSame(1, (int)$posting['is_posted']);
+        if ((int)$posting['is_posted'] !== 1) {
+            throw new RuntimeException('AP ' . $periodId . ' prepayment audit row should retain a posted journal.');
+        }
         $harness->assertSame('system_generated', (string)$posting['entry_mode']);
         $harness->assertSame('prepayment_' . $expectedRole, (string)$posting['journal_tag']);
         $harness->assertSame('review:9291:period:' . $periodId . ':role:' . $expectedRole, (string)$posting['journal_key']);
@@ -130,15 +134,15 @@ $harness->check('GoldenPrepaymentFourPeriodLifecycle', 'posts the complete four-
 
     $balanceSheet = (new \eel_accounts\Service\IxbrlBalanceSheetMetricsService())
         ->fetchClosingMetrics(GoldenAccountsFixture::GOLDEN_COMPANY_ID, 9111);
-    $prepaymentCurrentAsset = array_values(array_filter(
-        (array)($balanceSheet['sources']['current_assets'] ?? []),
+    $prepaymentAccruedIncome = array_values(array_filter(
+        (array)($balanceSheet['sources']['prepayments_accrued_income'] ?? []),
         static fn(array $row): bool => str_contains((string)($row['label'] ?? ''), 'Golden Test Prepayments')
     ));
     $prepaymentFixedAsset = array_values(array_filter(
         (array)($balanceSheet['sources']['fixed_assets'] ?? []),
         static fn(array $row): bool => str_contains((string)($row['label'] ?? ''), 'Golden Test Prepayments')
     ));
-    $harness->assertCount(1, $prepaymentCurrentAsset);
-    $harness->assertSame(821.00, (float)$prepaymentCurrentAsset[0]['amount']);
+    $harness->assertCount(1, $prepaymentAccruedIncome);
+    $harness->assertSame(821.00, (float)$prepaymentAccruedIncome[0]['amount']);
     $harness->assertSame([], $prepaymentFixedAsset);
 });

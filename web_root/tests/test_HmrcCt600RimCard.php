@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARATOR . 'TestOutput.php';
+
 $cardFile = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content' . DIRECTORY_SEPARATOR . 'cards' . DIRECTORY_SEPARATOR . 'tax_rates_ct600_rim.php';
 $source = file_get_contents($cardFile);
 if (!is_string($source)) {
@@ -30,4 +32,4 @@ if (strpos($source, '<th>Action</th>') === false || strpos($source, 'data-chicke
     throw new RuntimeException('The HMRC CT600 RIM card is missing the confirmed delete action.');
 }
 
-echo "HMRC CT600 RIM card checks passed.\n";
+test_output_line('HmrcCt600RimCard: renders the expected catalogue controls.');

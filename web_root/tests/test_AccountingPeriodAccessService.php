@@ -38,10 +38,31 @@ $harness->run(
                 $harness->skip('year_end_reviews table is not available.');
             }
 
-            $companyId = random_int(700000000, 799999999);
-            $accountingPeriodId = random_int(800000000, 899999999);
             InterfaceDB::beginTransaction();
             try {
+                $marker = strtoupper(substr(hash('sha256', __FILE__ . microtime(true)), 0, 10));
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO companies (company_name, company_number) VALUES (:company_name, :company_number)',
+                    ['company_name' => 'Accounting Period Access Fixture Limited', 'company_number' => 'AP' . $marker]
+                );
+                $companyId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM companies WHERE company_number = :company_number',
+                    ['company_number' => 'AP' . $marker]
+                );
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+                     VALUES (:company_id, :label, :period_start, :period_end)',
+                    [
+                        'company_id' => $companyId,
+                        'label' => 'Accounting Period Access Fixture',
+                        'period_start' => '2025-01-01',
+                        'period_end' => '2025-12-31',
+                    ]
+                );
+                $accountingPeriodId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label',
+                    ['company_id' => $companyId, 'label' => 'Accounting Period Access Fixture']
+                );
                 $open = $service->fetchDataEntryState($companyId, $accountingPeriodId);
                 $harness->assertSame(true, $open['permitted']);
                 $harness->assertSame(false, $open['is_locked']);

@@ -104,8 +104,9 @@ $harness->run(_companies_nominalsCard::class, static function (GeneratedServiceC
     });
 
     $harness->check(_companies_nominalsCard::class, 'renders shared asset nominal mappings', static function () use ($harness, $html): void {
-        $harness->assertTrue(str_contains($html, 'Asset Nominal Mappings'));
-        $harness->assertTrue(str_contains($html, 'Tools &amp; Equipment'));
-        $harness->assertTrue(str_contains($html, 'Ready: cost 1300 Tools and Equipment, accumulated depreciation 1330 Accumulated Depreciation - Tools'));
+        $harness->assertTrue(str_contains($html, 'name="tools_equipment_asset_cost_nominal_id"'));
+        $harness->assertTrue(str_contains($html, 'name="tools_equipment_accum_dep_nominal_id"'));
+        $harness->assertTrue(str_contains($html, '<strong>Tools &amp; Equipment cost nominal</strong><span>1300 Tools and Equipment</span>'));
+        $harness->assertTrue(str_contains($html, '<strong>Tools &amp; Equipment accumulated depreciation nominal</strong><span>1330 Accumulated Depreciation - Tools</span>'));
     });
 });

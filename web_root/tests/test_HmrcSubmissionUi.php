@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARATOR . 'TestOutput.php';
+
 $root = dirname(__DIR__, 2);
 $page = (string)file_get_contents($root . '/web_root/content/pages/HMRC.php');
 $card = (string)file_get_contents($root . '/web_root/content/cards/hmrc_submission_unavailable.php');
@@ -25,4 +27,4 @@ if (!str_contains($action, 'CT600 submission is not implemented.')
     throw new RuntimeException('HMRC submission action is not fail-closed.');
 }
 
-echo "PASS HMRC submission page and action are inert and fail closed.\n";
+test_output_line('HmrcSubmissionUi: page and action are inert and fail closed.');

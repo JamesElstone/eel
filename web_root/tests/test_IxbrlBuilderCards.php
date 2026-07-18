@@ -164,7 +164,7 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, 'name="is_still_trading" value="1" required checked'));
         $harness->assertTrue(str_contains($html, 'Has the company ever traded?'));
         $harness->assertFalse(str_contains($html, 'name="entity_trading_status"'));
-        $harness->assertTrue(str_contains($html, '<select class="select" id="ixbrl_approving_director_name" name="approving_director_name" required>'));
+        $harness->assertTrue(str_contains($html, '<select class="select" id="ixbrl_approving_director_name" name="approving_director_name" required data-state-default="James Elstone">'));
         $harness->assertTrue(str_contains($html, '<option value="James Elstone" selected>James Elstone</option>'));
         $harness->assertFalse(str_contains($html, '<datalist'));
         $harness->assertTrue(str_contains($html, 'Was the company dormant for this accounting period?'));
@@ -181,10 +181,10 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_ixbrl_disclosure_field"'));
         $harness->assertTrue(str_contains($html, 'data-submit-on-change="true"'));
         $saveButtonPosition = strpos($html, 'Save core details');
-        $corePanelEnd = strpos($html, "</section>\n                <div class=\"settings-stack\">");
+        $corePanelEnd = strpos($html, "</form>\n                <div class=\"settings-stack\">");
         $harness->assertTrue($saveButtonPosition !== false && $corePanelEnd !== false && $saveButtonPosition < $corePanelEnd);
-        $harness->assertTrue(str_contains($html, "<section class=\"panel-soft\">\n                    <div class=\"form-grid\""));
-        $harness->assertTrue(str_contains($html, 'FRS 105 simple-note scope'));
+        $harness->assertTrue(str_contains($html, '<h3 class="card-title">Period-specific filing statements</h3>'));
+        $harness->assertTrue(str_contains($html, 'FRS 105 Notes'));
         $harness->assertTrue(str_contains($html, 'not inferred or prefilled from Companies House'));
         foreach ([
             'micro_entity_eligibility_confirmed',
@@ -335,8 +335,8 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $harness->assertTrue(str_contains($draftHtml, 'Generate Filing Export</button>'));
             $harness->assertTrue(str_contains($draftHtml, 'Generate Filing Export</button>') && str_contains($draftHtml, 'disabled'));
             $harness->assertTrue(str_contains($draftHtml, 'Run External Validation'));
-            $harness->assertTrue(str_contains($draftHtml, 'Arelle status') && str_contains($draftHtml, 'Installed'));
-            $harness->assertTrue(str_contains($draftHtml, 'Arelle validation') && str_contains($draftHtml, 'Failed'));
+            $harness->assertTrue(str_contains($draftHtml, 'Arelle Status') && str_contains($draftHtml, 'Installed'));
+            $harness->assertTrue(str_contains($draftHtml, 'Arelle Validation') && str_contains($draftHtml, 'Failed'));
             $harness->assertTrue(str_contains($draftHtml, 'Review draft only'));
             $harness->assertFalse(str_contains($draftHtml, 'Download Filing-ready File'));
 

@@ -34,7 +34,7 @@ $harness->run(_tax_rates_ctCard::class, static function (GeneratedServiceClassTe
         $harness->assertSame(false, str_contains($html, 'active-version-6'));
         $harness->assertSame(false, str_contains($html, 'inactive-version'));
         $harness->assertTrue(str_contains($html, 'name="tax_rates_ct_status" value="active"'));
-        $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit">Refresh HMRC CT Rates</button>'));
+        $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit">Refresh HMRC Rates and FRS 105 thresholds</button>'));
         $harness->assertSame(false, str_contains($html, 'Import Live His Majesty'));
     });
 
@@ -44,7 +44,7 @@ $harness->run(_tax_rates_ctCard::class, static function (GeneratedServiceClassTe
         $html = $card->render($emptyContext);
 
         $harness->assertTrue(str_contains($html, 'No active sourced tax or allowance rules are stored yet.'));
-        $harness->assertTrue(str_contains($html, '<button class="button danger" type="submit">Import Live His Majesty&#039;s Revenue and Customs (HMRC) Rates</button>'));
+        $harness->assertTrue(str_contains($html, '<button class="button danger" type="submit">Import Live His Majesty&#039;s Revenue and Customs (HMRC) Rates and FRS 105 thresholds</button>'));
         $harness->assertSame(false, str_contains($html, 'Refresh His Majesty'));
     });
 

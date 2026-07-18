@@ -140,6 +140,7 @@ $harness->run(HealthAction::class, function (GeneratedServiceClassTestHarness $h
 
         $partial = $buildDefaultNominalStatus->invoke($service, [
             'default_bank_nominal_id' => 10,
+            'default_sales_nominal_id' => 10,
             'default_trade_nominal_id' => 15,
             'default_expense_nominal_id' => 20,
         ], $nominalAccounts);
@@ -147,6 +148,7 @@ $harness->run(HealthAction::class, function (GeneratedServiceClassTestHarness $h
 
         $complete = $buildDefaultNominalStatus->invoke($service, [
             'default_bank_nominal_id' => 10,
+            'default_sales_nominal_id' => 10,
             'default_trade_nominal_id' => 15,
             'default_expense_nominal_id' => 20,
             'director_loan_asset_nominal_id' => 30,

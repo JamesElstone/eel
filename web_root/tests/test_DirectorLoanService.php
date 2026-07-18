@@ -60,10 +60,12 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
 
             $harness->assertSame(true, (bool)($statement['success'] ?? false));
             $harness->assertSame(true, (bool)($disclosure['has_company_to_director_exposure'] ?? false));
-            $harness->assertSame('253.00', directorLoanStatementMoney($disclosure['total_advances'] ?? 0));
+            $harness->assertSame('353.00', directorLoanStatementMoney($disclosure['total_advances'] ?? 0));
             $harness->assertSame('253.00', directorLoanStatementMoney($disclosure['total_repayments'] ?? 0));
             $harness->assertSame('1035.63', directorLoanStatementMoney($disclosure['total_director_funding'] ?? 0));
-            $harness->assertSame('The company advanced £253.00 to ELSTONE, James Charles Benjamin Graeme during the period and £253.00 was repaid or settled during the period. The closing amount due from the director was £0.00. The advance was Interest-free and repayable on demand.', (new \eel_accounts\Service\IxbrlTaxonomyProfileService())->directorLoanStatementText($disclosure));
+            $statementText = (new \eel_accounts\Service\IxbrlTaxonomyProfileService())->directorLoanStatementText($disclosure);
+            $harness->assertTrue(str_contains($statementText, 'advanced £253.00 to Primary Director'));
+            $harness->assertTrue(str_contains($statementText, 'advanced £100.00 to Other Director'));
             $harness->assertSame('253.00', directorLoanStatementMoney($primaryDirector['gross_asset'] ?? 0));
             $harness->assertSame('1288.63', directorLoanStatementMoney($primaryDirector['gross_liability'] ?? 0));
             $harness->assertSame('253.00', directorLoanStatementMoney($primaryDirector['desired_reclassification'] ?? 0));

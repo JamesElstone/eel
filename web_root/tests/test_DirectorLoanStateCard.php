@@ -76,6 +76,21 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
             ],
         ]);
 
+        foreach ([
+            'counterparty' => 'External Counterparty',
+            'former director' => 'Former Director (former director)',
+            'attribution intent' => 'name="intent" value="set_director_loan_attribution"',
+            'reporting intent' => 'name="intent" value="save_director_loan_reporting_presentation"',
+            'within-year choice' => 'name="classification" value="within_one_year" checked required',
+            'after-year choice' => 'name="classification" value="after_more_than_one_year" required',
+            'locked reporting badge' => 'Period locked - reporting choice is read only',
+            'disabled reporting save' => '<button class="button primary" type="submit" disabled>Save reporting presentation</button>',
+        ] as $contract => $needle) {
+            if (!str_contains($html, $needle)) {
+                throw new RuntimeException('Director Loan card is missing the ' . $contract . ' contract.');
+            }
+        }
+
         $harness->assertSame('Assign each posted Director Loan control-account entry to the director whose loan account it belongs to. The transaction counterparty remains separate.', $card->helper([]));
         $harness->assertTrue(str_contains($html, 'External Counterparty'));
         $harness->assertTrue(str_contains($html, 'https://www.gov.uk/hmrc-internal-manuals/employment-income-manual/eim26198'));
@@ -94,9 +109,9 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_director_loan_reporting_presentation"'));
         $harness->assertTrue(str_contains($html, 'name="classification" value="within_one_year" checked required'));
         $harness->assertTrue(str_contains($html, 'name="classification" value="after_more_than_one_year" required'));
-        $harness->assertTrue(str_contains($html, 'Period locked - reporting choice remains editable'));
+        $harness->assertTrue(str_contains($html, 'Period locked - reporting choice is read only'));
         $harness->assertTrue(str_contains($html, 'does not alter journals, transactions, balances, nominal accounts, or the Year End lock'));
-        $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit">Save reporting presentation</button>'));
+        $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit" disabled>Save reporting presentation</button>'));
         $harness->assertSame(false, str_contains($html, 'director_loan_state.php'));
     });
 

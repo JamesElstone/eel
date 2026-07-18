@@ -103,10 +103,31 @@ $harness->run(AssetAction::class, static function (GeneratedServiceClassTestHarn
             $harness->skip('year_end_reviews table is not available.');
         }
 
-        $companyId = random_int(700000000, 799999999);
-        $accountingPeriodId = random_int(800000000, 899999999);
         InterfaceDB::beginTransaction();
         try {
+            $marker = strtoupper(substr(hash('sha256', __FILE__ . microtime(true)), 0, 10));
+            InterfaceDB::prepareExecute(
+                'INSERT INTO companies (company_name, company_number) VALUES (:company_name, :company_number)',
+                ['company_name' => 'Asset Lock Fixture Limited', 'company_number' => 'AL' . $marker]
+            );
+            $companyId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM companies WHERE company_number = :company_number',
+                ['company_number' => 'AL' . $marker]
+            );
+            InterfaceDB::prepareExecute(
+                'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+                 VALUES (:company_id, :label, :period_start, :period_end)',
+                [
+                    'company_id' => $companyId,
+                    'label' => 'Asset Lock Fixture',
+                    'period_start' => '2025-01-01',
+                    'period_end' => '2025-12-31',
+                ]
+            );
+            $accountingPeriodId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label',
+                ['company_id' => $companyId, 'label' => 'Asset Lock Fixture']
+            );
             InterfaceDB::prepareExecute(
                 'INSERT INTO year_end_reviews (company_id, accounting_period_id, is_locked, locked_at, locked_by)
                  VALUES (:company_id, :accounting_period_id, 1, CURRENT_TIMESTAMP, :locked_by)',
@@ -142,6 +163,7 @@ $harness->run(AssetAction::class, static function (GeneratedServiceClassTestHarn
             InterfaceDB::rollBack();
         }
 
+        $companyId ??= 0;
         $missingPeriodRequest = new RequestFramework(
             [],
             [

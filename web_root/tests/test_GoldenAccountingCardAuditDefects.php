@@ -32,7 +32,9 @@ $harness->check('GoldenAccountingCardAuditDefects', 'includes an approved previe
         // AP9112 consumes 259 days and AP9113 consumes the remaining 107 days.
         $expectedAp80Profit = round((float)$baselineAp80['profit_before_tax'] - 259.00, 2);
         $expectedAp81Profit = round((float)$baselineAp81['profit_before_tax'] - 107.00, 2);
-        $expectedAp80CurrentAssets = round((float)$baselineChAp80['current_assets'] - 259.00, 2);
+        $expectedAp80CurrentAssets = round((float)$baselineChAp80['current_assets'] - 366.00, 2);
+        $expectedAp80Prepayments = round((float)$baselineChAp80['prepayments_accrued_income'] + 107.00, 2);
+        $expectedAp80NetCurrent = round((float)$baselineChAp80['net_current_assets_liabilities'] - 259.00, 2);
 
         $actualProfitLoss = new \eel_accounts\Service\ProfitLossService();
         $actualAp80 = $actualProfitLoss->getProfitLossSummary(GoldenAccountsFixture::GOLDEN_COMPANY_ID, 9112);
@@ -50,6 +52,8 @@ $harness->check('GoldenAccountingCardAuditDefects', 'includes an approved previe
                 goldenCardAuditMoney($expectedAp80Profit),
                 goldenCardAuditMoney($expectedAp81Profit),
                 goldenCardAuditMoney($expectedAp80CurrentAssets),
+                goldenCardAuditMoney($expectedAp80Prepayments),
+                goldenCardAuditMoney($expectedAp80NetCurrent),
             ],
             [
                 goldenCardAuditMoney($actualAp80['profit_before_tax'] ?? 0),
@@ -57,6 +61,8 @@ $harness->check('GoldenAccountingCardAuditDefects', 'includes an approved previe
                 goldenCardAuditMoney(($actualTaxAp80['summary'] ?? [])['accounting_profit'] ?? 0),
                 goldenCardAuditMoney(($actualTaxAp81['summary'] ?? [])['accounting_profit'] ?? 0),
                 goldenCardAuditMoney($actualChAp80['current_assets'] ?? 0),
+                goldenCardAuditMoney($actualChAp80['prepayments_accrued_income'] ?? 0),
+                goldenCardAuditMoney($actualChAp80['net_current_assets_liabilities'] ?? 0),
             ]
         );
     } finally {

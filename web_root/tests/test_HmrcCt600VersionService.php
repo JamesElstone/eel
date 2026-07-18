@@ -35,30 +35,48 @@ $insertFixture = static function (): void {
 
 $harness->check(\eel_accounts\Service\HmrcCt600VersionService::class, 'selects V2 for an older CT period', static function () use ($harness, $service, $insertFixture): void {
     InterfaceDB::beginTransaction();
-    $insertFixture();
-    $result = $service->resolveForCtPeriod('2014-04-01', '2015-03-31', new DateTimeImmutable('2026-07-18'));
-    $harness->assertSame(true, $result['ok']);
-    $harness->assertSame('V2', $result['form_version']);
-    $harness->assertSame('V3.99', $result['artifact_version']);
+    try {
+        $insertFixture();
+        $result = $service->resolveForCtPeriod('2014-04-01', '2015-03-31', new DateTimeImmutable('2026-07-18'));
+        $harness->assertSame(true, $result['ok']);
+        $harness->assertSame('V2', $result['form_version']);
+        $harness->assertSame('V3.99', $result['artifact_version']);
+    } finally {
+        if (InterfaceDB::inTransaction()) {
+            InterfaceDB::rollBack();
+        }
+    }
 });
 
 $harness->check(\eel_accounts\Service\HmrcCt600VersionService::class, 'selects V2 when a CT period spans the V2/V3 boundary', static function () use ($harness, $service, $insertFixture): void {
     InterfaceDB::beginTransaction();
-    $insertFixture();
-    $result = $service->resolveForCtPeriod('2015-03-01', '2015-12-31', new DateTimeImmutable('2026-07-18'));
-    $harness->assertSame(true, $result['ok']);
-    $harness->assertSame('V2', $result['form_version']);
-    $harness->assertSame('V3.99', $result['artifact_version']);
-    $harness->assertSame(true, in_array('This CT period spans the V2/V3 boundary; the form version is selected from the CT period start date.', $result['warnings'], true));
+    try {
+        $insertFixture();
+        $result = $service->resolveForCtPeriod('2015-03-01', '2015-12-31', new DateTimeImmutable('2026-07-18'));
+        $harness->assertSame(true, $result['ok']);
+        $harness->assertSame('V2', $result['form_version']);
+        $harness->assertSame('V3.99', $result['artifact_version']);
+        $harness->assertSame(true, in_array('This CT period spans the V2/V3 boundary; the form version is selected from the CT period start date.', $result['warnings'], true));
+    } finally {
+        if (InterfaceDB::inTransaction()) {
+            InterfaceDB::rollBack();
+        }
+    }
 });
 
 $harness->check(\eel_accounts\Service\HmrcCt600VersionService::class, 'selects V3 for a CT period starting on the V3 boundary', static function () use ($harness, $service, $insertFixture): void {
     InterfaceDB::beginTransaction();
-    $insertFixture();
-    $result = $service->resolveForCtPeriod('2015-04-01', '2016-03-31', new DateTimeImmutable('2026-07-18'));
-    $harness->assertSame(true, $result['ok']);
-    $harness->assertSame('V3', $result['form_version']);
-    $harness->assertSame('V1.994', $result['artifact_version']);
+    try {
+        $insertFixture();
+        $result = $service->resolveForCtPeriod('2015-04-01', '2016-03-31', new DateTimeImmutable('2026-07-18'));
+        $harness->assertSame(true, $result['ok']);
+        $harness->assertSame('V3', $result['form_version']);
+        $harness->assertSame('V1.994', $result['artifact_version']);
+    } finally {
+        if (InterfaceDB::inTransaction()) {
+            InterfaceDB::rollBack();
+        }
+    }
 });
 
 $harness->run(\eel_accounts\Service\HmrcCt600VersionService::class, static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\HmrcCt600VersionService $service): void {

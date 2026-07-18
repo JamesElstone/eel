@@ -969,8 +969,8 @@ final class GoldenWorkflowCoverageFixture
         self::insert('ixbrl_generation_facts', [
             'id' => 9551,
             'run_id' => 9550,
-            'fact_key' => 'golden_complete_fixed_assets',
-            'taxonomy_concept' => 'uk-core:FixedAssets',
+            'fact_key' => 'fixed_assets',
+            'taxonomy_concept' => 'core:FixedAssets',
             'label' => 'Fixed assets',
             'value_type' => 'numeric',
             'numeric_value' => 1500.00,
@@ -978,19 +978,6 @@ final class GoldenWorkflowCoverageFixture
             'decimals_value' => '2',
             'context_ref' => 'golden-complete-2026',
             'source_json' => json_encode(['synthetic' => true, 'company_id' => 9400]),
-        ]);
-        self::insert('ixbrl_fact_mappings', [
-            'id' => 9552,
-            'fact_key' => 'golden_complete_fixed_assets',
-            'taxonomy_concept' => 'uk-core:FixedAssets',
-            'label' => 'Golden complete fixed assets',
-            'value_type' => 'numeric',
-            'calculation_type' => 'nominal_subtype_sum',
-            'source_key' => 'fixed_asset',
-            'sign_multiplier' => 1.00,
-            'is_required' => 1,
-            'sort_order' => 9552,
-            'is_active' => 1,
         ]);
     }
 

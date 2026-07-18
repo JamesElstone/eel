@@ -44,21 +44,6 @@ final class HmrcCtRimDownloadService
 
     private function countXsdFiles(string $path): int
     {
-        if (class_exists('ZipArchive')) {
-            $zip = new \ZipArchive();
-            if ($zip->open($path) !== true) {
-                throw new \RuntimeException('The downloaded HMRC CT600 RIM file is not a valid ZIP archive.');
-            }
-            $xsdCount = 0;
-            for ($index = 0; $index < $zip->numFiles; $index++) {
-                if (str_ends_with(strtolower((string)$zip->getNameIndex($index)), '.xsd')) {
-                    $xsdCount++;
-                }
-            }
-            $zip->close();
-            return $xsdCount;
-        }
-
         $content = @file_get_contents($path);
         if (!is_string($content) || $content === '') {
             throw new \RuntimeException('The downloaded HMRC CT600 RIM file is empty or unreadable.');

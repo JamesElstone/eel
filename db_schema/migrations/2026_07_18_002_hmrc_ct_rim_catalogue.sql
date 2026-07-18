@@ -31,8 +31,8 @@ CREATE TABLE IF NOT EXISTS hmrc_ct_rim_packages (
 INSERT IGNORE INTO hmrc_ct_rim_packages
   (form_version, artifact_version, applicable_from, applicable_to, live_from, hmrc_status, source_url)
 VALUES
-  ('V2', 'V3.99', '1900-01-01', '2015-03-31', '2015-07-22 00:00:00', 'live', 'https://www.gov.uk/government/publications/corporation-tax-technical-specifications-ct600-rim-artefacts'),
-  ('V3', 'V1.994', '2015-04-01', NULL, '2026-04-07 08:23:02', 'live', 'https://www.gov.uk/government/publications/corporation-tax-technical-specifications-ct600-rim-artefacts');
+  ('V2', 'V3.99', NULL, NULL, '2015-07-22 00:00:00', 'live', 'https://www.gov.uk/government/publications/corporation-tax-technical-specifications-ct600-rim-artefacts'),
+  ('V3', 'V1.994', NULL, NULL, '2026-04-07 08:23:02', 'live', 'https://www.gov.uk/government/publications/corporation-tax-technical-specifications-ct600-rim-artefacts');
 
 INSERT IGNORE INTO role_card_permissions (role_id, card_key)
 SELECT DISTINCT role_id, 'tax_rates_ct600_rim'

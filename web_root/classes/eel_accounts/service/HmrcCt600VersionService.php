@@ -13,7 +13,7 @@ final class HmrcCt600VersionService
         $maximumEnd = $start->modify('+1 year')->modify('-1 day');
         if ($end > $maximumEnd) { return $this->failure('The CT period exceeds 12 months.'); }
         $at = ($asOf ?? new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
-        $row = \InterfaceDB::fetchOne('SELECT * FROM hmrc_ct_rim_packages WHERE applicable_from <= :period_start AND (applicable_to IS NULL OR applicable_to >= :period_start) AND live_from IS NOT NULL AND live_from <= :as_of AND (live_to IS NULL OR live_to >= :as_of) AND LOWER(hmrc_status) = \'live\' ORDER BY applicable_from DESC, live_from DESC, id DESC LIMIT 1', ['period_start' => $start->format('Y-m-d'), 'as_of' => $at]);
+        $row = \InterfaceDB::fetchOne('SELECT * FROM hmrc_ct_rim_packages WHERE package_state IN (\'verified\', \'stale\') AND (applicable_from IS NULL OR applicable_from <= :period_start) AND (applicable_to IS NULL OR applicable_to >= :period_start) AND live_from IS NOT NULL AND live_from <= :as_of AND (live_to IS NULL OR live_to >= :as_of) AND LOWER(hmrc_status) = \'live\' ORDER BY (applicable_from IS NULL) ASC, applicable_from DESC, live_from DESC, id DESC LIMIT 1', ['period_start' => $start->format('Y-m-d'), 'as_of' => $at]);
         if (!is_array($row)) { return $this->failure('No live HMRC CT600 RIM artefact is available for this CT period.'); }
         $warnings = [];
         if ($end >= new \DateTimeImmutable('2015-04-01') && $start < new \DateTimeImmutable('2015-04-01')) { $warnings[] = 'This CT period spans the V2/V3 boundary; the form version is selected from the CT period start date.'; }

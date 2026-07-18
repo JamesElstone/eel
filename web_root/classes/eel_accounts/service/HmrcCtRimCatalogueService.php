@@ -11,12 +11,9 @@ final class HmrcCtRimCatalogueService
 
     /** @var null|callable(string): mixed */
     private $fetcher;
-    private HmrcCtRimApplicabilityService $applicabilityService;
-
-    public function __construct(?callable $fetcher = null, ?HmrcCtRimApplicabilityService $applicabilityService = null)
+    public function __construct(?callable $fetcher = null)
     {
         $this->fetcher = $fetcher;
-        $this->applicabilityService = $applicabilityService ?? new HmrcCtRimApplicabilityService();
     }
 
     public function fetchPackages(): array
@@ -48,12 +45,9 @@ final class HmrcCtRimCatalogueService
         foreach ($attachmentRows as $attachment) {
             $formVersion = (string)$attachment['form_version'];
             $artifactVersion = (string)$attachment['artifact_version'];
-            $applicability = $this->applicabilityService->forFormVersion($formVersion);
-            $applicableFrom = $applicability['applicable_from'];
-            $applicableTo = $applicability['applicable_to'];
             $liveFrom = $latestChangeAt !== null && strtolower((string)$attachment['status']) === 'live' ? $latestChangeAt : null;
             $existing = \InterfaceDB::fetchOne(
-                'SELECT id, local_path, sha256, package_state FROM hmrc_ct_rim_packages WHERE form_version = :form_version AND artifact_version = :artifact_version LIMIT 1',
+                'SELECT id, local_path, sha256, package_state, applicable_from, applicable_to FROM hmrc_ct_rim_packages WHERE form_version = :form_version AND artifact_version = :artifact_version LIMIT 1',
                 ['form_version' => $formVersion, 'artifact_version' => $artifactVersion]
             );
             $state = is_array($existing) ? (string)($existing['package_state'] ?? 'not_downloaded') : 'not_downloaded';
@@ -69,8 +63,8 @@ final class HmrcCtRimCatalogueService
             \InterfaceDB::prepareExecute($sql, [
                 'form_version' => $formVersion,
                 'artifact_version' => $artifactVersion,
-                'applicable_from' => $applicableFrom,
-                'applicable_to' => $applicableTo,
+                'applicable_from' => is_array($existing) ? ($existing['applicable_from'] ?? null) : null,
+                'applicable_to' => is_array($existing) ? ($existing['applicable_to'] ?? null) : null,
                 'published_at' => $sourceUpdatedAt,
                 'live_from' => $liveFrom,
                 'hmrc_status' => (string)$attachment['status'],

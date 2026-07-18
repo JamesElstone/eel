@@ -4,31 +4,14 @@ declare(strict_types=1);
 namespace eel_accounts\Service;
 
 /**
- * Owns the CT600 form applicability rules.
- *
- * HMRC's publication metadata identifies artefact revisions but does not
- * currently provide the CT600 form cutover dates. Keep those rules behind
- * this service so a future HMRC/API-backed update can replace this source
- * without changing catalogue refresh or version selection code.
+ * Reads CT600 form applicability calculated from downloaded primary XSDs.
  */
 final class HmrcCtRimApplicabilityService
 {
     /** @return array{applicable_from:?string, applicable_to:?string} */
     public function forFormVersion(string $formVersion): array
     {
-        return match (strtoupper(trim($formVersion))) {
-            'V2' => [
-                'applicable_from' => '1900-01-01',
-                'applicable_to' => '2015-03-31',
-            ],
-            'V3' => [
-                'applicable_from' => '2015-04-01',
-                'applicable_to' => null,
-            ],
-            default => [
-                'applicable_from' => null,
-                'applicable_to' => null,
-            ],
-        };
+        $row = \InterfaceDB::fetchOne('SELECT applicable_from, applicable_to FROM hmrc_ct_rim_packages WHERE form_version = :form_version AND applicable_from IS NOT NULL ORDER BY applicable_from ASC LIMIT 1', ['form_version' => strtoupper(trim($formVersion))]);
+        return ['applicable_from' => is_array($row) ? ($row['applicable_from'] ?? null) : null, 'applicable_to' => is_array($row) ? ($row['applicable_to'] ?? null) : null];
     }
 }

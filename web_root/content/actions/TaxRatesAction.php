@@ -58,10 +58,13 @@ final class TaxRatesAction implements ActionInterfaceFramework
                 if ($path === '') { continue; }
                 try {
                     if ($zipService->ensureExtracted($path)) { $expanded++; }
+                    $applicableFrom = (new \eel_accounts\Service\HmrcCtRimSchemaService())->applicableFrom($zipService->extractionDirectory($path), (string)($package['form_version'] ?? ''));
+                    \InterfaceDB::prepareExecute('UPDATE hmrc_ct_rim_packages SET applicable_from = :applicable_from WHERE id = :id', ['applicable_from' => $applicableFrom, 'id' => (int)($package['id'] ?? 0)]);
                 } catch (Throwable $exception) {
                     $downloadErrors[] = $exception->getMessage();
                 }
             }
+            $schemaService->recalculateWindows();
 
             $messages = [[
                 'type' => 'success',

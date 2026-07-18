@@ -44,7 +44,7 @@ final class _tax_rates_ct600_rimCard extends CardBaseFramework
             return $html . '<div class="notice warning">No HMRC CT600 RIM metadata is stored yet. Refresh the catalogue to discover the current V2 and V3 artefacts.</div></div>';
         }
 
-        $html .= '<div class="table-scroll"><table><thead><tr><th>Form</th><th>Artefact</th><th>Applicable from</th><th>HMRC status</th><th>State</th></tr></thead><tbody>';
+        $html .= '<div class="table-scroll"><table><thead><tr><th>Form</th><th>Artefact</th><th>Applicable from</th><th>HMRC status</th><th>State</th><th>Action</th></tr></thead><tbody>';
         foreach ($packages as $package) {
             $state = (string)($package['package_state'] ?? 'not_downloaded');
             $status = (string)($package['hmrc_status'] ?? 'unknown');
@@ -52,7 +52,8 @@ final class _tax_rates_ct600_rimCard extends CardBaseFramework
                 . '<td>' . HelperFramework::escape((string)($package['artifact_version'] ?? '')) . '</td>'
                 . '<td>' . HelperFramework::escape((string)($package['applicable_from'] ?? 'Not confirmed')) . '</td>'
                 . '<td>' . HelperFramework::escape($status) . '</td>'
-                . '<td><span class="badge ' . HelperFramework::escape($state === 'verified' ? 'success' : ($state === 'failed' ? 'danger' : 'info')) . '">' . HelperFramework::escape(str_replace('_', ' ', ucfirst($state))) . '</span></td></tr>';
+                . '<td><span class="badge ' . HelperFramework::escape($state === 'verified' ? 'success' : ($state === 'failed' ? 'danger' : 'info')) . '">' . HelperFramework::escape(str_replace('_', ' ', ucfirst($state))) . '</span></td>'
+                . '<td>' . $this->deleteForm((int)($package['id'] ?? 0), (string)($package['form_version'] ?? ''), (string)($package['artifact_version'] ?? '')) . '</td></tr>';
         }
         return $html . '</tbody></table></div></div>';
     }
@@ -76,5 +77,13 @@ final class _tax_rates_ct600_rimCard extends CardBaseFramework
     {
         return '<form method="post" action="?page=tax_artifacts" data-ajax="true">' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="TaxRates"><input type="hidden" name="intent" value="hmrc_ct_rim_refresh"><button class="button primary" type="submit">Refresh HMRC CT600 RIM Catalogue</button></form>';
+    }
+
+    private function deleteForm(int $packageId, string $formVersion, string $artifactVersion): string
+    {
+        if ($packageId <= 0) { return ''; }
+        $label = trim($formVersion . ' ' . $artifactVersion);
+        return '<form method="post" action="?page=tax_artifacts" data-ajax="true">' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+            . '<input type="hidden" name="card_action" value="TaxRates"><input type="hidden" name="intent" value="hmrc_ct_rim_delete"><input type="hidden" name="package_id" value="' . $packageId . '"><button class="button button-inline danger" type="submit" data-chicken-check="true" data-chicken-title="Delete HMRC CT600 RIM package" data-chicken-message="Delete HMRC CT600 RIM ' . HelperFramework::escape($label) . '?<br><br>This removes the database row, ZIP file, extracted directory, and validation-file catalogue records. This cannot be undone." data-chicken-confirm-text="Delete" data-chicken-button-class="button danger">Delete</button></form>';
     }
 }

@@ -15,6 +15,7 @@ final class TaxRatesAction implements ActionInterfaceFramework
         return match ($intent) {
             'refresh_hmrc_rates' => $this->refreshHmrcRates(),
             'hmrc_ct_rim_refresh' => $this->refreshHmrcCtRim(),
+            'hmrc_ct_rim_delete' => $this->deleteHmrcCtRim($request),
             'toggle_tax_treatment_rule' => $this->toggleTreatmentRule($request),
             'update_tax_treatment_rule_review_status' => $this->updateTreatmentRuleReviewStatus($request),
             default => new ActionResultFramework(false, ['tax.rates'], [[
@@ -84,6 +85,25 @@ final class TaxRatesAction implements ActionInterfaceFramework
         return new ActionResultFramework(false, ['hmrc_ct_rim.state'], [[
             'type' => 'error',
             'message' => (string)(($result['errors'] ?? ['HMRC CT600 RIM refresh failed.'])[0] ?? 'HMRC CT600 RIM refresh failed.'),
+        ]]);
+    }
+
+    private function deleteHmrcCtRim(RequestFramework $request): ActionResultFramework
+    {
+        try {
+            $result = (new \eel_accounts\Service\HmrcCtRimPackageDeleteService())->delete(max(0, (int)$request->input('package_id', 0)));
+        } catch (Throwable $exception) {
+            $result = ['success' => false, 'errors' => [$exception->getMessage()]];
+        }
+        if (!empty($result['success'])) {
+            return new ActionResultFramework(true, ['hmrc_ct_rim.refresh', 'hmrc_ct_rim.state', 'page.context'], [[
+                'type' => 'success',
+                'message' => 'HMRC CT600 RIM package and local files deleted.',
+            ]]);
+        }
+        return new ActionResultFramework(false, ['hmrc_ct_rim.state'], [[
+            'type' => 'error',
+            'message' => (string)(($result['errors'] ?? ['The HMRC CT600 RIM package could not be deleted.'])[0] ?? 'The HMRC CT600 RIM package could not be deleted.'),
         ]]);
     }
 

@@ -1,0 +1,36 @@
+name: Line endings
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          autocrlf: false
+
+      - name: Check tracked text file endings
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          failures=0
+          while IFS= read -r -d '' file; do
+            case "$file" in
+              *.bat) continue ;;
+            esac
+
+            # grep -Iq treats binary files as non-text, so they are skipped.
+            if grep -Iq . "$file" && grep -n $'\r' "$file" >/dev/null; then
+              echo "Unexpected CRLF or CR in: $file"
+              failures=1
+            fi
+          done < <(git ls-files -z)
+
+          exit "$failures"

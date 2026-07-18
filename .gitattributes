@@ -1,0 +1,16 @@
+# Canonical repository line endings.
+* text=auto eol=lf
+
+# Windows command files are intentionally checked out with CRLF.
+*.bat text eol=crlf
+
+# Binary files must never be modified by line-ending conversion.
+*.ico binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.ttf binary
+*.woff binary
+*.woff2 binary

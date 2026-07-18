@@ -15,7 +15,6 @@ final class TaxRatesAction implements ActionInterfaceFramework
         return match ($intent) {
             'refresh_hmrc_rates' => $this->refreshHmrcRates(),
             'hmrc_ct_rim_refresh' => $this->refreshHmrcCtRim(),
-            'hmrc_ct_rim_download' => $this->downloadHmrcCtRim($request),
             'toggle_tax_treatment_rule' => $this->toggleTreatmentRule($request),
             'update_tax_treatment_rule_review_status' => $this->updateTreatmentRuleReviewStatus($request),
             default => new ActionResultFramework(false, ['tax.rates'], [[
@@ -34,40 +33,36 @@ final class TaxRatesAction implements ActionInterfaceFramework
         }
 
         if (!empty($result['success'])) {
-            return new ActionResultFramework(true, ['hmrc_ct_rim.refresh', 'hmrc_ct_rim.state', 'page.context'], [[
+            $downloaded = 0;
+            $downloadErrors = [];
+            foreach ((array)($result['packages'] ?? []) as $package) {
+                if (!is_array($package) || (string)($package['package_state'] ?? '') !== 'not_downloaded') {
+                    continue;
+                }
+                $download = (new \eel_accounts\Service\HmrcCtRimDownloadService())->download((int)($package['id'] ?? 0));
+                if (!empty($download['success'])) {
+                    $downloaded++;
+                    continue;
+                }
+                foreach ((array)($download['errors'] ?? ['The HMRC CT600 RIM package could not be downloaded.']) as $error) {
+                    $downloadErrors[] = (string)$error;
+                }
+            }
+
+            $messages = [[
                 'type' => 'success',
-                'message' => 'HMRC CT600 RIM metadata refreshed: ' . (int)($result['updated_count'] ?? 0) . ' package(s) checked.',
-            ]]);
+                'message' => 'HMRC CT600 RIM catalogue refreshed: ' . (int)($result['updated_count'] ?? 0) . ' package(s) checked and ' . $downloaded . ' new package(s) downloaded and verified.',
+            ]];
+            foreach ($downloadErrors as $error) {
+                $messages[] = ['type' => 'error', 'message' => $error];
+            }
+            return new ActionResultFramework(true, ['hmrc_ct_rim.refresh', 'hmrc_ct_rim.state', 'page.context'], $messages);
         }
 
         return new ActionResultFramework(false, ['hmrc_ct_rim.state'], [[
             'type' => 'error',
             'message' => (string)(($result['errors'] ?? ['HMRC CT600 RIM refresh failed.'])[0] ?? 'HMRC CT600 RIM refresh failed.'),
         ]]);
-    }
-
-    private function downloadHmrcCtRim(RequestFramework $request): never
-    {
-        $packageId = max(0, (int)$request->input('package_id', 0));
-        $result = (new \eel_accounts\Service\HmrcCtRimDownloadService())->download($packageId);
-        if (empty($result['success'])) {
-            header('Content-Type: text/plain; charset=utf-8', true, 409);
-            echo (string)(($result['errors'] ?? ['The HMRC CT600 RIM package could not be downloaded.'])[0] ?? 'The HMRC CT600 RIM package could not be downloaded.');
-            exit;
-        }
-
-        $path = (string)($result['path'] ?? '');
-        if ($path === '' || !is_file($path) || !is_readable($path)) {
-            header('Content-Type: text/plain; charset=utf-8', true, 404);
-            echo 'The verified HMRC CT600 RIM package was not found.';
-            exit;
-        }
-        $filename = basename((string)($result['filename'] ?? 'hmrc-ct600-rim.zip'));
-        header('Content-Type: application/zip');
-        header('Content-Disposition: attachment; filename="' . str_replace('"', '', $filename) . '"');
-        header('Content-Length: ' . (string)(filesize($path) ?: 0));
-        readfile($path);
-        exit;
     }
 
     private function refreshHmrcRates(): ActionResultFramework

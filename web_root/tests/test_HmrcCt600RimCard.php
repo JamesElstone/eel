@@ -12,7 +12,7 @@ $required = [
     'Source updated:',
     'Checked:',
     'hmrc_ct_rim_refresh',
-    'hmrc_ct_rim_download',
+    'Refresh HMRC CT600 RIM Catalogue',
     'https://www.gov.uk/government/publications/corporation-tax-technical-specifications-ct600-rim-artefacts',
     'https://www.gov.uk/government/news/new-version-of-company-tax-return-form-introduced',
     'https://www.gov.uk/government/publications/corporation-tax-company-tax-return-ct600-2008-version-2',
@@ -23,6 +23,10 @@ foreach ($required as $needle) {
     if (strpos($source, $needle) === false) {
         throw new RuntimeException('Missing HMRC CT600 RIM card requirement: ' . $needle);
     }
+}
+
+if (strpos($source, '<th>Action</th>') !== false || strpos($source, 'hmrc_ct_rim_download') !== false) {
+    throw new RuntimeException('The HMRC CT600 RIM card still exposes a per-package download action.');
 }
 
 echo "HMRC CT600 RIM card checks passed.\n";

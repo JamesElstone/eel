@@ -22,7 +22,7 @@ final class _tax_rates_ct600_rimCard extends CardBaseFramework
 
     public function helper(array $context): string
     {
-        return 'Download the HMRC CT600 RIM validation artefacts on demand. Packages are verified locally and are not committed to this repository.';
+        return 'Refresh the HMRC CT600 RIM catalogue to check for new validation artefacts. New packages are downloaded and verified locally and are not committed to this repository.';
     }
 
     public function render(array $context): string
@@ -44,7 +44,7 @@ final class _tax_rates_ct600_rimCard extends CardBaseFramework
             return $html . '<div class="notice warning">No HMRC CT600 RIM metadata is stored yet. Refresh the catalogue to discover the current V2 and V3 artefacts.</div></div>';
         }
 
-        $html .= '<div class="table-scroll"><table><thead><tr><th>Form</th><th>Artefact</th><th>Applicable from</th><th>HMRC status</th><th>State</th><th>Action</th></tr></thead><tbody>';
+        $html .= '<div class="table-scroll"><table><thead><tr><th>Form</th><th>Artefact</th><th>Applicable from</th><th>HMRC status</th><th>State</th></tr></thead><tbody>';
         foreach ($packages as $package) {
             $state = (string)($package['package_state'] ?? 'not_downloaded');
             $status = (string)($package['hmrc_status'] ?? 'unknown');
@@ -52,8 +52,7 @@ final class _tax_rates_ct600_rimCard extends CardBaseFramework
                 . '<td>' . HelperFramework::escape((string)($package['artifact_version'] ?? '')) . '</td>'
                 . '<td>' . HelperFramework::escape((string)($package['applicable_from'] ?? 'Not confirmed')) . '</td>'
                 . '<td>' . HelperFramework::escape($status) . '</td>'
-                . '<td><span class="badge ' . HelperFramework::escape($state === 'verified' ? 'success' : ($state === 'failed' ? 'danger' : 'info')) . '">' . HelperFramework::escape(str_replace('_', ' ', ucfirst($state))) . '</span></td>'
-                . '<td>' . $this->downloadForm((int)($package['id'] ?? 0), $state) . '</td></tr>';
+                . '<td><span class="badge ' . HelperFramework::escape($state === 'verified' ? 'success' : ($state === 'failed' ? 'danger' : 'info')) . '">' . HelperFramework::escape(str_replace('_', ' ', ucfirst($state))) . '</span></td></tr>';
         }
         return $html . '</tbody></table></div></div>';
     }
@@ -75,14 +74,7 @@ final class _tax_rates_ct600_rimCard extends CardBaseFramework
 
     private function refreshForm(): string
     {
-        return '<form method="post" action="?page=tax_rates" data-ajax="true">' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
-            . '<input type="hidden" name="card_action" value="TaxRates"><input type="hidden" name="intent" value="hmrc_ct_rim_refresh"><button class="button primary" type="submit">Refresh HMRC CT600 RIM catalogue</button></form>';
-    }
-
-    private function downloadForm(int $packageId, string $state): string
-    {
-        if ($packageId <= 0) { return ''; }
-        return '<form method="post" action="?page=tax_rates" target="_blank" data-ajax="false">' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
-            . '<input type="hidden" name="card_action" value="TaxRates"><input type="hidden" name="intent" value="hmrc_ct_rim_download"><input type="hidden" name="package_id" value="' . $packageId . '"><button class="button button-inline" type="submit">' . HelperFramework::escape($state === 'verified' ? 'Download verified ZIP' : 'Download and verify ZIP') . '</button></form>';
+        return '<form method="post" action="?page=tax_artifacts" data-ajax="true">' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+            . '<input type="hidden" name="card_action" value="TaxRates"><input type="hidden" name="intent" value="hmrc_ct_rim_refresh"><button class="button primary" type="submit">Refresh HMRC CT600 RIM Catalogue</button></form>';
     }
 }

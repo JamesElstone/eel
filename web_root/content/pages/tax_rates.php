@@ -33,6 +33,7 @@ final class _tax_rates extends PageContextFramework
     {
         return [
             'tax_rates_ct',
+            'tax_rates_ct600_rim',
             'tax_rates_vat',
             'tax_thresholds_vat',
             'tax_treatment_rules',
@@ -51,6 +52,9 @@ final class _tax_rates extends PageContextFramework
             'tax_rates_ct' => [
                 'rules' => $service->fetchRules(),
                 'source_url' => \eel_accounts\Service\TaxRateRuleService::HMRC_RATES_COLLECTION_URL,
+            ],
+            'hmrc_ct_rim' => [
+                'source_url' => \eel_accounts\Service\HmrcCtRimCatalogueService::SOURCE_URL,
             ],
             'tax_treatment_rules' => [
                 'rules' => (new \eel_accounts\Service\CorporationTaxTreatmentRuleService())->fetchRules(),

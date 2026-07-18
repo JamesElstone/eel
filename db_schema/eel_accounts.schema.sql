@@ -3033,6 +3033,41 @@ CREATE TABLE `year_end_review_acknowledgements` (
 -- Table structure for table `schema_migrations`
 --
 
+DROP TABLE IF EXISTS `hmrc_ct_rim_packages`;
+CREATE TABLE `hmrc_ct_rim_packages` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `form_version` varchar(16) NOT NULL,
+  `artifact_version` varchar(64) NOT NULL,
+  `applicable_from` date DEFAULT NULL,
+  `applicable_to` date DEFAULT NULL,
+  `published_at` datetime DEFAULT NULL,
+  `live_from` datetime DEFAULT NULL,
+  `live_to` datetime DEFAULT NULL,
+  `hmrc_status` varchar(64) NOT NULL DEFAULT 'unknown',
+  `source_url` varchar(500) NOT NULL,
+  `download_url` varchar(1000) DEFAULT NULL,
+  `local_path` varchar(1000) DEFAULT NULL,
+  `sha256` char(64) DEFAULT NULL,
+  `source_updated_at` datetime DEFAULT NULL,
+  `checked_at` datetime DEFAULT NULL,
+  `latest_change_note` text DEFAULT NULL,
+  `package_state` varchar(32) NOT NULL DEFAULT 'not_downloaded',
+  `xsd_count` int(11) NOT NULL DEFAULT 0,
+  `verification_error` text DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_hmrc_ct_rim_package` (`form_version`,`artifact_version`),
+  KEY `idx_hmrc_ct_rim_applicability` (`form_version`,`applicable_from`,`applicable_to`),
+  KEY `idx_hmrc_ct_rim_live` (`form_version`,`live_from`,`live_to`,`hmrc_status`),
+  CONSTRAINT `chk_hmrc_ct_rim_dates` CHECK (`applicable_to` IS NULL OR `applicable_from` IS NULL OR `applicable_from` <= `applicable_to`),
+  CONSTRAINT `chk_hmrc_ct_rim_state` CHECK (`package_state` in ('not_downloaded','downloaded','verified','stale','failed'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO `hmrc_ct_rim_packages` (`form_version`,`artifact_version`,`applicable_from`,`applicable_to`,`live_from`,`hmrc_status`,`source_url`) VALUES
+('V2','V3.99','1900-01-01','2015-03-31','2015-07-22 00:00:00','live','https://www.gov.uk/government/publications/corporation-tax-technical-specifications-ct600-rim-artefacts'),
+('V3','V1.994','2015-04-01',NULL,'2026-04-07 08:23:02','live','https://www.gov.uk/government/publications/corporation-tax-technical-specifications-ct600-rim-artefacts');
+
 INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
 SELECT DISTINCT `role_id`, 'ixbrl_accounts_disclosures'
 FROM `role_card_permissions`
@@ -3123,7 +3158,8 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_16_005_ixbrl_taxonomy_facts.sql'),
   ('2026_07_17_001_ixbrl_sales_nominal.sql'),
   ('2026_07_17_002_frs105_thresholds.sql'),
-  ('2026_07_17_004_hmrc_ct600_govtalk.sql');
+  ('2026_07_17_004_hmrc_ct600_govtalk.sql'),
+  ('2026_07_18_002_hmrc_ct_rim_catalogue.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

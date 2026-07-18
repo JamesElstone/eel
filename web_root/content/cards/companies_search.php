@@ -92,6 +92,11 @@ final class _companies_searchCard extends CardBaseFramework
         }
 
         return '
+            <div class="form-row-actions">
+                <a class="button button-inline" href="https://www.gov.uk/corporation-tax-accounting-period" target="_blank" rel="noopener noreferrer">HMRC - Corporation Tax accounting periods</a>
+                <a class="button button-inline" href="https://www.gov.uk/first-company-accounts-and-return/overview" target="_blank" rel="noopener noreferrer">HMRC - First company accounts and return</a>
+                <a class="button button-inline" href="https://www.gov.uk/guidance/company-tax-return-obligations" target="_blank" rel="noopener noreferrer">HMRC - Company Tax Return obligations</a>
+            </div>
             <form id="company-search-form" method="post" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Company">

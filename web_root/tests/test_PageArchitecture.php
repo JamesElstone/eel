@@ -199,7 +199,7 @@ final class TestPageArchitectureHarness
         $page = $this->loadPageCards('tax_rates');
 
         $this->assertSame(_tax_rates::class, $page::class);
-        $this->assertSame(['tax_rates_ct', 'tax_rates_vat', 'tax_thresholds_vat', 'tax_treatment_rules'], $page->cards());
+        $this->assertSame(['tax_rates_ct', 'tax_rates_ct600_rim', 'tax_rates_vat', 'tax_thresholds_vat', 'tax_treatment_rules'], $page->cards());
     }
 
     private function testAjaxDeltaResponseReturnsOnlyStaleCards(): void

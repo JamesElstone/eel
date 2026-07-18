@@ -52,6 +52,12 @@ final class HmrcCtRimPackageDeleteService
             }
         }
         @chmod($directory, 0777);
-        if (!@rmdir($directory)) { throw new \RuntimeException('The HMRC CT600 RIM extracted directory could not be deleted: ' . $directory); }
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            clearstatcache(true, $directory);
+            gc_collect_cycles();
+            if (@rmdir($directory)) { return; }
+            usleep(100000);
+        }
+        throw new \RuntimeException('The HMRC CT600 RIM extracted directory could not be deleted: ' . $directory);
     }
 }

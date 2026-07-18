@@ -82,10 +82,13 @@ final class _tax_rates_ctCard extends CardBaseFramework
                 ]
             );
 
-        return '<div class="settings-stack">' . $table->render($context, [
-            'cards[]' => (array)($context['page']['page_cards'] ?? []),
-            self::FILTER_FIELD => $statusFilter,
-        ]) . '</div>';
+        return '<div class="settings-stack">'
+            . $this->sourceSummary($rules, $context)
+            . $table->render($context, [
+                'cards[]' => (array)($context['page']['page_cards'] ?? []),
+                self::FILTER_FIELD => $statusFilter,
+            ])
+            . '</div>';
     }
 
     private function table(array $rules, string $statusFilter): TableFramework
@@ -177,6 +180,21 @@ final class _tax_rates_ctCard extends CardBaseFramework
             <input type="hidden" name="' . HelperFramework::escape(self::FILTER_FIELD) . '" value="' . HelperFramework::escape($this->normaliseStatusFilter($statusFilter)) . '">
             <button class="' . HelperFramework::escape($buttonClass) . '" type="submit">' . HelperFramework::escape($buttonLabel) . '</button>
         </form>';
+    }
+
+    private function sourceSummary(array $rules, array $context): string
+    {
+        if ($rules === []) {
+            return '<div class="helper">The table starts empty and is populated only by a successful GOV.UK refresh.</div>';
+        }
+
+        $row = $rules[0];
+        $url = trim((string)($context[$this->key()]['source_url'] ?? ($row['source_url'] ?? '')));
+        $link = $url === '' ? '' : '. <a class="button button-inline" href="' . HelperFramework::escape($url) . '" target="_blank" rel="noopener noreferrer">HMRC - Rates and allowances</a>';
+
+        return '<div class="helper">Source updated: ' . HelperFramework::escape((string)($row['source_updated_at'] ?? 'Unknown'))
+            . '. Checked: ' . HelperFramework::escape((string)($row['source_checked_at'] ?? 'Unknown'))
+            . $link . '</div>';
     }
 
     private function statusHtml(bool $isActive): string

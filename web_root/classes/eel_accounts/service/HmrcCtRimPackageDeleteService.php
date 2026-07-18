@@ -37,14 +37,21 @@ final class HmrcCtRimPackageDeleteService
 
     private function deleteDirectory(string $directory): void
     {
-        $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS), \RecursiveIteratorIterator::CHILD_FIRST);
-        foreach ($iterator as $item) {
-            if ($item->isDir()) {
-                if (!@rmdir($item->getPathname())) { throw new \RuntimeException('The HMRC CT600 RIM extracted directory could not be deleted.'); }
-            } elseif (!@unlink($item->getPathname())) {
-                throw new \RuntimeException('An HMRC CT600 RIM extracted file could not be deleted.');
+        $entries = @scandir($directory);
+        if (!is_array($entries)) { throw new \RuntimeException('The HMRC CT600 RIM extracted directory could not be read for deletion.'); }
+        foreach ($entries as $entry) {
+            if ($entry === '.' || $entry === '..') { continue; }
+            $path = $directory . DIRECTORY_SEPARATOR . $entry;
+            if (is_dir($path) && !is_link($path)) {
+                $this->deleteDirectory($path);
+                continue;
+            }
+            @chmod($path, 0666);
+            if (!@unlink($path)) {
+                throw new \RuntimeException('An HMRC CT600 RIM extracted file could not be deleted: ' . $path);
             }
         }
-        if (!@rmdir($directory)) { throw new \RuntimeException('The HMRC CT600 RIM extracted directory could not be deleted.'); }
+        @chmod($directory, 0777);
+        if (!@rmdir($directory)) { throw new \RuntimeException('The HMRC CT600 RIM extracted directory could not be deleted: ' . $directory); }
     }
 }

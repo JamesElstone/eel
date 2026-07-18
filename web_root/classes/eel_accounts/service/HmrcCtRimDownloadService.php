@@ -17,10 +17,7 @@ final class HmrcCtRimDownloadService
         if ($temporary === false) { throw new \RuntimeException('A temporary HMRC CT600 RIM download file could not be created.'); }
         try {
             $this->downloadFile($url, $temporary);
-            $zip = new \ZipArchive();
-            if ($zip->open($temporary) !== true) { throw new \RuntimeException('The downloaded HMRC CT600 RIM file is not a valid ZIP archive.'); }
-            $xsdCount = 0; for ($i = 0; $i < $zip->numFiles; $i++) { $name = (string)$zip->getNameIndex($i); if (str_ends_with(strtolower($name), '.xsd')) { $xsdCount++; } }
-            $zip->close();
+            $xsdCount = $this->countXsdFiles($temporary);
             if ($xsdCount < 1) { throw new \RuntimeException('The downloaded HMRC CT600 RIM archive does not contain an XSD validation file.'); }
             $sha256 = hash_file('sha256', $temporary); $filename = 'ct600-' . strtolower((string)$row['form_version']) . '-artefacts-' . strtolower((string)$row['artifact_version']) . '.zip'; $path = $directory . DIRECTORY_SEPARATOR . preg_replace('/[^A-Za-z0-9._-]+/', '-', $filename);
             if (!rename($temporary, $path)) { throw new \RuntimeException('The verified HMRC CT600 RIM file could not be stored.'); }
@@ -40,5 +37,64 @@ final class HmrcCtRimDownloadService
         curl_setopt_array($handle, [CURLOPT_FILE => $file, CURLOPT_FOLLOWLOCATION => true, CURLOPT_TIMEOUT => 120, CURLOPT_CONNECTTIMEOUT => 15, CURLOPT_USERAGENT => 'EEL Accounts HMRC CT600 RIM download']);
         curl_exec($handle); $status = (int)curl_getinfo($handle, CURLINFO_RESPONSE_CODE); $error = curl_error($handle); curl_close($handle); fclose($file);
         if ($status < 200 || $status >= 300 || $error !== '') { throw new \RuntimeException('The HMRC CT600 RIM download failed' . ($error !== '' ? ': ' . $error : ' with HTTP status ' . $status) . '.'); }
+    }
+
+    private function countXsdFiles(string $path): int
+    {
+        if (class_exists('ZipArchive')) {
+            $zip = new \ZipArchive();
+            if ($zip->open($path) !== true) {
+                throw new \RuntimeException('The downloaded HMRC CT600 RIM file is not a valid ZIP archive.');
+            }
+            $xsdCount = 0;
+            for ($index = 0; $index < $zip->numFiles; $index++) {
+                if (str_ends_with(strtolower((string)$zip->getNameIndex($index)), '.xsd')) {
+                    $xsdCount++;
+                }
+            }
+            $zip->close();
+            return $xsdCount;
+        }
+
+        $content = @file_get_contents($path);
+        if (!is_string($content) || $content === '') {
+            throw new \RuntimeException('The downloaded HMRC CT600 RIM file is empty or unreadable.');
+        }
+
+        $endOffset = strrpos($content, "PK\x05\x06");
+        if ($endOffset === false || strlen($content) - $endOffset < 22) {
+            throw new \RuntimeException('The downloaded HMRC CT600 RIM file is not a valid ZIP archive.');
+        }
+        $endRecord = unpack('Vsignature/vdisk/vcentral_disk/ventries_disk/ventries_total/Vcentral_size/Vcentral_offset/vcomment_length', substr($content, $endOffset, 22));
+        if (!is_array($endRecord) || (int)$endRecord['signature'] !== 0x06054b50 || (int)$endRecord['disk'] !== 0 || (int)$endRecord['central_disk'] !== 0) {
+            throw new \RuntimeException('The downloaded HMRC CT600 RIM ZIP directory is malformed.');
+        }
+
+        $offset = (int)$endRecord['central_offset'];
+        $totalEntries = (int)$endRecord['entries_total'];
+        $xsdCount = 0;
+        for ($index = 0; $index < $totalEntries; $index++) {
+            if ($offset < 0 || $offset + 46 > strlen($content) || substr($content, $offset, 4) !== "PK\x01\x02") {
+                throw new \RuntimeException('The downloaded HMRC CT600 RIM ZIP directory is malformed.');
+            }
+            $header = unpack('Vsignature/vversion_made/vversion_needed/vflags/vmethod/vtime/vdate/Vcrc/Vcompressed_size/Vuncompressed_size/vname_length/vextra_length/vcomment_length/vdisk_start/vinternal_attributes/Vexternal_attributes/Vlocal_offset', substr($content, $offset, 46));
+            if (!is_array($header)) {
+                throw new \RuntimeException('The downloaded HMRC CT600 RIM ZIP directory is malformed.');
+            }
+            $nameLength = (int)$header['name_length'];
+            $extraLength = (int)$header['extra_length'];
+            $commentLength = (int)$header['comment_length'];
+            $nameOffset = $offset + 46;
+            $nextOffset = $nameOffset + $nameLength + $extraLength + $commentLength;
+            if ($nameLength <= 0 || $nextOffset > strlen($content)) {
+                throw new \RuntimeException('The downloaded HMRC CT600 RIM ZIP directory is malformed.');
+            }
+            if (str_ends_with(strtolower(substr($content, $nameOffset, $nameLength)), '.xsd')) {
+                $xsdCount++;
+            }
+            $offset = $nextOffset;
+        }
+
+        return $xsdCount;
     }
 }

@@ -61,7 +61,7 @@ final class _tax_treatment_rulesCard extends CardBaseFramework
                 'Corporation Tax treatment rules',
                 $this->paginationPageField(),
                 [
-                    'page' => (string)($context['page']['page_id'] ?? 'tax_rates'),
+                    'page' => (string)($context['page']['page_id'] ?? 'tax_artifacts'),
                     '_pagination' => '1',
                     '_invalidate_fact' => $this->tableInvalidationFact(),
                     'cards[]' => [$this->key()],
@@ -74,7 +74,7 @@ final class _tax_treatment_rulesCard extends CardBaseFramework
                 $this->statusFilterOptions(),
                 $statusFilter,
                 [
-                    'page' => (string)($context['page']['page_id'] ?? 'tax_rates'),
+                    'page' => (string)($context['page']['page_id'] ?? 'tax_artifacts'),
                     '_pagination' => '1',
                     '_invalidate_fact' => $this->tableInvalidationFact(),
                     'cards[]' => [$this->key()],
@@ -167,7 +167,7 @@ final class _tax_treatment_rulesCard extends CardBaseFramework
             ? ' data-chicken-check="true" data-chicken-message="Disable this Corporation Tax treatment rule?<br><br>Future Corporation Tax (CT) estimates will fall back to the next matching rule or nominal default." data-chicken-confirm-text="Disable"'
             : '';
 
-        return '<form method="post" action="?page=tax_rates" data-ajax="true">
+        return '<form method="post" action="?page=tax_artifacts" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="TaxRates">
             <input type="hidden" name="intent" value="toggle_tax_treatment_rule">
@@ -247,7 +247,7 @@ final class _tax_treatment_rulesCard extends CardBaseFramework
                 . '>' . HelperFramework::escape($label) . '</option>';
         }
 
-        return '<form method="post" action="?page=tax_rates" data-ajax="true">
+        return '<form method="post" action="?page=tax_artifacts" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="TaxRates">
             <input type="hidden" name="intent" value="update_tax_treatment_rule_review_status">

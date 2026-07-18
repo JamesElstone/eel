@@ -4,7 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-$page = ['page_id' => 'tax_rates', 'page_cards' => ['tax_rates_vat', 'tax_thresholds_vat']];
+$page = ['page_id' => 'tax_artifacts', 'page_cards' => ['tax_rates_vat', 'tax_thresholds_vat']];
 
 $rateRow = [
     'rate_type' => 'standard', 'scope' => 'uk', 'effective_from' => '2011-01-04', 'effective_to' => null,

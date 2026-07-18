@@ -14,7 +14,7 @@ $harness = new GeneratedServiceClassTestHarness();
 $harness->run(_tax_treatment_rulesCard::class, static function (GeneratedServiceClassTestHarness $harness, _tax_treatment_rulesCard $card): void {
     $context = [
         'page' => [
-            'page_id' => 'tax_rates',
+            'page_id' => 'tax_artifacts',
             'page_cards' => ['tax_treatment_rules'],
         ],
         'tax_treatment_rules' => [
@@ -80,7 +80,7 @@ $harness->run(_tax_treatment_rulesCard::class, static function (GeneratedService
 
     $harness->check(_tax_treatment_rulesCard::class, 'handle stores normalised filter input', static function () use ($harness, $card, $context): void {
         $request = new RequestFramework(
-            ['page' => 'tax_rates'],
+            ['page' => 'tax_artifacts'],
             ['tax_treatment_rules_status' => 'all'],
             ['REQUEST_METHOD' => 'POST'],
             [],

@@ -14,7 +14,7 @@ $harness = new GeneratedServiceClassTestHarness();
 $harness->run(_tax_rates_ctCard::class, static function (GeneratedServiceClassTestHarness $harness, _tax_rates_ctCard $card): void {
     $context = [
         'page' => [
-            'page_id' => 'tax_rates',
+            'page_id' => 'tax_artifacts',
             'page_cards' => ['tax_rates_ct'],
         ],
         'tax_rates_ct' => [
@@ -64,7 +64,7 @@ $harness->run(_tax_rates_ctCard::class, static function (GeneratedServiceClassTe
 
     $harness->check(_tax_rates_ctCard::class, 'handle stores normalised filter input', static function () use ($harness, $card, $context): void {
         $request = new RequestFramework(
-            ['page' => 'tax_rates'],
+            ['page' => 'tax_artifacts'],
             ['tax_rates_ct_status' => 'all'],
             ['REQUEST_METHOD' => 'POST'],
             [],

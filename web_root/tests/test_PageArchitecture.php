@@ -25,7 +25,7 @@ final class TestPageArchitectureHarness
         $this->runTest('assets page groups cards into asset tabs', [$this, 'testAssetsPageCardLayout']);
         $this->runTest('vehicles page resolves the vehicle register card', [$this, 'testVehiclesPageResolvesVehicleRegisterCard']);
         $this->runTest('tax page resolves read-only tax workings cards', [$this, 'testTaxPageResolvesTaxWorkingsCards']);
-        $this->runTest('tax rates page remains rate and treatment rule workflow', [$this, 'testTaxRatesPageRemainsRateWorkflow']);
+        $this->runTest('tax artifacts page remains rate and treatment rule workflow', [$this, 'testTaxRatesPageRemainsRateWorkflow']);
         $this->runTest('AJAX delta responses include only stale cards', [$this, 'testAjaxDeltaResponseReturnsOnlyStaleCards']);
         $this->runTest('AJAX delta responses expose a nonce refresh slot', [$this, 'testAjaxDeltaResponseIncludesAjaxNonceField']);
         $this->runTest('selector ajax responses include compact selector UI data', [$this, 'testSelectorAjaxResponseIncludesSelectorUi']);
@@ -196,9 +196,9 @@ final class TestPageArchitectureHarness
 
     private function testTaxRatesPageRemainsRateWorkflow(): void
     {
-        $page = $this->loadPageCards('tax_rates');
+        $page = $this->loadPageCards('tax_artifacts');
 
-        $this->assertSame(_tax_rates::class, $page::class);
+        $this->assertSame(_tax_artifacts::class, $page::class);
         $this->assertSame(['tax_rates_ct', 'tax_rates_ct600_rim', 'tax_rates_vat', 'tax_thresholds_vat', 'tax_treatment_rules'], $page->cards());
     }
 

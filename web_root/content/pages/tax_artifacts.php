@@ -7,16 +7,16 @@
  */
 declare(strict_types=1);
 
-final class _tax_rates extends PageContextFramework
+final class _tax_artifacts extends PageContextFramework
 {
     public function id(): string
     {
-        return 'tax_rates';
+        return 'tax_artifacts';
     }
 
     public function title(): string
     {
-        return 'Rates / Thresholds';
+        return 'Rates / Thresholds / Artifacts';
     }
 
     public function subtitle(): string

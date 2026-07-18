@@ -53,7 +53,7 @@ final class _tax_thresholds_vatCard extends CardBaseFramework
         $rules = $this->rules($context);
         $pagination = HelperFramework::paginateArray($rules, $this->paginationPage($context), self::PAGE_SIZE);
         $hiddenFields = [
-            'page' => (string)($context['page']['page_id'] ?? 'tax_rates'),
+            'page' => (string)($context['page']['page_id'] ?? 'tax_artifacts'),
             '_pagination' => '1',
             '_invalidate_fact' => 'vat.threshold.rules',
             'cards[]' => [$this->key()],
@@ -112,7 +112,7 @@ final class _tax_thresholds_vatCard extends CardBaseFramework
     private function refreshAction(bool $empty): string
     {
         $label = $empty ? 'Import Live HMRC VAT Thresholds' : 'Refresh HMRC VAT Thresholds';
-        return '<form method="post" action="?page=tax_rates" data-ajax="true">'
+        return '<form method="post" action="?page=tax_artifacts" data-ajax="true">'
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="TaxThresholdsVat">'
             . '<input type="hidden" name="intent" value="refresh_hmrc_vat_thresholds">'

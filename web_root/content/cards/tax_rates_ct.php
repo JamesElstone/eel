@@ -62,7 +62,7 @@ final class _tax_rates_ctCard extends CardBaseFramework
                 'sourced tax and allowance rules',
                 $this->paginationPageField(),
                 [
-                    'page' => (string)($context['page']['page_id'] ?? 'tax_rates'),
+                    'page' => (string)($context['page']['page_id'] ?? 'tax_artifacts'),
                     '_pagination' => '1',
                     '_invalidate_fact' => $this->tableInvalidationFact(),
                     'cards[]' => [$this->key()],
@@ -75,7 +75,7 @@ final class _tax_rates_ctCard extends CardBaseFramework
                 $this->statusFilterOptions(),
                 $statusFilter,
                 [
-                    'page' => (string)($context['page']['page_id'] ?? 'tax_rates'),
+                    'page' => (string)($context['page']['page_id'] ?? 'tax_artifacts'),
                     '_pagination' => '1',
                     '_invalidate_fact' => $this->tableInvalidationFact(),
                     'cards[]' => [$this->key()],
@@ -173,7 +173,7 @@ final class _tax_rates_ctCard extends CardBaseFramework
         $buttonClass = $isEmpty ? 'button danger' : 'button primary';
         $buttonLabel = $isEmpty ? 'Import Live His Majesty\'s Revenue and Customs (HMRC) Rates and FRS 105 thresholds' : 'Refresh HMRC Rates and FRS 105 thresholds';
 
-        return '<form method="post" action="?page=tax_rates" data-ajax="true">
+            return '<form method="post" action="?page=tax_artifacts" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="TaxRates">
             <input type="hidden" name="intent" value="refresh_hmrc_rates">

@@ -14,6 +14,9 @@ final class InterfaceDB
 
     private static ?PDO $connection = null;
 
+    /** @var SplObjectStorage<PDO, array{tables: array<string, bool>, columns: array<string, bool}>|null */
+    private static ?SplObjectStorage $metadataCache = null;
+
     private static function connection(): PDO
     {
         if (!self::$connection instanceof PDO) {
@@ -30,7 +33,13 @@ final class InterfaceDB
 
     public static function query(string $sql, ?int $fetchMode = null, mixed ...$fetchModeArgs): PDOStatement|false
     {
-        return self::_queryOn(self::connection(), $sql, $fetchMode, ...$fetchModeArgs);
+        try {
+            return self::_queryOn(self::connection(), $sql, $fetchMode, ...$fetchModeArgs);
+        } finally {
+            if (self::isSchemaMutationSql($sql)) {
+                self::clearMetadataCache();
+            }
+        }
     }
 
     public static function beginTransaction(): bool
@@ -121,12 +130,21 @@ final class InterfaceDB
 
         $stmt->execute(PdoDB::filterParamsForSql($sql, $params));
 
+        if (self::isSchemaMutationSql($sql)) {
+            self::clearMetadataCache();
+        }
+
         return $stmt;
     }
 
     public static function execute(string $sql, array $params = []): int
     {
         return self::prepareExecute($sql, $params)->rowCount();
+    }
+
+    public static function clearMetadataCache(): void
+    {
+        self::$metadataCache = null;
     }
 
     public static function fetchAll(string $sql, array $params = []): array
@@ -288,11 +306,30 @@ final class InterfaceDB
 
     private static function tableExistsByMetadataOn(PDO $pdo, ?string $schemaName, string $tableName): bool
     {
+        $cacheKey = self::metadataTableCacheKey($schemaName, $tableName);
+        $cacheHit = false;
+        $cached = self::metadataCacheValue($pdo, 'tables', $cacheKey, $cacheHit);
+        if ($cacheHit) {
+            return $cached;
+        }
+
+        $result = self::tableExistsByMetadataQueryOn($pdo, $schemaName, $tableName);
+        self::rememberMetadataCacheValue($pdo, 'tables', $cacheKey, $result);
+
+        return $result;
+    }
+
+    private static function tableExistsByMetadataQueryOn(PDO $pdo, ?string $schemaName, string $tableName): bool
+    {
         if (self::_driverNameOn($pdo) === 'sqlite') {
+            $catalog = $schemaName === null || $schemaName === ''
+                ? 'sqlite_master'
+                : self::quotedIdentifier($schemaName, 'sqlite') . '.sqlite_master';
+
             return (bool)self::_fetchColumnOn(
                 $pdo,
                 "SELECT 1
-                 FROM sqlite_master
+                 FROM {$catalog}
                  WHERE type = 'table'
                    AND name = :table_name
                  LIMIT 1",
@@ -322,8 +359,27 @@ final class InterfaceDB
 
     private static function columnExistsByMetadataOn(PDO $pdo, ?string $schemaName, string $tableName, string $columnName): bool
     {
+        $cacheKey = self::metadataColumnCacheKey($schemaName, $tableName, $columnName);
+        $cacheHit = false;
+        $cached = self::metadataCacheValue($pdo, 'columns', $cacheKey, $cacheHit);
+        if ($cacheHit) {
+            return $cached;
+        }
+
+        $result = self::columnExistsByMetadataQueryOn($pdo, $schemaName, $tableName, $columnName);
+        self::rememberMetadataCacheValue($pdo, 'columns', $cacheKey, $result);
+
+        return $result;
+    }
+
+    private static function columnExistsByMetadataQueryOn(PDO $pdo, ?string $schemaName, string $tableName, string $columnName): bool
+    {
         if (self::_driverNameOn($pdo) === 'sqlite') {
-            $stmt = self::_queryOn($pdo, 'PRAGMA table_info(' . $tableName . ')');
+            $schemaPrefix = $schemaName === null || $schemaName === ''
+                ? ''
+                : self::quotedIdentifier($schemaName, 'sqlite') . '.';
+            $quotedTable = self::quotedIdentifier($tableName, 'sqlite');
+            $stmt = self::_queryOn($pdo, 'PRAGMA ' . $schemaPrefix . 'table_info(' . $quotedTable . ')');
             $columns = $stmt instanceof PDOStatement ? $stmt->fetchAll() : [];
 
             foreach ($columns as $columnMeta) {
@@ -357,6 +413,64 @@ final class InterfaceDB
                 LIMIT 1';
 
         return (bool)self::_fetchColumnOn($pdo, $sql, $params);
+    }
+
+    private static function metadataTableCacheKey(?string $schemaName, string $tableName): string
+    {
+        return ($schemaName ?? '') . "\0" . $tableName;
+    }
+
+    private static function metadataColumnCacheKey(?string $schemaName, string $tableName, string $columnName): string
+    {
+        return self::metadataTableCacheKey($schemaName, $tableName) . "\0" . $columnName;
+    }
+
+    private static function metadataCacheValue(PDO $pdo, string $bucket, string $key, bool &$cacheHit): bool
+    {
+        $cacheHit = false;
+
+        if (self::$metadataCache === null || !self::$metadataCache->contains($pdo)) {
+            return false;
+        }
+
+        $cache = self::$metadataCache[$pdo];
+        if (!is_array($cache) || !isset($cache[$bucket]) || !is_array($cache[$bucket])) {
+            return false;
+        }
+
+        if (!array_key_exists($key, $cache[$bucket])) {
+            return false;
+        }
+
+        $cacheHit = true;
+
+        return (bool)$cache[$bucket][$key];
+    }
+
+    private static function rememberMetadataCacheValue(PDO $pdo, string $bucket, string $key, bool $value): void
+    {
+        if (self::$metadataCache === null) {
+            self::$metadataCache = new SplObjectStorage();
+        }
+
+        if (!self::$metadataCache->contains($pdo)) {
+            self::$metadataCache[$pdo] = [
+                'tables' => [],
+                'columns' => [],
+            ];
+        }
+
+        $cache = self::$metadataCache[$pdo];
+        $cache[$bucket][$key] = $value;
+        self::$metadataCache[$pdo] = $cache;
+    }
+
+    private static function isSchemaMutationSql(string $sql): bool
+    {
+        return preg_match(
+            '/^\s*(?:CREATE|ALTER|DROP|RENAME|TRUNCATE)\b/i',
+            $sql
+        ) === 1;
     }
 
     private static function qualifiedTableIdentifier(?string $schemaName, string $tableName, string $driverName): string
@@ -443,36 +557,7 @@ final class InterfaceDB
                 return false;
             }
 
-            if (self::_driverNameOn($pdo) === 'sqlite') {
-                return (bool)self::_fetchColumnOn(
-                    $pdo,
-                    "SELECT 1
-                     FROM sqlite_master
-                     WHERE type = 'table'
-                       AND name = :table_name
-                     LIMIT 1",
-                    ['table_name' => $tableName]
-                );
-            }
-
-            $sql = "SELECT 1
-                    FROM INFORMATION_SCHEMA.TABLES
-                    WHERE TABLE_NAME = :table_name";
-            $params = ['table_name' => $tableName];
-
-            if ($schemaName !== null && $schemaName !== '') {
-                $sql .= '
-                      AND TABLE_SCHEMA = :schema_name';
-                $params['schema_name'] = $schemaName;
-            } else {
-                $sql .= '
-                      AND TABLE_SCHEMA = DATABASE()';
-            }
-
-            $sql .= '
-                    LIMIT 1';
-
-            return (bool)self::_fetchColumnOn($pdo, $sql, $params);
+            return self::tableExistsByMetadataOn($pdo, $schemaName, $tableName);
         } catch (Throwable) {
             return false;
         }
@@ -733,41 +818,7 @@ final class InterfaceDB
                 return false;
             }
 
-            if (self::_driverNameOn($pdo) === 'sqlite') {
-                $stmt = self::_queryOn($pdo, 'PRAGMA table_info(' . $tableName . ')');
-                $columns = $stmt instanceof PDOStatement ? $stmt->fetchAll() : [];
-
-                foreach ($columns as $columnMeta) {
-                    if (strcasecmp((string)($columnMeta['name'] ?? ''), $column) === 0) {
-                        return true;
-                    }
-                }
-
-                return false;
-            }
-
-            $sql = "SELECT 1
-                    FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_NAME = :table_name
-                      AND COLUMN_NAME = :column_name";
-            $params = [
-                'table_name' => $tableName,
-                'column_name' => $column,
-            ];
-
-            if ($schemaName !== null && $schemaName !== '') {
-                $sql .= '
-                      AND TABLE_SCHEMA = :schema_name';
-                $params['schema_name'] = $schemaName;
-            } else {
-                $sql .= '
-                      AND TABLE_SCHEMA = DATABASE()';
-            }
-
-            $sql .= '
-                    LIMIT 1';
-
-            return (bool)self::_fetchColumnOn($pdo, $sql, $params);
+            return self::columnExistsByMetadataOn($pdo, $schemaName, $tableName, $column);
         } catch (Throwable) {
             return false;
         }

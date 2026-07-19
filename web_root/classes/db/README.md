@@ -6,6 +6,10 @@ This folder contains the small database layer used by eelKit.
 - `PdoDB.php` owns PDO connection setup, SQL logging, SQLite schema bootstrapping, and ODBC compatibility helpers.
 - `PdoStatementDB.php` wraps `PDOStatement` so named parameters can be rewritten for ODBC drivers that expect positional placeholders.
 
+`InterfaceDB::tableExists()` and `InterfaceDB::columnExists()` cache definitive metadata results for the current PDO connection and request. Call `InterfaceDB::clearMetadataCache()` after in-process schema changes or at the start of a long-running worker request. Successful schema-changing statements issued through `InterfaceDB` clear the cache automatically.
+
+SQL logging is buffered by `LogStore` and flushed in batches and during normal shutdown instead of calling `fflush()` for every query. Long-running workers can call `PdoDB::flushSqlLogs()` explicitly. SQL log timestamps use `Y-m-d H:i:s.u`; the CSV field shape remains unchanged.
+
 Database settings are read from `secure/app.php` under the `db` key. For MariaDB via ODBC, use an ODBC DSN such as `odbc:wccg` and keep real credentials out of version control.
 
 ## FreeBSD MariaDB ODBC Setup

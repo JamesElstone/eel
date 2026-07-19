@@ -128,13 +128,31 @@ final class AppService
         $type = $parameter->getType();
 
         if ($type instanceof ReflectionUnionType) {
+            $namedTypes = [];
+
             foreach ($type->getTypes() as $namedType) {
                 if (!$namedType instanceof ReflectionNamedType || $namedType->getName() === 'null') {
                     continue;
                 }
 
-                return $this->resolveNamedType($namedType, $parameter);
+                $namedTypes[] = $namedType;
             }
+
+            if (count($namedTypes) === 1) {
+                return $this->resolveNamedType($namedTypes[0], $parameter, $type->allowsNull());
+            }
+
+            if ($parameter->isDefaultValueAvailable()) {
+                return $parameter->getDefaultValue();
+            }
+
+            if ($parameter->allowsNull()) {
+                return null;
+            }
+
+            throw new RuntimeException(
+                'Unable to resolve ambiguous union constructor parameter $' . $parameter->getName() . '.'
+            );
         }
 
         if ($type instanceof ReflectionNamedType) {
@@ -152,9 +170,14 @@ final class AppService
         throw new RuntimeException('Unable to resolve untyped constructor parameter $' . $parameter->getName() . '.');
     }
 
-    private function resolveNamedType(ReflectionNamedType $type, ReflectionParameter $parameter): mixed
+    private function resolveNamedType(
+        ReflectionNamedType $type,
+        ReflectionParameter $parameter,
+        ?bool $nullableOverride = null
+    ): mixed
     {
         $typeName = ltrim($type->getName(), '\\');
+        $allowsNull = $nullableOverride ?? $parameter->allowsNull();
 
         if ($type->isBuiltin()) {
             return $this->resolveBuiltinParameter($typeName, $parameter);
@@ -165,7 +188,7 @@ final class AppService
                 return $parameter->getDefaultValue();
             }
 
-            if ($parameter->allowsNull()) {
+            if ($allowsNull) {
                 return null;
             }
 
@@ -176,8 +199,8 @@ final class AppService
             return $parameter->getDefaultValue();
         }
 
-        if ($parameter->allowsNull()) {
-            return null;
+        if ($allowsNull) {
+            return $this->get($typeName);
         }
 
         return $this->get($typeName);

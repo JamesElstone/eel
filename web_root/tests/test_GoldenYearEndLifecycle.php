@@ -13,6 +13,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'GoldenHmrcCorporationTaxOracle.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'GoldenComparisonReporter.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'PageServiceTestFactory.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'IxbrlTestFixture.php';
 
 $harness = new GeneratedServiceClassTestHarness();
 GoldenAccountsFixture::build();
@@ -137,7 +138,10 @@ $harness->check('GoldenYearEndLifecycle', 'previews the split-period CT provisio
         $harness->assertCount(2, (array)($initialSync['periods'] ?? []));
         $initialEvidence = (new \eel_accounts\Service\CorporationTaxComputationService())
             ->persistSummariesForYearEndLock($companyId, $accountingPeriodId);
-        $harness->assertSame(true, (bool)($initialEvidence['success'] ?? false));
+        if (empty($initialEvidence['success'])) {
+            throw new RuntimeException('Initial split-period CT evidence failed: '
+                . implode(' ', array_map('strval', (array)($initialEvidence['errors'] ?? []))));
+        }
         $acceptedPeriod = InterfaceDB::fetchOne(
             'SELECT id, latest_computation_run_id
              FROM corporation_tax_periods
@@ -150,21 +154,8 @@ $harness->check('GoldenYearEndLifecycle', 'previews the split-period CT provisio
         $acceptedRunId = (int)($acceptedPeriod['latest_computation_run_id'] ?? 0);
         $harness->assertTrue($acceptedCtPeriodId > 0);
         $harness->assertTrue($acceptedRunId > 0);
-        InterfaceDB::execute(
-            'UPDATE corporation_tax_periods
-             SET status = :status
-             WHERE id = :id',
-            ['status' => 'accepted', 'id' => $acceptedCtPeriodId]
-        );
-        InterfaceDB::execute(
-            'DELETE FROM corporation_tax_periods
-             WHERE company_id = :company_id
-               AND accounting_period_id = :accounting_period_id
-               AND sequence_no = 2',
-            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
-        );
         $harness->assertSame(
-            1,
+            2,
             (int)InterfaceDB::fetchColumn(
                 'SELECT COUNT(*)
                  FROM corporation_tax_periods
@@ -200,7 +191,10 @@ $harness->check('GoldenYearEndLifecycle', 'previews the split-period CT provisio
                 null,
                 false
             );
-        $harness->assertSame(true, (bool)($preview['reliable'] ?? false));
+        if (empty($preview['reliable'])) {
+            throw new RuntimeException('Split-period close preview was unreliable: '
+                . implode(' ', array_map('strval', (array)($preview['errors'] ?? []))));
+        }
         $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
         $liabilityNominalId = (int)($settings['corporation_tax_liability_nominal_id'] ?? 0);
         $previewedProvision = 0.0;
@@ -216,7 +210,7 @@ $harness->check('GoldenYearEndLifecycle', 'previews the split-period CT provisio
                 - (float)($adjustment['debit'] ?? 0);
         }
         $harness->assertSame(
-            1,
+            2,
             (int)InterfaceDB::fetchColumn(
                 'SELECT COUNT(*)
                  FROM corporation_tax_periods
@@ -237,18 +231,16 @@ $harness->check('GoldenYearEndLifecycle', 'previews the split-period CT provisio
                 $accountingPeriod,
                 $profitAndLoss
             );
-        $harness->assertSame(true, (bool)($postingBasis['available'] ?? false));
+        if (empty($postingBasis['available'])) {
+            throw new RuntimeException('Split-period posting basis was unavailable: '
+                . implode(' ', array_map('strval', (array)($postingBasis['errors'] ?? []))));
+        }
         $finalEvidence = (new \eel_accounts\Service\CorporationTaxComputationService())
             ->persistSummariesForYearEndLock($companyId, $accountingPeriodId);
-        $harness->assertSame(true, (bool)($finalEvidence['success'] ?? false));
-        $acceptedAfter = InterfaceDB::fetchOne(
-            'SELECT status, latest_computation_run_id
-             FROM corporation_tax_periods
-             WHERE id = :id',
-            ['id' => $acceptedCtPeriodId]
-        );
-        $harness->assertSame('accepted', (string)($acceptedAfter['status'] ?? ''));
-        $harness->assertSame($acceptedRunId, (int)($acceptedAfter['latest_computation_run_id'] ?? 0));
+        if (empty($finalEvidence['success'])) {
+            throw new RuntimeException('Final split-period CT evidence failed: '
+                . implode(' ', array_map('strval', (array)($finalEvidence['errors'] ?? []))));
+        }
         $statutoryProvision = round(
             (float)($postingBasis['estimated_corporation_tax'] ?? 0),
             2
@@ -330,11 +322,17 @@ $harness->check('GoldenYearEndLifecycle', 'keeps a following-period profit estim
         );
 
         $beforeRaw = goldenFollowingPeriodRawState($companyId, $ap80);
+        foreach ([$ap79, $ap80] as $periodId) {
+            $sync = (new \eel_accounts\Service\CorporationTaxPeriodService())
+                ->syncForAccountingPeriod($companyId, $periodId);
+            $harness->assertTrue(!empty($sync['success']));
+            test_confirm_ct_period_facts($companyId, $periodId);
+        }
+        $beforeRaw = goldenFollowingPeriodRawState($companyId, $ap80);
         $before = goldenFollowingPeriodEconomicSnapshot($companyId, $ap80);
         $harness->assertSame([], (array)($beforeRaw['capital_allowance_pool_runs'] ?? []));
         $harness->assertSame([], (array)($beforeRaw['capital_allowance_asset_calculations'] ?? []));
-        $harness->assertSame([], (array)($beforeRaw['corporation_tax_periods'] ?? []));
-        $harness->assertSame('transient', (string)($before['assets']['capital_allowance_source'] ?? ''));
+        $harness->assertCount(1, (array)($beforeRaw['corporation_tax_periods'] ?? []));
         $beforeTax = (array)($before['reporting']['tax'] ?? []);
         $harness->assertTrue((float)($beforeTax['losses_brought_forward'] ?? 0) > 0);
         $harness->assertTrue((float)($beforeTax['losses_used'] ?? 0) > 0);
@@ -358,16 +356,18 @@ $harness->check('GoldenYearEndLifecycle', 'keeps a following-period profit estim
 $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves reporting semantics when completed periods are locked', static function () use ($harness): void {
     $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
     $periods = [9111, 9112, 9113];
+    foreach ($periods as $periodId) {
+        $sync = (new \eel_accounts\Service\CorporationTaxPeriodService())
+            ->syncForAccountingPeriod($companyId, $periodId);
+        $harness->assertTrue(!empty($sync['success']));
+        test_confirm_ct_period_facts($companyId, $periodId);
+    }
     $hmrcExpected = GoldenHmrcCorporationTaxOracle::calculateSequence(GoldenLedgerSpecification::hmrcTaxFacts());
     $followingPeriodRawBefore = goldenFollowingPeriodRawState($companyId, 9112);
     $followingPeriodOutputsBefore = goldenFollowingPeriodEconomicSnapshot($companyId, 9112);
     $harness->assertSame([], (array)($followingPeriodRawBefore['capital_allowance_pool_runs'] ?? []));
     $harness->assertSame([], (array)($followingPeriodRawBefore['capital_allowance_asset_calculations'] ?? []));
-    $harness->assertSame([], (array)($followingPeriodRawBefore['corporation_tax_periods'] ?? []));
-    $harness->assertSame(
-        'transient',
-        (string)($followingPeriodOutputsBefore['assets']['capital_allowance_source'] ?? '')
-    );
+    $harness->assertCount(1, (array)($followingPeriodRawBefore['corporation_tax_periods'] ?? []));
     $followingAiaRows = (array)($followingPeriodOutputsBefore['reporting']['tax_detail']['aia_allocation'] ?? []);
     $harness->assertCount(1, $followingAiaRows);
     $harness->assertSame(
@@ -516,6 +516,7 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
             throw $exception;
         }
         $harness->assertTrue((new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $periodId));
+        ixbrl_test_complete_disclosures($companyId, $periodId, 'golden_year_end_test');
         $filingApproval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
             ->approveAndBuildFacts($companyId, $periodId, 'golden_year_end_test', 'Golden lifecycle filing approval.');
         $harness->assertTrue((int)($filingApproval['approval_id'] ?? 0) > 0);
@@ -568,6 +569,10 @@ function goldenClosePeriodForFollowingPeriodControl(
     int $companyId,
     int $accountingPeriodId
 ): void {
+    $sync = (new \eel_accounts\Service\CorporationTaxPeriodService())
+        ->syncForAccountingPeriod($companyId, $accountingPeriodId);
+    $harness->assertTrue(!empty($sync['success']));
+    test_confirm_ct_period_facts($companyId, $accountingPeriodId);
     $depreciation = (new \eel_accounts\Service\AssetService())
         ->runDepreciation($companyId, $accountingPeriodId);
     $harness->assertTrue(!empty($depreciation['success']));

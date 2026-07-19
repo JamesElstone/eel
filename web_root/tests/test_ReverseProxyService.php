@@ -19,7 +19,7 @@ $withRestoredConfig = static function (callable $callback): void {
         $callback();
     } finally {
         if ($originalConfig !== '') {
-            file_put_contents($configPath, $originalConfig);
+            test_write_file_contents_locked($configPath, $originalConfig);
             AppConfigurationStore::config(true);
         }
     }
@@ -56,7 +56,7 @@ $harness->check(ReverseProxyService::class, 'uses forwarded client IP only from 
         $harness->assertSame('198.51.100.20', $service->clientIpAddress($untrustedRequest));
     } finally {
         if ($originalConfig !== '') {
-            file_put_contents($configPath, $originalConfig);
+            test_write_file_contents_locked($configPath, $originalConfig);
             AppConfigurationStore::config(true);
         }
     }

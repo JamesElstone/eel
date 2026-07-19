@@ -23,6 +23,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     (int)$fixture['company_id'],
                     (int)$fixture['accounting_period_id']
                 );
+                test_confirm_ct_period_facts((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
 
                 $directorLoanAck = (new \eel_accounts\Service\DirectorLoanReconciliationService())->saveYearEndReview(
                     (int)$fixture['company_id'],
@@ -150,6 +151,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $companyId = (int)$fixture['company_id'];
                 $accountingPeriodId = (int)$fixture['accounting_period_id'];
                 (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $accountingPeriodId);
+                test_confirm_ct_period_facts($companyId, $accountingPeriodId);
                 $ctPeriods = (new \eel_accounts\Service\CorporationTaxPeriodService())->fetchForAccountingPeriod($companyId, $accountingPeriodId);
                 if (count($ctPeriods) < 2) {
                     $harness->skip('The fixture did not create multiple CT periods.');
@@ -228,6 +230,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $companyId = (int)$fixture['company_id'];
                 $accountingPeriodId = (int)$fixture['accounting_period_id'];
                 (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $accountingPeriodId);
+                test_confirm_ct_period_facts($companyId, $accountingPeriodId);
 
                 $persisted = $service->persistSummariesForYearEndLock($companyId, $accountingPeriodId);
                 $harness->assertSame(true, (bool)($persisted['success'] ?? false));

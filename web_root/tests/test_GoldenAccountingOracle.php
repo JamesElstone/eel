@@ -184,8 +184,16 @@ $harness->check(GoldenAccountingOracle::class, 'applies the year-two HMRC penalt
 });
 
 $harness->check(GoldenAccountingOracle::class, 'matches real journal, trial balance, profit and loss, director loan, tax, and Companies House services for all periods', static function () use ($harness): void {
-    $failures = [];
-    foreach (array_keys(GoldenLedgerSpecification::periods()) as $periodId) {
+    InterfaceDB::beginTransaction();
+    try {
+        $failures = [];
+        foreach (array_keys(GoldenLedgerSpecification::periods()) as $periodId) {
+        $sync = (new \eel_accounts\Service\CorporationTaxPeriodService())
+            ->syncForAccountingPeriod(GoldenAccountsFixture::GOLDEN_COMPANY_ID, $periodId);
+        if (empty($sync['success'])) {
+            throw new RuntimeException(implode(' ', (array)($sync['errors'] ?? ['Unable to create golden CT periods.'])));
+        }
+        test_confirm_ct_period_facts(GoldenAccountsFixture::GOLDEN_COMPANY_ID, $periodId);
         $expected = GoldenAccountingOracle::expected($periodId);
         $journals = (new \eel_accounts\Service\TransactionJournalService())->fetchJournals(GoldenAccountsFixture::GOLDEN_COMPANY_ID, $periodId);
         $trialBalance = (new \eel_accounts\Service\TrialBalanceService())->fetchTrialBalance(GoldenAccountsFixture::GOLDEN_COMPANY_ID, $periodId);
@@ -286,9 +294,14 @@ $harness->check(GoldenAccountingOracle::class, 'matches real journal, trial bala
         $comparison = (new \eel_accounts\Service\YearEndCompaniesHouseComparisonService())->fetchComparison(GoldenAccountsFixture::GOLDEN_COMPANY_ID, $periodId);
         goldenCompare($failures, 'companies_house', 'year_end_companies_house_comparison', $periodId, 'available', $expected['companies_house']['stored_filing_available'], $comparison['available'] ?? null);
         goldenCompare($failures, 'companies_house', 'year_end_companies_house_comparison', $periodId, 'missing_filing_error', true, in_array('No stored Companies House accounts filings were found for this company.', (array)($comparison['errors'] ?? []), true));
-    }
-    if ($failures !== []) {
-        throw new RuntimeException(GoldenComparisonReporter::report($failures));
+        }
+        if ($failures !== []) {
+            throw new RuntimeException(GoldenComparisonReporter::report($failures));
+        }
+    } finally {
+        if (InterfaceDB::inTransaction()) {
+            InterfaceDB::rollBack();
+        }
     }
 });
 

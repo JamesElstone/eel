@@ -47,11 +47,11 @@ $harness->check(AppConfigurationStore::class, 'falls back to the default applica
         }
 
         $config['app_strapline'] = '   ';
-        file_put_contents($path, "<?php\nreturn " . var_export($config, true) . ";\n", LOCK_EX);
+        test_write_file_contents_locked($path, "<?php\nreturn " . var_export($config, true) . ";\n");
 
         $harness->assertSame('A simple useful and secure PHP framework', AppConfigurationStore::appStrapline(true));
     } finally {
-        file_put_contents($path, $original, LOCK_EX);
+        test_write_file_contents_locked($path, $original);
         AppConfigurationStore::config(true);
     }
 });
@@ -91,7 +91,7 @@ $harness->check(AppConfigurationStore::class, 'updates database connection setti
         $harness->assertSame('test_password', $updated['db']['pass'] ?? null);
         $harness->assertSame('../db_schema/eel_accounts.schema.sql', $updated['db']['sqlite_schema'] ?? null);
     } finally {
-        file_put_contents($path, $original, LOCK_EX);
+        test_write_file_contents_locked($path, $original);
         AppConfigurationStore::config(true);
     }
 });
@@ -154,7 +154,7 @@ $harness->check(AppConfigurationStore::class, 'updates editable application sett
         $harness->assertSame(false, $updated['user_defaults']['new_user_otp_required'] ?? null);
         $harness->assertSame('../db_schema/eel_accounts.schema.sql', $updated['db']['sqlite_schema'] ?? null);
     } finally {
-        file_put_contents($path, $original, LOCK_EX);
+        test_write_file_contents_locked($path, $original);
         AppConfigurationStore::config(true);
     }
 });
@@ -180,7 +180,7 @@ $harness->check(AppConfigurationStore::class, 'sets nested configuration paths w
         $harness->assertSame('LIVE', $stored['accounting']['hmrc']['mode'] ?? null);
         $harness->assertSame('../db_schema/eel_accounts.schema.sql', $updated['db']['sqlite_schema'] ?? null);
     } finally {
-        file_put_contents($path, $original, LOCK_EX);
+        test_write_file_contents_locked($path, $original);
         AppConfigurationStore::config(true);
     }
 });
@@ -199,7 +199,7 @@ $harness->check(AppConfigurationStore::class, 'sets nested paths over existing s
 
         $harness->assertSame('TEST', $updated['accounting']['hmrc']['mode'] ?? null);
     } finally {
-        file_put_contents($path, $original, LOCK_EX);
+        test_write_file_contents_locked($path, $original);
         AppConfigurationStore::config(true);
     }
 });

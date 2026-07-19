@@ -232,6 +232,7 @@ $harness->check('GoldenAccountingCardAuditDefects', 'reconciles split CT-period 
     $periodService = new \eel_accounts\Service\CorporationTaxPeriodService();
     $sync = $periodService->syncForAccountingPeriod($companyId, 9111);
     $harness->assertTrue((bool)($sync['success'] ?? false));
+    test_confirm_ct_period_facts($companyId, 9111);
     $periods = array_values(array_filter(
         (array)($sync['periods'] ?? []),
         static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'
@@ -362,6 +363,7 @@ $harness->check('GoldenAccountingCardAuditDefects', 'keeps signed disallowable a
         $periodService = new \eel_accounts\Service\CorporationTaxPeriodService();
         $sync = $periodService->syncForAccountingPeriod($companyId, $accountingPeriodId);
         $harness->assertTrue((bool)($sync['success'] ?? false));
+        test_confirm_ct_period_facts($companyId, $accountingPeriodId);
         $periods = array_values(array_filter(
             (array)($sync['periods'] ?? []),
             static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'

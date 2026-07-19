@@ -20,7 +20,7 @@ $withRestoredConfig = static function (callable $callback): void {
         $callback();
     } finally {
         if ($originalConfig !== '') {
-            file_put_contents($configPath, $originalConfig);
+            test_write_file_contents_locked($configPath, $originalConfig);
             AppConfigurationStore::config(true);
         }
     }

@@ -1581,6 +1581,8 @@ function assetServiceTestCreateTaxViewFixture(): array
     $disallowableNominalId = assetServiceTestInsertNominalWithTreatment('ATD', 'Asset Tax Disallowable', 'expense', 'disallowable');
     $assetNominalId = assetServiceTestInsertNominalWithTreatment('ATA', 'Asset Tax Asset', 'asset', 'capital');
     $accumNominalId = assetServiceTestInsertNominalWithTreatment('ATC', 'Asset Tax Accumulated Depreciation', 'asset', 'capital');
+    $directorLoanAssetNominalId = assetServiceTestInsertNominalWithTreatment('ATLA', 'Asset Tax Director Loan Asset', 'asset', 'other');
+    $directorLoanLiabilityNominalId = assetServiceTestInsertNominalWithTreatment('ATLL', 'Asset Tax Director Loan Liability', 'liability', 'other');
 
     InterfaceDB::prepareExecute(
         'INSERT INTO companies (id, company_name, company_number, is_active)
@@ -1602,6 +1604,10 @@ function assetServiceTestCreateTaxViewFixture(): array
             'period_end' => '2026-12-31',
         ]
     );
+    $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
+    $settings->set('director_loan_asset_nominal_id', $directorLoanAssetNominalId, 'int');
+    $settings->set('director_loan_liability_nominal_id', $directorLoanLiabilityNominalId, 'int');
+    $settings->flush();
     InterfaceDB::prepareExecute(
         'INSERT INTO journals (
             company_id,
@@ -1706,6 +1712,7 @@ function assetServiceTestCreateTaxViewFixture(): array
     );
     assetServiceTestEnsureTaxRateRules();
     (new \eel_accounts\Service\CapitalAllowanceService())->rebuildForCompany($companyId);
+    test_confirm_ct_period_facts($companyId, $accountingPeriodId);
 
     return [
         'company_id' => $companyId,

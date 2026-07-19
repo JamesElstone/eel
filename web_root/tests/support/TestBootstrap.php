@@ -97,6 +97,93 @@ if (!function_exists('test_tmp_directory')) {
 defined('AF_HEADER_PREFIX') || define('AF_HEADER_PREFIX', 'X-AntiFraud-');
 defined('AF_COOKIE_PREFIX') || define('AF_COOKIE_PREFIX', 'af_');
 
+if (!function_exists('test_write_file_contents_locked')) {
+    function test_write_file_contents_locked(string $path, string $contents): void
+    {
+        $length = strlen($contents);
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $handle = @fopen($path, 'c+b');
+            if (is_resource($handle)) {
+                $locked = false;
+                try {
+                    $locked = flock($handle, LOCK_EX);
+                    if ($locked && ftruncate($handle, 0) && rewind($handle)) {
+                        $written = 0;
+                        while ($written < $length) {
+                            $bytes = fwrite($handle, substr($contents, $written));
+                            if ($bytes === false || $bytes === 0) {
+                                break;
+                            }
+                            $written += $bytes;
+                        }
+                        if ($written === $length && fflush($handle)) {
+                            return;
+                        }
+                    }
+                } finally {
+                    if ($locked) {
+                        flock($handle, LOCK_UN);
+                    }
+                    fclose($handle);
+                }
+            }
+            usleep(10000);
+        }
+
+        throw new RuntimeException('Unable to replace test file contents after retries: ' . $path);
+    }
+}
+
+if (!function_exists('test_confirm_ct_period_facts')) {
+    /** @return list<int> */
+    function test_confirm_ct_period_facts(
+        int $companyId,
+        int $accountingPeriodId,
+        int $associatedCompanyCount = 0
+    ): array {
+        $periods = (new \eel_accounts\Service\CorporationTaxPeriodService())
+            ->fetchForAccountingPeriod($companyId, $accountingPeriodId);
+        if ($periods === []) {
+            throw new RuntimeException('No Corporation Tax periods are available to confirm in the test fixture.');
+        }
+
+        $factService = new \eel_accounts\Service\CorporationTaxPeriodFactService();
+        $ids = [];
+        foreach ($periods as $period) {
+            if ((string)($period['status'] ?? '') === 'superseded') {
+                continue;
+            }
+            $ctPeriodId = (int)($period['id'] ?? 0);
+            $result = $factService->save(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId,
+                $associatedCompanyCount,
+                true,
+                'test-fixture'
+            );
+            if (empty($result['success'])) {
+                throw new RuntimeException(implode(' ', (array)($result['errors'] ?? ['Unable to confirm CT-period facts.'])));
+            }
+            $s455 = (new \eel_accounts\Service\S455ReviewService())->saveReview(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId,
+                'no',
+                true,
+                'test-fixture',
+                'The fixture has no close-company s455 exposure.'
+            );
+            if (empty($s455['success'])) {
+                throw new RuntimeException(implode(' ', (array)($s455['errors'] ?? ['Unable to confirm the fixture s455 review.'])));
+            }
+            $ids[] = $ctPeriodId;
+        }
+
+        return $ids;
+    }
+}
+
 spl_autoload_register(
     static function (string $className): void {
         $className = ltrim($className, '\\');

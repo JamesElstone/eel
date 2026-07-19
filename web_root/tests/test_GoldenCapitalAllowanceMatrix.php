@@ -48,7 +48,7 @@ final class GoldenCapitalAllowanceMatrixFixture
             ]);
         }
 
-        return [
+        $nominals = [
             'bank' => self::nominal('GCA-BANK-' . $companyId, 'Golden CA bank', 'asset', 'other'),
             'sales' => self::nominal('GCA-SALES-' . $companyId, 'Golden CA sales', 'income', 'allowable'),
             'plant' => self::nominal('GCA-PLANT-' . $companyId, 'Golden CA plant', 'asset', 'capital'),
@@ -56,6 +56,20 @@ final class GoldenCapitalAllowanceMatrixFixture
             'accumulated_depreciation' => self::nominal('GCA-ACCDEP-' . $companyId, 'Golden CA accumulated depreciation', 'asset', 'capital'),
             'unreviewed_vehicle' => self::nominal('1320', 'Motor Vehicles', 'asset', 'capital'),
         ];
+        self::insert('company_settings', [
+            'company_id' => $companyId,
+            'setting' => 'director_loan_asset_nominal_id',
+            'type' => 'int',
+            'value' => (string)self::nominal('GCA-DLA-' . $companyId, 'Golden CA director loan asset', 'asset', 'other'),
+        ]);
+        self::insert('company_settings', [
+            'company_id' => $companyId,
+            'setting' => 'director_loan_liability_nominal_id',
+            'type' => 'int',
+            'value' => (string)self::nominal('GCA-DLL-' . $companyId, 'Golden CA director loan liability', 'liability', 'other'),
+        ]);
+
+        return $nominals;
     }
 
     public static function addAsset(
@@ -789,6 +803,7 @@ $harness->check($subject, 'pro-rates and exhausts AIA then reconciles asset rows
         null,
         GoldenCapitalAllowanceMatrixFixture::fixedNineteenPercentRateService()
     );
+    test_confirm_ct_period_facts($companyId, $periodId);
     $summary = $ctService->fetchSummaryForCtPeriodId($companyId, $ctPeriodId);
     $harness->assertSame(true, (bool)($summary['available'] ?? false));
     $harness->assertSame(2000.0, GoldenCapitalAllowanceMatrixFixture::money($summary['accounting_profit'] ?? 0));
@@ -1048,7 +1063,9 @@ $harness->check($subject, 'requires disposal valuations for every pooled asset b
     $taxSummary = (new \eel_accounts\Service\CorporationTaxComputationService(
         null,
         GoldenCapitalAllowanceMatrixFixture::fixedNineteenPercentRateService()
-    ))->fetchSummaryForCtPeriodId($companyId, $finalCtPeriodId);
+    ));
+    test_confirm_ct_period_facts($companyId, $finalPeriodId);
+    $taxSummary = $taxSummary->fetchSummaryForCtPeriodId($companyId, $finalCtPeriodId);
     $harness->assertSame('review_required', (string)($taxSummary['confidence_status'] ?? ''));
     $harness->assertTrue(str_contains(
         implode(' ', array_map('strval', (array)($taxSummary['warnings'] ?? []))),

@@ -14,6 +14,21 @@ if (PHP_SAPI !== 'cli' && !eel_tests_developer_options_enabled()) {
     return;
 }
 
+$testRunnerLock = eel_tests_acquire_process_lock();
+if (!$testRunnerLock['acquired']) {
+    $message = (string)$testRunnerLock['message'];
+
+    if (PHP_SAPI === 'cli') {
+        fwrite(STDERR, $message . PHP_EOL);
+        exit(1);
+    }
+
+    http_response_code(409);
+    header('Content-Type: text/plain; charset=utf-8');
+    echo $message;
+    return;
+}
+
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARATOR . 'TestOutput.php';
 
 $testsDirectory = __DIR__;
@@ -74,6 +89,48 @@ function eel_tests_developer_options_enabled(): bool
 function eel_tests_app_config_path(): string
 {
     return dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'secure' . DIRECTORY_SEPARATOR . 'app.php';
+}
+
+/**
+ * @return array{acquired: bool, message: string}
+ */
+function eel_tests_acquire_process_lock(): array
+{
+    $runnerPath = (string)(realpath(__FILE__) ?: __FILE__);
+    $lockPath = sys_get_temp_dir()
+        . DIRECTORY_SEPARATOR
+        . 'eelkit-test-runner-'
+        . hash('sha256', $runnerPath)
+        . '.lock';
+    $handle = @fopen($lockPath, 'c+');
+
+    if (!is_resource($handle)) {
+        return [
+            'acquired' => false,
+            'message' => 'Test runner could not create its process lock: ' . $lockPath,
+        ];
+    }
+
+    if (!flock($handle, LOCK_EX | LOCK_NB)) {
+        fclose($handle);
+
+        return [
+            'acquired' => false,
+            'message' => 'Test runner is already running.',
+        ];
+    }
+
+    ftruncate($handle, 0);
+    rewind($handle);
+    fwrite($handle, 'PID ' . (string)getmypid() . ' since ' . gmdate('c'));
+    fflush($handle);
+
+    register_shutdown_function(static function () use ($handle): void {
+        flock($handle, LOCK_UN);
+        fclose($handle);
+    });
+
+    return ['acquired' => true, 'message' => ''];
 }
 
 function eel_tests_reset_process_state_for_file(): void

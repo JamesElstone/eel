@@ -31,7 +31,7 @@ $harness->run(AuthPageRenderer::class, function (GeneratedServiceClassTestHarnes
                 '<div class="auth-logo-mark"><img class="auth-logo-mark-image" src="/swallowtail_butterfly_42x42.png" alt="" aria-hidden="true"></div>'
             ));
         } finally {
-            file_put_contents($path, $original, LOCK_EX);
+            test_write_file_contents_locked($path, $original);
             AppConfigurationStore::config(true);
         }
     });

@@ -96,6 +96,10 @@ $harness->check('GoldenTaxControlMatrix', 'posts CT provision deltas, reversals,
     try {
         $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
         $accountingPeriodId = 9114;
+        goldenTaxControlRequireSuccess(
+            (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $accountingPeriodId)
+        );
+        test_confirm_ct_period_facts($companyId, $accountingPeriodId);
         $computation = new \eel_accounts\Service\CorporationTaxComputationService();
         $periods = (array)($computation->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId)['periods'] ?? []);
         $harness->assertCount(1, $periods);
@@ -196,7 +200,31 @@ $harness->check('GoldenTaxControlMatrix', 'persists the exact loss checkpoint us
         $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
         foreach ([9111, 9112] as $accountingPeriodId) {
             goldenTaxControlRequireSuccess(
+                (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $accountingPeriodId)
+            );
+            test_confirm_ct_period_facts($companyId, $accountingPeriodId);
+            goldenTaxControlRequireSuccess(
                 (new \eel_accounts\Service\AssetService())->runDepreciation($companyId, $accountingPeriodId)
+            );
+        }
+
+        $priorPersistence = (new \eel_accounts\Service\CorporationTaxComputationService())
+            ->persistSummariesForYearEndLock($companyId, 9111);
+        goldenTaxControlRequireSuccess($priorPersistence);
+        if ((int)InterfaceDB::fetchColumn(
+            'SELECT COUNT(*) FROM year_end_reviews WHERE company_id = :company_id AND accounting_period_id = :period_id',
+            ['company_id' => $companyId, 'period_id' => 9111]
+        ) === 0) {
+            InterfaceDB::prepareExecute(
+                'INSERT INTO year_end_reviews (company_id, accounting_period_id, is_locked, locked_at, locked_by)
+                 VALUES (:company_id, :period_id, 1, CURRENT_TIMESTAMP, :locked_by)',
+                ['company_id' => $companyId, 'period_id' => 9111, 'locked_by' => 'golden-tax-control']
+            );
+        } else {
+            InterfaceDB::prepareExecute(
+                'UPDATE year_end_reviews SET is_locked = 1, locked_at = CURRENT_TIMESTAMP, locked_by = :locked_by
+                 WHERE company_id = :company_id AND accounting_period_id = :period_id',
+                ['company_id' => $companyId, 'period_id' => 9111, 'locked_by' => 'golden-tax-control']
             );
         }
 
@@ -265,6 +293,10 @@ $harness->check('GoldenTaxControlMatrix', 'keeps CT600 submission disabled for a
     try {
         $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
         $accountingPeriodId = 9114;
+        goldenTaxControlRequireSuccess(
+            (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $accountingPeriodId)
+        );
+        test_confirm_ct_period_facts($companyId, $accountingPeriodId);
         $computation = new \eel_accounts\Service\CorporationTaxComputationService();
         $periods = (array)($computation->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId)['periods'] ?? []);
         $harness->assertCount(1, $periods);
@@ -291,6 +323,7 @@ $harness->check('GoldenTaxControlMatrix', 'enforces CT period sequence while CT6
         $periodService = new \eel_accounts\Service\CorporationTaxPeriodService();
         $sync = $periodService->syncForAccountingPeriod($companyId, 9111);
         goldenTaxControlRequireSuccess($sync);
+        test_confirm_ct_period_facts($companyId, 9111);
         $periods = (array)($sync['periods'] ?? []);
         $harness->assertCount(2, $periods);
         $firstId = (int)($periods[0]['id'] ?? 0);

@@ -23,7 +23,7 @@ $harness->run(BrandMarkRenderer::class, function (GeneratedServiceClassTestHarne
             AppConfigurationStore::set('brand-mark', 'E&K');
             $harness->assertSame('E&amp;K', BrandMarkRenderer::html('brand-mark-image'));
         } finally {
-            file_put_contents($path, $original, LOCK_EX);
+            test_write_file_contents_locked($path, $original);
             AppConfigurationStore::config(true);
         }
     });
@@ -55,7 +55,7 @@ $harness->run(BrandMarkRenderer::class, function (GeneratedServiceClassTestHarne
             $harness->assertSame(false, BrandMarkRenderer::isConfiguredImage());
             $harness->assertSame('https://example.test/logo.png', BrandMarkRenderer::html('brand-mark-image'));
         } finally {
-            file_put_contents($path, $original, LOCK_EX);
+            test_write_file_contents_locked($path, $original);
             AppConfigurationStore::config(true);
         }
     });

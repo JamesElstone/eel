@@ -11,9 +11,8 @@ final class _tax_rates_ct_computation_taxonomyCard extends CardBaseFramework
     public function render(array $context): string
     {
         $packages = (array)($context['services']['packages'] ?? []);
-        $token = HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken());
         $html = '<div class="settings-stack"><div class="form-row-actions"><a class="button button-inline" href="' . HelperFramework::escape(\eel_accounts\Service\HmrcCtComputationCatalogueService::SOURCE_URL) . '" target="_blank" rel="noopener noreferrer">HMRC technical specifications</a><a class="button button-inline" href="?page=ct_filing_mappings">CT Filing Mappings</a></div>'
-            . '<details><summary>Register a new artifact revision</summary><form method="post" data-ajax="true" class="panel-soft settings-stack">' . $token
+            . '<details><summary>Register a new artifact revision</summary><form method="post" data-ajax="true" class="panel-soft settings-stack">' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="CtComputationTaxonomy"><input type="hidden" name="intent" value="save_package"><div class="form-grid">'
             . '<label>Taxonomy version<input class="input" name="taxonomy_version" required></label><label>Artifact version<input class="input" name="artifact_version" required></label>'
             . '<label>Applicable from<input class="input" type="date" name="applicable_from" required></label><label>Applicable to<input class="input" type="date" name="applicable_to"></label>'

@@ -388,10 +388,32 @@ final class AppConfigurationStore
             . "declare(strict_types=1);\n\n"
             . 'return ' . var_export($config, true) . ";\n";
 
-        $result = @file_put_contents($path, $content, LOCK_EX);
-
-        if ($result === false) {
+        $handle = @fopen($path, 'c+b');
+        if (!is_resource($handle)) {
             throw new RuntimeException('Unable to write application configuration file: ' . $path);
+        }
+
+        try {
+            if (!flock($handle, LOCK_EX) || !ftruncate($handle, 0) || !rewind($handle)) {
+                throw new RuntimeException('Unable to write application configuration file: ' . $path);
+            }
+
+            $length = strlen($content);
+            $written = 0;
+            while ($written < $length) {
+                $bytes = fwrite($handle, substr($content, $written));
+                if ($bytes === false || $bytes === 0) {
+                    throw new RuntimeException('Unable to write application configuration file: ' . $path);
+                }
+                $written += $bytes;
+            }
+
+            if (!fflush($handle)) {
+                throw new RuntimeException('Unable to write application configuration file: ' . $path);
+            }
+        } finally {
+            flock($handle, LOCK_UN);
+            fclose($handle);
         }
     }
 

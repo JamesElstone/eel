@@ -21,7 +21,8 @@ final class CorporationTaxPeriodFactService
         }
 
         $periods = \InterfaceDB::fetchAll(
-            'SELECT ctp.id AS ct_period_id, ctp.sequence_no, ctp.period_start, ctp.period_end, ctp.status,
+            'SELECT ctp.id AS ct_period_id, ctp.company_id, ctp.accounting_period_id,
+                    ctp.sequence_no, ctp.period_start, ctp.period_end, ctp.status,
                     fact.associated_company_count, fact.confirmed_at, fact.confirmed_by,
                     fact.confirmation_note, fact.basis_hash
              FROM corporation_tax_periods ctp

@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'StandardNominalTestFixture.php';
 
 (new GeneratedServiceClassTestHarness())->run(\eel_accounts\Service\TrialBalanceService::class, static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\TrialBalanceService $service): void {
     $harness->check(\eel_accounts\Service\TrialBalanceService::class, 'uses CT-period summary scope for tax computation', static function () use ($harness, $service): void {
@@ -58,6 +59,17 @@ function trialBalanceCtPeriodSummaryFixture(): array
         'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label',
         ['company_id' => $companyId, 'label' => 'Trial Balance CT Fixture FY']
     );
+    StandardNominalTestFixture::ensureNominals(['1200', '2100']);
+    $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
+    $settings->set('director_loan_asset_nominal_id', StandardNominalTestFixture::id('1200'), 'int');
+    $settings->set('director_loan_liability_nominal_id', StandardNominalTestFixture::id('2100'), 'int');
+    $settings->flush();
+    $sync = (new \eel_accounts\Service\CorporationTaxPeriodService())
+        ->syncForAccountingPeriod($companyId, $periodId);
+    if (empty($sync['success'])) {
+        throw new RuntimeException(implode(' ', (array)($sync['errors'] ?? ['Unable to create CT periods.'])));
+    }
+    test_confirm_ct_period_facts($companyId, $periodId);
 
     return ['company_id' => $companyId, 'accounting_period_id' => $periodId];
 }

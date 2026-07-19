@@ -26,6 +26,8 @@ $harness->run(\eel_accounts\Service\ProfitLossService::class, static function (G
             $expenseNominalId = profitLossTestEnsureNominal('6090', 'Sundry Expenses', 'expense', 'allowable');
             $taxExpenseNominalId = profitLossTestEnsureNominal('8511', 'Current tax charge renamed', 'expense', 'disallowable');
             $taxLiabilityNominalId = profitLossTestEnsureNominal('2200', 'Corporation Tax', 'liability', 'allowable');
+            $directorLoanAssetNominalId = profitLossTestEnsureNominal('1200', 'Director Loan Asset', 'asset', 'other');
+            $directorLoanLiabilityNominalId = profitLossTestEnsureNominal('2100', 'Director Loan Liability', 'liability', 'other');
 
             $marker = substr(hash('sha256', __FILE__ . microtime(true) . random_int(1, PHP_INT_MAX)), 0, 10);
             InterfaceDB::prepareExecute(
@@ -37,6 +39,8 @@ $harness->run(\eel_accounts\Service\ProfitLossService::class, static function (G
             $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
             $settings->set('corporation_tax_expense_nominal_id', $taxExpenseNominalId, 'int');
             $settings->set('corporation_tax_liability_nominal_id', $taxLiabilityNominalId, 'int');
+            $settings->set('director_loan_asset_nominal_id', $directorLoanAssetNominalId, 'int');
+            $settings->set('director_loan_liability_nominal_id', $directorLoanLiabilityNominalId, 'int');
             $settings->flush();
             InterfaceDB::prepareExecute(
                 'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
@@ -49,6 +53,8 @@ $harness->run(\eel_accounts\Service\ProfitLossService::class, static function (G
                 ]
             );
             $periodId = (int)InterfaceDB::fetchColumn('SELECT id FROM accounting_periods WHERE company_id = :company_id LIMIT 1', ['company_id' => $companyId]);
+            (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $periodId);
+            test_confirm_ct_period_facts($companyId, $periodId);
 
             profitLossTestJournal($companyId, $periodId, '2025-01-31', 'Income', [
                 [$bankNominalId, 1000.00, 0.00],

@@ -116,7 +116,7 @@ final class GoldenWorkflowCoverageFixture
                 ],
             ],
             'reporting_and_tax' => [
-                'pages' => ['trial_balance', 'profit_loss', 'corporation_tax', 'tax_audit', 'tax_artifacts'],
+                'pages' => ['trial_balance', 'profit_loss', 'corporation_tax', 'tax_audit', 'tax_artifacts', 'ct_filing_mappings'],
                 'evidence' => [
                     self::evidence('corporation-tax periods', 'SELECT COUNT(*) FROM corporation_tax_periods WHERE company_id IN (9100, 9400)', 2),
                     self::evidence('persisted computation runs', 'SELECT COUNT(*) FROM corporation_tax_computation_runs WHERE company_id = 9400', 2),
@@ -826,6 +826,10 @@ final class GoldenWorkflowCoverageFixture
             'period_end' => '2025-09-30',
             'status' => 'computed',
         ]);
+        test_confirm_ct_period_facts(
+            GoldenAccountsFixture::COMPLETE_COMPANY_ID,
+            self::COMPLETE_PRIOR_PERIOD_ID
+        );
         self::insert('corporation_tax_computation_runs', [
             'id' => 9539,
             'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
@@ -877,6 +881,10 @@ final class GoldenWorkflowCoverageFixture
             'period_end' => '2026-09-30',
             'status' => 'accepted',
         ]);
+        test_confirm_ct_period_facts(
+            GoldenAccountsFixture::COMPLETE_COMPANY_ID,
+            self::COMPLETE_PERIOD_ID
+        );
         self::insert('corporation_tax_computation_runs', [
             'id' => 9541,
             'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,

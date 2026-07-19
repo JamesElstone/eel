@@ -86,7 +86,7 @@ $harness->check(UserSessionService::class, 'builds request metadata with browser
         $harness->assertSame('198.51.100.10', $metadata['ip_address']);
     } finally {
         if ($originalConfig !== '') {
-            file_put_contents($configPath, $originalConfig);
+            test_write_file_contents_locked($configPath, $originalConfig);
             AppConfigurationStore::config(true);
         }
     }

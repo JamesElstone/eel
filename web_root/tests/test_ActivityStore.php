@@ -101,7 +101,7 @@ $harness->run(ActivityStore::class, function (GeneratedServiceClassTestHarness $
             $harness->assertSame(1000, mb_strlen((string)$metadata['user_agent']));
         } finally {
             if ($originalConfig !== '') {
-                file_put_contents($configPath, $originalConfig);
+                test_write_file_contents_locked($configPath, $originalConfig);
                 AppConfigurationStore::config(true);
             }
         }

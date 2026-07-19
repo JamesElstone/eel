@@ -114,3 +114,62 @@ function ixbrl_test_assign_director_loan_nominals(
 
     return ['asset' => $assetNominalId, 'liability' => $liabilityNominalId];
 }
+
+function ixbrl_test_complete_disclosures(int $companyId, int $accountingPeriodId, string $actor = 'test-fixture'): array
+{
+    ixbrl_test_ensure_frs105_thresholds();
+    $period = InterfaceDB::fetchOne(
+        'SELECT period_end FROM accounting_periods WHERE id = :period_id AND company_id = :company_id',
+        ['period_id' => $accountingPeriodId, 'company_id' => $companyId]
+    );
+    if (!is_array($period)) {
+        throw new RuntimeException('The accounting period is unavailable for the iXBRL disclosure fixture.');
+    }
+    InterfaceDB::prepareExecute(
+        'UPDATE companies SET
+            company_status = COALESCE(NULLIF(company_status, \'\'), :company_status),
+            companies_house_type = COALESCE(NULLIF(companies_house_type, \'\'), :company_type),
+            companies_house_jurisdiction = COALESCE(NULLIF(companies_house_jurisdiction, \'\'), :jurisdiction),
+            registered_office_address_line_1 = COALESCE(NULLIF(registered_office_address_line_1, \'\'), :address_line_1),
+            registered_office_locality = COALESCE(NULLIF(registered_office_locality, \'\'), :locality),
+            registered_office_postal_code = COALESCE(NULLIF(registered_office_postal_code, \'\'), :postal_code),
+            registered_office_country = COALESCE(NULLIF(registered_office_country, \'\'), :country)
+         WHERE id = :company_id',
+        [
+            'company_status' => 'active',
+            'company_type' => 'ltd',
+            'jurisdiction' => 'england-wales',
+            'address_line_1' => '1 Test Street',
+            'locality' => 'Test Town',
+            'postal_code' => 'TE1 1ST',
+            'country' => 'United Kingdom',
+            'company_id' => $companyId,
+        ]
+    );
+    $result = (new \eel_accounts\Service\IxbrlAccountsDisclosureService())->save(
+        $companyId,
+        $accountingPeriodId,
+        [
+            'accounting_standard' => 'FRS_105',
+            'average_number_employees' => 1,
+            'entity_dormant' => 0,
+            'is_still_trading' => 1,
+            'micro_entity_eligibility_confirmed' => 1,
+            'going_concern_basis_appropriate' => 1,
+            'has_material_off_balance_sheet_arrangements' => 0,
+            'has_director_advances_credits_or_guarantees' => 0,
+            'has_financial_commitments_guarantees_or_contingencies' => 0,
+            'accounts_approval_date' => (string)$period['period_end'],
+            'approving_director_name' => 'Test Director',
+            'prepared_under_small_companies_regime' => 1,
+            'audit_exempt_section_477' => 1,
+            'directors_acknowledge_responsibilities' => 1,
+            'members_have_not_required_audit' => 1,
+        ],
+        $actor
+    );
+    if (empty($result['success']) || empty($result['complete'])) {
+        throw new RuntimeException(implode(' ', (array)($result['errors'] ?? $result['profile_errors'] ?? $result['missing_labels'] ?? ['Unable to complete iXBRL disclosures.'])));
+    }
+    return $result;
+}

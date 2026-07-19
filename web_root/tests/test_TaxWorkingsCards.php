@@ -156,6 +156,20 @@ foreach ($cardClasses as $className) {
         }
 
         if ($className === _tax_corporation_tax_summaryCard::class) {
+            $harness->check($className, 'renders penny precision for live and persisted computation values', static function () use ($harness, $card): void {
+                foreach (['live', 'persisted'] as $mode) {
+                    $context = taxWorkingsCardsContext();
+                    $context['services']['taxWorkings']['summary']['taxable_profit'] = 123.40;
+                    $context['services']['taxWorkings']['summary']['ordinary_corporation_tax'] = 123.45;
+                    $context['services']['taxWorkings']['summary']['estimated_corporation_tax'] = 123.45;
+                    $context['services']['taxWorkings']['summary']['computation_persistence'] = ['status' => $mode];
+
+                    $html = $card->render($context);
+
+                    $harness->assertTrue(str_contains($html, '$ 123.40'));
+                    $harness->assertTrue(str_contains($html, '$ 123.45'));
+                }
+            });
             $harness->check($className, 'keeps CT provision posting as a year-end close task', static function () use ($harness, $card): void {
                 $context = taxWorkingsCardsContext();
                 $context['tax'] = ['selected_ct_period_id' => 56];

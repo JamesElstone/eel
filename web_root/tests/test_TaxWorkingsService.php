@@ -27,7 +27,7 @@ $harness->run(\eel_accounts\Service\TaxWorkingsService::class, static function (
         $harness->assertSame('https://www.gov.uk/guidance/corporation-tax-marginal-relief', \eel_accounts\Service\TaxGuidanceService::url('marginal_relief'));
     });
 
-    $harness->check(\eel_accounts\Service\TaxWorkingsService::class, 'resolves a transient split CT period without persisting CT metadata', static function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\TaxWorkingsService::class, 'fails closed for a transient split CT period without persisting CT metadata', static function () use ($harness, $service): void {
         $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
         $accountingPeriodId = 9111;
         $transientCtPeriodId = \eel_accounts\Service\CorporationTaxPeriodService::transientReferenceId(
@@ -59,13 +59,8 @@ $harness->run(\eel_accounts\Service\TaxWorkingsService::class, static function (
                 $transientCtPeriodId
             );
 
-            $harness->assertSame(true, (bool)($workings['available'] ?? false));
-            $harness->assertSame($transientCtPeriodId, (int)($workings['selected_ct_period']['id'] ?? 0));
-            $harness->assertSame('2023-09-05', (string)($workings['selected_ct_period']['period_start'] ?? ''));
-            $harness->assertSame('2023-09-30', (string)($workings['selected_ct_period']['period_end'] ?? ''));
-            $harness->assertSame($transientCtPeriodId, (int)($workings['summary']['ct_period_id'] ?? 0));
-            $harness->assertSame('2023-09-05', (string)($workings['summary']['period_start'] ?? ''));
-            $harness->assertSame('2023-09-30', (string)($workings['summary']['period_end'] ?? ''));
+            $harness->assertSame(false, (bool)($workings['available'] ?? true));
+            $harness->assertTrue(trim((string)(($workings['errors'] ?? [])[0] ?? '')) !== '');
             $harness->assertSame(
                 $before,
                 InterfaceDB::fetchAll(

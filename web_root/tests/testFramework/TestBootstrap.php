@@ -21,6 +21,43 @@ defined('APP_CSS') || define('APP_CSS', APP_ROOT . 'css' . DIRECTORY_SEPARATOR);
 defined('AF_HEADER_PREFIX') || define('AF_HEADER_PREFIX', 'X-AntiFraud-');
 defined('AF_COOKIE_PREFIX') || define('AF_COOKIE_PREFIX', 'af_');
 
+if (!function_exists('test_write_file_contents_locked')) {
+    function test_write_file_contents_locked(string $path, string $contents): void
+    {
+        $length = strlen($contents);
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $handle = @fopen($path, 'c+b');
+            if (is_resource($handle)) {
+                $locked = false;
+                try {
+                    $locked = flock($handle, LOCK_EX);
+                    if ($locked && ftruncate($handle, 0) && rewind($handle)) {
+                        $written = 0;
+                        while ($written < $length) {
+                            $bytes = fwrite($handle, substr($contents, $written));
+                            if ($bytes === false || $bytes === 0) {
+                                break;
+                            }
+                            $written += $bytes;
+                        }
+                        if ($written === $length && fflush($handle)) {
+                            return;
+                        }
+                    }
+                } finally {
+                    if ($locked) {
+                        flock($handle, LOCK_UN);
+                    }
+                    fclose($handle);
+                }
+            }
+            usleep(10000);
+        }
+
+        throw new RuntimeException('Unable to replace test file contents after retries: ' . $path);
+    }
+}
+
 if (!function_exists('logDetails')) {
     function logDetails(): void
     {

@@ -74,13 +74,28 @@ final class CtFilingMappingService
             return $this->mappingFailure('An active compatible mapping profile for the requested target is required.');
         }
 
-        $table = $targetType === self::TARGET_RIM
-            ? 'ct600_rim_mappings'
-            : 'ct_computation_ixbrl_mappings';
-        $mappings = $knownMappings ?? \InterfaceDB::fetchAll(
-            'SELECT * FROM ' . $table . ' WHERE profile_id = :profile_id ORDER BY sort_order, id',
-            ['profile_id' => (int)$profile['id']]
-        );
+        if ($knownMappings !== null) {
+            $mappings = $knownMappings;
+        } elseif ($targetType === self::TARGET_RIM) {
+            $mappings = \InterfaceDB::fetchAll(
+                'SELECT m.*, i.data_type AS rim_data_type
+                 FROM ct600_rim_mappings m
+                 LEFT JOIN hmrc_ct_rim_components i
+                   ON i.package_id = :package_id AND i.component_path = m.target_xpath
+                 WHERE m.profile_id = :profile_id
+                 ORDER BY m.sort_order, m.id',
+                [
+                    'package_id' => (int)($profile['rim_package_id'] ?? 0),
+                    'profile_id' => (int)$profile['id'],
+                ]
+            );
+        } else {
+            $mappings = \InterfaceDB::fetchAll(
+                'SELECT * FROM ct_computation_ixbrl_mappings
+                 WHERE profile_id = :profile_id ORDER BY sort_order, id',
+                ['profile_id' => (int)$profile['id']]
+            );
+        }
         if ($mappings === []) {
             return $this->mappingFailure('The active mapping profile contains no mappings.');
         }
@@ -111,6 +126,29 @@ final class CtFilingMappingService
                 continue;
             }
             $mapping['source_value'] = $value;
+            if (!$missing && $targetType === self::TARGET_RIM && (string)($mapping['value_type'] ?? '') === 'numeric') {
+                $rimDataType = trim((string)($mapping['rim_data_type'] ?? ''));
+                if ($rimDataType === '') {
+                    $errors[] = 'The RIM datatype is unresolved for numeric CT600 target: '
+                        . (string)($mapping['target_xpath'] ?? '(blank target)') . '.';
+                    continue;
+                }
+                if ($this->isRimMonetaryType($rimDataType)) {
+                    try {
+                        $mappedValue = (float)$value * (float)($mapping['sign_multiplier'] ?? 1);
+                        $mapping['serialized_value'] = (new Ct600MonetaryValuePolicyService())->serialize(
+                            $mappedValue,
+                            $rimDataType,
+                            (string)($mapping['target_xpath'] ?? '')
+                        );
+                        $mapping['policy_version'] = Ct600MonetaryValuePolicyService::POLICY_VERSION;
+                    } catch (\Throwable $exception) {
+                        $errors[] = 'CT600 monetary value could not be serialized for ' . $key . ': '
+                            . $exception->getMessage();
+                        continue;
+                    }
+                }
+            }
             $resolved[] = $mapping;
             $canonicalValues[$key] = $value;
         }
@@ -137,6 +175,9 @@ final class CtFilingMappingService
             'computation_run_id' => (int)$filingModel['run']['run_id'],
             'ct_period_id' => (int)($filingModel['model']['ct_period']['id'] ?? 0),
             'canonical_values' => $canonicalValues,
+            'monetary_policy_version' => $targetType === self::TARGET_RIM
+                ? Ct600MonetaryValuePolicyService::POLICY_VERSION
+                : null,
             'mappings' => $resolved,
         ];
     }
@@ -474,6 +515,14 @@ final class CtFilingMappingService
             'text' => is_string($value),
             default => false,
         };
+    }
+
+    private function isRimMonetaryType(string $type): bool
+    {
+        $type = strtolower($type);
+        return str_contains($type, 'monetary')
+            || str_contains($type, 'wholepound')
+            || str_contains($type, 'poundpence');
     }
 
     private function mappingFailure(string $message): array

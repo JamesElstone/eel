@@ -684,6 +684,7 @@ function dividend_service_manual_fixture(\eel_accounts\Service\DividendService $
     $nominalResult = $service->ensureDividendNominals($companyId);
     dividend_service_configure_payable_nominal($companyId, $nominalResult);
     dividend_service_add_profit_journal($companyId, $accountingPeriodId, $marker, $profit, $profitDate);
+    dividend_service_prepare_ct_periods($companyId, $accountingPeriodId);
     dividend_service_save_reserve_review($companyId, $accountingPeriodId, [], dividend_service_default_review_date($periodStart, $periodEnd));
 
     return [
@@ -818,6 +819,7 @@ function dividend_service_transaction_fixture(\eel_accounts\Service\DividendServ
     );
 
     dividend_service_add_profit_journal($companyId, $accountingPeriodId, $marker, max(0.0, abs($amount) + 100.00), '2022-11-01');
+    dividend_service_prepare_ct_periods($companyId, $accountingPeriodId);
     // Fixture profit for transaction dividend capacity.
     dividend_service_save_reserve_review($companyId, $accountingPeriodId, [], '2022-11-02');
 
@@ -893,6 +895,8 @@ function dividend_service_two_period_fixture(\eel_accounts\Service\DividendServi
     dividend_service_ensure_ct_rate_rules();
     dividend_service_add_profit_journal($companyId, $priorPeriodId, $marker . 'P', 100.00, '2021-11-01');
     dividend_service_add_profit_journal($companyId, $currentPeriodId, $marker . 'C', 100.00, '2022-11-01');
+    dividend_service_prepare_ct_periods($companyId, $priorPeriodId);
+    dividend_service_prepare_ct_periods($companyId, $currentPeriodId);
 
     return [
         'marker' => $marker,
@@ -918,6 +922,16 @@ function dividend_service_lock_prior_close(array $fixture): void
     if ((int)($fixture['current_period_id'] ?? 0) > 0) {
         dividend_service_save_reserve_review((int)$fixture['company_id'], (int)$fixture['current_period_id'], [], '2022-11-30');
     }
+}
+
+function dividend_service_prepare_ct_periods(int $companyId, int $accountingPeriodId): void
+{
+    $sync = (new \eel_accounts\Service\CorporationTaxPeriodService())
+        ->syncForAccountingPeriod($companyId, $accountingPeriodId);
+    if (empty($sync['success'])) {
+        throw new RuntimeException(implode(' ', (array)($sync['errors'] ?? ['Unable to create CT periods.'])));
+    }
+    test_confirm_ct_period_facts($companyId, $accountingPeriodId);
 }
 
 function dividend_service_configure_payable_nominal(int $companyId, array $nominalResult): void

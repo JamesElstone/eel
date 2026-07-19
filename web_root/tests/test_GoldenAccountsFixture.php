@@ -259,6 +259,12 @@ $harness->check(GoldenAccountsFixture::class, 'resolves declared services and re
     $resolver = new ReflectionMethod(CardRendererFramework::class, 'resolveCardService');
     $resolver->setAccessible(true);
     $request = new RequestFramework([], [], ['REQUEST_METHOD' => 'GET'], [], []);
+    $selectedCtPeriodId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM corporation_tax_periods
+         WHERE company_id = :company_id AND accounting_period_id = :period_id
+         ORDER BY sequence_no, id LIMIT 1',
+        ['company_id' => GoldenAccountsFixture::GOLDEN_COMPANY_ID, 'period_id' => 9114]
+    );
     $baseContext = [
         'company' => [
             'id' => GoldenAccountsFixture::GOLDEN_COMPANY_ID,
@@ -268,7 +274,7 @@ $harness->check(GoldenAccountsFixture::class, 'resolves declared services and re
             'accounting_period_end' => '2026-09-30',
             'period_start' => '2025-10-01',
             'period_end' => '2026-09-30',
-            'ct_period_id' => 0,
+            'ct_period_id' => $selectedCtPeriodId,
             'currency' => 'GBP',
             'settings' => [
                 'default_bank_nominal_id' => 91001,
@@ -283,6 +289,7 @@ $harness->check(GoldenAccountsFixture::class, 'resolves declared services and re
         'page' => ['page_id' => 'golden_test', 'page_cards' => $keys, 'csrf_token' => 'golden-test-token'],
         'selected_company_id' => GoldenAccountsFixture::GOLDEN_COMPANY_ID,
         'selected_accounting_period_id' => 9114,
+        'tax' => ['selected_ct_period_id' => $selectedCtPeriodId],
         'edit_account_id' => 9120,
         'account_id' => 9120,
         'statement_upload_id' => 9143,

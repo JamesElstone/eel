@@ -190,7 +190,7 @@ $harness->run(CardRendererFramework::class, function (GeneratedServiceClassTestH
             $harness->assertTrue(str_contains($disabledHtml, 'data-card-size-toggle'));
             $harness->assertSame(false, str_contains($disabledHtml, 'Card: service_metadata_test'));
         } finally {
-            file_put_contents($path, $original, LOCK_EX);
+            test_write_file_contents_locked($path, $original);
             AppConfigurationStore::config(true);
         }
     });
@@ -217,7 +217,7 @@ $harness->run(CardRendererFramework::class, function (GeneratedServiceClassTestH
             $harness->assertSame(false, str_contains($disabledHtml, '[s:'));
             $harness->assertSame(false, str_contains($disabledHtml, 'Using ' . CardRendererOptionalParamTestService::class));
         } finally {
-            file_put_contents($path, $original, LOCK_EX);
+            test_write_file_contents_locked($path, $original);
             AppConfigurationStore::config(true);
         }
     });

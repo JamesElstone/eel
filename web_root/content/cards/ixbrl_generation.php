@@ -53,6 +53,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             : '';
 
         return '<div class="settings-stack">
+            <h3>Accounts iXBRL</h3>
             <section class="panel-soft">
                 <div class="status-head">
                     <h3 class="card-title">Latest run</h3>
@@ -105,7 +106,58 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <button class="button" type="submit"' . ($canValidateExternal ? '' : ' disabled') . '>Run External Validation</button>
             </form>
+            ' . $this->computationPeriods($context, $companyId, $accountingPeriodId) . '
         </div>';
+    }
+
+    private function computationPeriods(array $context, int $companyId, int $accountingPeriodId): string
+    {
+        $periods = (array)($context['ixbrl']['computation_periods'] ?? []);
+        $html = '<h3>Computations iXBRL</h3>';
+        if ($periods === []) {
+            return $html . '<div class="notice warning">No CT periods are available for computations generation.</div>';
+        }
+        foreach ($periods as $item) {
+            $period = (array)($item['ct_period'] ?? []);
+            $status = (array)($item['status'] ?? []);
+            $run = (array)($status['run'] ?? []);
+            $ctPeriodId = (int)($period['ct_period_id'] ?? $period['id'] ?? 0);
+            $start = (string)($period['period_start'] ?? '');
+            $end = (string)($period['period_end'] ?? '');
+            $ready = !empty($status['ready']);
+            $fresh = !empty($status['fresh']);
+            $fileable = !empty($status['fileable']);
+            $hidden = HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+                . '<input type="hidden" name="card_action" value="Ixbrl">'
+                . '<input type="hidden" name="company_id" value="' . $companyId . '">'
+                . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
+                . '<input type="hidden" name="ct_period_id" value="' . $ctPeriodId . '">';
+            $html .= '<section class="panel-soft"><div class="status-head"><h4>CT period '
+                . HelperFramework::escape($start) . ' to ' . HelperFramework::escape($end) . '</h4><span class="badge '
+                . ($fileable ? 'success' : ($fresh ? 'warning' : 'muted')) . '">'
+                . ($fileable ? 'Filing ready' : ($fresh ? 'Generated, not fileable' : 'Not generated')) . '</span></div>'
+                . '<div class="summary-grid">'
+                . $this->metric('Artifact', (string)($run['generated_filename'] ?? 'Not generated'))
+                . $this->metric('Internal validation', $this->validationLabel((string)($run['validation_status'] ?? 'not_run')))
+                . $this->metric('Arelle validation', $this->validationLabel((string)($run['external_validation_status'] ?? 'not_run')))
+                . '</div>';
+            foreach (array_values(array_unique(array_merge((array)($status['errors'] ?? []), (array)($status['artifact_errors'] ?? [])))) as $error) {
+                $html .= '<div class="notice warning">' . HelperFramework::escape((string)$error) . '</div>';
+            }
+            $html .= '<div class="form-row-actions"><form method="post" action="?page=disclosures" data-ajax="true">' . $hidden
+                . '<input type="hidden" name="intent" value="generate_computation_ixbrl"><button class="button primary" type="submit"'
+                . ($ready ? '' : ' disabled') . '>Generate and validate</button></form>';
+            if ($fresh) {
+                $html .= '<form method="post" action="?page=disclosures" data-ajax="true">' . $hidden
+                    . '<input type="hidden" name="intent" value="validate_computation_ixbrl"><button class="button" type="submit">Validate again</button></form>';
+            }
+            if ($fileable) {
+                $html .= '<form method="post" action="?page=disclosures">' . $hidden
+                    . '<input type="hidden" name="intent" value="download_computation_ixbrl"><button class="button" type="submit">Download</button></form>';
+            }
+            $html .= '</div></section>';
+        }
+        return $html;
     }
 
     private function metric(string $label, string $value): string

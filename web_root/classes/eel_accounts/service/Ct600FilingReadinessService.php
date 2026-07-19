@@ -16,11 +16,13 @@ final class Ct600FilingReadinessService
      * @param null|\Closure(string, string): array<string, mixed> $rimResolver
      * @param null|\Closure(int, int): array<string, mixed> $accountsLocator
      * @param null|\Closure(string): array<string, mixed> $credentialChecker
+     * @param null|\Closure(int, int): array<string, mixed> $computationLocator
      */
     public function __construct(
         private readonly ?\Closure $rimResolver = null,
         private readonly ?\Closure $accountsLocator = null,
         private readonly ?\Closure $credentialChecker = null,
+        private readonly ?\Closure $computationLocator = null,
     ) {
     }
 
@@ -65,6 +67,19 @@ final class Ct600FilingReadinessService
         }
 
         $accounts = $this->locateAccounts($companyId, $accountingPeriodId);
+        $computations = [];
+        foreach ($ctPeriods as $period) {
+            $ctPeriodId = (int)($period['ct_period_id'] ?? $period['id'] ?? 0);
+            $artifact = $this->locateComputation($companyId, $ctPeriodId);
+            $computations[] = [
+                'ct_period_id' => $ctPeriodId,
+                'ok' => !empty($artifact['ok']),
+                'state' => (string)($artifact['state'] ?? 'missing'),
+                'run_id' => (int)($artifact['run_id'] ?? 0),
+                'errors' => array_values(array_map('strval', (array)($artifact['errors'] ?? []))),
+            ];
+        }
+        $computationsReady = $computations !== [] && !in_array(false, array_column($computations, 'ok'), true);
         $credentials = $this->checkCredentials('TEST');
 
         return [
@@ -86,14 +101,12 @@ final class Ct600FilingReadinessService
             ],
             'ixbrl' => [
                 'label' => 'Accounts and computations iXBRL artifacts',
-                'ready' => false,
+                'ready' => !empty($accounts['ok']) && $computationsReady,
                 'accounts_ready' => !empty($accounts['ok']),
                 'accounts' => $accounts,
-                'computations_ready' => false,
-                'detail' => (!empty($accounts['ok'])
-                    ? 'The accounts iXBRL artifact is ready. '
-                    : (string)(($accounts['errors'] ?? [])[0] ?? 'The accounts iXBRL artifact is not ready.') . ' ')
-                    . 'Computations iXBRL generation is not yet configured.',
+                'computations_ready' => $computationsReady,
+                'computations' => $computations,
+                'detail' => $this->ixbrlDetail($accounts, $computations, $computationsReady),
             ],
             'attachments' => [
                 'label' => 'CT600 attachment choices',
@@ -135,6 +148,32 @@ final class Ct600FilingReadinessService
             return ($this->credentialChecker)($mode);
         }
         return (new \eel_accounts\Client\HmrcApiClient())->credentialsConfigured($mode);
+    }
+
+    private function locateComputation(int $companyId, int $ctPeriodId): array
+    {
+        if ($this->computationLocator !== null) {
+            return ($this->computationLocator)($companyId, $ctPeriodId);
+        }
+        return (new HmrcSubmissionPackageService())->locateComputationsIxbrlForCtPeriod($companyId, $ctPeriodId);
+    }
+
+    private function ixbrlDetail(array $accounts, array $computations, bool $computationsReady): string
+    {
+        if (empty($accounts['ok'])) {
+            return (string)(($accounts['errors'] ?? [])[0] ?? 'The accounts iXBRL artifact is not ready.');
+        }
+        if (!$computationsReady) {
+            foreach ($computations as $computation) {
+                $error = trim((string)(($computation['errors'] ?? [])[0] ?? ''));
+                if ($error !== '') {
+                    return 'The accounts iXBRL artifact is ready. CT period '
+                        . (int)$computation['ct_period_id'] . ': ' . $error;
+                }
+            }
+            return 'The accounts iXBRL artifact is ready, but no filing-ready computations artifacts exist.';
+        }
+        return 'The accounts iXBRL artifact and every CT-period computations artifact are filing-ready.';
     }
 
     /** @param list<array<string, mixed>> $periods */

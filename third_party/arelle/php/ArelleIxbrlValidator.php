@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 final class ArelleIxbrlValidator
 {
+    private string $validatorVersion = '';
+
     public function __construct(
         private readonly ?string $configPath = null,
         private readonly ?string $rootPath = null,
@@ -31,6 +33,10 @@ final class ArelleIxbrlValidator
         $arelleCommand = trim((string)($config['arelle_cmd'] ?? ''));
         if ($arelleCommand === '' || !is_file($arelleCommand)) {
             return $this->result(false, 'not_configured', ['Configured Arelle command was not found.'], [], '', $started);
+        }
+        $this->validatorVersion = $this->detectVersion($arelleCommand);
+        if ($this->validatorVersion === '') {
+            return $this->result(false, 'error', ['The configured Arelle version could not be identified.'], [], '', $started);
         }
 
         $logsPath = trim((string)($config['logs_path'] ?? ''));
@@ -279,13 +285,24 @@ final class ArelleIxbrlValidator
         return array_values(array_unique($matches));
     }
 
+    private function detectVersion(string $arelleCommand): string
+    {
+        $execution = $this->runCommand(escapeshellarg($arelleCommand) . ' --version', 15);
+        if (!empty($execution['timed_out']) || (int)($execution['exit_code'] ?? 1) !== 0) {
+            return '';
+        }
+        $output = trim((string)($execution['stdout'] ?? '') . "\n" . (string)($execution['stderr'] ?? ''));
+        $line = trim((string)((preg_split('/\R/', $output) ?: [])[0] ?? ''));
+        return $line === '' ? '' : substr($line, 0, 100);
+    }
+
     private function result(bool $ok, string $status, array $errors, array $warnings, string $logPath, float $started): array
     {
         return [
             'ok' => $ok,
             'status' => $status,
             'validator' => 'arelle',
-            'version' => '',
+            'version' => $this->validatorVersion,
             'errors' => array_values($errors),
             'warnings' => array_values($warnings),
             'log_path' => $logPath,

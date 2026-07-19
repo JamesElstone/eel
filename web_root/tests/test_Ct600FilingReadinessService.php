@@ -12,7 +12,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 (new GeneratedServiceClassTestHarness())->run(
     \eel_accounts\Service\Ct600FilingReadinessService::class,
     static function (GeneratedServiceClassTestHarness $harness): void {
-        $harness->check(\eel_accounts\Service\Ct600FilingReadinessService::class, 'reports filing prerequisites without claiming unfinished workflows are ready', static function () use ($harness): void {
+        $harness->check(\eel_accounts\Service\Ct600FilingReadinessService::class, 'requires filing-ready accounts and every CT-period computation', static function () use ($harness): void {
             $service = new \eel_accounts\Service\Ct600FilingReadinessService(
                 static fn(string $start, string $end): array => [
                     'ok' => true,
@@ -26,7 +26,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'run_id' => 81,
                     'errors' => [],
                 ],
-                static fn(string $mode): array => ['ok' => true, 'errors' => []]
+                static fn(string $mode): array => ['ok' => true, 'errors' => []],
+                static fn(int $companyId, int $ctPeriodId): array => [
+                    'ok' => true, 'state' => 'ready', 'run_id' => 82, 'errors' => [],
+                ]
             );
 
             $summary = $service->fetch(
@@ -44,8 +47,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(true, (bool)($summary['rim']['ready'] ?? false));
             $harness->assertSame(true, (bool)($summary['identity']['ready'] ?? false));
             $harness->assertSame(true, (bool)($summary['ixbrl']['accounts_ready'] ?? false));
-            $harness->assertSame(false, (bool)($summary['ixbrl']['computations_ready'] ?? true));
-            $harness->assertSame(false, (bool)($summary['ixbrl']['ready'] ?? true));
+            $harness->assertSame(true, (bool)($summary['ixbrl']['computations_ready'] ?? false));
+            $harness->assertSame(true, (bool)($summary['ixbrl']['ready'] ?? false));
             $harness->assertSame(false, (bool)($summary['attachments']['ready'] ?? true));
             $harness->assertSame(false, (bool)($summary['approval_transport']['ready'] ?? true));
             $harness->assertSame(true, (bool)($summary['approval_transport']['credentials_ready'] ?? false));
@@ -71,6 +74,30 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(false, (bool)($summary['identity']['ready'] ?? true));
             $harness->assertTrue(str_contains((string)($summary['identity']['detail'] ?? ''), 'company number'));
             $harness->assertTrue(str_contains((string)($summary['identity']['detail'] ?? ''), 'Corporation Tax UTR'));
+        });
+
+        $harness->check(\eel_accounts\Service\Ct600FilingReadinessService::class, 'blocks a two-period return when either computation is not fileable', static function () use ($harness): void {
+            $service = new \eel_accounts\Service\Ct600FilingReadinessService(
+                static fn(string $start, string $end): array => ['ok' => true, 'errors' => []],
+                static fn(int $companyId, int $accountingPeriodId): array => ['ok' => true, 'errors' => []],
+                static fn(string $mode): array => ['ok' => true, 'errors' => []],
+                static fn(int $companyId, int $ctPeriodId): array => $ctPeriodId === 7
+                    ? ['ok' => false, 'state' => 'not_ready', 'errors' => ['External validation hash mismatch.']]
+                    : ['ok' => true, 'state' => 'ready', 'run_id' => 90, 'errors' => []]
+            );
+            $summary = $service->fetch(
+                49,
+                79,
+                [
+                    ['id' => 6, 'period_start' => '2023-01-01', 'period_end' => '2023-10-31'],
+                    ['id' => 7, 'period_start' => '2023-11-01', 'period_end' => '2023-12-31'],
+                ],
+                ['company_number' => '12345678'],
+                ['utr' => '1234567890']
+            );
+            $harness->assertSame(false, (bool)$summary['ixbrl']['computations_ready']);
+            $harness->assertSame(2, count((array)$summary['ixbrl']['computations']));
+            $harness->assertTrue(str_contains((string)$summary['ixbrl']['detail'], 'External validation hash mismatch'));
         });
     }
 );

@@ -33,7 +33,6 @@ final class _corporation_tax extends PageContextFramework
     {
         return [
             'tax_period_selector',
-            'tax_ct_period_return',
             'tax_corporation_tax_summary',
             'tax_taxable_profit_bridge',
             'tax_prepayment_treatment',
@@ -61,7 +60,6 @@ final class _corporation_tax extends PageContextFramework
                 'tab' => 'Corporation Tax',
                 'cards' => [
                     'tax_period_selector',
-                    'tax_ct_period_return',
                     'tax_corporation_tax_summary',
                     'tax_taxable_profit_bridge',
                     'tax_prepayment_treatment',

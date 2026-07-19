@@ -39,6 +39,7 @@ require_once PROJECT_ROOT . 'third_party' . DIRECTORY_SEPARATOR . 'arelle' . DIR
 
             $harness->assertSame(true, $result['ok'] ?? false);
             $harness->assertSame('passed', $result['status'] ?? '');
+            $harness->assertSame('Arelle test 1.0', $result['version'] ?? '');
             $harness->assertTrue(is_file((string)($result['log_path'] ?? '')));
         });
 
@@ -93,13 +94,13 @@ function arelleValidatorFixture(string $mode = 'success'): array
     file_put_contents($ixbrl, '<html xmlns="http://www.w3.org/1999/xhtml"><body>sample</body></html>');
 
     $cmd = $root . DIRECTORY_SEPARATOR . 'fake_arelle.bat';
-    $body = match ($mode) {
-        'failure' => "@echo off\r\necho ERROR validation failed\r\nexit /b 1\r\n",
-        'bracketed_exception' => "@echo off\r\necho [Exception] taxonomy load failed\r\nexit /b 0\r\n",
-        'bracketed_error' => "@echo off\r\necho [ERROR] invalid fact\r\nexit /b 0\r\n",
-        'bracketed_critical' => "@echo off\r\necho [critical] validation aborted\r\nexit /b 0\r\n",
-        'traceback' => "@echo off\r\necho Traceback:\r\nexit /b 0\r\n",
-        default => "@echo off\r\necho validation passed\r\nexit /b 0\r\n",
+    $body = "@echo off\r\nif \"%1\"==\"--version\" (\r\n  echo Arelle test 1.0\r\n  exit /b 0\r\n)\r\n" . match ($mode) {
+        'failure' => "echo ERROR validation failed\r\nexit /b 1\r\n",
+        'bracketed_exception' => "echo [Exception] taxonomy load failed\r\nexit /b 0\r\n",
+        'bracketed_error' => "echo [ERROR] invalid fact\r\nexit /b 0\r\n",
+        'bracketed_critical' => "echo [critical] validation aborted\r\nexit /b 0\r\n",
+        'traceback' => "echo Traceback:\r\nexit /b 0\r\n",
+        default => "echo validation passed\r\nexit /b 0\r\n",
     };
     file_put_contents($cmd, $body);
 

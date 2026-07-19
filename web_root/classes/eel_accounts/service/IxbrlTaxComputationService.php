@@ -7,6 +7,7 @@ namespace eel_accounts\Service;
 final class IxbrlTaxComputationService
 {
     private const SECTION_ORDER = [
+        'identity' => 0,
         'detailed_profit_and_loss' => 10,
         'accounts_adjustments' => 20,
         'capital_allowances' => 30,
@@ -26,9 +27,16 @@ final class IxbrlTaxComputationService
         if (!is_array($package)) {
             return $this->failRun($runId, 'No verified HMRC computation-taxonomy package with a combined CT/DPL entry point applies to this CT period.');
         }
+        $packageHash = (new HmrcCtComputationCatalogueService())->verifiedPackageHash($package);
+        if ($packageHash === null) {
+            return $this->failRun($runId, 'The applicable computation-taxonomy package is missing, changed or has no verified inventory hash.');
+        }
         $profile = (new CtFilingMappingService())->activeProfile(CtFilingMappingService::TARGET_COMPUTATION, (int)$package['id']);
         if (!is_array($profile)) {
             return $this->failRun($runId, 'No active, compatible database mapping profile exists for the applicable computation taxonomy.');
+        }
+        if (preg_match('/^[a-f0-9]{64}$/i', (string)($profile['content_hash'] ?? '')) !== 1) {
+            return $this->failRun($runId, 'The active computation mapping profile has no valid content hash.');
         }
         $mappedFacts = (new CtFilingMappingService())->mapFrozenFacts(
             CtFilingMappingService::TARGET_COMPUTATION,
@@ -50,7 +58,7 @@ final class IxbrlTaxComputationService
             if ($errors !== []) {
                 throw new \RuntimeException(implode(' ', $errors));
             }
-            $artifact = $generator->storeArtifact(
+            $artifact = $generator->storeImmutableArtifact(
                 $companyId,
                 (string)$model['model']['identity']['company_number'],
                 str_replace('-', '', (string)$run['period_start']),
@@ -61,11 +69,16 @@ final class IxbrlTaxComputationService
             );
             $external = (new IxbrlExternalValidationService())->validateArtifact((string)$artifact['path']);
             $externalStatus = (string)($external['status'] ?? 'error');
-            $fileable = $externalStatus === 'passed';
+            $validatorVersion = trim((string)($external['version'] ?? ''));
+            $validatedHash = strtolower(trim((string)($external['validated_sha256'] ?? '')));
+            $fileable = $externalStatus === 'passed'
+                && $validatorVersion !== ''
+                && hash_equals((string)$artifact['sha256'], $validatedHash);
             \InterfaceDB::prepareExecute(
                 'UPDATE corporation_tax_computation_runs SET
                    ixbrl_status = :ixbrl_status,
                    computation_taxonomy_package_id = :package_id,
+                   computation_taxonomy_package_hash = :package_hash,
                    ixbrl_mapping_profile_id = :profile_id,
                    ixbrl_mapping_hash = :profile_hash,
                    filing_basis_version = :basis_version,
@@ -76,6 +89,7 @@ final class IxbrlTaxComputationService
                    validation_status = :validation_status,
                    validation_errors_json = :validation_errors,
                    external_validator = :external_validator,
+                   external_validator_version = :external_validator_version,
                    external_validation_status = :external_status,
                    external_validation_errors_json = :external_errors,
                    external_validation_warnings_json = :external_warnings,
@@ -88,6 +102,7 @@ final class IxbrlTaxComputationService
                 [
                     'ixbrl_status' => $fileable ? 'validated' : 'validation_failed',
                     'package_id' => (int)$package['id'],
+                    'package_hash' => $packageHash,
                     'profile_id' => (int)$profile['id'],
                     'profile_hash' => (string)$profile['content_hash'],
                     'basis_version' => (string)$model['basis_version'],
@@ -98,6 +113,7 @@ final class IxbrlTaxComputationService
                     'validation_status' => 'passed',
                     'validation_errors' => json_encode([], JSON_UNESCAPED_SLASHES),
                     'external_validator' => 'arelle',
+                    'external_validator_version' => $validatorVersion !== '' ? $validatorVersion : null,
                     'external_status' => $externalStatus,
                     'external_errors' => json_encode((array)($external['errors'] ?? []), JSON_UNESCAPED_SLASHES),
                     'external_warnings' => json_encode((array)($external['warnings'] ?? []), JSON_UNESCAPED_SLASHES),
@@ -109,7 +125,9 @@ final class IxbrlTaxComputationService
             );
             return [
                 'success' => $fileable,
-                'errors' => $fileable ? [] : (array)($external['errors'] ?? ['Arelle validation did not pass.']),
+                'errors' => $fileable ? [] : ((array)($external['errors'] ?? []) !== []
+                    ? (array)$external['errors']
+                    : ['Arelle validation did not return a complete validator identity and matching artifact hash.']),
                 'warnings' => (array)($external['warnings'] ?? []),
                 'filename' => $artifact['filename'],
                 'path' => $artifact['path'],
@@ -117,7 +135,7 @@ final class IxbrlTaxComputationService
                 'run_id' => $runId,
             ];
         } catch (\Throwable $exception) {
-            if (is_array($artifact)) {
+            if (is_array($artifact) && !empty($artifact['created'])) {
                 $generator->removeManagedArtifact((string)$artifact['path'], $companyId);
             }
             return $this->failRun($runId, $exception->getMessage());
@@ -136,6 +154,9 @@ final class IxbrlTaxComputationService
             if (!is_array($package)) {
                 $errors[] = 'No verified computation taxonomy applies to this CT period.';
             } else {
+                if ((new HmrcCtComputationCatalogueService())->verifiedPackageHash($package) === null) {
+                    $errors[] = 'The applicable computation taxonomy inventory is missing or has changed.';
+                }
                 $profile = (new CtFilingMappingService())->activeProfile(CtFilingMappingService::TARGET_COMPUTATION, (int)$package['id']);
                 if (!is_array($profile)) {
                     $errors[] = 'No active compatible computation mapping profile applies.';
@@ -143,12 +164,17 @@ final class IxbrlTaxComputationService
             }
         }
         $stored = isset($run['run_id']) ? \InterfaceDB::fetchOne('SELECT * FROM corporation_tax_computation_runs WHERE id = :id', ['id' => (int)$run['run_id']]) : null;
-        $fresh = is_array($stored) && !empty($model['available'])
-            && hash_equals((string)($stored['filing_basis_hash'] ?? ''), (string)($model['basis_hash'] ?? ''))
-            && is_array($profile) && hash_equals((string)($stored['ixbrl_mapping_hash'] ?? ''), (string)($profile['content_hash'] ?? ''))
-            && is_file((string)($stored['generated_path'] ?? ''))
-            && hash_equals((string)($stored['output_sha256'] ?? ''), (string)hash_file('sha256', (string)$stored['generated_path']));
-        return ['ready' => $errors === [], 'errors' => array_values(array_unique($errors)), 'model' => $model, 'package' => $package, 'profile' => $profile, 'run' => $stored, 'fresh' => $fresh, 'fileable' => $fresh && (string)($stored['ixbrl_status'] ?? '') === 'validated'];
+        $artifactErrors = $this->artifactErrors($companyId, $accountingPeriodId, $ctPeriodId, $model, $package, $profile, $stored, false);
+        $fresh = $artifactErrors === [];
+        $fileableErrors = $fresh
+            ? $this->artifactErrors($companyId, $accountingPeriodId, $ctPeriodId, $model, $package, $profile, $stored, true)
+            : $artifactErrors;
+        return [
+            'ready' => $errors === [], 'errors' => array_values(array_unique($errors)),
+            'artifact_errors' => $artifactErrors, 'fileable_errors' => $fileableErrors,
+            'model' => $model, 'package' => $package, 'profile' => $profile,
+            'run' => $stored, 'fresh' => $fresh, 'fileable' => $fileableErrors === [],
+        ];
     }
 
     public function validateFilingExport(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
@@ -168,26 +194,31 @@ final class IxbrlTaxComputationService
             return $this->failRun((int)$run['id'], implode(' ', $internalErrors));
         }
         $external = (new IxbrlExternalValidationService())->validateArtifact($path);
-        $passed = (string)($external['status'] ?? '') === 'passed';
+        $validatorVersion = trim((string)($external['version'] ?? ''));
+        $validatedHash = strtolower(trim((string)($external['validated_sha256'] ?? '')));
+        $passed = (string)($external['status'] ?? '') === 'passed'
+            && $validatorVersion !== ''
+            && hash_equals(strtolower((string)$run['output_sha256']), $validatedHash);
         \InterfaceDB::prepareExecute(
             'UPDATE corporation_tax_computation_runs SET ixbrl_status = :ixbrl_status, validation_status = :validation_status,
              validation_errors_json = :validation_errors, external_validator = :validator,
+             external_validator_version = :validator_version,
              external_validation_status = :external_status, external_validation_errors_json = :external_errors,
              external_validation_warnings_json = :external_warnings, external_validation_log_path = :external_log,
              external_validated_at = CURRENT_TIMESTAMP, external_validated_sha256 = :validated_sha256 WHERE id = :id',
-            ['ixbrl_status' => $passed ? 'validated' : 'validation_failed', 'validation_status' => 'passed', 'validation_errors' => json_encode([], JSON_UNESCAPED_SLASHES), 'validator' => 'arelle', 'external_status' => (string)($external['status'] ?? 'error'), 'external_errors' => json_encode((array)($external['errors'] ?? []), JSON_UNESCAPED_SLASHES), 'external_warnings' => json_encode((array)($external['warnings'] ?? []), JSON_UNESCAPED_SLASHES), 'external_log' => ($external['log_path'] ?? null) ?: null, 'validated_sha256' => ($external['validated_sha256'] ?? null) ?: null, 'id' => (int)$run['id']]
+            ['ixbrl_status' => $passed ? 'validated' : 'validation_failed', 'validation_status' => 'passed', 'validation_errors' => json_encode([], JSON_UNESCAPED_SLASHES), 'validator' => 'arelle', 'validator_version' => $validatorVersion !== '' ? $validatorVersion : null, 'external_status' => (string)($external['status'] ?? 'error'), 'external_errors' => json_encode((array)($external['errors'] ?? []), JSON_UNESCAPED_SLASHES), 'external_warnings' => json_encode((array)($external['warnings'] ?? []), JSON_UNESCAPED_SLASHES), 'external_log' => ($external['log_path'] ?? null) ?: null, 'validated_sha256' => ($external['validated_sha256'] ?? null) ?: null, 'id' => (int)$run['id']]
         );
-        return ['success' => $passed, 'errors' => $passed ? [] : (array)($external['errors'] ?? ['Arelle validation did not pass.']), 'warnings' => (array)($external['warnings'] ?? [])];
+        return ['success' => $passed, 'errors' => $passed ? [] : ((array)($external['errors'] ?? []) !== [] ? (array)$external['errors'] : ['Arelle validation did not return a complete validator identity and matching artifact hash.']), 'warnings' => (array)($external['warnings'] ?? [])];
     }
 
     private function renderMappedDocument(IxbrlGeneratorService $generator, array $model, array $package, array $mappings): array
     {
         $run = (array)$model['run'];
-        usort($mappings, fn(array $a, array $b): int => [self::SECTION_ORDER[(string)$a['presentation_section']] ?? 999, (int)$a['sort_order'], (int)$a['id']] <=> [self::SECTION_ORDER[(string)$b['presentation_section']] ?? 999, (int)$b['sort_order'], (int)$b['id']]);
+        $report = $this->buildReportModel($model, $mappings);
         $contexts = [];
         $sections = [];
         $namespaces = [];
-        foreach ($mappings as $mapping) {
+        foreach ((array)$report['mappings'] as $mapping) {
             if (!array_key_exists('source_value', $mapping)) {
                 throw new \RuntimeException('A computation mapping was not resolved from the frozen filing model.');
             }
@@ -229,7 +260,7 @@ final class IxbrlTaxComputationService
         if ($sections === []) {
             throw new \RuntimeException('The active profile produced no Inline XBRL facts.');
         }
-        $body = '<main><h1>Corporation Tax computation</h1><p>CT period ' . $generator->escape((string)$run['period_start']) . ' to ' . $generator->escape((string)$run['period_end']) . '</p>';
+        $body = '<main><h1>' . $generator->escape((string)$report['title']) . '</h1><p>CT period ' . $generator->escape((string)$report['period_start']) . ' to ' . $generator->escape((string)$report['period_end']) . '</p>';
         foreach ($sections as $section => $rows) {
             $body .= '<section><h2>' . $generator->escape(ucwords(str_replace('_', ' ', $section))) . '</h2><table><tbody>' . implode('', $rows) . '</tbody></table></section>';
         }
@@ -247,6 +278,97 @@ final class IxbrlTaxComputationService
             'units' => [['id' => 'GBP', 'measure' => 'iso4217:GBP']],
             'body' => $body,
         ])];
+    }
+
+    /** Build the human-readable report solely from the verified frozen model and its resolved mappings. */
+    public function buildReportModel(array $model, array $mappings): array
+    {
+        if (empty($model['available']) && !isset($model['model']['identity'], $model['run'])) {
+            throw new \RuntimeException('A verified frozen CT-period filing model is required for the computation report.');
+        }
+        $run = (array)($model['run'] ?? []);
+        $start = trim((string)($run['period_start'] ?? ''));
+        $end = trim((string)($run['period_end'] ?? ''));
+        if ($start === '' || $end === '') {
+            throw new \RuntimeException('The computation report requires its CT-period start and end dates.');
+        }
+        $included = array_values(array_filter($mappings, static fn(array $mapping): bool => array_key_exists('source_value', $mapping)));
+        usort($included, fn(array $a, array $b): int => [self::SECTION_ORDER[(string)$a['presentation_section']] ?? 999, (int)$a['sort_order'], (int)$a['id']] <=> [self::SECTION_ORDER[(string)$b['presentation_section']] ?? 999, (int)$b['sort_order'], (int)$b['id']]);
+        if ($included === []) {
+            throw new \RuntimeException('The active profile produced no computation report facts.');
+        }
+        $sections = [];
+        foreach ($included as $mapping) {
+            $section = (string)$mapping['presentation_section'];
+            $sections[$section][] = [
+                'canonical_key' => (string)$mapping['canonical_key'],
+                'label' => (string)$mapping['presentation_label'],
+                'value' => $mapping['source_value'],
+            ];
+        }
+        return [
+            'title' => 'Corporation Tax computation',
+            'period_start' => $start,
+            'period_end' => $end,
+            'sections' => $sections,
+            'mappings' => $included,
+        ];
+    }
+
+    private function artifactErrors(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        array $model,
+        ?array $package,
+        ?array $profile,
+        ?array $stored,
+        bool $requireValidation
+    ): array {
+        $errors = [];
+        if (empty($model['available']) || !is_array($stored)) {
+            return ['No current frozen computation artifact exists for this CT period.'];
+        }
+        if ((int)($stored['company_id'] ?? 0) !== $companyId
+            || (int)($stored['accounting_period_id'] ?? 0) !== $accountingPeriodId
+            || (int)($stored['ct_period_id'] ?? 0) !== $ctPeriodId) {
+            $errors[] = 'The computation artifact identity does not match the requested CT period.';
+        }
+        if (!hash_equals((string)($stored['filing_basis_version'] ?? ''), (string)($model['basis_version'] ?? ''))
+            || !hash_equals((string)($stored['filing_basis_hash'] ?? ''), (string)($model['basis_hash'] ?? ''))) {
+            $errors[] = 'The computation artifact filing basis is stale.';
+        }
+        $packageHash = is_array($package) ? (new HmrcCtComputationCatalogueService())->verifiedPackageHash($package) : null;
+        if (!is_array($package) || $packageHash === null
+            || (int)($stored['computation_taxonomy_package_id'] ?? 0) !== (int)($package['id'] ?? 0)
+            || !hash_equals((string)($stored['computation_taxonomy_package_hash'] ?? ''), (string)$packageHash)) {
+            $errors[] = 'The computation taxonomy package is stale, changed or incompatible.';
+        }
+        if (!is_array($profile)
+            || (int)($stored['ixbrl_mapping_profile_id'] ?? 0) !== (int)($profile['id'] ?? 0)
+            || preg_match('/^[a-f0-9]{64}$/i', (string)($profile['content_hash'] ?? '')) !== 1
+            || preg_match('/^[a-f0-9]{64}$/i', (string)($stored['ixbrl_mapping_hash'] ?? '')) !== 1
+            || !hash_equals((string)($stored['ixbrl_mapping_hash'] ?? ''), (string)($profile['content_hash'] ?? ''))) {
+            $errors[] = 'The computation mapping profile is stale or changed.';
+        }
+        $path = trim((string)($stored['generated_path'] ?? ''));
+        $outputHash = strtolower(trim((string)($stored['output_sha256'] ?? '')));
+        $actualHash = $path !== '' && is_file($path) ? hash_file('sha256', $path) : false;
+        if (!is_string($actualHash) || preg_match('/^[a-f0-9]{64}$/', $outputHash) !== 1 || !hash_equals($outputHash, strtolower($actualHash))) {
+            $errors[] = 'The computation artifact file is missing or has changed.';
+        }
+        if ($requireValidation) {
+            $validatedHash = strtolower(trim((string)($stored['external_validated_sha256'] ?? '')));
+            if ((string)($stored['ixbrl_status'] ?? '') !== 'validated'
+                || (string)($stored['validation_status'] ?? '') !== 'passed'
+                || (string)($stored['external_validation_status'] ?? '') !== 'passed'
+                || trim((string)($stored['external_validator'] ?? '')) === ''
+                || trim((string)($stored['external_validator_version'] ?? '')) === ''
+                || $outputHash === '' || !hash_equals($outputHash, $validatedHash)) {
+                $errors[] = 'The computation artifact has not passed current external validation.';
+            }
+        }
+        return array_values(array_unique($errors));
     }
 
     private function failRun(int $runId, string $message): array

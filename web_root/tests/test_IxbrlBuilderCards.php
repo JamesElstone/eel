@@ -371,4 +371,26 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             @unlink($path);
         }
     });
+    $harness->check(_ixbrl_generationCard::class, 'shows each CT period and gates computation download on fileable status', static function () use ($harness, $card): void {
+        $context = [
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'ixbrl' => [
+                'readiness' => [],
+                'latest_run' => [],
+                'computation_periods' => [[
+                    'ct_period' => ['id' => 6, 'period_start' => '2025-01-01', 'period_end' => '2025-12-31'],
+                    'status' => ['ready' => true, 'fresh' => true, 'fileable' => false, 'run' => ['generated_filename' => 'draft.xhtml']],
+                ]],
+            ],
+        ];
+        $draft = $card->render($context);
+        $harness->assertTrue(str_contains($draft, 'CT period 2025-01-01 to 2025-12-31'));
+        $harness->assertTrue(str_contains($draft, 'generate_computation_ixbrl'));
+        $harness->assertTrue(str_contains($draft, 'validate_computation_ixbrl'));
+        $harness->assertFalse(str_contains($draft, 'download_computation_ixbrl'));
+
+        $context['ixbrl']['computation_periods'][0]['status']['fileable'] = true;
+        $ready = $card->render($context);
+        $harness->assertTrue(str_contains($ready, 'download_computation_ixbrl'));
+    });
 });

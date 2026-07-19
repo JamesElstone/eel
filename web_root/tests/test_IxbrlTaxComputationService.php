@@ -24,5 +24,17 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         ], ['combined_dpl_entry_point_path' => $schema, 'entry_point_path' => null], $mappings);
         $xhtml = (string)$rendered['xhtml'];
         $h->assertTrue(strpos($xhtml, 'Detailed Profit And Loss') < strpos($xhtml, 'Capital Allowances'));
+        $h->assertTrue(str_contains($xhtml, 'CT period 2025-01-01 to 2025-12-31'));
+    });
+    $h->check($service::class, 'requires both CT-period dates in the human-readable report model', static function () use ($h, $service): void {
+        try {
+            $service->buildReportModel(
+                ['available' => true, 'run' => ['period_start' => '2025-01-01'], 'model' => ['identity' => ['company_number' => '01234567']]],
+                [['id' => 1, 'canonical_key' => 'profit', 'presentation_section' => 'detailed_profit_and_loss', 'presentation_label' => 'Profit', 'sort_order' => 1, 'source_value' => 100.0]]
+            );
+            $h->assertTrue(false);
+        } catch (RuntimeException $exception) {
+            $h->assertTrue(str_contains($exception->getMessage(), 'start and end dates'));
+        }
     });
 });

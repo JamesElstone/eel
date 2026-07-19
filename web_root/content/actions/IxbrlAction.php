@@ -14,6 +14,7 @@ final class IxbrlAction implements ActionInterfaceFramework
         $intent = trim((string)$request->input('intent', $request->input('global_action', '')));
         $companyId = (int)$request->input('company_id', 0);
         $accountingPeriodId = (int)$request->input('accounting_period_id', 0);
+        $ctPeriodId = (int)$request->input('ct_period_id', 0);
         $changedFacts = ['ixbrl.readiness', 'ixbrl.disclosures', 'ixbrl.trial.balance', 'ixbrl.accounts.mapping', 'ixbrl.facts.preview', 'ixbrl.generation', 'ct.filing', 'page.context'];
 
         $contextError = $this->accountingContextError($companyId, $accountingPeriodId);
@@ -24,6 +25,9 @@ final class IxbrlAction implements ActionInterfaceFramework
         try {
             if ($intent === 'download_ixbrl_filing') {
                 $this->downloadFiling($companyId, $accountingPeriodId);
+            }
+            if ($intent === 'download_computation_ixbrl') {
+                $this->downloadComputation($companyId, $accountingPeriodId, $ctPeriodId);
             }
             if ($intent === 'save_ixbrl_disclosures') {
                 $result = $this->saveDisclosures($request, $companyId, $accountingPeriodId);
@@ -92,19 +96,25 @@ final class IxbrlAction implements ActionInterfaceFramework
                 );
             }
 
-            $readiness = (new \eel_accounts\Service\IxbrlReadinessService())->getReadiness($companyId, $accountingPeriodId);
-            $result = match ($intent) {
-                'build_ixbrl_facts' => !empty($readiness['can_build_facts'])
-                    ? $this->buildFacts($companyId, $accountingPeriodId)
-                    : ['success' => false, 'errors' => (array)($readiness['blocking_errors'] ?? ['iXBRL facts cannot be built yet.'])],
-                'generate_ixbrl_preview' => !empty($readiness['can_generate'])
-                    ? $this->generatePreview($companyId, $accountingPeriodId)
-                    : ['success' => false, 'errors' => (array)($readiness['generation_errors'] ?? ['The iXBRL filing export cannot be generated yet.'])],
-                'validate_ixbrl_external' => !empty($readiness['can_validate'])
-                    ? $this->validateExternal($companyId, $accountingPeriodId)
-                    : ['success' => false, 'errors' => ['Generate a current iXBRL export before running Arelle validation.']],
-                default => ['success' => false, 'errors' => ['Unknown iXBRL builder action.']],
-            };
+            if (in_array($intent, ['generate_computation_ixbrl', 'validate_computation_ixbrl'], true)) {
+                $result = $intent === 'generate_computation_ixbrl'
+                    ? $this->generateComputation($companyId, $accountingPeriodId, $ctPeriodId)
+                    : $this->validateComputation($companyId, $accountingPeriodId, $ctPeriodId);
+            } else {
+                $readiness = (new \eel_accounts\Service\IxbrlReadinessService())->getReadiness($companyId, $accountingPeriodId);
+                $result = match ($intent) {
+                    'build_ixbrl_facts' => !empty($readiness['can_build_facts'])
+                        ? $this->buildFacts($companyId, $accountingPeriodId)
+                        : ['success' => false, 'errors' => (array)($readiness['blocking_errors'] ?? ['iXBRL facts cannot be built yet.'])],
+                    'generate_ixbrl_preview' => !empty($readiness['can_generate'])
+                        ? $this->generatePreview($companyId, $accountingPeriodId)
+                        : ['success' => false, 'errors' => (array)($readiness['generation_errors'] ?? ['The iXBRL filing export cannot be generated yet.'])],
+                    'validate_ixbrl_external' => !empty($readiness['can_validate'])
+                        ? $this->validateExternal($companyId, $accountingPeriodId)
+                        : ['success' => false, 'errors' => ['Generate a current iXBRL export before running Arelle validation.']],
+                    default => ['success' => false, 'errors' => ['Unknown iXBRL builder action.']],
+                };
+            }
         } catch (Throwable $exception) {
             $result = ['success' => false, 'errors' => [$exception->getMessage()]];
         }
@@ -224,6 +234,56 @@ final class IxbrlAction implements ActionInterfaceFramework
         if (is_int($size)) {
             header('Content-Length: ' . $size);
         }
+        readfile($path);
+        exit;
+    }
+
+    private function generateComputation(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
+    {
+        $result = (new \eel_accounts\Service\IxbrlTaxComputationService())
+            ->generateFilingExport($companyId, $accountingPeriodId, $ctPeriodId);
+        if (!empty($result['success'])) {
+            $result['messages'] = ['Computations iXBRL generated and externally validated for CT period #' . $ctPeriodId . '.'];
+        }
+        return $result;
+    }
+
+    private function validateComputation(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
+    {
+        $result = (new \eel_accounts\Service\IxbrlTaxComputationService())
+            ->validateFilingExport($companyId, $accountingPeriodId, $ctPeriodId);
+        if (!empty($result['success'])) {
+            $result['messages'] = ['Computations iXBRL external validation passed for CT period #' . $ctPeriodId . '.'];
+        }
+        return $result;
+    }
+
+    private function downloadComputation(int $companyId, int $accountingPeriodId, int $ctPeriodId): never
+    {
+        $context = new \eel_accounts\Service\AccountingContextService();
+        if ($companyId <= 0 || $companyId !== $context->authCompanyId()
+            || $accountingPeriodId <= 0 || $accountingPeriodId !== $context->authAccountingPeriodId()) {
+            header('Content-Type: text/plain; charset=utf-8', true, 403);
+            echo 'The submitted computation does not match the authenticated accounting context.';
+            exit;
+        }
+        $artifact = (new \eel_accounts\Service\HmrcSubmissionPackageService())
+            ->locateComputationsIxbrlForCtPeriod($companyId, $ctPeriodId);
+        if (empty($artifact['ok']) || (string)($artifact['state'] ?? '') !== 'ready') {
+            header('Content-Type: text/plain; charset=utf-8', true, 409);
+            echo (string)(($artifact['errors'] ?? [])[0] ?? 'The filing-ready computations iXBRL artifact is unavailable.');
+            exit;
+        }
+        $path = (string)$artifact['path'];
+        if (!is_file($path)) {
+            header('Content-Type: text/plain; charset=utf-8', true, 404);
+            echo 'The filing-ready computations iXBRL artifact was not found.';
+            exit;
+        }
+        header('Content-Type: application/xhtml+xml; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . str_replace('"', '', basename((string)$artifact['filename'])) . '"');
+        $size = filesize($path);
+        if (is_int($size)) { header('Content-Length: ' . $size); }
         readfile($path);
         exit;
     }

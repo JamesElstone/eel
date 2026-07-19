@@ -115,14 +115,31 @@ final class _disclosures extends PageContextFramework
         try {
             $periodProjection = (new \eel_accounts\Service\CorporationTaxPeriodService())
                 ->projectForAccountingPeriod($companyId, $accountingPeriodId);
+            $ctPeriods = array_values(array_filter(
+                (array)($periodProjection['periods'] ?? []),
+                static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'
+            ));
+            $computationPeriods = [];
+            $computationService = new \eel_accounts\Service\IxbrlTaxComputationService();
+            foreach ($ctPeriods as $period) {
+                $ctPeriodId = (int)($period['ct_period_id'] ?? $period['id'] ?? 0);
+                $computationPeriods[] = [
+                    'ct_period' => $period,
+                    'status' => $computationService->status($companyId, $accountingPeriodId, $ctPeriodId),
+                ];
+            }
             $filingReadiness = (new \eel_accounts\Service\Ct600FilingReadinessService())->fetch(
                 $companyId,
                 $accountingPeriodId,
-                (array)($periodProjection['periods'] ?? []),
+                $ctPeriods,
                 $company,
                 $companyId > 0 ? (new \eel_accounts\Store\CompanySettingsStore($companyId))->all() : []
             );
         } catch (Throwable $exception) {
+            $computationPeriods = [[
+                'ct_period' => [],
+                'status' => ['ready' => false, 'fresh' => false, 'fileable' => false, 'errors' => [$exception->getMessage()]],
+            ]];
             $filingReadiness = [[
                 'label' => 'CT600 filing prerequisites',
                 'ready' => false,
@@ -138,6 +155,7 @@ final class _disclosures extends PageContextFramework
                 'accounts_mapping' => $accountsMapping,
                 'latest_run' => $latestRun,
                 'facts' => $facts,
+                'computation_periods' => $computationPeriods ?? [],
             ],
         ];
     }

@@ -114,6 +114,49 @@ final class IxbrlGeneratorService
         return ['directory' => $directory, 'filename' => $filename, 'path' => $path, 'sha256' => (string)hash_file('sha256', $path)];
     }
 
+    /** Store a content-addressed artifact without ever replacing an existing file. */
+    public function storeImmutableArtifact(
+        int $companyId,
+        string $companyNumber,
+        string $periodStart,
+        string $periodEnd,
+        string $type,
+        int $runId,
+        string $xhtml
+    ): array {
+        $directory = rtrim((new FileCheckService())->getIxbrlDirectory($companyId), '\\/');
+        if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
+            throw new \RuntimeException('Could not create the company iXBRL directory.');
+        }
+        $sha256 = hash('sha256', $xhtml);
+        $base = pathinfo($this->artifactFilename($companyNumber, $periodStart, $periodEnd, $type, $runId), PATHINFO_FILENAME);
+        $filename = $base . '_' . substr($sha256, 0, 16) . '.xhtml';
+        $path = $directory . DIRECTORY_SEPARATOR . $filename;
+        if (is_file($path)) {
+            $existingHash = hash_file('sha256', $path);
+            if (!is_string($existingHash) || !hash_equals($sha256, strtolower($existingHash))) {
+                throw new \RuntimeException('An immutable iXBRL artifact filename is already occupied by different content.');
+            }
+            return ['directory' => $directory, 'filename' => $filename, 'path' => $path, 'sha256' => $sha256, 'created' => false];
+        }
+        $handle = @fopen($path, 'x+b');
+        if ($handle === false) {
+            throw new \RuntimeException('Could not create immutable iXBRL export file.');
+        }
+        $created = true;
+        try {
+            if (!flock($handle, LOCK_EX) || fwrite($handle, $xhtml) !== strlen($xhtml) || !fflush($handle)) {
+                throw new \RuntimeException('Could not write immutable iXBRL export file.');
+            }
+        } catch (\Throwable $exception) {
+            fclose($handle);
+            @unlink($path);
+            throw $exception;
+        }
+        fclose($handle);
+        return ['directory' => $directory, 'filename' => $filename, 'path' => $path, 'sha256' => $sha256, 'created' => $created];
+    }
+
     public function artifactFilename(string $companyNumber, string $periodStart, string $periodEnd, string $type, int $runId): string
     {
         if (!in_array($type, ['accounting', 'tax'], true) || $runId <= 0) {

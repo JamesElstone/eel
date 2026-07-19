@@ -37,6 +37,34 @@ final class HmrcCtComputationCatalogueService
         return is_array($row) ? $row : null;
     }
 
+    /** Return the verified catalogue hash, or null when any package file has changed. */
+    public function verifiedPackageHash(array $package): ?string
+    {
+        $packageId = (int)($package['id'] ?? 0);
+        $expected = strtolower(trim((string)($package['sha256'] ?? '')));
+        if ($packageId <= 0 || preg_match('/^[a-f0-9]{64}$/', $expected) !== 1) {
+            return null;
+        }
+        $files = \InterfaceDB::fetchAll(
+            'SELECT archive_path, extracted_path, file_size, sha256
+             FROM hmrc_ct_computation_files WHERE package_id = :package_id ORDER BY archive_path',
+            ['package_id' => $packageId]
+        );
+        if ($files === []) {
+            return null;
+        }
+        foreach ($files as $file) {
+            $path = (string)($file['extracted_path'] ?? '');
+            $recorded = strtolower((string)($file['sha256'] ?? ''));
+            $actual = $path !== '' && is_file($path) ? hash_file('sha256', $path) : false;
+            if (!is_string($actual) || !hash_equals($recorded, strtolower($actual))) {
+                return null;
+            }
+        }
+        $actual = $this->inventoryHash($files);
+        return hash_equals($expected, $actual) ? $actual : null;
+    }
+
     public function savePackage(array $input): int
     {
         $id = max(0, (int)($input['id'] ?? 0));
@@ -121,8 +149,9 @@ final class HmrcCtComputationCatalogueService
                 );
             }
             \InterfaceDB::prepareExecute(
-                'UPDATE hmrc_ct_computation_packages SET local_path = :path, package_state = :state, verification_error = NULL, checked_at = CURRENT_TIMESTAMP WHERE id = :id',
-                ['path' => $root, 'state' => 'downloaded', 'id' => $packageId]
+                'UPDATE hmrc_ct_computation_packages SET local_path = :path, sha256 = :sha256,
+                 package_state = :state, verification_error = NULL, checked_at = CURRENT_TIMESTAMP WHERE id = :id',
+                ['path' => $root, 'sha256' => $this->inventoryHash($files), 'state' => 'downloaded', 'id' => $packageId]
             );
             \InterfaceDB::commit();
         } catch (\Throwable $exception) {
@@ -183,5 +212,19 @@ final class HmrcCtComputationCatalogueService
     {
         $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $value);
         return $date instanceof \DateTimeImmutable && $date->format('Y-m-d') === $value;
+    }
+
+    private function inventoryHash(array $files): string
+    {
+        usort($files, static fn(array $left, array $right): int => (string)$left['archive_path'] <=> (string)$right['archive_path']);
+        $inventory = array_map(
+            static fn(array $file): array => [
+                'archive_path' => (string)$file['archive_path'],
+                'file_size' => (int)$file['file_size'],
+                'sha256' => strtolower((string)$file['sha256']),
+            ],
+            $files
+        );
+        return hash('sha256', (string)json_encode($inventory, JSON_UNESCAPED_SLASHES));
     }
 }

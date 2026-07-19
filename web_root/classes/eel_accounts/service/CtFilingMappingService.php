@@ -342,13 +342,60 @@ final class CtFilingMappingService
             $errors[] = count($unmappedRequired) . ' required package target(s) are unmapped.';
         }
         $sourceRows = \InterfaceDB::tableExists('ct_filing_canonical_sources') ? \InterfaceDB::fetchAll(
-            'SELECT canonical_key FROM ct_filing_canonical_sources WHERE target_scope IN (:both, :target) AND is_required = 1',
+            'SELECT canonical_key, value_type, source_section, is_required
+             FROM ct_filing_canonical_sources WHERE target_scope IN (:both, :target)',
             ['both' => 'both', 'target' => $target]
         ) : [];
         $mappedSources = array_map(static fn(array $mapping): string => (string)$mapping['canonical_key'], $mappings);
-        $unmappedSources = array_values(array_filter(array_map(static fn(array $row): string => (string)$row['canonical_key'], $sourceRows), static fn(string $key): bool => !in_array($key, $mappedSources, true)));
+        $sourceInventory = [];
+        foreach ($sourceRows as $sourceRow) {
+            $sourceInventory[(string)$sourceRow['canonical_key']] = $sourceRow;
+        }
+        $unmappedSources = array_values(array_filter(
+            array_map(static fn(array $row): string => (string)$row['canonical_key'], array_filter($sourceRows, static fn(array $row): bool => !empty($row['is_required']))),
+            static fn(string $key): bool => !in_array($key, $mappedSources, true)
+        ));
         if ($unmappedSources !== []) { $errors[] = count($unmappedSources) . ' required canonical source(s) are unmapped.'; }
-        return ['errors' => $errors, 'missing_targets' => $missingTargets, 'unmapped_required_targets' => $unmappedRequired, 'unmapped_canonical_sources' => $unmappedSources, 'mapping_count' => count($mappings), 'inventory_count' => count($inventory)];
+        $invalidSources = [];
+        $invalidRequiredPolicies = [];
+        $invalidTypes = [];
+        $invalidSections = [];
+        foreach ($mappings as $mapping) {
+            $key = (string)$mapping['canonical_key'];
+            $source = $sourceInventory[$key] ?? null;
+            if (!is_array($source)) {
+                $invalidSources[] = $key;
+                continue;
+            }
+            if ((string)$mapping['value_type'] !== (string)$source['value_type']) {
+                $invalidTypes[] = $key;
+            }
+            if (!empty($source['is_required'])
+                && empty($mapping['is_required'])
+                && (string)($mapping['null_policy'] ?? '') !== 'error') {
+                $invalidRequiredPolicies[] = $key;
+            }
+            if ($target === self::TARGET_COMPUTATION
+                && (string)($mapping['presentation_section'] ?? '') !== (string)$source['source_section']) {
+                $invalidSections[] = $key;
+            }
+        }
+        if ($invalidSources !== []) { $errors[] = count(array_unique($invalidSources)) . ' mapping source(s) are not in the canonical filing inventory.'; }
+        if ($invalidRequiredPolicies !== []) { $errors[] = count(array_unique($invalidRequiredPolicies)) . ' required canonical source mapping(s) do not fail closed when absent.'; }
+        if ($invalidTypes !== []) { $errors[] = count(array_unique($invalidTypes)) . ' mapping value type(s) disagree with the canonical filing inventory.'; }
+        if ($invalidSections !== []) { $errors[] = count(array_unique($invalidSections)) . ' computation mapping section(s) disagree with the canonical report model.'; }
+        return [
+            'errors' => $errors,
+            'missing_targets' => $missingTargets,
+            'unmapped_required_targets' => $unmappedRequired,
+            'unmapped_canonical_sources' => $unmappedSources,
+            'invalid_canonical_sources' => array_values(array_unique($invalidSources)),
+            'invalid_required_policies' => array_values(array_unique($invalidRequiredPolicies)),
+            'invalid_value_types' => array_values(array_unique($invalidTypes)),
+            'invalid_presentation_sections' => array_values(array_unique($invalidSections)),
+            'mapping_count' => count($mappings),
+            'inventory_count' => count($inventory),
+        ];
     }
 
     private function copyMappings(string $target, int $sourceId, int $profileId, int $packageId): void

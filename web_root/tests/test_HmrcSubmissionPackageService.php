@@ -9,14 +9,16 @@ require_once dirname(__DIR__) . DIRECTORY_SEPARATOR . 'classes' . DIRECTORY_SEPA
 
 $service = new \eel_accounts\Service\HmrcSubmissionPackageService();
 foreach ([
-    $service->locateComputationsIxbrl(49, 79),
-    $service->locateComputationsIxbrlForCtPeriod(49, 6),
     $service->buildSubmissionEnvelope(1),
 ] as $result) {
     if (($result['ok'] ?? true) !== false
         || ($result['errors'][0] ?? '') !== 'CT600 submission is not implemented.') {
         throw new RuntimeException('CT600 package operation did not fail closed.');
     }
+}
+$invalid = $service->locateComputationsIxbrlForCtPeriod(0, 0);
+if (($invalid['ok'] ?? true) !== false || ($invalid['state'] ?? '') !== 'missing') {
+    throw new RuntimeException('Invalid computations artifact lookup did not fail closed.');
 }
 if ($service->hashPackage(1) !== '') {
     throw new RuntimeException('Disabled CT600 package hashing returned a value.');

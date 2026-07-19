@@ -82,14 +82,12 @@ final class _not_an_assetCard extends CardBaseFramework
         );
         $acknowledgement = $review['acknowledgement'] ?? null;
 
-        return $tableHtml . (!empty($data['rows']) || is_array($acknowledgement)
-            ? $this->yearEndAcknowledgementHtml(
-                is_array($acknowledgement) ? $acknowledgement : null,
-                $companyId,
-                $accountingPeriodId,
-                $dataEntry
-            )
-            : '');
+        return $tableHtml . $this->yearEndAcknowledgementHtml(
+            is_array($acknowledgement) ? $acknowledgement : null,
+            $companyId,
+            $accountingPeriodId,
+            $dataEntry
+        );
     }
 
     private function yearEndAcknowledgementHtml(

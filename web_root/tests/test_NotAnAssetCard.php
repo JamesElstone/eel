@@ -219,6 +219,38 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
         $harness->assertTrue(str_contains($html, 'Set the Tools &amp; Small Equipment nominal on Company Nominals'));
     });
 
+    $harness->check(_not_an_assetCard::class, 'renders Year End confirmation when the configured review has no candidates', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => [
+                'id' => 49,
+                'accounting_period_id' => 79,
+                'settings' => [
+                    'tools_small_equipment_nominal_id' => 16,
+                    'potential_asset_threshold' => 100,
+                    'default_currency_symbol' => '£',
+                ],
+            ],
+            'services' => [
+                'nonAssetReview' => [
+                    'candidates' => [
+                        'available' => true,
+                        'threshold' => 100,
+                        'rows' => [],
+                    ],
+                    'data_entry' => ['permitted' => true, 'is_locked' => false, 'reason_code' => '', 'reason' => ''],
+                    'acknowledgement' => null,
+                ],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'No Tools &amp; Small Equipment items are over the selected threshold.'));
+        $harness->assertTrue(str_contains($html, 'Year End Confirmation'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="acknowledge_review_check"'));
+        $harness->assertTrue(str_contains($html, 'name="check_code" value="fixed_asset_review_placeholder"'));
+        $harness->assertTrue(str_contains($html, 'name="approval_confirmed" value="1" required data-year-end-ack-checkbox'));
+        $harness->assertTrue(str_contains($html, '>Approve for Year End</button>'));
+    });
+
     $harness->check(_not_an_assetCard::class, 'keeps locked periods viewable while removing mutation and approval controls', static function () use ($harness, $card): void {
         $context = [
             'company' => [

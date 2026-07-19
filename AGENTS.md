@@ -114,3 +114,5 @@ Downstream projects can add `web_root/css/project.css` for project-specific styl
 Downstream projects can add `web_root/js/project.js` for project-specific browser JavaScript. eelKit's `web_root/index.php` checks for that file and adds it to HTML responses after the eelKit JavaScript when present.
 
 If a downstream project needs styling that should be reusable across eelKit applications, propose the change for eelKit instead of duplicating or overriding framework styles downstream.
+
+## /notes is not under git control, dont add any files under /notes to git.

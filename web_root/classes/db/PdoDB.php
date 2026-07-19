@@ -589,7 +589,15 @@ final class PdoDB
         }
 
         try {
-            (new LogStore())->appendLine($logFile, self::formatLogLine($sql, $params));
+            (new LogStore())->appendBufferedLine($logFile, self::formatLogLine($sql, $params));
+        } catch (Throwable) {
+            return;
+        }
+    }
+
+    public static function flushSqlLogs(): void {
+        try {
+            (new LogStore())->flush();
         } catch (Throwable) {
             return;
         }
@@ -597,7 +605,7 @@ final class PdoDB
 
     private static function formatLogLine(string $sql, ?array $params = null): string {
         return self::toCsvLine([
-            date('Y-m-d H:i:s'),
+            (new DateTimeImmutable('now'))->format('Y-m-d H:i:s.u'),
             $sql,
             self::stringifyParams($params),
         ]);

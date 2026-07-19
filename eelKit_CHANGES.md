@@ -1,5 +1,17 @@
 # eelKit Changes
 
+## Database metadata and SQL runtime efficiency
+
+Feature name: `database_runtime_efficiency`.
+
+`InterfaceDB::tableExists()` and `InterfaceDB::columnExists()` now cache definitive metadata results per PDO connection for the current request. The public `InterfaceDB::clearMetadataCache()` method supports tests and long-running workers, while successful schema-changing statements issued through `InterfaceDB` invalidate the cache automatically. Schema-qualified SQLite metadata checks are supported through the same path.
+
+`AppService` now resolves nullable concrete class constructor dependencies when they do not declare an explicit default. Explicit defaults remain authoritative; nullable interfaces and ambiguous unions are not guessed or fabricated.
+
+SQL logging now buffers SQL lines and flushes them in batches and during normal shutdown instead of calling `fflush()` for every query. Long-running workers can call `PdoDB::flushSqlLogs()` explicitly. SQL log timestamps now include microseconds in the existing CSV field layout.
+
+Downstream domain caches remain independent and should be retained. These caches avoid repeated domain calculations and are not replaced by the framework's request-local database metadata cache.
+
 ## On-demand tab cards
 
 Feature name: `on_demand_tab_cards`.

@@ -116,7 +116,6 @@ final class YearEndLockService
                 'accounting_period_id' => $accountingPeriodId,
             ]
         );
-
         $this->writeAuditLog(
             $companyId,
             $accountingPeriodId,
@@ -206,6 +205,18 @@ final class YearEndLockService
              WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
             ['updated_at' => $now, 'company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
         );
+        if (\InterfaceDB::tableExists('corporation_tax_computation_runs')) {
+            try {
+                \InterfaceDB::execute(
+                    'UPDATE corporation_tax_computation_runs SET ixbrl_status = :status
+                     WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id
+                       AND generated_path IS NOT NULL',
+                    ['status' => 'stale', 'company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+                );
+            } catch (\Throwable) {
+                // Deployments apply the CT iXBRL migration independently; runtime freshness still fails closed.
+            }
+        }
 
         $review = $this->fetchReview($companyId, $accountingPeriodId);
         $this->writeAuditLog($companyId, $accountingPeriodId, 'unlock', $changedBy, $existing, $review, $notes);

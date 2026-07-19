@@ -23,9 +23,10 @@ final class GoldenCardComparisonRegistry
             'prepayments' => ['prepayments_review', 'year_end_prepayment_approvals'],
             'profit_loss' => ['pl_summary', 'pl_monthly_trend', 'pl_income_breakdown', 'pl_expense_breakdown', 'pl_net_profit_bridge', 'pl_source_coverage', 'reserve_review', 'year_end_retained_earnings'],
             'source_accounts' => ['banking_accounts', 'banking_reconciliation', 'banking_account_form', 'statement_field_mapping'],
-            'corporation_tax' => ['tax_period_selector', 'tax_corporation_tax_summary', 'tax_taxable_profit_bridge', 'tax_prepayment_treatment', 'tax_disallowable_add_backs', 'tax_capital_add_backs', 'tax_depreciation_add_back', 'tax_capital_allowances_summary', 'tax_aia_allocation', 'tax_main_rate_pool', 'tax_special_rate_pool', 'tax_car_co2_treatment', 'tax_disposals_balancing', 'tax_losses', 'tax_rate_bands', 'tax_warnings', 'tax_ct_period_facts', 'year_end_tax_readiness'],
+            'corporation_tax' => ['tax_period_selector', 'tax_ct_period_return', 'tax_corporation_tax_summary', 'tax_taxable_profit_bridge', 'tax_prepayment_treatment', 'tax_disallowable_add_backs', 'tax_capital_add_backs', 'tax_depreciation_add_back', 'tax_capital_allowances_summary', 'tax_aia_allocation', 'tax_main_rate_pool', 'tax_special_rate_pool', 'tax_car_co2_treatment', 'tax_disposals_balancing', 'tax_losses', 'tax_rate_bands', 'tax_warnings', 'tax_ct_period_facts', 'year_end_tax_readiness'],
             'tax_audit' => ['tax_audit_areas', 'tax_audit_detail'],
-            'tax_artifacts' => ['tax_rates_ct', 'tax_rates_ct600_rim', 'tax_rates_vat', 'tax_thresholds_vat', 'tax_treatment_rules'],
+            'tax_artifacts' => ['tax_rates_ct', 'tax_rates_ct600_rim', 'tax_rates_ct_computation_taxonomy', 'tax_rates_vat', 'tax_thresholds_vat', 'tax_treatment_rules'],
+            'ct_filing_mappings' => ['tax_ct600_rim_mappings', 'tax_ct_computation_mappings'],
             'transactions' => ['transactions_monthly_status', 'transaction_category_audit_log', 'transactions_imported', 'transaction_search', 'transactions_rules', 'transactions_rule_form', 'nominals_add_account', 'year_end_empty_month_confirmations', 'year_end_transaction_tail'],
             'trial_balance' => ['trial_balance_state', 'trial_balance_validation', 'trial_balance_losses'],
             'uploads' => ['uploads_statement_coverage', 'uploads_bank_transactions', 'transactions_monthly_status', 'uploads_details', 'statement_field_mapping', 'uploads_validate_commit', 'csv_export'],
@@ -45,6 +46,10 @@ final class GoldenCardComparisonRegistry
             'hmrc_obligations_action_panel' => 'Action-only obligation command panel.',
             'year_end_notes' => 'Action-only notes editor.',
             'ixbrl_generation' => 'Action-only generation and submission workflow.',
+            'tax_ct_period_return' => 'Action-only CT-period generation and download workflow.',
+            'tax_rates_ct_computation_taxonomy' => 'Artifact catalogue administration workflow.',
+            'tax_ct600_rim_mappings' => 'Mapping lifecycle administration workflow.',
+            'tax_ct_computation_mappings' => 'Mapping lifecycle administration workflow.',
         ];
     }
 

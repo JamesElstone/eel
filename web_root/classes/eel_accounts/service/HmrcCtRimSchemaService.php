@@ -27,7 +27,9 @@ final class HmrcCtRimSchemaService
                 'file_role' => $role,
             ]);
         }
-        return \InterfaceDB::fetchAll('SELECT * FROM hmrc_ct_rim_files WHERE package_id = :package_id ORDER BY archive_path ASC', ['package_id' => $packageId]);
+        $files = \InterfaceDB::fetchAll('SELECT * FROM hmrc_ct_rim_files WHERE package_id = :package_id ORDER BY archive_path ASC', ['package_id' => $packageId]);
+        $this->catalogueComponents($packageId, $files);
+        return $files;
     }
 
     public function analyseApplicability(int $packageId, string $directory, string $formVersion): array
@@ -91,5 +93,32 @@ final class HmrcCtRimSchemaService
     {
         if ($value === null || preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) !== 1) { return false; }
         try { return (new \DateTimeImmutable($value))->format('Y-m-d') === $value; } catch (\Throwable) { return false; }
+    }
+
+    private function catalogueComponents(int $packageId, array $files): void
+    {
+        if (!\InterfaceDB::tableExists('hmrc_ct_rim_components')) { return; }
+        \InterfaceDB::prepareExecute('DELETE FROM hmrc_ct_rim_components WHERE package_id = :package_id', ['package_id' => $packageId]);
+        foreach ($files as $file) {
+            if ((string)($file['file_type'] ?? '') !== 'xsd') { continue; }
+            $previous = libxml_use_internal_errors(true);
+            $document = new \DOMDocument();
+            if (!$document->load((string)$file['extracted_path'], LIBXML_NONET)) { libxml_clear_errors(); libxml_use_internal_errors($previous); continue; }
+            $schema = $document->documentElement;
+            $namespace = $schema?->getAttribute('targetNamespace') ?: null;
+            $xpath = new \DOMXPath($document); $xpath->registerNamespace('xs', 'http://www.w3.org/2001/XMLSchema');
+            foreach ($xpath->query('/xs:schema/xs:element[@name]') ?: [] as $element) {
+                if (!$element instanceof \DOMElement) { continue; }
+                $name = $element->getAttribute('name');
+                $componentPath = (string)$file['archive_path'] . '#/' . $name;
+                \InterfaceDB::prepareExecute(
+                    'INSERT IGNORE INTO hmrc_ct_rim_components
+                     (package_id, component_path, element_name, namespace_uri, data_type, min_occurs, max_occurs, is_required)
+                     VALUES (:package_id, :component_path, :element_name, :namespace_uri, :data_type, :min_occurs, :max_occurs, :is_required)',
+                    ['package_id' => $packageId, 'component_path' => $componentPath, 'element_name' => $name, 'namespace_uri' => $namespace, 'data_type' => ($element->getAttribute('type') ?: null), 'min_occurs' => ($element->hasAttribute('minOccurs') ? (int)$element->getAttribute('minOccurs') : 1), 'max_occurs' => ($element->getAttribute('maxOccurs') ?: '1'), 'is_required' => (!$element->hasAttribute('minOccurs') || (int)$element->getAttribute('minOccurs') > 0) ? 1 : 0]
+                );
+            }
+            libxml_clear_errors(); libxml_use_internal_errors($previous);
+        }
     }
 }

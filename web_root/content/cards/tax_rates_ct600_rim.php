@@ -44,14 +44,16 @@ final class _tax_rates_ct600_rimCard extends CardBaseFramework
             return $html . '<div class="notice warning">No HMRC CT600 RIM metadata is stored yet. Refresh the catalogue to discover the current V2 and V3 artefacts.</div></div>';
         }
 
-        $html .= '<div class="table-scroll"><table><thead><tr><th>Form</th><th>Artefact</th><th>Applicable from</th><th>HMRC status</th><th>State</th><th>Action</th></tr></thead><tbody>';
+        $html .= '<div class="table-scroll"><table><thead><tr><th>Form</th><th>Artefact</th><th>Applicable from</th><th>Primary XSD / inventory</th><th>Mapping compatibility</th><th>Checked</th><th>State</th><th>Action</th></tr></thead><tbody>';
         foreach ($packages as $package) {
             $state = (string)($package['package_state'] ?? 'not_downloaded');
             $status = (string)($package['hmrc_status'] ?? 'unknown');
             $html .= '<tr><td>' . HelperFramework::escape((string)($package['form_version'] ?? '')) . '</td>'
                 . '<td>' . HelperFramework::escape((string)($package['artifact_version'] ?? '')) . '</td>'
                 . '<td>' . HelperFramework::escape((string)($package['applicable_from'] ?? 'Not confirmed')) . '</td>'
-                . '<td>' . HelperFramework::escape($status) . '</td>'
+                . '<td>' . HelperFramework::escape((string)($package['primary_xsd'] ?? 'Not catalogued')) . '<br><span class="helper">' . (int)($package['schema_count'] ?? $package['xsd_count'] ?? 0) . ' XSD; ' . (int)($package['component_count'] ?? 0) . ' components</span></td>'
+                . '<td>' . (int)($package['compatible_profile_count'] ?? 0) . ' active compatible<br><span class="helper">' . (int)($package['unmapped_required_count'] ?? 0) . ' required unmapped</span></td>'
+                . '<td>' . HelperFramework::escape((string)($package['checked_at'] ?? 'Not checked')) . '</td>'
                 . '<td><span class="badge ' . HelperFramework::escape($state === 'verified' ? 'success' : ($state === 'failed' ? 'danger' : 'info')) . '">' . HelperFramework::escape(str_replace('_', ' ', ucfirst($state))) . '</span></td>'
                 . '<td>' . $this->deleteForm((int)($package['id'] ?? 0), (string)($package['form_version'] ?? ''), (string)($package['artifact_version'] ?? '')) . '</td></tr>';
         }
@@ -66,7 +68,7 @@ final class _tax_rates_ct600_rimCard extends CardBaseFramework
             ['HMRC - CT600 Version 2', 'https://www.gov.uk/government/publications/corporation-tax-company-tax-return-ct600-2008-version-2'],
             ['HMRC - Current CT600 Version 3 Forms', 'https://www.gov.uk/government/publications/corporation-tax-company-tax-return-ct600-2015-version-3'],
         ];
-        $html = '<div class="form-row-actions">';
+        $html = '<div class="form-row-actions"><a class="button button-inline" href="?page=ct_filing_mappings">CT Filing Mappings</a> ';
         foreach ($links as [$label, $url]) {
             $html .= '<a class="button button-inline" href="' . HelperFramework::escape($url) . '" target="_blank" rel="noopener noreferrer">' . HelperFramework::escape($label) . '</a> ';
         }

@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 namespace eel_accounts\Service;
 
-final class IxbrlRenderService
+final class IxbrlAccountingService
 {
     public function generatePreview(int $companyId, int $accountingPeriodId): array
     {
@@ -41,17 +41,19 @@ final class IxbrlRenderService
             }
 
             $artifact = $this->accountingArtifactLocation($companyId, $accountingPeriodId, (int)$run['id']);
-            $directory = (string)$artifact['directory'];
-            if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
-                throw new \RuntimeException('Could not create the company iXBRL directory.');
-            }
-            $filename = (string)$artifact['filename'];
-            $path = $directory . DIRECTORY_SEPARATOR . $filename;
+            $stored = (new IxbrlGeneratorService())->storeArtifact(
+                $companyId,
+                (string)$artifact['company_number'],
+                (string)$artifact['period_start'],
+                (string)$artifact['period_end'],
+                'accounting',
+                (int)$run['id'],
+                $xhtml
+            );
+            $filename = (string)$stored['filename'];
+            $path = (string)$stored['path'];
             $newGeneratedPath = $path;
-            if (file_put_contents($path, $xhtml) === false) {
-                throw new \RuntimeException('Could not write generated iXBRL export file.');
-            }
-            $hash = (string)hash_file('sha256', $path);
+            $hash = (string)$stored['sha256'];
 
             \InterfaceDB::prepareExecute(
                 'UPDATE ixbrl_generation_runs
@@ -146,7 +148,9 @@ final class IxbrlRenderService
         $companyNumber = $this->normaliseCompanyNumber((string)($row['company_number'] ?? ''));
 
         return [
-            'directory' => rtrim((new FileCheckService())->getIxbrlDirectory($companyId), '\\/'),
+            'company_number' => $companyNumber,
+            'period_start' => $this->filenameDate((string)($row['period_start'] ?? ''), 'start'),
+            'period_end' => $this->filenameDate((string)($row['period_end'] ?? ''), 'end'),
             'filename' => $this->artifactFilename(
                 $companyNumber,
                 $this->filenameDate((string)($row['period_start'] ?? ''), 'start'),
@@ -165,20 +169,13 @@ final class IxbrlRenderService
         int $runId
     ): string
     {
-        if (!in_array($ixbrlType, ['accounting', 'tax'], true)) {
-            throw new \InvalidArgumentException('Unsupported iXBRL artifact type.');
-        }
-        if ($runId <= 0) {
-            throw new \InvalidArgumentException('The iXBRL run id must be greater than zero.');
-        }
-
-        return 'accounts_ixbrl_'
-            . $this->normaliseCompanyNumber($companyNumber)
-            . '_' . $periodStart
-            . '_' . $periodEnd
-            . '_' . $ixbrlType
-            . '_' . $runId
-            . '.xhtml';
+        return (new IxbrlGeneratorService())->artifactFilename(
+            $companyNumber,
+            $periodStart,
+            $periodEnd,
+            $ixbrlType,
+            $runId
+        );
     }
 
     private function normaliseCompanyNumber(string $companyNumber): string
@@ -207,23 +204,7 @@ final class IxbrlRenderService
 
     private function removeManagedArtifact(string $path, int $companyId): void
     {
-        if ($path === '' || !is_file($path)) {
-            return;
-        }
-        try {
-            $managedDirectory = realpath((new FileCheckService())->getIxbrlDirectory($companyId));
-        } catch (\Throwable) {
-            return;
-        }
-        $artifactDirectory = realpath(dirname($path));
-        $filename = basename($path);
-        if ($managedDirectory === false
-            || $artifactDirectory === false
-            || strcasecmp($managedDirectory, $artifactDirectory) !== 0
-            || preg_match('/^accounts_ixbrl_[A-Z0-9_-]+_\d{8}_\d{8}_(accounting|tax)_\d+\.xhtml$/', $filename) !== 1) {
-            return;
-        }
-        @unlink($path);
+        (new IxbrlGeneratorService())->removeManagedArtifact($path, $companyId);
     }
 
     private function comparativeFactsRequired(int $companyId, int $accountingPeriodId): bool

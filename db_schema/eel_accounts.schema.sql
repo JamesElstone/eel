@@ -3399,6 +3399,10 @@ WHERE existing_permission.`card_key` IN ('incorporation_share_capital','tax_rate
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+
+-- CT-period iXBRL taxonomy and mapping tables are applied by
+-- migrations/2026_07_19_003_ct_ixbrl_mapping_profiles.sql and
+-- migrations/2026_07_19_004_ct_filing_mapping_maintenance.sql.
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
 -- Dump completed on 2026-04-17 20:26:45

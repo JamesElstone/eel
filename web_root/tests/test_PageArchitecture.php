@@ -26,6 +26,7 @@ final class TestPageArchitectureHarness
         $this->runTest('vehicles page resolves the vehicle register card', [$this, 'testVehiclesPageResolvesVehicleRegisterCard']);
         $this->runTest('tax page resolves read-only tax workings cards', [$this, 'testTaxPageResolvesTaxWorkingsCards']);
         $this->runTest('tax artifacts page remains rate and treatment rule workflow', [$this, 'testTaxRatesPageRemainsRateWorkflow']);
+        $this->runTest('CT filing mapping maintenance is global and separate from tax workings', [$this, 'testCtFilingMappingsPage']);
         $this->runTest('AJAX delta responses include only stale cards', [$this, 'testAjaxDeltaResponseReturnsOnlyStaleCards']);
         $this->runTest('AJAX delta responses expose a nonce refresh slot', [$this, 'testAjaxDeltaResponseIncludesAjaxNonceField']);
         $this->runTest('selector ajax responses include compact selector UI data', [$this, 'testSelectorAjaxResponseIncludesSelectorUi']);
@@ -141,6 +142,7 @@ final class TestPageArchitectureHarness
         $this->assertSame(
             [
                 'tax_period_selector',
+                'tax_ct_period_return',
                 'tax_corporation_tax_summary',
                 'tax_taxable_profit_bridge',
                 'tax_prepayment_treatment',
@@ -167,6 +169,7 @@ final class TestPageArchitectureHarness
                     'tab' => 'Corporation Tax',
                     'cards' => [
                         'tax_period_selector',
+                        'tax_ct_period_return',
                         'tax_corporation_tax_summary',
                         'tax_taxable_profit_bridge',
                         'tax_prepayment_treatment',
@@ -206,7 +209,20 @@ final class TestPageArchitectureHarness
         $page = $this->loadPageCards('tax_artifacts');
 
         $this->assertSame(_tax_artifacts::class, $page::class);
-        $this->assertSame(['tax_rates_ct', 'tax_rates_ct600_rim', 'tax_rates_vat', 'tax_thresholds_vat', 'tax_treatment_rules'], $page->cards());
+        $this->assertSame(['tax_rates_ct', 'tax_rates_ct600_rim', 'tax_rates_ct_computation_taxonomy', 'tax_rates_vat', 'tax_thresholds_vat', 'tax_treatment_rules'], $page->cards());
+    }
+
+    private function testCtFilingMappingsPage(): void
+    {
+        $page = $this->loadPageCards('ct_filing_mappings');
+        $this->assertSame(_ct_filing_mappings::class, $page::class);
+        $this->assertSame('CT Filing Mappings', $page->title());
+        $this->assertSame(['company_id', 'accounting_period_id'], $page->hiddenSiteContextSelectors());
+        $this->assertSame(['tax_ct600_rim_mappings', 'tax_ct_computation_mappings'], $page->cards());
+
+        $taxPage = $this->loadPageCards('corporation_tax');
+        $this->assertTrue(!in_array('tax_ct600_rim_mappings', $taxPage->cards(), true));
+        $this->assertTrue(!in_array('tax_ct_computation_mappings', $taxPage->cards(), true));
     }
 
     private function testAjaxDeltaResponseReturnsOnlyStaleCards(): void

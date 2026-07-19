@@ -4,15 +4,15 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 (new GeneratedServiceClassTestHarness())->run(
-    \eel_accounts\Service\IxbrlRenderService::class,
-    static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\IxbrlRenderService $service): void {
-        $harness->check(\eel_accounts\Service\IxbrlRenderService::class, 'refuses generation when no fact run exists', static function () use ($harness, $service): void {
+    \eel_accounts\Service\IxbrlAccountingService::class,
+    static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\IxbrlAccountingService $service): void {
+        $harness->check(\eel_accounts\Service\IxbrlAccountingService::class, 'refuses generation when no fact run exists', static function () use ($harness, $service): void {
             $result = $service->generatePreview(0, 0);
             $harness->assertSame(false, $result['success']);
         });
 
-        $harness->check(\eel_accounts\Service\IxbrlRenderService::class, 'builds period-based accounting artifact filenames with the run id last', static function () use ($harness, $service): void {
-            $method = new ReflectionMethod(\eel_accounts\Service\IxbrlRenderService::class, 'artifactFilename');
+        $harness->check(\eel_accounts\Service\IxbrlAccountingService::class, 'builds period-based accounting artifact filenames with the run id last', static function () use ($harness, $service): void {
+            $method = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'artifactFilename');
             $method->setAccessible(true);
 
             $harness->assertSame(
@@ -21,8 +21,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             );
         });
 
-        $harness->check(\eel_accounts\Service\IxbrlRenderService::class, 'renders the FRC 2026 Inline XBRL profile with valid contexts units and signs', static function () use ($harness, $service): void {
-            $method = new ReflectionMethod(\eel_accounts\Service\IxbrlRenderService::class, 'renderXhtml');
+        $harness->check(\eel_accounts\Service\IxbrlAccountingService::class, 'renders the FRC 2026 Inline XBRL profile with valid contexts units and signs', static function () use ($harness, $service): void {
+            $method = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'renderXhtml');
             $method->setAccessible(true);
             $xhtml = (string)$method->invoke($service, ixbrlRenderFixtureFacts());
 
@@ -45,12 +45,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertFalse(str_contains($xhtml, '<section'));
             $harness->assertFalse(str_contains($xhtml, ' lang="en"'));
 
-            $validator = new ReflectionMethod(\eel_accounts\Service\IxbrlRenderService::class, 'validateInlineXbrl');
+            $validator = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'validateInlineXbrl');
             $validator->setAccessible(true);
             $harness->assertSame([], $validator->invoke($service, $xhtml));
         });
 
-        $harness->check(\eel_accounts\Service\IxbrlRenderService::class, 'rejects a required fact that exists only in a comparative context', static function () use ($harness, $service): void {
+        $harness->check(\eel_accounts\Service\IxbrlAccountingService::class, 'rejects a required fact that exists only in a comparative context', static function () use ($harness, $service): void {
             $facts = ixbrlRenderFixtureFacts();
             foreach ($facts as &$fact) {
                 if ((string)$fact['fact_key'] === 'accounts_status') {
@@ -58,7 +58,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 }
             }
             unset($fact);
-            $method = new ReflectionMethod(\eel_accounts\Service\IxbrlRenderService::class, 'renderXhtml');
+            $method = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'renderXhtml');
             $method->setAccessible(true);
             $thrown = false;
             try {
@@ -69,7 +69,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue($thrown);
         });
 
-        $harness->check(\eel_accounts\Service\IxbrlRenderService::class, 'renders the prior locked period employee disclosure as a comparative', static function () use ($harness, $service): void {
+        $harness->check(\eel_accounts\Service\IxbrlAccountingService::class, 'renders the prior locked period employee disclosure as a comparative', static function () use ($harness, $service): void {
             $facts = ixbrlRenderFixtureFacts();
             $comparativeKeys = [];
             foreach ((new \eel_accounts\Service\IxbrlTaxonomyProfileService())->mappings() as $mapping) {
@@ -89,15 +89,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 }
                 $facts[] = $comparative;
             }
-            $method = new ReflectionMethod(\eel_accounts\Service\IxbrlRenderService::class, 'renderXhtml');
+            $method = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'renderXhtml');
             $method->setAccessible(true);
             $xhtml = (string)$method->invoke($service, $facts);
             $harness->assertTrue(str_contains($xhtml, 'name="core:AverageNumberEmployeesDuringPeriod" contextRef="comparative_period_duration"'));
             $harness->assertTrue(str_contains($xhtml, '(comparative:'));
         });
 
-        $harness->check(\eel_accounts\Service\IxbrlRenderService::class, 'rejects a missing comparative fact when a prior locked period exists', static function () use ($harness, $service): void {
-            $method = new ReflectionMethod(\eel_accounts\Service\IxbrlRenderService::class, 'renderXhtml');
+        $harness->check(\eel_accounts\Service\IxbrlAccountingService::class, 'rejects a missing comparative fact when a prior locked period exists', static function () use ($harness, $service): void {
+            $method = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'renderXhtml');
             $method->setAccessible(true);
             $thrown = false;
             try {

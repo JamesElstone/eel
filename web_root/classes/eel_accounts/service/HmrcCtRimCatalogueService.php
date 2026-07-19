@@ -22,9 +22,22 @@ final class HmrcCtRimCatalogueService
             return [];
         }
 
-        return \InterfaceDB::fetchAll(
-            'SELECT * FROM hmrc_ct_rim_packages ORDER BY applicable_from ASC, form_version ASC, artifact_version DESC'
-        );
+        if (\InterfaceDB::tableExists('hmrc_ct_rim_components')
+            && \InterfaceDB::tableExists('ct_filing_mapping_profiles')) {
+            return \InterfaceDB::fetchAll(
+                'SELECT p.*,
+                        (SELECT COUNT(*) FROM hmrc_ct_rim_files f WHERE f.package_id = p.id AND f.file_type = \'xsd\') AS schema_count,
+                        (SELECT f.archive_path FROM hmrc_ct_rim_files f WHERE f.package_id = p.id AND f.file_type = \'xsd\' ORDER BY (f.file_role = :primary) DESC, f.id LIMIT 1) AS primary_xsd,
+                        (SELECT COUNT(*) FROM hmrc_ct_rim_components c WHERE c.package_id = p.id) AS component_count,
+                        (SELECT COUNT(*) FROM ct_filing_mapping_profiles m WHERE m.rim_package_id = p.id AND m.status = :active AND m.compatibility_status = :compatible) AS compatible_profile_count,
+                        (SELECT COUNT(*) FROM hmrc_ct_rim_components c WHERE c.package_id = p.id AND c.is_required = 1
+                           AND NOT EXISTS (SELECT 1 FROM ct_filing_mapping_profiles m INNER JOIN ct600_rim_mappings x ON x.profile_id = m.id
+                                           WHERE m.rim_package_id = p.id AND m.status = :active AND m.compatibility_status = :compatible AND x.target_xpath = c.component_path)) AS unmapped_required_count
+                 FROM hmrc_ct_rim_packages p ORDER BY p.applicable_from ASC, p.form_version ASC, p.artifact_version DESC',
+                ['primary' => 'primary_schema', 'active' => 'active', 'compatible' => 'compatible']
+            );
+        }
+        return \InterfaceDB::fetchAll('SELECT * FROM hmrc_ct_rim_packages ORDER BY applicable_from ASC, form_version ASC, artifact_version DESC');
     }
 
     public function refresh(): array

@@ -143,7 +143,7 @@ final class IxbrlAction implements ActionInterfaceFramework
 
     private function generatePreview(int $companyId, int $accountingPeriodId): array
     {
-        $result = (new \eel_accounts\Service\IxbrlRenderService())->generateFilingExport($companyId, $accountingPeriodId);
+        $result = (new \eel_accounts\Service\IxbrlAccountingService())->generateFilingExport($companyId, $accountingPeriodId);
         if (empty($result['success'])) {
             return $result;
         }

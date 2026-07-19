@@ -438,6 +438,15 @@ final class YearEndChecklistService
             if (empty($result['success'])) {
                 return $this->rollbackLockTransaction($transaction, $result);
             }
+            $s455Freeze = (new \eel_accounts\Service\S455ReviewService())
+                ->freezeForYearEndLock($companyId, $accountingPeriodId);
+            if (empty($s455Freeze['success'])) {
+                return $this->rollbackLockTransaction($transaction, [
+                    'success' => false,
+                    'status' => 422,
+                    'errors' => (array)($s455Freeze['errors'] ?? ['The s455 evidence cut-off could not be frozen at the Year End lock timestamp.']),
+                ]);
+            }
 
             $result += [
                 'depreciation' => $depreciationResult,
@@ -446,6 +455,7 @@ final class YearEndChecklistService
                 'corporation_tax_provision' => $ctProvisionResult,
                 'retained_earnings_close' => $retainedEarningsCloseResult,
                 'corporation_tax' => $taxPersistenceResult,
+                's455' => $s455Freeze,
                 'backup' => $backup,
                 'checklist' => $this->fetchChecklist($companyId, $accountingPeriodId),
             ];
@@ -931,6 +941,12 @@ final class YearEndChecklistService
         $strandedRows = $metrics->strandedCommittedSourceRowsCount($companyId, $accountingPeriodId);
         $directorLoanReview = (new \eel_accounts\Service\DirectorLoanReconciliationService())
             ->fetchContext($companyId, $accountingPeriodId);
+        $ownershipReadiness = (new \eel_accounts\Service\OwnershipPartyService())
+            ->readinessForAccountingPeriod($companyId, $accountingPeriodId);
+        $ctPeriodFacts = (new \eel_accounts\Service\CorporationTaxPeriodFactService())
+            ->fetchForAccountingPeriod($companyId, $accountingPeriodId);
+        $s455Review = (new \eel_accounts\Service\S455ReviewService())
+            ->fetchForAccountingPeriod($companyId, $accountingPeriodId);
         $expensePosition = (new \eel_accounts\Service\YearEndExpenseConfirmationService($metrics))->fetchContext($companyId, $accountingPeriodId);
         $transactionTail = (new \eel_accounts\Service\YearEndTransactionTailService($metrics))->fetchContext($companyId, $accountingPeriodId);
         $prepaymentReview = (new \eel_accounts\Service\PrepaymentReviewService($metrics, $lock))->fetchContext($companyId, $accountingPeriodId);
@@ -1132,7 +1148,7 @@ final class YearEndChecklistService
                     : ($directorLoanUnattributedCount > 0
                         ? 'Attribute every Director Loan control-account entry before confirming or locking the period.'
                         : ((float)($directorLoanReview['potential_s455_exposure'] ?? 0) >= 0.005
-                            ? 'Potential s455 exposure is ' . $this->money($settings, $directorLoanReview['potential_s455_exposure'])
+                            ? 'The Director Loan asset-control principal is ' . $this->money($settings, $directorLoanReview['potential_s455_exposure']) . '; the separate s455 review determines tax from source-payment evidence.'
                                 . '. Confirm the directors, attributed entries, per-director balances, tax flags and calculated control-account reclassification.'
                             : 'Confirm the directors, attributed entries, per-director balances, tax flags and calculated control-account reclassification.'))),
             empty($directorLoanReview['available'])
@@ -1357,6 +1373,40 @@ final class YearEndChecklistService
         $taxPeriodDisplay = $this->taxPeriodDisplay($taxReadiness);
 
         $sections['corporation_tax_readiness'][] = $this->makeCheck(
+            'ownership_shareholding_reconciliation',
+            'Ownership and shareholding reconciliation',
+            'fail',
+            !empty($ownershipReadiness['available']) && !empty($ownershipReadiness['pass']) ? 'pass' : 'fail',
+            !empty($ownershipReadiness['available']) && !empty($ownershipReadiness['pass'])
+                ? 'Effective-dated shareholder holdings reconcile to issued shares at the accounting-period end.'
+                : (string)(($ownershipReadiness['errors'] ?? [])[0] ?? 'Shareholder holdings do not reconcile to issued shares at the accounting-period end.'),
+            !empty($ownershipReadiness['pass']) ? 'Reconciled' : 'Action required',
+            '?page=incorporation&show_card=incorporation_ownership_parties'
+        );
+        $sections['corporation_tax_readiness'][] = $this->makeCheck(
+            'ct_period_associated_company_facts',
+            'CT-period associated-company facts',
+            'fail',
+            !empty($ctPeriodFacts['available']) && !empty($ctPeriodFacts['all_confirmed']) ? 'pass' : 'fail',
+            !empty($ctPeriodFacts['available']) && !empty($ctPeriodFacts['all_confirmed'])
+                ? 'The associated-company count has been confirmed separately for every CT period.'
+                : (string)(($ctPeriodFacts['errors'] ?? [])[0] ?? 'Confirm the associated-company count for every CT period.'),
+            !empty($ctPeriodFacts['all_confirmed']) ? 'Confirmed' : 'Action required',
+            '?page=corporation_tax&show_card=tax_ct_period_facts'
+        );
+        $sections['corporation_tax_readiness'][] = $this->makeCheck(
+            's455_period_review',
+            'Participator-loan s455 review',
+            'fail',
+            !empty($s455Review['available']) && !empty($s455Review['all_confirmed']) ? 'pass' : 'fail',
+            !empty($s455Review['available']) && !empty($s455Review['all_confirmed'])
+                ? 'The close-company status and source-payment s455 evidence are confirmed for every CT period.'
+                : (string)(($s455Review['errors'] ?? [])[0] ?? 'Confirm the s455 review for every CT period. If the lock occurs before the repayment deadline, the review uses only evidence available at lock time.'),
+            !empty($s455Review['all_confirmed']) ? $this->money($settings, $s455Review['net_tax'] ?? 0) : 'Action required',
+            '?page=director_loans&show_card=director_loan_s455'
+        );
+
+        $sections['corporation_tax_readiness'][] = $this->makeCheck(
             'tax_adjusted_profit_basis_available',
             'Tax-adjusted profit basis available',
             'warning',
@@ -1514,6 +1564,12 @@ final class YearEndChecklistService
             && $priorPeriodDependencySatisfied
             && $retainedEarningsCloseCurrent
             && $taxProvisionCurrent
+            && !empty($ownershipReadiness['available'])
+            && !empty($ownershipReadiness['pass'])
+            && !empty($ctPeriodFacts['available'])
+            && !empty($ctPeriodFacts['all_confirmed'])
+            && !empty($s455Review['available'])
+            && !empty($s455Review['all_confirmed'])
             && $this->prepaymentSchedulesCurrent($prepaymentRepair)
             && $this->acknowledgementCurrentInSections($sections, 'prepayment_approvals')
             && !empty($directorLoanReview['available'])

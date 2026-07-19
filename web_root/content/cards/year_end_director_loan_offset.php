@@ -114,7 +114,7 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
                 ' . $this->stat('Calculated reclassification', $this->money($settings, $review['desired_reclassification_amount'] ?? 0)) . '
                 ' . $this->stat('Already posted', $this->money($settings, $review['posted_reclassification_amount'] ?? 0)) . '
                 ' . $this->stat('Pending at lock', $this->money($settings, $review['pending_adjustment_amount'] ?? 0)) . '
-                ' . $this->stat('Potential s455 exposure', $this->money($settings, $review['potential_s455_exposure'] ?? 0)) . '
+                ' . $this->stat('Gross loan asset (not s455)', $this->money($settings, $review['potential_s455_exposure'] ?? 0)) . '
             </div>
             ' . $warnings . '
             <section class="settings-stack">
@@ -146,7 +146,7 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
             </tr>';
         }
         return '<div class="panel-soft table-scroll"><table>
-            <thead><tr><th>Director</th><th>Gross asset</th><th>Gross liability</th><th>Reclassification</th><th>Net closing</th><th>Potential s455</th></tr></thead>
+            <thead><tr><th>Director</th><th>Gross asset</th><th>Gross liability</th><th>Reclassification</th><th>Net closing</th><th>Gross asset principal</th></tr></thead>
             <tbody>' . $rows . '</tbody>
         </table></div>';
     }
@@ -166,7 +166,7 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
             </tr>';
         }
         return '<div class="panel-soft table-scroll"><table>
-            <thead><tr><th>Director</th><th>Tax flag</th><th>Potential s455</th></tr></thead>
+            <thead><tr><th>Director</th><th>Tax flag</th><th>Gross asset principal</th></tr></thead>
             <tbody>' . $rows . '</tbody>
         </table></div>';
     }

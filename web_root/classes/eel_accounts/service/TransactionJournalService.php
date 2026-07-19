@@ -573,6 +573,7 @@ final class TransactionJournalService
                     t.amount,
                     t.nominal_account_id,
                     t.director_id,
+                    t.party_id,
                     t.transfer_account_id,
                     t.is_internal_transfer,
                     t.category_status,
@@ -760,6 +761,7 @@ final class TransactionJournalService
         foreach ($lines as &$line) {
             if ((int)($line['nominal_account_id'] ?? 0) === $nominalAccountId) {
                 $line['director_id'] = (int)($transaction['director_id'] ?? 0) ?: null;
+                $line['party_id'] = (int)($transaction['party_id'] ?? 0) ?: null;
             }
         }
         unset($line);
@@ -951,6 +953,7 @@ final class TransactionJournalService
             'SELECT jl.id,
                     jl.nominal_account_id,
                     jl.director_id,
+                    jl.party_id,
                     jl.company_account_id,
                     jl.debit,
                     jl.credit,
@@ -991,6 +994,7 @@ final class TransactionJournalService
         return [
             'nominal_account_id' => (int)($line['nominal_account_id'] ?? 0),
             'director_id' => (int)($line['director_id'] ?? 0),
+            'party_id' => (int)($line['party_id'] ?? 0),
             'company_account_id' => (int)($line['company_account_id'] ?? 0),
             'debit' => number_format((float)($line['debit'] ?? 0), 2, '.', ''),
             'credit' => number_format((float)($line['credit'] ?? 0), 2, '.', ''),
@@ -1059,6 +1063,7 @@ final class TransactionJournalService
                 journal_id,
                 nominal_account_id,
                 director_id,
+                party_id,
                 company_account_id,
                 debit,
                 credit,
@@ -1067,6 +1072,7 @@ final class TransactionJournalService
                 :journal_id,
                 :nominal_account_id,
                 :director_id,
+                :party_id,
                 :company_account_id,
                 :debit,
                 :credit,
@@ -1077,6 +1083,7 @@ final class TransactionJournalService
             'journal_id' => $journalId,
             'nominal_account_id' => (int)$line['nominal_account_id'],
             'director_id' => (int)($line['director_id'] ?? 0) > 0 ? (int)$line['director_id'] : null,
+            'party_id' => (int)($line['party_id'] ?? 0) > 0 ? (int)$line['party_id'] : null,
             'company_account_id' => isset($line['company_account_id']) && (int)$line['company_account_id'] > 0
                 ? (int)$line['company_account_id']
                 : null,

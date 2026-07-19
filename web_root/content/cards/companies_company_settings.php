@@ -52,28 +52,6 @@ final class _companies_company_settingsCard extends CardBaseFramework
             . ($companyName !== '' && $companyNumber !== '' ? ' for ' . $companyName . ' (' . $companyNumber . ')' : '');
     }
 
-    private function associatedCompanyCountOptions(int $selectedCount): string
-    {
-        $options = '';
-
-        for ($count = 0; $count <= 10; $count++) {
-            $label = $count === 0
-                ? '0 - none'
-                : (string)$count . ' other compan' . ($count === 1 ? 'y' : 'ies');
-            $options .= '<option value="' . $count . '"' . ($selectedCount === $count ? ' selected' : '') . '>'
-                . HelperFramework::escape($label)
-                . '</option>';
-        }
-
-        if ($selectedCount > 10) {
-            $options .= '<option value="' . $selectedCount . '" selected>'
-                . HelperFramework::escape((string)$selectedCount . ' other companies')
-                . '</option>';
-        }
-
-        return $options;
-    }
-
     public function render(array $context): string
     {
 
@@ -91,7 +69,6 @@ final class _companies_company_settingsCard extends CardBaseFramework
         $settings = (array)($context['company']['settings'] ?? []);
         $utrMissing = ($context['company']['settings']['utr'] ?? 0) === 0;
         $utr = $utrMissing ? '' : (string)($context['company']['settings']['utr'] ?? '');
-        $associatedCompanyCount = max(0, (int)($context['company']['settings']['associated_company_count'] ?? 0));
         $defaultCurrency = (string)($context['company']['settings']['default_currency'] ?? '');
         $defaultCurrencySymbol = (new \eel_accounts\Service\CompanySettingsService())->defaultCurrencySymbol($settings);
         $defaultCurrencyLabel = 'GBP - ' . $defaultCurrencySymbol;
@@ -110,7 +87,7 @@ final class _companies_company_settingsCard extends CardBaseFramework
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Company">
                 <input type="hidden" name="intent" value="save_company">
-                <section data-state-fields="utr,associated_company_count,qualifying_activity_ceased_on,default_currency,date_format" data-state-target="save_company_settings_button">
+                <section data-state-fields="utr,qualifying_activity_ceased_on,default_currency,date_format" data-state-target="save_company_settings_button">
                 <div class="form-grid">
                     <div class="form-row">
                         <label for="company_name">Company name</label>
@@ -134,12 +111,6 @@ final class _companies_company_settingsCard extends CardBaseFramework
                     <div class="form-row">
                         <label>Companies House active directors</label>
                         <input class="input" value="' . HelperFramework::escape($activeDirectorLabel) . '" readonly>
-                    </div>
-                    <div class="form-row">
-                        <label for="associated_company_count">Associated companies excluding this company</label>
-                        <select class="select" id="associated_company_count" name="associated_company_count" data-state-default="' . HelperFramework::escape((string)$associatedCompanyCount) . '">
-                            ' . $this->associatedCompanyCountOptions($associatedCompanyCount) . '
-                        </select>
                     </div>
                     <div class="form-row">
                         <label for="qualifying_activity_ceased_on">Qualifying activity ceased on</label>

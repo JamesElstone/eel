@@ -12,7 +12,7 @@ final class DirectorLoanAction implements ActionInterfaceFramework
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
         $intent = trim((string)$request->input('intent', $request->input('global_action', '')));
-        if ($intent !== 'save_director_loan_reporting_presentation') {
+        if (!in_array($intent, ['save_director_loan_reporting_presentation', 'mark_participator_loan_transaction', 'save_s455_review'], true)) {
             return ActionResultFramework::none();
         }
 
@@ -20,12 +20,30 @@ final class DirectorLoanAction implements ActionInterfaceFramework
         $accountingPeriodId = (int)$request->input('accounting_period_id', 0);
 
         try {
-            $result = (new \eel_accounts\Service\DirectorLoanReportingPresentationService())->save(
-                $companyId,
-                $accountingPeriodId,
-                (string)$request->input('classification', ''),
-                $this->actor($request)
-            );
+            $result = match ($intent) {
+                'mark_participator_loan_transaction' => (new \eel_accounts\Service\ParticipatorLoanService())->assignTransaction(
+                    $companyId,
+                    $accountingPeriodId,
+                    (int)$request->input('transaction_id', 0),
+                    (int)$request->input('party_id', 0),
+                    $this->actor($request)
+                ),
+                'save_s455_review' => (new \eel_accounts\Service\S455ReviewService())->saveReview(
+                    $companyId,
+                    $accountingPeriodId,
+                    (int)$request->input('ct_period_id', 0),
+                    (string)$request->input('close_company_status', ''),
+                    $this->truthy($request->input('confirmed', '0')),
+                    $this->actor($request),
+                    (string)$request->input('confirmation_note', '')
+                ),
+                default => (new \eel_accounts\Service\DirectorLoanReportingPresentationService())->save(
+                    $companyId,
+                    $accountingPeriodId,
+                    (string)$request->input('classification', ''),
+                    $this->actor($request)
+                ),
+            };
         } catch (Throwable $exception) {
             $result = ['success' => false, 'errors' => [$exception->getMessage()]];
         }
@@ -35,9 +53,13 @@ final class DirectorLoanAction implements ActionInterfaceFramework
         if ($success) {
             $messages[] = [
                 'type' => 'success',
-                'message' => !empty($result['changed'])
-                    ? 'Director Loan reporting presentation saved. Companies House and iXBRL figures will use the new repayment horizon.'
-                    : 'Director Loan reporting presentation is already set to that repayment horizon.',
+                'message' => match ($intent) {
+                    'mark_participator_loan_transaction' => 'Participator-loan source payment saved.',
+                    'save_s455_review' => 's455 review saved.',
+                    default => !empty($result['changed'])
+                        ? 'Director Loan reporting presentation saved. Companies House and iXBRL figures will use the new repayment horizon.'
+                        : 'No change was needed.',
+                },
             ];
         } else {
             foreach ((array)($result['errors'] ?? ['Director Loan reporting presentation could not be saved.']) as $error) {
@@ -49,6 +71,8 @@ final class DirectorLoanAction implements ActionInterfaceFramework
             $success,
             [
                 'director.loan.state',
+                'tax.s455',
+                'tax.workings',
                 'companies.house.snapshot',
                 'year.end.companies.house.comparison',
                 'year.end.checklist',
@@ -80,5 +104,10 @@ final class DirectorLoanAction implements ActionInterfaceFramework
         }
 
         return 'web_app';
+    }
+
+    private function truthy(mixed $value): bool
+    {
+        return in_array(strtolower(trim((string)$value)), ['1', 'true', 'yes', 'on'], true);
     }
 }

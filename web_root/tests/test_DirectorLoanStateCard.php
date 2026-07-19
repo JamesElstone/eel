@@ -104,7 +104,7 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
         $harness->assertTrue(str_contains($html, 'value="9" selected'));
         $harness->assertSame(false, str_contains($html, '<button class="button button-inline" type="submit">Save</button>'));
         $harness->assertTrue(str_contains($html, 'Calculated reclassification'));
-        $harness->assertTrue(str_contains($html, 'Potential s455 exposure'));
+        $harness->assertTrue(str_contains($html, 'Gross loan asset (not s455)'));
         $harness->assertTrue(str_contains($html, 'name="card_action" value="DirectorLoan"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_director_loan_reporting_presentation"'));
         $harness->assertTrue(str_contains($html, 'name="classification" value="within_one_year" checked required'));

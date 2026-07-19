@@ -26,6 +26,15 @@ final class TaxAction implements ActionInterfaceFramework
 
         try {
             $result = match ($intent) {
+                'save_ct_period_facts' => (new \eel_accounts\Service\CorporationTaxPeriodFactService())->save(
+                    $companyId,
+                    $accountingPeriodId,
+                    $ctPeriodId,
+                    (int)$request->input('associated_company_count', 0),
+                    $this->truthy($request->input('confirmed', '0')),
+                    $this->actor($request),
+                    (string)$request->input('confirmation_note', '')
+                ),
                 default => ['success' => false, 'errors' => ['Unknown tax action.']],
             };
         } catch (Throwable $exception) {
@@ -39,7 +48,7 @@ final class TaxAction implements ActionInterfaceFramework
     {
         $messages = [];
         if ($success) {
-            $messages[] = ['type' => 'success', 'message' => 'Corporation Tax provision posted.'];
+            $messages[] = ['type' => 'success', 'message' => 'CT-period facts saved.'];
         } else {
             foreach ($errors !== [] ? $errors : ['The tax action could not be completed.'] as $error) {
                 $messages[] = ['type' => 'error', 'message' => (string)$error];
@@ -48,9 +57,27 @@ final class TaxAction implements ActionInterfaceFramework
 
         return new ActionResultFramework(
             $success,
-            ['page.context', 'tax.workings', 'trial.balance.state', 'profit.loss', 'year.end.retained.earnings', 'dividend.reserve'],
+            ['page.context', 'tax.period.facts', 'tax.workings', 'trial.balance.state', 'profit.loss', 'year.end.retained.earnings', 'dividend.reserve', 'year.end.checklist'],
             $messages,
             $ctPeriodId !== 0 ? ['ct_period_id' => (string)$ctPeriodId] : []
         );
+    }
+
+    private function truthy(mixed $value): bool
+    {
+        return in_array(strtolower(trim((string)$value)), ['1', 'true', 'yes', 'on'], true);
+    }
+
+    private function actor(RequestFramework $request): string
+    {
+        try {
+            $session = new SessionAuthenticationService();
+            $session->startSession();
+            $deviceId = trim((string)AntiFraudService::instance($request)->requestValue('Client-Device-ID'));
+            $userId = $session->authenticatedUserId($deviceId !== '' ? $deviceId : null);
+            if ($userId > 0) { return 'user:' . $userId; }
+        } catch (Throwable) {
+        }
+        return 'web_app';
     }
 }

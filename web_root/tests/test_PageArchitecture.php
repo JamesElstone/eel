@@ -156,6 +156,7 @@ final class TestPageArchitectureHarness
                 'tax_losses',
                 'tax_rate_bands',
                 'tax_warnings',
+                'tax_ct_period_facts',
                 'year_end_tax_readiness',
             ],
             $page->cards()
@@ -181,6 +182,12 @@ final class TestPageArchitectureHarness
                         'tax_losses',
                         'tax_rate_bands',
                         'tax_warnings',
+                    ],
+                ],
+                [
+                    'tab' => 'CT Period Facts',
+                    'cards' => [
+                        'tax_ct_period_facts',
                     ],
                 ],
                 [

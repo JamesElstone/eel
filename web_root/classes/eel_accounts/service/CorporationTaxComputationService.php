@@ -108,6 +108,8 @@ final class CorporationTaxComputationService
             'taxable_before_losses' => round((float)$current['taxable_before_losses'], 2),
             'taxable_profit' => round((float)$current['taxable_profit'], 2),
             'taxable_loss' => round((float)$current['loss_created'], 2),
+            'ordinary_corporation_tax' => round((float)($current['ordinary_corporation_tax'] ?? $current['estimated_corporation_tax']), 2),
+            's455_tax' => round((float)($current['s455_tax'] ?? 0), 2),
             'estimated_corporation_tax' => round((float)$current['estimated_corporation_tax'], 2),
             'estimated_rate' => round((float)$current['estimated_rate'], 6),
             'associated_company_count' => (int)($current['associated_company_count'] ?? 0),
@@ -133,7 +135,9 @@ final class CorporationTaxComputationService
                 ['label' => 'Taxable result before losses', 'amount' => round((float)$current['taxable_before_losses'], 2)],
                 ['label' => 'Less losses brought forward utilised', 'amount' => round(0 - (float)$current['loss_utilised'], 2)],
                 ['label' => 'Taxable profit after losses', 'amount' => round((float)$current['taxable_profit'], 2)],
-                ['label' => 'Estimated corporation tax', 'amount' => round((float)$current['estimated_corporation_tax'], 2)],
+                ['label' => 'Corporation tax on profits', 'amount' => round((float)($current['ordinary_corporation_tax'] ?? $current['estimated_corporation_tax']), 2)],
+                ['label' => 's455 participator-loan tax', 'amount' => round((float)($current['s455_tax'] ?? 0), 2)],
+                ['label' => 'Estimated corporation tax total', 'amount' => round((float)$current['estimated_corporation_tax'], 2)],
             ],
             'schedule' => array_values(array_map(
                 static fn(array $row): array => [
@@ -184,7 +188,15 @@ final class CorporationTaxComputationService
             return $this->ctPeriodSummaryCache[$cacheKey] = $stored;
         }
 
-        $summary = $this->calculateSummaryForCtPeriodId($companyId, $ctPeriodId);
+        try {
+            $summary = $this->calculateSummaryForCtPeriodId($companyId, $ctPeriodId);
+        } catch (\Throwable $exception) {
+            $summary = [
+                'available' => false,
+                'errors' => [$exception->getMessage()],
+                'ct_period_id' => $ctPeriodId,
+            ];
+        }
         return $this->ctPeriodSummaryCache[$cacheKey] = $this->withComputationPersistenceState($companyId, $ctPeriodId, $summary);
     }
 
@@ -213,13 +225,18 @@ final class CorporationTaxComputationService
         $taxableProfit = max(0.0, round($taxableBeforeLosses - $lossUsed, 2));
         $lossCreated = $taxableBeforeLosses < 0 ? abs($taxableBeforeLosses) : 0.0;
         $lossCarriedForward = round((float)$losses['brought_forward'] - $lossUsed + $lossCreated, 2);
-        $associatedCompanyCount = $this->associatedCompanyCount($companyId);
+        $associatedCompanyCount = $this->associatedCompanyCount($companyId, $ctPeriodId);
+        $ordinaryCorporationTax = 0.0;
         $rateCalculation = ($this->rateService ?? new \eel_accounts\Service\CorporationTaxRateService())->calculate(
             (string)$ctPeriod['period_start'],
             (string)$ctPeriod['period_end'],
             $taxableProfit,
             $associatedCompanyCount
         );
+        $ordinaryCorporationTax = round((float)$rateCalculation['liability'], 2);
+        $s455Tax = (new \eel_accounts\Service\S455ReviewService())
+            ->requireConfirmedNetTax($companyId, $accountingPeriodId, $ctPeriodId);
+        $estimatedCorporationTax = round($ordinaryCorporationTax + $s455Tax, 2);
         $computationHash = hash('sha256', json_encode([
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
@@ -234,7 +251,9 @@ final class CorporationTaxComputationService
             'loss_bf' => (float)$losses['brought_forward'],
             'loss_used' => $lossUsed,
             'associated_company_count' => $associatedCompanyCount,
-            'rate_liability' => (float)$rateCalculation['liability'],
+            'ordinary_corporation_tax' => $ordinaryCorporationTax,
+            's455_tax' => $s455Tax,
+            'estimated_corporation_tax' => $estimatedCorporationTax,
             'accounting_allocation_basis' => (array)($accountingAllocation['basis'] ?? []),
             'prepayment_preview_reliable' => $this->prepaymentPreviewReliable($pnl),
             'prepayment_preview_warnings' => $this->prepaymentPreviewDetails($pnl),
@@ -253,7 +272,9 @@ final class CorporationTaxComputationService
             'capital_allowances' => round((float)$assetAdjustments['capital_allowances'], 2),
             'taxable_before_losses' => $taxableBeforeLosses,
             'taxable_profit' => $taxableProfit,
-            'estimated_corporation_tax' => round((float)$rateCalculation['liability'], 2),
+            'ordinary_corporation_tax' => $ordinaryCorporationTax,
+            's455_tax' => $s455Tax,
+            'estimated_corporation_tax' => $estimatedCorporationTax,
             'estimated_rate' => round((float)$rateCalculation['effective_rate'], 6),
             'associated_company_count' => $associatedCompanyCount,
             'ct_rate_bands' => (array)($rateCalculation['bands'] ?? []),
@@ -510,7 +531,7 @@ final class CorporationTaxComputationService
             $periodStart,
             $periodEnd,
             $taxableProfit,
-            $this->associatedCompanyCount($companyId)
+            $this->associatedCompanyCount($companyId, $ctPeriodId)
         );
         $warnings = array_values(array_filter(array_map(
             'strval',
@@ -607,12 +628,12 @@ final class CorporationTaxComputationService
 
         $schedule = [];
         $lossPool = [];
-        $associatedCompanyCount = $this->associatedCompanyCount($companyId);
         $rateService = $this->rateService ?? new \eel_accounts\Service\CorporationTaxRateService();
 
         try {
             foreach ($accountingPeriods as $accountingPeriod) {
                 $accountingPeriodId = (int)($accountingPeriod['id'] ?? 0);
+                $associatedCompanyCount = $this->associatedCompanyCountForAccountingPeriod($companyId, $accountingPeriodId);
                 $pnl = $this->profitAndLossSummary(
                     $companyId,
                     $accountingPeriodId,
@@ -1386,6 +1407,8 @@ final class CorporationTaxComputationService
             'taxable_before_losses' => round((float)$current['taxable_before_losses'], 2),
             'taxable_profit' => round((float)$current['taxable_profit'], 2),
             'taxable_loss' => round((float)$current['loss_created'], 2),
+            'ordinary_corporation_tax' => round((float)($current['ordinary_corporation_tax'] ?? $current['estimated_corporation_tax']), 2),
+            's455_tax' => round((float)($current['s455_tax'] ?? 0), 2),
             'estimated_corporation_tax' => round((float)$current['estimated_corporation_tax'], 2),
             'estimated_rate' => round((float)$current['estimated_rate'], 6),
             'associated_company_count' => (int)($current['associated_company_count'] ?? 0),
@@ -1411,7 +1434,9 @@ final class CorporationTaxComputationService
                 ['label' => 'Taxable result before losses', 'amount' => round((float)$current['taxable_before_losses'], 2)],
                 ['label' => 'Less losses brought forward utilised', 'amount' => round(0 - (float)$current['loss_utilised'], 2)],
                 ['label' => 'Taxable profit after losses', 'amount' => round((float)$current['taxable_profit'], 2)],
-                ['label' => 'Estimated corporation tax', 'amount' => round((float)$current['estimated_corporation_tax'], 2)],
+                ['label' => 'Corporation tax on profits', 'amount' => round((float)($current['ordinary_corporation_tax'] ?? $current['estimated_corporation_tax']), 2)],
+                ['label' => 's455 participator-loan tax', 'amount' => round((float)($current['s455_tax'] ?? 0), 2)],
+                ['label' => 'Estimated corporation tax total', 'amount' => round((float)$current['estimated_corporation_tax'], 2)],
             ],
             'schedule' => array_values(array_map(
                 static fn(array $row): array => [
@@ -1465,7 +1490,7 @@ final class CorporationTaxComputationService
         $taxableProfit = max(0.0, round($taxableBeforeLosses - $lossesUsed, 2));
         $lossCreated = $taxableBeforeLosses < 0 ? abs($taxableBeforeLosses) : 0.0;
         $lossesCarriedForward = round($lossesBroughtForward - $lossesUsed + $lossCreated, 2);
-        $associatedCompanyCount = $this->associatedCompanyCount($companyId);
+        $associatedCompanyCount = $this->associatedCompanyCountForAccountingPeriod($companyId, $accountingPeriodId, true);
         $rateCalculation = ($this->rateService ?? new \eel_accounts\Service\CorporationTaxRateService())->calculate(
             $periodStart,
             $periodEnd,
@@ -1846,21 +1871,47 @@ final class CorporationTaxComputationService
         ];
     }
 
-    private function associatedCompanyCount(int $companyId): int {
-        if ($companyId <= 0) {
-            return 0;
+    private function associatedCompanyCount(int $companyId, int $ctPeriodId): int {
+        $cacheKey = $companyId . ':' . $ctPeriodId;
+        if (array_key_exists($cacheKey, $this->associatedCompanyCountCache)) {
+            return $this->associatedCompanyCountCache[$cacheKey];
         }
+        return $this->associatedCompanyCountCache[$cacheKey] =
+            (new \eel_accounts\Service\CorporationTaxPeriodFactService())
+                ->requireAssociatedCompanyCount($companyId, $ctPeriodId);
+    }
 
-        if (array_key_exists($companyId, $this->associatedCompanyCountCache)) {
-            return $this->associatedCompanyCountCache[$companyId];
+    private function associatedCompanyCountForAccountingPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        bool $allowUnconfirmedPreview = false
+    ): int {
+        $periods = (array)($this->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId)['periods'] ?? []);
+        if ($periods === []) {
+            if ($allowUnconfirmedPreview) {
+                return 0;
+            }
+            throw new \RuntimeException('No CT period is available for the associated-company count.');
         }
-
-        try {
-            return $this->associatedCompanyCountCache[$companyId] =
-                max(0, (int)(new \eel_accounts\Store\CompanySettingsStore($companyId))->get('associated_company_count', 0));
-        } catch (\Throwable) {
-            return $this->associatedCompanyCountCache[$companyId] = 0;
+        $counts = [];
+        $facts = new \eel_accounts\Service\CorporationTaxPeriodFactService();
+        foreach ($periods as $period) {
+            $ctPeriodId = (int)($period['id'] ?? 0);
+            if ($ctPeriodId <= 0) {
+                continue;
+            }
+            if ($allowUnconfirmedPreview) {
+                $fact = $facts->fetchForCtPeriod($companyId, $ctPeriodId);
+                $counts[] = max(0, (int)($fact['associated_company_count'] ?? 0));
+            } else {
+                $counts[] = $this->associatedCompanyCount($companyId, $ctPeriodId);
+            }
         }
+        $counts = array_values(array_unique($counts));
+        if (count($counts) > 1) {
+            throw new \RuntimeException('This accounting period has different associated-company counts by CT period; use the CT-period tax summary.');
+        }
+        return (int)($counts[0] ?? 0);
     }
 
     private function tableExists(string $table): bool {

@@ -150,6 +150,8 @@ final class YearEndTaxReadinessService
             'taxable_before_losses',
             'taxable_profit',
             'taxable_loss',
+            'ordinary_corporation_tax',
+            's455_tax',
             'estimated_corporation_tax',
             'loss_created_in_period',
             'losses_used',

@@ -114,7 +114,7 @@ final class _director_loan_stateCard extends CardBaseFramework
                 ' . $this->stat('Gross Director Loan Liability', $this->money($settings, $statement['liability_payable'] ?? 0)) . '
                 ' . $this->stat('Calculated reclassification', $this->money($settings, $statement['desired_reclassification'] ?? 0)) . '
                 ' . $this->stat('Net position', $this->money($settings, $statement['net_position'] ?? 0)) . '
-                ' . $this->stat('Potential s455 exposure', $this->money($settings, $statement['potential_s455_exposure'] ?? 0)) . '
+                ' . $this->stat('Gross loan asset (not s455)', $this->money($settings, $statement['potential_s455_exposure'] ?? 0)) . '
                 ' . $this->stat('Unattributed entries', (string)($unattributedCount + $invalidCount)) . '
             </div>
             ' . (($unattributedCount + $invalidCount) > 0
@@ -298,7 +298,7 @@ final class _director_loan_stateCard extends CardBaseFramework
             ->textColumn('net_position_label', 'Position')
             ->column(
                 'potential_s455_exposure',
-                'Potential s455',
+                'Gross asset principal',
                 html: fn(array $row): string => HelperFramework::escape($this->money($settings, $row['potential_s455_exposure'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['potential_s455_exposure'] ?? 0), 2, '.', ''),
                 headerClass: 'numeric',

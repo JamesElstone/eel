@@ -21,7 +21,9 @@ final class _tax_corporation_tax_summaryCard extends CardBaseFramework
             . \eel_accounts\Renderer\TaxCardRenderer::summaryGrid([
                 ['Taxable profit', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['taxable_profit'] ?? 0)],
                 ['Taxable loss', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['taxable_loss'] ?? 0)],
-                ['Estimated Corporation Tax (CT)', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['estimated_corporation_tax'] ?? 0)],
+                ['Corporation Tax on profits', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['ordinary_corporation_tax'] ?? $summary['estimated_corporation_tax'] ?? 0)],
+                ['s455 participator-loan tax', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['s455_tax'] ?? 0)],
+                ['Estimated Corporation Tax total', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['estimated_corporation_tax'] ?? 0)],
                 ['Effective rate', \eel_accounts\Renderer\TaxCardRenderer::percent($summary['estimated_rate'] ?? 0)],
                 ['Posted CT provision', \eel_accounts\Renderer\TaxCardRenderer::money($context, $provision['posted_corporation_tax_charge'] ?? 0)],
                 ['Unposted P&L impact', \eel_accounts\Renderer\TaxCardRenderer::money($context, $provision['unposted_corporation_tax_adjustment'] ?? 0)],

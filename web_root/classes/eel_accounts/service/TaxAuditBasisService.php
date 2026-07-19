@@ -508,10 +508,21 @@ final class TaxAuditBasisService
         }
         if ($rows === []) {
             $rows[] = $this->auditRow('calculation_result', 0, '', 'Corporation Tax liability',
-                $summary['taxable_profit'] ?? 0, $summary['estimated_corporation_tax'] ?? 0, [
+                $summary['taxable_profit'] ?? 0, $summary['ordinary_corporation_tax'] ?? $summary['estimated_corporation_tax'] ?? 0, [
                     'rate' => $summary['estimated_rate'] ?? 0,
                     'associated_company_count' => $summary['associated_company_count'] ?? 0,
                 ]);
+        }
+        if (array_key_exists('s455_tax', $summary)) {
+            $rows[] = $this->auditRow(
+                's455_review',
+                (int)($summary['ct_period_id'] ?? 0),
+                (string)($summary['period_end'] ?? ''),
+                's455 participator-loan tax',
+                $summary['s455_tax'] ?? 0,
+                $summary['s455_tax'] ?? 0,
+                ['calculation_basis' => 'confirmed_source_payment_review']
+            );
         }
         return $rows;
     }

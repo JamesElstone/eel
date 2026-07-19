@@ -664,6 +664,7 @@ CREATE TABLE `journal_lines` (
   `journal_id` bigint(20) NOT NULL,
   `nominal_account_id` int(11) NOT NULL,
   `director_id` bigint(20) DEFAULT NULL,
+  `party_id` bigint(20) DEFAULT NULL,
   `company_account_id` int(11) DEFAULT NULL,
   `debit` decimal(12,2) NOT NULL DEFAULT 0.00,
   `credit` decimal(12,2) NOT NULL DEFAULT 0.00,
@@ -673,9 +674,12 @@ CREATE TABLE `journal_lines` (
   KEY `idx_journal_lines_nominal` (`nominal_account_id`),
   KEY `idx_journal_lines_director` (`director_id`),
   KEY `idx_journal_lines_nominal_director` (`nominal_account_id`,`director_id`),
+  KEY `idx_journal_lines_party` (`party_id`),
+  KEY `idx_journal_lines_nominal_party` (`nominal_account_id`,`party_id`),
   KEY `idx_journal_lines_company_account` (`company_account_id`),
   CONSTRAINT `fk_journal_lines_company_account` FOREIGN KEY (`company_account_id`) REFERENCES `company_accounts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_journal_lines_director` FOREIGN KEY (`director_id`) REFERENCES `company_directors` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_journal_lines_party` FOREIGN KEY (`party_id`) REFERENCES `company_parties` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_journal_lines_journal` FOREIGN KEY (`journal_id`) REFERENCES `journals` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_journal_lines_nominal_r` FOREIGN KEY (`nominal_account_id`) REFERENCES `nominal_accounts` (`id`) ON UPDATE CASCADE,
   CONSTRAINT `chk_journal_lines_nonnegative` CHECK (`debit` >= 0 and `credit` >= 0),
@@ -892,6 +896,132 @@ CREATE TABLE `corporation_tax_periods` (
   CONSTRAINT `fk_ct_period_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+-- Effective-dated ownership and CT-period human-confirmed facts.
+DROP TABLE IF EXISTS `corporation_tax_s455_reviews`;
+DROP TABLE IF EXISTS `corporation_tax_period_facts`;
+DROP TABLE IF EXISTS `company_shareholdings`;
+DROP TABLE IF EXISTS `company_party_roles`;
+DROP TABLE IF EXISTS `company_parties`;
+CREATE TABLE `company_parties` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `party_type` enum('individual','company','trust','partnership','other') NOT NULL DEFAULT 'individual',
+  `legal_name` varchar(255) NOT NULL,
+  `linked_director_id` bigint(20) DEFAULT NULL,
+  `source_note` text DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_company_parties_linked_director` (`company_id`,`linked_director_id`),
+  KEY `idx_company_parties_company_name` (`company_id`,`legal_name`),
+  CONSTRAINT `fk_company_parties_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_company_parties_director` FOREIGN KEY (`linked_director_id`) REFERENCES `company_directors` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE `company_party_roles` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `party_id` bigint(20) NOT NULL,
+  `role_type` enum('shareholder','participator','associate') NOT NULL,
+  `effective_from` date NOT NULL,
+  `effective_to` date DEFAULT NULL,
+  `source_note` text DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_company_party_roles_effective` (`company_id`,`role_type`,`effective_from`,`effective_to`),
+  KEY `idx_company_party_roles_party` (`party_id`,`effective_from`,`effective_to`),
+  CONSTRAINT `fk_company_party_roles_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_company_party_roles_party` FOREIGN KEY (`party_id`) REFERENCES `company_parties` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `chk_company_party_roles_dates` CHECK (`effective_to` is null or `effective_to` >= `effective_from`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE `company_shareholdings` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `party_id` bigint(20) NOT NULL,
+  `share_class_id` int(11) NOT NULL,
+  `quantity` int(11) NOT NULL,
+  `effective_from` date NOT NULL,
+  `effective_to` date DEFAULT NULL,
+  `source_note` text DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_company_shareholdings_effective` (`company_id`,`share_class_id`,`effective_from`,`effective_to`),
+  KEY `idx_company_shareholdings_party` (`party_id`,`effective_from`,`effective_to`),
+  CONSTRAINT `fk_company_shareholdings_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_company_shareholdings_party` FOREIGN KEY (`party_id`) REFERENCES `company_parties` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_company_shareholdings_class` FOREIGN KEY (`share_class_id`) REFERENCES `company_incorporation_share_classes` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `chk_company_shareholdings_quantity` CHECK (`quantity` > 0),
+  CONSTRAINT `chk_company_shareholdings_dates` CHECK (`effective_to` is null or `effective_to` >= `effective_from`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE `corporation_tax_period_facts` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `ct_period_id` int(11) NOT NULL,
+  `associated_company_count` int(11) NOT NULL DEFAULT 0,
+  `confirmed_at` datetime DEFAULT NULL,
+  `confirmed_by` varchar(100) DEFAULT NULL,
+  `confirmation_note` text DEFAULT NULL,
+  `basis_hash` char(64) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ct_period_facts_period` (`ct_period_id`),
+  KEY `idx_ct_period_facts_company_period` (`company_id`,`accounting_period_id`),
+  CONSTRAINT `fk_ct_period_facts_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct_period_facts_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct_period_facts_ct_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `chk_ct_period_facts_associated_count` CHECK (`associated_company_count` >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+DROP TABLE IF EXISTS `s455_rate_rules`;
+CREATE TABLE `s455_rate_rules` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `effective_from` date NOT NULL,
+  `effective_to` date DEFAULT NULL,
+  `rate` decimal(9,6) NOT NULL,
+  `source_note` varchar(255) NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_s455_rate_rules_effective` (`is_active`,`effective_from`,`effective_to`),
+  CONSTRAINT `chk_s455_rate_rules_rate` CHECK (`rate` >= 0 and `rate` <= 1),
+  CONSTRAINT `chk_s455_rate_rules_dates` CHECK (`effective_to` is null or `effective_to` >= `effective_from`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+INSERT INTO `s455_rate_rules` (`effective_from`,`effective_to`,`rate`,`source_note`,`is_active`) VALUES
+  ('2016-04-06','2022-04-05',0.325000,'CTA 2010 s455 dated local catalogue',1),
+  ('2022-04-06',NULL,0.337500,'CTA 2010 s455 dated local catalogue',1);
+CREATE TABLE `corporation_tax_s455_reviews` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `ct_period_id` int(11) NOT NULL,
+  `close_company_status` enum('unconfirmed','yes','no') NOT NULL DEFAULT 'unconfirmed',
+  `gross_principal` decimal(14,2) NOT NULL DEFAULT 0.00,
+  `gross_tax` decimal(14,2) NOT NULL DEFAULT 0.00,
+  `qualifying_repayments` decimal(14,2) NOT NULL DEFAULT 0.00,
+  `relief_tax` decimal(14,2) NOT NULL DEFAULT 0.00,
+  `net_tax` decimal(14,2) NOT NULL DEFAULT 0.00,
+  `ct600a_required` tinyint(1) NOT NULL DEFAULT 0,
+  `repayment_deadline` date NOT NULL,
+  `evidence_cutoff` datetime NOT NULL,
+  `window_status` enum('provisional_window_open','window_complete') NOT NULL,
+  `basis_hash` char(64) NOT NULL,
+  `basis_json` longtext NOT NULL,
+  `confirmed_at` datetime DEFAULT NULL,
+  `confirmed_by` varchar(100) DEFAULT NULL,
+  `confirmation_note` text DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ct_s455_review_period` (`ct_period_id`),
+  KEY `idx_ct_s455_review_company_period` (`company_id`,`accounting_period_id`),
+  CONSTRAINT `fk_ct_s455_review_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct_s455_review_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct_s455_review_ct_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Table structure for table `corporation_tax_computation_runs`
@@ -1339,9 +1469,11 @@ INSERT INTO `nominal_account_subtypes` (`code`, `name`, `parent_account_type`, `
   ('prepayments', 'Prepayments', 'asset', 25, 1),
   ('fixed_asset', 'Fixed Asset', 'asset', 20, 1),
   ('director_loan_asset', 'Director Loan Asset', 'asset', 30, 1),
+  ('participator_loan_asset', 'Participator Loan Asset', 'asset', 31, 1),
   ('trade_creditor', 'Trade Creditor', 'liability', 45, 1),
   ('expense_payable', 'Expense Payable', 'liability', 46, 1),
   ('director_loan_liability', 'Director Loan Liability', 'liability', 50, 1),
+  ('participator_loan_liability', 'Participator Loan Liability', 'liability', 51, 1),
   ('vat_control', 'VAT Control', 'liability', 55, 1),
   ('ordinary_share_capital', 'Ordinary Share Capital', 'equity', 70, 1),
   ('capital_reserves', 'Capital Reserves', 'equity', 80, 1),
@@ -2086,6 +2218,7 @@ CREATE TABLE `transactions` (
   `dedupe_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `nominal_account_id` int(11) DEFAULT NULL,
   `director_id` bigint(20) DEFAULT NULL,
+  `party_id` bigint(20) DEFAULT NULL,
   `transfer_account_id` int(11) DEFAULT NULL,
   `is_internal_transfer` tinyint(1) NOT NULL DEFAULT 0,
   `category_status` enum('uncategorised','auto','manual') NOT NULL DEFAULT 'uncategorised',
@@ -2100,9 +2233,11 @@ CREATE TABLE `transactions` (
   KEY `idx_transactions_upload` (`statement_upload_id`),
   KEY `idx_transactions_nominal` (`nominal_account_id`),
   KEY `idx_transactions_director` (`director_id`),
+  KEY `idx_transactions_party` (`party_id`),
   KEY `idx_transactions_category_status` (`category_status`),
   KEY `idx_transactions_company_month` (`company_id`,`txn_date`),
   CONSTRAINT `fk_transactions_director` FOREIGN KEY (`director_id`) REFERENCES `company_directors` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_transactions_party` FOREIGN KEY (`party_id`) REFERENCES `company_parties` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   KEY `idx_transactions_company_period_date` (`company_id`,`accounting_period_id`,`txn_date`),
   KEY `idx_transactions_company_period_category_status` (`company_id`,`accounting_period_id`,`category_status`),
   KEY `idx_transactions_company_currency` (`company_id`,`accounting_period_id`,`currency`),
@@ -3245,6 +3380,17 @@ INNER JOIN (
 WHERE existing_permission.`card_key` IN ('tax_corporation_tax_summary','tax_taxable_profit_bridge','year_end_tax_readiness');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_19_001_corporation_tax_audit_snapshots.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_19_002_ct_period_participator_controls.sql');
+INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
+SELECT DISTINCT existing_permission.`role_id`, new_card.`card_key`
+FROM `role_card_permissions` existing_permission
+INNER JOIN (
+  SELECT 'incorporation_ownership_parties' AS `card_key`
+  UNION ALL SELECT 'tax_ct_period_facts'
+  UNION ALL SELECT 'director_loan_s455'
+) new_card
+WHERE existing_permission.`card_key` IN ('incorporation_share_capital','tax_rate_bands','director_loan_state');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

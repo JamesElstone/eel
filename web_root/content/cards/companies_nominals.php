@@ -75,6 +75,8 @@ final class _companies_nominalsCard extends CardBaseFramework
                 'prepayment_asset_nominal_id' => 'Prepayments asset nominal',
                 'director_loan_asset_nominal_id' => 'Director Loan Asset nominal',
                 'director_loan_liability_nominal_id' => 'Director Loan Liability nominal',
+                'participator_loan_asset_nominal_id' => 'Participator Loan Asset nominal',
+                'participator_loan_liability_nominal_id' => 'Participator Loan Liability nominal',
                 'vat_nominal_id' => 'VAT control nominal',
                 'uncategorised_nominal_id' => 'Fallback uncategorised nominal',
                 'corporation_tax_expense_nominal_id' => 'Corporation Tax expense nominal',
@@ -127,7 +129,7 @@ final class _companies_nominalsCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="Nominals">
                 <input type="hidden" name="intent" value="save_nominals">
                 <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)($context['company']['id'] ?? 0)) . '">
-                <section data-state-fields="default_bank_nominal_id,default_sales_nominal_id,default_trade_nominal_id,default_expense_nominal_id,tools_small_equipment_nominal_id,prepayment_asset_nominal_id,director_loan_asset_nominal_id,director_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id,corporation_tax_expense_nominal_id,corporation_tax_liability_nominal_id,' . HelperFramework::escape($helperStateFields) . '" data-state-target="save_default_nominals">
+                <section data-state-fields="default_bank_nominal_id,default_sales_nominal_id,default_trade_nominal_id,default_expense_nominal_id,tools_small_equipment_nominal_id,prepayment_asset_nominal_id,director_loan_asset_nominal_id,director_loan_liability_nominal_id,participator_loan_asset_nominal_id,participator_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id,corporation_tax_expense_nominal_id,corporation_tax_liability_nominal_id,' . HelperFramework::escape($helperStateFields) . '" data-state-target="save_default_nominals">
                     <div class="form-grid">
                         <div class="form-row">
                             <label for="default_bank_nominal_id">Default Bank nominal</label>
@@ -183,6 +185,20 @@ final class _companies_nominalsCard extends CardBaseFramework
                             <select class="select" id="director_loan_liability_nominal_id" name="director_loan_liability_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['director_loan_liability_nominal_id'] ?? '')) . '">
                                 <option value="">Select nominal account</option>
                                 ' . $this->nominalOptions($nominalAccounts, (string)($settings['director_loan_liability_nominal_id'] ?? '')) . '
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <label for="participator_loan_asset_nominal_id">Participator Loan Asset nominal</label>
+                            <select class="select" id="participator_loan_asset_nominal_id" name="participator_loan_asset_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['participator_loan_asset_nominal_id'] ?? '')) . '">
+                                <option value="">Select nominal account</option>
+                                ' . $this->nominalOptions($nominalAccounts, (string)($settings['participator_loan_asset_nominal_id'] ?? '')) . '
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <label for="participator_loan_liability_nominal_id">Participator Loan Liability nominal</label>
+                            <select class="select" id="participator_loan_liability_nominal_id" name="participator_loan_liability_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['participator_loan_liability_nominal_id'] ?? '')) . '">
+                                <option value="">Select nominal account</option>
+                                ' . $this->nominalOptions($nominalAccounts, (string)($settings['participator_loan_liability_nominal_id'] ?? '')) . '
                             </select>
                         </div>
                         <div class="form-row">

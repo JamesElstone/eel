@@ -36,6 +36,7 @@ final class _incorporation extends PageContextFramework
             'incorporation_add_shares',
             'incorporation_share_capital',
             'incorporation_payment_matching',
+            'incorporation_ownership_parties',
         ];
     }
 
@@ -59,6 +60,12 @@ final class _incorporation extends PageContextFramework
                 'tab' => 'Payment',
                 'cards' => [
                     'incorporation_payment_matching',
+                ],
+            ],
+            [
+                'tab' => 'Ownership & Parties',
+                'cards' => [
+                    'incorporation_ownership_parties',
                 ],
             ],
         ];

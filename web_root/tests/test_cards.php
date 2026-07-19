@@ -420,11 +420,12 @@ final class TestCardsHarness
 
         $directorLoansPage = new _director_loans();
         $this->assertSame(
-            ['director_loan_state', 'director_loan_directors', 'year_end_director_loan_offset'],
+            ['director_loan_state', 'director_loan_directors', 'director_loan_s455', 'year_end_director_loan_offset'],
             $directorLoansPage->cards()
         );
         $this->assertPageTabContains($directorLoansPage, 'Statement', ['director_loan_state']);
         $this->assertPageTabContains($directorLoansPage, 'Directors', ['director_loan_directors']);
+        $this->assertPageTabContains($directorLoansPage, 'Participator loans (s455)', ['director_loan_s455']);
         $this->assertPageFinalTabContains($directorLoansPage, 'Year End Confirmation', ['year_end_director_loan_offset']);
         $this->assertPageFinalTabContains(new _expense_claims(), 'Year End Confirmation', ['year_end_expenses_confirmation']);
         $this->assertPageFinalTabContains(new _companies_house(), 'Year End Confirmation', ['year_end_companies_house_comparison']);

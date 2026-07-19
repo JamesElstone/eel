@@ -162,7 +162,6 @@ final class CompanySettingsService
             $companyRepository->saveCompanySection($settings);
 
             $settingsStore->set('utr', $settings['utr'], 'char');
-            $settingsStore->set('associated_company_count', $settings['associated_company_count'] ?? 0, 'int');
             if ($hasCessationSetting) {
                 $settingsStore->set('qualifying_activity_ceased_on', $cessationDate, 'char');
             }
@@ -330,6 +329,8 @@ final class CompanySettingsService
             $settingsStore->set('director_loan_asset_nominal_id', $settings['director_loan_asset_nominal_id'] ?? '', 'int');
             $settingsStore->set('director_loan_liability_nominal_id', $directorLoanLiabilityNominalId, 'int');
             $settingsStore->set('director_loan_nominal_id', $directorLoanLiabilityNominalId, 'int');
+            $settingsStore->set('participator_loan_asset_nominal_id', $settings['participator_loan_asset_nominal_id'] ?? '', 'int');
+            $settingsStore->set('participator_loan_liability_nominal_id', $settings['participator_loan_liability_nominal_id'] ?? '', 'int');
             $settingsStore->set('vat_nominal_id', $settings['vat_nominal_id'] ?? '', 'int');
             $settingsStore->set('uncategorised_nominal_id', $settings['uncategorised_nominal_id'] ?? '', 'int');
             $settingsStore->set('corporation_tax_expense_nominal_id', $settings['corporation_tax_expense_nominal_id'] ?? '', 'int');
@@ -379,6 +380,8 @@ final class CompanySettingsService
             'prepayment_asset_nominal_id',
             'director_loan_asset_nominal_id',
             'director_loan_liability_nominal_id',
+            'participator_loan_asset_nominal_id',
+            'participator_loan_liability_nominal_id',
             'vat_nominal_id',
             'uncategorised_nominal_id',
             'corporation_tax_expense_nominal_id',
@@ -577,6 +580,12 @@ final class CompanySettingsService
             'director_loan_asset_nominal_id' => $this->directorLoanAssetNominalSuggestion($normalised),
             'director_loan_liability_nominal_id' => $this->directorLoanLiabilityNominalSuggestion($normalised),
             'director_loan_nominal_id' => $this->directorLoanLiabilityNominalSuggestion($normalised),
+            'participator_loan_asset_nominal_id' => $this->firstMatchingNominal($normalised, static function (array $row): bool {
+                return $row['account_type'] === 'asset' && $row['subtype_code'] === 'participator_loan_asset';
+            }),
+            'participator_loan_liability_nominal_id' => $this->firstMatchingNominal($normalised, static function (array $row): bool {
+                return $row['account_type'] === 'liability' && $row['subtype_code'] === 'participator_loan_liability';
+            }),
             'vat_nominal_id' => $this->firstMatchingNominal($normalised, static function (array $row): bool {
                 return $row['id'] > 0
                     && ($row['subtype_code'] === 'vat_control'

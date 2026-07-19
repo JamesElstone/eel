@@ -28,7 +28,6 @@ final class CompanySettingsStore
         return [
             // A UTR is an identifier, not a number; preserve any leading zero.
             'utr' => ['type' => 'char', 'default' => ''],
-            'associated_company_count' => ['type' => 'int', 'default' => '0'],
             'qualifying_activity_ceased_on' => ['type' => 'char', 'default' => ''],
             'default_currency' => ['type' => 'char', 'default' => 'GBP'],
             'default_currency_symbol' => ['type' => 'char', 'default' => '&#163;'],
@@ -41,6 +40,8 @@ final class CompanySettingsStore
             'director_loan_nominal_id' => ['type' => 'int', 'default' => ''],
             'director_loan_asset_nominal_id' => ['type' => 'int', 'default' => ''],
             'director_loan_liability_nominal_id' => ['type' => 'int', 'default' => ''],
+            'participator_loan_asset_nominal_id' => ['type' => 'int', 'default' => ''],
+            'participator_loan_liability_nominal_id' => ['type' => 'int', 'default' => ''],
             'vat_nominal_id' => ['type' => 'int', 'default' => ''],
             'uncategorised_nominal_id' => ['type' => 'int', 'default' => ''],
             'corporation_tax_expense_nominal_id' => ['type' => 'int', 'default' => ''],

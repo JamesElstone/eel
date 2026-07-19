@@ -825,6 +825,8 @@ final class ProfitLossService
                     'capital_add_backs' => (float)($preTax['capital_add_backs'] ?? 0),
                     'other_treatment_count' => (int)($preTax['other_treatment_count'] ?? 0),
                     'unknown_treatment_count' => (int)($preTax['unknown_treatment_count'] ?? 0),
+                    'other_treatment_amount' => round((float)($preTax['other_treatment_amount'] ?? 0), 2),
+                    'unknown_treatment_amount' => round((float)($preTax['unknown_treatment_amount'] ?? 0), 2),
                     'prepayment_preview_reliable' => !array_key_exists('prepayment_preview_reliable', $preTax)
                         || !empty($preTax['prepayment_preview_reliable']),
                     'prepayment_preview_warnings' => array_values(array_unique(array_map(

@@ -241,16 +241,82 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
         }
     });
 
-    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'lock status gate rejects unresolved warnings', static function () use ($harness): void {
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'warnings and failures both prevent the Year End lock', static function () use ($harness): void {
         $service = new \eel_accounts\Service\YearEndChecklistService();
         $method = new ReflectionMethod($service, 'canLockOverallStatus');
         $method->setAccessible(true);
+        $overall = new ReflectionMethod($service, 'determineOverallStatus');
+        $overall->setAccessible(true);
 
         $harness->assertSame(true, (bool)$method->invoke($service, 'ready_for_review'));
         $harness->assertSame(false, (bool)$method->invoke($service, 'in_progress'));
         $harness->assertSame(false, (bool)$method->invoke($service, 'needs_attention'));
         $harness->assertSame(false, (bool)$method->invoke($service, 'not_started'));
         $harness->assertSame(false, (bool)$method->invoke($service, 'locked'));
+        $harness->assertSame('in_progress', (string)$overall->invoke(
+            $service,
+            [['status' => 'warning']],
+            true,
+            false
+        ));
+        $harness->assertSame('ready_for_review', (string)$overall->invoke(
+            $service,
+            [['status' => 'info']],
+            true,
+            false
+        ));
+        $harness->assertSame('needs_attention', (string)$overall->invoke(
+            $service,
+            [['status' => 'warning'], ['status' => 'fail']],
+            true,
+            false
+        ));
+    });
+
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'CT-period tax fact failures link to the selected Tax period', static function () use ($harness): void {
+        $service = new \eel_accounts\Service\YearEndChecklistService();
+        $method = new ReflectionMethod($service, 'ctPeriodTaxFactChecks');
+        $method->setAccessible(true);
+
+        $checks = $method->invoke($service, [
+            'periods' => [[
+                'available' => true,
+                'ct_period_id' => 73,
+                'ct_period_display_sequence_no' => 4,
+                'unknown_treatment_count' => 1,
+                'unknown_treatment_amount' => 12.34,
+                'other_treatment_count' => 0,
+                'other_treatment_amount' => 0.0,
+                'hard_gate_diagnostics' => [[
+                    'code' => 'capital_allowance_fixture',
+                    'category' => 'capital_allowance',
+                    'amount_affecting' => true,
+                    'message' => 'Resolve the capital allowance warning.',
+                ]],
+            ]],
+        ], [
+            'periods' => [[
+                'ct_period_id' => 73,
+                'sequence_no' => 4,
+                'confirmed' => true,
+            ]],
+        ], [
+            'periods' => [[
+                'ct_period_id' => 73,
+                'sequence_no' => 4,
+                'confirmed' => false,
+            ]],
+        ]);
+
+        $harness->assertSame(1, count($checks));
+        $harness->assertSame('ct_period_tax_facts_73', (string)($checks[0]['check_code'] ?? ''));
+        $harness->assertSame('fail', (string)($checks[0]['status'] ?? ''));
+        $harness->assertSame('corporation_tax', (string)($checks[0]['workflow_page'] ?? ''));
+        $harness->assertSame('73', (string)(($checks[0]['workflow_fields'] ?? [])['ct_period_id'] ?? ''));
+        $harness->assertTrue(str_contains((string)($checks[0]['detail_text'] ?? ''), 'unknown tax treatment'));
+        $harness->assertTrue(str_contains((string)($checks[0]['detail_text'] ?? ''), 's455 review is not confirmed'));
+        $harness->assertTrue(str_contains((string)($checks[0]['detail_text'] ?? ''), 'capital allowance warning'));
+        $harness->assertSame(false, array_key_exists('review_clearable', $checks[0]));
     });
 
     $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'posted source work checks are split by source type', static function () use ($harness): void {

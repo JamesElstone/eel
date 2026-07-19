@@ -105,6 +105,7 @@ final class YearEndTaxReadinessService
             ];
         }
 
+        $periodSummaries = (new CorporationTaxHardGateService())->apply($companyId, $periodSummaries);
         $totals = $this->totals($periodSummaries);
         $warnings = $this->warnings($periodSummaries);
         $prepaymentPreviewWarnings = array_values(array_unique(array_merge(...array_map(
@@ -170,7 +171,13 @@ final class YearEndTaxReadinessService
 
         $totals['other_treatment_count'] = array_sum(array_map(static fn(array $period): int => (int)($period['other_treatment_count'] ?? 0), $periods));
         $totals['unknown_treatment_count'] = array_sum(array_map(static fn(array $period): int => (int)($period['unknown_treatment_count'] ?? 0), $periods));
+        $totals['other_treatment_amount'] = round(array_sum(array_map(static fn(array $period): float => (float)($period['other_treatment_amount'] ?? 0), $periods)), 2);
+        $totals['unknown_treatment_amount'] = round(array_sum(array_map(static fn(array $period): float => (float)($period['unknown_treatment_amount'] ?? 0), $periods)), 2);
         $totals['ct_period_count'] = count($periods);
+        $totals['hard_gate_diagnostic_count'] = array_sum(array_map(
+            static fn(array $period): int => count((array)($period['hard_gate_diagnostics'] ?? [])),
+            $periods
+        ));
 
         return $totals;
     }

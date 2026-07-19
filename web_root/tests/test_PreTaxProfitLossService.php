@@ -27,6 +27,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('150.00', number_format((float)($result['operating_expense_total'] ?? 0), 2, '.', ''));
             $harness->assertSame('650.00', number_format((float)($result['profit_before_tax'] ?? 0), 2, '.', ''));
             $harness->assertSame('50.00', number_format((float)($result['disallowable_add_backs'] ?? 0), 2, '.', ''));
+            $harness->assertSame('0.00', number_format((float)($result['other_treatment_amount'] ?? 0), 2, '.', ''));
+            $harness->assertSame('0.00', number_format((float)($result['unknown_treatment_amount'] ?? 0), 2, '.', ''));
             $harness->assertSame(1, (int)($result['journal_count'] ?? 0));
             $harness->assertTrue(($result['scope'] ?? null) instanceof \eel_accounts\Service\PeriodLedgerScope);
             $harness->assertTrue(($result['dataset'] ?? null) instanceof \eel_accounts\Service\PeriodLedgerDataset);
@@ -35,6 +37,45 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $service->clearRuntimeCache();
             $recalculated = $service->calculate((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], '2025-06-30');
             $harness->assertSame('650.00', number_format((float)($recalculated['profit_before_tax'] ?? 0), 2, '.', ''));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
+    $harness->check(\eel_accounts\Service\PreTaxProfitLossService::class, 'measures non-zero unresolved other treatment from posted journal value', static function () use ($harness): void {
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = periodLedgerTestCreateFixture();
+            $otherNominalId = periodLedgerTestInsertNominal(
+                'LO' . substr(hash('sha256', (string)$fixture['accounting_period_id']), 0, 10),
+                'Ledger Other Treatment ' . $fixture['accounting_period_id'],
+                'expense',
+                'other'
+            );
+            periodLedgerTestInsertJournal(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                '2025-04-20',
+                'period-ledger-other-' . (string)$fixture['accounting_period_id'],
+                [
+                    [$otherNominalId, 42.50, 0.0],
+                    [(int)$fixture['asset_nominal_id'], 0.0, 42.50],
+                ]
+            );
+
+            $result = (new \eel_accounts\Service\PreTaxProfitLossService())->calculate(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                '2025-06-30',
+                null,
+                ['success' => true, 'rows' => []],
+                []
+            );
+
+            $harness->assertSame(1, (int)($result['other_treatment_count'] ?? 0));
+            $harness->assertSame('42.50', number_format((float)($result['other_treatment_amount'] ?? 0), 2, '.', ''));
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();

@@ -954,6 +954,8 @@ final class YearEndChecklistService
         $duplicateRepayments = $metrics->duplicateRepaymentRiskSummary($companyId, $periodStart, $periodEnd);
         $financialStatements = $metrics->financialStatementsSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd, $trialBalance);
         $taxReadiness = $tax->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
+        $frs105Profile = (new \eel_accounts\Service\Frs105YearEndProfileService())
+            ->fetch($companyId, $accountingPeriodId);
         $balanceSheetMetrics = (array)(($financialStatements['balance_sheet'] ?? [])['metrics'] ?? []);
         $corporationTaxProvision = is_array($taxReadiness['provision'] ?? null)
             ? (array)$taxReadiness['provision']
@@ -1013,8 +1015,8 @@ final class YearEndChecklistService
         $sections['bookkeeping_completeness'][] = $this->makeCheck(
             'missing_month_warning',
             'Expected month coverage',
-            'warning',
-            $missingMonths > 0 ? 'warning' : 'pass',
+            'fail',
+            $missingMonths > 0 ? 'fail' : 'pass',
             $missingMonths > 0
                 ? 'Some months inside the accounting period have no uploads or transactions and should be reviewed.'
                 : 'Every month inside the accounting period has at least some source activity.',
@@ -1047,8 +1049,8 @@ final class YearEndChecklistService
         $sections['categorisation_suspense'][] = $this->makeCheck(
             'auto_categorisations_pending_review',
             'Transaction auto categorisations pending review',
-            'warning',
-            $autoAttentionCount > 0 ? 'warning' : 'pass',
+            'fail',
+            $autoAttentionCount > 0 ? 'fail' : 'pass',
             $this->autoDecisionReviewDetail($autoDecisionSummary),
             $this->autoDecisionReviewMetric($autoDecisionSummary),
             $this->autoDecisionReviewActionUrl($autoDecisionSummary)
@@ -1096,8 +1098,8 @@ final class YearEndChecklistService
         $sections['bank_source_completeness'][] = $this->makeCheck(
             'statement_continuity',
             'Statement continuity',
-            'warning',
-            $continuityWarningCount > 0 ? 'warning' : 'pass',
+            'fail',
+            $continuityWarningCount > 0 ? 'fail' : 'pass',
             $continuityWarningCount > 0
                 ? $this->statementContinuityDetail($statementContinuity, $settings)
                 : ($acceptedInitialGapCount > 0
@@ -1177,8 +1179,8 @@ final class YearEndChecklistService
         $sections['director_loan_expenses'][] = $this->makeCheck(
             'duplicate_repayment_protection',
             'Duplicate repayment protection',
-            'warning',
-            !empty($duplicateRepayments['available']) && (int)$duplicateRepayments['risk_count'] > 0 ? 'warning' : (!empty($duplicateRepayments['available']) ? 'pass' : 'not_applicable'),
+            'fail',
+            !empty($duplicateRepayments['available']) && (int)$duplicateRepayments['risk_count'] > 0 ? 'fail' : (!empty($duplicateRepayments['available']) ? 'pass' : 'not_applicable'),
             !empty($duplicateRepayments['available'])
                 ? 'Potentially duplicated repayment recognition should be checked where the same bank transaction is linked more than once.'
                 : 'Expense repayment links are not available yet.',
@@ -1297,8 +1299,8 @@ final class YearEndChecklistService
         $sections['year_end_accounts_review'][] = $this->makeCheck(
             'vehicle_tax_review',
             'Vehicle tax review',
-            'warning',
-            $vehicleReviewWarnings === [] ? 'pass' : 'warning',
+            'fail',
+            $vehicleReviewWarnings === [] ? 'pass' : 'fail',
             $vehicleReviewWarnings === []
                 ? 'Motor vehicle assets have no outstanding vehicle tax review warnings for this period.'
                 : 'Review vehicle type, CO2 emissions, and car/van nominal classification before relying on capital allowances.',
@@ -1328,8 +1330,8 @@ final class YearEndChecklistService
         $sections['year_end_accounts_review'][] = $this->makeCheck(
             'prepayments_review',
             'Prepayments review',
-            'warning',
-            empty($prepaymentReview['available']) ? 'not_applicable' : ($prepaymentPendingCount > 0 ? 'warning' : 'pass'),
+            'fail',
+            empty($prepaymentReview['available']) ? 'not_applicable' : ($prepaymentPendingCount > 0 ? 'fail' : 'pass'),
             empty($prepaymentReview['available'])
                 ? (string)(($prepaymentReview['errors'] ?? [])[0] ?? 'Prepayment review is not available.')
                 : ($prepaymentPendingCount > 0
@@ -1406,15 +1408,55 @@ final class YearEndChecklistService
             '?page=director_loans&show_card=director_loan_s455'
         );
 
+        $ctPeriodTaxFactChecks = $this->ctPeriodTaxFactChecks($taxReadiness, $ctPeriodFacts, $s455Review);
+        array_push($sections['corporation_tax_readiness'], ...$ctPeriodTaxFactChecks);
+        $ctPeriodTaxFactsPass = !in_array('fail', array_column($ctPeriodTaxFactChecks, 'status'), true);
+
+        $sections['corporation_tax_readiness'][] = $this->makeCheck(
+            'frs105_micro_entity_profile',
+            'Supported FRS 105 micro-entity profile',
+            'fail',
+            !empty($frs105Profile['available']) && !empty($frs105Profile['pass']) ? 'pass' : 'fail',
+            !empty($frs105Profile['available']) && !empty($frs105Profile['pass'])
+                ? 'The accounting period meets the application\'s sole supported ordinary trading-company FRS 105 micro-entity profile.'
+                : (string)(($frs105Profile['errors'] ?? [])[0] ?? 'The supported FRS 105 micro-entity profile could not be confirmed.'),
+            !empty($frs105Profile['pass']) ? 'Supported' : 'Action required',
+            '?page=disclosures&show_card=ixbrl_accounts_disclosures'
+        );
+
         $sections['corporation_tax_readiness'][] = $this->makeCheck(
             'tax_adjusted_profit_basis_available',
             'Tax-adjusted profit basis available',
-            'warning',
-            !empty($taxReadiness['available']) && ((int)($taxReadiness['unknown_treatment_count'] ?? 0) > 0 || (int)($taxReadiness['other_treatment_count'] ?? 0) > 0) ? 'warning' : (!empty($taxReadiness['available']) ? 'pass' : 'fail'),
+            'fail',
+            !empty($taxReadiness['available']) ? 'pass' : 'fail',
             !empty($taxReadiness['available'])
                 ? 'Nominal tax treatments are being used to estimate the tax-adjusted result across all CT periods in this accounting period.'
                 : 'Tax readiness could not be calculated for this period.',
             !empty($taxReadiness['available']) ? $this->money($settings, $taxReadiness['taxable_profit'] ?? 0) : '',
+            '?page=nominals'
+        );
+        $unknownTreatmentAmount = round((float)($taxReadiness['unknown_treatment_amount'] ?? 0), 2);
+        $otherTreatmentAmount = round((float)($taxReadiness['other_treatment_amount'] ?? 0), 2);
+        $sections['corporation_tax_readiness'][] = $this->makeCheck(
+            'unknown_nominal_tax_treatments',
+            'Unknown nominal tax treatments',
+            'fail',
+            !empty($taxReadiness['available']) && $unknownTreatmentAmount < 0.005 ? 'pass' : 'fail',
+            $unknownTreatmentAmount < 0.005
+                ? 'Every non-zero posted profit-and-loss movement resolves to a supported nominal tax treatment.'
+                : 'Reclassify every non-zero journal movement whose nominal tax treatment is unknown.',
+            !empty($taxReadiness['available']) ? $this->money($settings, $unknownTreatmentAmount) : '',
+            '?page=nominals'
+        );
+        $sections['corporation_tax_readiness'][] = $this->makeCheck(
+            'other_nominal_tax_treatments',
+            'Unresolved other nominal tax treatments',
+            'fail',
+            !empty($taxReadiness['available']) && $otherTreatmentAmount < 0.005 ? 'pass' : 'fail',
+            $otherTreatmentAmount < 0.005
+                ? 'No non-zero posted profit-and-loss movement remains in the unresolved other treatment.'
+                : 'Assign every non-zero journal movement marked other to an allowable, disallowable, or capital nominal treatment.',
+            !empty($taxReadiness['available']) ? $this->money($settings, $otherTreatmentAmount) : '',
             '?page=nominals'
         );
         $taxEstimateCheck = $this->makeCheck(
@@ -1465,8 +1507,8 @@ final class YearEndChecklistService
         $sections['corporation_tax_readiness'][] = $this->makeCheck(
             'corporation_tax_estimate_confidence',
             'Corporation tax estimate confidence',
-            'warning',
-            empty($taxReadiness['available']) ? 'not_applicable' : ($taxConfidenceStatus === 'ready_for_review' ? 'pass' : 'warning'),
+            'fail',
+            empty($taxReadiness['available']) ? 'fail' : ($taxConfidenceStatus === 'ready_for_review' ? 'pass' : 'fail'),
             empty($taxReadiness['available'])
                 ? 'Tax readiness must be available before estimate confidence can be assessed.'
                 : ($taxConfidenceStatus === 'ready_for_review'
@@ -1496,6 +1538,7 @@ final class YearEndChecklistService
             '?page=corporation_tax&show_card=year_end_tax_readiness#tax-readiness',
             empty($taxReadiness['available']) ? null : $this->acknowledgementBasis('tax_readiness_acknowledgement', $taxReadiness)
         ), $reviewAcknowledgements);
+
         $sections['corporation_tax_readiness'][] = $this->applyReviewAcknowledgement($this->makeCheck(
             'filing_basis_reminder',
             'Filing basis reminder',
@@ -1556,11 +1599,14 @@ final class YearEndChecklistService
         ), $reviewAcknowledgements);
 
         $blockingChecksPass = $uncategorisedCount === 0
+            && $missingMonths === 0
+            && $autoAttentionCount === 0
             && abs((float)$suspenseSummary['closing_balance']) < 0.005
             && !empty($trialBalance['balances'])
             && !empty($trialBalance['exists'])
             && $journalIntegrityIssues === 0
             && $unpostedSourceWorkCount === 0
+            && $continuityWarningCount === 0
             && $priorPeriodDependencySatisfied
             && $retainedEarningsCloseCurrent
             && $taxProvisionCurrent
@@ -1570,8 +1616,27 @@ final class YearEndChecklistService
             && !empty($ctPeriodFacts['all_confirmed'])
             && !empty($s455Review['available'])
             && !empty($s455Review['all_confirmed'])
+            && $ctPeriodTaxFactsPass
+            && !empty($frs105Profile['available'])
+            && !empty($frs105Profile['pass'])
+            && !empty($taxReadiness['available'])
+            && (float)($taxReadiness['unknown_treatment_amount'] ?? 0) < 0.005
+            && (float)($taxReadiness['other_treatment_amount'] ?? 0) < 0.005
+            && (int)($taxReadiness['hard_gate_diagnostic_count'] ?? 0) === 0
+            && (array)($taxReadiness['warnings'] ?? []) === []
+            && $this->acknowledgementCurrentInSections($sections, 'tax_readiness_acknowledgement')
+            && (empty($expensePosition['available'])
+                || $this->acknowledgementCurrentInSections($sections, 'expense_position_acknowledgement'))
+            && (empty($duplicateRepayments['available']) || (int)($duplicateRepayments['risk_count'] ?? 0) === 0)
+            && ($potentialAssetCandidateCount === 0
+                || $this->acknowledgementCurrentInSections($sections, 'fixed_asset_review_placeholder'))
+            && $vehicleReviewWarnings === []
+            && (empty($transactionTail['available'])
+                || $this->acknowledgementCurrentInSections($sections, 'transaction_tail_review'))
+            && $prepaymentPendingCount === 0
             && $this->prepaymentSchedulesCurrent($prepaymentRepair)
             && $this->acknowledgementCurrentInSections($sections, 'prepayment_approvals')
+            && $this->acknowledgementCurrentInSections($sections, 'cut_off_journals_review')
             && !empty($directorLoanReview['available'])
             && (!$directorLoanHasActivity || (
                 $directorLoanUnattributedCount === 0
@@ -1619,9 +1684,126 @@ final class YearEndChecklistService
             'checks_flat' => $checks,
             'expense_position' => $expensePosition,
             'tax_readiness' => $taxReadiness,
+            'frs105_profile' => $frs105Profile,
             'companies_house_comparison' => $chComparison,
             'retained_earnings_close' => $retainedEarningsClose,
         ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function ctPeriodTaxFactChecks(array $taxReadiness, array $ctPeriodFacts, array $s455Review): array
+    {
+        $summaries = $this->rowsByCtPeriodId((array)($taxReadiness['periods'] ?? []));
+        $facts = $this->rowsByCtPeriodId((array)($ctPeriodFacts['periods'] ?? []));
+        $s455 = $this->rowsByCtPeriodId((array)($s455Review['periods'] ?? []));
+        $periodIds = array_values(array_unique(array_merge(
+            array_keys($summaries),
+            array_keys($facts),
+            array_keys($s455)
+        )));
+        sort($periodIds, SORT_NUMERIC);
+
+        if ($periodIds === []) {
+            return [$this->makeCheck(
+                'ct_period_tax_facts_unavailable',
+                'CT-period tax facts',
+                'fail',
+                'fail',
+                'No CT periods are available for tax-fact readiness checks.',
+                'Action required',
+                '?page=corporation_tax'
+            )];
+        }
+
+        $checks = [];
+        foreach ($periodIds as $ctPeriodId) {
+            $summary = (array)($summaries[$ctPeriodId] ?? []);
+            $fact = (array)($facts[$ctPeriodId] ?? []);
+            $s455Period = (array)($s455[$ctPeriodId] ?? []);
+            $errors = [];
+            if ($summary === [] || empty($summary['available'])) {
+                $errors[] = 'The CT-period computation is unavailable.';
+            }
+            if ($fact === [] || empty($fact['confirmed'])) {
+                $errors[] = 'The associated-company facts are not confirmed.';
+            }
+            if ($s455Period === [] || empty($s455Period['confirmed'])) {
+                $errors[] = 'The participator-loan s455 review is not confirmed.';
+            }
+            $unknownCount = (int)($summary['unknown_treatment_count'] ?? 0);
+            $otherCount = (int)($summary['other_treatment_count'] ?? 0);
+            $unknownAmount = round((float)($summary['unknown_treatment_amount'] ?? ($unknownCount > 0 ? 0.01 : 0)), 2);
+            $otherAmount = round((float)($summary['other_treatment_amount'] ?? ($otherCount > 0 ? 0.01 : 0)), 2);
+            if ($unknownAmount >= 0.005) {
+                $errors[] = number_format($unknownAmount, 2, '.', '') . ' of journal value has an unknown tax treatment.';
+            }
+            if ($otherAmount >= 0.005) {
+                $errors[] = number_format($otherAmount, 2, '.', '') . ' of journal value has an unresolved other tax treatment.';
+            }
+            if (array_key_exists('hard_gate_diagnostics', $summary)) {
+                foreach ((array)$summary['hard_gate_diagnostics'] as $diagnostic) {
+                    if (!is_array($diagnostic) || empty($diagnostic['amount_affecting'])) {
+                        continue;
+                    }
+                    if ((string)($diagnostic['category'] ?? '') === 'nominal_treatment') {
+                        continue;
+                    }
+                    $message = trim((string)($diagnostic['message'] ?? ''));
+                    if ($message !== '') {
+                        $errors[] = $message;
+                    }
+                }
+            } else {
+                // Backward-compatible fail-closed handling for immutable runs
+                // created before structured diagnostics were persisted.
+                foreach ((array)($summary['warnings'] ?? []) as $warning) {
+                    $warning = trim((string)$warning);
+                    if ($warning !== '') {
+                        $errors[] = $warning;
+                    }
+                }
+            }
+            $errors = array_values(array_unique($errors));
+            $sequence = (int)($summary['ct_period_display_sequence_no']
+                ?? $summary['ct_period_sequence_no']
+                ?? $fact['sequence_no']
+                ?? $s455Period['sequence_no']
+                ?? 0);
+            $title = $sequence > 0 ? 'CT Period ' . $sequence . ' tax facts' : 'CT-period tax facts';
+
+            $checks[] = $this->makeCheck(
+                'ct_period_tax_facts_' . $ctPeriodId,
+                $title,
+                'fail',
+                $errors === [] ? 'pass' : 'fail',
+                $errors === []
+                    ? 'The available computation, associated-company facts, s455 review and amount-affecting diagnostics are resolved for this CT period.'
+                    : implode(' ', $errors),
+                $errors === [] ? 'Resolved' : count($errors) . ' issue' . (count($errors) === 1 ? '' : 's'),
+                '?page=corporation_tax&ct_period_id=' . $ctPeriodId . '&show_card=tax_warnings'
+            );
+        }
+
+        return $checks;
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function rowsByCtPeriodId(array $rows): array
+    {
+        $indexed = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $ctPeriodId = (int)($row['ct_period_id'] ?? 0);
+            if ($ctPeriodId > 0) {
+                $indexed[$ctPeriodId] = $row;
+            }
+        }
+
+        return $indexed;
     }
 
     private function autoDecisionReviewDetail(array $summary): string

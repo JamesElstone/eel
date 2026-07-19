@@ -38,6 +38,8 @@ final class PreTaxProfitLossService
         $capital = 0.0;
         $otherCount = 0;
         $unknownCount = 0;
+        $otherAmount = 0.0;
+        $unknownAmount = 0.0;
 
         foreach ($dataset->rows as $row) {
             $type = (string)($row['account_type'] ?? '');
@@ -70,6 +72,16 @@ final class PreTaxProfitLossService
                 $journalDate,
                 $journalDate
             )['tax_treatment'] ?? '');
+            $absoluteAmount = abs($amount);
+            if ($absoluteAmount >= 0.005) {
+                if ($taxTreatment === 'other') {
+                    $otherCount++;
+                    $otherAmount = round($otherAmount + $absoluteAmount, 2);
+                } elseif (!in_array($taxTreatment, ['allowable', 'disallowable', 'capital'], true)) {
+                    $unknownCount++;
+                    $unknownAmount = round($unknownAmount + $absoluteAmount, 2);
+                }
+            }
             if ((string)($row['account_type'] ?? '') === 'income') {
                 if ($taxTreatment === 'capital') {
                     // A credit income movement is negative on the signed
@@ -83,10 +95,6 @@ final class PreTaxProfitLossService
                 $disallowable += $amount;
             } elseif ($taxTreatment === 'capital') {
                 $capital += $amount;
-            } elseif ($taxTreatment === 'other') {
-                $otherCount++;
-            } elseif (!in_array($taxTreatment, ['allowable', 'disallowable', 'capital', 'other'], true)) {
-                $unknownCount++;
             }
         }
         $postedOperatingExpenses = $operatingExpenses;
@@ -125,6 +133,16 @@ final class PreTaxProfitLossService
                 $journalDate,
                 $journalDate
             )['tax_treatment'] ?? '');
+            $absoluteAmount = abs($amount);
+            if ($absoluteAmount >= 0.005) {
+                if ($taxTreatment === 'other') {
+                    $otherCount++;
+                    $otherAmount = round($otherAmount + $absoluteAmount, 2);
+                } elseif (!in_array($taxTreatment, ['allowable', 'disallowable', 'capital'], true)) {
+                    $unknownCount++;
+                    $unknownAmount = round($unknownAmount + $absoluteAmount, 2);
+                }
+            }
             if ($taxTreatment === 'disallowable') {
                 $disallowable += $amount;
             } elseif ($taxTreatment === 'capital') {
@@ -171,6 +189,8 @@ final class PreTaxProfitLossService
             'capital_add_backs' => round($capital, 2),
             'other_treatment_count' => $otherCount,
             'unknown_treatment_count' => $unknownCount,
+            'other_treatment_amount' => round($otherAmount, 2),
+            'unknown_treatment_amount' => round($unknownAmount, 2),
             'journal_count' => $dataset->journalCount,
         ];
     }

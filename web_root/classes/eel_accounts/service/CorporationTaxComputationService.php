@@ -81,10 +81,10 @@ final class CorporationTaxComputationService
         }
 
         $warnings = [];
-        if ((int)($current['unknown_treatment_count'] ?? 0) > 0) {
+        if ($this->treatmentAmount($current, 'unknown') >= 0.005) {
             $warnings[] = 'Some nominal tax treatments are unknown and should be reviewed before relying on the estimate.';
         }
-        if ((int)($current['other_treatment_count'] ?? 0) > 0) {
+        if ($this->treatmentAmount($current, 'other') >= 0.005) {
             $warnings[] = 'Some nominal tax treatments are marked as other and need manual review.';
         }
         if (!empty($current['asset_adjustment_warning'])) {
@@ -120,6 +120,8 @@ final class CorporationTaxComputationService
             'losses_carried_forward' => round((float)$current['loss_carried_forward'], 2),
             'other_treatment_count' => (int)$current['other_treatment_count'],
             'unknown_treatment_count' => (int)$current['unknown_treatment_count'],
+            'other_treatment_amount' => $this->treatmentAmount($current, 'other'),
+            'unknown_treatment_amount' => $this->treatmentAmount($current, 'unknown'),
             'prepayment_preview_reliable' => $this->prepaymentPreviewReliable($current),
             'prepayment_preview_warnings' => $this->prepaymentPreviewDetails($current),
             'warnings' => $warnings,
@@ -257,6 +259,8 @@ final class CorporationTaxComputationService
             'accounting_allocation_basis' => (array)($accountingAllocation['basis'] ?? []),
             'prepayment_preview_reliable' => $this->prepaymentPreviewReliable($pnl),
             'prepayment_preview_warnings' => $this->prepaymentPreviewDetails($pnl),
+            'other_treatment_amount' => $this->treatmentAmount($pnl, 'other'),
+            'unknown_treatment_amount' => $this->treatmentAmount($pnl, 'unknown'),
         ], JSON_UNESCAPED_SLASHES));
 
         $row = [
@@ -285,6 +289,8 @@ final class CorporationTaxComputationService
             'loss_carried_forward' => $lossCarriedForward,
             'other_treatment_count' => (int)($pnl['other_treatment_count'] ?? 0),
             'unknown_treatment_count' => (int)($pnl['unknown_treatment_count'] ?? 0),
+            'other_treatment_amount' => $this->treatmentAmount($pnl, 'other'),
+            'unknown_treatment_amount' => $this->treatmentAmount($pnl, 'unknown'),
             'prepayment_preview_reliable' => $this->prepaymentPreviewReliable($pnl),
             'prepayment_preview_warnings' => $this->prepaymentPreviewDetails($pnl),
             'asset_adjustment_warning' => (string)($assetAdjustments['warning'] ?? ''),
@@ -377,6 +383,7 @@ final class CorporationTaxComputationService
         $activePeriods = $this->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId);
         $periods = (array)($activePeriods['periods'] ?? []);
         $summaries = [];
+        $newRunIds = [];
         $errors = (array)($activePeriods['errors'] ?? []);
         foreach ($periods as $period) {
             $ctPeriodId = (int)($period['id'] ?? 0);
@@ -402,6 +409,25 @@ final class CorporationTaxComputationService
                 continue;
             }
             $summaries[] = $summary;
+            if ((int)($summary['computation_run_id'] ?? 0) > 0) {
+                $newRunIds[(int)$summary['ct_period_id']] = (int)$summary['computation_run_id'];
+            }
+        }
+
+        $summaries = (new CorporationTaxHardGateService())->apply($companyId, $summaries);
+        foreach ($summaries as $summary) {
+            $diagnostics = (array)($summary['hard_gate_diagnostics'] ?? []);
+            if ($diagnostics !== []) {
+                foreach ($diagnostics as $diagnostic) {
+                    $errors[] = (string)($summary['period_label'] ?? ('CT Period ' . (int)($summary['ct_period_display_sequence_no'] ?? 0)))
+                        . ': ' . (string)($diagnostic['message'] ?? 'An amount-affecting tax diagnostic remains.');
+                }
+                continue;
+            }
+            $runId = (int)($newRunIds[(int)($summary['ct_period_id'] ?? 0)] ?? 0);
+            if ($runId > 0) {
+                $this->updatePersistedHardGateDiagnostics($runId, $summary);
+            }
         }
 
         return [
@@ -409,6 +435,20 @@ final class CorporationTaxComputationService
             'errors' => $errors,
             'summaries' => $summaries,
         ];
+    }
+
+    private function updatePersistedHardGateDiagnostics(int $runId, array $summary): void
+    {
+        $summaryJson = json_encode($summary, JSON_UNESCAPED_SLASHES);
+        if ($runId <= 0 || !is_string($summaryJson)) {
+            return;
+        }
+        \InterfaceDB::prepareExecute(
+            'UPDATE corporation_tax_computation_runs
+             SET summary_json = :summary_json
+             WHERE id = :id AND status = :status',
+            ['summary_json' => $summaryJson, 'id' => $runId, 'status' => 'generated']
+        );
     }
 
     public function activeCtPeriodsForAccountingPeriod(int $companyId, int $accountingPeriodId): array
@@ -693,6 +733,8 @@ final class CorporationTaxComputationService
                     'rate_liability' => (float)$rateCalculation['liability'],
                     'prepayment_preview_reliable' => $this->prepaymentPreviewReliable($pnl),
                     'prepayment_preview_warnings' => $this->prepaymentPreviewDetails($pnl),
+                    'other_treatment_amount' => $this->treatmentAmount($pnl, 'other'),
+                    'unknown_treatment_amount' => $this->treatmentAmount($pnl, 'unknown'),
                 ], JSON_UNESCAPED_SLASHES));
 
                 $schedule[$accountingPeriodId] = [
@@ -716,6 +758,8 @@ final class CorporationTaxComputationService
                     'loss_carried_forward' => $lossCf,
                     'other_treatment_count' => (int)($pnl['other_treatment_count'] ?? 0),
                     'unknown_treatment_count' => (int)($pnl['unknown_treatment_count'] ?? 0),
+                    'other_treatment_amount' => $this->treatmentAmount($pnl, 'other'),
+                    'unknown_treatment_amount' => $this->treatmentAmount($pnl, 'unknown'),
                     'prepayment_preview_reliable' => $this->prepaymentPreviewReliable($pnl),
                     'prepayment_preview_warnings' => $this->prepaymentPreviewDetails($pnl),
                     'asset_adjustment_warning' => (string)($assetAdjustments['warning'] ?? ''),
@@ -1380,10 +1424,10 @@ final class CorporationTaxComputationService
 
     private function summaryFromRows(array $current, array $schedule): array {
         $warnings = [];
-        if ((int)($current['unknown_treatment_count'] ?? 0) > 0) {
+        if ($this->treatmentAmount($current, 'unknown') >= 0.005) {
             $warnings[] = 'Some nominal tax treatments are unknown and should be reviewed before relying on the estimate.';
         }
-        if ((int)($current['other_treatment_count'] ?? 0) > 0) {
+        if ($this->treatmentAmount($current, 'other') >= 0.005) {
             $warnings[] = 'Some nominal tax treatments are marked as other and need manual review.';
         }
         if (!empty($current['asset_adjustment_warning'])) {
@@ -1419,6 +1463,8 @@ final class CorporationTaxComputationService
             'losses_carried_forward' => round((float)$current['loss_carried_forward'], 2),
             'other_treatment_count' => (int)$current['other_treatment_count'],
             'unknown_treatment_count' => (int)$current['unknown_treatment_count'],
+            'other_treatment_amount' => $this->treatmentAmount($current, 'other'),
+            'unknown_treatment_amount' => $this->treatmentAmount($current, 'unknown'),
             'prepayment_preview_reliable' => $this->prepaymentPreviewReliable($current),
             'prepayment_preview_warnings' => $this->prepaymentPreviewDetails($current),
             'warnings' => $warnings,
@@ -1499,10 +1545,10 @@ final class CorporationTaxComputationService
         );
         $warnings = [];
 
-        if ((int)($profitAndLoss['unknown_treatment_count'] ?? 0) > 0) {
+        if ($this->treatmentAmount($profitAndLoss, 'unknown') >= 0.005) {
             $warnings[] = 'Some nominal tax treatments are unknown and should be reviewed before relying on the estimate.';
         }
-        if ((int)($profitAndLoss['other_treatment_count'] ?? 0) > 0) {
+        if ($this->treatmentAmount($profitAndLoss, 'other') >= 0.005) {
             $warnings[] = 'Some nominal tax treatments are marked as other and need manual review.';
         }
         if (!empty($assetAdjustments['warning'])) {
@@ -1547,6 +1593,8 @@ final class CorporationTaxComputationService
             'losses_carried_forward' => $lossesCarriedForward,
             'other_treatment_count' => (int)($profitAndLoss['other_treatment_count'] ?? 0),
             'unknown_treatment_count' => (int)($profitAndLoss['unknown_treatment_count'] ?? 0),
+            'other_treatment_amount' => $this->treatmentAmount($profitAndLoss, 'other'),
+            'unknown_treatment_amount' => $this->treatmentAmount($profitAndLoss, 'unknown'),
             'prepayment_preview_reliable' => $this->prepaymentPreviewReliable($profitAndLoss),
             'prepayment_preview_warnings' => $this->prepaymentPreviewDetails($profitAndLoss),
             'warnings' => $warnings,
@@ -1667,6 +1715,18 @@ final class CorporationTaxComputationService
                 $periodStart
             )
         ), 2);
+    }
+
+    private function treatmentAmount(array $source, string $treatment): float
+    {
+        $amountKey = $treatment . '_treatment_amount';
+        if (array_key_exists($amountKey, $source)) {
+            return round(abs((float)$source[$amountKey]), 2);
+        }
+
+        // Older immutable summaries pre-date amount totals. Keep them safely
+        // blocked when their row count proves unresolved treatment existed.
+        return (int)($source[$treatment . '_treatment_count'] ?? 0) > 0 ? 0.01 : 0.0;
     }
 
     /**

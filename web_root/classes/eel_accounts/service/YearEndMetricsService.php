@@ -727,6 +727,8 @@ final class YearEndMetricsService
             ))),
             'other_treatment_count' => (int)$result['other_treatment_count'],
             'unknown_treatment_count' => (int)$result['unknown_treatment_count'],
+            'other_treatment_amount' => round((float)($result['other_treatment_amount'] ?? 0), 2),
+            'unknown_treatment_amount' => round((float)($result['unknown_treatment_amount'] ?? 0), 2),
         ];
     }
 

@@ -159,10 +159,6 @@ final class CorporationTaxTreatmentRuleService
             return $this->fetchRules(false);
         }
 
-        if (!\InterfaceDB::tableExists('corporation_tax_treatment_rules')) {
-            return [];
-        }
-
         if ($this->activeRuleCache !== null) {
             return $this->activeRuleCache;
         }

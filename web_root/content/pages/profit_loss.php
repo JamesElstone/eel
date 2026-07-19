@@ -91,7 +91,8 @@ final class _profit_loss extends PageContextFramework
         $company = (array)($baseContext['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
-        $profitLossService = new \eel_accounts\Service\ProfitLossService();
+        /** @var \eel_accounts\Service\ProfitLossService $profitLossService */
+        $profitLossService = $services->get(\eel_accounts\Service\ProfitLossService::class);
 
         return [
             'profit_loss' => [

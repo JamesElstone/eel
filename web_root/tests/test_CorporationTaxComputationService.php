@@ -126,5 +126,33 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(str_contains($warnings, 'prepayment preview is unreliable'));
             $harness->assertTrue(str_contains($warnings, 'no longer matches its linked source amount'));
         });
+
+        $harness->check(\eel_accounts\Service\CorporationTaxComputationService::class, 'caches VAT support scope once per company until runtime caches are cleared', static function () use ($harness): void {
+            $scopeCalls = 0;
+            $scopeFetcher = static function (int $companyId) use (&$scopeCalls): array {
+                $scopeCalls++;
+
+                return [
+                    'tax_year_end_read_only' => false,
+                    'supported' => true,
+                    'company_id' => $companyId,
+                    'message' => '',
+                ];
+            };
+            $computation = new \eel_accounts\Service\CorporationTaxComputationService(
+                vatSupportScopeFetcher: $scopeFetcher
+            );
+            $scopeMethod = new ReflectionMethod($computation, 'vatSupportScope');
+            $scopeMethod->setAccessible(true);
+
+            $first = $scopeMethod->invoke($computation, 77);
+            $second = $scopeMethod->invoke($computation, 77);
+            $harness->assertSame($first, $second);
+            $harness->assertSame(1, $scopeCalls);
+
+            $computation->clearRuntimeCaches();
+            $scopeMethod->invoke($computation, 77);
+            $harness->assertSame(2, $scopeCalls);
+        });
     }
 );

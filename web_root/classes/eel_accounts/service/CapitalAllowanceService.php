@@ -14,6 +14,12 @@ final class CapitalAllowanceService
     private const RUN_HASH_ALGORITHM_VERSION = 'capital_allowance_pool_v2';
     private const RUN_HASH_VERSION_PREFIX = 'ca02:';
 
+    /** @var array<int, array<string|int, mixed>> */
+    private array $calculationCache = [];
+    private ?\eel_accounts\Service\TaxRateRuleService $resolvedTaxRateRuleService = null;
+    private ?\eel_accounts\Service\CorporationTaxPeriodService $resolvedCorporationTaxPeriodService = null;
+    private ?\eel_accounts\Service\YearEndLockService $resolvedYearEndLockService = null;
+
     public function __construct(
         private readonly ?\eel_accounts\Service\TaxRateRuleService $taxRateRuleService = null,
         private readonly ?\eel_accounts\Service\CorporationTaxPeriodService $corporationTaxPeriodService = null
@@ -28,6 +34,22 @@ final class CapitalAllowanceService
             && \InterfaceDB::tableExists('capital_allowance_asset_calculations');
     }
 
+    public function clearRuntimeCache(?int $companyId = null): void
+    {
+        if ($companyId === null) {
+            $this->calculationCache = [];
+            if ($this->resolvedTaxRateRuleService !== null) {
+                $this->resolvedTaxRateRuleService->clearRuntimeCaches();
+            }
+            return;
+        }
+
+        unset($this->calculationCache[$companyId]);
+        if ($this->resolvedTaxRateRuleService !== null) {
+            $this->resolvedTaxRateRuleService->clearRuntimeCaches();
+        }
+    }
+
     public function rebuildForCompany(int $companyId): array
     {
         $scopeBlock = (new VatSupportScopeService())->mutationBlockResult($companyId, 'rebuild Corporation Tax capital allowance data');
@@ -38,6 +60,8 @@ final class CapitalAllowanceService
         if ($companyId <= 0 || !$this->hasRequiredSchema()) {
             return [];
         }
+
+        $this->clearRuntimeCache($companyId);
 
         $periods = $this->fetchAccountingPeriods($companyId);
         if ($periods === []) {
@@ -70,25 +94,30 @@ final class CapitalAllowanceService
      */
     public function calculateForCompany(int $companyId): array
     {
-        if ($companyId <= 0 || !$this->hasRequiredSchema()) {
+        if ($companyId <= 0) {
+            return [];
+        }
+
+        if (array_key_exists($companyId, $this->calculationCache)) {
+            return $this->calculationCache[$companyId];
+        }
+
+        if (!$this->hasRequiredSchema()) {
             return [];
         }
 
         try {
+            // A service instance may perform a persisted rebuild and a later
+            // transient read in the same request. Start each fresh company
+            // calculation from current rate rows, then cache within that run.
+            $this->taxRateRules()->clearRuntimeCaches();
             $periods = $this->fetchAccountingPeriods($companyId);
-            $lockedPeriodIds = array_values(array_map(
-                static fn(array $period): int => (int)$period['id'],
-                array_filter(
-                    $periods,
-                    fn(array $period): bool => (new \eel_accounts\Service\YearEndLockService())
-                        ->isLocked($companyId, (int)$period['id'])
-                        || $this->periodHasFinalCtStatus($companyId, (int)$period['id'])
-                )
-            ));
+            $lockedPeriodIds = $this->immutablePeriodIdsForCompany($companyId, $periods);
 
-            return $this->buildForCompany($companyId, 'none', 0, $lockedPeriodIds);
+            return $this->calculationCache[$companyId] =
+                $this->buildForCompany($companyId, 'none', 0, $lockedPeriodIds);
         } catch (\Throwable $exception) {
-            return [
+            return $this->calculationCache[$companyId] = [
                 'success' => false,
                 'errors' => [$exception->getMessage()],
             ];
@@ -112,6 +141,8 @@ final class CapitalAllowanceService
         if ($accountingPeriodId <= 0) {
             return ['success' => false, 'errors' => ['Select an accounting period before persisting capital allowances.']];
         }
+
+        $this->clearRuntimeCache($companyId);
 
         $period = \InterfaceDB::fetchOne(
             'SELECT id
@@ -137,7 +168,8 @@ final class CapitalAllowanceService
                     . 'so its capital allowance evidence cannot be replaced.'
                 );
             }
-            (new \eel_accounts\Service\YearEndLockService())->assertUnlockedForUpdate(
+            $lockService = $this->yearEndLockService();
+            $lockService->assertUnlockedForUpdate(
                 $companyId,
                 $accountingPeriodId,
                 'replace capital allowance evidence for this period'
@@ -149,8 +181,7 @@ final class CapitalAllowanceService
                     $periods,
                     fn(array $candidate): bool => (int)$candidate['id'] !== $accountingPeriodId
                         && (
-                            (new \eel_accounts\Service\YearEndLockService())
-                                ->isLocked($companyId, (int)$candidate['id'])
+                            $lockService->isLocked($companyId, (int)$candidate['id'])
                             || $this->periodHasFinalCtStatus($companyId, (int)$candidate['id'])
                         )
                 )
@@ -198,6 +229,13 @@ final class CapitalAllowanceService
             return [];
         }
 
+        $firstPeriod = (array)reset($periods);
+        $lastPeriod = (array)end($periods);
+        $calculationStart = (string)($firstPeriod['period_start'] ?? '');
+        $calculationEnd = (string)($lastPeriod['period_end'] ?? '');
+        $assetAdditions = $this->fetchAssetAdditions($companyId, $calculationStart, $calculationEnd);
+        $assetDisposals = $this->fetchDisposals($companyId, $calculationStart, $calculationEnd);
+
         $cessationDate = $this->qualifyingActivityCessationDate($companyId);
         $lockedPeriodIds = array_fill_keys(array_map('intval', $lockedPeriodIds), true);
 
@@ -207,8 +245,7 @@ final class CapitalAllowanceService
         $outstandingPooledAssets = [];
         $results = [];
 
-        $ctPeriodService = $this->corporationTaxPeriodService
-            ?? new \eel_accounts\Service\CorporationTaxPeriodService();
+        $ctPeriodService = $this->corporationTaxPeriodService();
 
         foreach ($periods as $period) {
             $periodId = (int)$period['id'];
@@ -265,7 +302,7 @@ final class CapitalAllowanceService
                 $special = $this->emptyPool('special_rate_pool', $specialWdv);
 
                 if (!$afterCessation) {
-                    foreach ($this->fetchAssetAdditions($companyId, $periodStart, $activityEnd) as $asset) {
+                    foreach ($this->assetEventsForPeriod($assetAdditions, 'purchase_date', $periodStart, $activityEnd) as $asset) {
                         $assetId = (int)$asset['id'];
                         $cost = round((float)$asset['cost'], 2);
                         $treatment = $this->additionTreatment($asset);
@@ -323,7 +360,7 @@ final class CapitalAllowanceService
                         $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'main_pool', 'main_pool_addition', $cost);
                     }
 
-                    foreach ($this->fetchDisposals($companyId, $periodStart, $activityEnd) as $asset) {
+                    foreach ($this->assetEventsForPeriod($assetDisposals, 'disposal_date', $periodStart, $activityEnd) as $asset) {
                         $assetId = (int)$asset['id'];
                         $pool = (string)($assetPools[$assetId] ?? $this->poolForExistingAsset($asset));
                         $proceeds = $this->qualifyingDisposalValue($asset);
@@ -644,7 +681,7 @@ final class CapitalAllowanceService
             $sql,
             $params
         ) ?: [];
-        $locked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId)
+        $locked = $this->yearEndLockService()->isLocked($companyId, $accountingPeriodId)
             || $this->periodHasFinalCtStatus($companyId, $accountingPeriodId);
         if (!$locked || $rows === []) {
             $calculated = $this->calculateForCompany($companyId);
@@ -843,6 +880,23 @@ final class CapitalAllowanceService
                AND ar.disposal_proceeds IS NOT NULL',
             ['company_id' => $companyId, 'period_start' => $periodStart, 'period_end' => $periodEnd]
         ) ?: [];
+    }
+
+    /**
+     * Asset rows are fetched once for the complete company sequence and then
+     * partitioned in memory, avoiding two SQL round trips for every CT period.
+     * ISO dates preserve chronological ordering under string comparison.
+     */
+    private function assetEventsForPeriod(array $rows, string $dateColumn, string $periodStart, string $periodEnd): array
+    {
+        return array_values(array_filter(
+            $rows,
+            static function (array $row) use ($dateColumn, $periodStart, $periodEnd): bool {
+                $date = (string)($row[$dateColumn] ?? '');
+
+                return $date !== '' && $date >= $periodStart && $date <= $periodEnd;
+            }
+        ));
     }
 
     private function qualifyingDisposalValue(array $asset): float
@@ -1139,7 +1193,7 @@ final class CapitalAllowanceService
     private function lockedPeriodIdsForRebuild(int $companyId, array $periods): array
     {
         $lockedPeriodIds = [];
-        $lockService = new \eel_accounts\Service\YearEndLockService();
+        $lockService = $this->yearEndLockService();
         foreach ($periods as $period) {
             $periodId = (int)($period['id'] ?? 0);
             if ($periodId <= 0) {
@@ -1178,6 +1232,62 @@ final class CapitalAllowanceService
                 'accounting_period_id' => $accountingPeriodId,
             ]
         ) > 0;
+    }
+
+    /** @return list<int> */
+    private function immutablePeriodIdsForCompany(int $companyId, array $periods): array
+    {
+        $candidateIds = [];
+        foreach ($periods as $period) {
+            $periodId = (int)($period['id'] ?? 0);
+            if ($periodId <= 0) {
+                continue;
+            }
+            $candidateIds[$periodId] = true;
+        }
+
+        if ($candidateIds === []) {
+            return [];
+        }
+
+        $immutableIds = [];
+        if (\InterfaceDB::tableExists('year_end_reviews')) {
+            foreach (\InterfaceDB::fetchAll(
+                'SELECT accounting_period_id
+                 FROM year_end_reviews
+                 WHERE company_id = :company_id
+                   AND is_locked = 1',
+                ['company_id' => $companyId]
+            ) ?: [] as $row) {
+                $periodId = (int)($row['accounting_period_id'] ?? 0);
+                if (isset($candidateIds[$periodId])) {
+                    $immutableIds[$periodId] = true;
+                }
+            }
+        }
+
+        if (\InterfaceDB::tableExists('corporation_tax_periods')) {
+            foreach (\InterfaceDB::fetchAll(
+                'SELECT DISTINCT accounting_period_id
+                 FROM corporation_tax_periods
+                 WHERE company_id = :company_id
+                   AND status IN (\'submitted\', \'accepted\')',
+                ['company_id' => $companyId]
+            ) ?: [] as $row) {
+                $periodId = (int)($row['accounting_period_id'] ?? 0);
+                if (isset($candidateIds[$periodId])) {
+                    $immutableIds[$periodId] = true;
+                }
+            }
+        }
+
+        return array_values(array_map(
+            'intval',
+            array_filter(
+                array_keys($candidateIds),
+                static fn(int $periodId): bool => isset($immutableIds[$periodId])
+            )
+        ));
     }
 
     /** @return array{owns_transaction: bool, savepoint: string} */
@@ -1373,7 +1483,31 @@ final class CapitalAllowanceService
 
     private function taxRateRules(): \eel_accounts\Service\TaxRateRuleService
     {
-        return $this->taxRateRuleService ?? new \eel_accounts\Service\TaxRateRuleService();
+        if ($this->resolvedTaxRateRuleService === null) {
+            $this->resolvedTaxRateRuleService = $this->taxRateRuleService
+                ?? new \eel_accounts\Service\TaxRateRuleService();
+        }
+
+        return $this->resolvedTaxRateRuleService;
+    }
+
+    private function corporationTaxPeriodService(): \eel_accounts\Service\CorporationTaxPeriodService
+    {
+        if ($this->resolvedCorporationTaxPeriodService === null) {
+            $this->resolvedCorporationTaxPeriodService = $this->corporationTaxPeriodService
+                ?? new \eel_accounts\Service\CorporationTaxPeriodService();
+        }
+
+        return $this->resolvedCorporationTaxPeriodService;
+    }
+
+    private function yearEndLockService(): \eel_accounts\Service\YearEndLockService
+    {
+        if ($this->resolvedYearEndLockService === null) {
+            $this->resolvedYearEndLockService = new \eel_accounts\Service\YearEndLockService();
+        }
+
+        return $this->resolvedYearEndLockService;
     }
 
     private function isIsoDate(string $date): bool

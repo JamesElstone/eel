@@ -97,10 +97,13 @@ final class _corporation_tax extends PageContextFramework
         $company = (array)($baseContext['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
-        $vatSupportScope = (new \eel_accounts\Service\VatSupportScopeService())->fetchForCompany($companyId);
+        /** @var \eel_accounts\Service\VatSupportScopeService $vatSupportScopeService */
+        $vatSupportScopeService = $services->get(\eel_accounts\Service\VatSupportScopeService::class);
+        $vatSupportScope = $vatSupportScopeService->fetchForCompany($companyId);
+        /** @var \eel_accounts\Service\CorporationTaxComputationService $taxComputationService */
+        $taxComputationService = $services->get(\eel_accounts\Service\CorporationTaxComputationService::class);
         $available = $companyId > 0 && $accountingPeriodId > 0
-            ? (new \eel_accounts\Service\CorporationTaxComputationService())
-                ->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId)
+            ? $taxComputationService->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId)
             : ['periods' => [], 'errors' => []];
         $ctPeriods = array_values(array_filter(
             (array)($available['periods'] ?? []),

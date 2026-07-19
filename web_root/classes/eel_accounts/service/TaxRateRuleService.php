@@ -17,6 +17,11 @@ final class TaxRateRuleService
     public const CAPITAL_ALLOWANCE_AIA_SOURCE_URL = 'https://www.gov.uk/capital-allowances/annual-investment-allowance';
     public const FRS105_THRESHOLDS_SOURCE_URL = 'https://www.gov.uk/annual-accounts/microentities-small-and-dormant-companies';
 
+    /** @var array<string, array<int, array<string, mixed>>> */
+    private array $activeRulesCache = [];
+    /** @var array<string, float> */
+    private array $weightedValueCache = [];
+
     public function ensureSchema(): void
     {
         if (\InterfaceDB::tableExists('tax_rate_rules')) {
@@ -81,6 +86,12 @@ final class TaxRateRuleService
                 KEY idx_tax_rate_rules_lookup (tax_domain, regime, rule_key, is_active, period_start, period_end)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
         );
+    }
+
+    public function clearRuntimeCaches(): void
+    {
+        $this->activeRulesCache = [];
+        $this->weightedValueCache = [];
     }
 
     public function fetchRules(): array
@@ -151,10 +162,12 @@ final class TaxRateRuleService
             if ($ownsTransaction) {
                 \InterfaceDB::commit();
             }
+            $this->clearRuntimeCaches();
         } catch (\Throwable $exception) {
             if ($ownsTransaction && \InterfaceDB::inTransaction()) {
                 \InterfaceDB::rollBack();
             }
+            $this->clearRuntimeCaches();
             throw $exception;
         }
 
@@ -377,6 +390,11 @@ final class TaxRateRuleService
     private function weightedValueForPeriod(string $taxDomain, string $regime, string $ruleKey, string $periodStart, string $periodEnd, string $valueColumn): float
     {
         $this->ensureSchema();
+        $cacheKey = implode("\x1f", [$taxDomain, $regime, $ruleKey, $periodStart, $periodEnd, $valueColumn]);
+        if (array_key_exists($cacheKey, $this->weightedValueCache)) {
+            return $this->weightedValueCache[$cacheKey];
+        }
+
         $start = new \DateTimeImmutable($periodStart);
         $end = new \DateTimeImmutable($periodEnd);
         if ($start > $end) {
@@ -409,12 +427,17 @@ final class TaxRateRuleService
             throw new \RuntimeException('No complete active sourced tax rate rule was found for ' . $taxDomain . '/' . $regime . '/' . $ruleKey . ' covering ' . $periodStart . ' to ' . $periodEnd . '.');
         }
 
-        return round($weightedValue / $totalDays, 6);
+        return $this->weightedValueCache[$cacheKey] = round($weightedValue / $totalDays, 6);
     }
 
     private function fetchActiveRulesForPeriod(string $taxDomain, string $regime, string $ruleKey, string $periodStart, string $periodEnd): array
     {
-        return \InterfaceDB::fetchAll(
+        $cacheKey = implode("\x1f", [$taxDomain, $regime, $ruleKey, $periodStart, $periodEnd]);
+        if (array_key_exists($cacheKey, $this->activeRulesCache)) {
+            return $this->activeRulesCache[$cacheKey];
+        }
+
+        return $this->activeRulesCache[$cacheKey] = \InterfaceDB::fetchAll(
             'SELECT *
              FROM tax_rate_rules
              WHERE tax_domain = :tax_domain

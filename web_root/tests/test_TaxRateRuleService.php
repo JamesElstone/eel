@@ -91,6 +91,18 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame(1000000.0, $service->weightedAmountForPeriod('capital_allowances', 'plant_machinery', 'aia_annual_limit', '2026-04-01', '2026-04-30'));
                 $hybrid = $service->weightedRateForPeriod('capital_allowances', 'plant_machinery', 'main_pool_wda', '2026-03-01', '2026-04-30');
                 $harness->assertSame(0.160328, $hybrid);
+
+                $weightedCache = new ReflectionProperty($service, 'weightedValueCache');
+                $cacheCount = count((array)$weightedCache->getValue($service));
+                $harness->assertSame(3, $cacheCount);
+                $harness->assertSame(
+                    $hybrid,
+                    $service->weightedRateForPeriod('capital_allowances', 'plant_machinery', 'main_pool_wda', '2026-03-01', '2026-04-30')
+                );
+                $harness->assertSame($cacheCount, count((array)$weightedCache->getValue($service)));
+
+                $service->clearRuntimeCaches();
+                $harness->assertSame(0, count((array)$weightedCache->getValue($service)));
             } finally {
                 if (\InterfaceDB::inTransaction()) {
                     \InterfaceDB::rollBack();

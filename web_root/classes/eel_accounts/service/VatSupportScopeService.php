@@ -14,15 +14,47 @@ final class VatSupportScopeService
     public const UNSUPPORTED_MESSAGE = 'Tax and Year End are read only because this VAT registration was confirmed through the LIVE HMRC VAT API. VAT-registered Tax and Year End processing is not currently supported.';
     public const SCOPE_EVALUATION_ERROR_MESSAGE = 'Tax and Year End are read only because the VAT support scope could not be verified safely.';
 
+    /** @var array<int, array<string, mixed>> */
+    private array $companyScopeCache = [];
+
     public function fetchForCompany(int $companyId): array
     {
         if ($companyId <= 0) {
             return $this->evaluate([]);
         }
 
-        return $this->evaluate(
-            (new \eel_accounts\Repository\CompanyRepository())->fetchCompanyDetails($companyId) ?? []
+        if (array_key_exists($companyId, $this->companyScopeCache)) {
+            return $this->companyScopeCache[$companyId];
+        }
+
+        $select = [
+            'is_vat_registered',
+            'vat_validation_status',
+            'vat_validation_source',
+        ];
+        if (\InterfaceDB::columnExists('companies', 'vat_validation_mode')) {
+            $select[] = 'vat_validation_mode';
+        }
+
+        $settings = \InterfaceDB::fetchOne(
+            'SELECT ' . implode(', ', $select) . '
+             FROM companies
+             WHERE id = :company_id
+             LIMIT 1',
+            ['company_id' => $companyId]
         );
+
+        return $this->companyScopeCache[$companyId] = $this->evaluate(is_array($settings) ? $settings : []);
+    }
+
+    public function clearRuntimeCache(?int $companyId = null): void
+    {
+        if ($companyId === null) {
+            $this->companyScopeCache = [];
+            return;
+        }
+
+        unset($this->companyScopeCache[$companyId]);
     }
 
     public function evaluate(array $settings): array

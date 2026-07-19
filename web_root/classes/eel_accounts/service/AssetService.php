@@ -1410,6 +1410,7 @@ final class AssetService
         }
 
         $assets = $this->fetchDepreciableAssets($companyId, (string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end']);
+        $postedDepreciationByAsset = $this->fetchDepreciationByAsset($companyId, $accountingPeriodId);
         $rows = [];
         $total = 0.0;
         $skipped = 0;
@@ -1435,10 +1436,7 @@ final class AssetService
                 $depreciationPeriodStart,
                 $depreciationPeriodEnd
             );
-            $postedPeriodAmount = $this->sumDepreciationForAccountingPeriod(
-                (int)$asset['id'],
-                $accountingPeriodId
-            );
+            $postedPeriodAmount = (float)($postedDepreciationByAsset[(int)$asset['id']] ?? 0.0);
             $amount = round(max(0.0, $expectedPeriodAmount - $postedPeriodAmount), 2);
             if ($amount <= 0) {
                 $skipped++;

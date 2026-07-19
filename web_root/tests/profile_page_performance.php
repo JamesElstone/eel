@@ -102,7 +102,7 @@ function page_profile_options(array $argv): array
 function page_profile_usage(): void
 {
     echo 'Usage: php web_root/tests/profile_page_performance.php [--threshold-ms=100] [--company-id=ID] [--accounting-period-id=ID] [--ct-period-id=ID] [--page=page_id]' . PHP_EOL;
-    echo 'Profiles every page by loading its cards, running card handle(), resolving declared card services, and calling render().' . PHP_EOL;
+    echo 'Profiles every page by building module context, loading its cards, running card handle(), resolving declared card services, and calling render().' . PHP_EOL;
 }
 
 function page_profile_page_services(): PageServiceFramework
@@ -393,9 +393,19 @@ function page_profile_profile_page(
             $cardKeys
         );
 
+        $actionResult = ActionResultFramework::none();
+        $contextStarted = hrtime(true);
+        $moduleContextMethod = new ReflectionMethod($page, 'moduleContext');
+        $moduleContextMethod->setAccessible(true);
+        $moduleContext = $moduleContextMethod->invoke($page, $request, $services, $actionResult, $context);
+        if (is_array($moduleContext)) {
+            $context = array_merge($context, $moduleContext);
+        }
+        $contextMs = page_profile_elapsed_ms($contextStarted);
+
         $handleStarted = hrtime(true);
         foreach ($cards as $card) {
-            $handledContext = $card->handle($request, $services, $context, ActionResultFramework::none());
+            $handledContext = $card->handle($request, $services, $context, $actionResult);
             if (is_array($handledContext)) {
                 $context = $handledContext;
             }
@@ -418,6 +428,7 @@ function page_profile_profile_page(
             'page_id' => $page->id(),
             'card_count' => count($cards),
             'load_ms' => $loadMs,
+            'context_ms' => $contextMs,
             'handle_ms' => $handleMs,
             'service_ms' => $serviceMs,
             'render_ms' => $renderMs,
@@ -522,7 +533,7 @@ function page_profile_profile_card(
 
 function page_profile_is_slow(array $profile, int $thresholdMs): bool
 {
-    foreach (['load_ms', 'handle_ms', 'service_ms', 'render_ms', 'total_ms'] as $key) {
+    foreach (['load_ms', 'context_ms', 'handle_ms', 'service_ms', 'render_ms', 'total_ms'] as $key) {
         if ((int)($profile[$key] ?? 0) > $thresholdMs) {
             return true;
         }
@@ -554,12 +565,13 @@ function page_profile_print_report(array $slowRows, array $errors, int $threshol
     if ($slowRows === []) {
         echo 'No page timings exceeded ' . $thresholdMs . 'ms.' . PHP_EOL;
     } else {
-        echo implode("\t", ['page_id', 'cards', 'load_ms', 'handle_ms', 'service_ms', 'render_ms', 'total_ms', 'slow_phase', 'slowest_cards']) . PHP_EOL;
+        echo implode("\t", ['page_id', 'cards', 'load_ms', 'context_ms', 'handle_ms', 'service_ms', 'render_ms', 'total_ms', 'slow_phase', 'slowest_cards']) . PHP_EOL;
         foreach ($slowRows as $row) {
             echo implode("\t", [
                 (string)$row['page_id'],
                 (string)$row['card_count'],
                 (string)$row['load_ms'],
+                (string)$row['context_ms'],
                 (string)$row['handle_ms'],
                 (string)$row['service_ms'],
                 (string)$row['render_ms'],
@@ -587,7 +599,7 @@ function page_profile_print_report(array $slowRows, array $errors, int $threshol
 function page_profile_slow_phase(array $row, int $thresholdMs): string
 {
     $phases = [];
-    foreach (['load', 'handle', 'service', 'render', 'total'] as $phase) {
+    foreach (['load', 'context', 'handle', 'service', 'render', 'total'] as $phase) {
         if ((int)($row[$phase . '_ms'] ?? 0) > $thresholdMs) {
             $phases[] = $phase;
         }

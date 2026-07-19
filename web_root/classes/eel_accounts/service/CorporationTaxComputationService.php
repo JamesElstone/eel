@@ -26,11 +26,18 @@ final class CorporationTaxComputationService
     private array $ctPeriodLossScheduleCache = [];
     private array $ctPeriodSummaryCache = [];
     private array $profitAndLossSummaryCache = [];
+    private array $vatSupportScopeCache = [];
+    private ?\eel_accounts\Service\YearEndMetricsService $resolvedMetricsService = null;
+    private ?\eel_accounts\Service\CorporationTaxRateService $resolvedRateService = null;
+    private ?\eel_accounts\Service\CapitalAllowanceService $resolvedCapitalAllowanceService = null;
+    private ?\eel_accounts\Service\VatSupportScopeService $resolvedVatSupportScopeService = null;
 
     public function __construct(
         private readonly ?\eel_accounts\Service\YearEndMetricsService $metricsService = null,
         private readonly ?\eel_accounts\Service\CorporationTaxRateService $rateService = null,
         private readonly ?\Closure $vatSupportScopeFetcher = null,
+        private readonly ?\eel_accounts\Service\CapitalAllowanceService $capitalAllowanceService = null,
+        private readonly ?\eel_accounts\Service\VatSupportScopeService $vatSupportScopeService = null,
     ) {
     }
 
@@ -47,6 +54,13 @@ final class CorporationTaxComputationService
         $this->ctPeriodLossScheduleCache = [];
         $this->ctPeriodSummaryCache = [];
         $this->profitAndLossSummaryCache = [];
+        $this->vatSupportScopeCache = [];
+        if ($this->resolvedCapitalAllowanceService !== null) {
+            $this->resolvedCapitalAllowanceService->clearRuntimeCache();
+        }
+        if ($this->resolvedVatSupportScopeService !== null) {
+            $this->resolvedVatSupportScopeService->clearRuntimeCache();
+        }
     }
 
     public function fetchSummary(int $companyId, int $accountingPeriodId): array {
@@ -55,7 +69,7 @@ final class CorporationTaxComputationService
             return $this->unsupportedVatScopeResult($scope, 'A live accounting-period Corporation Tax computation is not available.');
         }
 
-        $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
+        $metrics = $this->resolvedMetricsService();
         $accountingPeriod = $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
         if ($accountingPeriod === null) {
             return [
@@ -229,7 +243,7 @@ final class CorporationTaxComputationService
         $lossCarriedForward = round((float)$losses['brought_forward'] - $lossUsed + $lossCreated, 2);
         $associatedCompanyCount = $this->associatedCompanyCount($companyId, $ctPeriodId);
         $ordinaryCorporationTax = 0.0;
-        $rateCalculation = ($this->rateService ?? new \eel_accounts\Service\CorporationTaxRateService())->calculate(
+        $rateCalculation = $this->resolvedRateService()->calculate(
             (string)$ctPeriod['period_start'],
             (string)$ctPeriod['period_end'],
             $taxableProfit,
@@ -635,7 +649,7 @@ final class CorporationTaxComputationService
                 'errors' => [],
             ];
         } else {
-            $accountingPeriod = ($this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService())
+            $accountingPeriod = $this->resolvedMetricsService()
                 ->fetchAccountingPeriod($companyId, $accountingPeriodId);
             $projection = $periodService->projectForAccountingPeriod(
                 $companyId,
@@ -729,7 +743,7 @@ final class CorporationTaxComputationService
         $taxableProfit = (float)$lossCalculation['taxable_profit'];
         $lossCreated = (float)$lossCalculation['loss_created'];
         $lossesCarriedForward = (float)$lossCalculation['losses_carried_forward'];
-        $rateCalculation = ($this->rateService ?? new CorporationTaxRateService())->calculate(
+        $rateCalculation = $this->resolvedRateService()->calculate(
             $periodStart,
             $periodEnd,
             $taxableProfit,
@@ -822,7 +836,7 @@ final class CorporationTaxComputationService
             return $this->accountingPeriodLossScheduleCache[$companyId];
         }
 
-        $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
+        $metrics = $this->resolvedMetricsService();
         $accountingPeriods = array_reverse($metrics->fetchAccountingPeriods($companyId));
         if ($accountingPeriods === []) {
             return [];
@@ -830,7 +844,7 @@ final class CorporationTaxComputationService
 
         $schedule = [];
         $lossPool = [];
-        $rateService = $this->rateService ?? new \eel_accounts\Service\CorporationTaxRateService();
+        $rateService = $this->resolvedRateService();
 
         try {
             foreach ($accountingPeriods as $accountingPeriod) {
@@ -1002,7 +1016,7 @@ final class CorporationTaxComputationService
         if (count($ctPeriods) <= 1) {
             $pnl = $this->profitAndLossSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
             $days = $this->inclusiveDays($periodStart, $periodEnd);
-            $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
+            $metrics = $this->resolvedMetricsService();
             $accountingPeriod = $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
             $usesWholeAccountingPeriod = is_array($accountingPeriod)
                 && (string)($accountingPeriod['period_start'] ?? '') === $periodStart
@@ -1032,7 +1046,7 @@ final class CorporationTaxComputationService
             ];
         }
 
-        $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
+        $metrics = $this->resolvedMetricsService();
         $accountingPeriod = $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
         if ($accountingPeriod === null) {
             throw new \RuntimeException('The accounting period could not be found for CT time apportionment.');
@@ -1208,7 +1222,7 @@ final class CorporationTaxComputationService
         }
 
         return $this->capitalAllowanceBreakdownCache[$cacheKey] =
-            (new \eel_accounts\Service\CapitalAllowanceService())->fetchPeriodBreakdown($companyId, $accountingPeriodId, $ctPeriodId);
+            $this->resolvedCapitalAllowanceService()->fetchPeriodBreakdown($companyId, $accountingPeriodId, $ctPeriodId);
     }
 
     private function storedLockedSummaryForCtPeriodId(int $companyId, int $ctPeriodId): ?array
@@ -1430,7 +1444,7 @@ final class CorporationTaxComputationService
             return $this->ctPeriodLossScheduleCache[$companyId];
         }
 
-        $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
+        $metrics = $this->resolvedMetricsService();
         $accountingPeriods = array_reverse($metrics->fetchAccountingPeriods($companyId));
         $checkpoint = $stopAtCtPeriodId !== null
             ? $this->lockedLossCheckpointBefore($companyId, $stopAtCtPeriodId)
@@ -1675,7 +1689,7 @@ final class CorporationTaxComputationService
             return $this->unsupportedVatScopeResult($scope, 'A live current-period Corporation Tax estimate is not supported.');
         }
 
-        $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
+        $metrics = $this->resolvedMetricsService();
         $accountingPeriod ??= $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
         if ($accountingPeriod === null) {
             return [
@@ -1699,7 +1713,7 @@ final class CorporationTaxComputationService
         $lossCreated = $taxableBeforeLosses < 0 ? abs($taxableBeforeLosses) : 0.0;
         $lossesCarriedForward = round($lossesBroughtForward - $lossesUsed + $lossCreated, 2);
         $associatedCompanyCount = $this->associatedCompanyCountForAccountingPeriod($companyId, $accountingPeriodId, true);
-        $rateCalculation = ($this->rateService ?? new \eel_accounts\Service\CorporationTaxRateService())->calculate(
+        $rateCalculation = $this->resolvedRateService()->calculate(
             $periodStart,
             $periodEnd,
             $taxableProfit,
@@ -2046,7 +2060,7 @@ final class CorporationTaxComputationService
             return $this->profitAndLossSummaryCache[$cacheKey];
         }
 
-        $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
+        $metrics = $this->resolvedMetricsService();
         return $this->profitAndLossSummaryCache[$cacheKey] =
             $metrics->profitAndLossSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
     }
@@ -2058,6 +2072,10 @@ final class CorporationTaxComputationService
             return ['tax_year_end_read_only' => false, 'message' => ''];
         }
 
+        if (array_key_exists($companyId, $this->vatSupportScopeCache)) {
+            return $this->vatSupportScopeCache[$companyId];
+        }
+
         try {
             if ($this->vatSupportScopeFetcher !== null) {
                 $scope = ($this->vatSupportScopeFetcher)($companyId);
@@ -2065,18 +2083,59 @@ final class CorporationTaxComputationService
                     throw new \RuntimeException('VAT support scope resolver returned an invalid result.');
                 }
 
-                return $scope;
+                return $this->vatSupportScopeCache[$companyId] = $scope;
             }
 
-            return (new \eel_accounts\Service\VatSupportScopeService())->fetchForCompany($companyId);
+            return $this->vatSupportScopeCache[$companyId] =
+                $this->resolvedVatSupportScopeService()->fetchForCompany($companyId);
         } catch (\Throwable) {
-            return [
+            return $this->vatSupportScopeCache[$companyId] = [
                 'tax_year_end_read_only' => true,
                 'supported' => false,
                 'scope_evaluation_failed' => true,
                 'message' => \eel_accounts\Service\VatSupportScopeService::SCOPE_EVALUATION_ERROR_MESSAGE,
             ];
         }
+    }
+
+    private function resolvedMetricsService(): \eel_accounts\Service\YearEndMetricsService
+    {
+        if ($this->resolvedMetricsService === null) {
+            $this->resolvedMetricsService = $this->metricsService
+                ?? new \eel_accounts\Service\YearEndMetricsService();
+        }
+
+        return $this->resolvedMetricsService;
+    }
+
+    private function resolvedRateService(): \eel_accounts\Service\CorporationTaxRateService
+    {
+        if ($this->resolvedRateService === null) {
+            $this->resolvedRateService = $this->rateService
+                ?? new \eel_accounts\Service\CorporationTaxRateService();
+        }
+
+        return $this->resolvedRateService;
+    }
+
+    private function resolvedCapitalAllowanceService(): \eel_accounts\Service\CapitalAllowanceService
+    {
+        if ($this->resolvedCapitalAllowanceService === null) {
+            $this->resolvedCapitalAllowanceService = $this->capitalAllowanceService
+                ?? new \eel_accounts\Service\CapitalAllowanceService();
+        }
+
+        return $this->resolvedCapitalAllowanceService;
+    }
+
+    private function resolvedVatSupportScopeService(): \eel_accounts\Service\VatSupportScopeService
+    {
+        if ($this->resolvedVatSupportScopeService === null) {
+            $this->resolvedVatSupportScopeService = $this->vatSupportScopeService
+                ?? new \eel_accounts\Service\VatSupportScopeService();
+        }
+
+        return $this->resolvedVatSupportScopeService;
     }
 
     /** @param array<string, mixed> $scope */

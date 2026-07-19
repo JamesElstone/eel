@@ -76,10 +76,12 @@ final class _disclosures extends PageContextFramework
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
 
-        $builder = new \eel_accounts\Service\IxbrlFactBuilderService();
+        /** @var \eel_accounts\Service\IxbrlFactBuilderService $builder */
+        $builder = $services->get(\eel_accounts\Service\IxbrlFactBuilderService::class);
+        /** @var \eel_accounts\Service\IxbrlReadinessService $readinessService */
+        $readinessService = $services->get(\eel_accounts\Service\IxbrlReadinessService::class);
         try {
-            $readiness = (new \eel_accounts\Service\IxbrlReadinessService())
-                ->getReadiness($companyId, $accountingPeriodId);
+            $readiness = $readinessService->getReadiness($companyId, $accountingPeriodId);
         } catch (Throwable $exception) {
             $readiness = [
                 'company' => $company,
@@ -106,21 +108,26 @@ final class _disclosures extends PageContextFramework
         }
         $latestRun = $builder->getLatestRun($companyId, $accountingPeriodId);
         $facts = is_array($latestRun) ? $builder->getFacts((int)$latestRun['id']) : [];
+        /** @var \eel_accounts\Service\IxbrlAccountsMappingService $accountsMappingService */
+        $accountsMappingService = $services->get(\eel_accounts\Service\IxbrlAccountsMappingService::class);
         try {
-            $accountsMapping = (new \eel_accounts\Service\IxbrlAccountsMappingService())
-                ->getAccountsMapping($companyId, $accountingPeriodId);
+            $accountsMapping = $accountsMappingService->getAccountsMapping($companyId, $accountingPeriodId);
         } catch (Throwable $exception) {
             $accountsMapping = ['errors' => [$exception->getMessage()]];
         }
+        /** @var \eel_accounts\Service\CorporationTaxPeriodService $corporationTaxPeriodService */
+        $corporationTaxPeriodService = $services->get(\eel_accounts\Service\CorporationTaxPeriodService::class);
+        /** @var \eel_accounts\Service\IxbrlTaxComputationService $computationService */
+        $computationService = $services->get(\eel_accounts\Service\IxbrlTaxComputationService::class);
+        /** @var \eel_accounts\Service\Ct600FilingReadinessService $filingReadinessService */
+        $filingReadinessService = $services->get(\eel_accounts\Service\Ct600FilingReadinessService::class);
         try {
-            $periodProjection = (new \eel_accounts\Service\CorporationTaxPeriodService())
-                ->projectForAccountingPeriod($companyId, $accountingPeriodId);
+            $periodProjection = $corporationTaxPeriodService->projectForAccountingPeriod($companyId, $accountingPeriodId);
             $ctPeriods = array_values(array_filter(
                 (array)($periodProjection['periods'] ?? []),
                 static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'
             ));
             $computationPeriods = [];
-            $computationService = new \eel_accounts\Service\IxbrlTaxComputationService();
             foreach ($ctPeriods as $period) {
                 $ctPeriodId = (int)($period['ct_period_id'] ?? $period['id'] ?? 0);
                 $computationPeriods[] = [
@@ -128,7 +135,7 @@ final class _disclosures extends PageContextFramework
                     'status' => $computationService->status($companyId, $accountingPeriodId, $ctPeriodId),
                 ];
             }
-            $filingReadiness = (new \eel_accounts\Service\Ct600FilingReadinessService())->fetch(
+            $filingReadiness = $filingReadinessService->fetch(
                 $companyId,
                 $accountingPeriodId,
                 $ctPeriods,

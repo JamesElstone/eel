@@ -380,6 +380,12 @@ $harness->check($subject, 'calculates missing and stale open-period pool state w
     $harness->assertSame(true, (bool)$missing['available']);
     $harness->assertSame('transient', (string)($missing['calculation_source'] ?? ''));
     $harness->assertCount(2, (array)$missing['rows']);
+    $calculationCache = new ReflectionProperty($service, 'calculationCache');
+    $harness->assertSame(1, count((array)$calculationCache->getValue($service)));
+    $service->fetchPeriodBreakdown($companyId, $periodId);
+    $harness->assertSame(1, count((array)$calculationCache->getValue($service)));
+    $service->clearRuntimeCache($companyId);
+    $harness->assertSame(0, count((array)$calculationCache->getValue($service)));
     $harness->assertSame(
         0,
         (int)InterfaceDB::fetchColumn(

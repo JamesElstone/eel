@@ -52,9 +52,10 @@ final class _tax_audit extends PageContextFramework
         $company = (array)($baseContext['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
+        /** @var \eel_accounts\Service\CorporationTaxComputationService $taxComputationService */
+        $taxComputationService = $services->get(\eel_accounts\Service\CorporationTaxComputationService::class);
         $available = $companyId > 0 && $accountingPeriodId > 0
-            ? (new \eel_accounts\Service\CorporationTaxComputationService())
-                ->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId)
+            ? $taxComputationService->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId)
             : ['periods' => [], 'errors' => []];
         $periods = array_values(array_filter(
             (array)($available['periods'] ?? []),

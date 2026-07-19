@@ -64,9 +64,9 @@ final class _year_end_stateCard extends CardBaseFramework
             ? 'Reopen this accounting period for changes.'
             : 'Runs the live preflight, creates a fresh database backup, completes the final close tasks, and locks this accounting period against further changes.';
         $latestBackupAt = $this->latestBackupCreatedAt($context);
-        $hasChecklistWarnings = !empty((($context['year_end'] ?? [])['checklist_has_warnings'] ?? false));
-        $lockDisabled = !$isLocked && $hasChecklistWarnings;
-        $lockDisabledTitle = 'Resolve year-end checklist warnings before running the year-end close and locking this accounting period.';
+        $hasChecklistBlockers = !empty((($context['year_end'] ?? [])['checklist_has_blockers'] ?? false));
+        $lockDisabled = !$isLocked && $hasChecklistBlockers;
+        $lockDisabledTitle = 'Resolve year-end checklist warnings and blockers before running the year-end close and locking this accounting period.';
         $status = (string)($checklist['overall_status'] ?? '');
 
         return '

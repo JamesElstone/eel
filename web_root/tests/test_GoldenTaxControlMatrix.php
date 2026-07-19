@@ -222,6 +222,15 @@ $harness->check('GoldenTaxControlMatrix', 'persists the exact loss checkpoint us
         $harness->assertCount(1, (array)($persisted['summaries'] ?? []));
         $persistedSummary = (array)($persisted['summaries'][0] ?? []);
         $harness->assertSame('current', (string)($persistedSummary['computation_persistence']['status'] ?? ''));
+        $harness->assertSame(
+            \eel_accounts\Service\YearEndTaxFreezeService::BASIS_VERSION,
+            (string)($persistedSummary['year_end_freeze_basis_version'] ?? '')
+        );
+        $harness->assertSame(
+            (string)($persisted['freeze_manifest_hash'] ?? ''),
+            (string)($persistedSummary['year_end_freeze_manifest_hash'] ?? 'different')
+        );
+        $harness->assertTrue(strlen((string)($persisted['freeze_manifest_hash'] ?? '')) === 64);
 
         $history = InterfaceDB::fetchOne(
             'SELECT computation_hash,

@@ -77,6 +77,20 @@ $harness->run(_ixbrl_readinessCard::class, static function (GeneratedServiceClas
                     'status_label' => 'Filing blocked',
                     'detail' => 'Filing validation is incomplete.',
                 ]],
+            ], 'ct600_filing_readiness' => [
+                'rim' => [
+                    'label' => 'HMRC CT600 RIM availability',
+                    'ready' => true,
+                    'detail' => 'A live RIM resolves for every CT period.',
+                ],
+                'identity' => [
+                    'label' => 'CT600 submission identity',
+                    'ready' => false,
+                    'detail' => 'Missing Corporation Tax UTR.',
+                ],
+                'ixbrl' => ['label' => 'Accounts and computations iXBRL artifacts', 'ready' => false, 'detail' => 'Computations are not configured.'],
+                'attachments' => ['label' => 'CT600 attachment choices', 'ready' => false, 'detail' => 'Not configured.'],
+                'approval_transport' => ['label' => 'CT600 approval and transport', 'ready' => false, 'detail' => 'Not configured.'],
             ]],
         ]);
 
@@ -104,6 +118,13 @@ $harness->run(_ixbrl_readinessCard::class, static function (GeneratedServiceClas
         $harness->assertTrue(str_contains($html, 'Generate filing'));
         $harness->assertFalse(str_contains($html, 'Companies House Comparison'));
         $harness->assertFalse(str_contains($html, 'ixbrl-companies-house-comparison'));
+        $harness->assertTrue(str_contains($html, 'CT600 filing prerequisites'));
+        $harness->assertTrue(str_contains($html, 'They do not affect the Year End lock.'));
+        $harness->assertTrue(str_contains($html, 'HMRC CT600 RIM availability'));
+        $harness->assertTrue(str_contains($html, 'CT600 submission identity'));
+        $harness->assertTrue(str_contains($html, 'Accounts and computations iXBRL artifacts'));
+        $harness->assertTrue(str_contains($html, 'CT600 attachment choices'));
+        $harness->assertTrue(str_contains($html, 'CT600 approval and transport'));
     });
 });
 

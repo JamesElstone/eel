@@ -112,10 +112,28 @@ final class _disclosures extends PageContextFramework
         } catch (Throwable $exception) {
             $accountsMapping = ['errors' => [$exception->getMessage()]];
         }
+        try {
+            $periodProjection = (new \eel_accounts\Service\CorporationTaxPeriodService())
+                ->projectForAccountingPeriod($companyId, $accountingPeriodId);
+            $filingReadiness = (new \eel_accounts\Service\Ct600FilingReadinessService())->fetch(
+                $companyId,
+                $accountingPeriodId,
+                (array)($periodProjection['periods'] ?? []),
+                $company,
+                $companyId > 0 ? (new \eel_accounts\Store\CompanySettingsStore($companyId))->all() : []
+            );
+        } catch (Throwable $exception) {
+            $filingReadiness = [[
+                'label' => 'CT600 filing prerequisites',
+                'ready' => false,
+                'detail' => $exception->getMessage(),
+            ]];
+        }
 
         return [
             'ixbrl' => [
                 'readiness' => $readiness,
+                'ct600_filing_readiness' => $filingReadiness,
                 'disclosures' => (array)($readiness['disclosures'] ?? []),
                 'accounts_mapping' => $accountsMapping,
                 'latest_run' => $latestRun,

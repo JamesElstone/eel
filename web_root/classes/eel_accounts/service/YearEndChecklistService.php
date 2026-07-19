@@ -81,7 +81,7 @@ final class YearEndChecklistService
                 'Detailed Year End review',
                 'warning',
                 'warning',
-                'Open Year End to run the complete accounts, tax, confirmation, and filing checks before closing this period.',
+                'Open Year End to resolve the accounts, tax, and confirmations that must be complete before closing this period.',
                 'Review required',
                 '?page=year_end&show_card=year_end_checklist'
             );
@@ -385,6 +385,20 @@ final class YearEndChecklistService
                 ]);
             }
 
+            $taxFreezeAfterAdjustments = $this->revalidateApprovedTaxBasis($companyId, $accountingPeriodId);
+            if (empty($taxFreezeAfterAdjustments['success'])) {
+                return $this->rollbackLockTransaction($transaction, [
+                    'success' => false,
+                    'status' => 422,
+                    'errors' => (array)($taxFreezeAfterAdjustments['errors'] ?? ['The approved Corporation Tax basis changed during the Year End close.']),
+                    'checklist' => $checklist,
+                    'director_loan_offset' => $directorLoanOffsetResult,
+                    'prepayments' => $prepaymentResult,
+                    'depreciation' => $depreciationResult,
+                    'tax_freeze' => $taxFreezeAfterAdjustments,
+                ]);
+            }
+
             $ctProvisionResult = ($this->corporationTaxProvisionService ?? new \eel_accounts\Service\CorporationTaxProvisionService())
                 ->postProvisionsForAccountingPeriod($companyId, $accountingPeriodId, $lockedBy);
             if (empty($ctProvisionResult['success'])) {
@@ -413,6 +427,22 @@ final class YearEndChecklistService
                     'depreciation' => $depreciationResult,
                     'corporation_tax_provision' => $ctProvisionResult,
                     'retained_earnings_close' => $retainedEarningsCloseResult,
+                ]);
+            }
+
+            $finalTaxFreeze = $this->revalidateApprovedTaxBasis($companyId, $accountingPeriodId, true);
+            if (empty($finalTaxFreeze['success'])) {
+                return $this->rollbackLockTransaction($transaction, [
+                    'success' => false,
+                    'status' => 422,
+                    'errors' => (array)($finalTaxFreeze['errors'] ?? ['The final Corporation Tax basis or provision does not match the approved Year End position.']),
+                    'checklist' => $checklist,
+                    'director_loan_offset' => $directorLoanOffsetResult,
+                    'prepayments' => $prepaymentResult,
+                    'depreciation' => $depreciationResult,
+                    'corporation_tax_provision' => $ctProvisionResult,
+                    'retained_earnings_close' => $retainedEarningsCloseResult,
+                    'tax_freeze' => $finalTaxFreeze,
                 ]);
             }
 
@@ -527,6 +557,69 @@ final class YearEndChecklistService
             'success' => true,
             'prepayments' => $prepaymentValidation,
             'depreciation' => $depreciationPreview,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function revalidateApprovedTaxBasis(
+        int $companyId,
+        int $accountingPeriodId,
+        bool $requireCurrentProvision = false
+    ): array {
+        $taxReadiness = (new \eel_accounts\Service\YearEndTaxReadinessService())
+            ->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
+        $freezeService = new \eel_accounts\Service\YearEndTaxFreezeService();
+        $basis = $freezeService->approvalBasis($taxReadiness);
+        if ($basis === null) {
+            $messages = array_values(array_filter(array_map(
+                static fn(array $diagnostic): string => trim((string)($diagnostic['message'] ?? '')),
+                array_filter((array)($taxReadiness['blocking_diagnostics'] ?? []), 'is_array')
+            ), static fn(string $message): bool => $message !== ''));
+            return [
+                'success' => false,
+                'errors' => $messages !== []
+                    ? $messages
+                    : ['The Corporation Tax basis is not ready to freeze.'],
+                'tax_readiness' => $taxReadiness,
+            ];
+        }
+
+        $acknowledgementService = $this->acknowledgementService
+            ?? new \eel_accounts\Service\YearEndAcknowledgementService();
+        $acknowledgement = $acknowledgementService->fetch(
+            $companyId,
+            $accountingPeriodId,
+            'tax_readiness_acknowledgement'
+        );
+        $evaluation = $acknowledgementService->evaluate($acknowledgement, $basis);
+        if (empty($evaluation['current'])) {
+            return [
+                'success' => false,
+                'errors' => ['The amount-affecting Corporation Tax basis changed after approval. Review and approve the updated tax basis before closing Year End.'],
+                'tax_readiness' => $taxReadiness,
+                'acknowledgement_state' => (string)($evaluation['state'] ?? 'absent'),
+            ];
+        }
+
+        if ($requireCurrentProvision) {
+            $provision = (array)($taxReadiness['provision'] ?? []);
+            $variance = round((float)($provision['unposted_corporation_tax_adjustment'] ?? 0), 2);
+            if (empty($provision['available'])
+                || !in_array((string)($provision['status'] ?? ''), ['posted', 'not_required'], true)
+                || abs($variance) >= 0.005) {
+                return [
+                    'success' => false,
+                    'errors' => ['The final Corporation Tax provision does not equal the approved CT-period liabilities.'],
+                    'tax_readiness' => $taxReadiness,
+                    'provision' => $provision,
+                ];
+            }
+        }
+
+        return [
+            'success' => true,
+            'tax_readiness' => $taxReadiness,
+            'freeze_manifest_hash' => (string)($taxReadiness['freeze_manifest_hash'] ?? ''),
         ];
     }
 
@@ -1267,7 +1360,7 @@ final class YearEndChecklistService
             empty($incorporationShares['available'])
                 ? (string)(($incorporationShares['errors'] ?? [])[0] ?? 'Incorporation share capital summary is not available.')
                 : match ($incorporationShareStatus) {
-                    'shares_not_paid_up' => 'Formation shares include unpaid amounts and should be reviewed before filing.',
+                    'shares_not_paid_up' => 'Formation shares include unpaid amounts and should be reviewed before closing Year End.',
                     'payment_unmatched' => 'Formation share capital is recorded, but the incoming payment has not been matched yet.',
                     'missing' => 'Formation share capital has not been recorded yet.',
                     default => 'Formation share capital and payment matching are complete.',
@@ -1335,7 +1428,7 @@ final class YearEndChecklistService
             empty($prepaymentReview['available'])
                 ? (string)(($prepaymentReview['errors'] ?? [])[0] ?? 'Prepayment review is not available.')
                 : ($prepaymentPendingCount > 0
-                    ? 'Review all source items posted to nominals marked as prepayment candidates before filing.'
+                    ? 'Review all source items posted to nominals marked as prepayment candidates before closing Year End.'
                     : 'All potential prepayment source items have been reviewed for this accounting period.'),
             empty($prepaymentReview['available'])
                 ? ''
@@ -1424,40 +1517,22 @@ final class YearEndChecklistService
             '?page=disclosures&show_card=ixbrl_accounts_disclosures'
         );
 
+        $taxFreezeReady = !empty($taxReadiness['available'])
+            && (string)($taxReadiness['freeze_status'] ?? '') === 'ready_for_approval';
+        $taxFreezeBlockers = (array)($taxReadiness['blocking_diagnostics'] ?? []);
+        $firstTaxFreezeBlocker = (array)($taxFreezeBlockers[0] ?? []);
         $sections['corporation_tax_readiness'][] = $this->makeCheck(
-            'tax_adjusted_profit_basis_available',
-            'Tax-adjusted profit basis available',
+            'tax_basis_ready_to_freeze',
+            'Tax basis ready to freeze',
             'fail',
-            !empty($taxReadiness['available']) ? 'pass' : 'fail',
-            !empty($taxReadiness['available'])
-                ? 'Nominal tax treatments are being used to estimate the tax-adjusted result across all CT periods in this accounting period.'
-                : 'Tax readiness could not be calculated for this period.',
-            !empty($taxReadiness['available']) ? $this->money($settings, $taxReadiness['taxable_profit'] ?? 0) : '',
-            '?page=nominals'
-        );
-        $unknownTreatmentAmount = round((float)($taxReadiness['unknown_treatment_amount'] ?? 0), 2);
-        $otherTreatmentAmount = round((float)($taxReadiness['other_treatment_amount'] ?? 0), 2);
-        $sections['corporation_tax_readiness'][] = $this->makeCheck(
-            'unknown_nominal_tax_treatments',
-            'Unknown nominal tax treatments',
-            'fail',
-            !empty($taxReadiness['available']) && $unknownTreatmentAmount < 0.005 ? 'pass' : 'fail',
-            $unknownTreatmentAmount < 0.005
-                ? 'Every non-zero posted profit-and-loss movement resolves to a supported nominal tax treatment.'
-                : 'Reclassify every non-zero journal movement whose nominal tax treatment is unknown.',
-            !empty($taxReadiness['available']) ? $this->money($settings, $unknownTreatmentAmount) : '',
-            '?page=nominals'
-        );
-        $sections['corporation_tax_readiness'][] = $this->makeCheck(
-            'other_nominal_tax_treatments',
-            'Unresolved other nominal tax treatments',
-            'fail',
-            !empty($taxReadiness['available']) && $otherTreatmentAmount < 0.005 ? 'pass' : 'fail',
-            $otherTreatmentAmount < 0.005
-                ? 'No non-zero posted profit-and-loss movement remains in the unresolved other treatment.'
-                : 'Assign every non-zero journal movement marked other to an allowable, disallowable, or capital nominal treatment.',
-            !empty($taxReadiness['available']) ? $this->money($settings, $otherTreatmentAmount) : '',
-            '?page=nominals'
+            $taxFreezeReady ? 'pass' : 'fail',
+            $taxFreezeReady
+                ? 'Every CT period has a complete calculation with no unresolved issue that can change the accounts, tax basis, provision, or frozen computation.'
+                : (string)($firstTaxFreezeBlocker['message'] ?? 'Resolve the amount-affecting Corporation Tax issues before closing Year End.'),
+            $taxFreezeReady
+                ? 'Ready to freeze'
+                : (count($taxFreezeBlockers) . ' action' . (count($taxFreezeBlockers) === 1 ? '' : 's') . ' required'),
+            '?page=corporation_tax'
         );
         $taxEstimateCheck = $this->makeCheck(
             'corporation_tax_estimate_generated',
@@ -1465,7 +1540,7 @@ final class YearEndChecklistService
             'info',
             !empty($taxReadiness['available']) ? 'pass' : 'fail',
             !empty($taxReadiness['available'])
-                ? 'Estimated taxable profit/loss and corporation tax have been generated for every CT period in this accounting period. This is not final filing-grade tax computation.'
+                ? 'Taxable profit/loss and Corporation Tax have been calculated for every CT period in this accounting period.'
                 : 'No tax estimate could be generated for this period.',
             !empty($taxReadiness['available'])
                 ? ('Tax ' . $this->money($settings, $taxReadiness['estimated_corporation_tax'] ?? 0))
@@ -1502,21 +1577,6 @@ final class YearEndChecklistService
                     . ' / estimate ' . $this->money($settings, $taxProvision['estimated_corporation_tax'] ?? 0)),
             '?page=corporation_tax&show_card=year_end_tax_readiness#tax-readiness'
         );
-        $taxConfidenceStatus = (string)($taxReadiness['confidence_status'] ?? 'review_required');
-        $taxWarningCount = count((array)($taxReadiness['warnings'] ?? []));
-        $sections['corporation_tax_readiness'][] = $this->makeCheck(
-            'corporation_tax_estimate_confidence',
-            'Corporation tax estimate confidence',
-            'fail',
-            empty($taxReadiness['available']) ? 'fail' : ($taxConfidenceStatus === 'ready_for_review' ? 'pass' : 'fail'),
-            empty($taxReadiness['available'])
-                ? 'Tax readiness must be available before estimate confidence can be assessed.'
-                : ($taxConfidenceStatus === 'ready_for_review'
-                    ? 'No scope warnings are currently attached to the corporation tax estimates for any CT period.'
-                    : 'Review the estimate warnings before relying on the corporation tax numbers.'),
-            empty($taxReadiness['available']) ? '' : ($taxWarningCount . ' warning' . ($taxWarningCount === 1 ? '' : 's')),
-            '?page=corporation_tax'
-        );
         $sections['corporation_tax_readiness'][] = $this->makeCheck(
             'losses_carried_forward',
             'Losses carried forward',
@@ -1530,23 +1590,13 @@ final class YearEndChecklistService
             'tax_readiness_acknowledgement',
             'Tax readiness acknowledgement',
             'warning',
-            empty($taxReadiness['available']) ? 'not_applicable' : 'warning',
-            empty($taxReadiness['available'])
-                ? 'Tax readiness must be available before this review can be acknowledged.'
-                : 'Review the corporation tax workings for every CT period before closing this accounting period.',
-            empty($taxReadiness['available']) ? '' : 'Pending',
+            $taxFreezeReady ? 'warning' : 'fail',
+            $taxFreezeReady
+                ? 'Review and approve the amount-affecting Corporation Tax basis for every CT period before closing this accounting period.'
+                : 'Resolve the amount-affecting Corporation Tax issues before approving the tax basis.',
+            $taxFreezeReady ? 'Approval required' : 'Blocked',
             '?page=corporation_tax&show_card=year_end_tax_readiness#tax-readiness',
-            empty($taxReadiness['available']) ? null : $this->acknowledgementBasis('tax_readiness_acknowledgement', $taxReadiness)
-        ), $reviewAcknowledgements);
-
-        $sections['corporation_tax_readiness'][] = $this->applyReviewAcknowledgement($this->makeCheck(
-            'filing_basis_reminder',
-            'Filing basis reminder',
-            'info',
-            'info',
-            'Year-end lock finalises the app ledger. Statutory accounts, iXBRL, and tax filing outputs should still be reviewed separately before submission.',
-            '',
-            '?page=corporation_tax&show_card=year_end_tax_readiness'
+            (new \eel_accounts\Service\YearEndTaxFreezeService())->approvalBasis($taxReadiness)
         ), $reviewAcknowledgements);
 
         $comparisonFailures = 0;
@@ -1609,7 +1659,7 @@ final class YearEndChecklistService
             && $continuityWarningCount === 0
             && $priorPeriodDependencySatisfied
             && $retainedEarningsCloseCurrent
-            && $taxProvisionCurrent
+            && $taxProvisionAvailable
             && !empty($ownershipReadiness['available'])
             && !empty($ownershipReadiness['pass'])
             && !empty($ctPeriodFacts['available'])
@@ -1619,11 +1669,7 @@ final class YearEndChecklistService
             && $ctPeriodTaxFactsPass
             && !empty($frs105Profile['available'])
             && !empty($frs105Profile['pass'])
-            && !empty($taxReadiness['available'])
-            && (float)($taxReadiness['unknown_treatment_amount'] ?? 0) < 0.005
-            && (float)($taxReadiness['other_treatment_amount'] ?? 0) < 0.005
-            && (int)($taxReadiness['hard_gate_diagnostic_count'] ?? 0) === 0
-            && (array)($taxReadiness['warnings'] ?? []) === []
+            && $taxFreezeReady
             && $this->acknowledgementCurrentInSections($sections, 'tax_readiness_acknowledgement')
             && (empty($expensePosition['available'])
                 || $this->acknowledgementCurrentInSections($sections, 'expense_position_acknowledgement'))

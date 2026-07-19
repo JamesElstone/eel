@@ -70,6 +70,7 @@ final class YearEndTaxReadinessService
 
         $periodSummaries = [];
         $errors = (array)($activePeriods['errors'] ?? []);
+        $expectedPeriodCount = count($ctPeriods);
 
         foreach ($ctPeriods as $ctPeriod) {
             $ctPeriodId = (int)($ctPeriod['id'] ?? 0);
@@ -123,8 +124,15 @@ final class YearEndTaxReadinessService
         $confidenceStatus = $warnings === [] ? 'ready_for_review' : 'review_required';
         $provision = ($this->provisionService ?? new \eel_accounts\Service\CorporationTaxProvisionService())
             ->fetchAccountingPeriodPosition($companyId, $accountingPeriodId, $periodSummaries);
+        $freeze = (new YearEndTaxFreezeService())->build(
+            $companyId,
+            $accountingPeriodId,
+            $periodSummaries,
+            array_values(array_map('strval', $errors)),
+            $expectedPeriodCount
+        );
 
-        return array_merge($totals, [
+        return array_merge($totals, $freeze, [
             'available' => true,
             'errors' => $errors,
             'periods' => $periodSummaries,

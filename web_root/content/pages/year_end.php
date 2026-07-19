@@ -90,13 +90,13 @@ final class _year_end extends PageContextFramework
             ]),
             'year_end' => [
                 'checklist' => $checklist,
-                'checklist_has_warnings' => $this->checklistHasWarnings($checklist),
+                'checklist_has_blockers' => $this->checklistHasBlockers($checklist),
             ],
             'year_end_audit_rows' => (new \eel_accounts\Repository\AccountingAuditRepository())->fetchRecentYearEndAudit(200),
         ];
     }
 
-    private function checklistHasWarnings(array $checklist): bool
+    private function checklistHasBlockers(array $checklist): bool
     {
         foreach ((array)($checklist['checks_flat'] ?? []) as $check) {
             if (in_array((string)(((array)$check)['status'] ?? ''), ['fail', 'needs_attention', 'warning', 'not_started'], true)) {

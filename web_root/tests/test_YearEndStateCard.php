@@ -43,15 +43,29 @@ $harness->run(_year_end_stateCard::class, static function (GeneratedServiceClass
         $harness->assertSame(true, str_contains($html, 'data-year-end-state-running-label="Running Year-End Close...'));
         $harness->assertSame(true, str_contains($html, 'intent" value="lock_period"'));
         $harness->assertSame(false, str_contains($html, 'Lock Period'));
-        $harness->assertSame(false, str_contains($html, 'disabled title="Resolve year-end checklist warnings'));
+        $harness->assertSame(false, str_contains($html, 'disabled title="Resolve year-end checklist warnings and blockers'));
     });
 
-    $harness->check(_year_end_stateCard::class, 'disables lock when shared checklist has warnings', static function () use ($harness, $card): void {
+    $harness->check(_year_end_stateCard::class, 'disables lock when shared checklist has blockers', static function () use ($harness, $card): void {
         $html = $card->render(yearEndStateCardContext(true));
 
         $harness->assertSame(true, str_contains($html, 'Run Year-End Close and Lock'));
-        $harness->assertSame(true, str_contains($html, 'Complete or acknowledge the remaining checklist items before running the year-end close and lock.'));
-        $harness->assertSame(true, str_contains($html, 'disabled title="Resolve year-end checklist warnings before running the year-end close and locking this accounting period."'));
+        $harness->assertSame(true, str_contains($html, 'Resolve the blocking checklist items before running the year-end close and lock.'));
+        $harness->assertSame(true, str_contains($html, 'disabled title="Resolve year-end checklist warnings and blockers before running the year-end close and locking this accounting period."'));
+    });
+
+    $harness->check(_year_end_stateCard::class, 'disables lock when a warning remains', static function () use ($harness, $card): void {
+        $context = yearEndStateCardContext(true);
+        $context['year_end']['checklist']['checks_flat'] = [[
+            'check_code' => 'fixture_warning',
+            'status' => 'warning',
+        ]];
+        $context['year_end']['checklist']['overall_status'] = 'in_progress';
+
+        $html = $card->render($context);
+
+        $harness->assertSame(true, str_contains($html, 'Run Year-End Close and Lock'));
+        $harness->assertSame(true, str_contains($html, 'disabled title="Resolve year-end checklist warnings and blockers'));
     });
 
     $harness->check(_year_end_stateCard::class, 'does not use manual backup freshness as an accounting readiness gate', static function () use ($harness, $card): void {
@@ -87,14 +101,14 @@ $harness->run(_year_end_stateCard::class, static function (GeneratedServiceClass
 
         $harness->assertSame(true, str_contains($html, 'Unlock Period'));
         $harness->assertSame(true, str_contains($html, 'intent" value="unlock_period"'));
-        $harness->assertSame(false, str_contains($html, 'disabled title="Resolve year-end checklist warnings'));
+        $harness->assertSame(false, str_contains($html, 'disabled title="Resolve year-end checklist warnings and blockers'));
         $harness->assertSame(true, str_contains($html, 'value="recalculate"'));
         $harness->assertSame(true, str_contains($html, 'data-year-end-state-running-label="Refreshing..." disabled title="This accounting period is locked."'));
         $harness->assertSame(false, str_contains($html, 'Run Year-End Close and Lock'));
     });
 });
 
-function yearEndStateCardContext(bool $hasWarnings): array
+function yearEndStateCardContext(bool $hasBlockers): array
 {
     return [
         'company' => [
@@ -107,17 +121,17 @@ function yearEndStateCardContext(bool $hasWarnings): array
             'page_cards' => ['year_end_state'],
         ],
         'year_end' => [
-            'checklist_has_warnings' => $hasWarnings,
+            'checklist_has_blockers' => $hasBlockers,
             'checklist' => [
-                'overall_status' => $hasWarnings ? 'in_progress' : 'ready_for_review',
+                'overall_status' => $hasBlockers ? 'needs_attention' : 'ready_for_review',
                 'accounting_period' => ['id' => 70],
                 'review' => ['is_locked' => false, 'review_notes' => ''],
                 'month_tiles' => [],
                 'sections' => [],
-                'checks_flat' => $hasWarnings ? [
+                'checks_flat' => $hasBlockers ? [
                     [
-                        'check_code' => 'fixture_warning',
-                        'status' => 'warning',
+                        'check_code' => 'fixture_blocker',
+                        'status' => 'fail',
                     ],
                 ] : [],
             ],

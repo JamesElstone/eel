@@ -415,7 +415,16 @@ final class CorporationTaxComputationService
         }
 
         $summaries = (new CorporationTaxHardGateService())->apply($companyId, $summaries);
-        foreach ($summaries as $summary) {
+        $freeze = (new YearEndTaxFreezeService())->build(
+            $companyId,
+            $accountingPeriodId,
+            $summaries,
+            array_values(array_map('strval', $errors)),
+            count($periods)
+        );
+        foreach ($summaries as &$summary) {
+            $summary['year_end_freeze_basis_version'] = YearEndTaxFreezeService::BASIS_VERSION;
+            $summary['year_end_freeze_manifest_hash'] = (string)($freeze['freeze_manifest_hash'] ?? '');
             $diagnostics = (array)($summary['hard_gate_diagnostics'] ?? []);
             if ($diagnostics !== []) {
                 foreach ($diagnostics as $diagnostic) {
@@ -429,11 +438,25 @@ final class CorporationTaxComputationService
                 $this->updatePersistedHardGateDiagnostics($runId, $summary);
             }
         }
+        unset($summary);
+
+        if ((string)($freeze['freeze_status'] ?? '') !== 'ready_for_approval') {
+            foreach ((array)($freeze['blocking_diagnostics'] ?? []) as $diagnostic) {
+                if (!is_array($diagnostic)) {
+                    continue;
+                }
+                $message = trim((string)($diagnostic['message'] ?? ''));
+                if ($message !== '') {
+                    $errors[] = $message;
+                }
+            }
+        }
 
         return [
             'success' => $errors === [],
             'errors' => $errors,
             'summaries' => $summaries,
+            'freeze_manifest_hash' => (string)($freeze['freeze_manifest_hash'] ?? ''),
         ];
     }
 

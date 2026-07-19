@@ -85,7 +85,10 @@ final class CorporationTaxHardGateService
         foreach ((array)($current['warnings'] ?? []) as $warning) {
             $warning = trim((string)$warning);
             $lower = strtolower($warning);
-            if ($warning === '' || str_contains($lower, 'nominal tax treatments are unknown') || str_contains($lower, 'nominal tax treatments are marked as other')) {
+            if ($warning === ''
+                || str_contains($lower, 'nominal tax treatments are unknown')
+                || str_contains($lower, 'nominal tax treatments are marked as other')
+                || $this->isGeneralCalculationAssumption($lower)) {
                 continue;
             }
             [$category, $workflow] = $this->warningRoute($lower);
@@ -217,6 +220,12 @@ final class CorporationTaxHardGateService
             return ['prepayment', 'prepayments'];
         }
         return ['tax_computation', 'corporation_tax'];
+    }
+
+    private function isGeneralCalculationAssumption(string $warning): bool
+    {
+        return str_contains($warning, 'assumes non-ring-fence profits')
+            || str_contains($warning, 'assumes augmented profits equal taxable profits');
     }
 
     private function lossDiagnostic(string $code, string $message, int $ctPeriodId): array

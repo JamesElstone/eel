@@ -30,6 +30,13 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
             'estimated_corporation_tax' => 2375,
             'losses_carried_forward' => 45.67,
             'ct_period_count' => 2,
+            'freeze_status' => 'blocked',
+            'blocking_diagnostic_count' => 1,
+            'blocking_diagnostics' => [[
+                'code' => 'fixture_adjustment',
+                'amount_affecting' => true,
+                'message' => 'Review final period',
+            ]],
             'provision' => [
                 'available' => true,
                 'status' => 'not_posted',
@@ -86,7 +93,12 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
                     'loss_utilised' => 20,
                     'losses_carried_forward' => 25.67,
                     'ct_rate_bands' => [],
-                    'warnings' => ['Review final period'],
+                    'warnings' => ['A later filing warning must not be displayed at Year End.'],
+                    'hard_gate_diagnostics' => [[
+                        'code' => 'fixture_adjustment',
+                        'amount_affecting' => true,
+                        'message' => 'Review final period',
+                    ]],
                 ],
             ],
             'steps' => [
@@ -141,7 +153,9 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(true, str_contains($html, '$ 45.67'));
         $harness->assertSame(true, str_contains($html, '05/09/2022 to 04/09/2023'));
         $harness->assertSame(true, str_contains($html, '05/09/2023 to 30/09/2023'));
-        $harness->assertSame(true, str_contains($html, '1 warning'));
+        $harness->assertSame(true, str_contains($html, '1 action required'));
+        $harness->assertSame(true, str_contains($html, 'Review final period'));
+        $harness->assertSame(false, str_contains($html, 'later filing warning'));
         $harness->assertSame(false, str_contains($html, 'Corporation Tax Computation'));
         $harness->assertSame(false, str_contains($html, 'Loss schedule'));
     });
@@ -154,6 +168,9 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
             'losses_carried_forward' => 12.50,
             'confidence_status' => 'ready_for_review',
             'confidence_label' => 'Ready for review',
+            'freeze_status' => 'ready_for_approval',
+            'blocking_diagnostic_count' => 0,
+            'blocking_diagnostics' => [],
             'periods' => [
                 [
                     'ct_period_id' => 601,
@@ -169,6 +186,7 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
                     'estimated_rate' => 0.19,
                     'losses_carried_forward' => 12.50,
                     'warnings' => [],
+                    'hard_gate_diagnostics' => [],
                 ],
             ],
             'warnings' => [],

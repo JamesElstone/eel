@@ -81,6 +81,24 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             }
         });
 
+        $harness->check(\eel_accounts\Service\CorporationTaxHardGateService::class, 'does not turn generic calculation assumptions into Year End issues', static function () use ($harness): void {
+            $diagnostics = (new \eel_accounts\Service\CorporationTaxHardGateService())->evaluatePeriod([
+                'ct_period_id' => 8,
+                'warnings' => [
+                    'Corporation Tax estimate assumes non-ring-fence profits.',
+                    'Corporation Tax estimate assumes augmented profits equal taxable profits; review if exempt distributions were received.',
+                ],
+                'taxable_before_losses' => 0.0,
+                'taxable_profit' => 0.0,
+                'loss_created_in_period' => 0.0,
+                'losses_brought_forward' => 0.0,
+                'losses_used' => 0.0,
+                'losses_carried_forward' => 0.0,
+            ]);
+
+            $harness->assertSame([], $diagnostics);
+        });
+
         $harness->check(\eel_accounts\Service\CorporationTaxHardGateService::class, 'blocks an unavailable locked predecessor computation', static function () use ($harness): void {
             $service = new \eel_accounts\Service\CorporationTaxHardGateService(
                 static fn(int $companyId, string $periodStart): array => ['expected' => true, 'available' => false]

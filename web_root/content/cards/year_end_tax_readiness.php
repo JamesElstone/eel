@@ -93,7 +93,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
     private function acknowledgementHtml(bool $acknowledged, string $state, string $acknowledgedAt, string $acknowledgedBy, string $note, int $companyId, int $accountingPeriodId): string
     {
         return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
-            'subject' => 'corporation tax readiness',
+            'subject' => 'Corporation Tax basis',
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
             'acknowledged' => $acknowledged,
@@ -117,8 +117,9 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
     private function overallTaxPositionHtml(array $companySettings, array $taxReadiness, array $provision): string
     {
         $periodCount = (int)($taxReadiness['ct_period_count'] ?? count($this->periods($taxReadiness)));
-        $warningCount = count((array)($taxReadiness['warnings'] ?? []));
+        $blockerCount = (int)($taxReadiness['blocking_diagnostic_count'] ?? count((array)($taxReadiness['blocking_diagnostics'] ?? [])));
         $provisionStatus = (string)($provision['status'] ?? 'not_posted');
+        $freezeReady = (string)($taxReadiness['freeze_status'] ?? '') === 'ready_for_approval';
 
         return '<section class="panel-soft stack">
             <h3 class="card-title">Overall Tax Position</h3>
@@ -130,9 +131,13 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
                 ['Provision status', $this->provisionLabel($provisionStatus)],
                 ['Posted CT charge', $this->money($companySettings, $provision['posted_corporation_tax_charge'] ?? 0)],
                 ['Close adjustment', $this->money($companySettings, $provision['unposted_corporation_tax_adjustment'] ?? 0)],
-                ['Warnings', (string)$warningCount],
+                ['Tax basis', $this->badge($freezeReady ? 'success' : 'danger', $freezeReady ? 'Ready to freeze' : 'Action required'), true],
             ]) . '
-            ' . $this->warningsHtml((array)($taxReadiness['warnings'] ?? []), 'Overall warnings', 'All CT periods are ready for review.') . '
+            ' . $this->diagnosticsHtml(
+                (array)($taxReadiness['blocking_diagnostics'] ?? []),
+                'Adjustments required before Year End',
+                $blockerCount === 0 ? 'No amount-affecting Corporation Tax issues remain.' : ''
+            ) . '
         </section>';
     }
 
@@ -204,11 +209,14 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
 
     private function ctPeriodHtml(array $companySettings, array $period, int $companyId, int $accountingPeriodId): string
     {
-        $warnings = (array)($period['warnings'] ?? []);
-        $warningCount = count($warnings);
-        $warningStatus = $warningCount === 0
+        $diagnostics = array_values(array_filter(
+            (array)($period['hard_gate_diagnostics'] ?? []),
+            static fn(mixed $diagnostic): bool => is_array($diagnostic) && !empty($diagnostic['amount_affecting'])
+        ));
+        $diagnosticCount = count($diagnostics);
+        $basisStatus = $diagnosticCount === 0
             ? $this->badge('success', 'Ready')
-            : $this->badge('warning', $warningCount . ' warning' . ($warningCount === 1 ? '' : 's'));
+            : $this->badge('danger', $diagnosticCount . ' action' . ($diagnosticCount === 1 ? '' : 's') . ' required');
         $periodButton = $this->periodTaxWorkflowButton($period, $companyId, $accountingPeriodId);
 
         return '<section class="panel-soft stack">
@@ -217,7 +225,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
                 ['Taxable profit', $this->money($companySettings, $period['taxable_profit'] ?? 0)],
                 ['Estimated CT', $this->money($companySettings, $period['estimated_corporation_tax'] ?? 0)],
                 ['Effective rate', $this->percent($period['estimated_rate'] ?? null)],
-                ['Warning status', $warningStatus, true],
+                ['Tax basis status', $basisStatus, true],
             ]) . '
             <h3 class="card-title">Taxable Profit Bridge</h3>
             ' . $this->table(['Step', 'Amount'], $this->bridgeRows($companySettings, $period), 'No taxable profit bridge is available for this CT period.') . '
@@ -230,7 +238,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             ]) . '
             <h3 class="card-title">Rate Bands</h3>
             ' . $this->rateBandsHtml($companySettings, $period) . '
-            ' . $this->warningsHtml($warnings, 'Period warnings', 'No period warnings for this CT period.') . '
+            ' . $this->diagnosticsHtml($diagnostics, 'Adjustments required for this CT period', 'No amount-affecting issues remain for this CT period.') . '
             ' . ($periodButton !== '' ? '<div class="actions-row">' . $periodButton . '</div>' : '') . '
         </section>';
     }
@@ -276,20 +284,22 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         );
     }
 
-    private function warningsHtml(array $warnings, string $title, string $emptyMessage): string
+    private function diagnosticsHtml(array $diagnostics, string $title, string $emptyMessage): string
     {
-        $warnings = array_values(array_filter(array_map(
-            static fn(mixed $warning): string => trim((string)$warning),
-            $warnings
-        ), static fn(string $warning): bool => $warning !== ''));
+        $messages = array_values(array_filter(array_map(
+            static fn(mixed $diagnostic): string => is_array($diagnostic)
+                ? trim((string)($diagnostic['message'] ?? ''))
+                : '',
+            $diagnostics
+        ), static fn(string $message): bool => $message !== ''));
 
-        if ($warnings === []) {
+        if ($messages === []) {
             return '<div class="helper">' . $this->badge('success', 'Ready') . ' ' . HelperFramework::escape($emptyMessage) . '</div>';
         }
 
         $html = '<section class="stack"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3>';
-        foreach ($warnings as $warning) {
-            $html .= '<div class="helper">' . HelperFramework::escape($warning) . '</div>';
+        foreach ($messages as $message) {
+            $html .= '<div class="helper">' . HelperFramework::escape($message) . '</div>';
         }
 
         return $html . '</section>';
@@ -298,7 +308,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
     private function reviewApprovalHtml(string $acknowledgementForm): string
     {
         return '<section class="panel-soft stack">
-            <h3 class="card-title">Review And Approval</h3>
+            <h3 class="card-title">Tax Basis Review And Approval</h3>
             ' . $acknowledgementForm . '
         </section>';
     }

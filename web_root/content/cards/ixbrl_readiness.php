@@ -25,6 +25,7 @@ final class _ixbrl_readinessCard extends CardBaseFramework
         $readiness = (array)($context['ixbrl']['readiness'] ?? []);
         $accountingPeriod = (array)($readiness['accounting_period'] ?? []);
         $checks = (array)($readiness['checks'] ?? []);
+        $filingReadiness = (array)($context['ixbrl']['ct600_filing_readiness'] ?? []);
         [$headline, $headlineClass] = $this->headline($readiness);
         $period = (string)($accountingPeriod['period_start'] ?? '') . ' to ' . (string)($accountingPeriod['period_end'] ?? '');
 
@@ -34,6 +35,16 @@ final class _ixbrl_readinessCard extends CardBaseFramework
             $items .= '<div class="summary-card">
                 <div class="summary-label">' . HelperFramework::escape((string)($check['label'] ?? 'Check')) . '</div>
                 <div class="summary-value"><span class="badge ' . HelperFramework::escape((string)($check['status'] ?? 'warning')) . '">' . HelperFramework::escape($statusLabel) . '</span></div>
+                <div class="helper">' . HelperFramework::escape((string)($check['detail'] ?? '')) . '</div>
+            </div>';
+        }
+
+        $filingItems = '';
+        foreach ($filingReadiness as $check) {
+            $ready = !empty($check['ready']);
+            $filingItems .= '<div class="summary-card">
+                <div class="summary-label">' . HelperFramework::escape((string)($check['label'] ?? 'Filing prerequisite')) . '</div>
+                <div class="summary-value"><span class="badge ' . ($ready ? 'success' : 'warning') . '">' . ($ready ? 'Ready' : 'Not ready') . '</span></div>
                 <div class="helper">' . HelperFramework::escape((string)($check['detail'] ?? '')) . '</div>
             </div>';
         }
@@ -54,6 +65,11 @@ final class _ixbrl_readinessCard extends CardBaseFramework
                 ' . $this->capability('Filing ready', !empty($readiness['ready_for_filing'])) . '
             </section>
             <section class="summary-grid">' . $items . '</section>
+            <section>
+                <h3 class="card-title">CT600 filing prerequisites</h3>
+                <p class="helper">These checks apply to filing preparation after Year End. They do not affect the Year End lock.</p>
+                <div class="summary-grid">' . $filingItems . '</div>
+            </section>
         </div>';
     }
 

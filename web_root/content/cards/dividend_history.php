@@ -32,6 +32,11 @@ final class _dividend_historyCard extends CardBaseFramework
         ]];
     }
 
+    public function handleError(string $serviceKey, array $error, array $context): string
+    {
+        return '';
+    }
+
     protected function additionalInvalidationFacts(): array
     {
         return ['page.context'];

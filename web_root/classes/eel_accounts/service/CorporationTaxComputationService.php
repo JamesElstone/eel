@@ -306,6 +306,13 @@ final class CorporationTaxComputationService
         $this->insertLossHistory($companyId, (int)$row['accounting_period_id'], (int)$row['ct_period_id'], (string)$row['computation_hash'], $row);
         $runId = $this->insertComputationRun($companyId, $row, $summary);
         if ($runId > 0) {
+            (new \eel_accounts\Service\TaxAuditBasisService())->persistSnapshot(
+                $companyId,
+                (int)$row['accounting_period_id'],
+                (int)$row['ct_period_id'],
+                $runId,
+                $summary
+            );
             (new \eel_accounts\Service\CorporationTaxPeriodService())->markLatestComputation((int)$row['ct_period_id'], $runId);
             unset($this->ctPeriodSummaryCache[$companyId . ':' . (int)$row['ct_period_id']]);
             unset($this->ctPeriodCache[$companyId . ':' . (int)$row['ct_period_id']]);

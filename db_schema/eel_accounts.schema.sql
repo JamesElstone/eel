@@ -934,6 +934,55 @@ CREATE TABLE `corporation_tax_computation_runs` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `corporation_tax_audit_snapshots`
+--
+
+DROP TABLE IF EXISTS `corporation_tax_audit_areas`;
+DROP TABLE IF EXISTS `corporation_tax_audit_snapshots`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `corporation_tax_audit_snapshots` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `computation_run_id` int(11) NOT NULL,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `ct_period_id` int(11) NOT NULL,
+  `basis_version` varchar(50) NOT NULL,
+  `basis_hash` char(64) NOT NULL,
+  `snapshot_origin` varchar(32) NOT NULL DEFAULT 'year_end_lock',
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ct_audit_snapshot_run` (`computation_run_id`),
+  KEY `idx_ct_audit_snapshot_period` (`company_id`,`accounting_period_id`,`ct_period_id`),
+  CONSTRAINT `fk_ct_audit_snapshot_run` FOREIGN KEY (`computation_run_id`) REFERENCES `corporation_tax_computation_runs` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct_audit_snapshot_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct_audit_snapshot_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct_audit_snapshot_ct_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `chk_ct_audit_snapshot_origin` CHECK (`snapshot_origin` in ('year_end_lock','legacy_reconstruction'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `corporation_tax_audit_areas` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `snapshot_id` bigint(20) NOT NULL,
+  `area_code` varchar(64) NOT NULL,
+  `area_label` varchar(150) NOT NULL,
+  `amount` decimal(14,2) NOT NULL DEFAULT 0.00,
+  `expected_amount` decimal(14,2) NOT NULL DEFAULT 0.00,
+  `reconciliation_difference` decimal(14,2) NOT NULL DEFAULT 0.00,
+  `reconciliation_status` varchar(16) NOT NULL DEFAULT 'reconciled',
+  `source_count` int(11) NOT NULL DEFAULT 0,
+  `area_hash` char(64) NOT NULL,
+  `detail_json` longtext NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ct_audit_area_snapshot_code` (`snapshot_id`,`area_code`),
+  KEY `idx_ct_audit_area_snapshot` (`snapshot_id`,`id`),
+  CONSTRAINT `fk_ct_audit_area_snapshot` FOREIGN KEY (`snapshot_id`) REFERENCES `corporation_tax_audit_snapshots` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `chk_ct_audit_area_reconciliation` CHECK (`reconciliation_status` in ('reconciled','discrepancy'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `hmrc_ct600_submissions`
 --
 
@@ -3186,6 +3235,16 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_18_002_hmrc_ct_rim_catalogue.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_18_004_hmrc_ct_rim_files.sql');
+INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
+SELECT DISTINCT existing_permission.`role_id`, audit_card.`card_key`
+FROM `role_card_permissions` existing_permission
+INNER JOIN (
+  SELECT 'tax_audit_areas' AS `card_key`
+  UNION ALL SELECT 'tax_audit_detail'
+) audit_card
+WHERE existing_permission.`card_key` IN ('tax_corporation_tax_summary','tax_taxable_profit_bridge','year_end_tax_readiness');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_19_001_corporation_tax_audit_snapshots.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

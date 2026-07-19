@@ -579,18 +579,9 @@ final class YearEndChecklistService
     ): array {
         $taxReadiness = (new \eel_accounts\Service\YearEndTaxReadinessService())
             ->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
-        $frs105Profile = (new \eel_accounts\Service\Frs105YearEndProfileService())
-            ->fetch($companyId, $accountingPeriodId);
         $metrics = new \eel_accounts\Service\YearEndMetricsService();
-        $company = $metrics->fetchCompanySummary($companyId) ?? [];
-        $accountingPeriod = $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId) ?? [];
         $freezeService = new \eel_accounts\Service\YearEndTaxFreezeService();
-        $basis = $freezeService->approvalBasis(
-            $taxReadiness,
-            (array)($frs105Profile['supported_return_profile'] ?? []),
-            $company,
-            $accountingPeriod
-        );
+        $basis = $freezeService->approvalBasis($taxReadiness);
         if ($basis === null) {
             $messages = array_values(array_filter(array_map(
                 static fn(array $diagnostic): string => trim((string)($diagnostic['message'] ?? '')),
@@ -1069,8 +1060,6 @@ final class YearEndChecklistService
         $duplicateRepayments = $metrics->duplicateRepaymentRiskSummary($companyId, $periodStart, $periodEnd);
         $financialStatements = $metrics->financialStatementsSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd, $trialBalance);
         $taxReadiness = $tax->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
-        $frs105Profile = (new \eel_accounts\Service\Frs105YearEndProfileService())
-            ->fetch($companyId, $accountingPeriodId);
         $balanceSheetMetrics = (array)(($financialStatements['balance_sheet'] ?? [])['metrics'] ?? []);
         $corporationTaxProvision = is_array($taxReadiness['provision'] ?? null)
             ? (array)$taxReadiness['provision']
@@ -1527,18 +1516,6 @@ final class YearEndChecklistService
         array_push($sections['corporation_tax_readiness'], ...$ctPeriodTaxFactChecks);
         $ctPeriodTaxFactsPass = !in_array('fail', array_column($ctPeriodTaxFactChecks, 'status'), true);
 
-        $sections['corporation_tax_readiness'][] = $this->makeCheck(
-            'frs105_micro_entity_profile',
-            'Supported FRS 105 micro-entity profile',
-            'fail',
-            !empty($frs105Profile['available']) && !empty($frs105Profile['pass']) ? 'pass' : 'fail',
-            !empty($frs105Profile['available']) && !empty($frs105Profile['pass'])
-                ? 'The accounting period meets the application\'s sole supported ordinary trading-company FRS 105 micro-entity profile.'
-                : (string)(($frs105Profile['errors'] ?? [])[0] ?? 'The supported FRS 105 micro-entity profile could not be confirmed.'),
-            !empty($frs105Profile['pass']) ? 'Supported' : 'Action required',
-            '?page=disclosures&show_card=ixbrl_accounts_disclosures'
-        );
-
         $taxFreezeReady = !empty($taxReadiness['available'])
             && (string)($taxReadiness['freeze_status'] ?? '') === 'ready_for_approval';
         $taxFreezeBlockers = (array)($taxReadiness['blocking_diagnostics'] ?? []);
@@ -1618,12 +1595,7 @@ final class YearEndChecklistService
                 : 'Resolve the amount-affecting Corporation Tax issues before approving the tax basis.',
             $taxFreezeReady ? 'Approval required' : 'Blocked',
             '?page=corporation_tax&show_card=year_end_tax_readiness#tax-readiness',
-            (new \eel_accounts\Service\YearEndTaxFreezeService())->approvalBasis(
-                $taxReadiness,
-                (array)($frs105Profile['supported_return_profile'] ?? []),
-                $companySummary,
-                $accountingPeriod
-            )
+            (new \eel_accounts\Service\YearEndTaxFreezeService())->approvalBasis($taxReadiness)
         ), $reviewAcknowledgements);
 
         $comparisonFailures = 0;
@@ -1694,8 +1666,6 @@ final class YearEndChecklistService
             && !empty($s455Review['available'])
             && !empty($s455Review['all_confirmed'])
             && $ctPeriodTaxFactsPass
-            && !empty($frs105Profile['available'])
-            && !empty($frs105Profile['pass'])
             && $taxFreezeReady
             && $this->acknowledgementCurrentInSections($sections, 'tax_readiness_acknowledgement')
             && (empty($expensePosition['available'])
@@ -1757,7 +1727,6 @@ final class YearEndChecklistService
             'checks_flat' => $checks,
             'expense_position' => $expensePosition,
             'tax_readiness' => $taxReadiness,
-            'frs105_profile' => $frs105Profile,
             'companies_house_comparison' => $chComparison,
             'retained_earnings_close' => $retainedEarningsClose,
         ];

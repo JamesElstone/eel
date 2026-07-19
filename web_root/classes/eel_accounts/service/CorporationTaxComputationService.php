@@ -460,23 +460,20 @@ final class CorporationTaxComputationService
         ];
     }
 
-    /**
-     * Seals every persisted CT-period run against its approved Year End basis.
-     * The surrounding lock transaction owns all rollback behaviour.
-     */
+    /** Seals immutable calculation evidence; post-Year-End filing approval is separate. */
     public function sealSummariesForYearEndLock(int $companyId, int $accountingPeriodId): array
     {
         if (!\InterfaceDB::inTransaction()) {
             return [
                 'success' => false,
-                'errors' => ['Corporation Tax filing bases can only be sealed inside the Year End lock transaction.'],
+                'errors' => ['Corporation Tax calculation bases can only be sealed inside the Year End lock transaction.'],
                 'sealed_periods' => [],
             ];
         }
         if (!(new YearEndLockService())->isLocked($companyId, $accountingPeriodId)) {
             return [
                 'success' => false,
-                'errors' => ['The atomic Year End lock must be applied before its Corporation Tax filing bases can be sealed.'],
+                'errors' => ['The atomic Year End lock must be applied before its Corporation Tax calculation bases can be sealed.'],
                 'sealed_periods' => [],
             ];
         }
@@ -490,7 +487,6 @@ final class CorporationTaxComputationService
         if ($periods === []) {
             $errors[] = 'At least one persisted active CT period is required before Year End can be sealed.';
         }
-        $modelService = new CtPeriodFilingModelService();
         foreach ($periods as $period) {
             $ctPeriodId = (int)($period['id'] ?? 0);
             if ($ctPeriodId <= 0) {
@@ -498,34 +494,66 @@ final class CorporationTaxComputationService
                 continue;
             }
 
-            $model = $modelService->buildForYearEndSeal($companyId, $accountingPeriodId, $ctPeriodId);
-            if (empty($model['available'])) {
-                foreach ((array)($model['errors'] ?? ['The frozen CT-period filing basis could not be assembled.']) as $error) {
-                    $errors[] = 'CT period ' . $ctPeriodId . ': ' . (string)$error;
-                }
+            $run = \InterfaceDB::fetchOne(
+                'SELECT r.*, s.id AS snapshot_id, s.basis_version AS snapshot_basis_version,
+                        s.basis_hash AS snapshot_basis_hash, ack.basis_version AS approval_basis_version,
+                        ack.basis_hash AS approval_basis_hash, ack.basis_json AS approval_basis_json
+                 FROM corporation_tax_periods ctp
+                 INNER JOIN corporation_tax_computation_runs r ON r.id = ctp.latest_computation_run_id
+                 INNER JOIN corporation_tax_audit_snapshots s ON s.computation_run_id = r.id
+                 INNER JOIN year_end_review_acknowledgements ack
+                   ON ack.company_id = ctp.company_id AND ack.accounting_period_id = ctp.accounting_period_id
+                  AND ack.check_code = :check_code
+                 WHERE ctp.id = :ct_period_id AND ctp.company_id = :company_id
+                   AND ctp.accounting_period_id = :accounting_period_id LIMIT 1',
+                [
+                    'check_code' => 'tax_readiness_acknowledgement',
+                    'ct_period_id' => $ctPeriodId,
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                ]
+            );
+            if (!is_array($run)) {
+                $errors[] = 'CT period ' . $ctPeriodId . ': The persisted calculation evidence is incomplete.';
                 continue;
             }
-            $run = (array)$model['run'];
             $summary = json_decode((string)($run['summary_json'] ?? ''), true);
             if (!is_array($summary)) {
                 $errors[] = 'CT period ' . $ctPeriodId . ': The persisted computation summary is unreadable.';
                 continue;
             }
-            $summary['frozen_filing_basis'] = [
-                'basis_version' => (string)$model['basis_version'],
-                'basis_hash' => (string)$model['basis_hash'],
-                'approval_basis_version' => (string)($model['approval']['basis_version'] ?? ''),
-                'approval_basis_hash' => (string)($model['approval']['basis_hash'] ?? ''),
-                'freeze_manifest_hash' => (string)($model['approval']['freeze_manifest_hash'] ?? ''),
-                'computation_run_id' => (int)($run['run_id'] ?? 0),
+            $approvalBasis = json_decode((string)($run['approval_basis_json'] ?? ''), true);
+            $freezeManifest = is_array($approvalBasis) && is_array($approvalBasis['freeze_manifest'] ?? null)
+                ? (array)$approvalBasis['freeze_manifest']
+                : [];
+            $freezeManifestHash = $freezeManifest !== []
+                ? (new YearEndAcknowledgementService())->hashBasis($freezeManifest)
+                : '';
+            if ($freezeManifestHash === ''
+                || !hash_equals($freezeManifestHash, (string)($summary['year_end_freeze_manifest_hash'] ?? ''))) {
+                $errors[] = 'CT period ' . $ctPeriodId . ': The computation is not bound to the approved Year End tax basis.';
+                continue;
+            }
+            $sealBasis = [
+                'basis_version' => 'ct-calculation-seal-v1',
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'ct_period_id' => $ctPeriodId,
+                'computation_run_id' => (int)($run['id'] ?? 0),
                 'computation_hash' => (string)($run['computation_hash'] ?? ''),
                 'tax_audit_snapshot_id' => (int)($run['snapshot_id'] ?? 0),
                 'tax_audit_basis_version' => (string)($run['snapshot_basis_version'] ?? ''),
                 'tax_audit_basis_hash' => (string)($run['snapshot_basis_hash'] ?? ''),
+                'tax_approval_basis_version' => (string)($run['approval_basis_version'] ?? ''),
+                'tax_approval_basis_hash' => (string)($run['approval_basis_hash'] ?? ''),
+                'freeze_manifest_hash' => $freezeManifestHash,
             ];
+            $sealBasis['basis_hash'] = (new YearEndAcknowledgementService())->hashBasis($sealBasis);
+            $summary['frozen_calculation_basis'] = $sealBasis;
+            unset($summary['frozen_filing_basis']);
             $summaryJson = json_encode($summary, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
             if (!is_string($summaryJson)) {
-                $errors[] = 'CT period ' . $ctPeriodId . ': The frozen filing-basis seal could not be encoded.';
+                $errors[] = 'CT period ' . $ctPeriodId . ': The frozen calculation-basis seal could not be encoded.';
                 continue;
             }
             \InterfaceDB::prepareExecute(
@@ -534,26 +562,29 @@ final class CorporationTaxComputationService
                    AND accounting_period_id = :accounting_period_id AND ct_period_id = :ct_period_id',
                 [
                     'summary_json' => $summaryJson,
-                    'run_id' => (int)$run['run_id'],
+                    'run_id' => (int)$run['id'],
                     'company_id' => $companyId,
                     'accounting_period_id' => $accountingPeriodId,
                     'ct_period_id' => $ctPeriodId,
                 ]
             );
 
-            $verified = $modelService->build($companyId, $accountingPeriodId, $ctPeriodId);
-            if (empty($verified['available'])) {
-                foreach ((array)($verified['errors'] ?? ['The written filing-basis seal could not be verified.']) as $error) {
-                    $errors[] = 'CT period ' . $ctPeriodId . ': ' . (string)$error;
-                }
+            $written = \InterfaceDB::fetchColumn(
+                'SELECT summary_json FROM corporation_tax_computation_runs WHERE id = :id LIMIT 1',
+                ['id' => (int)$run['id']]
+            );
+            $verifiedSummary = json_decode((string)$written, true);
+            $verifiedSeal = is_array($verifiedSummary) ? (array)($verifiedSummary['frozen_calculation_basis'] ?? []) : [];
+            if ($verifiedSeal === [] || !hash_equals((string)$sealBasis['basis_hash'], (string)($verifiedSeal['basis_hash'] ?? ''))) {
+                $errors[] = 'CT period ' . $ctPeriodId . ': The written calculation-basis seal could not be verified.';
                 continue;
             }
             $sealed[] = [
                 'ct_period_id' => $ctPeriodId,
-                'computation_run_id' => (int)$run['run_id'],
+                'computation_run_id' => (int)$run['id'],
                 'tax_audit_snapshot_id' => (int)$run['snapshot_id'],
-                'basis_version' => (string)$verified['basis_version'],
-                'basis_hash' => (string)$verified['basis_hash'],
+                'basis_version' => (string)$sealBasis['basis_version'],
+                'basis_hash' => (string)$sealBasis['basis_hash'],
             ];
         }
 

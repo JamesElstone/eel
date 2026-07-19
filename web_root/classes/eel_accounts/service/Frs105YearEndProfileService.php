@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 namespace eel_accounts\Service;
 
-/** Pre-lock readiness for the application's sole supported accounts profile. */
+/** Post-Year-End filing readiness for the application's sole supported accounts profile. */
 final class Frs105YearEndProfileService
 {
     public const RETURN_PROFILE_CODE = 'ordinary-uk-trading-frs105';

@@ -133,6 +133,7 @@ $harness->check('GoldenYearEndLifecycle', 'previews the split-period CT provisio
         $periodService = new \eel_accounts\Service\CorporationTaxPeriodService();
         $initialSync = $periodService->syncForAccountingPeriod($companyId, $accountingPeriodId);
         $harness->assertSame(true, (bool)($initialSync['success'] ?? false));
+        test_confirm_ct_period_facts($companyId, $accountingPeriodId);
         $harness->assertCount(2, (array)($initialSync['periods'] ?? []));
         $initialEvidence = (new \eel_accounts\Service\CorporationTaxComputationService())
             ->persistSummariesForYearEndLock($companyId, $accountingPeriodId);
@@ -227,6 +228,7 @@ $harness->check('GoldenYearEndLifecycle', 'previews the split-period CT provisio
 
         $postingSync = $periodService->syncForAccountingPeriod($companyId, $accountingPeriodId);
         $harness->assertSame(true, (bool)($postingSync['success'] ?? false));
+        test_confirm_ct_period_facts($companyId, $accountingPeriodId);
         $harness->assertCount(2, (array)($postingSync['periods'] ?? []));
         $postingBasis = (new \eel_accounts\Service\CorporationTaxComputationService())
             ->previewProvisionPositionForAccountingPeriod(
@@ -469,17 +471,9 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         $beforeLock = goldenYearEndReportingSnapshot($companyId, $periodId);
         InterfaceDB::beginTransaction();
         try {
-            $metrics = new \eel_accounts\Service\YearEndMetricsService();
             $taxReadiness = (new \eel_accounts\Service\YearEndTaxReadinessService())
                 ->fetchAccountingPeriodCtSummary($companyId, $periodId);
-            $returnProfile = (new \eel_accounts\Service\Frs105YearEndProfileService())
-                ->fetch($companyId, $periodId);
-            $approvalBasis = (new \eel_accounts\Service\YearEndTaxFreezeService())->approvalBasis(
-                $taxReadiness,
-                (array)($returnProfile['supported_return_profile'] ?? []),
-                $metrics->fetchCompanySummary($companyId) ?? [],
-                $metrics->fetchAccountingPeriod($companyId, $periodId) ?? []
-            );
+            $approvalBasis = (new \eel_accounts\Service\YearEndTaxFreezeService())->approvalBasis($taxReadiness);
             if (!is_array($approvalBasis)) {
                 throw new RuntimeException('AP ' . $periodId . ' CT basis was not ready for approval.');
             }
@@ -522,6 +516,10 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
             throw $exception;
         }
         $harness->assertTrue((new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $periodId));
+        $filingApproval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
+            ->approveAndBuildFacts($companyId, $periodId, 'golden_year_end_test', 'Golden lifecycle filing approval.');
+        $harness->assertTrue((int)($filingApproval['approval_id'] ?? 0) > 0);
+        $harness->assertTrue((int)($filingApproval['fact_run_id'] ?? 0) > 0);
         foreach ($ctPeriods as $ctPeriod) {
             $filingModel = (new \eel_accounts\Service\CtPeriodFilingModelService())
                 ->build($companyId, $periodId, (int)$ctPeriod['id']);

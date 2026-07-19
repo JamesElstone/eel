@@ -13,24 +13,46 @@ final class IxbrlFactBuilderService
 {
     public function buildFacts(int $companyId, int $accountingPeriodId): int
     {
-        $this->assertSchemaReady();
-        $report = (new IxbrlAccountsReportService())->build($companyId, $accountingPeriodId);
-        $mappings = (new IxbrlTaxonomyProfileService())->mappings();
+        return (new IxbrlAccountsFilingApprovalService())->rebuildFactsFromCurrentApproval(
+            $companyId,
+            $accountingPeriodId
+        );
+    }
 
-        return (int)\InterfaceDB::transaction(function () use (
+    /** Builds from the report already verified by the filing-approval transaction. */
+    public function buildFactsFromApprovedReport(
+        int $companyId,
+        int $accountingPeriodId,
+        array $report,
+        int $approvalId,
+        string $approvalHash
+    ): int {
+        $this->assertSchemaReady();
+        if ((int)($report['company']['id'] ?? 0) !== $companyId
+            || (int)($report['accounting_period']['id'] ?? 0) !== $accountingPeriodId
+            || preg_match('/^[a-f0-9]{64}$/i', $approvalHash) !== 1
+            || $approvalId <= 0) {
+            throw new \RuntimeException('The approved accounts report identity is invalid.');
+        }
+        $mappings = (new IxbrlTaxonomyProfileService())->mappings();
+        $build = function () use (
             $companyId,
             $accountingPeriodId,
             $report,
-            $mappings
+            $mappings,
+            $approvalId,
+            $approvalHash
         ): int {
             $token = 'build:' . bin2hex(random_bytes(8));
             \InterfaceDB::prepareExecute(
                 'INSERT INTO ixbrl_generation_runs (
                     company_id, accounting_period_id, status, error_message,
-                    taxonomy_profile, basis_version, basis_hash
+                    taxonomy_profile, basis_version, basis_hash,
+                    filing_approval_id, filing_approval_hash
                  ) VALUES (
                     :company_id, :accounting_period_id, :status, :token,
-                    :taxonomy_profile, :basis_version, :basis_hash
+                    :taxonomy_profile, :basis_version, :basis_hash,
+                    :filing_approval_id, :filing_approval_hash
                  )',
                 [
                     'company_id' => $companyId,
@@ -40,6 +62,8 @@ final class IxbrlFactBuilderService
                     'taxonomy_profile' => IxbrlTaxonomyProfileService::PROFILE,
                     'basis_version' => IxbrlTaxonomyProfileService::BASIS_VERSION,
                     'basis_hash' => (string)$report['basis_hash'],
+                    'filing_approval_id' => $approvalId,
+                    'filing_approval_hash' => $approvalHash,
                 ]
             );
             $runId = (int)\InterfaceDB::fetchColumn(
@@ -94,7 +118,8 @@ final class IxbrlFactBuilderService
             );
 
             return $runId;
-        });
+        };
+        return \InterfaceDB::inTransaction() ? $build() : (int)\InterfaceDB::transaction($build);
     }
 
     public function getFacts(int $runId): array
@@ -145,14 +170,17 @@ final class IxbrlFactBuilderService
             return ['state' => 'missing', 'detail' => 'No iXBRL facts are available for freshness checking.'];
         }
         if (!\InterfaceDB::columnExists('ixbrl_generation_runs', 'basis_version')
-            || !\InterfaceDB::columnExists('ixbrl_generation_runs', 'basis_hash')) {
+            || !\InterfaceDB::columnExists('ixbrl_generation_runs', 'basis_hash')
+            || !\InterfaceDB::columnExists('ixbrl_generation_runs', 'filing_approval_id')
+            || !\InterfaceDB::columnExists('ixbrl_generation_runs', 'filing_approval_hash')) {
             return [
                 'state' => 'unverifiable',
                 'detail' => 'Apply the latest iXBRL taxonomy migration and rebuild the facts.',
             ];
         }
         $run = \InterfaceDB::fetchOne(
-            'SELECT id, company_id, accounting_period_id, basis_version, basis_hash
+            'SELECT id, company_id, accounting_period_id, basis_version, basis_hash,
+                    filing_approval_id, filing_approval_hash
              FROM ixbrl_generation_runs WHERE id = :id LIMIT 1',
             ['id' => $runId]
         );
@@ -164,6 +192,21 @@ final class IxbrlFactBuilderService
             return [
                 'state' => 'unverifiable',
                 'detail' => 'The iXBRL run predates complete source-basis tracking and must be rebuilt.',
+            ];
+        }
+
+        $approvalStatus = (new IxbrlAccountsFilingApprovalService())->status(
+            (int)$run['company_id'],
+            (int)$run['accounting_period_id']
+        );
+        $approval = is_array($approvalStatus['approval'] ?? null) ? (array)$approvalStatus['approval'] : [];
+        if (($approvalStatus['state'] ?? '') !== 'current'
+            || (int)($run['filing_approval_id'] ?? 0) !== (int)($approval['id'] ?? 0)
+            || !hash_equals((string)($run['filing_approval_hash'] ?? ''), (string)($approval['basis_hash'] ?? ''))) {
+            return [
+                'state' => 'stale',
+                'detail' => 'The facts do not belong to the current approved filing basis. Approve the disclosures again.',
+                'built_hash' => $builtHash,
             ];
         }
 
@@ -201,7 +244,10 @@ final class IxbrlFactBuilderService
 
     private function assertSchemaReady(): void
     {
-        foreach (['ixbrl_generation_runs', 'ixbrl_generation_facts', 'ixbrl_fact_mappings', 'ixbrl_accounts_disclosures'] as $table) {
+        foreach ([
+            'ixbrl_generation_runs', 'ixbrl_generation_facts', 'ixbrl_fact_mappings',
+            'ixbrl_accounts_disclosures', 'ixbrl_accounts_filing_approvals', 'ct_period_filing_bases',
+        ] as $table) {
             if (!\InterfaceDB::tableExists($table)) {
                 throw new \RuntimeException('Apply the latest iXBRL database migrations before building facts.');
             }

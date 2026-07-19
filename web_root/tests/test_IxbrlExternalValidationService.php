@@ -25,7 +25,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(false, $status['blocking'] ?? true);
         });
 
-        $harness->check(\eel_accounts\Service\IxbrlExternalValidationService::class, 'stores the exact stable output hash processed by Arelle', static function () use ($harness): void {
+        $harness->check(\eel_accounts\Service\IxbrlExternalValidationService::class, 'rejects an artifact that has no current filing approval', static function () use ($harness): void {
             InterfaceDB::beginTransaction();
             $fixture = ixbrlExternalValidationFixture();
             try {
@@ -40,10 +40,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ['id' => $fixture['run_id']]
                 );
 
-                $harness->assertSame(true, (bool)($result['ok'] ?? false));
-                $harness->assertSame($fixture['hash'], (string)($result['validated_sha256'] ?? ''));
-                $harness->assertSame('passed', (string)($stored['external_validation_status'] ?? ''));
-                $harness->assertSame($fixture['hash'], (string)($stored['external_validated_sha256'] ?? ''));
+                $harness->assertSame(false, (bool)($result['ok'] ?? true));
+                $harness->assertSame('stale', (string)($result['status'] ?? ''));
+                $harness->assertSame(null, $stored['external_validated_sha256'] ?? null);
             } finally {
                 @unlink($fixture['path']);
                 InterfaceDB::rollBack();
@@ -66,7 +65,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 );
 
                 $harness->assertSame(false, (bool)($result['ok'] ?? true));
-                $harness->assertSame('error', (string)($result['status'] ?? ''));
+                $harness->assertSame('stale', (string)($result['status'] ?? ''));
                 $harness->assertSame(null, $storedHash);
             } finally {
                 @unlink($fixture['path']);

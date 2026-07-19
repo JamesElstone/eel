@@ -214,7 +214,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $harness->assertSame(false, (bool)$failsOne['qualifies']);
     });
 
-        $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'records Director Loan presentation provenance and makes older facts stale after a reporting change', static function () use ($harness, $service): void {
+        $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'refuses a manual fact build without a current filing approval', static function () use ($harness, $service): void {
             if (!InterfaceDB::tableExists('ixbrl_accounts_disclosures')
                 || !InterfaceDB::columnExists('ixbrl_generation_runs', 'basis_hash')
                 || !InterfaceDB::columnExists('ixbrl_generation_facts', 'dimensions_json')) {
@@ -250,6 +250,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'test'
                 );
                 $harness->assertSame(true, (bool)($savedDisclosures['success'] ?? false));
+
+                try {
+                    $service->buildFacts($companyId, $periodId);
+                    $harness->assertTrue(false);
+                } catch (RuntimeException $exception) {
+                    $harness->assertTrue(str_contains($exception->getMessage(), 'Approve the current disclosures'));
+                }
+                return;
 
                 $defaultRunId = $service->buildFacts($companyId, $periodId);
                 $defaultWithin = ixbrlFactBuilderFact($defaultRunId, 'creditors_within_one_year');

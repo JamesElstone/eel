@@ -70,131 +70,17 @@ final class YearEndTaxFreezeService
     }
 
     /** @return array<string, mixed>|null */
-    public function approvalBasis(
-        array $taxReadiness,
-        array $supportedReturnProfile,
-        array $company,
-        array $accountingPeriod
-    ): ?array
+    public function approvalBasis(array $taxReadiness): ?array
     {
         $manifest = $taxReadiness['freeze_manifest'] ?? null;
-        $profile = $this->approvedSupportedReturnProfile($supportedReturnProfile);
-        $identity = is_array($manifest)
-            ? $this->filingIdentity($manifest, $company, $accountingPeriod)
-            : null;
         if (!is_array($manifest)
-            || (string)($taxReadiness['freeze_status'] ?? '') !== 'ready_for_approval'
-            || $profile === null
-            || $identity === null) {
+            || (string)($taxReadiness['freeze_status'] ?? '') !== 'ready_for_approval') {
             return null;
         }
 
         return [
             'check_code' => 'tax_readiness_acknowledgement',
-            'filing_identity' => $identity,
             'freeze_manifest' => $manifest,
-            'supported_return_profile' => $profile,
-        ];
-    }
-
-    /** @return array<string, mixed>|null */
-    private function filingIdentity(array $manifest, array $company, array $accountingPeriod): ?array
-    {
-        $companyId = (int)($company['id'] ?? 0);
-        $companyName = trim((string)($company['company_name'] ?? ''));
-        $companyNumber = trim((string)($company['company_number'] ?? ''));
-        $accountingPeriodId = (int)($accountingPeriod['id'] ?? 0);
-        $accountingPeriodStart = trim((string)($accountingPeriod['period_start'] ?? ''));
-        $accountingPeriodEnd = trim((string)($accountingPeriod['period_end'] ?? ''));
-        if ($companyId <= 0
-            || $companyName === ''
-            || $companyNumber === ''
-            || $accountingPeriodId <= 0
-            || !$this->validDateRange($accountingPeriodStart, $accountingPeriodEnd)
-            || (int)($manifest['company_id'] ?? 0) !== $companyId
-            || (int)($manifest['accounting_period_id'] ?? 0) !== $accountingPeriodId) {
-            return null;
-        }
-
-        $ctPeriods = [];
-        foreach ((array)($manifest['periods'] ?? []) as $sequence => $period) {
-            if (!is_array($period)) {
-                return null;
-            }
-            $ctPeriodId = (int)($period['ct_period_id'] ?? 0);
-            $periodStart = trim((string)($period['period_start'] ?? ''));
-            $periodEnd = trim((string)($period['period_end'] ?? ''));
-            if ($ctPeriodId <= 0 || !$this->validDateRange($periodStart, $periodEnd)) {
-                return null;
-            }
-            $ctPeriods[] = [
-                'id' => $ctPeriodId,
-                'sequence_no' => (int)($period['sequence_no'] ?? ($sequence + 1)),
-                'start_date' => $periodStart,
-                'end_date' => $periodEnd,
-            ];
-        }
-        if ($ctPeriods === []) {
-            return null;
-        }
-
-        return [
-            'company' => [
-                'id' => $companyId,
-                'name' => $companyName,
-                'number' => $companyNumber,
-            ],
-            'accounting_period' => [
-                'id' => $accountingPeriodId,
-                'start_date' => $accountingPeriodStart,
-                'end_date' => $accountingPeriodEnd,
-            ],
-            'ct_periods' => $ctPeriods,
-        ];
-    }
-
-    private function validDateRange(string $start, string $end): bool
-    {
-        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $start) !== 1
-            || preg_match('/^\d{4}-\d{2}-\d{2}$/', $end) !== 1) {
-            return false;
-        }
-        try {
-            return new \DateTimeImmutable($start) <= new \DateTimeImmutable($end);
-        } catch (\Throwable) {
-            return false;
-        }
-    }
-
-    /** @return array<string, mixed>|null */
-    private function approvedSupportedReturnProfile(array $profile): ?array
-    {
-        if ((string)($profile['profile_code'] ?? '') !== Frs105YearEndProfileService::RETURN_PROFILE_CODE
-            || (string)($profile['profile_version'] ?? '') !== Frs105YearEndProfileService::RETURN_PROFILE_VERSION
-            || ($profile['ordinary_trading_company_confirmed'] ?? null) !== true
-            || ($profile['supported'] ?? null) !== true
-            || !is_array($profile['check_results'] ?? null)
-            || !is_array($profile['failed_checks'] ?? null)
-            || $profile['failed_checks'] !== []) {
-            return null;
-        }
-
-        $checkResults = [];
-        foreach (Frs105YearEndProfileService::RETURN_PROFILE_CHECK_CODES as $code) {
-            if (($profile['check_results'][$code] ?? null) !== true) {
-                return null;
-            }
-            $checkResults[$code] = true;
-        }
-        ksort($checkResults, SORT_STRING);
-
-        return [
-            'profile_code' => Frs105YearEndProfileService::RETURN_PROFILE_CODE,
-            'profile_version' => Frs105YearEndProfileService::RETURN_PROFILE_VERSION,
-            'ordinary_trading_company_confirmed' => true,
-            'supported' => true,
-            'check_results' => $checkResults,
-            'failed_checks' => [],
         ];
     }
 

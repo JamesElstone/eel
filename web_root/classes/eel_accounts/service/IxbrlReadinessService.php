@@ -210,8 +210,24 @@ final class IxbrlReadinessService
             $yearEndLocked,
             ['build', 'generate', 'filing'],
             $yearEndLocked
-                ? 'Year End is locked; its completed reviews and acknowledgements are authoritative.'
-                : 'Complete and lock Year End before confirming disclosures or building iXBRL facts.'
+                ? 'Year End is locked; its ledger and Corporation Tax calculation evidence are authoritative.'
+                : 'Complete and lock Year End before approving the filing basis.'
+        );
+
+        $filingApproval = $validSelection
+            ? (new IxbrlAccountsFilingApprovalService())->status($companyId, $accountingPeriodId)
+            : ['state' => 'absent', 'errors' => ['Select a company and accounting period.']];
+        $approvalCurrent = (string)($filingApproval['state'] ?? '') === 'current';
+        $this->addCheck(
+            $checks,
+            'filing_basis_approved',
+            'Complete filing basis approved',
+            $approvalCurrent,
+            ['build', 'generate', 'filing'],
+            $approvalCurrent
+                ? 'The current disclosures, report mapping and CT calculation seals have an immutable approval.'
+                : (string)(($filingApproval['errors'] ?? [])[0]
+                    ?? 'Approve disclosures and build filing facts from the Accounts Disclosures panel.')
         );
 
         $latestRun = $validSelection && \InterfaceDB::tableExists('ixbrl_generation_runs')
@@ -334,6 +350,7 @@ final class IxbrlReadinessService
             ],
             'facts_current' => $factsCurrent,
             'year_end_locked' => $yearEndLocked,
+            'filing_approval' => $filingApproval,
             'closing_balance_reliable' => $closingReliable,
             'run_freshness' => $runFreshness,
             'latest_run' => $latestRun,

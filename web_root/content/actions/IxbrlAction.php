@@ -14,7 +14,7 @@ final class IxbrlAction implements ActionInterfaceFramework
         $intent = trim((string)$request->input('intent', $request->input('global_action', '')));
         $companyId = (int)$request->input('company_id', 0);
         $accountingPeriodId = (int)$request->input('accounting_period_id', 0);
-        $changedFacts = ['ixbrl.readiness', 'ixbrl.disclosures', 'ixbrl.trial.balance', 'ixbrl.accounts.mapping', 'ixbrl.facts.preview', 'ixbrl.generation', 'page.context'];
+        $changedFacts = ['ixbrl.readiness', 'ixbrl.disclosures', 'ixbrl.trial.balance', 'ixbrl.accounts.mapping', 'ixbrl.facts.preview', 'ixbrl.generation', 'ct.filing', 'page.context'];
 
         $contextError = $this->accountingContextError($companyId, $accountingPeriodId);
         if ($contextError !== null) {
@@ -65,12 +65,29 @@ final class IxbrlAction implements ActionInterfaceFramework
                     $request->input(trim((string)$request->input('disclosure_field', '')), null),
                     $this->actor($request)
                 );
-                $fieldChangedFacts = ['ixbrl.readiness', 'ixbrl.disclosures'];
                 return $this->result(
                     !empty($result['success']),
                     (array)($result['errors'] ?? []),
-                    $fieldChangedFacts,
-                    !empty($result['success']) ? ['Disclosure updated. Rebuild the iXBRL facts before generating or filing.'] : [],
+                    $changedFacts,
+                    !empty($result['success']) ? ['Disclosure updated. Approve the revised filing basis before generating or filing.'] : [],
+                    []
+                );
+            }
+            if ($intent === 'approve_ixbrl_accounts_filing_basis') {
+                $approved = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())->approveAndBuildFacts(
+                    $companyId,
+                    $accountingPeriodId,
+                    $this->actor($request),
+                    trim((string)$request->input('approval_note', ''))
+                );
+                return $this->result(
+                    true,
+                    [],
+                    $changedFacts,
+                    [
+                        'Filing basis approval #' . (int)$approved['approval_id']
+                        . ' recorded and iXBRL fact run #' . (int)$approved['fact_run_id'] . ' built.',
+                    ],
                     []
                 );
             }

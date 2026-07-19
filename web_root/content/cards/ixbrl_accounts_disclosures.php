@@ -44,6 +44,14 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                 'companyId' => ':company.id',
                 'accountingPeriodId' => ':company.accounting_period_id',
             ],
+        ], [
+            'key' => 'ixbrl_filing_approval',
+            'service' => \eel_accounts\Service\IxbrlAccountsFilingApprovalService::class,
+            'method' => 'status',
+            'params' => [
+                'companyId' => ':company.id',
+                'accountingPeriodId' => ':company.accounting_period_id',
+            ],
         ]];
     }
 
@@ -75,6 +83,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         $suggestions = (array)($result['suggested_disclosures'] ?? []);
         $suggestionSources = (array)($result['suggestion_sources'] ?? []);
         $directorLoanDisclosure = (array)($context['services']['director_loan_disclosure'] ?? []);
+        $approvalStatus = (array)($context['services']['ixbrl_filing_approval'] ?? []);
         foreach (self::EXPLICIT_SIMPLE_NOTE_FIELDS as $field) {
             unset($suggestions[$field], $suggestionSources[$field]);
         }
@@ -246,8 +255,50 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                         ' . $this->yesNo('has_financial_commitments_guarantees_or_contingencies', 'Are there any financial commitments, guarantees or contingencies requiring disclosure?', $display['has_financial_commitments_guarantees_or_contingencies'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
                     </section>
                 </div>
-            </form>
+                ' . $this->approvalPanel($approvalStatus, $companyId, $accountingPeriodId) . '
         </div>';
+    }
+
+    private function approvalPanel(array $status, int $companyId, int $accountingPeriodId): string
+    {
+        $state = (string)($status['state'] ?? 'absent');
+        $approval = is_array($status['approval'] ?? null) ? (array)$status['approval'] : [];
+        $current = $state === 'current';
+        $label = $current ? 'Current' : ($state === 'stale' ? 'Stale' : 'Not approved');
+        $badge = $current ? 'success' : 'danger';
+        $detail = $current
+            ? 'The approved basis matches the current Year End lock, disclosures, accounts mapping and CT calculation seals.'
+            : ($state === 'stale'
+                ? 'The previous approval is retained as evidence, but the current filing basis has changed.'
+                : 'Approve the complete filing basis to create immutable CT bases and the accounts fact snapshot.');
+        $evidence = '';
+        if ($approval !== []) {
+            $evidence = '<div class="helper">' . ($current ? 'Approval #' : 'Previous approval #') . (int)$approval['id']
+                . ' by ' . HelperFramework::escape((string)$approval['approved_by'])
+                . ' at ' . HelperFramework::escape((string)$approval['approved_at'])
+                . '; disclosure revision ' . (int)$approval['disclosure_revision']
+                . '; basis ' . HelperFramework::escape(substr((string)$approval['basis_hash'], 0, 16)) . '…</div>';
+        }
+        $errors = '';
+        foreach ((array)($status['errors'] ?? []) as $error) {
+            $errors .= '<div class="standout helper">' . HelperFramework::escape((string)$error) . '</div>';
+        }
+        $disabled = empty($status['can_approve']) ? ' disabled aria-disabled="true"' : '';
+
+        return '<section class="panel-soft">
+            <div class="status-head"><h3 class="card-title">Filing basis approval</h3><span class="badge ' . $badge . '">' . $label . '</span></div>
+            <div class="helper">' . HelperFramework::escape($detail) . '</div>' . $evidence . $errors . '
+            <form method="post" action="?page=disclosures" data-ajax="true">
+                <input type="hidden" name="card_action" value="Ixbrl">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
+                <input type="hidden" name="intent" value="approve_ixbrl_accounts_filing_basis">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <div class="form-row"><label for="ixbrl_filing_approval_note">Approval note (optional)</label>
+                    <textarea class="input" id="ixbrl_filing_approval_note" name="approval_note" rows="2"></textarea></div>
+                <div class="actions-row"><button class="button primary" type="submit"' . $disabled . '>Approve disclosures and build filing facts</button></div>
+            </form>
+        </section>';
     }
 
     private function yesNo(string $name, string $label, mixed $value, bool $disabled = false, bool $ajaxField = false, int $companyId = 0, int $accountingPeriodId = 0): string

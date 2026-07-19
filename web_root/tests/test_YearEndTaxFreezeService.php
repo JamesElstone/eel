@@ -27,6 +27,24 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(false, array_key_exists('filing_identity', (array)(($left['freeze_manifest'] ?? [])['periods'][0] ?? [])));
         });
 
+        $harness->check(\eel_accounts\Service\YearEndTaxFreezeService::class, 'preserves penny-accurate tax facts in the frozen manifest', static function () use ($harness, $service): void {
+            $periods = yearEndTaxFreezePeriods();
+            $periods[0]['taxable_profit'] = 123.40;
+            $periods[0]['ordinary_corporation_tax'] = 23.45;
+            $periods[0]['s455_tax'] = 1.01;
+            $periods[0]['estimated_corporation_tax'] = 24.46;
+
+            $result = $service->build(49, 79, $periods, [], 2);
+            $frozen = (array)(($result['freeze_manifest'] ?? [])['periods'][0] ?? []);
+
+            $harness->assertSame('123.40', $frozen['taxable_profit'] ?? null);
+            $harness->assertSame('23.45', $frozen['ordinary_corporation_tax'] ?? null);
+            $harness->assertSame('1.01', $frozen['s455_tax'] ?? null);
+            $harness->assertSame('24.46', $frozen['corporation_tax_liability'] ?? null);
+            $harness->assertSame(false, array_key_exists('whole_pound_taxable_profit', $frozen));
+            $harness->assertSame(false, array_key_exists('whole_pound_corporation_tax_liability', $frozen));
+        });
+
         $harness->check(\eel_accounts\Service\YearEndTaxFreezeService::class, 'changes the approval hash when an amount-affecting fact changes', static function () use ($harness, $service): void {
             $periods = yearEndTaxFreezePeriods();
             $initial = $service->build(49, 79, $periods, [], 2);
@@ -49,46 +67,38 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
             $harness->assertSame('blocked', (string)($blocked['freeze_status'] ?? ''));
             $harness->assertSame(2, (int)($blocked['blocking_diagnostic_count'] ?? 0));
-            $harness->assertSame(null, $service->approvalBasis($blocked, yearEndSupportedReturnProfile(), yearEndFreezeCompany(), yearEndFreezeAccountingPeriod()));
+            $harness->assertSame(null, $service->approvalBasis($blocked));
             $harness->assertTrue(in_array('nominal_unknown_treatment', array_column((array)($blocked['blocking_diagnostics'] ?? []), 'code'), true));
             $harness->assertTrue(in_array('ct_period_computation_count', array_column((array)($blocked['blocking_diagnostics'] ?? []), 'code'), true));
         });
 
         $harness->check(\eel_accounts\Service\YearEndTaxFreezeService::class, 'produces an acknowledgement basis only for a ready calculation', static function () use ($harness, $service): void {
             $ready = $service->build(49, 79, yearEndTaxFreezePeriods(), [], 2);
-            $basis = $service->approvalBasis($ready, yearEndSupportedReturnProfile(), yearEndFreezeCompany(), yearEndFreezeAccountingPeriod());
+            $basis = $service->approvalBasis($ready);
 
             $harness->assertSame('tax_readiness_acknowledgement', (string)($basis['check_code'] ?? ''));
             $harness->assertSame(\eel_accounts\Service\YearEndTaxFreezeService::BASIS_VERSION, (string)(($basis['freeze_manifest'] ?? [])['basis_version'] ?? ''));
-            $harness->assertSame(true, (bool)(($basis['supported_return_profile'] ?? [])['ordinary_trading_company_confirmed'] ?? false));
-            $harness->assertSame('01234567', (string)($basis['filing_identity']['company']['number'] ?? ''));
-            $harness->assertSame(2, count((array)($basis['filing_identity']['ct_periods'] ?? [])));
-            $harness->assertSame(null, $service->approvalBasis($ready, [], yearEndFreezeCompany(), yearEndFreezeAccountingPeriod()));
-            $harness->assertSame(null, $service->approvalBasis($ready, array_replace(yearEndSupportedReturnProfile(), ['supported' => false]), yearEndFreezeCompany(), yearEndFreezeAccountingPeriod()));
-            $harness->assertSame(null, $service->approvalBasis($ready, yearEndSupportedReturnProfile(), [], yearEndFreezeAccountingPeriod()));
+            $harness->assertSame(false, array_key_exists('supported_return_profile', (array)$basis));
+            $harness->assertSame(false, array_key_exists('filing_identity', (array)$basis));
         });
 
         $harness->check(\eel_accounts\Service\YearEndTaxFreezeService::class, 'makes approval stale when the calculation basis changes', static function () use ($harness, $service): void {
             $acknowledgements = new \eel_accounts\Service\YearEndAcknowledgementService();
             $initial = $service->build(49, 79, yearEndTaxFreezePeriods(), [], 2);
-            $profile = yearEndSupportedReturnProfile();
-            $initialBasis = (array)$service->approvalBasis($initial, $profile, yearEndFreezeCompany(), yearEndFreezeAccountingPeriod());
+            $initialBasis = (array)$service->approvalBasis($initial);
             $stored = [
                 'basis_version' => \eel_accounts\Service\YearEndAcknowledgementService::BASIS_VERSION,
                 'basis_hash' => $acknowledgements->hashBasis($initialBasis),
             ];
             $periods = yearEndTaxFreezePeriods();
             $periods[1]['estimated_corporation_tax'] = 1.00;
-            $changedBasis = $service->approvalBasis($service->build(49, 79, $periods, [], 2), $profile, yearEndFreezeCompany(), yearEndFreezeAccountingPeriod());
+            $changedBasis = $service->approvalBasis($service->build(49, 79, $periods, [], 2));
 
             $harness->assertSame(true, (bool)($acknowledgements->evaluate($stored, $initialBasis)['current'] ?? false));
             $harness->assertSame(false, (bool)($acknowledgements->evaluate($stored, $changedBasis)['current'] ?? true));
 
-            $changedProfile = $profile;
-            $changedProfile['profile_version'] = 'changed-profile-version';
-            $changedProfileBasis = $service->approvalBasis($initial, $changedProfile, yearEndFreezeCompany(), yearEndFreezeAccountingPeriod());
-            $harness->assertSame(null, $changedProfileBasis);
-            $harness->assertSame(false, (bool)($acknowledgements->evaluate($stored, $changedProfileBasis)['current'] ?? true));
+            $sameCalculationBasis = $service->approvalBasis($initial);
+            $harness->assertSame(true, (bool)($acknowledgements->evaluate($stored, $sameCalculationBasis)['current'] ?? false));
         });
     }
 );

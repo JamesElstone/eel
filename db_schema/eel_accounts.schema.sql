@@ -1232,6 +1232,8 @@ CREATE TABLE `ixbrl_generation_runs` (
   `taxonomy_profile` varchar(100) DEFAULT NULL,
   `basis_version` varchar(50) DEFAULT NULL,
   `basis_hash` char(64) DEFAULT NULL,
+  `filing_approval_id` bigint(20) DEFAULT NULL,
+  `filing_approval_hash` char(64) DEFAULT NULL,
   `validation_status` varchar(32) NOT NULL DEFAULT 'not_validated',
   `validation_errors_json` longtext DEFAULT NULL,
   `external_validator` varchar(50) DEFAULT NULL,
@@ -1251,6 +1253,7 @@ CREATE TABLE `ixbrl_generation_runs` (
   PRIMARY KEY (`id`),
   KEY `idx_ixbrl_runs_company_accounting_period` (`company_id`,`accounting_period_id`),
   KEY `idx_ixbrl_runs_status` (`status`),
+  KEY `idx_ixbrl_runs_filing_approval` (`filing_approval_id`),
   CONSTRAINT `fk_ixbrl_runs_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_ixbrl_runs_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -3094,6 +3097,57 @@ CREATE TABLE `year_end_reviews` (
 ) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
+DROP TABLE IF EXISTS `ct_period_filing_bases`;
+DROP TABLE IF EXISTS `ixbrl_accounts_filing_approvals`;
+CREATE TABLE `ixbrl_accounts_filing_approvals` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `disclosure_id` bigint(20) NOT NULL,
+  `disclosure_revision` int(10) unsigned NOT NULL,
+  `year_end_review_id` int(11) NOT NULL,
+  `year_end_locked_at` datetime NOT NULL,
+  `basis_version` varchar(64) NOT NULL,
+  `basis_hash` char(64) NOT NULL,
+  `basis_json` longtext NOT NULL,
+  `approved_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `approved_by` varchar(100) NOT NULL,
+  `approval_note` text DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_ixbrl_filing_approval_period` (`company_id`,`accounting_period_id`,`id`),
+  KEY `idx_ixbrl_filing_approval_basis` (`basis_hash`),
+  CONSTRAINT `fk_ixbrl_filing_approval_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ixbrl_filing_approval_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ixbrl_filing_approval_disclosure` FOREIGN KEY (`disclosure_id`) REFERENCES `ixbrl_accounts_disclosures` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_ixbrl_filing_approval_year_end` FOREIGN KEY (`year_end_review_id`) REFERENCES `year_end_reviews` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE `ct_period_filing_bases` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `filing_approval_id` bigint(20) NOT NULL,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `ct_period_id` int(11) NOT NULL,
+  `computation_run_id` int(11) NOT NULL,
+  `calculation_basis_version` varchar(64) NOT NULL,
+  `calculation_basis_hash` char(64) NOT NULL,
+  `basis_version` varchar(100) NOT NULL,
+  `basis_hash` char(64) NOT NULL,
+  `basis_json` longtext NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ct_period_filing_basis_approval_period` (`filing_approval_id`,`ct_period_id`),
+  KEY `idx_ct_period_filing_basis_context` (`company_id`,`accounting_period_id`,`ct_period_id`,`id`),
+  KEY `idx_ct_period_filing_basis_hash` (`basis_hash`),
+  CONSTRAINT `fk_ct_period_filing_basis_approval` FOREIGN KEY (`filing_approval_id`) REFERENCES `ixbrl_accounts_filing_approvals` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct_period_filing_basis_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct_period_filing_basis_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct_period_filing_basis_ct_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct_period_filing_basis_run` FOREIGN KEY (`computation_run_id`) REFERENCES `corporation_tax_computation_runs` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+ALTER TABLE `ixbrl_generation_runs`
+  ADD CONSTRAINT `fk_ixbrl_runs_filing_approval` FOREIGN KEY (`filing_approval_id`) REFERENCES `ixbrl_accounts_filing_approvals` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
 --
 -- Table structure for table `director_loan_attribution_audit`
 --
@@ -3382,6 +3436,8 @@ INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_19_001_corporation_tax_audit_snapshots.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_19_002_ct_period_participator_controls.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_19_005_accounts_filing_approvals.sql');
 INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
 SELECT DISTINCT existing_permission.`role_id`, new_card.`card_key`
 FROM `role_card_permissions` existing_permission

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'IxbrlTestFixture.php';
 
 (new GeneratedServiceClassTestHarness())->run(
     \eel_accounts\Service\CtPeriodFilingModelService::class,
@@ -13,6 +14,179 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $result = $service->build(0, 0, 0);
             $h->assertSame(false, $result['available']);
         });
+
+        $preExistingNominalIds = array_map('intval', array_column(\InterfaceDB::fetchAll(
+            "SELECT id FROM nominal_accounts WHERE code IN ('1000', '1200', '2100', '4000')"
+        ), 'id'));
+        $preExistingSubtypeIds = array_map('intval', array_column(\InterfaceDB::fetchAll(
+            "SELECT id FROM nominal_account_subtypes WHERE code IN ('bank', 'director_loan_asset', 'director_loan_liability')"
+        ), 'id'));
+
+        $h->check($service::class, 'loads one and two CT periods from one current post-Year-End approval', static function () use ($h, $service): void {
+            foreach ([1, 2] as $periodCount) {
+                $fixture = ctPeriodFilingModelFixture($periodCount);
+                $approval = (array)$fixture['filing_approval'];
+                $h->assertSame($periodCount, count((array)($approval['ct_basis_ids'] ?? [])));
+                foreach ($fixture['ct_period_ids'] as $ctPeriodId) {
+                    $model = $service->build($fixture['company_id'], $fixture['accounting_period_id'], $ctPeriodId);
+                    $h->assertSame(true, (bool)($model['available'] ?? false));
+                    $h->assertSame((int)$approval['approval_id'], (int)($model['approval']['id'] ?? 0));
+                    $h->assertSame((string)$approval['approval_hash'], (string)($model['approval']['basis_hash'] ?? ''));
+                    $h->assertSame($ctPeriodId, (int)($model['model']['ct_period']['id'] ?? 0));
+                    $h->assertSame((string)$model['basis_hash'], (string)($model['seal']['basis_hash'] ?? ''));
+                }
+            }
+        });
+
+        $h->check($service::class, 'preserves frozen warnings and gives both filing targets the identical stored basis', static function () use ($h, $service): void {
+            $warning = 'Frozen filing-stage warning retained for review.';
+            $fixture = ctPeriodFilingModelFixture(1, [$warning]);
+            $model = $service->build($fixture['company_id'], $fixture['accounting_period_id'], $fixture['ct_period_ids'][0]);
+            $h->assertSame(true, (bool)($model['available'] ?? false));
+            $h->assertSame($warning, (string)($model['warning_diagnostics'][0]['message'] ?? ''));
+            $h->assertTrue(str_starts_with((string)($model['warning_diagnostics'][0]['code'] ?? ''), 'frozen_warning_'));
+
+            $rimMapping = [[
+                'id' => 1, 'profile_id' => 1,
+                'canonical_key' => 'identity.company_name',
+                'value_type' => 'text', 'null_policy' => 'error', 'is_required' => 1, 'sort_order' => 1,
+            ]];
+            $computationMapping = [array_replace($rimMapping[0], ['profile_id' => 2])];
+            $mappingService = new \eel_accounts\Service\CtFilingMappingService();
+            $rim = $mappingService->mapFrozenFacts('ct600_rim', $model, [
+                'id' => 1, 'target_type' => 'ct600_rim', 'status' => 'active', 'compatibility_status' => 'compatible',
+            ], $rimMapping);
+            $computation = $mappingService->mapFrozenFacts('computation_ixbrl', $model, [
+                'id' => 2, 'target_type' => 'computation_ixbrl', 'status' => 'active', 'compatibility_status' => 'compatible',
+            ], $computationMapping);
+            $h->assertSame(true, (bool)($rim['success'] ?? false));
+            $h->assertSame((string)$rim['basis_hash'], (string)$computation['basis_hash']);
+            $h->assertSame($rim['canonical_values'], $computation['canonical_values']);
+        });
+
+        $h->check($service::class, 'makes approval, facts and CT bases stale after a disclosure edit while retaining history', static function () use ($h, $service): void {
+            $fixture = ctPeriodFilingModelFixture();
+            $before = ctPeriodFilingModelEvidenceCounts();
+            $changed = (new \eel_accounts\Service\IxbrlAccountsDisclosureService())->saveField(
+                $fixture['company_id'], $fixture['accounting_period_id'],
+                'going_concern_basis_appropriate', 0, 'test'
+            );
+            $h->assertSame(true, (bool)($changed['success'] ?? false));
+            $status = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
+                ->status($fixture['company_id'], $fixture['accounting_period_id']);
+            $h->assertSame('stale', (string)($status['state'] ?? ''));
+            $h->assertSame($before, ctPeriodFilingModelEvidenceCounts());
+            $h->assertSame(false, (bool)($service->build(
+                $fixture['company_id'], $fixture['accounting_period_id'], $fixture['ct_period_ids'][0]
+            )['available'] ?? true));
+            $freshness = (new \eel_accounts\Service\IxbrlFactBuilderService())->getRunFreshness(
+                (int)$fixture['filing_approval']['fact_run_id']
+            );
+            $h->assertSame('stale', (string)($freshness['state'] ?? ''));
+        });
+
+        $h->check($service::class, 'invalidates approval on unlock and requires a new approval after relock', static function () use ($h): void {
+            $fixture = ctPeriodFilingModelFixture();
+            $approvalService = new \eel_accounts\Service\IxbrlAccountsFilingApprovalService();
+            $firstApprovalId = (int)$fixture['filing_approval']['approval_id'];
+
+            \InterfaceDB::execute(
+                'UPDATE year_end_reviews
+                 SET is_locked = 0, locked_at = NULL, locked_by = NULL
+                 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+                ['company_id' => $fixture['company_id'], 'accounting_period_id' => $fixture['accounting_period_id']]
+            );
+            $unlocked = $approvalService->status($fixture['company_id'], $fixture['accounting_period_id']);
+            $h->assertSame('stale', (string)($unlocked['state'] ?? ''));
+            $h->assertSame(false, (bool)($unlocked['can_approve'] ?? true));
+
+            \InterfaceDB::execute(
+                'UPDATE year_end_reviews
+                 SET is_locked = 1, locked_at = :locked_at, locked_by = :locked_by
+                 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+                [
+                    'locked_at' => '2026-07-19 13:00:00', 'locked_by' => 'relock-test',
+                    'company_id' => $fixture['company_id'], 'accounting_period_id' => $fixture['accounting_period_id'],
+                ]
+            );
+            $relocked = $approvalService->status($fixture['company_id'], $fixture['accounting_period_id']);
+            $h->assertSame('stale', (string)($relocked['state'] ?? ''));
+            $h->assertSame(true, (bool)($relocked['can_approve'] ?? false));
+            $replacement = $approvalService->approveAndBuildFacts(
+                $fixture['company_id'], $fixture['accounting_period_id'], 'relock-test'
+            );
+            $h->assertTrue((int)($replacement['approval_id'] ?? 0) > $firstApprovalId);
+            $h->assertSame('current', (string)($approvalService->status(
+                $fixture['company_id'], $fixture['accounting_period_id']
+            )['state'] ?? ''));
+        });
+
+        $h->check($service::class, 'rejects a changed calculation seal or computation after approval', static function () use ($h, $service): void {
+            $fixture = ctPeriodFilingModelFixture();
+            $runId = $fixture['run_ids'][0];
+            $summary = json_decode((string)\InterfaceDB::fetchColumn(
+                'SELECT summary_json FROM corporation_tax_computation_runs WHERE id = :id', ['id' => $runId]
+            ), true);
+            unset($summary['accounting_profit']);
+            \InterfaceDB::execute(
+                'UPDATE corporation_tax_computation_runs SET summary_json = :summary WHERE id = :id',
+                ['summary' => json_encode($summary, JSON_UNESCAPED_SLASHES), 'id' => $runId]
+            );
+            $changed = $service->build($fixture['company_id'], $fixture['accounting_period_id'], $fixture['ct_period_ids'][0]);
+            $h->assertSame(false, (bool)($changed['available'] ?? true));
+            if (!str_contains(implode(' ', (array)$changed['errors']), 'changed since filing approval')) {
+                throw new RuntimeException('Unexpected changed-computation errors: ' . implode(' ', (array)$changed['errors']));
+            }
+
+            $fixture = ctPeriodFilingModelFixture();
+            $runId = $fixture['run_ids'][0];
+            $summary = json_decode((string)\InterfaceDB::fetchColumn(
+                'SELECT summary_json FROM corporation_tax_computation_runs WHERE id = :id', ['id' => $runId]
+            ), true);
+            unset($summary['frozen_calculation_basis']);
+            \InterfaceDB::execute(
+                'UPDATE corporation_tax_computation_runs SET summary_json = :summary WHERE id = :id',
+                ['summary' => json_encode($summary, JSON_UNESCAPED_SLASHES), 'id' => $runId]
+            );
+            $missingSeal = $service->build($fixture['company_id'], $fixture['accounting_period_id'], $fixture['ct_period_ids'][0]);
+            $h->assertSame(false, (bool)($missingSeal['available'] ?? true));
+            if (!str_contains(strtolower(implode(' ', (array)$missingSeal['errors'])), 'current disclosures and filing basis')) {
+                throw new RuntimeException('Unexpected missing-seal errors: ' . implode(' ', (array)$missingSeal['errors']));
+            }
+        });
+
+        $h->check($service::class, 'rolls approval, CT bases and fact run back when fact construction fails', static function () use ($h): void {
+            $fixture = ctPeriodFilingModelFixture(1, [], [], [], false);
+            $before = ctPeriodFilingModelEvidenceCounts();
+            try {
+                (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService(
+                    static function (): int { throw new RuntimeException('Injected fact-build failure.'); }
+                ))->approveAndBuildFacts($fixture['company_id'], $fixture['accounting_period_id'], 'test');
+                $h->assertTrue(false, 'Expected the injected fact build to fail.');
+            } catch (RuntimeException $exception) {
+                if (!str_contains($exception->getMessage(), 'Injected fact-build failure')) {
+                    throw new RuntimeException('Unexpected fact-build rollback error: ' . $exception->getMessage());
+                }
+            }
+            $h->assertSame($before, ctPeriodFilingModelEvidenceCounts());
+        });
+
+        \InterfaceDB::execute(
+            'DELETE FROM companies WHERE company_name = :name',
+            ['name' => 'Approved Filing Fixture']
+        );
+        $nominalCleanupSql = "DELETE FROM nominal_accounts WHERE code IN ('1000', '1200', '2100', '4000')";
+        if ($preExistingNominalIds !== []) {
+            $nominalCleanupSql .= ' AND id NOT IN (' . implode(',', $preExistingNominalIds) . ')';
+        }
+        \InterfaceDB::execute($nominalCleanupSql);
+        $subtypeCleanupSql = "DELETE FROM nominal_account_subtypes
+            WHERE code IN ('bank', 'director_loan_asset', 'director_loan_liability')";
+        if ($preExistingSubtypeIds !== []) {
+            $subtypeCleanupSql .= ' AND id NOT IN (' . implode(',', $preExistingSubtypeIds) . ')';
+        }
+        \InterfaceDB::execute($subtypeCleanupSql);
+        return;
 
         $h->check($service::class, 'consumes one approved locked CT period without writing duplicate evidence', static function () use ($h, $service): void {
             $fixture = ctPeriodFilingModelFixture();
@@ -257,7 +431,8 @@ function ctPeriodFilingModelFixture(
     int $periodCount = 1,
     array $warnings = [],
     array $blockers = [],
-    array $summaryOverrides = []
+    array $summaryOverrides = [],
+    bool $approve = true
 ): array {
     foreach ([
         'companies',
@@ -268,17 +443,28 @@ function ctPeriodFilingModelFixture(
         'corporation_tax_audit_areas',
         'year_end_reviews',
         'year_end_review_acknowledgements',
+        'ixbrl_accounts_disclosures',
+        'ixbrl_accounts_filing_approvals',
+        'ct_period_filing_bases',
     ] as $table) {
         if (!\InterfaceDB::tableExists($table)) {
             throw new RuntimeException('Required CT filing model test table is unavailable: ' . $table);
         }
     }
-    if (!\InterfaceDB::inTransaction()) {
-        \InterfaceDB::beginTransaction();
-    }
+    ixbrl_test_ensure_frs105_thresholds();
     \InterfaceDB::execute(
-        'INSERT INTO companies (company_name, company_number, is_active) VALUES (:name, :number, 1)',
-        ['name' => 'Approved Filing Fixture', 'number' => '12345678']
+        'INSERT INTO companies (
+            company_name, company_number, is_active, company_status, companies_house_type,
+            companies_house_jurisdiction, registered_office_address_line_1,
+            registered_office_locality, registered_office_postal_code, registered_office_country
+         ) VALUES (
+            :name, :number, 1, :status, :type, :jurisdiction, :address, :locality, :postcode, :country
+         )',
+        [
+            'name' => 'Approved Filing Fixture', 'number' => '12345678', 'status' => 'active',
+            'type' => 'ltd', 'jurisdiction' => 'england-wales', 'address' => '1 Filing Street',
+            'locality' => 'Testford', 'postcode' => 'TE5 1AA', 'country' => 'United Kingdom',
+        ]
     );
     $companyId = ctPeriodFilingModelLastInsertId();
     \InterfaceDB::execute(
@@ -286,6 +472,32 @@ function ctPeriodFilingModelFixture(
         ['company_id' => $companyId, 'label' => 'Approved filing fixture', 'start' => '2023-01-01', 'end' => '2023-12-31']
     );
     $accountingPeriodId = ctPeriodFilingModelLastInsertId();
+    $salesNominalId = ixbrl_test_assign_sales_nominal($companyId);
+    ixbrl_test_assign_director_loan_nominals($companyId);
+    $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
+    $settings->set('default_currency', 'GBP', 'char');
+    $settings->flush();
+    StandardNominalTestFixture::ensureNominals(['1000']);
+    \InterfaceDB::execute(
+        'INSERT INTO journals (company_id, accounting_period_id, source_type, source_ref, journal_date, description, is_posted)
+         VALUES (:company_id, :period_id, :source_type, :source_ref, :journal_date, :description, 1)',
+        [
+            'company_id' => $companyId, 'period_id' => $accountingPeriodId, 'source_type' => 'manual',
+            'source_ref' => 'ct-filing-sales-' . $companyId, 'journal_date' => '2023-06-30',
+            'description' => 'Supported trading evidence',
+        ]
+    );
+    $salesJournalId = ctPeriodFilingModelLastInsertId();
+    \InterfaceDB::execute(
+        'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit, line_description)
+         VALUES (:journal_id, :nominal_id, 100, 0, :description)',
+        ['journal_id' => $salesJournalId, 'nominal_id' => StandardNominalTestFixture::id('1000'), 'description' => 'Cash']
+    );
+    \InterfaceDB::execute(
+        'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit, line_description)
+         VALUES (:journal_id, :nominal_id, 0, 100, :description)',
+        ['journal_id' => $salesJournalId, 'nominal_id' => $salesNominalId, 'description' => 'Sales']
+    );
 
     $periodDefinitions = $periodCount === 2
         ? [
@@ -476,10 +688,43 @@ function ctPeriodFilingModelFixture(
     }
 
     if ($blockers === []) {
-        $seal = (new \eel_accounts\Service\CorporationTaxComputationService())
-            ->sealSummariesForYearEndLock($companyId, $accountingPeriodId);
-        if (empty($seal['success'])) {
-            throw new RuntimeException('CT filing fixture could not be sealed: ' . implode(' ', (array)($seal['errors'] ?? [])));
+        \InterfaceDB::beginTransaction();
+        try {
+            $seal = (new \eel_accounts\Service\CorporationTaxComputationService())
+                ->sealSummariesForYearEndLock($companyId, $accountingPeriodId);
+            if (empty($seal['success'])) {
+                throw new RuntimeException('CT filing fixture could not be sealed: ' . implode(' ', (array)($seal['errors'] ?? [])));
+            }
+            \InterfaceDB::commit();
+        } catch (Throwable $exception) {
+            if (\InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+            throw $exception;
+        }
+
+        $savedDisclosures = (new \eel_accounts\Service\IxbrlAccountsDisclosureService())->save(
+            $companyId,
+            $accountingPeriodId,
+            [
+                'accounting_standard' => 'FRS_105', 'average_number_employees' => 1,
+                'is_still_trading' => 1, 'accounts_approval_date' => '2024-01-31',
+                'approving_director_name' => 'Fixture Director',
+                'prepared_under_small_companies_regime' => 1, 'audit_exempt_section_477' => 1,
+                'directors_acknowledge_responsibilities' => 1, 'members_have_not_required_audit' => 1,
+                'micro_entity_eligibility_confirmed' => 1, 'going_concern_basis_appropriate' => 1,
+                'has_material_off_balance_sheet_arrangements' => 0,
+                'has_director_advances_credits_or_guarantees' => 0,
+                'has_financial_commitments_guarantees_or_contingencies' => 0,
+            ],
+            'test'
+        );
+        if (empty($savedDisclosures['success'])) {
+            throw new RuntimeException('CT filing disclosures failed: ' . implode(' ', (array)($savedDisclosures['errors'] ?? [])));
+        }
+        if ($approve) {
+            $filingApproval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
+                ->approveAndBuildFacts($companyId, $accountingPeriodId, 'test', 'CT filing model fixture.');
         }
     }
 
@@ -489,6 +734,7 @@ function ctPeriodFilingModelFixture(
         'ct_period_ids' => $ctPeriodIds,
         'run_ids' => $runIds,
         'manifest_hash' => $manifestHash,
+        'filing_approval' => $filingApproval ?? null,
     ];
 }
 
@@ -496,8 +742,12 @@ function ctPeriodFilingModelFixture(
 function ctPeriodFilingModelEvidenceCounts(): array
 {
     return [
-        'approvals' => (int)\InterfaceDB::fetchColumn('SELECT COUNT(*) FROM year_end_review_acknowledgements'),
-        'runs' => (int)\InterfaceDB::fetchColumn('SELECT COUNT(*) FROM corporation_tax_computation_runs'),
+        'tax_approvals' => (int)\InterfaceDB::fetchColumn('SELECT COUNT(*) FROM year_end_review_acknowledgements'),
+        'filing_approvals' => (int)\InterfaceDB::fetchColumn('SELECT COUNT(*) FROM ixbrl_accounts_filing_approvals'),
+        'ct_bases' => (int)\InterfaceDB::fetchColumn('SELECT COUNT(*) FROM ct_period_filing_bases'),
+        'computation_runs' => (int)\InterfaceDB::fetchColumn('SELECT COUNT(*) FROM corporation_tax_computation_runs'),
+        'fact_runs' => (int)\InterfaceDB::fetchColumn('SELECT COUNT(*) FROM ixbrl_generation_runs'),
+        'facts' => (int)\InterfaceDB::fetchColumn('SELECT COUNT(*) FROM ixbrl_generation_facts'),
         'snapshots' => (int)\InterfaceDB::fetchColumn('SELECT COUNT(*) FROM corporation_tax_audit_snapshots'),
         'areas' => (int)\InterfaceDB::fetchColumn('SELECT COUNT(*) FROM corporation_tax_audit_areas'),
     ];

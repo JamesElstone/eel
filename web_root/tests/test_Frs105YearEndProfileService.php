@@ -36,6 +36,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $result = $service->evaluate($supportedDisclosures, $eligible, ['total_debit' => 0.0, 'total_credit' => 0.0]);
             $harness->assertSame(true, (bool)($result['pass'] ?? false));
             $harness->assertSame([], (array)($result['errors'] ?? []));
+            $profile = (array)($result['supported_return_profile'] ?? []);
+            $harness->assertSame(\eel_accounts\Service\Frs105YearEndProfileService::RETURN_PROFILE_CODE, (string)($profile['profile_code'] ?? ''));
+            $harness->assertSame(\eel_accounts\Service\Frs105YearEndProfileService::RETURN_PROFILE_VERSION, (string)($profile['profile_version'] ?? ''));
+            $harness->assertSame(true, (bool)($profile['ordinary_trading_company_confirmed'] ?? false));
+            $harness->assertSame(true, (bool)($profile['supported'] ?? false));
+            $harness->assertSame([], (array)($profile['failed_checks'] ?? []));
+            foreach (\eel_accounts\Service\Frs105YearEndProfileService::RETURN_PROFILE_CHECK_CODES as $code) {
+                $harness->assertSame(true, (bool)($profile['check_results'][$code] ?? false));
+            }
         });
 
         $harness->check(\eel_accounts\Service\Frs105YearEndProfileService::class, 'rejects another profile and posted deferred-tax value', static function () use ($harness, $service, $eligible, $supportedDisclosures): void {
@@ -58,6 +67,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(in_array('ordinary_uk_trading_profile', $codes, true));
             $harness->assertTrue(in_array('frs105_disclosures_supported', $codes, true));
             $harness->assertTrue(in_array('frs105_deferred_tax_journal_value', $codes, true));
+            $profile = (array)($result['supported_return_profile'] ?? []);
+            $harness->assertSame(false, (bool)($profile['ordinary_trading_company_confirmed'] ?? true));
+            $harness->assertSame(false, (bool)($profile['supported'] ?? true));
+            $failedCodes = array_column((array)($profile['failed_checks'] ?? []), 'code');
+            $harness->assertTrue(in_array('ordinary_uk_trading_profile', $failedCodes, true));
+            $harness->assertTrue(in_array('frs105_disclosures_supported', $failedCodes, true));
         });
     }
 );

@@ -218,7 +218,7 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
         });
     });
 
-    $harness->check('YearEndAction', 'saves tax readiness acknowledgement', static function () use ($harness): void {
+    $harness->check('YearEndAction', 'rejects tax readiness acknowledgement until the supported Year End profile is confirmed', static function () use ($harness): void {
         yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness): void {
             $instance = yearEndActionTestInstanceWithDirectorCount(1);
             if (!InterfaceDB::tableExists('year_end_review_acknowledgements') || !InterfaceDB::columnExists('year_end_review_acknowledgements', 'basis_hash')) {
@@ -230,8 +230,8 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
                 createTestPageServiceFramework()
             );
 
-            $harness->assertSame(true, $result->isSuccess());
-            $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'Tax readiness approval saved'));
+            $harness->assertSame(false, $result->isSuccess());
+            $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'blocking year-end check'));
             $acknowledgedAt = (string)InterfaceDB::fetchColumn(
                 'SELECT COALESCE(acknowledged_at, \'\')
                  FROM year_end_review_acknowledgements
@@ -246,8 +246,8 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
                 ]
             );
 
-            $harness->assertSame(false, $acknowledgedAt === '');
-            $harness->assertSame('Approval note from action test.', (string)InterfaceDB::fetchColumn(
+            $harness->assertSame(true, $acknowledgedAt === '');
+            $harness->assertSame('', (string)InterfaceDB::fetchColumn(
                 'SELECT COALESCE(note, \'\') FROM year_end_review_acknowledgements
                  WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id AND check_code = :check_code',
                 ['company_id' => (int)$fixture['company_id'], 'accounting_period_id' => (int)$fixture['accounting_period_id'], 'check_code' => 'tax_readiness_acknowledgement']

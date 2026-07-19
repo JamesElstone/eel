@@ -64,16 +64,52 @@ final class YearEndTaxFreezeService
     }
 
     /** @return array<string, mixed>|null */
-    public function approvalBasis(array $taxReadiness): ?array
+    public function approvalBasis(array $taxReadiness, array $supportedReturnProfile): ?array
     {
         $manifest = $taxReadiness['freeze_manifest'] ?? null;
-        if (!is_array($manifest) || (string)($taxReadiness['freeze_status'] ?? '') !== 'ready_for_approval') {
+        $profile = $this->approvedSupportedReturnProfile($supportedReturnProfile);
+        if (!is_array($manifest)
+            || (string)($taxReadiness['freeze_status'] ?? '') !== 'ready_for_approval'
+            || $profile === null) {
             return null;
         }
 
         return [
             'check_code' => 'tax_readiness_acknowledgement',
             'freeze_manifest' => $manifest,
+            'supported_return_profile' => $profile,
+        ];
+    }
+
+    /** @return array<string, mixed>|null */
+    private function approvedSupportedReturnProfile(array $profile): ?array
+    {
+        if ((string)($profile['profile_code'] ?? '') !== Frs105YearEndProfileService::RETURN_PROFILE_CODE
+            || (string)($profile['profile_version'] ?? '') !== Frs105YearEndProfileService::RETURN_PROFILE_VERSION
+            || ($profile['ordinary_trading_company_confirmed'] ?? null) !== true
+            || ($profile['supported'] ?? null) !== true
+            || !is_array($profile['check_results'] ?? null)
+            || !is_array($profile['failed_checks'] ?? null)
+            || $profile['failed_checks'] !== []) {
+            return null;
+        }
+
+        $checkResults = [];
+        foreach (Frs105YearEndProfileService::RETURN_PROFILE_CHECK_CODES as $code) {
+            if (($profile['check_results'][$code] ?? null) !== true) {
+                return null;
+            }
+            $checkResults[$code] = true;
+        }
+        ksort($checkResults, SORT_STRING);
+
+        return [
+            'profile_code' => Frs105YearEndProfileService::RETURN_PROFILE_CODE,
+            'profile_version' => Frs105YearEndProfileService::RETURN_PROFILE_VERSION,
+            'ordinary_trading_company_confirmed' => true,
+            'supported' => true,
+            'check_results' => $checkResults,
+            'failed_checks' => [],
         ];
     }
 

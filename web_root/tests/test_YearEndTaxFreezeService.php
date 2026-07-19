@@ -49,33 +49,43 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
             $harness->assertSame('blocked', (string)($blocked['freeze_status'] ?? ''));
             $harness->assertSame(2, (int)($blocked['blocking_diagnostic_count'] ?? 0));
-            $harness->assertSame(null, $service->approvalBasis($blocked));
+            $harness->assertSame(null, $service->approvalBasis($blocked, yearEndSupportedReturnProfile()));
             $harness->assertTrue(in_array('nominal_unknown_treatment', array_column((array)($blocked['blocking_diagnostics'] ?? []), 'code'), true));
             $harness->assertTrue(in_array('ct_period_computation_count', array_column((array)($blocked['blocking_diagnostics'] ?? []), 'code'), true));
         });
 
         $harness->check(\eel_accounts\Service\YearEndTaxFreezeService::class, 'produces an acknowledgement basis only for a ready calculation', static function () use ($harness, $service): void {
             $ready = $service->build(49, 79, yearEndTaxFreezePeriods(), [], 2);
-            $basis = $service->approvalBasis($ready);
+            $basis = $service->approvalBasis($ready, yearEndSupportedReturnProfile());
 
             $harness->assertSame('tax_readiness_acknowledgement', (string)($basis['check_code'] ?? ''));
             $harness->assertSame(\eel_accounts\Service\YearEndTaxFreezeService::BASIS_VERSION, (string)(($basis['freeze_manifest'] ?? [])['basis_version'] ?? ''));
+            $harness->assertSame(true, (bool)(($basis['supported_return_profile'] ?? [])['ordinary_trading_company_confirmed'] ?? false));
+            $harness->assertSame(null, $service->approvalBasis($ready, []));
+            $harness->assertSame(null, $service->approvalBasis($ready, array_replace(yearEndSupportedReturnProfile(), ['supported' => false])));
         });
 
         $harness->check(\eel_accounts\Service\YearEndTaxFreezeService::class, 'makes approval stale when the calculation basis changes', static function () use ($harness, $service): void {
             $acknowledgements = new \eel_accounts\Service\YearEndAcknowledgementService();
             $initial = $service->build(49, 79, yearEndTaxFreezePeriods(), [], 2);
-            $initialBasis = (array)$service->approvalBasis($initial);
+            $profile = yearEndSupportedReturnProfile();
+            $initialBasis = (array)$service->approvalBasis($initial, $profile);
             $stored = [
                 'basis_version' => \eel_accounts\Service\YearEndAcknowledgementService::BASIS_VERSION,
                 'basis_hash' => $acknowledgements->hashBasis($initialBasis),
             ];
             $periods = yearEndTaxFreezePeriods();
             $periods[1]['estimated_corporation_tax'] = 1.00;
-            $changedBasis = $service->approvalBasis($service->build(49, 79, $periods, [], 2));
+            $changedBasis = $service->approvalBasis($service->build(49, 79, $periods, [], 2), $profile);
 
             $harness->assertSame(true, (bool)($acknowledgements->evaluate($stored, $initialBasis)['current'] ?? false));
             $harness->assertSame(false, (bool)($acknowledgements->evaluate($stored, $changedBasis)['current'] ?? true));
+
+            $changedProfile = $profile;
+            $changedProfile['profile_version'] = 'changed-profile-version';
+            $changedProfileBasis = $service->approvalBasis($initial, $changedProfile);
+            $harness->assertSame(null, $changedProfileBasis);
+            $harness->assertSame(false, (bool)($acknowledgements->evaluate($stored, $changedProfileBasis)['current'] ?? true));
         });
     }
 );
@@ -129,5 +139,24 @@ function yearEndTaxFreezePeriods(): array
             'ct_rate_bands' => [],
             'hard_gate_diagnostics' => [],
         ],
+    ];
+}
+
+/** @return array<string, mixed> */
+function yearEndSupportedReturnProfile(): array
+{
+    $checkResults = [];
+    foreach (\eel_accounts\Service\Frs105YearEndProfileService::RETURN_PROFILE_CHECK_CODES as $code) {
+        $checkResults[$code] = true;
+    }
+    ksort($checkResults, SORT_STRING);
+
+    return [
+        'profile_code' => \eel_accounts\Service\Frs105YearEndProfileService::RETURN_PROFILE_CODE,
+        'profile_version' => \eel_accounts\Service\Frs105YearEndProfileService::RETURN_PROFILE_VERSION,
+        'ordinary_trading_company_confirmed' => true,
+        'supported' => true,
+        'check_results' => $checkResults,
+        'failed_checks' => [],
     ];
 }

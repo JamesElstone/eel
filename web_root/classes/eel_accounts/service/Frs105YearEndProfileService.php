@@ -12,6 +12,16 @@ namespace eel_accounts\Service;
 /** Pre-lock readiness for the application's sole supported accounts profile. */
 final class Frs105YearEndProfileService
 {
+    public const RETURN_PROFILE_CODE = 'ordinary-uk-trading-frs105';
+    public const RETURN_PROFILE_VERSION = 'ct600-supported-return-profile-v1';
+    public const RETURN_PROFILE_CHECK_CODES = [
+        'frs105_accounting_standard',
+        'ordinary_uk_trading_profile',
+        'frs105_disclosures_supported',
+        'frs105_micro_entity_eligibility',
+        'frs105_deferred_tax_journal_value',
+    ];
+
     public function fetch(int $companyId, int $accountingPeriodId): array
     {
         $period = $companyId > 0 && $accountingPeriodId > 0
@@ -96,11 +106,34 @@ final class Frs105YearEndProfileService
         );
 
         $failed = array_values(array_filter($checks, static fn(array $check): bool => empty($check['pass'])));
+        $checkResults = [];
+        foreach ($checks as $check) {
+            $code = (string)($check['code'] ?? '');
+            if ($code !== '') {
+                $checkResults[$code] = !empty($check['pass']);
+            }
+        }
+        ksort($checkResults, SORT_STRING);
+        $supportedReturnProfile = [
+            'profile_code' => self::RETURN_PROFILE_CODE,
+            'profile_version' => self::RETURN_PROFILE_VERSION,
+            'ordinary_trading_company_confirmed' => ($checkResults['ordinary_uk_trading_profile'] ?? false) === true,
+            'supported' => $failed === [],
+            'check_results' => $checkResults,
+            'failed_checks' => array_map(
+                static fn(array $check): array => [
+                    'code' => (string)($check['code'] ?? 'unknown_profile_check'),
+                    'message' => (string)($check['detail'] ?? 'The supported return profile check failed.'),
+                ],
+                $failed
+            ),
+        ];
         return [
             'available' => true,
             'pass' => $failed === [],
             'errors' => array_map(static fn(array $check): string => (string)$check['detail'], $failed),
             'checks' => $checks,
+            'supported_return_profile' => $supportedReturnProfile,
             'disclosures' => $disclosures,
             'micro_entity_eligibility' => $microEligibility,
         ];

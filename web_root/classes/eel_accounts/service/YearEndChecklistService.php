@@ -568,8 +568,13 @@ final class YearEndChecklistService
     ): array {
         $taxReadiness = (new \eel_accounts\Service\YearEndTaxReadinessService())
             ->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
+        $frs105Profile = (new \eel_accounts\Service\Frs105YearEndProfileService())
+            ->fetch($companyId, $accountingPeriodId);
         $freezeService = new \eel_accounts\Service\YearEndTaxFreezeService();
-        $basis = $freezeService->approvalBasis($taxReadiness);
+        $basis = $freezeService->approvalBasis(
+            $taxReadiness,
+            (array)($frs105Profile['supported_return_profile'] ?? [])
+        );
         if ($basis === null) {
             $messages = array_values(array_filter(array_map(
                 static fn(array $diagnostic): string => trim((string)($diagnostic['message'] ?? '')),
@@ -1596,7 +1601,10 @@ final class YearEndChecklistService
                 : 'Resolve the amount-affecting Corporation Tax issues before approving the tax basis.',
             $taxFreezeReady ? 'Approval required' : 'Blocked',
             '?page=corporation_tax&show_card=year_end_tax_readiness#tax-readiness',
-            (new \eel_accounts\Service\YearEndTaxFreezeService())->approvalBasis($taxReadiness)
+            (new \eel_accounts\Service\YearEndTaxFreezeService())->approvalBasis(
+                $taxReadiness,
+                (array)($frs105Profile['supported_return_profile'] ?? [])
+            )
         ), $reviewAcknowledgements);
 
         $comparisonFailures = 0;

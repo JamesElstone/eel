@@ -24,6 +24,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $h->assertSame($before, $after);
             $h->assertSame('tax_readiness_acknowledgement', (string)($result['approval']['check_code'] ?? ''));
             $h->assertSame($fixture['manifest_hash'], (string)($result['approval']['freeze_manifest_hash'] ?? ''));
+            $h->assertSame(true, (bool)($result['supported_return_profile']['supported'] ?? false));
+            $h->assertSame(true, (bool)($result['model']['supported_return_profile']['ordinary_trading_company_confirmed'] ?? false));
+            $h->assertSame(true, (bool)($result['facts']['supported_return_profile.supported'] ?? false));
             $h->assertSame([], (array)($result['blocking_diagnostics'] ?? []));
             $h->assertSame([], (array)($result['warning_diagnostics'] ?? []));
         });
@@ -87,6 +90,42 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $missing = $service->build($fixture['company_id'], $fixture['accounting_period_id'], $fixture['ct_period_ids'][0]);
             $h->assertSame(false, (bool)($missing['available'] ?? true));
             $h->assertTrue(str_contains(implode(' ', (array)$missing['errors']), 'no approved Corporation Tax readiness basis'));
+        });
+
+        $h->check($service::class, 'rejects missing, incomplete and unsupported approved return profiles', static function () use ($h, $service): void {
+            $fixture = ctPeriodFilingModelFixture();
+            ctPeriodFilingModelRewriteApproval($fixture, static function (array $basis): array {
+                unset($basis['supported_return_profile']);
+                return $basis;
+            });
+            $missing = $service->build($fixture['company_id'], $fixture['accounting_period_id'], $fixture['ct_period_ids'][0]);
+            $h->assertSame(false, (bool)($missing['available'] ?? true));
+            $h->assertTrue(str_contains(implode(' ', (array)$missing['errors']), 'no supported-return-profile assessment'));
+
+            $fixture = ctPeriodFilingModelFixture();
+            ctPeriodFilingModelRewriteApproval($fixture, static function (array $basis): array {
+                unset($basis['supported_return_profile']['check_results']['frs105_micro_entity_eligibility']);
+                return $basis;
+            });
+            $incomplete = $service->build($fixture['company_id'], $fixture['accounting_period_id'], $fixture['ct_period_ids'][0]);
+            $h->assertSame(false, (bool)($incomplete['available'] ?? true));
+            $h->assertTrue(str_contains(implode(' ', (array)$incomplete['errors']), 'frs105_micro_entity_eligibility'));
+
+            $fixture = ctPeriodFilingModelFixture();
+            ctPeriodFilingModelRewriteApproval($fixture, static function (array $basis): array {
+                $basis['supported_return_profile']['ordinary_trading_company_confirmed'] = false;
+                $basis['supported_return_profile']['supported'] = false;
+                $basis['supported_return_profile']['check_results']['ordinary_uk_trading_profile'] = false;
+                $basis['supported_return_profile']['failed_checks'] = [[
+                    'code' => 'ordinary_uk_trading_profile',
+                    'message' => 'The supported profile requires an active, non-dormant trading company.',
+                ]];
+                return $basis;
+            });
+            $unsupported = $service->build($fixture['company_id'], $fixture['accounting_period_id'], $fixture['ct_period_ids'][0]);
+            $h->assertSame(false, (bool)($unsupported['available'] ?? true));
+            $h->assertSame('ordinary_uk_trading_profile', (string)($unsupported['blocking_diagnostics'][0]['code'] ?? ''));
+            $h->assertTrue(str_contains(implode(' ', (array)$unsupported['errors']), 'active, non-dormant trading company'));
         });
 
         $h->check($service::class, 'rejects a validly rehashed approval for different CT-period dates', static function () use ($h, $service): void {
@@ -221,7 +260,11 @@ function ctPeriodFilingModelFixture(
     ];
     $acknowledgements = new \eel_accounts\Service\YearEndAcknowledgementService();
     $manifestHash = $acknowledgements->hashBasis($manifest);
-    $approvalBasis = ['check_code' => 'tax_readiness_acknowledgement', 'freeze_manifest' => $manifest];
+    $approvalBasis = [
+        'check_code' => 'tax_readiness_acknowledgement',
+        'freeze_manifest' => $manifest,
+        'supported_return_profile' => ctPeriodFilingModelSupportedReturnProfile(),
+    ];
     $approvalJson = json_encode($acknowledgements->normalizedBasis($approvalBasis), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
     $approvalHash = $acknowledgements->hashBasis($approvalBasis);
 
@@ -268,7 +311,6 @@ function ctPeriodFilingModelFixture(
             'year_end_freeze_manifest_hash' => $manifestHash,
             'hard_gate_diagnostics' => $blockers,
             'warnings' => $warnings,
-            'supported_return_profile' => ['failed_checks' => []],
         ], $summaryOverrides);
         \InterfaceDB::execute(
             'INSERT INTO corporation_tax_computation_runs
@@ -384,6 +426,52 @@ function ctPeriodFilingModelCanonicalJson(array $value): string
         return $item;
     };
     return (string)json_encode($normalise($value), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
+}
+
+/** @return array<string, mixed> */
+function ctPeriodFilingModelSupportedReturnProfile(): array
+{
+    $checkResults = [];
+    foreach (\eel_accounts\Service\Frs105YearEndProfileService::RETURN_PROFILE_CHECK_CODES as $code) {
+        $checkResults[$code] = true;
+    }
+    ksort($checkResults, SORT_STRING);
+
+    return [
+        'profile_code' => \eel_accounts\Service\Frs105YearEndProfileService::RETURN_PROFILE_CODE,
+        'profile_version' => \eel_accounts\Service\Frs105YearEndProfileService::RETURN_PROFILE_VERSION,
+        'ordinary_trading_company_confirmed' => true,
+        'supported' => true,
+        'check_results' => $checkResults,
+        'failed_checks' => [],
+    ];
+}
+
+/** @param callable(array<string, mixed>): array<string, mixed> $change */
+function ctPeriodFilingModelRewriteApproval(array $fixture, callable $change): void
+{
+    $row = \InterfaceDB::fetchOne(
+        'SELECT basis_json FROM year_end_review_acknowledgements
+         WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+        ['company_id' => $fixture['company_id'], 'accounting_period_id' => $fixture['accounting_period_id']]
+    );
+    $basis = json_decode((string)($row['basis_json'] ?? ''), true);
+    if (!is_array($basis)) {
+        throw new RuntimeException('The filing-model approval fixture is unreadable.');
+    }
+    $basis = $change($basis);
+    $acknowledgements = new \eel_accounts\Service\YearEndAcknowledgementService();
+    \InterfaceDB::execute(
+        'UPDATE year_end_review_acknowledgements
+         SET basis_json = :basis_json, basis_hash = :basis_hash
+         WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+        [
+            'basis_json' => json_encode($acknowledgements->normalizedBasis($basis), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION),
+            'basis_hash' => $acknowledgements->hashBasis($basis),
+            'company_id' => $fixture['company_id'],
+            'accounting_period_id' => $fixture['accounting_period_id'],
+        ]
+    );
 }
 
 function ctPeriodFilingModelLastInsertId(): int

@@ -7,7 +7,7 @@ namespace eel_accounts\Service;
 /** Builds an immutable canonical filing model exclusively from approved, locked Year End evidence. */
 final class CtPeriodFilingModelService
 {
-    public const BASIS_VERSION = 'ct-period-filing-model-v2';
+    public const BASIS_VERSION = 'ct-period-filing-model-v3';
     private const TAX_APPROVAL_CHECK = 'tax_readiness_acknowledgement';
     private const REQUIRED_AUDIT_AREAS = [
         'accounting_profit',
@@ -98,8 +98,13 @@ final class CtPeriodFilingModelService
         $approvalResult = $this->approvedPeriodBasis($row, $summary, $companyId, $accountingPeriodId, $ctPeriodId);
         array_push($errors, ...(array)($approvalResult['errors'] ?? []));
         $approval = (array)($approvalResult['approval'] ?? []);
+        $supportedReturnProfile = (array)($approvalResult['supported_return_profile'] ?? []);
 
-        [$blockingDiagnostics, $warningDiagnostics, $diagnosticErrors] = $this->frozenDiagnostics($summary, $ctPeriodId);
+        [$blockingDiagnostics, $warningDiagnostics, $diagnosticErrors] = $this->frozenDiagnostics(
+            $summary,
+            $supportedReturnProfile,
+            $ctPeriodId
+        );
         array_push($errors, ...$diagnosticErrors);
 
         $auditResult = $this->verifiedAuditAreas(
@@ -115,6 +120,7 @@ final class CtPeriodFilingModelService
                 'errors' => array_values(array_unique(array_map('strval', $errors))),
                 'run' => $row,
                 'approval' => $approval,
+                'supported_return_profile' => $supportedReturnProfile,
                 'blocking_diagnostics' => $blockingDiagnostics,
                 'warning_diagnostics' => $warningDiagnostics,
             ];
@@ -137,6 +143,7 @@ final class CtPeriodFilingModelService
                 'sequence_no' => (int)$row['sequence_no'],
             ],
             'approval' => $approval,
+            'supported_return_profile' => $supportedReturnProfile,
             'diagnostics' => [
                 'blocking' => $blockingDiagnostics,
                 'warnings' => $warningDiagnostics,
@@ -157,6 +164,7 @@ final class CtPeriodFilingModelService
             'errors' => [],
             'run' => $row,
             'approval' => $approval,
+            'supported_return_profile' => $supportedReturnProfile,
             'blocking_diagnostics' => $blockingDiagnostics,
             'warning_diagnostics' => $warningDiagnostics,
             'model' => $model,
@@ -209,7 +217,7 @@ final class CtPeriodFilingModelService
         return $errors;
     }
 
-    /** @return array{approval: array<string, mixed>, errors: list<string>} */
+    /** @return array{approval: array<string, mixed>, supported_return_profile: array<string, mixed>, errors: list<string>} */
     private function approvedPeriodBasis(
         array $row,
         array $summary,
@@ -222,6 +230,7 @@ final class CtPeriodFilingModelService
         if ((string)($row['approval_check_code'] ?? '') !== self::TAX_APPROVAL_CHECK) {
             return [
                 'approval' => [],
+                'supported_return_profile' => [],
                 'errors' => ['The locked accounting period has no approved Corporation Tax readiness basis.'],
             ];
         }
@@ -246,6 +255,9 @@ final class CtPeriodFilingModelService
         if ((string)($basis['check_code'] ?? '') !== self::TAX_APPROVAL_CHECK) {
             $errors[] = 'The stored Year End approval is not a Corporation Tax readiness approval.';
         }
+        $profileResult = $this->validateSupportedReturnProfile($basis['supported_return_profile'] ?? null);
+        array_push($errors, ...(array)($profileResult['errors'] ?? []));
+        $supportedReturnProfile = (array)($profileResult['profile'] ?? []);
 
         $manifest = is_array($basis['freeze_manifest'] ?? null) ? (array)$basis['freeze_manifest'] : [];
         if ($manifest === []) {
@@ -317,11 +329,15 @@ final class CtPeriodFilingModelService
             'approved_ct_period_id' => (int)($approvedPeriod['ct_period_id'] ?? 0),
         ];
 
-        return ['approval' => $approval, 'errors' => array_values(array_unique($errors))];
+        return [
+            'approval' => $approval,
+            'supported_return_profile' => $supportedReturnProfile,
+            'errors' => array_values(array_unique($errors)),
+        ];
     }
 
     /** @return array{0: list<array<string, mixed>>, 1: list<array<string, mixed>>, 2: list<string>} */
-    private function frozenDiagnostics(array $summary, int $ctPeriodId): array
+    private function frozenDiagnostics(array $summary, array $supportedReturnProfile, int $ctPeriodId): array
     {
         $errors = [];
         if (!array_key_exists('hard_gate_diagnostics', $summary)
@@ -338,19 +354,16 @@ final class CtPeriodFilingModelService
             $blocking[] = $this->normaliseDiagnostic($diagnostic, $ctPeriodId, 'hard_failure', 'tax_computation');
         }
 
-        $profile = $summary['supported_return_profile'] ?? null;
-        if (is_array($profile)) {
-            foreach ((array)($profile['failed_checks'] ?? []) as $failedCheck) {
-                if (!is_array($failedCheck)) {
-                    $failedCheck = ['message' => trim((string)$failedCheck)];
-                }
-                $blocking[] = $this->normaliseDiagnostic(
-                    $failedCheck,
-                    $ctPeriodId,
-                    'hard_failure',
-                    'supported_return_profile'
-                );
+        foreach ((array)($supportedReturnProfile['failed_checks'] ?? []) as $failedCheck) {
+            if (!is_array($failedCheck)) {
+                $failedCheck = ['message' => trim((string)$failedCheck)];
             }
+            $blocking[] = $this->normaliseDiagnostic(
+                $failedCheck,
+                $ctPeriodId,
+                'hard_failure',
+                'supported_return_profile'
+            );
         }
 
         $blocking = $this->uniqueDiagnostics($blocking);
@@ -373,6 +386,50 @@ final class CtPeriodFilingModelService
         }
 
         return [$blocking, $this->uniqueDiagnostics($warnings), array_values(array_unique($errors))];
+    }
+
+    /** @return array{profile: array<string, mixed>, errors: list<string>} */
+    private function validateSupportedReturnProfile(mixed $value): array
+    {
+        if (!is_array($value)) {
+            return [
+                'profile' => [],
+                'errors' => ['The approved Year End basis has no supported-return-profile assessment. Unlock, review and approve Year End again.'],
+            ];
+        }
+
+        $errors = [];
+        if ((string)($value['profile_code'] ?? '') !== Frs105YearEndProfileService::RETURN_PROFILE_CODE) {
+            $errors[] = 'The approved supported-return-profile code is missing or incompatible.';
+        }
+        if ((string)($value['profile_version'] ?? '') !== Frs105YearEndProfileService::RETURN_PROFILE_VERSION) {
+            $errors[] = 'The approved supported-return-profile version is missing or incompatible.';
+        }
+        if (($value['ordinary_trading_company_confirmed'] ?? null) !== true) {
+            $errors[] = 'The approved Year End basis does not explicitly confirm an ordinary trading company.';
+        }
+        if (($value['supported'] ?? null) !== true) {
+            $errors[] = 'The approved Year End basis does not support this CT600 return profile.';
+        }
+
+        $checkResults = $value['check_results'] ?? null;
+        if (!is_array($checkResults)) {
+            $errors[] = 'The approved supported-return-profile check results are missing or unreadable.';
+        } else {
+            foreach (Frs105YearEndProfileService::RETURN_PROFILE_CHECK_CODES as $code) {
+                if (($checkResults[$code] ?? null) !== true) {
+                    $errors[] = 'The approved supported-return-profile check is missing or unresolved: ' . $code . '.';
+                }
+            }
+        }
+
+        if (!is_array($value['failed_checks'] ?? null)) {
+            $errors[] = 'The approved supported-return-profile diagnostics are missing or unreadable.';
+        } elseif ($value['failed_checks'] !== []) {
+            $errors[] = 'The approved supported-return-profile assessment contains unresolved checks.';
+        }
+
+        return ['profile' => $value, 'errors' => array_values(array_unique($errors))];
     }
 
     /** @return array<string, mixed> */

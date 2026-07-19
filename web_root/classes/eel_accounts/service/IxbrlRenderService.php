@@ -40,11 +40,12 @@ final class IxbrlRenderService
                 throw new \RuntimeException('Generated iXBRL failed internal validation: ' . implode(' ', $validationErrors));
             }
 
-            $directory = PROJECT_ROOT . 'outbound' . DIRECTORY_SEPARATOR . 'ixbrl';
+            $artifact = $this->accountingArtifactLocation($companyId, $accountingPeriodId, (int)$run['id']);
+            $directory = (string)$artifact['directory'];
             if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
-                throw new \RuntimeException('Could not create outbound iXBRL directory.');
+                throw new \RuntimeException('Could not create the company iXBRL directory.');
             }
-            $filename = 'accounts_ixbrl_' . $companyId . '_' . $accountingPeriodId . '_' . (int)$run['id'] . '.xhtml';
+            $filename = (string)$artifact['filename'];
             $path = $directory . DIRECTORY_SEPARATOR . $filename;
             $newGeneratedPath = $path;
             if (file_put_contents($path, $xhtml) === false) {
@@ -89,7 +90,7 @@ final class IxbrlRenderService
             return ['success' => true, 'errors' => [], 'filename' => $filename, 'path' => $path, 'sha256' => $hash];
         } catch (\Throwable $exception) {
             foreach (array_unique([$oldGeneratedPath, $newGeneratedPath]) as $failedArtifact) {
-                $this->removeManagedArtifact((string)$failedArtifact);
+                $this->removeManagedArtifact((string)$failedArtifact, $companyId);
             }
             \InterfaceDB::prepareExecute(
                 'UPDATE ixbrl_generation_runs
@@ -124,18 +125,102 @@ final class IxbrlRenderService
         }
     }
 
-    private function removeManagedArtifact(string $path): void
+    private function accountingArtifactLocation(int $companyId, int $accountingPeriodId, int $runId): array
+    {
+        $row = \InterfaceDB::fetchOne(
+            'SELECT c.company_number, ap.period_start, ap.period_end
+             FROM accounting_periods ap
+             INNER JOIN companies c ON c.id = ap.company_id
+             WHERE ap.id = :accounting_period_id
+               AND ap.company_id = :company_id
+             LIMIT 1',
+            [
+                'accounting_period_id' => $accountingPeriodId,
+                'company_id' => $companyId,
+            ]
+        );
+        if (!is_array($row)) {
+            throw new \RuntimeException('The accounting period could not be found for iXBRL storage.');
+        }
+
+        $companyNumber = $this->normaliseCompanyNumber((string)($row['company_number'] ?? ''));
+
+        return [
+            'directory' => rtrim((new FileCheckService())->getIxbrlDirectory($companyId), '\\/'),
+            'filename' => $this->artifactFilename(
+                $companyNumber,
+                $this->filenameDate((string)($row['period_start'] ?? ''), 'start'),
+                $this->filenameDate((string)($row['period_end'] ?? ''), 'end'),
+                'accounting',
+                $runId
+            ),
+        ];
+    }
+
+    private function artifactFilename(
+        string $companyNumber,
+        string $periodStart,
+        string $periodEnd,
+        string $ixbrlType,
+        int $runId
+    ): string
+    {
+        if (!in_array($ixbrlType, ['accounting', 'tax'], true)) {
+            throw new \InvalidArgumentException('Unsupported iXBRL artifact type.');
+        }
+        if ($runId <= 0) {
+            throw new \InvalidArgumentException('The iXBRL run id must be greater than zero.');
+        }
+
+        return 'accounts_ixbrl_'
+            . $this->normaliseCompanyNumber($companyNumber)
+            . '_' . $periodStart
+            . '_' . $periodEnd
+            . '_' . $ixbrlType
+            . '_' . $runId
+            . '.xhtml';
+    }
+
+    private function normaliseCompanyNumber(string $companyNumber): string
+    {
+        $normalised = strtoupper(preg_replace('/\s+/', '', trim($companyNumber)) ?? '');
+        $normalised = preg_replace('/[^A-Z0-9_-]/', '', $normalised) ?? '';
+        if ($normalised === '') {
+            throw new \RuntimeException('The selected company does not have a valid company number for iXBRL storage.');
+        }
+
+        return $normalised;
+    }
+
+    private function filenameDate(string $date, string $label): string
+    {
+        $parsed = \DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+        $errors = \DateTimeImmutable::getLastErrors();
+        if (!$parsed instanceof \DateTimeImmutable
+            || (is_array($errors) && (($errors['warning_count'] ?? 0) > 0 || ($errors['error_count'] ?? 0) > 0))
+            || $parsed->format('Y-m-d') !== $date) {
+            throw new \RuntimeException('The accounting period ' . $label . ' date is invalid for iXBRL storage.');
+        }
+
+        return $parsed->format('Ymd');
+    }
+
+    private function removeManagedArtifact(string $path, int $companyId): void
     {
         if ($path === '' || !is_file($path)) {
             return;
         }
-        $managedDirectory = realpath(PROJECT_ROOT . 'outbound' . DIRECTORY_SEPARATOR . 'ixbrl');
+        try {
+            $managedDirectory = realpath((new FileCheckService())->getIxbrlDirectory($companyId));
+        } catch (\Throwable) {
+            return;
+        }
         $artifactDirectory = realpath(dirname($path));
         $filename = basename($path);
         if ($managedDirectory === false
             || $artifactDirectory === false
             || strcasecmp($managedDirectory, $artifactDirectory) !== 0
-            || preg_match('/^accounts_ixbrl_\d+_\d+_\d+\.xhtml$/', $filename) !== 1) {
+            || preg_match('/^accounts_ixbrl_[A-Z0-9_-]+_\d{8}_\d{8}_(accounting|tax)_\d+\.xhtml$/', $filename) !== 1) {
             return;
         }
         @unlink($path);

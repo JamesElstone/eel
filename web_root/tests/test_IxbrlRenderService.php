@@ -11,6 +11,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(false, $result['success']);
         });
 
+        $harness->check(\eel_accounts\Service\IxbrlRenderService::class, 'builds period-based accounting artifact filenames with the run id last', static function () use ($harness, $service): void {
+            $method = new ReflectionMethod(\eel_accounts\Service\IxbrlRenderService::class, 'artifactFilename');
+            $method->setAccessible(true);
+
+            $harness->assertSame(
+                'accounts_ixbrl_01234567_20250101_20251231_accounting_42.xhtml',
+                $method->invoke($service, '01234567', '20250101', '20251231', 'accounting', 42)
+            );
+        });
+
         $harness->check(\eel_accounts\Service\IxbrlRenderService::class, 'renders the FRC 2026 Inline XBRL profile with valid contexts units and signs', static function () use ($harness, $service): void {
             $method = new ReflectionMethod(\eel_accounts\Service\IxbrlRenderService::class, 'renderXhtml');
             $method->setAccessible(true);

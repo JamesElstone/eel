@@ -139,6 +139,10 @@ $harness->run('eel_accounts\Service\FileCheckService', function (GeneratedServic
                 $service->getCompaniesHouseDirectory($companyId)
             );
             $harness->assertSame(
+                $uploads['upload_base_dir'] . DIRECTORY_SEPARATOR . '12345678' . DIRECTORY_SEPARATOR . 'ixbrl' . DIRECTORY_SEPARATOR,
+                $service->getIxbrlDirectory($companyId)
+            );
+            $harness->assertSame(
                 '12345678/statements/statement.csv',
                 $service->getStatementRelativePath($companyId, 'statement.csv')
             );

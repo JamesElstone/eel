@@ -300,6 +300,13 @@ final class FileCheckService
         return $this->categoryUploadForResolvedPathSegment($baseDirectory, $this->companyPathSegment($companyId), 'companies_house');
     }
 
+    public function getIxbrlDirectory(int $companyId): string
+    {
+        $baseDirectory = $this->getUploadBaseDirectoryForCompany($companyId);
+
+        return $this->categoryUploadForResolvedPathSegment($baseDirectory, $this->companyPathSegment($companyId), 'ixbrl');
+    }
+
     public function getStatementRelativePath(int $companyId, string $filename): string
     {
         return $this->categoryRelativePathForResolvedPathSegment($this->companyPathSegment($companyId), 'statements', $filename);

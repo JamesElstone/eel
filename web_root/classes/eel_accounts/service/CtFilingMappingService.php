@@ -46,6 +46,101 @@ final class CtFilingMappingService
         return is_array($row) ? $row : null;
     }
 
+    /**
+     * Resolves a mapping profile only against a verified frozen CT-period model.
+     * No tax calculation or ledger service is reachable through this operation.
+     */
+    public function mapFrozenFacts(
+        string $targetType,
+        array $filingModel,
+        array $profile,
+        ?array $knownMappings = null
+    ): array
+    {
+        $this->assertTarget($targetType);
+        if (empty($filingModel['available'])
+            || trim((string)($filingModel['basis_version'] ?? '')) === ''
+            || preg_match('/^[a-f0-9]{64}$/i', (string)($filingModel['basis_hash'] ?? '')) !== 1
+            || (int)(($filingModel['run'] ?? [])['run_id'] ?? 0) <= 0
+            || (int)(($filingModel['model'] ?? [])['ct_period']['id'] ?? 0) <= 0
+            || !is_array($filingModel['seal'] ?? null)
+            || $filingModel['seal'] === []) {
+            return $this->mappingFailure('A verified, sealed CT-period filing model is required.');
+        }
+        if ((string)($profile['target_type'] ?? '') !== $targetType
+            || (string)($profile['status'] ?? '') !== 'active'
+            || (string)($profile['compatibility_status'] ?? '') !== 'compatible'
+            || (int)($profile['id'] ?? 0) <= 0) {
+            return $this->mappingFailure('An active compatible mapping profile for the requested target is required.');
+        }
+
+        $table = $targetType === self::TARGET_RIM
+            ? 'ct600_rim_mappings'
+            : 'ct_computation_ixbrl_mappings';
+        $mappings = $knownMappings ?? \InterfaceDB::fetchAll(
+            'SELECT * FROM ' . $table . ' WHERE profile_id = :profile_id ORDER BY sort_order, id',
+            ['profile_id' => (int)$profile['id']]
+        );
+        if ($mappings === []) {
+            return $this->mappingFailure('The active mapping profile contains no mappings.');
+        }
+
+        $facts = (array)($filingModel['facts'] ?? []);
+        $resolved = [];
+        $canonicalValues = [];
+        $errors = [];
+        foreach ($mappings as $mapping) {
+            if (!is_array($mapping) || (int)($mapping['profile_id'] ?? 0) !== (int)$profile['id']) {
+                $errors[] = 'A mapping row does not belong to the selected active profile.';
+                continue;
+            }
+            $key = trim((string)($mapping['canonical_key'] ?? ''));
+            $exists = $key !== '' && array_key_exists($key, $facts);
+            $value = $exists ? $facts[$key] : null;
+            $missing = !$exists || $value === null || $value === '';
+            $required = !empty($mapping['is_required']) || (string)($mapping['null_policy'] ?? '') === 'error';
+            if ($missing && $required) {
+                $errors[] = 'Required canonical filing fact is missing: ' . ($key !== '' ? $key : '(blank key)') . '.';
+                continue;
+            }
+            if ($missing && (string)($mapping['null_policy'] ?? 'omit') === 'omit') {
+                continue;
+            }
+            if (!$missing && !$this->valueMatchesType($value, (string)($mapping['value_type'] ?? ''))) {
+                $errors[] = 'Canonical filing fact has the wrong type: ' . $key . '.';
+                continue;
+            }
+            $mapping['source_value'] = $value;
+            $resolved[] = $mapping;
+            $canonicalValues[$key] = $value;
+        }
+        if ($errors !== []) {
+            return [
+                'success' => false,
+                'errors' => array_values(array_unique($errors)),
+                'basis_version' => (string)$filingModel['basis_version'],
+                'basis_hash' => (string)$filingModel['basis_hash'],
+                'computation_run_id' => (int)$filingModel['run']['run_id'],
+                'ct_period_id' => (int)($filingModel['model']['ct_period']['id'] ?? 0),
+                'canonical_values' => $canonicalValues,
+                'mappings' => [],
+            ];
+        }
+
+        return [
+            'success' => true,
+            'errors' => [],
+            'target_type' => $targetType,
+            'profile_id' => (int)$profile['id'],
+            'basis_version' => (string)$filingModel['basis_version'],
+            'basis_hash' => (string)$filingModel['basis_hash'],
+            'computation_run_id' => (int)$filingModel['run']['run_id'],
+            'ct_period_id' => (int)($filingModel['model']['ct_period']['id'] ?? 0),
+            'canonical_values' => $canonicalValues,
+            'mappings' => $resolved,
+        ];
+    }
+
     public function cloneDraft(string $targetType, int $packageId, string $actor): int
     {
         $this->assertTarget($targetType);
@@ -320,5 +415,31 @@ final class CtFilingMappingService
     {
         $policy = trim((string)$value);
         return in_array($policy, ['omit', 'nil', 'error'], true) ? $policy : 'omit';
+    }
+
+    private function valueMatchesType(mixed $value, string $type): bool
+    {
+        return match ($type) {
+            'numeric' => is_int($value) || is_float($value),
+            'integer' => is_int($value),
+            'boolean' => is_bool($value),
+            'date' => is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) === 1,
+            'text' => is_string($value),
+            default => false,
+        };
+    }
+
+    private function mappingFailure(string $message): array
+    {
+        return [
+            'success' => false,
+            'errors' => [$message],
+            'basis_version' => '',
+            'basis_hash' => '',
+            'computation_run_id' => 0,
+            'ct_period_id' => 0,
+            'canonical_values' => [],
+            'mappings' => [],
+        ];
     }
 }

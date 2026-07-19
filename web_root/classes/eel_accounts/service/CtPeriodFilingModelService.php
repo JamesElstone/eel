@@ -7,7 +7,7 @@ namespace eel_accounts\Service;
 /** Builds an immutable canonical filing model exclusively from approved, locked Year End evidence. */
 final class CtPeriodFilingModelService
 {
-    public const BASIS_VERSION = 'ct-period-filing-model-v3';
+    public const BASIS_VERSION = 'ct-period-filing-model-v4';
     private const TAX_APPROVAL_CHECK = 'tax_readiness_acknowledgement';
     private const REQUIRED_AUDIT_AREAS = [
         'accounting_profit',
@@ -20,12 +20,32 @@ final class CtPeriodFilingModelService
 
     public function build(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
     {
+        return $this->buildInternal($companyId, $accountingPeriodId, $ctPeriodId, true);
+    }
+
+    /** Builds the verified model before its final hash is written during the atomic Year End lock. */
+    public function buildForYearEndSeal(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
+    {
+        if (!\InterfaceDB::inTransaction()) {
+            return $this->failure('The filing basis can only be sealed inside the Year End lock transaction.');
+        }
+        return $this->buildInternal($companyId, $accountingPeriodId, $ctPeriodId, false);
+    }
+
+    private function buildInternal(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        bool $requireSeal
+    ): array
+    {
         if ($companyId <= 0 || $accountingPeriodId <= 0 || $ctPeriodId <= 0) {
             return $this->failure('Select a company, accounting period and CT period.');
         }
 
         $row = \InterfaceDB::fetchOne(
-            'SELECT c.company_name, c.company_number,
+            'SELECT c.id AS live_company_id, c.company_name, c.company_number,
+                    ap.id AS live_accounting_period_id,
                     ap.period_start AS accounting_period_start,
                     ap.period_end AS accounting_period_end,
                     ctp.*,
@@ -94,11 +114,16 @@ final class CtPeriodFilingModelService
             $errors[] = 'The locked computation summary is unreadable.';
             $summary = [];
         }
+        $seal = is_array($summary['frozen_filing_basis'] ?? null)
+            ? (array)$summary['frozen_filing_basis']
+            : [];
+        unset($summary['frozen_filing_basis']);
 
         $approvalResult = $this->approvedPeriodBasis($row, $summary, $companyId, $accountingPeriodId, $ctPeriodId);
         array_push($errors, ...(array)($approvalResult['errors'] ?? []));
         $approval = (array)($approvalResult['approval'] ?? []);
         $supportedReturnProfile = (array)($approvalResult['supported_return_profile'] ?? []);
+        $filingIdentity = (array)($approvalResult['filing_identity'] ?? []);
 
         [$blockingDiagnostics, $warningDiagnostics, $diagnosticErrors] = $this->frozenDiagnostics(
             $summary,
@@ -126,21 +151,38 @@ final class CtPeriodFilingModelService
             ];
         }
 
-        $summary['ct_period_id'] = $ctPeriodId;
+        array_push($errors, ...$this->requiredSummaryErrors($summary));
+        if ($errors !== []) {
+            return [
+                'available' => false,
+                'errors' => array_values(array_unique(array_map('strval', $errors))),
+                'run' => $row,
+                'approval' => $approval,
+                'supported_return_profile' => $supportedReturnProfile,
+                'blocking_diagnostics' => $blockingDiagnostics,
+                'warning_diagnostics' => $warningDiagnostics,
+            ];
+        }
+
+        $frozenCompany = (array)($filingIdentity['company'] ?? []);
+        $frozenAccountingPeriod = (array)($filingIdentity['accounting_period'] ?? []);
+        $frozenCtPeriod = (array)($filingIdentity['ct_period'] ?? []);
         $model = [
             'identity' => [
-                'company_name' => (string)$row['company_name'],
-                'company_number' => (string)$row['company_number'],
+                'company_id' => (int)$frozenCompany['id'],
+                'company_name' => (string)$frozenCompany['name'],
+                'company_number' => (string)$frozenCompany['number'],
             ],
             'accounting_period' => [
-                'start_date' => (string)$row['accounting_period_start'],
-                'end_date' => (string)$row['accounting_period_end'],
+                'id' => (int)$frozenAccountingPeriod['id'],
+                'start_date' => (string)$frozenAccountingPeriod['start_date'],
+                'end_date' => (string)$frozenAccountingPeriod['end_date'],
             ],
             'ct_period' => [
-                'id' => $ctPeriodId,
-                'start_date' => (string)$row['period_start'],
-                'end_date' => (string)$row['period_end'],
-                'sequence_no' => (int)$row['sequence_no'],
+                'id' => (int)$frozenCtPeriod['id'],
+                'start_date' => (string)$frozenCtPeriod['start_date'],
+                'end_date' => (string)$frozenCtPeriod['end_date'],
+                'sequence_no' => (int)$frozenCtPeriod['sequence_no'],
             ],
             'approval' => $approval,
             'supported_return_profile' => $supportedReturnProfile,
@@ -158,6 +200,25 @@ final class CtPeriodFilingModelService
         $facts = [];
         $this->flatten($model, '', $facts);
         $canonical = $this->canonicalJson($model);
+        $basisVersion = self::BASIS_VERSION . '+' . (string)$row['snapshot_basis_version'];
+        $basisHash = hash(
+            'sha256',
+            self::BASIS_VERSION . '|' . (string)$row['snapshot_basis_hash'] . '|' . $canonical
+        );
+        if ($requireSeal) {
+            $sealErrors = $this->sealErrors($seal, $row, $approval, $basisVersion, $basisHash);
+            if ($sealErrors !== []) {
+                return [
+                    'available' => false,
+                    'errors' => $sealErrors,
+                    'run' => $row,
+                    'approval' => $approval,
+                    'supported_return_profile' => $supportedReturnProfile,
+                    'blocking_diagnostics' => $blockingDiagnostics,
+                    'warning_diagnostics' => $warningDiagnostics,
+                ];
+            }
+        }
 
         return [
             'available' => true,
@@ -169,11 +230,9 @@ final class CtPeriodFilingModelService
             'warning_diagnostics' => $warningDiagnostics,
             'model' => $model,
             'facts' => $facts,
-            'basis_version' => self::BASIS_VERSION . '+' . (string)$row['snapshot_basis_version'],
-            'basis_hash' => hash(
-                'sha256',
-                self::BASIS_VERSION . '|' . (string)$row['snapshot_basis_hash'] . '|' . $canonical
-            ),
+            'basis_version' => $basisVersion,
+            'basis_hash' => $basisHash,
+            'seal' => $seal,
         ];
     }
 
@@ -217,7 +276,7 @@ final class CtPeriodFilingModelService
         return $errors;
     }
 
-    /** @return array{approval: array<string, mixed>, supported_return_profile: array<string, mixed>, errors: list<string>} */
+    /** @return array{approval: array<string, mixed>, supported_return_profile: array<string, mixed>, filing_identity: array<string, mixed>, errors: list<string>} */
     private function approvedPeriodBasis(
         array $row,
         array $summary,
@@ -231,6 +290,7 @@ final class CtPeriodFilingModelService
             return [
                 'approval' => [],
                 'supported_return_profile' => [],
+                'filing_identity' => [],
                 'errors' => ['The locked accounting period has no approved Corporation Tax readiness basis.'],
             ];
         }
@@ -258,6 +318,15 @@ final class CtPeriodFilingModelService
         $profileResult = $this->validateSupportedReturnProfile($basis['supported_return_profile'] ?? null);
         array_push($errors, ...(array)($profileResult['errors'] ?? []));
         $supportedReturnProfile = (array)($profileResult['profile'] ?? []);
+        $identityResult = $this->validateFilingIdentity(
+            $basis['filing_identity'] ?? null,
+            $row,
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId
+        );
+        array_push($errors, ...(array)($identityResult['errors'] ?? []));
+        $filingIdentity = (array)($identityResult['identity'] ?? []);
 
         $manifest = is_array($basis['freeze_manifest'] ?? null) ? (array)$basis['freeze_manifest'] : [];
         if ($manifest === []) {
@@ -332,6 +401,64 @@ final class CtPeriodFilingModelService
         return [
             'approval' => $approval,
             'supported_return_profile' => $supportedReturnProfile,
+            'filing_identity' => $filingIdentity,
+            'errors' => array_values(array_unique($errors)),
+        ];
+    }
+
+    /** @return array{identity: array<string, mixed>, errors: list<string>} */
+    private function validateFilingIdentity(
+        mixed $value,
+        array $row,
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId
+    ): array {
+        if (!is_array($value)) {
+            return ['identity' => [], 'errors' => ['The approved Year End basis has no frozen filing identity.']];
+        }
+
+        $errors = [];
+        $company = is_array($value['company'] ?? null) ? (array)$value['company'] : [];
+        $accountingPeriod = is_array($value['accounting_period'] ?? null) ? (array)$value['accounting_period'] : [];
+        if ((int)($company['id'] ?? 0) !== $companyId
+            || trim((string)($company['name'] ?? '')) === ''
+            || trim((string)($company['number'] ?? '')) === '') {
+            $errors[] = 'The approved frozen company identity is missing or inconsistent.';
+        }
+        if ((int)($accountingPeriod['id'] ?? 0) !== $accountingPeriodId
+            || !$this->validDate((string)($accountingPeriod['start_date'] ?? ''))
+            || !$this->validDate((string)($accountingPeriod['end_date'] ?? ''))
+            || (string)($accountingPeriod['start_date'] ?? '') !== (string)($row['accounting_period_start'] ?? '')
+            || (string)($accountingPeriod['end_date'] ?? '') !== (string)($row['accounting_period_end'] ?? '')) {
+            $errors[] = 'The approved frozen accounting-period identity or dates are missing or inconsistent.';
+        }
+
+        $matchedPeriod = null;
+        $matches = 0;
+        foreach ((array)($value['ct_periods'] ?? []) as $period) {
+            if (!is_array($period) || (int)($period['id'] ?? 0) !== $ctPeriodId) {
+                continue;
+            }
+            $matchedPeriod = $period;
+            $matches++;
+        }
+        if ($matches !== 1 || !is_array($matchedPeriod)
+            || (int)($matchedPeriod['sequence_no'] ?? 0) <= 0
+            || (string)($matchedPeriod['start_date'] ?? '') !== (string)($row['period_start'] ?? '')
+            || (string)($matchedPeriod['end_date'] ?? '') !== (string)($row['period_end'] ?? '')
+            || !$this->validDate((string)($matchedPeriod['start_date'] ?? ''))
+            || !$this->validDate((string)($matchedPeriod['end_date'] ?? ''))) {
+            $errors[] = 'The approved frozen CT-period identity or dates are missing or inconsistent.';
+            $matchedPeriod = [];
+        }
+
+        return [
+            'identity' => [
+                'company' => $company,
+                'accounting_period' => $accountingPeriod,
+                'ct_period' => $matchedPeriod,
+            ],
             'errors' => array_values(array_unique($errors)),
         ];
     }
@@ -545,6 +672,101 @@ final class CtPeriodFilingModelService
         }
         foreach ($value as $key => $child) {
             $this->flatten($child, $prefix === '' ? (string)$key : $prefix . '.' . $key, $facts);
+        }
+    }
+
+    /** @return list<string> */
+    private function requiredSummaryErrors(array $summary): array
+    {
+        $errors = [];
+        if (($summary['available'] ?? null) !== true) {
+            $errors[] = 'The frozen computation is not explicitly marked available.';
+        }
+        foreach (['accounting_period_id', 'ct_period_id'] as $field) {
+            if (!is_int($summary[$field] ?? null) || (int)$summary[$field] <= 0) {
+                $errors[] = 'The frozen computation is missing the required identifier: ' . $field . '.';
+            }
+        }
+        foreach (['period_start', 'period_end'] as $field) {
+            if (!$this->validDate((string)($summary[$field] ?? ''))) {
+                $errors[] = 'The frozen computation is missing the required date: ' . $field . '.';
+            }
+        }
+        foreach ([
+            'accounting_profit',
+            'disallowable_add_backs',
+            'capital_add_backs',
+            'depreciation_add_back',
+            'capital_allowances',
+            'taxable_before_losses',
+            'taxable_profit',
+            'ordinary_corporation_tax',
+            's455_tax',
+            'estimated_corporation_tax',
+        ] as $field) {
+            if (!is_int($summary[$field] ?? null) && !is_float($summary[$field] ?? null)) {
+                $errors[] = 'The frozen computation is missing the required monetary fact: ' . $field . '.';
+            }
+        }
+        foreach (['hard_gate_diagnostics', 'warnings'] as $field) {
+            if (!array_key_exists($field, $summary) || !is_array($summary[$field])) {
+                $errors[] = 'The frozen computation is missing the structured ' . $field . ' result.';
+            }
+        }
+        if (preg_match('/^[a-f0-9]{64}$/i', trim((string)($summary['computation_hash'] ?? ''))) !== 1) {
+            $errors[] = 'The frozen computation summary has no valid computation hash.';
+        }
+
+        return array_values(array_unique($errors));
+    }
+
+    /** @return list<string> */
+    private function sealErrors(
+        array $seal,
+        array $row,
+        array $approval,
+        string $basisVersion,
+        string $basisHash
+    ): array {
+        if ($seal === []) {
+            return ['The locked computation has no frozen filing-basis seal. Unlock, review and lock Year End again.'];
+        }
+        $errors = [];
+        $expected = [
+            'basis_version' => $basisVersion,
+            'basis_hash' => $basisHash,
+            'approval_basis_version' => (string)($approval['basis_version'] ?? ''),
+            'approval_basis_hash' => (string)($approval['basis_hash'] ?? ''),
+            'freeze_manifest_hash' => (string)($approval['freeze_manifest_hash'] ?? ''),
+            'computation_run_id' => (int)($row['run_id'] ?? 0),
+            'computation_hash' => (string)($row['computation_hash'] ?? ''),
+            'tax_audit_snapshot_id' => (int)($row['snapshot_id'] ?? 0),
+            'tax_audit_basis_version' => (string)($row['snapshot_basis_version'] ?? ''),
+            'tax_audit_basis_hash' => (string)($row['snapshot_basis_hash'] ?? ''),
+        ];
+        foreach ($expected as $field => $value) {
+            $stored = $seal[$field] ?? null;
+            $matches = is_int($value)
+                ? is_int($stored) && $stored === $value
+                : is_string($stored) && $stored !== '' && hash_equals($value, $stored);
+            if (!$matches) {
+                $errors[] = 'The frozen filing-basis seal is missing or inconsistent: ' . $field . '.';
+            }
+        }
+
+        return $errors;
+    }
+
+    private function validDate(string $value): bool
+    {
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) !== 1) {
+            return false;
+        }
+        try {
+            $date = new \DateTimeImmutable($value);
+            return $date->format('Y-m-d') === $value;
+        } catch (\Throwable) {
+            return false;
         }
     }
 

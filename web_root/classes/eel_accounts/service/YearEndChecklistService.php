@@ -477,6 +477,16 @@ final class YearEndChecklistService
                     'errors' => (array)($s455Freeze['errors'] ?? ['The s455 evidence cut-off could not be frozen at the Year End lock timestamp.']),
                 ]);
             }
+            $filingBasisSeal = (new \eel_accounts\Service\CorporationTaxComputationService())
+                ->sealSummariesForYearEndLock($companyId, $accountingPeriodId);
+            if (empty($filingBasisSeal['success'])) {
+                return $this->rollbackLockTransaction($transaction, [
+                    'success' => false,
+                    'status' => 422,
+                    'errors' => (array)($filingBasisSeal['errors'] ?? ['The Corporation Tax filing basis could not be sealed.']),
+                    'corporation_tax_filing_basis' => $filingBasisSeal,
+                ]);
+            }
 
             $result += [
                 'depreciation' => $depreciationResult,
@@ -486,6 +496,7 @@ final class YearEndChecklistService
                 'retained_earnings_close' => $retainedEarningsCloseResult,
                 'corporation_tax' => $taxPersistenceResult,
                 's455' => $s455Freeze,
+                'corporation_tax_filing_basis' => $filingBasisSeal,
                 'backup' => $backup,
                 'checklist' => $this->fetchChecklist($companyId, $accountingPeriodId),
             ];
@@ -570,10 +581,15 @@ final class YearEndChecklistService
             ->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
         $frs105Profile = (new \eel_accounts\Service\Frs105YearEndProfileService())
             ->fetch($companyId, $accountingPeriodId);
+        $metrics = new \eel_accounts\Service\YearEndMetricsService();
+        $company = $metrics->fetchCompanySummary($companyId) ?? [];
+        $accountingPeriod = $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId) ?? [];
         $freezeService = new \eel_accounts\Service\YearEndTaxFreezeService();
         $basis = $freezeService->approvalBasis(
             $taxReadiness,
-            (array)($frs105Profile['supported_return_profile'] ?? [])
+            (array)($frs105Profile['supported_return_profile'] ?? []),
+            $company,
+            $accountingPeriod
         );
         if ($basis === null) {
             $messages = array_values(array_filter(array_map(
@@ -1014,6 +1030,7 @@ final class YearEndChecklistService
         }
 
         $settings = $metrics->fetchCompanySettings($companyId);
+        $companySummary = $metrics->fetchCompanySummary($companyId) ?? [];
         $bankNominalId = (int)($settings['default_bank_nominal_id'] ?? 0);
         $periodStart = (string)$accountingPeriod['period_start'];
         $periodEnd = (string)$accountingPeriod['period_end'];
@@ -1603,7 +1620,9 @@ final class YearEndChecklistService
             '?page=corporation_tax&show_card=year_end_tax_readiness#tax-readiness',
             (new \eel_accounts\Service\YearEndTaxFreezeService())->approvalBasis(
                 $taxReadiness,
-                (array)($frs105Profile['supported_return_profile'] ?? [])
+                (array)($frs105Profile['supported_return_profile'] ?? []),
+                $companySummary,
+                $accountingPeriod
             )
         ), $reviewAcknowledgements);
 

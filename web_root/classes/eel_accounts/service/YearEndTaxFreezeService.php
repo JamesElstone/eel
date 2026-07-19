@@ -33,6 +33,12 @@ final class YearEndTaxFreezeService
             (string)($right['period_start'] ?? ''),
             (int)($right['ct_period_id'] ?? 0),
         ]);
+        foreach ($periods as $index => &$period) {
+            if ((int)($period['ct_period_sequence_no'] ?? 0) <= 0) {
+                $period['ct_period_sequence_no'] = $index + 1;
+            }
+        }
+        unset($period);
 
         $blockingDiagnostics = $this->blockingDiagnostics($periods, $errors, $expectedPeriodCount);
         $manifestPeriods = array_map(fn(array $period): array => $this->periodBasis($period), $periods);
@@ -64,21 +70,100 @@ final class YearEndTaxFreezeService
     }
 
     /** @return array<string, mixed>|null */
-    public function approvalBasis(array $taxReadiness, array $supportedReturnProfile): ?array
+    public function approvalBasis(
+        array $taxReadiness,
+        array $supportedReturnProfile,
+        array $company,
+        array $accountingPeriod
+    ): ?array
     {
         $manifest = $taxReadiness['freeze_manifest'] ?? null;
         $profile = $this->approvedSupportedReturnProfile($supportedReturnProfile);
+        $identity = is_array($manifest)
+            ? $this->filingIdentity($manifest, $company, $accountingPeriod)
+            : null;
         if (!is_array($manifest)
             || (string)($taxReadiness['freeze_status'] ?? '') !== 'ready_for_approval'
-            || $profile === null) {
+            || $profile === null
+            || $identity === null) {
             return null;
         }
 
         return [
             'check_code' => 'tax_readiness_acknowledgement',
+            'filing_identity' => $identity,
             'freeze_manifest' => $manifest,
             'supported_return_profile' => $profile,
         ];
+    }
+
+    /** @return array<string, mixed>|null */
+    private function filingIdentity(array $manifest, array $company, array $accountingPeriod): ?array
+    {
+        $companyId = (int)($company['id'] ?? 0);
+        $companyName = trim((string)($company['company_name'] ?? ''));
+        $companyNumber = trim((string)($company['company_number'] ?? ''));
+        $accountingPeriodId = (int)($accountingPeriod['id'] ?? 0);
+        $accountingPeriodStart = trim((string)($accountingPeriod['period_start'] ?? ''));
+        $accountingPeriodEnd = trim((string)($accountingPeriod['period_end'] ?? ''));
+        if ($companyId <= 0
+            || $companyName === ''
+            || $companyNumber === ''
+            || $accountingPeriodId <= 0
+            || !$this->validDateRange($accountingPeriodStart, $accountingPeriodEnd)
+            || (int)($manifest['company_id'] ?? 0) !== $companyId
+            || (int)($manifest['accounting_period_id'] ?? 0) !== $accountingPeriodId) {
+            return null;
+        }
+
+        $ctPeriods = [];
+        foreach ((array)($manifest['periods'] ?? []) as $sequence => $period) {
+            if (!is_array($period)) {
+                return null;
+            }
+            $ctPeriodId = (int)($period['ct_period_id'] ?? 0);
+            $periodStart = trim((string)($period['period_start'] ?? ''));
+            $periodEnd = trim((string)($period['period_end'] ?? ''));
+            if ($ctPeriodId <= 0 || !$this->validDateRange($periodStart, $periodEnd)) {
+                return null;
+            }
+            $ctPeriods[] = [
+                'id' => $ctPeriodId,
+                'sequence_no' => (int)($period['sequence_no'] ?? ($sequence + 1)),
+                'start_date' => $periodStart,
+                'end_date' => $periodEnd,
+            ];
+        }
+        if ($ctPeriods === []) {
+            return null;
+        }
+
+        return [
+            'company' => [
+                'id' => $companyId,
+                'name' => $companyName,
+                'number' => $companyNumber,
+            ],
+            'accounting_period' => [
+                'id' => $accountingPeriodId,
+                'start_date' => $accountingPeriodStart,
+                'end_date' => $accountingPeriodEnd,
+            ],
+            'ct_periods' => $ctPeriods,
+        ];
+    }
+
+    private function validDateRange(string $start, string $end): bool
+    {
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $start) !== 1
+            || preg_match('/^\d{4}-\d{2}-\d{2}$/', $end) !== 1) {
+            return false;
+        }
+        try {
+            return new \DateTimeImmutable($start) <= new \DateTimeImmutable($end);
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /** @return array<string, mixed>|null */
@@ -130,6 +215,7 @@ final class YearEndTaxFreezeService
 
         return [
             'ct_period_id' => (int)($period['ct_period_id'] ?? 0),
+            'sequence_no' => (int)($period['ct_period_sequence_no'] ?? 0),
             'period_start' => (string)($period['period_start'] ?? ''),
             'period_end' => (string)($period['period_end'] ?? ''),
             'accounting_profit' => $this->money($period['accounting_profit'] ?? 0),

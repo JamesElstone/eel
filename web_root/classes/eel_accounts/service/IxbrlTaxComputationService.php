@@ -30,19 +30,22 @@ final class IxbrlTaxComputationService
         if (!is_array($profile)) {
             return $this->failRun($runId, 'No active, compatible database mapping profile exists for the applicable computation taxonomy.');
         }
-        $mappings = \InterfaceDB::fetchAll(
-            'SELECT * FROM ct_computation_ixbrl_mappings WHERE profile_id = :profile_id
-             ORDER BY presentation_section, sort_order, id',
-            ['profile_id' => (int)$profile['id']]
+        $mappedFacts = (new CtFilingMappingService())->mapFrozenFacts(
+            CtFilingMappingService::TARGET_COMPUTATION,
+            $model,
+            $profile
         );
-        if ($mappings === []) {
-            return $this->failRun($runId, 'The active computation-taxonomy profile contains no mappings.');
+        if (empty($mappedFacts['success'])) {
+            return $this->failRun(
+                $runId,
+                (string)(($mappedFacts['errors'] ?? [])[0] ?? 'The frozen filing facts could not be mapped.')
+            );
         }
 
         $generator = new IxbrlGeneratorService();
         $artifact = null;
         try {
-            $rendered = $this->renderMappedDocument($generator, $model, $package, $mappings);
+            $rendered = $this->renderMappedDocument($generator, $model, $package, (array)$mappedFacts['mappings']);
             $errors = $generator->validateStructure($rendered['xhtml'], [$rendered['schema_ref']]);
             if ($errors !== []) {
                 throw new \RuntimeException(implode(' ', $errors));
@@ -179,26 +182,16 @@ final class IxbrlTaxComputationService
 
     private function renderMappedDocument(IxbrlGeneratorService $generator, array $model, array $package, array $mappings): array
     {
-        $facts = (array)$model['facts'];
         $run = (array)$model['run'];
         usort($mappings, fn(array $a, array $b): int => [self::SECTION_ORDER[(string)$a['presentation_section']] ?? 999, (int)$a['sort_order'], (int)$a['id']] <=> [self::SECTION_ORDER[(string)$b['presentation_section']] ?? 999, (int)$b['sort_order'], (int)$b['id']]);
         $contexts = [];
         $sections = [];
         $namespaces = [];
         foreach ($mappings as $mapping) {
-            $key = (string)$mapping['canonical_key'];
-            $exists = array_key_exists($key, $facts);
-            $value = $exists ? $facts[$key] : null;
-            $nullPolicy = (string)$mapping['null_policy'];
-            if (!$exists && $nullPolicy === 'omit' && empty($mapping['is_required'])) {
-                continue;
+            if (!array_key_exists('source_value', $mapping)) {
+                throw new \RuntimeException('A computation mapping was not resolved from the frozen filing model.');
             }
-            if ((!$exists || $value === null || $value === '') && ($nullPolicy === 'error' || !empty($mapping['is_required']))) {
-                throw new \RuntimeException('Required canonical filing fact is missing: ' . $key);
-            }
-            if (($value === null || $value === '') && $nullPolicy === 'omit') {
-                continue;
-            }
+            $value = $mapping['source_value'];
             $dimensions = json_decode((string)($mapping['dimensions_json'] ?? ''), true);
             $dimensions = is_array($dimensions) ? $dimensions : [];
             $contextId = 'ct_' . substr(hash('sha256', (string)$mapping['period_type'] . '|' . json_encode($dimensions)), 0, 12);

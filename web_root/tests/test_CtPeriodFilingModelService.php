@@ -54,6 +54,69 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $h->assertSame((string)$first['basis_hash'], (string)$second['basis_hash']);
         });
 
+        $h->check($service::class, 'keeps approved identity after live company presentation changes', static function () use ($h, $service): void {
+            $fixture = ctPeriodFilingModelFixture();
+            \InterfaceDB::execute(
+                'UPDATE companies SET company_name = :name, company_number = :number WHERE id = :id',
+                ['name' => 'Later Live Name', 'number' => '87654321', 'id' => $fixture['company_id']]
+            );
+            $result = $service->build($fixture['company_id'], $fixture['accounting_period_id'], $fixture['ct_period_ids'][0]);
+            $h->assertSame(true, (bool)($result['available'] ?? false));
+            $h->assertSame('Approved Filing Fixture', (string)($result['model']['identity']['company_name'] ?? ''));
+            $h->assertSame('12345678', (string)($result['model']['identity']['company_number'] ?? ''));
+        });
+
+        $h->check($service::class, 'fails closed for a missing or altered final seal and required fact', static function () use ($h, $service): void {
+            $fixture = ctPeriodFilingModelFixture();
+            $runId = $fixture['run_ids'][0];
+            $summary = json_decode((string)\InterfaceDB::fetchColumn('SELECT summary_json FROM corporation_tax_computation_runs WHERE id = :id', ['id' => $runId]), true);
+            unset($summary['frozen_filing_basis']);
+            \InterfaceDB::execute('UPDATE corporation_tax_computation_runs SET summary_json = :summary WHERE id = :id', ['summary' => json_encode($summary, JSON_UNESCAPED_SLASHES), 'id' => $runId]);
+            $missingSeal = $service->build($fixture['company_id'], $fixture['accounting_period_id'], $fixture['ct_period_ids'][0]);
+            $h->assertSame(false, (bool)($missingSeal['available'] ?? true));
+            $h->assertTrue(str_contains(implode(' ', (array)$missingSeal['errors']), 'no frozen filing-basis seal'));
+
+            $fixture = ctPeriodFilingModelFixture();
+            $runId = $fixture['run_ids'][0];
+            $summary = json_decode((string)\InterfaceDB::fetchColumn('SELECT summary_json FROM corporation_tax_computation_runs WHERE id = :id', ['id' => $runId]), true);
+            unset($summary['accounting_profit']);
+            \InterfaceDB::execute('UPDATE corporation_tax_computation_runs SET summary_json = :summary WHERE id = :id', ['summary' => json_encode($summary, JSON_UNESCAPED_SLASHES), 'id' => $runId]);
+            $missingFact = $service->build($fixture['company_id'], $fixture['accounting_period_id'], $fixture['ct_period_ids'][0]);
+            $h->assertSame(false, (bool)($missingFact['available'] ?? true));
+            $h->assertTrue(str_contains(implode(' ', (array)$missingFact['errors']), 'accounting_profit'));
+        });
+
+        $h->check($service::class, 'maps both filing targets from the identical sealed penny facts', static function () use ($h, $service): void {
+            $fixture = ctPeriodFilingModelFixture();
+            $model = $service->build($fixture['company_id'], $fixture['accounting_period_id'], $fixture['ct_period_ids'][0]);
+            $mappingService = new \eel_accounts\Service\CtFilingMappingService();
+            $results = [];
+            foreach ([\eel_accounts\Service\CtFilingMappingService::TARGET_RIM, \eel_accounts\Service\CtFilingMappingService::TARGET_COMPUTATION] as $target) {
+                $profileId = $target === \eel_accounts\Service\CtFilingMappingService::TARGET_RIM ? 1 : 2;
+                $mapping = [
+                    'id' => 1,
+                    'profile_id' => $profileId,
+                    'canonical_key' => 'computation.summary.accounting_profit',
+                    'value_type' => 'numeric',
+                    'null_policy' => 'error',
+                    'is_required' => 1,
+                    'sort_order' => 1,
+                ];
+                $results[$target] = $mappingService->mapFrozenFacts($target, $model, [
+                    'id' => $profileId,
+                    'target_type' => $target,
+                    'status' => 'active',
+                    'compatibility_status' => 'compatible',
+                ], [$mapping]);
+            }
+            $rim = $results[\eel_accounts\Service\CtFilingMappingService::TARGET_RIM];
+            $computation = $results[\eel_accounts\Service\CtFilingMappingService::TARGET_COMPUTATION];
+            $h->assertSame(true, (bool)($rim['success'] ?? false));
+            $h->assertSame((string)$rim['basis_hash'], (string)$computation['basis_hash']);
+            $h->assertSame(100.0, (float)($rim['canonical_values']['computation.summary.accounting_profit'] ?? 0));
+            $h->assertSame($rim['canonical_values'], $computation['canonical_values']);
+        });
+
         $h->check($service::class, 'preserves an unexpected frozen blocker and rejects the approved model', static function () use ($h, $service): void {
             $blocker = [
                 'code' => 'loss_brought_forward_continuity',
@@ -262,6 +325,20 @@ function ctPeriodFilingModelFixture(
     $manifestHash = $acknowledgements->hashBasis($manifest);
     $approvalBasis = [
         'check_code' => 'tax_readiness_acknowledgement',
+        'filing_identity' => [
+            'company' => ['id' => $companyId, 'name' => 'Approved Filing Fixture', 'number' => '12345678'],
+            'accounting_period' => [
+                'id' => $accountingPeriodId,
+                'start_date' => '2023-01-01',
+                'end_date' => '2023-12-31',
+            ],
+            'ct_periods' => array_map(static fn(array $period, int $index): array => [
+                'id' => $ctPeriodIds[$index],
+                'sequence_no' => (int)$period['sequence_no'],
+                'start_date' => (string)$period['period_start'],
+                'end_date' => (string)$period['period_end'],
+            ], $periodDefinitions, array_keys($periodDefinitions)),
+        ],
         'freeze_manifest' => $manifest,
         'supported_return_profile' => ctPeriodFilingModelSupportedReturnProfile(),
     ];
@@ -303,7 +380,14 @@ function ctPeriodFilingModelFixture(
             'period_start' => $period['period_start'],
             'period_end' => $period['period_end'],
             'accounting_profit' => 100.00,
+            'disallowable_add_backs' => 0.00,
+            'capital_add_backs' => 0.00,
+            'depreciation_add_back' => 0.00,
+            'capital_allowances' => 0.00,
+            'taxable_before_losses' => 100.00,
             'taxable_profit' => 100.00,
+            'ordinary_corporation_tax' => 19.00,
+            's455_tax' => 0.00,
             'estimated_corporation_tax' => 19.00,
             'unknown_treatment_amount' => 0.00,
             'computation_hash' => $computationHash,
@@ -388,6 +472,14 @@ function ctPeriodFilingModelFixture(
                     'detail_json' => ctPeriodFilingModelCanonicalJson($detail),
                 ]
             );
+        }
+    }
+
+    if ($blockers === []) {
+        $seal = (new \eel_accounts\Service\CorporationTaxComputationService())
+            ->sealSummariesForYearEndLock($companyId, $accountingPeriodId);
+        if (empty($seal['success'])) {
+            throw new RuntimeException('CT filing fixture could not be sealed: ' . implode(' ', (array)($seal['errors'] ?? [])));
         }
     }
 

@@ -460,6 +460,114 @@ final class CorporationTaxComputationService
         ];
     }
 
+    /**
+     * Seals every persisted CT-period run against its approved Year End basis.
+     * The surrounding lock transaction owns all rollback behaviour.
+     */
+    public function sealSummariesForYearEndLock(int $companyId, int $accountingPeriodId): array
+    {
+        if (!\InterfaceDB::inTransaction()) {
+            return [
+                'success' => false,
+                'errors' => ['Corporation Tax filing bases can only be sealed inside the Year End lock transaction.'],
+                'sealed_periods' => [],
+            ];
+        }
+        if (!(new YearEndLockService())->isLocked($companyId, $accountingPeriodId)) {
+            return [
+                'success' => false,
+                'errors' => ['The atomic Year End lock must be applied before its Corporation Tax filing bases can be sealed.'],
+                'sealed_periods' => [],
+            ];
+        }
+
+        $periods = array_values(array_filter(
+            (new CorporationTaxPeriodService())->fetchExistingForAccountingPeriod($companyId, $accountingPeriodId),
+            static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'
+        ));
+        $sealed = [];
+        $errors = [];
+        if ($periods === []) {
+            $errors[] = 'At least one persisted active CT period is required before Year End can be sealed.';
+        }
+        $modelService = new CtPeriodFilingModelService();
+        foreach ($periods as $period) {
+            $ctPeriodId = (int)($period['id'] ?? 0);
+            if ($ctPeriodId <= 0) {
+                $errors[] = 'An active CT period has no valid identifier.';
+                continue;
+            }
+
+            $model = $modelService->buildForYearEndSeal($companyId, $accountingPeriodId, $ctPeriodId);
+            if (empty($model['available'])) {
+                foreach ((array)($model['errors'] ?? ['The frozen CT-period filing basis could not be assembled.']) as $error) {
+                    $errors[] = 'CT period ' . $ctPeriodId . ': ' . (string)$error;
+                }
+                continue;
+            }
+            $run = (array)$model['run'];
+            $summary = json_decode((string)($run['summary_json'] ?? ''), true);
+            if (!is_array($summary)) {
+                $errors[] = 'CT period ' . $ctPeriodId . ': The persisted computation summary is unreadable.';
+                continue;
+            }
+            $summary['frozen_filing_basis'] = [
+                'basis_version' => (string)$model['basis_version'],
+                'basis_hash' => (string)$model['basis_hash'],
+                'approval_basis_version' => (string)($model['approval']['basis_version'] ?? ''),
+                'approval_basis_hash' => (string)($model['approval']['basis_hash'] ?? ''),
+                'freeze_manifest_hash' => (string)($model['approval']['freeze_manifest_hash'] ?? ''),
+                'computation_run_id' => (int)($run['run_id'] ?? 0),
+                'computation_hash' => (string)($run['computation_hash'] ?? ''),
+                'tax_audit_snapshot_id' => (int)($run['snapshot_id'] ?? 0),
+                'tax_audit_basis_version' => (string)($run['snapshot_basis_version'] ?? ''),
+                'tax_audit_basis_hash' => (string)($run['snapshot_basis_hash'] ?? ''),
+            ];
+            $summaryJson = json_encode($summary, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
+            if (!is_string($summaryJson)) {
+                $errors[] = 'CT period ' . $ctPeriodId . ': The frozen filing-basis seal could not be encoded.';
+                continue;
+            }
+            \InterfaceDB::prepareExecute(
+                'UPDATE corporation_tax_computation_runs SET summary_json = :summary_json
+                 WHERE id = :run_id AND company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id AND ct_period_id = :ct_period_id',
+                [
+                    'summary_json' => $summaryJson,
+                    'run_id' => (int)$run['run_id'],
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'ct_period_id' => $ctPeriodId,
+                ]
+            );
+
+            $verified = $modelService->build($companyId, $accountingPeriodId, $ctPeriodId);
+            if (empty($verified['available'])) {
+                foreach ((array)($verified['errors'] ?? ['The written filing-basis seal could not be verified.']) as $error) {
+                    $errors[] = 'CT period ' . $ctPeriodId . ': ' . (string)$error;
+                }
+                continue;
+            }
+            $sealed[] = [
+                'ct_period_id' => $ctPeriodId,
+                'computation_run_id' => (int)$run['run_id'],
+                'tax_audit_snapshot_id' => (int)$run['snapshot_id'],
+                'basis_version' => (string)$verified['basis_version'],
+                'basis_hash' => (string)$verified['basis_hash'],
+            ];
+        }
+
+        if (count($sealed) !== count($periods)) {
+            $errors[] = 'Every active CT period must be sealed exactly once before Year End can complete.';
+        }
+
+        return [
+            'success' => $errors === [],
+            'errors' => array_values(array_unique($errors)),
+            'sealed_periods' => $sealed,
+        ];
+    }
+
     private function updatePersistedHardGateDiagnostics(int $runId, array $summary): void
     {
         $summaryJson = json_encode($summary, JSON_UNESCAPED_SLASHES);
@@ -2012,5 +2120,3 @@ final class CorporationTaxComputationService
         return $cache[$table];
     }
 }
-
-

@@ -13,9 +13,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             'presentation_section' => $section, 'presentation_label' => $label, 'null_policy' => 'omit', 'is_required' => 0, 'sort_order' => 100,
         ];
         $mappings = [
-            $mapping(3, 'missing.optional', 'accounts_adjustments', 'Omitted'),
-            $mapping(2, 'capital', 'capital_allowances', 'Capital allowances'),
-            $mapping(1, 'profit', 'detailed_profit_and_loss', 'Detailed profit'),
+            array_replace($mapping(2, 'capital', 'capital_allowances', 'Capital allowances'), ['source_value' => 20.0]),
+            array_replace($mapping(1, 'profit', 'detailed_profit_and_loss', 'Detailed profit'), ['source_value' => 100.0]),
         ];
         $method = new ReflectionMethod($service::class, 'renderMappedDocument'); $method->setAccessible(true);
         $rendered = $method->invoke($service, new \eel_accounts\Service\IxbrlGeneratorService(), [
@@ -25,6 +24,5 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         ], ['combined_dpl_entry_point_path' => $schema, 'entry_point_path' => null], $mappings);
         $xhtml = (string)$rendered['xhtml'];
         $h->assertTrue(strpos($xhtml, 'Detailed Profit And Loss') < strpos($xhtml, 'Capital Allowances'));
-        $h->assertTrue(!str_contains($xhtml, 'Omitted'));
     });
 });

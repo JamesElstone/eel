@@ -469,6 +469,32 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         $beforeLock = goldenYearEndReportingSnapshot($companyId, $periodId);
         InterfaceDB::beginTransaction();
         try {
+            $metrics = new \eel_accounts\Service\YearEndMetricsService();
+            $taxReadiness = (new \eel_accounts\Service\YearEndTaxReadinessService())
+                ->fetchAccountingPeriodCtSummary($companyId, $periodId);
+            $returnProfile = (new \eel_accounts\Service\Frs105YearEndProfileService())
+                ->fetch($companyId, $periodId);
+            $approvalBasis = (new \eel_accounts\Service\YearEndTaxFreezeService())->approvalBasis(
+                $taxReadiness,
+                (array)($returnProfile['supported_return_profile'] ?? []),
+                $metrics->fetchCompanySummary($companyId) ?? [],
+                $metrics->fetchAccountingPeriod($companyId, $periodId) ?? []
+            );
+            if (!is_array($approvalBasis)) {
+                throw new RuntimeException('AP ' . $periodId . ' CT basis was not ready for approval.');
+            }
+            $approval = (new \eel_accounts\Service\YearEndAcknowledgementService())->save(
+                $companyId,
+                $periodId,
+                'tax_readiness_acknowledgement',
+                $approvalBasis,
+                'golden_year_end_test',
+                '',
+                true
+            );
+            if (empty($approval['success'])) {
+                throw new RuntimeException('AP ' . $periodId . ' CT approval failed: ' . implode(' ', (array)($approval['errors'] ?? [])));
+            }
             $taxPersistence = (new \eel_accounts\Service\CorporationTaxComputationService())
                 ->persistSummariesForYearEndLock($companyId, $periodId);
             if (empty($taxPersistence['success'])) {
@@ -482,6 +508,12 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
                 throw new RuntimeException('AP ' . $periodId . ' lock failed: ' . implode(' ', (array)($lock['errors'] ?? [])));
             }
             $harness->assertTrue(!empty($lock['success']));
+            $filingSeal = (new \eel_accounts\Service\CorporationTaxComputationService())
+                ->sealSummariesForYearEndLock($companyId, $periodId);
+            if (empty($filingSeal['success'])) {
+                throw new RuntimeException('AP ' . $periodId . ' CT filing seal failed: ' . implode(' ', (array)($filingSeal['errors'] ?? [])));
+            }
+            $harness->assertSame(count($ctPeriods), count((array)($filingSeal['sealed_periods'] ?? [])));
             InterfaceDB::commit();
         } catch (Throwable $exception) {
             if (InterfaceDB::inTransaction()) {
@@ -490,6 +522,12 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
             throw $exception;
         }
         $harness->assertTrue((new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $periodId));
+        foreach ($ctPeriods as $ctPeriod) {
+            $filingModel = (new \eel_accounts\Service\CtPeriodFilingModelService())
+                ->build($companyId, $periodId, (int)$ctPeriod['id']);
+            $harness->assertTrue(!empty($filingModel['available']));
+            $harness->assertTrue(preg_match('/^[a-f0-9]{64}$/', (string)($filingModel['basis_hash'] ?? '')) === 1);
+        }
         $afterLock = goldenYearEndReportingSnapshot($companyId, $periodId);
 
         if ($beforeLock !== $afterLock) {

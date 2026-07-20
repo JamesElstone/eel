@@ -115,7 +115,6 @@ final class _companies_nominalsCard extends CardBaseFramework
             ';
         }
 
-        $helperDefaultsHtml = $this->renderHelperNominalDefaults($nominalAccounts, $settings);
         $helperStateFields = implode(',', (new \eel_accounts\Service\CompanySettingsService())->helperNominalSettingKeys());
         $mainHtml = '
             <form method="post" data-ajax="true">
@@ -124,93 +123,7 @@ final class _companies_nominalsCard extends CardBaseFramework
                 <input type="hidden" name="intent" value="save_nominals">
                 <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)($context['company']['id'] ?? 0)) . '">
                 <section data-state-fields="default_bank_nominal_id,default_sales_nominal_id,default_trade_nominal_id,default_expense_nominal_id,tools_small_equipment_nominal_id,prepayment_asset_nominal_id,participator_loan_asset_nominal_id,participator_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id,corporation_tax_expense_nominal_id,corporation_tax_liability_nominal_id,' . HelperFramework::escape($helperStateFields) . '" data-state-target="save_default_nominals">
-                    <div class="form-grid">
-                        <div class="form-row">
-                            <label for="default_bank_nominal_id">Default Bank nominal</label>
-                            <select class="select" id="default_bank_nominal_id" name="default_bank_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['default_bank_nominal_id'] ?? '')) . '">
-                                <option value="">Select nominal account</option>
-                                ' . $this->nominalOptions($nominalAccounts, (string)($settings['default_bank_nominal_id'] ?? '')) . '
-                            </select>
-                        </div>
-                        <div class="form-row">
-                            <label for="default_sales_nominal_id">Default Sales nominal</label>
-                            <select class="select" id="default_sales_nominal_id" name="default_sales_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['default_sales_nominal_id'] ?? '')) . '">
-                                <option value="">Select nominal account</option>
-                                ' . $this->nominalOptions($nominalAccounts, (string)($settings['default_sales_nominal_id'] ?? '')) . '
-                            </select>
-                        </div>
-                        <div class="form-row">
-                            <label for="default_trade_nominal_id">Default Trade nominal</label>
-                            <select class="select" id="default_trade_nominal_id" name="default_trade_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['default_trade_nominal_id'] ?? '')) . '">
-                                <option value="">Select nominal account</option>
-                                ' . $this->nominalOptions($nominalAccounts, (string)($settings['default_trade_nominal_id'] ?? '')) . '
-                            </select>
-                        </div>
-                        <div class="form-row">
-                            <label for="default_expense_nominal_id">Expense claims payable nominal</label>
-                            <select class="select" id="default_expense_nominal_id" name="default_expense_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['default_expense_nominal_id'] ?? '')) . '">
-                                <option value="">Select nominal account</option>
-                                ' . $this->nominalOptions($nominalAccounts, (string)($settings['default_expense_nominal_id'] ?? '')) . '
-                            </select>
-                        </div>
-                        <div class="form-row">
-                            <label for="tools_small_equipment_nominal_id">Tools &amp; Small Equipment nominal</label>
-                            <select class="select" id="tools_small_equipment_nominal_id" name="tools_small_equipment_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['tools_small_equipment_nominal_id'] ?? '')) . '">
-                                <option value="">Select nominal account</option>
-                                ' . $this->nominalOptions($nominalAccounts, (string)($settings['tools_small_equipment_nominal_id'] ?? '')) . '
-                            </select>
-                        </div>
-                        <div class="form-row">
-                            <label for="prepayment_asset_nominal_id">Prepayments asset nominal</label>
-                            <select class="select" id="prepayment_asset_nominal_id" name="prepayment_asset_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['prepayment_asset_nominal_id'] ?? '')) . '">
-                                <option value="">Select nominal account</option>
-                                ' . $this->prepaymentNominalOptions($nominalAccounts, (string)($settings['prepayment_asset_nominal_id'] ?? '')) . '
-                            </select>
-                        </div>
-                        <div class="form-row">
-                            <label for="participator_loan_asset_nominal_id">Participator Loan Asset nominal</label>
-                            <select class="select" id="participator_loan_asset_nominal_id" name="participator_loan_asset_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['participator_loan_asset_nominal_id'] ?? '')) . '">
-                                <option value="">Select nominal account</option>
-                                ' . $this->nominalOptions($nominalAccounts, (string)($settings['participator_loan_asset_nominal_id'] ?? '')) . '
-                            </select>
-                        </div>
-                        <div class="form-row">
-                            <label for="participator_loan_liability_nominal_id">Participator Loan Liability nominal</label>
-                            <select class="select" id="participator_loan_liability_nominal_id" name="participator_loan_liability_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['participator_loan_liability_nominal_id'] ?? '')) . '">
-                                <option value="">Select nominal account</option>
-                                ' . $this->nominalOptions($nominalAccounts, (string)($settings['participator_loan_liability_nominal_id'] ?? '')) . '
-                            </select>
-                        </div>
-                        <div class="form-row">
-                            <label for="vat_nominal_id">Default VAT Control nominal</label>
-                            <select class="select" id="vat_nominal_id" name="vat_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['vat_nominal_id'] ?? '')) . '">
-                                <option value="">Select nominal account</option>
-                                ' . $this->nominalOptions($nominalAccounts, (string)($settings['vat_nominal_id'] ?? '')) . '
-                            </select>
-                        </div>
-                        <div class="form-row">
-                            <label for="uncategorised_nominal_id">Fallback nominal for uncategorised Transactions</label>
-                            <select class="select" id="uncategorised_nominal_id" name="uncategorised_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['uncategorised_nominal_id'] ?? '')) . '">
-                                <option value="">Select nominal account</option>
-                                ' . $this->nominalOptions($nominalAccounts, (string)($settings['uncategorised_nominal_id'] ?? '')) . '
-                            </select>
-                        </div>
-                        <div class="form-row">
-                            <label for="corporation_tax_expense_nominal_id">Corporation Tax Expense nominal</label>
-                            <select class="select" id="corporation_tax_expense_nominal_id" name="corporation_tax_expense_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['corporation_tax_expense_nominal_id'] ?? '')) . '">
-                                <option value="">Select nominal account</option>
-                                ' . $this->nominalOptions($nominalAccounts, (string)($settings['corporation_tax_expense_nominal_id'] ?? '')) . '
-                            </select>
-                        </div>
-                        <div class="form-row">
-                            <label for="corporation_tax_liability_nominal_id">Corporation Tax Liability nominal</label>
-                            <select class="select" id="corporation_tax_liability_nominal_id" name="corporation_tax_liability_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['corporation_tax_liability_nominal_id'] ?? '')) . '">
-                                <option value="">Select nominal account</option>
-                                ' . $this->nominalOptions($nominalAccounts, (string)($settings['corporation_tax_liability_nominal_id'] ?? '')) . '
-                            </select>
-                        </div>
-                        ' . $helperDefaultsHtml . '
-                    </div>
+                    ' . $this->renderNominalDefaultTable($nominalAccounts, $settings) . '
                     <div>
                         <button class="button primary" id="save_default_nominals" type="submit" disabled>Save Nominals Defaults</button>
                     </div>
@@ -220,15 +133,27 @@ final class _companies_nominalsCard extends CardBaseFramework
 
         return '
             <div class="nominals-layout">
-                <div>' . $mainHtml . '</div>
                 <div>' . $suggestionsHtml . '</div>
+                <div>' . $mainHtml . '</div>
             </div>
         ';
     }
 
-    private function renderHelperNominalDefaults(array $nominalAccounts, array $settings): string
+    private function renderNominalDefaultTable(array $nominalAccounts, array $settings): string
     {
         $fields = [
+            'default_bank_nominal_id' => 'Default Bank nominal',
+            'default_sales_nominal_id' => 'Default Sales nominal',
+            'default_trade_nominal_id' => 'Default Trade nominal',
+            'default_expense_nominal_id' => 'Expense claims payable nominal',
+            'tools_small_equipment_nominal_id' => 'Tools & Small Equipment nominal',
+            'prepayment_asset_nominal_id' => 'Prepayments asset nominal',
+            'participator_loan_asset_nominal_id' => 'Participator Loan Asset nominal',
+            'participator_loan_liability_nominal_id' => 'Participator Loan Liability nominal',
+            'vat_nominal_id' => 'Default VAT Control nominal',
+            'uncategorised_nominal_id' => 'Fallback nominal for uncategorised Transactions',
+            'corporation_tax_expense_nominal_id' => 'Corporation Tax Expense nominal',
+            'corporation_tax_liability_nominal_id' => 'Corporation Tax Liability nominal',
             'dividends_payable_nominal_id' => 'Dividends Payable nominal',
             'default_expense_charge_nominal_id' => 'Default ordinary expense charge nominal',
         ];
@@ -236,16 +161,20 @@ final class _companies_nominalsCard extends CardBaseFramework
             $fields[$category . '_asset_cost_nominal_id'] = $label . ' cost nominal';
             $fields[$category . '_accum_dep_nominal_id'] = $label . ' accumulated depreciation nominal';
         }
-        $html = '';
+        $rowsHtml = '';
         foreach ($fields as $key => $label) {
             $value = (string)($settings[$key] ?? '');
-            $html .= '<div class="form-row"><label for="' . HelperFramework::escape($key) . '">'
-                . HelperFramework::escape($label) . '</label><select class="select" id="' . HelperFramework::escape($key)
+            $options = $key === 'prepayment_asset_nominal_id'
+                ? $this->prepaymentNominalOptions($nominalAccounts, $value)
+                : $this->nominalOptions($nominalAccounts, $value);
+            $rowsHtml .= '<tr><th scope="row"><label for="' . HelperFramework::escape($key) . '">'
+                . HelperFramework::escape($label) . '</label></th><td><select class="select" id="' . HelperFramework::escape($key)
                 . '" name="' . HelperFramework::escape($key) . '" data-state-default="' . HelperFramework::escape($value)
-                . '"><option value="">Select nominal account</option>' . $this->nominalOptions($nominalAccounts, $value) . '</select></div>';
+                . '"><option value="">Select nominal account</option>' . $options . '</select></td></tr>';
         }
 
-        return $html;
+        return '<div class="table-scroll"><table class="table"><thead><tr><th>Default</th><th>Nominal account</th></tr></thead><tbody>'
+            . $rowsHtml . '</tbody></table></div>';
     }
 
     private function nominalOptions(array $nominalAccounts, string $selectedId): string

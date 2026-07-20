@@ -1582,7 +1582,7 @@
 
 .nominals-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
   margin-top: 18px;
   align-items: start;

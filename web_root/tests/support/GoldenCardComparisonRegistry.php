@@ -21,7 +21,7 @@ final class GoldenCardComparisonRegistry
             'minutes' => ['company_minutes'],
             'nominals' => ['nominals_accounts', 'nominals_add_account', 'nominals_categories', 'nominals_add_category', 'nominals_account_types', 'nominals_import_export', 'nominal_opening_balances', 'nominal_closing_balances'],
             'prepayments' => ['prepayments_review', 'year_end_prepayment_approvals'],
-            'profit_loss' => ['pl_summary', 'pl_monthly_trend', 'pl_income_breakdown', 'pl_expense_breakdown', 'pl_net_profit_bridge', 'pl_source_coverage', 'reserve_review', 'year_end_retained_earnings'],
+            'profit_loss' => ['pl_summary', 'pl_monthly_trend', 'pl_income_breakdown', 'pl_expense_breakdown', 'pl_net_profit_bridge', 'pl_source_coverage', 'reserve_review', 'year_end_profit_loss_confirm'],
             'source_accounts' => ['banking_accounts', 'banking_reconciliation', 'banking_account_form', 'statement_field_mapping'],
             'corporation_tax' => ['tax_period_selector', 'tax_corporation_tax_summary', 'tax_taxable_profit_bridge', 'tax_prepayment_treatment', 'tax_disallowable_add_backs', 'tax_capital_add_backs', 'tax_depreciation_add_back', 'tax_capital_allowances_summary', 'tax_aia_allocation', 'tax_main_rate_pool', 'tax_special_rate_pool', 'tax_car_co2_treatment', 'tax_disposals_balancing', 'tax_losses', 'tax_rate_bands', 'tax_warnings', 'tax_ct_period_facts', 'year_end_tax_readiness'],
             'tax_audit' => ['tax_audit_areas', 'tax_audit_detail'],

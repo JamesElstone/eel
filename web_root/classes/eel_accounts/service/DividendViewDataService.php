@@ -32,10 +32,16 @@ final class DividendViewDataService
         $dividends = $this->dividendService ?? new \eel_accounts\Service\DividendService();
         $context = $dividends->getDividendCapacityContext($companyId, $accountingPeriodId);
         $capacity = (array)($context['capacity'] ?? []);
+        $profitLossClose = (new \eel_accounts\Service\RetainedEarningsCloseService())
+            ->fetchContext($companyId, $accountingPeriodId);
 
         return [
             'capacity' => $capacity,
             'reserve_review' => (array)($context['reserve_review'] ?? []),
+            'profit_loss_approval' => [
+                'current' => !empty($profitLossClose['acknowledged']),
+                'state' => (string)($profitLossClose['acknowledgement_state'] ?? 'absent'),
+            ],
             'warnings' => $dividends->getDividendWarningsForCapacity($companyId, $accountingPeriodId, $capacity),
             'is_locked' => ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())
                 ->isLocked($companyId, $accountingPeriodId),

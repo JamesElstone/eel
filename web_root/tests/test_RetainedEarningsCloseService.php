@@ -82,6 +82,7 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
                 ])
             );
 
+            retainedEarningsCloseSaveReserveReview($fixture);
             $acknowledged = $service->saveAcknowledgement((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], true, 'test');
             $harness->assertSame(true, (bool)($acknowledged['success'] ?? false));
 
@@ -195,6 +196,7 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
             $harness->assertSame('400.00', number_format((float)(($context['depreciation_preview'] ?? [])['total_amount'] ?? 0), 2, '.', ''));
             $harness->assertSame('600.00', number_format((float)(($context['summary'] ?? [])['current_profit_loss'] ?? 0), 2, '.', ''));
 
+            retainedEarningsCloseSaveReserveReview($fixture);
             $acknowledged = $service->saveAcknowledgement((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], true, 'test');
             $harness->assertSame(true, (bool)($acknowledged['success'] ?? false));
             $harness->assertSame(false, (bool)($service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id'])['acknowledgement_stale'] ?? true));
@@ -339,6 +341,10 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
             $harness->assertSame('500.00', number_format((float)($beforeBridge['share_capital_movement'] ?? 0), 2, '.', ''));
             $harness->assertSame('200.00', number_format((float)($beforeBridge['unexplained_movement'] ?? 0), 2, '.', ''));
 
+            retainedEarningsCloseSaveReserveReview([
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+            ]);
             $acknowledged = $service->saveAcknowledgement($companyId, $accountingPeriodId, true, 'test');
             $harness->assertSame(true, (bool)($acknowledged['success'] ?? false));
             $posted = $service->postClose($companyId, $accountingPeriodId, 'test');
@@ -363,7 +369,7 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
 
 function retainedEarningsCloseRequireSchema(GeneratedServiceClassTestHarness $harness): void
 {
-    foreach (['companies', 'accounting_periods', 'journals', 'journal_lines', 'journal_entry_metadata', 'nominal_accounts', 'year_end_reviews', 'year_end_review_acknowledgements', 'year_end_audit_log'] as $table) {
+    foreach (['companies', 'accounting_periods', 'journals', 'journal_lines', 'journal_entry_metadata', 'nominal_accounts', 'year_end_reviews', 'year_end_review_acknowledgements', 'year_end_audit_log', 'dividend_reserve_classification_rules', 'dividend_reserve_review_snapshots'] as $table) {
         if (!InterfaceDB::tableExists($table)) {
             $harness->skip($table . ' table is not available.');
         }
@@ -371,6 +377,12 @@ function retainedEarningsCloseRequireSchema(GeneratedServiceClassTestHarness $ha
 
     foreach (['basis_version', 'basis_hash', 'basis_json'] as $column) {
         if (!InterfaceDB::columnExists('year_end_review_acknowledgements', $column)) {
+            $harness->skip($column . ' column is not available.');
+        }
+    }
+
+    foreach (['as_at_date', 'brought_forward_distributable_reserves', 'dividends_declared', 'closing_distributable_reserves'] as $column) {
+        if (!InterfaceDB::columnExists('dividend_reserve_review_snapshots', $column)) {
             $harness->skip($column . ' column is not available.');
         }
     }
@@ -379,7 +391,7 @@ function retainedEarningsCloseRequireSchema(GeneratedServiceClassTestHarness $ha
 
 function retainedEarningsCloseRequireDepreciationSchema(GeneratedServiceClassTestHarness $harness): void
 {
-    foreach (['companies', 'accounting_periods', 'journals', 'journal_lines', 'journal_entry_metadata', 'nominal_accounts', 'year_end_reviews', 'year_end_review_acknowledgements', 'year_end_audit_log', 'asset_register', 'asset_depreciation_entries'] as $table) {
+    foreach (['companies', 'accounting_periods', 'journals', 'journal_lines', 'journal_entry_metadata', 'nominal_accounts', 'year_end_reviews', 'year_end_review_acknowledgements', 'year_end_audit_log', 'asset_register', 'asset_depreciation_entries', 'dividend_reserve_classification_rules', 'dividend_reserve_review_snapshots'] as $table) {
         if (!InterfaceDB::tableExists($table)) {
             $harness->skip($table . ' table is not available.');
         }
@@ -389,6 +401,44 @@ function retainedEarningsCloseRequireDepreciationSchema(GeneratedServiceClassTes
         if (!InterfaceDB::columnExists('year_end_review_acknowledgements', $column)) {
             $harness->skip($column . ' column is not available.');
         }
+    }
+
+    foreach (['as_at_date', 'brought_forward_distributable_reserves', 'dividends_declared', 'closing_distributable_reserves'] as $column) {
+        if (!InterfaceDB::columnExists('dividend_reserve_review_snapshots', $column)) {
+            $harness->skip($column . ' column is not available.');
+        }
+    }
+}
+
+function retainedEarningsCloseSaveReserveReview(array $fixture): void
+{
+    $period = InterfaceDB::fetchOne(
+        'SELECT period_end FROM accounting_periods WHERE id = :id',
+        ['id' => (int)$fixture['accounting_period_id']]
+    );
+    $review = (new \eel_accounts\Service\DividendReserveClassificationService())
+        ->fetchReviewContext(
+            (int)$fixture['company_id'],
+            (int)$fixture['accounting_period_id'],
+            (string)($period['period_end'] ?? '')
+        );
+    $treatments = [];
+    foreach ((array)($review['rows'] ?? []) as $row) {
+        $nominalId = (int)($row['nominal_account_id'] ?? 0);
+        if ($nominalId > 0) {
+            $treatments[(string)$nominalId] = (string)($row['treatment'] ?? 'unknown');
+        }
+    }
+
+    $result = (new \eel_accounts\Service\DividendReserveClassificationService())->saveReview(
+        (int)$fixture['company_id'],
+        (int)$fixture['accounting_period_id'],
+        $treatments,
+        'test',
+        (string)($period['period_end'] ?? '')
+    );
+    if (empty($result['success'])) {
+        throw new \RuntimeException(implode('; ', (array)($result['errors'] ?? ['Reserve review fixture could not be saved.'])));
     }
 }
 

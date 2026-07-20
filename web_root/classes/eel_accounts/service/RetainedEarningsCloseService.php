@@ -159,6 +159,8 @@ final class RetainedEarningsCloseService
             $periodEnd,
             $prepaymentPreview
         );
+        $reserveReview = (new \eel_accounts\Service\DividendReserveClassificationService())
+            ->fetchReviewContext($companyId, $accountingPeriodId, $periodEnd);
 
         $summary = [
             'opening_equity' => round($openingEquity, 2),
@@ -194,6 +196,7 @@ final class RetainedEarningsCloseService
             'profit_and_loss_rows' => $plRows,
             'journal_lines' => $journalLines,
             'existing_journal' => $existingJournal,
+            'reserve_review' => $reserveReview,
             'prior_period_dependency' => $priorPeriodDependency,
             'warnings' => empty($priorPeriodDependency['satisfied'])
                 ? [(string)($priorPeriodDependency['detail'] ?? 'Complete and lock the prior accounting period before closing retained earnings.')]
@@ -235,6 +238,14 @@ final class RetainedEarningsCloseService
                 'success' => false,
                 'status' => 422,
                 'errors' => [(string)(($context['prior_period_dependency'] ?? [])['detail'] ?? 'Complete and lock the prior accounting period before approving retained earnings.')],
+                'context' => $context,
+            ];
+        }
+        if (empty((($context['reserve_review'] ?? [])['snapshot_current'] ?? false))) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'errors' => ['Complete and save the Distributable Profit Review before approving Profit & Loss.'],
                 'context' => $context,
             ];
         }
@@ -333,8 +344,51 @@ final class RetainedEarningsCloseService
             ->buildBasis('retained_earnings_close_confirmation', [
                 'summary' => $this->stableAcknowledgementSummary((array)($context['summary'] ?? [])),
                 'journal_lines' => (array)($context['journal_lines'] ?? []),
+                'reserve_review' => $this->stableReserveReview((array)($context['reserve_review'] ?? [])),
                 'prior_period_dependency' => (array)($context['prior_period_dependency'] ?? []),
             ]);
+    }
+
+    private function stableReserveReview(array $review): array
+    {
+        $summary = (array)($review['summary'] ?? []);
+        $stableSummary = array_intersect_key($summary, array_flip([
+            'brought_forward_distributable_reserves',
+            'ledger_profit_loss',
+            'realised_profit_amount',
+            'realised_loss_amount',
+            'unrealised_gain_amount',
+            'unrealised_loss_amount',
+            'non_distributable_amount',
+            'capital_amount',
+            'tax_charge_amount',
+            'dividend_distribution_amount',
+            'unknown_amount',
+            'distributable_current_profit',
+            'dividends_declared',
+            'closing_distributable_reserves',
+        ]));
+
+        return [
+            'available' => !empty($review['available']),
+            'status' => (string)($review['status'] ?? 'unavailable'),
+            'as_at_date' => (string)($review['as_at_date'] ?? ''),
+            'source_hash' => (string)($review['source_hash'] ?? ''),
+            'snapshot_current' => !empty($review['snapshot_current']),
+            'summary' => $stableSummary,
+            'rows' => array_map(
+                static fn(array $row): array => [
+                    'nominal_account_id' => (int)($row['nominal_account_id'] ?? 0),
+                    'profit_effect' => number_format((float)($row['profit_effect'] ?? 0), 2, '.', ''),
+                    'default_treatment' => (string)($row['default_treatment'] ?? ''),
+                    'treatment' => (string)($row['treatment'] ?? ''),
+                ],
+                array_values(array_filter(
+                    (array)($review['rows'] ?? []),
+                    static fn(mixed $row): bool => is_array($row)
+                ))
+            ),
+        ];
     }
 
     private function stableAcknowledgementSummary(array $summary): array

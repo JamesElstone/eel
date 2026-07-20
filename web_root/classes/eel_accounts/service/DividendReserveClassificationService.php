@@ -110,6 +110,15 @@ final class DividendReserveClassificationService
         }
 
         (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'change the reserve review for this period');
+        $profitLossClose = (new RetainedEarningsCloseService())->fetchContext($companyId, $accountingPeriodId);
+        if (!empty($profitLossClose['acknowledged'])) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'errors' => ['Revoke the Profit & Loss approval before changing reserve classifications.'],
+                'context' => $this->fetchReviewContext($companyId, $accountingPeriodId, $asAtDate),
+            ];
+        }
         $context = $this->fetchReviewContext($companyId, $accountingPeriodId, $asAtDate);
         if (empty($context['available'])) {
             return $context + ['success' => false];

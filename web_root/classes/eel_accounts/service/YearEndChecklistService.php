@@ -928,6 +928,15 @@ final class YearEndChecklistService
         if ($acknowledged && !is_array($basis)) {
             return ['success' => false, 'errors' => ['The current live review basis could not be verified. Refresh the related workflow and try again.']];
         }
+        $basisFacts = (array)($basis['facts'] ?? $basis);
+        if ($acknowledged
+            && $checkCode === 'retained_earnings_close_confirmation'
+            && empty((($basisFacts['reserve_review'] ?? [])['snapshot_current'] ?? false))) {
+            return [
+                'success' => false,
+                'errors' => ['Complete and save the Distributable Profit Review before approving Profit & Loss.'],
+            ];
+        }
 
         $service = $this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService();
         $existing = $service->fetch($companyId, $accountingPeriodId, $checkCode);
@@ -1330,16 +1339,16 @@ final class YearEndChecklistService
         );
         $retainedEarningsConfirmationCheck = $this->applyReviewAcknowledgement($this->makeCheck(
             'retained_earnings_close_confirmation',
-            'Retained earnings close confirmation',
+            'Profit & Loss confirmation',
             'fail',
             $retainedEarningsCloseAvailable && $priorPeriodDependencySatisfied ? 'fail' : 'fail',
             !$retainedEarningsCloseAvailable
                 ? (string)(($retainedEarningsClose['errors'] ?? [])[0] ?? 'Retained earnings close preview is not available.')
                 : (!$priorPeriodDependencySatisfied
                     ? (string)($priorPeriodDependency['detail'] ?? 'Complete and lock the prior accounting period first.')
-                    : 'Review and agree how current profit/loss will be carried into retained earnings before locking.'),
+                    : 'Review and agree the current Profit & Loss, including distributable reserve classifications, before locking.'),
             $retainedEarningsCloseAvailable ? 'Pending' : '',
-            '?page=profit_loss&show_card=year_end_retained_earnings',
+            '?page=profit_loss&show_card=year_end_profit_loss_confirm',
             !$retainedEarningsCloseAvailable || !$priorPeriodDependencySatisfied
                 ? null
                 : $retainedEarningsService->acknowledgementBasisForContext($retainedEarningsClose)
@@ -1354,7 +1363,7 @@ final class YearEndChecklistService
                 ? 'Current profit/loss has not yet been carried into retained earnings for this period.'
                 : 'Opening equity, direct equity movements, current profit/loss, and closing equity look internally consistent.',
             $this->money($settings, $financialStatements['retained_earnings']['unexplained_movement'] ?? 0),
-            '?page=profit_loss&show_card=year_end_retained_earnings'
+            '?page=profit_loss&show_card=year_end_profit_loss_confirm'
         );
         $retainedEarningsMovementCheck['formula_text'] = $this->balanceEquationText(
             $settings,

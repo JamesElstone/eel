@@ -120,4 +120,37 @@ $harness->run(_reserve_reviewCard::class, static function (GeneratedServiceClass
         $harness->assertTrue(str_contains($html, 'Changes are recorded automatically.'));
         $harness->assertTrue(!str_contains($html, '>Save Review</button>'));
     });
+
+    $harness->check(_reserve_reviewCard::class, 'locks reserve classifications after current profit and loss approval', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => [
+                'id' => 7,
+                'accounting_period_id' => 22,
+                'settings' => ['default_currency_symbol' => '&#163;'],
+            ],
+            'dividends' => [
+                'profit_loss_approval' => ['current' => true],
+                'reserve_review' => [
+                    'available' => true,
+                    'status' => 'current',
+                    'status_label' => 'Reserve review current',
+                    'as_at_date' => '2026-07-04',
+                    'summary' => [],
+                    'treatments' => ['realised_profit'],
+                    'rows' => [[
+                        'nominal_account_id' => 101,
+                        'nominal_code' => '4000',
+                        'nominal_name' => 'Sales',
+                        'profit_effect' => 800.00,
+                        'default_treatment' => 'realised_profit',
+                        'treatment' => 'realised_profit',
+                    ]],
+                ],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'name="treatment[101]" disabled'));
+        $harness->assertTrue(str_contains($html, 'Revoke Profit &amp; Loss approval before changing reserve classifications.'));
+        $harness->assertTrue(str_contains($html, 'Reserve classifications are included in that approval and are read only until the approval is revoked.'));
+    });
 });

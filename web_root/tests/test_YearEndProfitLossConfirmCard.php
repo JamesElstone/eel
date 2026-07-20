@@ -12,9 +12,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 
-$harness->run(_year_end_retained_earningsCard::class, static function (GeneratedServiceClassTestHarness $harness, _year_end_retained_earningsCard $card): void {
-    $harness->check(_year_end_retained_earningsCard::class, 'renders layman close wording and acknowledgement', static function () use ($harness, $card): void {
-        $html = $card->render(yearEndRetainedEarningsCardContext(false, false));
+$harness->run(_year_end_profit_loss_confirmCard::class, static function (GeneratedServiceClassTestHarness $harness, _year_end_profit_loss_confirmCard $card): void {
+    $harness->check(_year_end_profit_loss_confirmCard::class, 'renders layman close wording and acknowledgement', static function () use ($harness, $card): void {
+        $html = $card->render(yearEndProfitLossConfirmCardContext(false, false));
 
         $harness->assertSame(true, str_contains($html, 'Retained Earnings'));
         $harness->assertSame(true, str_contains($html, 'carry current profit/loss into 3000 Retained Earnings'));
@@ -29,8 +29,8 @@ $harness->run(_year_end_retained_earningsCard::class, static function (Generated
         $harness->assertSame(false, str_contains($html, 'preview_deferred'));
     });
 
-    $harness->check(_year_end_retained_earningsCard::class, 'renders agreement details and revoke action when current', static function () use ($harness, $card): void {
-        $html = $card->render(yearEndRetainedEarningsCardContext(true, false));
+    $harness->check(_year_end_profit_loss_confirmCard::class, 'renders agreement details and revoke action when current', static function () use ($harness, $card): void {
+        $html = $card->render(yearEndProfitLossConfirmCardContext(true, false));
 
         $harness->assertSame(true, str_contains($html, 'Approved at 2026-07-06 10:00:00 by Fixture Reviewer using the web_app.'));
         $harness->assertSame(true, str_contains($html, 'name="retained_earnings_close_acknowledgement" value="0"'));
@@ -38,16 +38,16 @@ $harness->run(_year_end_retained_earningsCard::class, static function (Generated
         $harness->assertSame(false, str_contains($html, 'checked required'));
     });
 
-    $harness->check(_year_end_retained_earningsCard::class, 'warns when agreement is stale', static function () use ($harness, $card): void {
-        $html = $card->render(yearEndRetainedEarningsCardContext(true, true));
+    $harness->check(_year_end_profit_loss_confirmCard::class, 'warns when agreement is stale', static function () use ($harness, $card): void {
+        $html = $card->render(yearEndProfitLossConfirmCardContext(true, true));
 
         $harness->assertSame(true, str_contains($html, 'Figures have changed since the last agreement.'));
         $harness->assertSame(true, str_contains($html, 'Review required — underlying data changed.'));
         $harness->assertSame(true, str_contains($html, 'type="submit" disabled title="Complete and lock the prior accounting period before closing retained earnings."'));
     });
 
-    $harness->check(_year_end_retained_earningsCard::class, 'does not present an unbalanced balance sheet as an equality', static function () use ($harness, $card): void {
-        $html = $card->render(yearEndRetainedEarningsCardContext(false, false, [
+    $harness->check(_year_end_profit_loss_confirmCard::class, 'does not present an unbalanced balance sheet as an equality', static function () use ($harness, $card): void {
+        $html = $card->render(yearEndProfitLossConfirmCardContext(false, false, [
             'summary' => [
                 'opening_equity' => 0,
                 'current_profit_loss' => -275.50,
@@ -65,7 +65,7 @@ $harness->run(_year_end_retained_earningsCard::class, static function (Generated
         $harness->assertSame(true, str_contains($html, 'difference -£ 75.50'));
     });
 
-    $harness->check(_year_end_retained_earningsCard::class, 'reuses the profit and loss corporation tax provision', static function () use ($harness, $card): void {
+    $harness->check(_year_end_profit_loss_confirmCard::class, 'reuses the profit and loss corporation tax provision', static function () use ($harness, $card): void {
         $services = $card->services();
         $params = (array)($services[0]['params'] ?? []);
 
@@ -81,7 +81,7 @@ $harness->run(_year_end_retained_earningsCard::class, static function (Generated
     });
 });
 
-function yearEndRetainedEarningsCardContext(bool $acknowledged, bool $stale, array $closeOverrides = []): array
+function yearEndProfitLossConfirmCardContext(bool $acknowledged, bool $stale, array $closeOverrides = []): array
 {
     $close = array_merge([
         'available' => true,
@@ -143,7 +143,7 @@ function yearEndRetainedEarningsCardContext(bool $acknowledged, bool $stale, arr
             'settings' => ['default_currency_symbol' => '&#163;'],
         ],
         'services' => [
-            'yearEndRetainedEarnings' => $close,
+            'yearEndProfitLossConfirm' => $close,
         ],
     ];
 }

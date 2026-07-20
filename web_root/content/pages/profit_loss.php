@@ -39,7 +39,7 @@ final class _profit_loss extends PageContextFramework
             'pl_net_profit_bridge',
             'pl_source_coverage',
             'reserve_review',
-            'year_end_retained_earnings',
+            'year_end_profit_loss_confirm',
         ];
     }
 
@@ -74,9 +74,9 @@ final class _profit_loss extends PageContextFramework
                 ],
             ],
             [
-                'tab' => 'Year End Confirmation',
+                'tab' => 'Profit & Loss Confirmation',
                 'cards' => [
-                    'year_end_retained_earnings',
+                    'year_end_profit_loss_confirm',
                 ],
             ],
         ];

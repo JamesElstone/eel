@@ -7,25 +7,25 @@
  */
 declare(strict_types=1);
 
-final class _year_end_retained_earningsCard extends CardBaseFramework
+final class _year_end_profit_loss_confirmCard extends CardBaseFramework
 {
     private ?\eel_accounts\Service\CompanySettingsService $companySettingsService = null;
 
     public function key(): string
     {
-        return 'year_end_retained_earnings';
+        return 'year_end_profit_loss_confirm';
     }
 
     public function title(): string
     {
-        return 'Retained Earnings';
+        return 'Profit & Loss Confirmation';
     }
 
     public function services(): array
     {
         return [
             [
-                'key' => 'yearEndRetainedEarnings',
+                'key' => 'yearEndProfitLossConfirm',
                 'service' => \eel_accounts\Service\RetainedEarningsCloseService::class,
                 'method' => 'fetchContext',
                 'params' => [
@@ -50,7 +50,7 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $close = (array)($context['services']['yearEndRetainedEarnings'] ?? []);
+        $close = (array)($context['services']['yearEndProfitLossConfirm'] ?? []);
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $companySettings = (array)($company['settings'] ?? []);
@@ -58,7 +58,7 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
         $accountingPeriodId = (int)($accountingPeriod['id'] ?? ($company['accounting_period_id'] ?? 0));
 
         if (empty($close['available'])) {
-            return '<section class="settings-stack" id="year-end-retained-earnings">' . $this->renderErrors((array)($close['errors'] ?? ['Retained earnings close preview is not available.'])) . '</section>';
+            return '<section class="settings-stack" id="year-end-profit-loss-confirm">' . $this->renderErrors((array)($close['errors'] ?? ['Profit & Loss confirmation is not available.'])) . '</section>';
         }
 
         $summary = (array)($close['summary'] ?? []);
@@ -83,8 +83,13 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
             ? '<div class="helper">Figures have changed since the last agreement. Review them and agree again before locking.</div>'
             : '';
         $acknowledgement = (array)($close['acknowledgement'] ?? []);
-        $canAcknowledge = !empty($close['can_acknowledge']);
+        $reserveReview = (array)($close['reserve_review'] ?? []);
+        $reserveReviewCurrent = !empty($reserveReview['snapshot_current']);
+        $canAcknowledge = !empty($close['can_acknowledge']) && $reserveReviewCurrent;
         $blockedReason = (string)(($close['prior_period_dependency'] ?? [])['detail'] ?? '');
+        if (!empty($close['can_acknowledge']) && !$reserveReviewCurrent) {
+            $blockedReason = 'Complete and save the Distributable Profit Review before approving Profit & Loss.';
+        }
         $dependencyHtml = '';
         foreach ((array)($close['warnings'] ?? []) as $warning) {
             $dependencyHtml .= '<div class="helper"><span class="badge warning">Prior period</span> ' . HelperFramework::escape((string)$warning) . '</div>';
@@ -101,7 +106,11 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
             $blockedReason
         );
 
-        return '<section class="settings-stack" id="year-end-retained-earnings">
+        $reserveReviewHtml = $reserveReviewCurrent
+            ? '<div class="helper"><span class="badge success">Distributable Profit Review included</span> The approved Profit & Loss basis includes the current reserve classifications as at ' . HelperFramework::escape((string)($reserveReview['as_at_date'] ?? '-')) . '.</div>'
+            : '<div class="helper"><span class="badge warning">Distributable Profit Review required</span> Review and save the reserve classifications before approving Profit & Loss.</div>';
+
+        return '<section class="settings-stack" id="year-end-profit-loss-confirm">
             <div class="helper">When the period is locked, the app will carry current profit/loss into 3000 Retained Earnings and reset income and expense nominal balances for the next period (clear them). Original transactions, expense claims, and source journals are not changed.</div>
             <div class="month-grid">
                 ' . $this->summaryCard('Opening equity', $this->money($companySettings, $summary['opening_equity'] ?? 0)) . '
@@ -112,7 +121,7 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
                 ' . $this->summaryCard('Retained earnings movement', $this->money($companySettings, $summary['retained_earnings_movement'] ?? 0)) . '
             </div>
             <div class="helper">' . HelperFramework::escape($this->balanceEquation($companySettings, $summary)) . '</div>
-            ' . $dependencyHtml . $pendingDepreciationHtml . $pendingPrepaymentHtml . $staleHtml . $existingHtml . '
+            ' . $dependencyHtml . $reserveReviewHtml . $pendingDepreciationHtml . $pendingPrepaymentHtml . $staleHtml . $existingHtml . '
             <div class="table-scroll panel-soft">
                 <table>
                     <thead><tr><th>Nominal</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead>
@@ -126,7 +135,7 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
     private function acknowledgementHtml(bool $acknowledged, string $state, string $acknowledgedAt, string $acknowledgedBy, string $note, int $companyId, int $accountingPeriodId, bool $canAcknowledge, string $blockedReason): string
     {
         return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
-            'subject' => 'retained earnings close',
+            'subject' => 'profit and loss close, including the distributable profit review',
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
             'acknowledged' => $acknowledged,

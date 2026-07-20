@@ -54,19 +54,21 @@ final class S455ReviewService
 
         $evidence = $closeCompanyStatus === 'no'
             ? ['rows' => [], 'errors' => []]
-            : $this->cashEvidence($companyId, $windowEnd, $cutoff);
+            : $this->cashEvidence($companyId, (string)$period['period_start'], $windowEnd, $cutoff);
         $lotsByParty = [];
         $liabilitiesByParty = [];
         $movements = [];
         $errors = (array)$evidence['errors'];
         foreach ((array)$evidence['rows'] as $row) {
             $partyId = (int)($row['party_id'] ?? 0);
+            $date = (string)$row['txn_date'];
             if ($partyId <= 0) {
-                $errors[] = 'Loan transaction #' . (int)($row['transaction_id'] ?? 0) . ' is not linked to a confirmed ownership party.';
+                if ($date >= (string)$period['period_start']) {
+                    $errors[] = 'Loan transaction #' . (int)($row['transaction_id'] ?? 0) . ' is not linked to a confirmed ownership party.';
+                }
                 continue;
             }
             $amount = round((float)($row['amount'] ?? 0), 2);
-            $date = (string)$row['txn_date'];
             $kind = (string)$row['cash_direction'];
             $settled = 0.0;
             if ($kind === 'payment') {
@@ -283,7 +285,7 @@ final class S455ReviewService
         return ['success' => true, 'errors' => [], 'ct_period_ids' => $frozen, 'locked_at' => (string)$lock['locked_at']];
     }
 
-    private function cashEvidence(int $companyId, string $windowEnd, string $cutoff): array
+    private function cashEvidence(int $companyId, string $periodStart, string $windowEnd, string $cutoff): array
     {
         $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
         $participatorIds = array_values(array_filter([
@@ -338,6 +340,7 @@ final class S455ReviewService
              FROM journals j
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              WHERE j.company_id = ? AND j.is_posted = 1
+               AND j.journal_date >= ?
                AND j.journal_date <= ?
                AND j.created_at <= ?
                AND j.updated_at <= ?
@@ -347,7 +350,13 @@ final class S455ReviewService
                    SELECT 1 FROM journal_entry_metadata jem
                    WHERE jem.journal_id = j.id AND jem.journal_tag = \'director_loan_offset\'
                )',
-            array_merge([$companyId, min(substr($cutoff, 0, 10), $windowEnd), $cutoff, $cutoff], $allIds)
+            array_merge([
+                $companyId,
+                $periodStart,
+                min(substr($cutoff, 0, 10), $windowEnd),
+                $cutoff,
+                $cutoff,
+            ], $allIds)
         );
         if ($unsupportedCount > 0) {
             $errors[] = $unsupportedCount . ' non-cash or unsupported loan movement(s) cannot be used in the v1 s455 calculation.';

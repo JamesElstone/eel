@@ -111,6 +111,12 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         $periodEndDisplay = $periodEndDate instanceof \DateTimeImmutable && $periodEndDate->format('Y-m-d') === $periodEnd
             ? $periodEndDate->format($dateFormat)
             : 'the accounting period end';
+        $formatCompanyDate = static function (string $date) use ($dateFormat): string {
+            $parsedDate = \DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+            return $parsedDate instanceof \DateTimeImmutable && $parsedDate->format('Y-m-d') === $date
+                ? $parsedDate->format($dateFormat)
+                : $date;
+        };
         $tradingEvidence = (array)($result['trading_status_evidence'] ?? []);
         $hasTradingEvidence = !empty($tradingEvidence['has_previous_trading_evidence']);
         $tradingAnswers = (array)($result['trading_status_answers'] ?? []);
@@ -155,22 +161,45 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         $smallCompaniesLabel = $smallCompaniesAvailable
             ? (!empty($smallCompanies['qualifies']) ? 'Yes' : 'No')
             : 'Not available';
-        $smallCompaniesDetail = $smallCompaniesAvailable
-            ? (new \eel_accounts\Service\IxbrlMicroEntityEligibilityService())->detail($smallCompanies)
-            : (string)($smallCompanies['error'] ?? 'Enter the accounting figures and refresh to calculate this status.');
-        $thresholdPeriod = (array)($smallCompanies['threshold_effective_period'] ?? []);
-        $thresholdMeta = '';
+        $smallCompaniesSummary = '';
+        if ($smallCompaniesAvailable) {
+            $metrics = (array)($smallCompanies['metrics'] ?? []);
+            $thresholds = (array)($smallCompanies['thresholds'] ?? []);
+            $baseThresholds = (array)($smallCompanies['base_thresholds'] ?? []);
+            $passes = (array)($smallCompanies['passes'] ?? []);
+            $thresholdPeriod = (array)($smallCompanies['threshold_effective_period'] ?? []);
+            $money = static fn(mixed $value): string => '£' . number_format((float)$value, 2);
+            $testValue = static function (string $key) use ($metrics, $thresholds, $passes, $money): string {
+                return $money($metrics[$key] ?? 0)
+                    . ' / ' . $money($thresholds[$key] ?? 0) . ' (' . (!empty($passes[$key]) ? 'Pass' : 'Fail') . ')';
+            };
+            $sourceUrl = trim((string)($smallCompanies['threshold_source'] ?? ''));
+            $source = $sourceUrl === ''
+                ? 'Not recorded'
+                : '<a class="button" href="' . HelperFramework::escape($sourceUrl) . '" target="_blank" rel="noopener noreferrer">GOV.UK guidance</a>';
+            $thresholdStart = trim((string)($thresholdPeriod['start'] ?? ''));
+            $thresholdEnd = trim((string)($thresholdPeriod['end'] ?? ''));
+            $thresholdDates = $formatCompanyDate($thresholdStart) . ' to '
+                . ($thresholdEnd !== '' ? $formatCompanyDate($thresholdEnd) : 'Current');
+            $checkedAt = $formatCompanyDate(trim((string)($smallCompanies['threshold_source_checked_at'] ?? '')));
+            $smallCompaniesSummary = '<div class="ixbrl-small-companies-detail table-scroll"><table><thead><tr>
+                <th>FRS 105 tests</th><th>Turnover</th><th>Balance sheet total</th><th>Average employees</th><th>Source</th><th>Validity Period</th><th>Last Checked</th>
+            </tr></thead><tbody><tr>
+                <td>' . (int)($smallCompanies['pass_count'] ?? 0) . ' of 3 passed; all required</td>
+                <td>' . HelperFramework::escape($testValue('turnover')) . '<div class="helper">Base ' . HelperFramework::escape($money($baseThresholds['turnover'] ?? 0)) . '; ' . (int)($smallCompanies['period_days'] ?? 0) . ' days</div></td>
+                <td>' . HelperFramework::escape($testValue('balance_sheet_total')) . '</td>
+                <td>' . (int)($metrics['employees'] ?? 0) . ' / ' . (int)($thresholds['employees'] ?? 0) . ' (' . (!empty($passes['employees']) ? 'Pass' : 'Fail') . ')</td>
+                <td>' . $source . '</td>
+                <td>' . HelperFramework::escape($thresholdDates) . '</td>
+                <td>' . HelperFramework::escape($checkedAt) . '</td>
+            </tr></tbody></table></div>';
+        } else {
+            $smallCompaniesSummary = '<div class="helper">' . HelperFramework::escape((string)($smallCompanies['error'] ?? 'Enter the accounting figures and refresh to calculate this status.')) . '</div>';
+        }
         $updatedAt = trim((string)($disclosures['updated_at'] ?? ''));
         $updatedBy = trim((string)($result['updated_by_display_name'] ?? ''));
         $updatedAtDisplay = $updatedAt !== '' ? $updatedAt : 'Not yet saved';
         $updatedByDisplay = $updatedBy !== '' ? $updatedBy : 'Not yet saved';
-        if ($smallCompaniesAvailable) {
-            $thresholdMeta = '<div class="helper">Source: ' . HelperFramework::escape((string)($smallCompanies['threshold_source'] ?? ''))
-                . '; effective from ' . HelperFramework::escape((string)($thresholdPeriod['start'] ?? ''))
-                . ' to ' . HelperFramework::escape((string)($thresholdPeriod['end'] ?? 'current'))
-                . '; checked ' . HelperFramework::escape((string)($smallCompanies['threshold_source_checked_at'] ?? '')) . '.</div>';
-        }
-
         return '<div class="settings-stack">
             <form method="post" action="?page=disclosures" data-ajax="true" data-ixbrl-trading-form="true">
             <input type="hidden" name="card_action" value="Ixbrl">
@@ -205,7 +234,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                     <div class="form-row full">
                         ' . $this->yesNo(
                             'is_still_trading',
-                            'Was the company still trading on ' . ($periodEnd !== '' ? $periodEnd : 'the accounting period end') . '?',
+                            'Was the company still trading on ' . $periodEndDisplay . '?',
                             $tradingAnswers['is_still_trading'] ?? null,
                             $controlDisabled
                         ) . '
@@ -249,24 +278,21 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                             <span class="badge ' . ($smallCompaniesAvailable && !empty($smallCompanies['qualifies']) ? 'success' : 'danger') . '">' . HelperFramework::escape($smallCompaniesLabel) . '</span>
                         </div>
                         <div class="ixbrl-small-companies-detail">
-                            <div class="helper">Calculated from the accounting-period turnover, balance-sheet total, and average employees; all three FRS 105 tests are required. This result is read-only.</div>
-                            <div class="helper">' . HelperFramework::escape($smallCompaniesDetail) . '</div>
-                            ' . $thresholdMeta . '
+                            ' . $smallCompaniesSummary . '
                         </div>
                         ' . $this->yesNo('audit_exempt_section_477', 'Is the company claiming audit exemption under section 477 of the Companies Act 2006?', $display['audit_exempt_section_477'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
                         ' . $this->yesNo('directors_acknowledge_responsibilities', 'Do the directors acknowledge their Companies Act responsibilities for the records and accounts?', $display['directors_acknowledge_responsibilities'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
-                        ' . $this->yesNo('members_have_not_required_audit', 'Do the members confirm that no audit is required under section 476?', $display['members_have_not_required_audit'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
+                        ' . $this->yesNo('members_have_not_required_audit', 'Do the relevant business voting parties confirm that no audit is required under section 476?', $display['members_have_not_required_audit'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
                     </section>
                     <section class="panel-soft">
                         <h4 class="card-title">Eligibility and accounting basis</h4>
-                        <div class="helper">Confirm both answers directly; they are not inferred or prefilled from Companies House. The current profile requires Yes. A No answer is saved and audited, but blocks the facts build because that accounts profile is not yet supported.</div>
+                        <div class="helper ixbrl-eligibility-helper">Sending of Accounts and Returns using this software will be blocked if either of the following two questions are No, as they are not supported.</div>
                         ' . $this->yesNo('micro_entity_eligibility_confirmed', 'Is the company eligible to prepare these accounts as a micro-entity?', $display['micro_entity_eligibility_confirmed'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
                         ' . $this->yesNo('going_concern_basis_appropriate', 'Is the going-concern basis appropriate for these accounts?', $display['going_concern_basis_appropriate'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
                     </section>
                     <section class="panel-soft">
-                        <h4 class="card-title">FRS 105 Notes</h4>
-                        <div class="helper">Answer the manual questions explicitly. Director advances and credits are calculated from the chronological Director Loan Statement; director guarantees are confirmed separately. Positive disclosures for the other unsupported categories still block facts and iXBRL generation.</div>
-                        ' . $this->yesNo('has_material_off_balance_sheet_arrangements', 'Are there any material off-balance-sheet arrangements requiring disclosure?', $display['has_material_off_balance_sheet_arrangements'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
+                        <h4 class="card-title ixbrl-frs105-notes-title">FRS 105 Notes</h4>
+                        ' . $this->yesNo('has_material_off_balance_sheet_arrangements', 'Are there any material off-balance-sheet arrangements requiring disclosure?', $display['has_material_off_balance_sheet_arrangements'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId, 'Director and Participant Advances are calculated automatically from transactions. This is confirming no other legal agreements exist which create a liability.') . '
                         ' . $this->directorLoanDisclosure($directorLoanDisclosure) . '
                         ' . $this->yesNo('has_director_advances_credits_or_guarantees', 'Were there any director guarantees requiring disclosure?', $display['has_director_advances_credits_or_guarantees'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
                         ' . $this->yesNo('has_financial_commitments_guarantees_or_contingencies', 'Are there any financial commitments, guarantees or contingencies requiring disclosure?', $display['has_financial_commitments_guarantees_or_contingencies'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
@@ -302,9 +328,9 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         }
         $disabled = empty($status['can_approve']) ? ' disabled aria-disabled="true"' : '';
 
-        return '<section class="panel-soft">
-            <div class="status-head"><h3 class="card-title">Filing basis approval</h3><span class="badge ' . $badge . '">' . $label . '</span></div>
-            <div class="helper">' . HelperFramework::escape($detail) . '</div>' . $evidence . $errors . '
+        return '<section class="panel-soft ixbrl-approval-panel">
+            <div class="status-head"><h3 class="card-title">Disclosure Approval</h3><span class="badge ' . $badge . '">' . $label . '</span></div>
+            <div class="helper ixbrl-approval-detail">' . HelperFramework::escape($detail) . '</div>' . $evidence . $errors . '
             <form method="post" action="?page=disclosures" data-ajax="true">
                 <input type="hidden" name="card_action" value="Ixbrl">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
@@ -313,12 +339,13 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <div class="form-row"><label for="ixbrl_filing_approval_note">Approval note (optional)</label>
                     <textarea class="input" id="ixbrl_filing_approval_note" name="approval_note" rows="2"></textarea></div>
-                <div class="actions-row"><button class="button primary" type="submit"' . $disabled . '>Approve disclosures and build filing facts</button></div>
+                <div class="helper ixbrl-approval-confirmation">I here by confirm that the information on this page is a true and accurate reflection of this business.</div>
+                <div class="actions-row"><button class="button primary" type="submit"' . $disabled . '>I Approve this Statement of Fact</button></div>
             </form>
         </section>';
     }
 
-    private function yesNo(string $name, string $label, mixed $value, bool $disabled = false, bool $ajaxField = false, int $companyId = 0, int $accountingPeriodId = 0): string
+    private function yesNo(string $name, string $label, mixed $value, bool $disabled = false, bool $ajaxField = false, int $companyId = 0, int $accountingPeriodId = 0, string $helper = ''): string
     {
         $yesId = 'ixbrl_' . $name . '_yes';
         $noId = 'ixbrl_' . $name . '_no';
@@ -327,6 +354,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
 
         $fieldset = '<fieldset class="panel-soft">
             <legend>' . HelperFramework::escape($label) . '</legend>
+            ' . ($helper !== '' ? '<div class="helper ixbrl-question-helper">' . HelperFramework::escape($helper) . '</div>' : '') . '
             <div class="actions-row">
                 <label for="' . $yesId . '"><input id="' . $yesId . '" type="radio" name="' . HelperFramework::escape($name) . '" value="1" required' . ($normalised === 1 ? ' checked' : '') . ($disabled ? ' disabled aria-disabled="true"' : '') . $submitOnChange . '> Yes</label>
                 <label for="' . $noId . '"><input id="' . $noId . '" type="radio" name="' . HelperFramework::escape($name) . '" value="0" required' . ($normalised === 0 ? ' checked' : '') . ($disabled ? ' disabled aria-disabled="true"' : '') . $submitOnChange . '> No</label>
@@ -350,22 +378,20 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
     private function directorLoanDisclosure(array $summary): string
     {
         if (empty($summary['success'])) {
-            return '<section class="panel-soft"><h4 class="card-title">Director advances and credits requiring disclosure</h4><div class="helper">Unable to calculate the chronological Director Loan Statement.</div></section>';
+            return '<fieldset class="panel-soft"><legend>Director advances and credits requiring disclosure</legend><div class="helper">Unable to calculate the chronological Director Loan Statement.</div></fieldset>';
         }
 
         $hasExposure = !empty($summary['has_company_to_director_exposure']);
-        $label = $hasExposure ? 'Yes' : 'No';
-        $class = $hasExposure ? 'success' : 'muted';
         $detail = $hasExposure
             ? 'Maximum company-to-director exposure: £' . number_format((float)($summary['disclosures'][0]['maximum_company_to_director_exposure'] ?? 0), 2)
                 . '; advances: £' . number_format((float)($summary['total_advances'] ?? 0), 2)
                 . '; settled: £' . number_format((float)($summary['total_repayments'] ?? 0), 2) . '.'
             : 'The chronological running balance never became negative for any attributed director.';
 
-        return '<section class="panel-soft">
-            <div class="status-head"><h4 class="card-title">Director advances and credits requiring disclosure</h4><span class="badge ' . $class . '">' . $label . '</span></div>
+        return '<fieldset class="panel-soft">
+            <legend>Director advances and credits requiring disclosure</legend>
             <div class="helper">Automatically calculated from the chronological Director Loan Statement. ' . HelperFramework::escape($detail) . '</div>
-        </section>';
+        </fieldset>';
     }
 
     private function tradingStatusAnswers(string $status): array

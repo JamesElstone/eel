@@ -134,7 +134,7 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertSame('fetch', (string)($services[0]['method'] ?? ''));
 
         $html = $card->render([
-            'company' => ['id' => 49, 'accounting_period_id' => 79, 'settings' => ['date_format' => 'Y-m-d']],
+            'company' => ['id' => 49, 'accounting_period_id' => 79, 'settings' => ['date_format' => 'd/m/Y']],
             'services' => ['ixbrl_accounts_disclosures' => [
                 'available' => true,
                 'complete' => false,
@@ -170,6 +170,19 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
                     'sales_nominal_code' => '4000',
                     'sales_nominal_name' => 'Sales',
                 ],
+                'small_companies_regime' => [
+                    'available' => true,
+                    'qualifies' => true,
+                    'metrics' => ['turnover' => 125.00, 'balance_sheet_total' => 50.00, 'employees' => 1],
+                    'thresholds' => ['turnover' => 632000.00, 'balance_sheet_total' => 316000.00, 'employees' => 10],
+                    'base_thresholds' => ['turnover' => 632000.00],
+                    'passes' => ['turnover' => true, 'balance_sheet_total' => true, 'employees' => true],
+                    'pass_count' => 3,
+                    'period_days' => 365,
+                    'threshold_source' => 'https://example.test/frs105',
+                    'threshold_effective_period' => ['start' => '2013-09-30', 'end' => '2025-04-05'],
+                    'threshold_source_checked_at' => '2026-07-17',
+                ],
             ]],
         ]);
 
@@ -183,8 +196,8 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, 'value="1"'));
         $harness->assertTrue(str_contains($html, 'value="2025-05-29"'));
         $harness->assertTrue(str_contains($html, 'data-set-today-for="ixbrl_accounts_approval_date">Today</button>'));
-        $harness->assertTrue(str_contains($html, 'Was the company still trading on 2025-05-31?'));
-        $harness->assertTrue(str_contains($html, 'If a company is marked as not trading on 2025-05-31, it automatically calculates Never Traded versus No Longer Trading status based on any historical Sales posted.'));
+        $harness->assertTrue(str_contains($html, 'Was the company still trading on 31/05/2025?'));
+        $harness->assertTrue(str_contains($html, 'If a company is marked as not trading on 31/05/2025, it automatically calculates Never Traded versus No Longer Trading status based on any historical Sales posted.'));
         $harness->assertFalse(str_contains($html, 'Previous trading is evidenced automatically'));
         $harness->assertFalse(str_contains($html, 'Trading status is calculated from these answers'));
         $harness->assertTrue(str_contains($html, 'name="is_still_trading" value="1" required checked'));
@@ -198,7 +211,12 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, 'Not Dormant during Accounting Period'));
         $harness->assertTrue(str_contains($html, 'gross posted sales of £125.00 on Nominal 4000 Sales'));
         $harness->assertFalse(str_contains($html, 'name="entity_dormant"'));
-        $harness->assertTrue(str_contains($html, 'all three FRS 105 tests are required'));
+        $harness->assertTrue(str_contains($html, '<th>FRS 105 tests</th><th>Turnover</th><th>Balance sheet total</th><th>Average employees</th><th>Source</th><th>Validity Period</th><th>Last Checked</th>'));
+        $harness->assertTrue(str_contains($html, '3 of 3 passed; all required'));
+        $harness->assertTrue(str_contains($html, '£125.00 / £632,000.00 (Pass)'));
+        $harness->assertTrue(str_contains($html, '<a class="button" href="https://example.test/frs105"'));
+        $harness->assertTrue(str_contains($html, '<td>30/09/2013 to 05/04/2025</td>'));
+        $harness->assertTrue(str_contains($html, '<td>17/07/2026</td>'));
         $harness->assertTrue(str_contains($html, 'class="ixbrl-small-companies-detail"'));
         $harness->assertFalse(str_contains($html, 'name="prepared_under_small_companies_regime"'));
         $harness->assertTrue(str_contains($html, 'value="James Elstone"'));
@@ -217,7 +235,12 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, '>Approving Director</label>'));
         $harness->assertTrue(str_contains($html, 'actions-row actions-row-nowrap ixbrl-core-details-actions'));
         $harness->assertTrue(str_contains($html, 'FRS 105 Notes'));
-        $harness->assertTrue(str_contains($html, 'not inferred or prefilled from Companies House'));
+        $harness->assertTrue(str_contains($html, 'Sending of Accounts and Returns using this software will be blocked'));
+        $harness->assertTrue(str_contains($html, 'Director and Participant Advances are calculated automatically from transactions.'));
+        $harness->assertTrue(str_contains($html, '<legend>Director advances and credits requiring disclosure</legend>'));
+        $harness->assertTrue(str_contains($html, 'Disclosure Approval'));
+        $harness->assertTrue(str_contains($html, 'I here by confirm that the information on this page is a true and accurate reflection of this business.'));
+        $harness->assertTrue(str_contains($html, '>I Approve this Statement of Fact</button>'));
         foreach ([
             'micro_entity_eligibility_confirmed',
             'going_concern_basis_appropriate',

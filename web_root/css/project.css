@@ -45,6 +45,31 @@
   margin: 10px 0;
 }
 
+.card-body .ixbrl-eligibility-helper {
+  display: block;
+  margin: 16px 0;
+  color: var(--danger);
+}
+
+.card-body .ixbrl-question-helper {
+  margin-bottom: 16px;
+}
+
+.card-body .ixbrl-frs105-notes-title {
+  margin-bottom: 16px;
+}
+
+.ixbrl-approval-panel,
+.ixbrl-approval-panel form {
+  display: grid;
+  gap: 16px;
+}
+
+.card-body .ixbrl-approval-panel .ixbrl-approval-detail,
+.card-body .ixbrl-approval-panel .ixbrl-approval-confirmation {
+  margin: 0;
+}
+
 .form-row {
   padding-bottom: 0;
 }

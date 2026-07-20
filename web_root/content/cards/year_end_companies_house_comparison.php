@@ -68,13 +68,12 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             ? $review['acknowledgement']
             : null;
         $mismatchCount = (int)($review['mismatch_count'] ?? 0);
-        $ctPeriodFacts = (array)($review['ct_period_facts'] ?? []);
         $filing = (array)($context['services']['companiesHouseAccountsFiling'] ?? []);
 
         return '<section class="settings-stack" id="year-end-companies-house-comparison">
             ' . $this->renderAccountsFilingPanel($companyId, $accountingPeriodId, $filing, $access) . '
             ' . $this->renderComparisonPanel($comparison, $companySettings) . '
-            ' . $this->renderAcknowledgementPanel($companyId, $accountingPeriodId, $comparison, $acknowledgement, $access, $mismatchCount, $review, $ctPeriodFacts) . '
+            ' . $this->renderAcknowledgementPanel($companyId, $accountingPeriodId, $comparison, $acknowledgement, $access, $mismatchCount, $review) . '
         </section>';
     }
 
@@ -262,8 +261,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         ?array $acknowledgement,
         array $access,
         int $mismatchCount,
-        array $review,
-        array $ctPeriodFacts = []
+        array $review
     ): string {
         if (empty($comparison['available'])) {
             return $this->panel('Approval', '<div class="helper">A Companies House filing must be available before a mismatch can be approved.</div>');
@@ -274,16 +272,13 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         }
 
         $isAcknowledged = !empty($acknowledgement['current']);
-        $ctPeriodBlockers = $this->ctPeriodConfirmationBlockers($ctPeriodFacts);
-        $disabledReason = $ctPeriodBlockers !== []
-            ? implode(' ', $ctPeriodBlockers)
-            : (string)($review['acknowledgement_blocked_reason'] ?? '');
+        $disabledReason = (string)($review['acknowledgement_blocked_reason'] ?? '');
         $form = \eel_accounts\Renderer\YearEndApprovalRenderer::render([
             'subject' => 'Companies House comparison',
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
             'locked' => !empty($access['is_locked']),
-            'disabled' => empty($review['can_acknowledge']) || $ctPeriodBlockers !== [],
+            'disabled' => empty($review['can_acknowledge']),
             'disabledReason' => $disabledReason,
             'acknowledged' => $isAcknowledged,
             'acknowledgementState' => (string)($acknowledgement['state'] ?? ''),
@@ -306,31 +301,6 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             </div>
             ' . $form . '
         </section>';
-    }
-
-    private function ctPeriodConfirmationBlockers(array $facts): array
-    {
-        if (!array_key_exists('available', $facts)) {
-            return [];
-        }
-
-        if (empty($facts['available'])) {
-            $error = trim((string)(($facts['errors'] ?? [])[0] ?? ''));
-            return $error !== '' ? [$error] : ['Confirm the associated-company count for every CT period.'];
-        }
-
-        $blockers = [];
-        foreach ((array)($facts['periods'] ?? []) as $period) {
-            if (!is_array($period) || !empty($period['confirmed'])) {
-                continue;
-            }
-
-            $sequence = (int)($period['display_sequence_no'] ?? $period['sequence_no'] ?? 0);
-            $label = $sequence > 0 ? 'CT Period ' . $sequence : 'CT period';
-            $blockers[] = $label . ': Confirm the associated-company count for this CT period.';
-        }
-
-        return array_values(array_unique($blockers));
     }
 
     private function eligibilityForm(int $companyId, int $accountingPeriodId, array $eligibility, bool $locked = false): string

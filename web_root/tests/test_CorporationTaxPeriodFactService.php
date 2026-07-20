@@ -9,7 +9,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $harness->check(get_class($service), 'rejects an invalid CT-period context', static function () use ($harness, $service): void {
             $result = $service->fetchForCtPeriod(0, 0);
             $harness->assertSame(false, (bool)($result['available'] ?? true));
-            $harness->assertSame(false, (bool)($result['confirmed'] ?? true));
+            $harness->assertSame('CT-period facts are not available.', (string)(($result['errors'] ?? [])[0] ?? ''));
         });
     }
 );

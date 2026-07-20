@@ -26,6 +26,11 @@ $harness->run(_incorporation_relationshipsCard::class, static function (
                         'id' => 8,
                         'effective_from' => '2026-01-01',
                     ]],
+                ], [
+                    'id' => 13,
+                    'legal_name' => 'Unrelated Party',
+                    'roles' => [],
+                    'effective_holdings' => [],
                 ]],
             ]],
         ]);
@@ -42,5 +47,7 @@ $harness->run(_incorporation_relationshipsCard::class, static function (
         $harness->assertTrue(str_contains($html, 'aria-label="Last effective date"'));
         $harness->assertTrue(str_contains($html, '>End role</button>'));
         $harness->assertFalse(str_contains($html, 'End an ownership role'));
+        $harness->assertFalse(str_contains($html, '<option value="12">Example Owner</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="13">Unrelated Party</option>'));
     });
 });

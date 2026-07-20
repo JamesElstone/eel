@@ -158,9 +158,7 @@ if (!function_exists('test_confirm_ct_period_facts')) {
                 $companyId,
                 $accountingPeriodId,
                 $ctPeriodId,
-                $associatedCompanyCount,
-                true,
-                'test-fixture'
+                $associatedCompanyCount
             );
             if (empty($result['success'])) {
                 throw new RuntimeException(implode(' ', (array)($result['errors'] ?? ['Unable to confirm CT-period facts.'])));

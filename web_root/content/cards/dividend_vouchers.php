@@ -66,7 +66,7 @@ final class _dividend_vouchersCard extends CardBaseFramework
                 <td>' . $this->documentDetailsHtml('Voucher', (string)($row['voucher_text'] ?? '')) . '</td>
                 <td>' . $this->documentDetailsHtml('Minutes', (string)($row['minutes_text'] ?? '')) . '</td>
                 <td>' . $statusHtml . '</td>
-                <td><div class="helper">' . HelperFramework::escape((string)($row['source_ref'] ?? '')) . '</div></td>
+                <td>' . $this->sourceHtml($row) . '</td>
             </tr>';
         }
 
@@ -94,6 +94,18 @@ final class _dividend_vouchersCard extends CardBaseFramework
             <summary>' . HelperFramework::escape($label) . '</summary>
             <pre class="helper">' . HelperFramework::escape($text) . '</pre>
         </details>';
+    }
+
+    private function sourceHtml(array $row): string
+    {
+        $sourceRef = trim((string)($row['source_ref'] ?? ''));
+        $transactionId = (int)($row['transaction_id'] ?? 0);
+        if ($sourceRef === '' || $transactionId <= 0) {
+            return '<span class="helper">' . HelperFramework::escape($sourceRef) . '</span>';
+        }
+
+        return '<a class="button button-inline" href="?page=transactions&amp;show_card=transaction_search&amp;transaction_search_keyword='
+            . $transactionId . '">' . HelperFramework::escape($sourceRef) . '</a>';
     }
 
     private function voucherRows(array $context): array

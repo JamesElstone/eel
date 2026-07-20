@@ -25,8 +25,7 @@ final class CompaniesHouseComparisonReviewService
      *     comparison: array,
      *     acknowledgement: ?array,
      *     access: array,
-     *     mismatch_count: int,
-     *     ct_period_facts: array
+     *     mismatch_count: int
      * }
      */
     public function fetchContext(int $companyId, int $accountingPeriodId): array
@@ -35,8 +34,6 @@ final class CompaniesHouseComparisonReviewService
             ->fetchComparison($companyId, $accountingPeriodId);
         $access = ($this->accessService ?? new \eel_accounts\Service\AccountingPeriodAccessService())
             ->fetchDataEntryState($companyId, $accountingPeriodId);
-        $ctPeriodFacts = (new \eel_accounts\Service\CorporationTaxPeriodFactService())
-            ->fetchForAccountingPeriod($companyId, $accountingPeriodId);
         $acknowledgements = $this->acknowledgementService
             ?? new \eel_accounts\Service\YearEndAcknowledgementService();
         $acknowledgement = $acknowledgements->fetch($companyId, $accountingPeriodId, self::CHECK_CODE);
@@ -63,7 +60,6 @@ final class CompaniesHouseComparisonReviewService
             'acknowledgement' => is_array($acknowledgement) ? $acknowledgement : null,
             'access' => $access,
             'mismatch_count' => $this->mismatchCount($comparison),
-            'ct_period_facts' => $ctPeriodFacts,
             'can_acknowledge' => $comparisonCanBeAcknowledged && empty($access['is_locked']),
             'acknowledgement_blocked_reason' => !$comparisonCanBeAcknowledged
                 ? (string)(($comparison['warnings'] ?? [])[0] ?? 'Complete and lock the prior accounting period before approving this comparison.')

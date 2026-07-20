@@ -127,7 +127,12 @@ final class _incorporation_relationshipsCard extends CardBaseFramework
     private function partyOptions(array $parties): string
     {
         $html = '';
-        foreach ($parties as $party) { $html .= '<option value="' . (int)$party['id'] . '">' . HelperFramework::escape((string)$party['legal_name']) . '</option>'; }
+        foreach ($parties as $party) {
+            if ($this->calculatedShareholderFrom($party) !== null || !empty($party['roles'])) {
+                continue;
+            }
+            $html .= '<option value="' . (int)$party['id'] . '">' . HelperFramework::escape((string)$party['legal_name']) . '</option>';
+        }
         return $html;
     }
 }

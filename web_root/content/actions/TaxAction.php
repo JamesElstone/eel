@@ -30,10 +30,7 @@ final class TaxAction implements ActionInterfaceFramework
                     $companyId,
                     $accountingPeriodId,
                     $ctPeriodId,
-                    (int)$request->input('associated_company_count', 0),
-                    $this->truthy($request->input('confirmed', '0')),
-                    $this->actor($request),
-                    (string)$request->input('confirmation_note', '')
+                    (int)$request->input('associated_company_count', 0)
                 ),
                 default => ['success' => false, 'errors' => ['Unknown tax action.']],
             };
@@ -63,21 +60,4 @@ final class TaxAction implements ActionInterfaceFramework
         );
     }
 
-    private function truthy(mixed $value): bool
-    {
-        return in_array(strtolower(trim((string)$value)), ['1', 'true', 'yes', 'on'], true);
-    }
-
-    private function actor(RequestFramework $request): string
-    {
-        try {
-            $session = new SessionAuthenticationService();
-            $session->startSession();
-            $deviceId = trim((string)AntiFraudService::instance($request)->requestValue('Client-Device-ID'));
-            $userId = $session->authenticatedUserId($deviceId !== '' ? $deviceId : null);
-            if ($userId > 0) { return 'user:' . $userId; }
-        } catch (Throwable) {
-        }
-        return 'web_app';
-    }
 }

@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 namespace eel_accounts\Service;
 
-/** Stores the editable associated-company count used by each CT-period calculation. */
+/** Stores editable CT-period facts used by each Corporation Tax calculation. */
 final class CorporationTaxPeriodFactService
 {
     public function fetchForAccountingPeriod(int $companyId, int $accountingPeriodId): array
@@ -34,6 +34,12 @@ final class CorporationTaxPeriodFactService
             ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
         );
 
+        $ownership = new OwnershipPartyService();
+        foreach ($periods as &$period) {
+            $period['close_company'] = $ownership->closeCompanyStatus($companyId, (string)$period['period_end']);
+        }
+        unset($period);
+
         return ['available' => true, 'errors' => [], 'periods' => $periods];
     }
 
@@ -56,7 +62,11 @@ final class CorporationTaxPeriodFactService
             return ['available' => false, 'errors' => ['The selected CT period could not be found.']];
         }
 
-        return $period + ['available' => true, 'errors' => []];
+        return $period + [
+            'available' => true,
+            'errors' => [],
+            'close_company' => (new OwnershipPartyService())->closeCompanyStatus($companyId, (string)$period['period_end']),
+        ];
     }
 
     public function requireAssociatedCompanyCount(int $companyId, int $ctPeriodId): int

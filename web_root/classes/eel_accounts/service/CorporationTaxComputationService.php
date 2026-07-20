@@ -284,7 +284,7 @@ final class CorporationTaxComputationService
         );
         $ordinaryCorporationTax = round((float)$rateCalculation['liability'], 2);
         $s455Tax = (new \eel_accounts\Service\S455ReviewService())
-            ->requireConfirmedNetTax($companyId, $accountingPeriodId, $ctPeriodId);
+            ->currentNetTax($companyId, $accountingPeriodId, $ctPeriodId);
         $estimatedCorporationTax = round($ordinaryCorporationTax + $s455Tax, 2);
         $computationHash = hash('sha256', json_encode([
             'company_id' => $companyId,

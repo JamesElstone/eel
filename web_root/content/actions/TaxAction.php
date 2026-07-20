@@ -54,7 +54,7 @@ final class TaxAction implements ActionInterfaceFramework
 
         return new ActionResultFramework(
             $success,
-            ['page.context', 'tax.period.facts', 'tax.workings', 'trial.balance.state', 'profit.loss', 'year.end.retained.earnings', 'dividend.reserve', 'year.end.checklist'],
+            ['page.context', 'tax.period.facts', 'tax.s455', 'tax.workings', 'trial.balance.state', 'profit.loss', 'year.end.retained.earnings', 'dividend.reserve', 'year.end.checklist'],
             $messages,
             $ctPeriodId !== 0 ? ['ct_period_id' => (string)$ctPeriodId] : []
         );

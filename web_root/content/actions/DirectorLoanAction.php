@@ -12,7 +12,7 @@ final class DirectorLoanAction implements ActionInterfaceFramework
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
         $intent = trim((string)$request->input('intent', $request->input('global_action', '')));
-        if (!in_array($intent, ['save_director_loan_reporting_presentation', 'save_s455_review'], true)) {
+        if ($intent !== 'save_director_loan_reporting_presentation') {
             return ActionResultFramework::none();
         }
 
@@ -21,15 +21,6 @@ final class DirectorLoanAction implements ActionInterfaceFramework
 
         try {
             $result = match ($intent) {
-                'save_s455_review' => (new \eel_accounts\Service\S455ReviewService())->saveReview(
-                    $companyId,
-                    $accountingPeriodId,
-                    (int)$request->input('ct_period_id', 0),
-                    (string)$request->input('close_company_status', ''),
-                    $this->truthy($request->input('confirmed', '0')),
-                    $this->actor($request),
-                    (string)$request->input('confirmation_note', '')
-                ),
                 default => (new \eel_accounts\Service\DirectorLoanReportingPresentationService())->save(
                     $companyId,
                     $accountingPeriodId,
@@ -47,7 +38,6 @@ final class DirectorLoanAction implements ActionInterfaceFramework
             $messages[] = [
                 'type' => 'success',
                 'message' => match ($intent) {
-                    'save_s455_review' => 's455 review saved.',
                     default => !empty($result['changed'])
                         ? 'Director Loan reporting presentation saved. Companies House and iXBRL figures will use the new repayment horizon.'
                         : 'No change was needed.',
@@ -98,8 +88,4 @@ final class DirectorLoanAction implements ActionInterfaceFramework
         return 'web_app';
     }
 
-    private function truthy(mixed $value): bool
-    {
-        return in_array(strtolower(trim((string)$value)), ['1', 'true', 'yes', 'on'], true);
-    }
 }

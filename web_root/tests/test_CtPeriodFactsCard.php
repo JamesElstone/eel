@@ -29,6 +29,8 @@ $harness->run(_tax_ct_period_factsCard::class, static function (GeneratedService
 
         $harness->assertSame(true, str_contains($html, 'value="0"'));
         $harness->assertSame(true, str_contains($html, 'The application uses 0 until you change it.'));
+        $harness->assertSame(true, str_contains($html, 'Close company — Cannot calculate'));
+        $harness->assertSame(false, str_contains($html, 'name="close_company_status"'));
         $harness->assertSame(false, str_contains($html, 'I have reviewed the associated-company position for this CT period'));
         $harness->assertSame(false, str_contains($html, 'name="confirmed"'));
     });

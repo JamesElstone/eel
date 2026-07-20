@@ -163,18 +163,6 @@ if (!function_exists('test_confirm_ct_period_facts')) {
             if (empty($result['success'])) {
                 throw new RuntimeException(implode(' ', (array)($result['errors'] ?? ['Unable to confirm CT-period facts.'])));
             }
-            $s455 = (new \eel_accounts\Service\S455ReviewService())->saveReview(
-                $companyId,
-                $accountingPeriodId,
-                $ctPeriodId,
-                'no',
-                true,
-                'test-fixture',
-                'The fixture has no close-company s455 exposure.'
-            );
-            if (empty($s455['success'])) {
-                throw new RuntimeException(implode(' ', (array)($s455['errors'] ?? ['Unable to confirm the fixture s455 review.'])));
-            }
             $ids[] = $ctPeriodId;
         }
 

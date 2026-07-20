@@ -23,7 +23,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                             'sequence_no' => 1,
                             'period_start' => '2022-09-05',
                             'period_end' => '2023-09-04',
-                            'confirmed' => true,
+                            'close_status_calculated' => true,
                             'gross_principal' => 100.00,
                             'gross_tax' => 33.75,
                             'qualifying_repayments' => 25.00,
@@ -31,7 +31,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                             'repayment_deadline' => '2024-06-05',
                             'evidence_cutoff' => '2023-09-30 12:00:00',
                             'close_company_status' => 'yes',
-                            'confirmation_note' => '',
+                            'review_note' => '',
                             'window_status' => 'provisional_window_open',
                             'ct600a_required' => true,
                             'errors' => [],
@@ -42,6 +42,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
             $harness->assertTrue(str_contains($html, 'Net s455 tax'));
             $harness->assertTrue(str_contains($html, '25.31'));
+            $harness->assertTrue(str_contains($html, 'Repayment opportunity'));
+            $harness->assertTrue(str_contains($html, 'does not block Year End from closing'));
+            $harness->assertTrue(!str_contains($html, 'Window status:'));
+            $harness->assertTrue(!str_contains($html, 'CT600A is'));
+            $harness->assertTrue(!str_contains($html, 'source-payment evidence'));
+            $harness->assertTrue(!str_contains($html, 'name="confirmed"'));
+            $harness->assertSame(
+                'This is a live s455 estimate based on correctly attributed cash transactions and the close-company result calculated from effective ownership and relationship records.',
+                $card->helper([])
+            );
         });
     }
 );

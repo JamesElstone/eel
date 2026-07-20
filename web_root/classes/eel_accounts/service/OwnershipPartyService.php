@@ -122,6 +122,81 @@ final class OwnershipPartyService
         return false;
     }
 
+    /**
+     * Applies the broad close-company tests from the effective ownership and
+     * relationship records held by the application at the given date.
+     *
+     * @return array{available: bool, status: string, effective_party_count: int, shareholder_party_count: int, non_shareholder_party_count: int, director_party_count: int, detail: string}
+     */
+    public function closeCompanyStatus(int $companyId, string $date): array
+    {
+        $date = $this->normaliseDate($date);
+        if ($companyId <= 0 || $date === null || !$this->schemaAvailable()) {
+            return [
+                'available' => false,
+                'status' => 'unconfirmed',
+                'effective_party_count' => 0,
+                'shareholder_party_count' => 0,
+                'non_shareholder_party_count' => 0,
+                'director_party_count' => 0,
+                'detail' => 'Close-company status cannot be calculated until ownership and relationship data is available.',
+            ];
+        }
+
+        $parties = $this->effectiveParties($companyId, $date);
+        $effectivePartyCount = count($parties);
+        $shareholderPartyCount = (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(DISTINCT h.party_id)
+             FROM company_shareholdings h
+             WHERE h.company_id = :company_id
+               AND h.effective_from <= :as_of
+               AND (h.effective_to IS NULL OR h.effective_to >= :as_of)',
+            ['company_id' => $companyId, 'as_of' => $date]
+        );
+        $directorPartyCount = count(array_filter(
+            $parties,
+            static fn(array $party): bool => (int)($party['linked_director_id'] ?? 0) > 0
+        ));
+        $nonShareholderPartyCount = max(0, $effectivePartyCount - $shareholderPartyCount);
+
+        if ($effectivePartyCount === 0) {
+            return [
+                'available' => true,
+                'status' => 'unconfirmed',
+                'effective_party_count' => 0,
+                'shareholder_party_count' => 0,
+                'non_shareholder_party_count' => 0,
+                'director_party_count' => 0,
+                'detail' => 'No effective shareholders, participators, or associates are recorded for this date.',
+            ];
+        }
+
+        $isClose = $effectivePartyCount <= 5 || $directorPartyCount === $effectivePartyCount;
+        if (!$isClose) {
+            return [
+                'available' => true,
+                'status' => 'unconfirmed',
+                'effective_party_count' => $effectivePartyCount,
+                'shareholder_party_count' => $shareholderPartyCount,
+                'non_shareholder_party_count' => $nonShareholderPartyCount,
+                'director_party_count' => $directorPartyCount,
+                'detail' => 'More than five effective participators are recorded. The recorded data does not establish whether a group of five or fewer controls the company.',
+            ];
+        }
+
+        return [
+            'available' => true,
+            'status' => 'yes',
+            'effective_party_count' => $effectivePartyCount,
+            'shareholder_party_count' => $shareholderPartyCount,
+            'non_shareholder_party_count' => $nonShareholderPartyCount,
+            'director_party_count' => $directorPartyCount,
+            'detail' => $effectivePartyCount <= 5
+                ? 'Five or fewer effective participators are recorded.'
+                : 'Every effective participator is linked to a director.',
+        ];
+    }
+
     public function requireEffectiveParty(int $companyId, int $partyId, string $date): array
     {
         foreach ($this->effectiveParties($companyId, $date) as $party) {

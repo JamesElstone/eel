@@ -11,6 +11,10 @@ final class _director_loan_s455Card extends CardBaseFramework
 {
     public function key(): string { return 'director_loan_s455'; }
     public function title(): string { return 'Participator loans (s455)'; }
+    public function helper(array $context): string
+    {
+        return 'This is a live s455 estimate based on correctly attributed cash transactions and the close-company result calculated from effective ownership and relationship records.';
+    }
     public function services(): array
     {
         return [
@@ -27,25 +31,17 @@ final class _director_loan_s455Card extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $companyId = (int)($context['company']['id'] ?? 0);
-        $accountingPeriodId = (int)($context['company']['accounting_period_id'] ?? 0);
         $s455 = (array)($context['services']['s455'] ?? []);
         if (empty($s455['available'])) {
             return '<div class="helper">' . HelperFramework::escape((string)(($s455['errors'] ?? [])[0] ?? 's455 review is unavailable.')) . '</div>';
         }
         $settings = (array)($context['company']['settings'] ?? []);
-        $html = '<section class="settings-stack" id="director-loan-s455">'
-            . '<div class="helper">Only correctly attributed cash transactions are used. Non-cash offsets and unsupported journals remain blocking issues.</div>';
+        $html = '<section class="settings-stack" id="director-loan-s455">';
         foreach ((array)$s455['periods'] as $period) {
             if (empty($period['available'])) { continue; }
-            $errors = (array)($period['errors'] ?? []);
-            $html .= '<form method="post" data-ajax="true" class="panel-soft settings-stack">'
-                . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
-                . '<input type="hidden" name="card_action" value="DirectorLoan"><input type="hidden" name="intent" value="save_s455_review">'
-                . '<input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
-                . '<input type="hidden" name="ct_period_id" value="' . (int)$period['ct_period_id'] . '">'
+            $html .= '<section class="panel-soft settings-stack">'
                 . '<div class="actions-row"><h4 class="card-title">Tax Period ' . (int)$period['sequence_no'] . ': ' . HelperFramework::escape((string)$period['period_start']) . ' to ' . HelperFramework::escape((string)$period['period_end']) . '</h4>'
-                . '<span class="badge ' . (!empty($period['confirmed']) ? 'success' : 'warning') . '">' . (!empty($period['confirmed']) ? 'Confirmed' : 'Review required') . '</span></div>'
+                . '<span class="badge ' . (!empty($period['close_status_calculated']) ? 'success' : 'warning') . '">' . (!empty($period['close_status_calculated']) ? 'Close status calculated' : 'Ownership data needed') . '</span></div>'
                 . '<div class="summary-grid">'
                 . $this->stat('Closing principal', $this->money($settings, $period['gross_principal']))
                 . $this->stat('Gross s455 tax', $this->money($settings, $period['gross_tax']))
@@ -54,16 +50,8 @@ final class _director_loan_s455Card extends CardBaseFramework
                 . $this->stat('Repayment deadline', (string)$period['repayment_deadline'])
                 . $this->stat('Evidence cutoff', (string)$period['evidence_cutoff'])
                 . '</div>'
-                . '<div class="form-grid"><div class="form-row"><label>Close company status</label><select class="select" name="close_company_status" required><option value="">Select</option>'
-                . '<option value="yes"' . ((string)$period['close_company_status'] === 'yes' ? ' selected' : '') . '>Yes</option>'
-                . '<option value="no"' . ((string)$period['close_company_status'] === 'no' ? ' selected' : '') . '>No</option></select></div>'
-                . '<div class="form-row"><label>Review note</label><input class="input" name="confirmation_note" value="' . HelperFramework::escape((string)($period['confirmation_note'] ?? '')) . '"></div></div>'
-                . '<label class="checkbox-row"><input type="checkbox" name="confirmed" value="1"' . (!empty($period['confirmed']) ? ' checked' : '') . '> I confirm the company/party classifications and source-payment evidence</label>'
-                . ($errors !== [] ? '<div class="panel-soft warn"><strong>Blocking issues</strong><div class="helper">' . HelperFramework::escape(implode(' ', array_map('strval', $errors))) . '</div></div>' : '')
                 . ($this->repaymentGuidance($period))
-                . '<div class="helper">Window status: ' . HelperFramework::escape(HelperFramework::labelFromKey((string)$period['window_status'], '_'))
-                . (!empty($period['ct600a_required']) ? '. CT600A is indicated.' : '. CT600A is not indicated by the current cash evidence.') . '</div>'
-                . '<div class="actions-row"><button class="button primary" type="submit">Save s455 review</button></div></form>';
+                . '</section>';
         }
         return $html . '</section>';
     }
@@ -74,9 +62,9 @@ final class _director_loan_s455Card extends CardBaseFramework
             return '';
         }
 
-        return '<div class="panel-soft warn"><strong>Repayment opportunity</strong><div class="helper">Future cash repayments correctly categorised to the Participator Loan nominal on or before '
+        return '<div class="panel-soft warn"><strong>Repayment opportunity</strong><div class="helper">Future transactions that are cash repayments, correctly categorised to the Participator Loan nominal on or before '
             . HelperFramework::escape((string)($period['repayment_deadline'] ?? 'the repayment deadline'))
-            . ' may reduce this s455 position. A repayment is counted only when the party, timing, and statutory eligibility checks pass.</div></div>';
+            . ' may reduce this s455 position. A repayment is counted only when the party, timing, and statutory eligibility checks pass. This is guidance only and does not block Year End from closing.</div></div>';
     }
 
     private function stat(string $label, string $value): string

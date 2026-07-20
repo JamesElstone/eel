@@ -1303,7 +1303,7 @@ final class YearEndChecklistService
                     : ($directorLoanUnattributedCount > 0
                         ? 'Attribute every Director Loan control-account entry before confirming or locking the period.'
                         : ((float)($directorLoanReview['potential_s455_exposure'] ?? 0) >= 0.005
-                            ? 'The Director Loan asset-control principal is ' . $this->money($settings, $directorLoanReview['potential_s455_exposure']) . '; the separate s455 review determines tax from source-payment evidence.'
+                            ? 'The Participator Loan asset-control principal is ' . $this->money($settings, $directorLoanReview['potential_s455_exposure']) . '; the separate s455 estimate uses attributed cash movements and the calculated close-company status.'
                                 . '. Confirm the directors, attributed entries, per-director balances, tax flags and calculated control-account reclassification.'
                             : 'Confirm the directors, attributed entries, per-director balances, tax flags and calculated control-account reclassification.'))),
             empty($directorLoanReview['available'])
@@ -1540,17 +1540,17 @@ final class YearEndChecklistService
         );
         $sections['corporation_tax_readiness'][] = $this->makeCheck(
             's455_period_review',
-            'Participator-loan s455 review',
-            'fail',
-            !empty($s455Review['available']) && !empty($s455Review['all_confirmed']) ? 'pass' : 'fail',
-            !empty($s455Review['available']) && !empty($s455Review['all_confirmed'])
-                ? 'The close-company status and source-payment s455 evidence are confirmed for every CT period.'
-                : (string)(($s455Review['errors'] ?? [])[0] ?? 'Confirm the s455 review for every CT period. If the lock occurs before the repayment deadline, the review uses only evidence available at lock time.'),
-            !empty($s455Review['all_confirmed']) ? $this->money($settings, $s455Review['net_tax'] ?? 0) : 'Action required',
-            '?page=loans&show_card=director_loan_s455'
+            'Participator-loan s455 estimate',
+            'warning',
+            !empty($s455Review['available']) && !empty($s455Review['all_close_statuses_calculated']) ? 'pass' : 'warning',
+            !empty($s455Review['available']) && !empty($s455Review['all_close_statuses_calculated'])
+                ? 'The live estimate uses the close-company result calculated from effective ownership and relationship records for every CT period.'
+                : 'Complete the effective ownership and relationship records to calculate the close-company result. Future qualifying repayments before the repayment deadline may reduce the estimate; this does not block Year End from closing.',
+            !empty($s455Review['available']) ? $this->money($settings, $s455Review['net_tax'] ?? 0) : 'Unavailable',
+            '?page=corporation_tax&show_card=tax_ct_period_facts'
         );
 
-        $ctPeriodTaxFactChecks = $this->ctPeriodTaxFactChecks($taxReadiness, $ctPeriodFacts, $s455Review);
+        $ctPeriodTaxFactChecks = $this->ctPeriodTaxFactChecks($taxReadiness, $ctPeriodFacts);
         array_push($sections['corporation_tax_readiness'], ...$ctPeriodTaxFactChecks);
         $ctPeriodTaxFactsPass = !in_array('fail', array_column($ctPeriodTaxFactChecks, 'status'), true);
 
@@ -1707,8 +1707,6 @@ final class YearEndChecklistService
             && $taxProvisionAvailable
             && !empty($ownershipReadiness['available'])
             && !empty($ownershipReadiness['pass'])
-            && !empty($s455Review['available'])
-            && !empty($s455Review['all_confirmed'])
             && $ctPeriodTaxFactsPass
             && $taxFreezeReady
             && $this->acknowledgementCurrentInSections($sections, 'tax_readiness_acknowledgement')
@@ -1779,15 +1777,13 @@ final class YearEndChecklistService
     /**
      * @return list<array<string, mixed>>
      */
-    private function ctPeriodTaxFactChecks(array $taxReadiness, array $ctPeriodFacts, array $s455Review): array
+    private function ctPeriodTaxFactChecks(array $taxReadiness, array $ctPeriodFacts): array
     {
         $summaries = $this->rowsByCtPeriodId((array)($taxReadiness['periods'] ?? []));
         $facts = $this->rowsByCtPeriodId((array)($ctPeriodFacts['periods'] ?? []));
-        $s455 = $this->rowsByCtPeriodId((array)($s455Review['periods'] ?? []));
         $periodIds = array_values(array_unique(array_merge(
             array_keys($summaries),
-            array_keys($facts),
-            array_keys($s455)
+            array_keys($facts)
         )));
         sort($periodIds, SORT_NUMERIC);
 
@@ -1807,13 +1803,9 @@ final class YearEndChecklistService
         foreach ($periodIds as $ctPeriodId) {
             $summary = (array)($summaries[$ctPeriodId] ?? []);
             $fact = (array)($facts[$ctPeriodId] ?? []);
-            $s455Period = (array)($s455[$ctPeriodId] ?? []);
             $errors = [];
             if ($summary === [] || empty($summary['available'])) {
                 $errors[] = 'The CT-period computation is unavailable.';
-            }
-            if ($s455Period === [] || empty($s455Period['confirmed'])) {
-                $errors[] = 'The participator-loan s455 review is not confirmed.';
             }
             $unknownCount = (int)($summary['unknown_treatment_count'] ?? 0);
             $otherCount = (int)($summary['other_treatment_count'] ?? 0);
@@ -1852,7 +1844,6 @@ final class YearEndChecklistService
             $sequence = (int)($summary['ct_period_display_sequence_no']
                 ?? $summary['ct_period_sequence_no']
                 ?? $fact['sequence_no']
-                ?? $s455Period['sequence_no']
                 ?? 0);
             $title = $sequence > 0 ? 'CT Period ' . $sequence . ' tax facts' : 'CT-period tax facts';
 

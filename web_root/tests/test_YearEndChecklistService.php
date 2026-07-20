@@ -302,12 +302,6 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
                 'sequence_no' => 4,
                 'confirmed' => true,
             ]],
-        ], [
-            'periods' => [[
-                'ct_period_id' => 73,
-                'sequence_no' => 4,
-                'confirmed' => false,
-            ]],
         ]);
 
         $harness->assertSame(1, count($checks));
@@ -316,7 +310,7 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
         $harness->assertSame('corporation_tax', (string)($checks[0]['workflow_page'] ?? ''));
         $harness->assertSame('73', (string)(($checks[0]['workflow_fields'] ?? [])['ct_period_id'] ?? ''));
         $harness->assertTrue(str_contains((string)($checks[0]['detail_text'] ?? ''), 'unknown tax treatment'));
-        $harness->assertTrue(str_contains((string)($checks[0]['detail_text'] ?? ''), 's455 review is not confirmed'));
+        $harness->assertTrue(!str_contains((string)($checks[0]['detail_text'] ?? ''), 's455 review is not confirmed'));
         $harness->assertTrue(str_contains((string)($checks[0]['detail_text'] ?? ''), 'capital allowance warning'));
         $harness->assertSame(false, array_key_exists('review_clearable', $checks[0]));
     });

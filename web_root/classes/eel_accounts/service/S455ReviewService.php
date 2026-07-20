@@ -31,7 +31,7 @@ final class S455ReviewService
             'available' => true,
             'errors' => [],
             'periods' => $rows,
-            'all_confirmed' => $rows !== [] && !in_array(false, array_column($rows, 'confirmed'), true),
+            'all_close_statuses_calculated' => $rows !== [] && !in_array(false, array_column($rows, 'close_status_calculated'), true),
             'net_tax' => round(array_sum(array_map(static fn(array $row): float => (float)($row['net_tax'] ?? 0), $rows)), 2),
         ];
     }
@@ -40,10 +40,10 @@ final class S455ReviewService
     {
         $period = $this->ctPeriod($companyId, $accountingPeriodId, $ctPeriodId);
         if ($period === null) {
-            return ['available' => false, 'confirmed' => false, 'errors' => ['The selected CT period could not be found.']];
+            return ['available' => false, 'close_status_calculated' => false, 'errors' => ['The selected CT period could not be found.']];
         }
-        $review = $this->storedReview($companyId, $ctPeriodId);
-        $closeCompanyStatus = (string)($review['close_company_status'] ?? 'unconfirmed');
+        $closeCompany = (new OwnershipPartyService())->closeCompanyStatus($companyId, (string)$period['period_end']);
+        $closeCompanyStatus = (string)($closeCompany['status'] ?? 'unconfirmed');
         $lock = (new YearEndLockService())->fetchReview($companyId, $accountingPeriodId);
         $lockedAt = !empty($lock['is_locked']) ? trim((string)($lock['locked_at'] ?? '')) : '';
         $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
@@ -178,6 +178,7 @@ final class S455ReviewService
             'evidence_cutoff' => $cutoff,
             'window_status' => $windowStatus,
             'close_company_status' => $closeCompanyStatus,
+            'close_company' => $closeCompany,
             'lots' => $lots,
             'movements' => array_map(static fn(array $row): array => [
                 'transaction_id' => (int)($row['transaction_id'] ?? 0),
@@ -196,12 +197,6 @@ final class S455ReviewService
         $hashBasis = $basis;
         unset($hashBasis['evidence_cutoff']);
         $basisHash = hash('sha256', json_encode($hashBasis, JSON_UNESCAPED_SLASHES));
-        $confirmed = is_array($review)
-            && trim((string)($review['confirmed_at'] ?? '')) !== ''
-            && hash_equals($basisHash, (string)($review['basis_hash'] ?? ''))
-            && $closeCompanyStatus !== 'unconfirmed'
-            && $errors === [];
-
         return $basis + [
             'available' => true,
             'errors' => array_values(array_unique($errors)),
@@ -214,46 +209,15 @@ final class S455ReviewService
             'ct600a_required' => $closeCompanyStatus === 'yes' && $grossPrincipal >= 0.005,
             'basis' => $basis,
             'basis_hash' => $basisHash,
-            'confirmed' => $confirmed,
-            'confirmed_at' => (string)($review['confirmed_at'] ?? ''),
-            'confirmed_by' => (string)($review['confirmed_by'] ?? ''),
-            'confirmation_note' => (string)($review['confirmation_note'] ?? ''),
+            'close_status_calculated' => $closeCompanyStatus !== 'unconfirmed',
         ];
     }
 
-    public function saveReview(
-        int $companyId,
-        int $accountingPeriodId,
-        int $ctPeriodId,
-        string $closeCompanyStatus,
-        bool $confirmed,
-        string $confirmedBy,
-        string $note = ''
-    ): array {
-        $closeCompanyStatus = strtolower(trim($closeCompanyStatus));
-        if (!in_array($closeCompanyStatus, ['yes', 'no'], true)) {
-            return ['success' => false, 'errors' => ['Confirm whether the company is a close company for this CT period.']];
-        }
-        (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'change the s455 review');
-        $existing = $this->storedReview($companyId, $ctPeriodId);
-        $temp = $existing;
-        $this->upsertReviewStatus($companyId, $accountingPeriodId, $ctPeriodId, $closeCompanyStatus, false, '', '');
-        $calculation = $this->calculate($companyId, $accountingPeriodId, $ctPeriodId);
-        if (empty($calculation['available'])) {
-            return ['success' => false, 'errors' => (array)$calculation['errors']];
-        }
-        if ($confirmed && !empty($calculation['errors'])) {
-            return ['success' => false, 'errors' => (array)$calculation['errors']];
-        }
-        $this->persistCalculation($calculation, $closeCompanyStatus, $confirmed, $confirmedBy, $note);
-        return ['success' => true, 'errors' => [], 'review' => $this->calculate($companyId, $accountingPeriodId, $ctPeriodId), 'previous' => $temp];
-    }
-
-    public function requireConfirmedNetTax(int $companyId, int $accountingPeriodId, int $ctPeriodId): float
+    public function currentNetTax(int $companyId, int $accountingPeriodId, int $ctPeriodId): float
     {
         $review = $this->calculate($companyId, $accountingPeriodId, $ctPeriodId);
-        if (empty($review['confirmed'])) {
-            throw new \RuntimeException((string)(($review['errors'] ?? [])[0] ?? 'Complete and confirm the s455 review for this CT period.'));
+        if (empty($review['available'])) {
+            throw new \RuntimeException((string)(($review['errors'] ?? [])[0] ?? 'The s455 estimate could not be calculated for this CT period.'));
         }
         return round((float)$review['net_tax'], 2);
     }
@@ -277,19 +241,9 @@ final class S455ReviewService
         foreach ($periods as $period) {
             $ctPeriodId = (int)($period['id'] ?? 0);
             $calculation = $this->calculate($companyId, $accountingPeriodId, $ctPeriodId);
-            if (empty($calculation['confirmed'])) {
-                return [
-                    'success' => false,
-                    'errors' => [(string)(($calculation['errors'] ?? [])[0] ?? 'The s455 basis changed before the Year End lock completed.')],
-                ];
-            }
-            $stored = $this->storedReview($companyId, $ctPeriodId) ?? [];
             $this->persistCalculation(
                 $calculation,
-                (string)$calculation['close_company_status'],
-                true,
-                (string)($stored['confirmed_by'] ?? 'year_end_lock'),
-                (string)($stored['confirmation_note'] ?? '')
+                (string)$calculation['close_company_status']
             );
             $frozen[] = $ctPeriodId;
         }
@@ -386,7 +340,7 @@ final class S455ReviewService
         return $rate !== false && $rate !== null ? (float)$rate : null;
     }
 
-    private function persistCalculation(array $calculation, string $status, bool $confirmed, string $actor, string $note): void
+    private function persistCalculation(array $calculation, string $status): void
     {
         $params = [
             'company_id' => (int)$calculation['company_id'],
@@ -404,42 +358,11 @@ final class S455ReviewService
             'window_status' => (string)$calculation['window_status'],
             'basis_hash' => (string)$calculation['basis_hash'],
             'basis_json' => json_encode($calculation['basis'], JSON_UNESCAPED_SLASHES),
-            'confirmed_at' => $confirmed ? (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s') : null,
-            'confirmed_by' => $confirmed ? (trim($actor) !== '' ? substr(trim($actor), 0, 100) : 'web_app') : null,
-            'confirmation_note' => trim($note) !== '' ? trim($note) : null,
-        ];
-        $this->upsert($params);
-    }
-
-    private function upsertReviewStatus(int $companyId, int $accountingPeriodId, int $ctPeriodId, string $status, bool $confirmed, string $actor, string $note): void
-    {
-        $period = $this->ctPeriod($companyId, $accountingPeriodId, $ctPeriodId);
-        if ($period === null) {
-            throw new \RuntimeException('The selected CT period could not be found.');
-        }
-        $deadline = (new \DateTimeImmutable((string)$period['period_end']))->modify('+9 months +1 day')->format('Y-m-d');
-        $cutoff = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
-        $basis = ['version' => 's455-cash-v1-pending', 'close_company_status' => $status];
-        $this->upsert([
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-            'ct_period_id' => $ctPeriodId,
-            'close_company_status' => $status,
-            'gross_principal' => 0,
-            'gross_tax' => 0,
-            'qualifying_repayments' => 0,
-            'relief_tax' => 0,
-            'net_tax' => 0,
-            'ct600a_required' => 0,
-            'repayment_deadline' => $deadline,
-            'evidence_cutoff' => $cutoff,
-            'window_status' => substr($cutoff, 0, 10) >= $deadline ? 'window_complete' : 'provisional_window_open',
-            'basis_hash' => hash('sha256', json_encode($basis)),
-            'basis_json' => json_encode($basis),
             'confirmed_at' => null,
             'confirmed_by' => null,
             'confirmation_note' => null,
-        ]);
+        ];
+        $this->upsert($params);
     }
 
     private function upsert(array $params): void
@@ -475,15 +398,6 @@ final class S455ReviewService
                 confirmation_note=VALUES(confirmation_note), updated_at=CURRENT_TIMESTAMP';
         }
         \InterfaceDB::prepareExecute($sql, $params);
-    }
-
-    private function storedReview(int $companyId, int $ctPeriodId): ?array
-    {
-        $row = \InterfaceDB::fetchOne(
-            'SELECT * FROM corporation_tax_s455_reviews WHERE company_id = :company_id AND ct_period_id = :ct_period_id LIMIT 1',
-            ['company_id' => $companyId, 'ct_period_id' => $ctPeriodId]
-        );
-        return is_array($row) ? $row : null;
     }
 
     private function ctPeriod(int $companyId, int $accountingPeriodId, int $ctPeriodId): ?array

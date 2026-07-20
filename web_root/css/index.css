@@ -866,6 +866,60 @@ body.sidebar-collapsed .sidebar-hide-collapsed-link-initials .nav-link-short {
   margin-top: 14px;
 }
 
+.long-action-progress-region {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 14px;
+  padding: 20px;
+  pointer-events: none;
+}
+
+.long-action-progress-overlay {
+  width: min(720px, calc(100vw - 40px));
+  padding: 16px;
+  border: 2px solid #39ff14;
+  border-radius: 8px;
+  background: #000;
+  color: #39ff14;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+}
+
+.long-action-progress-title {
+  margin-bottom: 10px;
+  color: #39ff14;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.long-action-progress-output {
+  display: block;
+  width: 100%;
+  min-height: 16rem;
+  max-height: min(55vh, 32rem);
+  resize: none;
+  border: 1px solid #39ff14;
+  border-radius: 4px;
+  padding: 12px;
+  background: #000;
+  color: #39ff14;
+  caret-color: #39ff14;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  overflow-y: auto;
+}
+
+.long-action-progress-output:focus {
+  outline: 2px solid #39ff14;
+  outline-offset: 2px;
+}
+
 .mini-form {
   display: flex;
   gap: 10px;

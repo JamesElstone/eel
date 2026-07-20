@@ -83,7 +83,7 @@ final class ResponseFramework
         echo $this->body;
     }
 
-    private static function defaultHeaders(): array
+    public static function securityHeaders(): array
     {
         return [
             'X-Frame-Options' => 'SAMEORIGIN',
@@ -105,5 +105,10 @@ final class ResponseFramework
             'Cross-Origin-Opener-Policy' => 'same-origin',
             'Cross-Origin-Resource-Policy' => 'same-origin',
         ];
+    }
+
+    private static function defaultHeaders(): array
+    {
+        return self::securityHeaders();
     }
 }

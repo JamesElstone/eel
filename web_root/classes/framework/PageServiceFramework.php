@@ -10,12 +10,15 @@ declare(strict_types=1);
 final class PageServiceFramework
 {
     private ?SiteContextCoordinatorFramework $siteContextCoordinator = null;
+    private ?ActionProgressFramework $actionProgress = null;
 
     public function __construct(
         private readonly AppService $appServices,
-        ?SiteContextCoordinatorFramework $siteContextCoordinator = null
+        ?SiteContextCoordinatorFramework $siteContextCoordinator = null,
+        ?ActionProgressFramework $actionProgress = null
     ) {
         $this->siteContextCoordinator = $siteContextCoordinator;
+        $this->actionProgress = $actionProgress;
     }
 
     public function get(string $serviceClass): object
@@ -65,5 +68,14 @@ final class PageServiceFramework
         }
 
         return $this->siteContextCoordinator;
+    }
+
+    public function actionProgress(): ActionProgressFramework
+    {
+        if ($this->actionProgress === null) {
+            $this->actionProgress = new ActionProgressFramework();
+        }
+
+        return $this->actionProgress;
     }
 }

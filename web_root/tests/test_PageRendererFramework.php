@@ -555,6 +555,30 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
         $harness->assertTrue($finallyPosition < $restorePosition);
     });
 
+    $harness->check(PageRendererFramework::class, 'frontend consumes opt-in NDJSON action progress', function () use ($harness): void {
+        $script = (string)file_get_contents(APP_JS . 'index.js');
+
+        foreach ([
+            'function createActionProgressController()',
+            "includes('application/x-ndjson')",
+            'function createAjaxNdjsonParser(progressController = null)',
+            'async function readAjaxNdjsonResponse(response, progressController = null)',
+            "event.type === 'progress'",
+            "event.type === 'complete'",
+            "event.type === 'error'",
+            'textarea.readOnly = true;',
+            'textarea.scrollTop = textarea.scrollHeight;',
+            'progress: actionProgress,',
+            'actionProgress.close();',
+        ] as $expected) {
+            $harness->assertTrue(str_contains($script, $expected));
+        }
+
+        $harness->assertTrue(
+            strpos($script, 'actionProgress.close();') < strpos($script, 'restorePendingBlur();')
+        );
+    });
+
     $harness->check(PageRendererFramework::class, 'frontend preserves table pagination on ajax form submissions', function () use ($harness): void {
         $script = file_get_contents(APP_JS . 'index.js');
 

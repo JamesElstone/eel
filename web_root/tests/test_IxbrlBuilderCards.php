@@ -236,8 +236,9 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, 'actions-row actions-row-nowrap ixbrl-core-details-actions'));
         $harness->assertTrue(str_contains($html, 'FRS 105 Notes'));
         $harness->assertTrue(str_contains($html, 'Sending of Accounts and Returns using this software will be blocked'));
+        $harness->assertTrue(str_contains($html, 'Is the business still a going-concern and continue to operate for the foreseeable future?'));
         $harness->assertTrue(str_contains($html, 'Director and Participant Advances are calculated automatically from transactions.'));
-        $harness->assertTrue(str_contains($html, '<legend>Director advances and credits requiring disclosure</legend>'));
+        $harness->assertTrue(str_contains($html, '<legend>Director or Participant Advances and Credits requiring disclosure</legend>'));
         $harness->assertTrue(str_contains($html, 'Disclosure Approval'));
         $harness->assertTrue(str_contains($html, 'I here by confirm that the information on this page is a true and accurate reflection of this business.'));
         $harness->assertTrue(str_contains($html, '>I Approve this Statement of Fact</button>'));

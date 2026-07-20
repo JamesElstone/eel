@@ -288,7 +288,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                         <h4 class="card-title">Eligibility and accounting basis</h4>
                         <div class="helper ixbrl-eligibility-helper">Sending of Accounts and Returns using this software will be blocked if either of the following two questions are No, as they are not supported.</div>
                         ' . $this->yesNo('micro_entity_eligibility_confirmed', 'Is the company eligible to prepare these accounts as a micro-entity?', $display['micro_entity_eligibility_confirmed'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
-                        ' . $this->yesNo('going_concern_basis_appropriate', 'Is the going-concern basis appropriate for these accounts?', $display['going_concern_basis_appropriate'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
+                        ' . $this->yesNo('going_concern_basis_appropriate', 'Is the business still a going-concern and continue to operate for the foreseeable future?', $display['going_concern_basis_appropriate'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
                     </section>
                     <section class="panel-soft">
                         <h4 class="card-title ixbrl-frs105-notes-title">FRS 105 Notes</h4>
@@ -378,7 +378,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
     private function directorLoanDisclosure(array $summary): string
     {
         if (empty($summary['success'])) {
-            return '<fieldset class="panel-soft"><legend>Director advances and credits requiring disclosure</legend><div class="helper">Unable to calculate the chronological Director Loan Statement.</div></fieldset>';
+            return '<fieldset class="panel-soft"><legend>Director or Participant Advances and Credits requiring disclosure</legend><div class="helper">Unable to calculate the chronological Director Loan Statement.</div></fieldset>';
         }
 
         $hasExposure = !empty($summary['has_company_to_director_exposure']);
@@ -389,7 +389,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
             : 'The chronological running balance never became negative for any attributed director.';
 
         return '<fieldset class="panel-soft">
-            <legend>Director advances and credits requiring disclosure</legend>
+            <legend>Director or Participant Advances and Credits requiring disclosure</legend>
             <div class="helper">Automatically calculated from the chronological Director Loan Statement. ' . HelperFramework::escape($detail) . '</div>
         </fieldset>';
     }

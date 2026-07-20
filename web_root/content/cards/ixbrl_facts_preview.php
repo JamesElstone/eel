@@ -18,12 +18,9 @@ final class _ixbrl_facts_previewCard extends CardBaseFramework
     public function render(array $context): string
     {
         $company = (array)($context['company'] ?? []);
-        $companyId = (int)($company['id'] ?? 0);
-        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $companySettings = (array)($company['settings'] ?? []);
         $readiness = (array)($context['ixbrl']['readiness'] ?? []);
         $facts = (array)($context['ixbrl']['facts'] ?? []);
-        $disabled = !empty($readiness['can_build_facts']) ? '' : ' disabled';
         $freshness = (array)($readiness['run_freshness'] ?? []);
         $freshnessState = (string)($freshness['state'] ?? ($facts === [] ? 'missing' : 'unknown'));
 
@@ -40,22 +37,14 @@ final class _ixbrl_facts_previewCard extends CardBaseFramework
         }
 
         $table = $facts === []
-            ? '<div class="helper">No generated facts yet. Build facts once the readiness checks pass.</div>'
+            ? '<div class="helper">No approved fact snapshot yet. Approve the disclosures once the readiness checks pass to create it.</div>'
             : '<div class="table-scroll"><table class="data-table"><thead><tr><th>Section</th><th>Concept</th><th>Type / unit</th><th>Context / dimensions</th><th>Value</th><th>Source</th></tr></thead><tbody>' . $rows . '</tbody></table></div>';
 
         return '<div class="settings-stack">
             <section class="panel-soft">
                 <div class="status-head"><h3 class="card-title">Latest fact snapshot</h3><span class="badge ' . HelperFramework::escape($this->freshnessClass($freshnessState)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($freshnessState, '_')) . '</span></div>
-                <div class="helper">' . HelperFramework::escape((string)($freshness['detail'] ?? 'Build facts to create a traceable snapshot of the current accounts report.')) . '</div>
+                <div class="helper">' . HelperFramework::escape((string)($freshness['detail'] ?? 'Approving the disclosures creates a traceable snapshot of the current accounts report.')) . '</div>
             </section>
-            <form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">
-                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-                <input type="hidden" name="card_action" value="Ixbrl">
-                <input type="hidden" name="intent" value="build_ixbrl_facts">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <button class="button primary" type="submit"' . $disabled . '>Build / Refresh Facts</button>
-            </form>
             ' . $table . '
         </div>';
     }

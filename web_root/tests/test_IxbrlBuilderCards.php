@@ -380,6 +380,8 @@ $harness->run(_ixbrl_facts_previewCard::class, static function (GeneratedService
         $harness->assertFalse(str_contains($html, '£1'));
         $harness->assertTrue(str_contains($html, 'Confirmed accounts disclosures'));
         $harness->assertFalse(str_contains($html, '&quot;source_summary&quot;'));
+        $harness->assertFalse(str_contains($html, 'Build / Refresh Facts'));
+        $harness->assertFalse(str_contains($html, 'name="intent" value="build_ixbrl_facts"'));
     });
 });
 
@@ -413,6 +415,8 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                 ],
             ];
             $draftHtml = $card->render($context);
+            $harness->assertFalse(str_contains($draftHtml, 'Build / Refresh Facts'));
+            $harness->assertFalse(str_contains($draftHtml, 'name="intent" value="build_ixbrl_facts"'));
             $harness->assertTrue(str_contains($draftHtml, 'Generate Filing Export</button>'));
             $harness->assertTrue(str_contains($draftHtml, 'Generate Filing Export</button>') && str_contains($draftHtml, 'disabled'));
             $harness->assertTrue(str_contains($draftHtml, 'Run External Validation'));

@@ -15,7 +15,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
 
     public function helper(array $context): string
     {
-        return 'Builds the filing facts, generates the iXBRL export, checks it internally and with Arelle, and enables the download when the export is filing-ready.';
+        return 'Generates the iXBRL export from the approved facts, checks it internally and with Arelle, and enables the download when the export is filing-ready.';
     }
 
     protected function additionalInvalidationFacts(): array { return ['page.context']; }
@@ -28,7 +28,6 @@ final class _ixbrl_generationCard extends CardBaseFramework
         $run = (array)($context['ixbrl']['latest_run'] ?? []);
         $readiness = (array)($context['ixbrl']['readiness'] ?? []);
         $arelleStatus = (array)($readiness['arelle_status'] ?? []);
-        $canBuild = !empty($readiness['can_build_facts']);
         $canGenerate = !empty($readiness['can_generate']);
         $canValidateExternal = !empty($readiness['can_validate']);
         $readyForFiling = !empty($readiness['ready_for_filing']);
@@ -99,14 +98,6 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     ? '<div class="helper"><span class="badge warning">Review draft only</span> The generated file is withheld from filing download until the current file passes every validation and hash check.</div>'
                     : '') . '
             </section>
-            <form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">
-                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-                <input type="hidden" name="card_action" value="Ixbrl">
-                <input type="hidden" name="intent" value="build_ixbrl_facts">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <button class="button" type="submit"' . ($canBuild ? '' : ' disabled') . '>Build / Refresh Facts</button>
-            </form>
             <form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Ixbrl">

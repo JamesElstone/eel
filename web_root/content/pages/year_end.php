@@ -80,11 +80,12 @@ final class _year_end extends PageContextFramework
         $company = (array)($baseContext['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
-        /** @var \eel_accounts\Service\YearEndChecklistService $checklistService */
-        $checklistService = $services->get(\eel_accounts\Service\YearEndChecklistService::class);
-        $checklist = $companyId > 0 && $accountingPeriodId > 0
-            ? ($checklistService->fetchChecklist($companyId, $accountingPeriodId) ?? [])
-            : [];
+        $checklist = [];
+        if ($this->shouldBuildChecklist($actionResult) && $companyId > 0 && $accountingPeriodId > 0) {
+            /** @var \eel_accounts\Service\YearEndChecklistService $checklistService */
+            $checklistService = $services->get(\eel_accounts\Service\YearEndChecklistService::class);
+            $checklist = $checklistService->fetchChecklist($companyId, $accountingPeriodId) ?? [];
+        }
 
         return [
             'page' => array_merge((array)($baseContext['page'] ?? []), [
@@ -94,8 +95,15 @@ final class _year_end extends PageContextFramework
                 'checklist' => $checklist,
                 'checklist_has_blockers' => $this->checklistHasBlockers($checklist),
             ],
-            'year_end_audit_rows' => (new \eel_accounts\Repository\AccountingAuditRepository())->fetchRecentYearEndAudit(200),
         ];
+    }
+
+    private function shouldBuildChecklist(ActionResultFramework $actionResult): bool
+    {
+        $changedFacts = $actionResult->changedFacts();
+
+        return $changedFacts === []
+            || array_diff($changedFacts, ['year.end.notes', 'year.end.audit.log']) !== [];
     }
 
     private function checklistHasBlockers(array $checklist): bool

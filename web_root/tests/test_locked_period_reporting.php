@@ -87,6 +87,16 @@ $harness->check('LockedPeriodReporting', 'locked workflow cards render read-only
         $harness->assertTrue(str_contains($notesHtml, 'readonly'));
         $harness->assertFalse(str_contains($notesHtml, 'Save Notes') || str_contains($notesHtml, 'Save notes'));
 
+        $notesServiceContextHtml = (new _year_end_notesCard())->render([
+            'company' => ['id' => $companyId, 'accounting_period_id' => $accountingPeriodId],
+            'services' => [
+                'year_end_review' => ['is_locked' => 1, 'review_notes' => 'Lightweight locked note'],
+            ],
+        ]);
+        $harness->assertTrue(str_contains($notesServiceContextHtml, 'Lightweight locked note'));
+        $harness->assertTrue(str_contains($notesServiceContextHtml, 'readonly'));
+        $harness->assertFalse(str_contains($notesServiceContextHtml, 'Save Notes') || str_contains($notesServiceContextHtml, 'Save notes'));
+
         $expenseCreateHtml = (new _expense_claim_createCard())->render([
             'company' => ['id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'settings' => []],
             'accounting_period' => [

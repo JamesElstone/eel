@@ -755,21 +755,8 @@ final class YearEndChecklistService
             return $scopeError;
         }
 
-        ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'change the year-end notes for this period');
-        $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId);
-        if (empty($checklistResult['success'])) {
-            return $checklistResult;
-        }
-
         $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
-        $result = $lock->saveNotes($companyId, $accountingPeriodId, $notes, $changedBy);
-        if (empty($result['success'])) {
-            return $result;
-        }
-
-        return $result + [
-            'checklist' => $this->fetchChecklist($companyId, $accountingPeriodId),
-        ];
+        return $lock->saveNotes($companyId, $accountingPeriodId, $notes, $changedBy);
     }
 
     public function saveTaxReadinessAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {

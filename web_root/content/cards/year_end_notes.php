@@ -29,6 +29,21 @@ final class _year_end_notesCard extends CardBaseFramework
         return ['year.end.state', 'year.end.checklist', 'year.end.audit.log'];
     }
 
+    public function services(): array
+    {
+        return [
+            [
+                'key' => 'year_end_review',
+                'service' => \eel_accounts\Service\YearEndLockService::class,
+                'method' => 'fetchReview',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                ],
+            ],
+        ];
+    }
+
     public function handleError(string $serviceKey, array $error, array $context): string
     {
         return '';
@@ -36,16 +51,17 @@ final class _year_end_notesCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $checklist = $this->checklist($context);
-        if ($checklist === []) {
+        $company = (array)($context['company'] ?? []);
+        $companyId = (int)($company['id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return '<div class="helper">Year-end notes are not available for the selected accounting period.</div>';
         }
 
-        $company = (array)($context['company'] ?? []);
-        $companyId = (int)($company['id'] ?? 0);
-        $accountingPeriod = (array)($checklist['accounting_period'] ?? []);
-        $accountingPeriodId = (int)($accountingPeriod['id'] ?? ($company['accounting_period_id'] ?? 0));
-        $review = (array)($checklist['review'] ?? []);
+        $review = (array)(($context['services'] ?? [])['year_end_review'] ?? []);
+        if ($review === []) {
+            $review = (array)(($this->checklist($context))['review'] ?? []);
+        }
         $notes = (string)($review['review_notes'] ?? '');
         $isLocked = !empty($review['is_locked'])
             || (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);

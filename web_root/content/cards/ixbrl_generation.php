@@ -41,7 +41,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             && trim((string)($run['generated_path'] ?? '')) !== ''
             && is_file((string)$run['generated_path']);
         $download = $readyForFiling && $fileExists
-            ? '<form method="post" action="?page=disclosures" class="actions-row">'
+            ? '<form method="post" action="?page=disclosures">'
                 . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
                 . '<input type="hidden" name="card_action" value="Ixbrl">'
                 . '<input type="hidden" name="intent" value="download_ixbrl_filing">'
@@ -96,16 +96,18 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 ' . (!$readyForFiling && $fileExists
                     ? '<div class="helper"><span class="badge warning">Review draft only</span> The generated file is withheld from filing download until the current file passes every validation and hash check.</div>'
                     : '') . '
-                <form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">
-                    ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-                    <input type="hidden" name="card_action" value="Ixbrl">
-                    <input type="hidden" name="intent" value="generate_ixbrl_preview">
-                    <input type="hidden" name="company_id" value="' . $companyId . '">
-                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                    <button class="button primary" type="submit"' . ($canGenerate ? '' : ' disabled') . '>Generate Filing Export</button>
-                </form>
+                <div class="actions-row">
+                    <form method="post" action="?page=disclosures" data-ajax="true">
+                        ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
+                        <input type="hidden" name="card_action" value="Ixbrl">
+                        <input type="hidden" name="intent" value="generate_ixbrl_preview">
+                        <input type="hidden" name="company_id" value="' . $companyId . '">
+                        <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                        <button class="button primary" type="submit"' . ($canGenerate ? '' : ' disabled') . '>Generate Accounting Period iXBRL</button>
+                    </form>
+                    ' . $download . '
+                </div>
             </section>
-            ' . $download . '
             ' . $this->computationPeriods($context, $companyId, $accountingPeriodId) . '
         </div>';
     }
@@ -141,12 +143,23 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . $this->metric('Internal validation', $this->validationLabel((string)($run['validation_status'] ?? 'not_run')))
                 . $this->metric('Arelle validation', $this->validationLabel((string)($run['external_validation_status'] ?? 'not_run')))
                 . '</div>';
-            foreach (array_values(array_unique(array_merge((array)($status['errors'] ?? []), (array)($status['artifact_errors'] ?? [])))) as $error) {
+            $errors = array_values(array_unique(array_merge((array)($status['errors'] ?? []), (array)($status['artifact_errors'] ?? []))));
+            $staleArtifactErrors = [
+                'The computation artifact filing basis is stale.',
+                'The computation taxonomy package is stale, changed or incompatible.',
+                'The computation mapping profile is stale or changed.',
+                'The computation artifact file is missing or has changed.',
+            ];
+            if (array_intersect($errors, $staleArtifactErrors) !== []) {
+                $errors = array_values(array_diff($errors, $staleArtifactErrors));
+                $errors[] = 'Corporation Tax iXBRL needs to be regenerated because its filing basis, taxonomy package, mapping profile, or artifact file is no longer current.';
+            }
+            foreach ($errors as $error) {
                 $html .= '<div class="helper ixbrl-computation-helper">' . HelperFramework::escape((string)$error) . '</div>';
             }
             $html .= '<div class="form-row-actions"><form method="post" action="?page=disclosures" data-ajax="true">' . $hidden
                 . '<input type="hidden" name="intent" value="generate_computation_ixbrl"><button class="button primary" type="submit"'
-                . ($ready ? '' : ' disabled') . '>Generate and validate</button></form>';
+                . ($ready ? '' : ' disabled') . '>Generate Corporation Tax Period iXBRL</button></form>';
             if ($fresh) {
                 $html .= '<form method="post" action="?page=disclosures" data-ajax="true">' . $hidden
                     . '<input type="hidden" name="intent" value="validate_computation_ixbrl"><button class="button" type="submit">Validate again</button></form>';

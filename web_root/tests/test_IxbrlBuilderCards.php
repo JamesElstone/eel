@@ -417,8 +417,8 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $draftHtml = $card->render($context);
             $harness->assertFalse(str_contains($draftHtml, 'Build / Refresh Facts'));
             $harness->assertFalse(str_contains($draftHtml, 'name="intent" value="build_ixbrl_facts"'));
-            $harness->assertTrue(str_contains($draftHtml, 'Generate Filing Export</button>'));
-            $harness->assertTrue(str_contains($draftHtml, 'Generate Filing Export</button>') && str_contains($draftHtml, 'disabled'));
+            $harness->assertTrue(str_contains($draftHtml, 'Generate Accounting Period iXBRL</button>'));
+            $harness->assertTrue(str_contains($draftHtml, 'Generate Accounting Period iXBRL</button>') && str_contains($draftHtml, 'disabled'));
             $harness->assertFalse(str_contains($draftHtml, 'Run External Validation'));
             $harness->assertFalse(str_contains($draftHtml, 'name="intent" value="validate_ixbrl_external"'));
             $harness->assertTrue(str_contains($draftHtml, 'Arelle Status') && str_contains($draftHtml, 'Installed'));
@@ -453,6 +453,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(str_contains($draft, 'Corporation Tax iXBRL'));
         $harness->assertTrue(str_contains($draft, '<div class="summary-label">CT period</div>'));
         $harness->assertTrue(str_contains($draft, 'generate_computation_ixbrl'));
+        $harness->assertTrue(str_contains($draft, 'Generate Corporation Tax Period iXBRL</button>'));
         $harness->assertTrue(str_contains($draft, 'validate_computation_ixbrl'));
         $harness->assertFalse(str_contains($draft, 'download_computation_ixbrl'));
 
@@ -465,6 +466,16 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         $withHelpers = $card->render($context);
         $harness->assertTrue(str_contains($withHelpers, 'class="helper ixbrl-computation-helper">Approve the current disclosures'));
         $harness->assertTrue(str_contains($withHelpers, 'class="helper ixbrl-computation-helper">No current frozen computation artifact exists'));
+
+        $context['ixbrl']['computation_periods'][0]['status']['artifact_errors'] = [
+            'The computation artifact filing basis is stale.',
+            'The computation taxonomy package is stale, changed or incompatible.',
+            'The computation mapping profile is stale or changed.',
+            'The computation artifact file is missing or has changed.',
+        ];
+        $withStaleArtifact = $card->render($context);
+        $harness->assertTrue(str_contains($withStaleArtifact, 'Corporation Tax iXBRL needs to be regenerated because its filing basis'));
+        $harness->assertFalse(str_contains($withStaleArtifact, 'The computation mapping profile is stale or changed.'));
 
         $context['ixbrl']['computation_periods'][0]['status']['fileable'] = true;
         $ready = $card->render($context);

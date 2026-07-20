@@ -107,7 +107,7 @@ final class _director_loan_stateCard extends CardBaseFramework
 
         return '
             <div class="actions-row">
-                <a class="button" href="https://www.gov.uk/hmrc-internal-manuals/employment-income-manual/eim26198" target="_blank" rel="noopener noreferrer">HMRC guidance on netting director loan balances</a>
+                <a class="button" href="https://www.gov.uk/hmrc-internal-manuals/employment-income-manual/eim26198" target="_blank" rel="noopener noreferrer">HMRC Guidance on Netting Director Loan Balances</a>
             </div>
             <div class="month-grid">
                 ' . $this->stat('Gross Director Loan Asset', $this->money($settings, $statement['asset_receivable'] ?? 0)) . '

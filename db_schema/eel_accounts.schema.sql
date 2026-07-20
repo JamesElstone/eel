@@ -1166,12 +1166,18 @@ CREATE TABLE `hmrc_ct600_submissions` (
   `response_headers_json` longtext DEFAULT NULL,
   `request_body_path` varchar(1000) DEFAULT NULL,
   `manifest_path` varchar(1000) DEFAULT NULL,
+  `source_manifest_json` longtext DEFAULT NULL,
+  `source_manifest_sha256` char(64) DEFAULT NULL,
+  `test_submission_id` bigint(20) DEFAULT NULL,
   `response_body_path` varchar(1000) DEFAULT NULL,
   `response_sha256` char(64) DEFAULT NULL,
   `validation_json` longtext DEFAULT NULL,
   `declarant_name` varchar(255) DEFAULT NULL,
   `declarant_status` varchar(255) DEFAULT NULL,
   `declaration_confirmed` tinyint(1) NOT NULL DEFAULT 0,
+  `authority_confirmed` tinyint(1) NOT NULL DEFAULT 0,
+  `authority_confirmed_at` datetime DEFAULT NULL,
+  `authority_confirmed_by` varchar(255) DEFAULT NULL,
   `supplementary_scope_confirmed` tinyint(1) NOT NULL DEFAULT 0,
   `original_unfiled_confirmed` tinyint(1) NOT NULL DEFAULT 0,
   `declaration_approved_at` datetime DEFAULT NULL,
@@ -1186,6 +1192,7 @@ CREATE TABLE `hmrc_ct600_submissions` (
   `cleanup_response_path` varchar(1000) DEFAULT NULL,
   `cleanup_response_sha256` char(64) DEFAULT NULL,
   `cleanup_error` text DEFAULT NULL,
+  `cleanup_attempts` int(11) NOT NULL DEFAULT 0,
   `recovery_attempts` int(11) NOT NULL DEFAULT 0,
   `last_recovery_at` datetime DEFAULT NULL,
   `invalidated_at` datetime DEFAULT NULL,
@@ -1199,9 +1206,12 @@ CREATE TABLE `hmrc_ct600_submissions` (
   UNIQUE KEY `uq_hmrc_ct600_idempotency` (`idempotency_key`),
   KEY `idx_hmrc_ct600_environment_outcome` (`environment`,`business_outcome`),
   KEY `idx_hmrc_ct600_poll_due` (`protocol_state`,`next_poll_at`),
+  KEY `idx_hmrc_ct600_source_manifest` (`ct_period_id`,`environment`,`source_manifest_sha256`,`body_sha256`),
+  KEY `idx_hmrc_ct600_test_submission` (`test_submission_id`),
   CONSTRAINT `fk_hmrc_ct600_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_hmrc_ct600_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_hmrc_ct600_ct_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+  CONSTRAINT `fk_hmrc_ct600_ct_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_hmrc_ct600_test_submission` FOREIGN KEY (`test_submission_id`) REFERENCES `hmrc_ct600_submissions` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 

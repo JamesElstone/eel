@@ -79,6 +79,25 @@ $harness->check(\eel_accounts\Service\HmrcCt600VersionService::class, 'selects V
     }
 });
 
+$harness->check(\eel_accounts\Service\HmrcCt600VersionService::class, 'uses the published V3 lifecycle only from its official live date', static function () use ($harness, $service, $insertFixture): void {
+    InterfaceDB::beginTransaction();
+    try {
+        $insertFixture();
+        InterfaceDB::prepareExecute(
+            'UPDATE hmrc_ct_rim_packages SET hmrc_status = :status, live_from = NULL WHERE id = :id',
+            ['status' => 'published', 'id' => 2]
+        );
+        $before = $service->resolveForCtPeriod('2025-04-01', '2026-03-31', new DateTimeImmutable('2026-04-06 23:59:59Z'));
+        $after = $service->resolveForCtPeriod('2025-04-01', '2026-03-31', new DateTimeImmutable('2026-04-07 00:00:00Z'));
+        $harness->assertSame(false, $before['ok']);
+        $harness->assertSame(true, $after['ok']);
+        $harness->assertSame('V3', $after['form_version']);
+        $harness->assertSame('2026-04-07 00:00:00', $after['live_from']);
+    } finally {
+        if (InterfaceDB::inTransaction()) { InterfaceDB::rollBack(); }
+    }
+});
+
 $harness->run(\eel_accounts\Service\HmrcCt600VersionService::class, static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\HmrcCt600VersionService $service): void {
     $harness->check(\eel_accounts\Service\HmrcCt600VersionService::class, 'rejects invalid period dates', static function () use ($harness, $service): void {
         $result = $service->resolveForCtPeriod('2025-02-30', '2026-01-31');

@@ -32,6 +32,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
         $canGenerate = !empty($readiness['can_generate']);
         $canValidateExternal = !empty($readiness['can_validate']);
         $readyForFiling = !empty($readiness['ready_for_filing']);
+        $canGenerateAll = $canGenerate && $this->allComputationPeriodsReady($context);
         $runFreshness = (array)($run['run_freshness'] ?? []);
         $stale = (int)($run['fact_count'] ?? 0) > 0
             && (string)($runFreshness['state'] ?? '') !== 'current';
@@ -53,6 +54,23 @@ final class _ixbrl_generationCard extends CardBaseFramework
             : '';
 
         return '<div class="settings-stack">
+            <section class="panel-soft">
+                <div class="status-head">
+                    <div>
+                        <h3 class="card-title">Complete filing set</h3>
+                        <div class="helper">Generate and validate the accounts iXBRL and every computation iXBRL for this accounting period in one operation.</div>
+                    </div>
+                </div>
+                <form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">
+                    ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
+                    <input type="hidden" name="card_action" value="Ixbrl">
+                    <input type="hidden" name="intent" value="generate_all_filing_ixbrl">
+                    <input type="hidden" name="company_id" value="' . $companyId . '">
+                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                    <button class="button primary" type="submit"' . ($canGenerateAll ? '' : ' disabled') . '>Generate all filing iXBRLs</button>
+                </form>
+                ' . ($canGenerateAll ? '' : '<div class="helper">Approve a generation-ready accounts basis and resolve every CT-period computation blocker first.</div>') . '
+            </section>
             <h3>Accounts iXBRL</h3>
             <section class="panel-soft">
                 <div class="status-head">
@@ -158,6 +176,24 @@ final class _ixbrl_generationCard extends CardBaseFramework
             $html .= '</div></section>';
         }
         return $html;
+    }
+
+    private function allComputationPeriodsReady(array $context): bool
+    {
+        $periods = (array)($context['ixbrl']['computation_periods'] ?? []);
+        if ($periods === []) {
+            return false;
+        }
+
+        foreach ($periods as $item) {
+            $period = (array)($item['ct_period'] ?? []);
+            $status = (array)($item['status'] ?? []);
+            if ((int)($period['ct_period_id'] ?? $period['id'] ?? 0) <= 0 || empty($status['ready'])) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function metric(string $label, string $value): string

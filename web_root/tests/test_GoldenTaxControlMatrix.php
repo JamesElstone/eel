@@ -288,7 +288,7 @@ $harness->check('GoldenTaxControlMatrix', 'persists the exact loss checkpoint us
     }
 });
 
-$harness->check('GoldenTaxControlMatrix', 'keeps CT600 submission disabled for an unpersisted computation', static function () use ($harness): void {
+$harness->check('GoldenTaxControlMatrix', 'rejects CT600 packaging for an unpersisted computation', static function () use ($harness): void {
     InterfaceDB::beginTransaction();
     try {
         $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
@@ -308,7 +308,8 @@ $harness->check('GoldenTaxControlMatrix', 'keeps CT600 submission disabled for a
         $submissions = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService();
         $disabled = $submissions->validatePackage($companyId, $ctPeriodId, 'TEST');
         $harness->assertFalse((bool)($disabled['success'] ?? true));
-        $harness->assertSame('CT600 submission is not implemented.', (string)($disabled['errors'][0] ?? ''));
+        $harness->assertSame('The CT600 filing body is not ready.', (string)($disabled['errors'][0] ?? ''));
+        $harness->assertTrue(goldenTaxControlErrorsContain($disabled, 'current approved CT-period filing basis'));
     } finally {
         if (InterfaceDB::inTransaction()) {
             InterfaceDB::rollBack();
@@ -316,7 +317,7 @@ $harness->check('GoldenTaxControlMatrix', 'keeps CT600 submission disabled for a
     }
 });
 
-$harness->check('GoldenTaxControlMatrix', 'enforces CT period sequence while CT600 submission remains disabled', static function () use ($harness): void {
+$harness->check('GoldenTaxControlMatrix', 'enforces CT period sequence and removes the legacy draft route', static function () use ($harness): void {
     InterfaceDB::beginTransaction();
     try {
         $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
@@ -349,7 +350,10 @@ $harness->check('GoldenTaxControlMatrix', 'enforces CT period sequence while CT6
         $submissions = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService();
         $disabled = $submissions->createSubmissionDraft($companyId, $firstId, 'TEST');
         $harness->assertFalse((bool)($disabled['success'] ?? true));
-        $harness->assertSame('CT600 submission is not implemented.', (string)($disabled['errors'][0] ?? ''));
+        $harness->assertSame(
+            'Use Test or Submit Tax Return to prepare and transmit one immutable package.',
+            (string)($disabled['errors'][0] ?? '')
+        );
     } finally {
         if (InterfaceDB::inTransaction()) {
             InterfaceDB::rollBack();
@@ -357,7 +361,7 @@ $harness->check('GoldenTaxControlMatrix', 'enforces CT period sequence while CT6
     }
 });
 
-$harness->check('GoldenTaxControlMatrix', 'keeps an incomplete CT600 package disabled', static function () use ($harness): void {
+$harness->check('GoldenTaxControlMatrix', 'rejects an incomplete CT600 package before transmission', static function () use ($harness): void {
     InterfaceDB::beginTransaction();
     try {
         $companyId = GoldenAccountsFixture::EMPTY_COMPANY_ID;
@@ -393,7 +397,8 @@ $harness->check('GoldenTaxControlMatrix', 'keeps an incomplete CT600 package dis
         $result = (new \eel_accounts\Service\HmrcCorporationTaxSubmissionService())
             ->validatePackage($companyId, $ctPeriodId, 'TEST');
         $harness->assertFalse((bool)($result['success'] ?? true));
-        $harness->assertSame('CT600 submission is not implemented.', (string)($result['errors'][0] ?? ''));
+        $harness->assertSame('The CT600 filing body is not ready.', (string)($result['errors'][0] ?? ''));
+        $harness->assertTrue(goldenTaxControlErrorsContain($result, 'current approved CT-period filing basis'));
     } finally {
         if (InterfaceDB::inTransaction()) {
             InterfaceDB::rollBack();

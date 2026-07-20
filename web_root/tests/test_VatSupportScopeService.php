@@ -70,7 +70,10 @@ $harness->run(\eel_accounts\Service\VatSupportScopeService::class, static functi
                 : 0;
 
             $harness->assertSame(false, (bool)$result['success']);
-            $harness->assertSame('CT600 submission is not implemented.', (string)($result['errors'][0] ?? ''));
+            $harness->assertSame(
+                'Use Test or Submit Tax Return to prepare and transmit one immutable package.',
+                (string)($result['errors'][0] ?? '')
+            );
             $harness->assertSame($before, $after);
         } finally {
             if (InterfaceDB::inTransaction()) {
@@ -463,7 +466,7 @@ $harness->run(\eel_accounts\Service\VatSupportScopeService::class, static functi
         }
     });
 
-    $harness->check(\eel_accounts\Service\VatSupportScopeService::class, 'both CT600 compatibility builders fail closed without generating a draft', static function () use ($harness): void {
+    $harness->check(\eel_accounts\Service\VatSupportScopeService::class, 'both CT600 builders fail closed without an approved frozen filing basis', static function () use ($harness): void {
         GoldenAccountsFixture::build();
         InterfaceDB::beginTransaction();
         $expectedPath = '';
@@ -538,7 +541,11 @@ $harness->run(\eel_accounts\Service\VatSupportScopeService::class, static functi
                 foreach ($results as $result) {
                     $harness->assertSame(false, (bool)($result['ok'] ?? true));
                     $harness->assertSame(null, $result['path'] ?? null);
-                    $harness->assertSame('CT600 submission is not implemented.', (string)($result['errors'][0] ?? ''));
+                    $harness->assertTrue((array)($result['errors'] ?? []) !== []);
+                    $harness->assertFalse(str_contains(
+                        implode(' ', array_map('strval', (array)($result['errors'] ?? []))),
+                        'not implemented'
+                    ));
                 }
             }
 

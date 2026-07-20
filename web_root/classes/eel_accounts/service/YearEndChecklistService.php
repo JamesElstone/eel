@@ -1520,6 +1520,10 @@ final class YearEndChecklistService
             && (string)($taxReadiness['freeze_status'] ?? '') === 'ready_for_approval';
         $taxFreezeBlockers = (array)($taxReadiness['blocking_diagnostics'] ?? []);
         $firstTaxFreezeBlocker = (array)($taxFreezeBlockers[0] ?? []);
+        $taxFreezeErrors = array_values(array_filter(array_map(
+            static fn(mixed $error): string => trim((string)$error),
+            (array)($taxReadiness['errors'] ?? [])
+        )));
         $sections['corporation_tax_readiness'][] = $this->makeCheck(
             'tax_basis_ready_to_freeze',
             'Tax basis ready to freeze',
@@ -1527,10 +1531,14 @@ final class YearEndChecklistService
             $taxFreezeReady ? 'pass' : 'fail',
             $taxFreezeReady
                 ? 'Every CT period has a complete calculation with no unresolved issue that can change the accounts, tax basis, provision, or frozen computation.'
-                : (string)($firstTaxFreezeBlocker['message'] ?? 'Resolve the amount-affecting Corporation Tax issues before closing Year End.'),
+                : (string)($firstTaxFreezeBlocker['message']
+                    ?? $taxFreezeErrors[0]
+                    ?? 'Resolve the amount-affecting Corporation Tax issues before closing Year End.'),
             $taxFreezeReady
                 ? 'Ready to freeze'
-                : (count($taxFreezeBlockers) . ' action' . (count($taxFreezeBlockers) === 1 ? '' : 's') . ' required'),
+                : ($taxFreezeBlockers === []
+                    ? 'Action required'
+                    : (count($taxFreezeBlockers) . ' action' . (count($taxFreezeBlockers) === 1 ? '' : 's') . ' required')),
             '?page=corporation_tax'
         );
         $taxEstimateCheck = $this->makeCheck(

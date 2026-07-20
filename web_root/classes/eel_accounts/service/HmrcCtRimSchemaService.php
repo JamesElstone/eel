@@ -99,26 +99,300 @@ final class HmrcCtRimSchemaService
     {
         if (!\InterfaceDB::tableExists('hmrc_ct_rim_components')) { return; }
         \InterfaceDB::prepareExecute('DELETE FROM hmrc_ct_rim_components WHERE package_id = :package_id', ['package_id' => $packageId]);
-        foreach ($files as $file) {
-            if ((string)($file['file_type'] ?? '') !== 'xsd') { continue; }
-            $previous = libxml_use_internal_errors(true);
-            $document = new \DOMDocument();
-            if (!$document->load((string)$file['extracted_path'], LIBXML_NONET)) { libxml_clear_errors(); libxml_use_internal_errors($previous); continue; }
-            $schema = $document->documentElement;
-            $namespace = $schema?->getAttribute('targetNamespace') ?: null;
-            $xpath = new \DOMXPath($document); $xpath->registerNamespace('xs', 'http://www.w3.org/2001/XMLSchema');
-            foreach ($xpath->query('/xs:schema/xs:element[@name]') ?: [] as $element) {
-                if (!$element instanceof \DOMElement) { continue; }
-                $name = $element->getAttribute('name');
-                $componentPath = (string)$file['archive_path'] . '#/' . $name;
+        $components = $this->inspectSchemaFiles(array_values(array_filter(
+            $files,
+            static fn(array $file): bool => (string)($file['file_type'] ?? '') === 'xsd'
+        )));
+        $hasMetadata = \InterfaceDB::columnsExists('hmrc_ct_rim_components', [
+            'parent_path', 'sequence_order', 'is_leaf', 'source_file_id',
+        ]);
+        foreach ($components as $component) {
+            if ($hasMetadata) {
                 \InterfaceDB::prepareExecute(
                     'INSERT IGNORE INTO hmrc_ct_rim_components
-                     (package_id, component_path, element_name, namespace_uri, data_type, min_occurs, max_occurs, is_required)
-                     VALUES (:package_id, :component_path, :element_name, :namespace_uri, :data_type, :min_occurs, :max_occurs, :is_required)',
-                    ['package_id' => $packageId, 'component_path' => $componentPath, 'element_name' => $name, 'namespace_uri' => $namespace, 'data_type' => ($element->getAttribute('type') ?: null), 'min_occurs' => ($element->hasAttribute('minOccurs') ? (int)$element->getAttribute('minOccurs') : 1), 'max_occurs' => ($element->getAttribute('maxOccurs') ?: '1'), 'is_required' => (!$element->hasAttribute('minOccurs') || (int)$element->getAttribute('minOccurs') > 0) ? 1 : 0]
+                     (package_id, component_path, parent_path, element_name, namespace_uri, data_type,
+                      min_occurs, max_occurs, is_required, sequence_order, is_leaf, source_file_id)
+                     VALUES (:package_id, :component_path, :parent_path, :element_name, :namespace_uri, :data_type,
+                             :min_occurs, :max_occurs, :is_required, :sequence_order, :is_leaf, :source_file_id)',
+                    ['package_id' => $packageId] + $component
                 );
+                continue;
             }
-            libxml_clear_errors(); libxml_use_internal_errors($previous);
+            \InterfaceDB::prepareExecute(
+                'INSERT IGNORE INTO hmrc_ct_rim_components
+                 (package_id, component_path, element_name, namespace_uri, data_type, min_occurs, max_occurs, is_required)
+                 VALUES (:package_id, :component_path, :element_name, :namespace_uri, :data_type, :min_occurs, :max_occurs, :is_required)',
+                ['package_id' => $packageId] + $component
+            );
         }
+
+        if (\InterfaceDB::tableExists('ct_filing_mapping_profiles')) {
+            (new CtFilingMappingService())->prepareMappingsForPackage(
+                CtFilingMappingService::TARGET_RIM,
+                $packageId,
+                'hmrc-rim-catalogue'
+            );
+        }
+    }
+
+    /**
+     * Inspect one XSD without database access. This is also useful to review an
+     * HMRC artefact before it is admitted to the package catalogue.
+     *
+     * @return list<array<string, int|string|null>>
+     */
+    public function inspectSchemaFile(string $path): array
+    {
+        if (!is_file($path)) {
+            throw new \InvalidArgumentException('The RIM schema file was not found.');
+        }
+        return $this->inspectSchemaFiles([[
+            'id' => null,
+            'archive_path' => basename($path),
+            'extracted_path' => $path,
+            'file_type' => 'xsd',
+        ]]);
+    }
+
+    /** @return list<array<string, int|string|null>> */
+    private function inspectSchemaFiles(array $files): array
+    {
+        $previous = libxml_use_internal_errors(true);
+        $schemas = [];
+        $elements = [];
+        $types = [];
+        $groups = [];
+        try {
+            foreach ($files as $file) {
+                $document = new \DOMDocument();
+                if (!$document->load((string)($file['extracted_path'] ?? ''), LIBXML_NONET)) {
+                    libxml_clear_errors();
+                    continue;
+                }
+                $schema = $document->documentElement;
+                if (!$schema instanceof \DOMElement
+                    || $schema->namespaceURI !== 'http://www.w3.org/2001/XMLSchema') {
+                    continue;
+                }
+                $xpath = new \DOMXPath($document);
+                $xpath->registerNamespace('xs', 'http://www.w3.org/2001/XMLSchema');
+                $context = [
+                    'document' => $document,
+                    'schema' => $schema,
+                    'xpath' => $xpath,
+                    'namespace' => $schema->getAttribute('targetNamespace'),
+                    'file_id' => isset($file['id']) ? (int)$file['id'] : null,
+                ];
+                $schemas[] = $context;
+                foreach ($xpath->query('/xs:schema/xs:element[@name]') ?: [] as $node) {
+                    if ($node instanceof \DOMElement) {
+                        $elements[$this->schemaKey($context['namespace'], $node->getAttribute('name'))] = [$node, $context];
+                    }
+                }
+                foreach ($xpath->query('/xs:schema/xs:complexType[@name] | /xs:schema/xs:simpleType[@name]') ?: [] as $node) {
+                    if ($node instanceof \DOMElement) {
+                        $types[$this->schemaKey($context['namespace'], $node->getAttribute('name'))] = [$node, $context];
+                    }
+                }
+                foreach ($xpath->query('/xs:schema/xs:group[@name]') ?: [] as $node) {
+                    if ($node instanceof \DOMElement) {
+                        $groups[$this->schemaKey($context['namespace'], $node->getAttribute('name'))] = [$node, $context];
+                    }
+                }
+            }
+
+            $indexes = ['elements' => $elements, 'types' => $types, 'groups' => $groups];
+            $rows = [];
+            $order = 0;
+            foreach ($schemas as $context) {
+                foreach ($context['xpath']->query('/xs:schema/xs:element[@name]') ?: [] as $root) {
+                    if (!$root instanceof \DOMElement) { continue; }
+                    $this->walkElement($root, $context, '', true, $indexes, [], $rows, $order);
+                }
+            }
+            return array_values($rows);
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($previous);
+        }
+    }
+
+    private function walkElement(
+        \DOMElement $declaration,
+        array $context,
+        string $parentPath,
+        bool $ancestorsRequired,
+        array $indexes,
+        array $typeStack,
+        array &$rows,
+        int &$order
+    ): void {
+        $effective = $declaration;
+        if ($declaration->hasAttribute('ref')) {
+            $reference = $this->resolveQName($declaration->getAttribute('ref'), $declaration, $context['namespace']);
+            $resolved = $indexes['elements'][$this->schemaKey($reference['namespace'], $reference['local'])] ?? null;
+            if (is_array($resolved)) {
+                [$effective, $context] = $resolved;
+            }
+        }
+        $name = $declaration->getAttribute('name') ?: $effective->getAttribute('name');
+        if ($name === '') { return; }
+        $path = $parentPath === '' ? $name : $parentPath . '/' . $name;
+        if (isset($rows[$path])) { return; }
+        $min = $declaration->hasAttribute('minOccurs') ? max(0, (int)$declaration->getAttribute('minOccurs')) : 1;
+        $max = $declaration->getAttribute('maxOccurs') ?: '1';
+        $type = $this->elementType($effective, $context, $indexes);
+        [$children, $childStack] = $this->elementChildren($effective, $context, $indexes, $typeStack);
+        $required = $ancestorsRequired && $min > 0;
+        $rows[$path] = [
+            'component_path' => $path,
+            'parent_path' => $parentPath !== '' ? $parentPath : null,
+            'element_name' => $name,
+            'namespace_uri' => $context['namespace'] !== '' ? $context['namespace'] : null,
+            'data_type' => $type,
+            'min_occurs' => $min,
+            'max_occurs' => $max,
+            'is_required' => $required ? 1 : 0,
+            'sequence_order' => ++$order,
+            'is_leaf' => $children === [] ? 1 : 0,
+            'source_file_id' => $context['file_id'],
+        ];
+        foreach ($children as [$child, $childContext, $branchRequired]) {
+            $this->walkElement($child, $childContext, $path, $required && $branchRequired, $indexes, $childStack, $rows, $order);
+        }
+    }
+
+    private function elementType(\DOMElement $element, array $context, array $indexes): ?string
+    {
+        $declared = trim($element->getAttribute('type'));
+        if ($declared !== '') { return $declared; }
+        foreach ($element->childNodes as $child) {
+            if (!$child instanceof \DOMElement || $child->namespaceURI !== 'http://www.w3.org/2001/XMLSchema') { continue; }
+            if ($child->localName === 'simpleType') {
+                return $this->simpleTypeBase($child);
+            }
+            if ($child->localName === 'complexType') {
+                foreach ($child->childNodes as $contentContainer) {
+                    if (!$contentContainer instanceof \DOMElement
+                        || $contentContainer->namespaceURI !== 'http://www.w3.org/2001/XMLSchema'
+                        || !in_array($contentContainer->localName, ['simpleContent', 'complexContent'], true)) {
+                        continue;
+                    }
+                    foreach ($contentContainer->childNodes as $content) {
+                        if ($content instanceof \DOMElement
+                            && $content->namespaceURI === 'http://www.w3.org/2001/XMLSchema'
+                            && in_array($content->localName, ['extension', 'restriction'], true)
+                            && $content->hasAttribute('base')) {
+                            return $content->getAttribute('base');
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private function simpleTypeBase(\DOMElement $simpleType): ?string
+    {
+        foreach ($simpleType->childNodes as $child) {
+            if (!$child instanceof \DOMElement || $child->namespaceURI !== 'http://www.w3.org/2001/XMLSchema') { continue; }
+            if ($child->hasAttribute('base')) { return $child->getAttribute('base'); }
+            if ($child->hasAttribute('itemType')) { return $child->getAttribute('itemType'); }
+            if ($child->hasAttribute('memberTypes')) { return $child->getAttribute('memberTypes'); }
+        }
+        return null;
+    }
+
+    /** @return array{0:list<array{0:\DOMElement,1:array,2:bool}>,1:array} */
+    private function elementChildren(\DOMElement $element, array $context, array $indexes, array $typeStack): array
+    {
+        $typeNode = null;
+        $typeContext = $context;
+        foreach ($element->childNodes as $child) {
+            if ($child instanceof \DOMElement
+                && $child->namespaceURI === 'http://www.w3.org/2001/XMLSchema'
+                && $child->localName === 'complexType') {
+                $typeNode = $child;
+                break;
+            }
+        }
+        $declaredType = trim($element->getAttribute('type'));
+        if ($typeNode === null && $declaredType !== '') {
+            $qname = $this->resolveQName($declaredType, $element, $context['namespace']);
+            $key = $this->schemaKey($qname['namespace'], $qname['local']);
+            $resolved = $indexes['types'][$key] ?? null;
+            if (is_array($resolved) && !isset($typeStack[$key])) {
+                [$typeNode, $typeContext] = $resolved;
+                $typeStack[$key] = true;
+            }
+        }
+        if (!$typeNode instanceof \DOMElement || $typeNode->localName !== 'complexType') {
+            return [[], $typeStack];
+        }
+        return [$this->particleElements($typeNode, $typeContext, $indexes, $typeStack), $typeStack];
+    }
+
+    /** @return list<array{0:\DOMElement,1:array,2:bool}> */
+    private function particleElements(
+        \DOMElement $node,
+        array $context,
+        array $indexes,
+        array $typeStack,
+        bool $branchRequired = true
+    ): array
+    {
+        $rows = [];
+        foreach ($node->childNodes as $child) {
+            if (!$child instanceof \DOMElement || $child->namespaceURI !== 'http://www.w3.org/2001/XMLSchema') { continue; }
+            if ($child->localName === 'element') {
+                $rows[] = [$child, $context, $branchRequired];
+                continue;
+            }
+            if (in_array($child->localName, ['sequence', 'choice', 'all', 'complexContent', 'simpleContent', 'extension', 'restriction'], true)) {
+                $particleRequired = $branchRequired
+                    && (!$child->hasAttribute('minOccurs') || (int)$child->getAttribute('minOccurs') > 0);
+                if (in_array($child->localName, ['extension', 'restriction'], true) && $child->hasAttribute('base')) {
+                    $base = $this->resolveQName($child->getAttribute('base'), $child, $context['namespace']);
+                    $key = $this->schemaKey($base['namespace'], $base['local']);
+                    $resolved = $indexes['types'][$key] ?? null;
+                    if (is_array($resolved) && !isset($typeStack[$key])) {
+                        [$baseNode, $baseContext] = $resolved;
+                        $nextStack = $typeStack;
+                        $nextStack[$key] = true;
+                        $rows = array_merge($rows, $this->particleElements($baseNode, $baseContext, $indexes, $nextStack, $particleRequired));
+                    }
+                }
+                // A required choice requires one branch, not every branch.
+                $childBranchesRequired = $child->localName === 'choice' ? false : $particleRequired;
+                $rows = array_merge($rows, $this->particleElements($child, $context, $indexes, $typeStack, $childBranchesRequired));
+                continue;
+            }
+            if ($child->localName === 'group' && $child->hasAttribute('ref')) {
+                $group = $this->resolveQName($child->getAttribute('ref'), $child, $context['namespace']);
+                $resolved = $indexes['groups'][$this->schemaKey($group['namespace'], $group['local'])] ?? null;
+                if (is_array($resolved)) {
+                    [$groupNode, $groupContext] = $resolved;
+                    $groupRequired = $branchRequired
+                        && (!$child->hasAttribute('minOccurs') || (int)$child->getAttribute('minOccurs') > 0);
+                    $rows = array_merge($rows, $this->particleElements($groupNode, $groupContext, $indexes, $typeStack, $groupRequired));
+                }
+            }
+        }
+        return $rows;
+    }
+
+    /** @return array{namespace:string,local:string} */
+    private function resolveQName(string $qname, \DOMElement $node, string $defaultNamespace): array
+    {
+        $parts = explode(':', trim($qname), 2);
+        if (count($parts) === 2) {
+            return ['namespace' => (string)($node->lookupNamespaceURI($parts[0]) ?? ''), 'local' => $parts[1]];
+        }
+        return ['namespace' => $defaultNamespace, 'local' => $parts[0]];
+    }
+
+    private function schemaKey(string $namespace, string $localName): string
+    {
+        return $namespace . '|' . $localName;
     }
 }

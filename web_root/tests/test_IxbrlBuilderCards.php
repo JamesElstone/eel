@@ -393,4 +393,41 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         $ready = $card->render($context);
         $harness->assertTrue(str_contains($ready, 'download_computation_ixbrl'));
     });
+    $harness->check(_ixbrl_generationCard::class, 'offers one combined filing generation action only when every artifact can be built', static function () use ($harness, $card): void {
+        $context = [
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'ixbrl' => [
+                'readiness' => ['can_generate' => true],
+                'latest_run' => [],
+                'computation_periods' => [[
+                    'ct_period' => ['id' => 6, 'period_start' => '2022-09-05', 'period_end' => '2023-09-04'],
+                    'status' => ['ready' => true],
+                ], [
+                    'ct_period' => ['id' => 7, 'period_start' => '2023-09-05', 'period_end' => '2023-09-30'],
+                    'status' => ['ready' => true],
+                ]],
+            ],
+        ];
+
+        $ready = $card->render($context);
+        $harness->assertTrue(str_contains($ready, 'name="intent" value="generate_all_filing_ixbrl"'));
+        $harness->assertTrue(str_contains($ready, '>Generate all filing iXBRLs</button>'));
+        $harness->assertFalse(str_contains($ready, 'type="submit" disabled>Generate all filing iXBRLs</button>'));
+
+        $context['ixbrl']['computation_periods'][1]['status']['ready'] = false;
+        $blocked = $card->render($context);
+        $harness->assertTrue(str_contains($blocked, 'type="submit" disabled>Generate all filing iXBRLs</button>'));
+        $harness->assertTrue(str_contains($blocked, 'resolve every CT-period computation blocker'));
+    });
+});
+
+$harness->run(IxbrlAction::class, static function (GeneratedServiceClassTestHarness $harness, IxbrlAction $action): void {
+    $harness->check(IxbrlAction::class, 'delegates combined filing generation to the existing accounts and per-period generators', static function () use ($harness): void {
+        $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content'
+            . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'IxbrlAction.php');
+        $harness->assertTrue(str_contains($source, "\$intent === 'generate_all_filing_ixbrl'"));
+        $harness->assertTrue(str_contains($source, '$this->generatePreview($companyId, $accountingPeriodId)'));
+        $harness->assertTrue(str_contains($source, '$this->generateComputation($companyId, $accountingPeriodId, $ctPeriodId)'));
+        $harness->assertTrue(str_contains($source, 'projectForAccountingPeriod($companyId, $accountingPeriodId)'));
+    });
 });

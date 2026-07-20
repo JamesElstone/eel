@@ -24,20 +24,27 @@ final class HmrcCtRimCatalogueService
 
         if (\InterfaceDB::tableExists('hmrc_ct_rim_components')
             && \InterfaceDB::tableExists('ct_filing_mapping_profiles')) {
-            return \InterfaceDB::fetchAll(
+            $leafCondition = \InterfaceDB::columnExists('hmrc_ct_rim_components', 'is_leaf')
+                ? ' AND c.is_leaf = 1'
+                : '';
+            $rows = \InterfaceDB::fetchAll(
                 'SELECT p.*,
                         (SELECT COUNT(*) FROM hmrc_ct_rim_files f WHERE f.package_id = p.id AND f.file_type = \'xsd\') AS schema_count,
                         (SELECT f.archive_path FROM hmrc_ct_rim_files f WHERE f.package_id = p.id AND f.file_type = \'xsd\' ORDER BY (f.file_role = :primary) DESC, f.id LIMIT 1) AS primary_xsd,
                         (SELECT COUNT(*) FROM hmrc_ct_rim_components c WHERE c.package_id = p.id) AS component_count,
                         (SELECT COUNT(*) FROM ct_filing_mapping_profiles m WHERE m.rim_package_id = p.id AND m.status = :active AND m.compatibility_status = :compatible) AS compatible_profile_count,
-                        (SELECT COUNT(*) FROM hmrc_ct_rim_components c WHERE c.package_id = p.id AND c.is_required = 1
+                        (SELECT COUNT(*) FROM hmrc_ct_rim_components c WHERE c.package_id = p.id AND c.is_required = 1' . $leafCondition . '
                            AND NOT EXISTS (SELECT 1 FROM ct_filing_mapping_profiles m INNER JOIN ct600_rim_mappings x ON x.profile_id = m.id
                                            WHERE m.rim_package_id = p.id AND m.status = :active AND m.compatibility_status = :compatible AND x.target_xpath = c.component_path)) AS unmapped_required_count
                  FROM hmrc_ct_rim_packages p ORDER BY p.applicable_from ASC, p.form_version ASC, p.artifact_version DESC',
                 ['primary' => 'primary_schema', 'active' => 'active', 'compatible' => 'compatible']
             );
+            return array_map(fn(array $row): array => $this->effectiveLifecycle($row), $rows);
         }
-        return \InterfaceDB::fetchAll('SELECT * FROM hmrc_ct_rim_packages ORDER BY applicable_from ASC, form_version ASC, artifact_version DESC');
+        return array_map(
+            fn(array $row): array => $this->effectiveLifecycle($row),
+            \InterfaceDB::fetchAll('SELECT * FROM hmrc_ct_rim_packages ORDER BY applicable_from ASC, form_version ASC, artifact_version DESC')
+        );
     }
 
     public function refresh(): array
@@ -51,14 +58,19 @@ final class HmrcCtRimCatalogueService
         $checkedAt = gmdate('Y-m-d H:i:s');
         $changeHistory = array_values(array_filter((array)($document['details']['change_history'] ?? $document['change_history'] ?? []), 'is_array'));
         $latestNote = (string)($changeHistory[0]['note'] ?? '');
-        $latestChangeAt = $this->timestamp($changeHistory[0]['public_timestamp'] ?? null);
         $attachmentRows = $this->attachments($document);
         $updated = 0;
 
         foreach ($attachmentRows as $attachment) {
             $formVersion = (string)$attachment['form_version'];
             $artifactVersion = (string)$attachment['artifact_version'];
-            $liveFrom = $latestChangeAt !== null && strtolower((string)$attachment['status']) === 'live' ? $latestChangeAt : null;
+            $lifecycle = $this->effectiveLifecycle([
+                'form_version' => $formVersion,
+                'artifact_version' => $artifactVersion,
+                'hmrc_status' => (string)$attachment['status'],
+                'live_from' => $attachment['live_from'] ?? null,
+            ]);
+            $liveFrom = $lifecycle['live_from'] ?? null;
             $existing = \InterfaceDB::fetchOne(
                 'SELECT id, local_path, sha256, package_state, applicable_from, applicable_to FROM hmrc_ct_rim_packages WHERE form_version = :form_version AND artifact_version = :artifact_version LIMIT 1',
                 ['form_version' => $formVersion, 'artifact_version' => $artifactVersion]
@@ -80,7 +92,7 @@ final class HmrcCtRimCatalogueService
                 'applicable_to' => is_array($existing) ? ($existing['applicable_to'] ?? null) : null,
                 'published_at' => $sourceUpdatedAt,
                 'live_from' => $liveFrom,
-                'hmrc_status' => (string)$attachment['status'],
+                'hmrc_status' => (string)$lifecycle['hmrc_status'],
                 'source_url' => self::SOURCE_URL,
                 'download_url' => (string)$attachment['url'],
                 'local_path' => is_array($existing) ? ($existing['local_path'] ?? null) : null,
@@ -100,9 +112,43 @@ final class HmrcCtRimCatalogueService
         return PROJECT_ROOT . self::CACHE_DIRECTORY;
     }
 
+    /**
+     * Normalise the lifecycle facts HMRC publishes in prose rather than in an
+     * attachment title. Exact natural package identities are intentional: a
+     * future artefact is never silently treated as live.
+     */
+    public function effectiveLifecycle(array $package): array
+    {
+        $form = strtoupper(trim((string)($package['form_version'] ?? '')));
+        $artifact = strtoupper(trim((string)($package['artifact_version'] ?? '')));
+        $status = strtolower(trim((string)($package['hmrc_status'] ?? 'published')));
+        $knownLive = [
+            'V2|V3.99' => '2015-07-22 00:00:00',
+            'V3|V1.994' => '2026-04-07 00:00:00',
+        ];
+        $identity = $form . '|' . $artifact;
+        if (isset($knownLive[$identity]) && in_array($status, ['published', 'live'], true)) {
+            $package['hmrc_status'] = 'live';
+            if (trim((string)($package['live_from'] ?? '')) === '') {
+                $package['live_from'] = $knownLive[$identity];
+            }
+        } else {
+            $package['hmrc_status'] = $status !== '' ? $status : 'published';
+        }
+        return $package;
+    }
+
     private function attachments(array $document): array
     {
         $items = array_merge((array)($document['details']['documents'] ?? []), (array)($document['details']['attachments'] ?? []), (array)($document['documents'] ?? []), (array)($document['attachments'] ?? []));
+        $publicationText = strtolower(strip_tags(
+            (string)($document['details']['body'] ?? '') . ' '
+            . (string)($document['description'] ?? '') . ' '
+            . implode(' ', array_map(
+                static fn(array $entry): string => (string)($entry['note'] ?? ''),
+                array_values(array_filter((array)($document['details']['change_history'] ?? []), 'is_array'))
+            ))
+        ));
         $rows = [];
         foreach ($items as $item) {
             if (!is_array($item)) { continue; }
@@ -110,7 +156,30 @@ final class HmrcCtRimCatalogueService
             $url = trim((string)($item['url'] ?? $item['href'] ?? ''));
             if ($url === '' || !str_starts_with($url, 'https://assets.publishing.service.gov.uk/')) { continue; }
             if (preg_match('/CT600\s+V([0-9]+)\b.*?Artefacts\s+V([0-9.]+)/i', $title, $match) !== 1) { continue; }
-            $rows[] = ['form_version' => 'V' . $match[1], 'artifact_version' => 'V' . $match[2], 'url' => $url, 'status' => stripos($title, 'live') !== false ? 'live' : 'published'];
+            $formVersion = 'V' . $match[1];
+            $artifactVersion = 'V' . $match[2];
+            $formToken = '(?:ct600\s*)?v?' . preg_quote($match[1], '/') . '\b';
+            $artifactToken = '(?:artefacts?\s*)?v?' . preg_quote($match[2], '/') . '\b';
+            $liveProximity = '/(?:'
+                . $formToken . '.{0,240}' . $artifactToken . '.{0,160}\blive\b'
+                . '|\blive\b.{0,160}' . $formToken . '.{0,240}' . $artifactToken
+                . ')/is';
+            $mentionedLive = stripos($title, 'live') !== false
+                || preg_match($liveProximity, $publicationText) === 1;
+            $row = $this->effectiveLifecycle([
+                'form_version' => $formVersion,
+                'artifact_version' => $artifactVersion,
+                'url' => $url,
+                'hmrc_status' => $mentionedLive ? 'live' : 'published',
+                'live_from' => null,
+            ]);
+            $rows[] = [
+                'form_version' => $formVersion,
+                'artifact_version' => $artifactVersion,
+                'url' => $url,
+                'status' => (string)$row['hmrc_status'],
+                'live_from' => $row['live_from'] ?? null,
+            ];
         }
         return $rows;
     }

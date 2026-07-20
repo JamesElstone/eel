@@ -7,8 +7,8 @@ namespace eel_accounts\Service;
 /** Freezes the complete post-Year-End filing basis and builds its accounts facts atomically. */
 final class IxbrlAccountsFilingApprovalService
 {
-    public const BASIS_VERSION = 'accounts-filing-approval-v1';
-    public const CT_BASIS_VERSION = 'ct-period-filing-model-v5';
+    public const BASIS_VERSION = 'accounts-filing-approval-v3';
+    public const CT_BASIS_VERSION = 'ct-period-filing-model-v7';
     private const REQUIRED_AUDIT_AREAS = [
         'accounting_profit', 'expense_treatments', 'depreciation_capital',
         'capital_allowances', 'losses', 'tax_liability',
@@ -230,6 +230,12 @@ final class IxbrlAccountsFilingApprovalService
             throw new \RuntimeException((string)(($profile['errors'] ?? [])[0] ?? 'The FRS 105 filing profile is not supported.'));
         }
         $report = (new IxbrlAccountsReportService())->build($companyId, $accountingPeriodId);
+        $companySettings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
+        $utr = preg_replace('/\s+/', '', trim((string)($companySettings['utr'] ?? ''))) ?? '';
+        $turnover = ($report['basis']['current_mapping']['buckets']['turnover'] ?? null);
+        if (!is_int($turnover) && !is_float($turnover)) {
+            throw new \RuntimeException('The accounts filing basis has no numeric turnover fact to freeze.');
+        }
         $periods = $this->calculationPeriods($companyId, $accountingPeriodId, $lock);
         if ($periods === []) {
             throw new \RuntimeException('No active Corporation Tax periods are available for filing approval.');
@@ -238,6 +244,13 @@ final class IxbrlAccountsFilingApprovalService
         $basis = [
             'basis_version' => self::BASIS_VERSION,
             'company' => (array)$report['basis']['company'],
+            'filing_identity' => [
+                'utr' => $utr,
+            ],
+            'accounts_facts' => [
+                'turnover' => (float)$turnover,
+                'presentation_currency' => (string)$report['presentation_currency'],
+            ],
             'accounting_period' => [
                 'id' => (int)$report['accounting_period']['id'],
                 'start_date' => (string)$report['accounting_period']['period_start'],
@@ -364,6 +377,8 @@ final class IxbrlAccountsFilingApprovalService
             throw new \RuntimeException('The frozen Tax Audit snapshot failed its integrity check.');
         }
         $basis = (array)$candidate['basis'];
+        $sameAccountsPeriod = (string)$basis['accounting_period']['start_date'] === (string)$period['period_start']
+            && (string)$basis['accounting_period']['end_date'] === (string)$period['period_end'];
         $warnings = [];
         foreach ((array)($summary['warnings'] ?? []) as $warning) {
             $diagnostic = is_array($warning) ? $warning : ['message' => trim((string)$warning)];
@@ -386,6 +401,14 @@ final class IxbrlAccountsFilingApprovalService
                 'company_name' => (string)$basis['company']['company_name'],
                 'company_number' => (string)$basis['company']['company_number'],
             ],
+            'filing_identity' => (array)$basis['filing_identity'],
+            'accounts_facts' => (array)$basis['accounts_facts'],
+            'accounts_report' => (array)$basis['accounts_report'],
+            'filing_decisions' => $this->filingDecisions(
+                $summary,
+                $sameAccountsPeriod,
+                count((array)$candidate['ct_periods']) > 1
+            ),
             'accounting_period' => (array)$basis['accounting_period'],
             'ct_period' => [
                 'id' => (int)$period['id'], 'sequence_no' => (int)$period['sequence_no'],
@@ -410,6 +433,201 @@ final class IxbrlAccountsFilingApprovalService
         ];
         $json = $this->canonicalJson($model);
         return ['basis_json' => $json, 'basis_hash' => hash('sha256', self::CT_BASIS_VERSION . '|' . (string)$candidate['basis_hash'] . '|' . (string)$period['calculation_basis_hash'] . '|' . $json)];
+    }
+
+    /**
+     * Freeze the narrow CT600 presentation/claim choices approved with the
+     * disclosures. These values only classify already-frozen computation
+     * evidence; they never recalculate the tax result.
+     *
+     * @return array<string,mixed>
+     */
+    private function filingDecisions(array $summary, bool $sameAccountsPeriod, bool $multipleReturns): array
+    {
+        foreach ([
+            'taxable_before_losses', 'taxable_profit', 'taxable_loss',
+            'loss_created_in_period', 'losses_brought_forward', 'losses_used',
+            'capital_allowances', 'ordinary_corporation_tax', 'estimated_corporation_tax',
+            'associated_company_count',
+        ] as $key) {
+            if (!array_key_exists($key, $summary) || !is_numeric($summary[$key])) {
+                throw new \RuntimeException('The frozen calculation cannot support CT600 decision ' . $key . '.');
+            }
+        }
+
+        $beforeLosses = round((float)$summary['taxable_before_losses'], 2);
+        $taxableProfit = round((float)$summary['taxable_profit'], 2);
+        $taxableLoss = round((float)$summary['taxable_loss'], 2);
+        $lossCreated = round((float)$summary['loss_created_in_period'], 2);
+        $lossesBroughtForward = round((float)$summary['losses_brought_forward'], 2);
+        $lossesUsed = round((float)$summary['losses_used'], 2);
+        $expectedProfit = max(0.0, round($beforeLosses - $lossesUsed, 2));
+        $expectedLoss = max(0.0, round(-$beforeLosses, 2));
+        if ($lossesUsed < 0.0 || $lossesBroughtForward < $lossesUsed
+            || ($lossesUsed > 0.0 && $beforeLosses <= 0.0)
+            || abs($taxableProfit - $expectedProfit) > 0.009
+            || abs($taxableLoss - $expectedLoss) > 0.009
+            || abs($lossCreated - $expectedLoss) > 0.009) {
+            throw new \RuntimeException('The frozen loss evidence cannot be classified safely for the CT600 main return.');
+        }
+
+        $capital = $this->capitalAllowanceDecisions($summary);
+        $taxBands = $this->taxBandDecisions($summary, $taxableProfit);
+
+        return array_replace([
+            'return_type' => 'new',
+            'company_type' => 0,
+            'this_period_return' => true,
+            'multiple_returns' => $multipleReturns,
+            'accounts_attached' => true,
+            'accounts_same_period' => $sameAccountsPeriod,
+            'computations_attached' => true,
+            'computations_same_period' => true,
+            'supplementary_pages' => [],
+            'loss_relief_treatment' => $lossesUsed > 0.0
+                ? 'trading_brought_forward_against_same_trade_profit'
+                : 'none',
+            'trading_profit_before_losses' => max(0.0, $beforeLosses),
+            'trading_losses_brought_forward_used' => $lossesUsed,
+            'net_trading_profits' => $taxableProfit,
+            'profits_before_other_deductions' => $taxableProfit,
+            'profits_before_donations_group_relief' => $taxableProfit,
+            'associated_company_count' => (int)$summary['associated_company_count'],
+            'tax_calculation_bands' => $taxBands,
+        ], $capital);
+    }
+
+    /** @return array<string,float> */
+    private function capitalAllowanceDecisions(array $summary): array
+    {
+        $claimed = round((float)$summary['capital_allowances'], 2);
+        $breakdown = (array)($summary['capital_allowance_breakdown'] ?? []);
+        $rows = (array)($breakdown['rows'] ?? []);
+        if ($claimed > 0.0 && $rows === []) {
+            throw new \RuntimeException('The frozen capital-allowance total has no pool breakdown for CT600.');
+        }
+
+        $result = [
+            'aia_claimed_in_trade' => 0.0,
+            'main_pool_capital_allowances' => 0.0,
+            'main_pool_balancing_charges' => 0.0,
+            'special_rate_pool_capital_allowances' => 0.0,
+            'special_rate_pool_balancing_charges' => 0.0,
+            'qualifying_expenditure_other_machinery_plant' => 0.0,
+        ];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                throw new \RuntimeException('A frozen capital-allowance pool row is unreadable.');
+            }
+            $pool = (string)($row['pool_type'] ?? '');
+            if (!in_array($pool, ['main_pool', 'special_rate_pool'], true)) {
+                foreach (['aia_claimed', 'fya_claimed', 'wda_claimed', 'balancing_allowance', 'balancing_charge'] as $key) {
+                    if (abs((float)($row[$key] ?? 0)) > 0.004) {
+                        throw new \RuntimeException('A capital-allowance pool is outside the supported CT600 MVP: ' . $pool . '.');
+                    }
+                }
+                continue;
+            }
+            $aia = round((float)($row['aia_claimed'] ?? 0), 2);
+            $fya = round((float)($row['fya_claimed'] ?? 0), 2);
+            $wda = round((float)($row['wda_claimed'] ?? 0), 2);
+            $balancingAllowance = round((float)($row['balancing_allowance'] ?? 0), 2);
+            $balancingCharge = round((float)($row['balancing_charge'] ?? 0), 2);
+            if ($fya > 0.0) {
+                throw new \RuntimeException('First-year capital allowances require CT600 boxes outside the supported MVP.');
+            }
+            foreach ([$aia, $wda, $balancingAllowance, $balancingCharge] as $amount) {
+                if ($amount < 0.0) {
+                    throw new \RuntimeException('A frozen capital-allowance pool amount is negative.');
+                }
+            }
+            $result['aia_claimed_in_trade'] += $aia;
+            $result[$pool . '_capital_allowances'] += $aia + $wda + $balancingAllowance;
+            $result[$pool . '_balancing_charges'] += $balancingCharge;
+        }
+
+        foreach ((array)($breakdown['asset_calculations'] ?? []) as $asset) {
+            if (!is_array($asset)) {
+                throw new \RuntimeException('A frozen capital-allowance asset row is unreadable.');
+            }
+            $addition = round((float)($asset['addition_amount'] ?? 0), 2);
+            if ($addition < 0.0) {
+                throw new \RuntimeException('A frozen qualifying-expenditure amount is negative.');
+            }
+            if ($addition > 0.0) {
+                $pool = (string)($asset['pool_type'] ?? '');
+                $allowanceType = (string)($asset['allowance_type'] ?? '');
+                if (!in_array($pool, ['main_pool', 'special_rate_pool'], true)
+                    || !in_array($allowanceType, ['aia', 'wda', 'none', ''], true)) {
+                    throw new \RuntimeException('Qualifying expenditure is outside the supported plant-and-machinery MVP.');
+                }
+                $result['qualifying_expenditure_other_machinery_plant'] += $addition;
+            }
+        }
+
+        foreach ($result as $key => $value) {
+            $result[$key] = round($value, 2);
+        }
+        $classified = round(
+            $result['main_pool_capital_allowances'] + $result['special_rate_pool_capital_allowances'],
+            2
+        );
+        if (abs($classified - $claimed) > 0.009) {
+            throw new \RuntimeException('The frozen capital allowances do not reconcile to the supported CT600 pool boxes.');
+        }
+        return $result;
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function taxBandDecisions(array $summary, float $taxableProfit): array
+    {
+        $bands = (array)($summary['ct_rate_bands'] ?? []);
+        $ordinaryTax = round((float)$summary['ordinary_corporation_tax'], 2);
+        if ($taxableProfit <= 0.0) {
+            if ($ordinaryTax !== 0.0 || $bands !== []) {
+                throw new \RuntimeException('A nil-profit CT600 has inconsistent frozen tax-band evidence.');
+            }
+            return [];
+        }
+        if ($bands === [] || count($bands) > 2) {
+            throw new \RuntimeException('A profitable CT600 requires one or two frozen financial-year tax bands.');
+        }
+        $normalised = [];
+        $profitTotal = 0.0;
+        $netTaxTotal = 0.0;
+        foreach ($bands as $band) {
+            if (!is_array($band) || preg_match('/^FY([0-9]{4})$/', (string)($band['financial_year'] ?? ''), $match) !== 1) {
+                throw new \RuntimeException('A frozen Corporation Tax rate band has no valid financial year.');
+            }
+            $basis = (string)($band['basis'] ?? '');
+            $rate = $basis === 'small_profits_rate'
+                ? (float)($band['small_profits_rate'] ?? -1)
+                : (float)($band['main_rate'] ?? -1);
+            $profit = round((float)($band['taxable_profit'] ?? -1), 2);
+            $netTax = round((float)($band['liability'] ?? -1), 2);
+            $marginalRelief = round((float)($band['marginal_relief'] ?? 0), 2);
+            $grossTax = round($netTax + $marginalRelief, 2);
+            if ($profit < 0.0 || $netTax < 0.0 || $marginalRelief < 0.0 || $rate < 0.0 || $rate > 1.0
+                || !in_array($basis, ['flat_main_rate', 'main_rate', 'small_profits_rate', 'main_rate_less_marginal_relief'], true)) {
+                throw new \RuntimeException('A frozen Corporation Tax rate band is outside the supported ordinary-rate model.');
+            }
+            $normalised[] = [
+                'financial_year' => (string)$match[1],
+                'profit' => $profit,
+                'tax_rate_percent' => round($rate * 100, 4),
+                'gross_tax' => $grossTax,
+                'marginal_relief' => $marginalRelief,
+                'net_tax' => $netTax,
+                'basis' => $basis,
+            ];
+            $profitTotal += $profit;
+            $netTaxTotal += $netTax;
+        }
+        if (abs(round($profitTotal, 2) - $taxableProfit) > 0.009
+            || abs(round($netTaxTotal, 2) - $ordinaryTax) > 0.009) {
+            throw new \RuntimeException('The frozen Corporation Tax bands do not reconcile to profit and liability.');
+        }
+        return $normalised;
     }
 
     private function verifyPersisted(int $approvalId, int $factRunId, array $candidate, array $ctBasisIds): void

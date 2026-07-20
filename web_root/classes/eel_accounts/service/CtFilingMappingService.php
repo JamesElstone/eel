@@ -47,6 +47,217 @@ final class CtFilingMappingService
     }
 
     /**
+     * Reviewed templates are keyed only by the package's published natural
+     * identity. No database id is portable between installations.
+     */
+    public function reviewedTemplate(string $targetType, string $version, string $artifactVersion): ?array
+    {
+        $this->assertTarget($targetType);
+        $version = strtoupper(trim($version));
+        $artifactVersion = strtoupper(trim($artifactVersion));
+        if ($targetType === self::TARGET_RIM
+            && $version === 'V3' && $artifactVersion === 'V1.994') {
+            return [
+                'profile_name' => 'reviewed_ct600_v3_v1_994',
+                'natural_identity' => ['form_version' => 'V3', 'artifact_version' => 'V1.994'],
+                'mappings' => [
+                    ['canonical_key' => 'identity.company_name', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyInformation/CompanyName'],
+                    ['canonical_key' => 'identity.company_number', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyInformation/RegistrationNumber'],
+                    ['canonical_key' => 'filing_identity.utr', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyInformation/Reference'],
+                    ['canonical_key' => 'ct_period.start_date', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyInformation/PeriodCovered/From'],
+                    ['canonical_key' => 'ct_period.end_date', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyInformation/PeriodCovered/To'],
+                    ['canonical_key' => 'accounts_facts.turnover', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/Turnover/Total'],
+                    ['canonical_key' => 'filing_decisions.trading_profit_before_losses', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/Income/Trading/Profits'],
+                    ['canonical_key' => 'filing_decisions.trading_losses_brought_forward_used', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/Income/Trading/LossesBroughtForward'],
+                    ['canonical_key' => 'filing_decisions.net_trading_profits', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/Income/Trading/NetProfits'],
+                    ['canonical_key' => 'filing_decisions.profits_before_other_deductions', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/ProfitsBeforeOtherDeductions'],
+                    ['canonical_key' => 'filing_decisions.profits_before_donations_group_relief', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/ChargesAndReliefs/ProfitsBeforeDonationsAndGroupRelief'],
+                    ['canonical_key' => 'computation.summary.taxable_profit', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/ChargeableProfits'],
+                    ['canonical_key' => 'computation.summary.ordinary_corporation_tax', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/NetCorporationTaxChargeable'],
+                    ['canonical_key' => 'filing_decisions.associated_company_count', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/CorporationTaxChargeable/AssociatedCompanies/ThisPeriod'],
+                    ['canonical_key' => 'computation.summary.s455_tax', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/LoansToParticipators'],
+                    ['canonical_key' => 'computation.summary.ordinary_corporation_tax', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/NetCorporationTaxLiability'],
+                    ['canonical_key' => 'computation.summary.estimated_corporation_tax', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/TaxChargeable'],
+                    ['canonical_key' => 'computation.summary.estimated_corporation_tax', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/TaxPayable'],
+                    ['canonical_key' => 'filing_decisions.aia_claimed_in_trade', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/AllowancesAndCharges/AIACapitalAllowancesInc'],
+                    ['canonical_key' => 'filing_decisions.special_rate_pool_capital_allowances', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/AllowancesAndCharges/MachineryAndPlantSpecialRatePool/CapitalAllowances'],
+                    ['canonical_key' => 'filing_decisions.special_rate_pool_balancing_charges', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/AllowancesAndCharges/MachineryAndPlantSpecialRatePool/BalancingCharges'],
+                    ['canonical_key' => 'filing_decisions.main_pool_capital_allowances', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/AllowancesAndCharges/MachineryAndPlantMainPool/CapitalAllowances'],
+                    ['canonical_key' => 'filing_decisions.main_pool_balancing_charges', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/AllowancesAndCharges/MachineryAndPlantMainPool/BalancingCharges'],
+                    ['canonical_key' => 'filing_decisions.qualifying_expenditure_other_machinery_plant', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/QualifyingExpenditure/OtherMachineryAndPlant'],
+                    ['canonical_key' => 'computation.summary.loss_created_in_period', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/LossesDeficitsAndExcess/AmountArising/LossesOfTradesUK/Arising'],
+                ],
+                'unsupported_decisions' => [
+                    [
+                        'canonical_keys' => ['computation.summary.losses_used', 'computation.summary.losses_carried_forward'],
+                        'reason' => 'The frozen aggregate values do not distinguish a box 275 current/later-period claim from a box 285 carried-forward-loss claim. Box 160 is supported only by the exact frozen same-trade relief decision and amount.',
+                        'claim_targets' => [
+                            'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/TradingLosses',
+                            'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/TradingLossesCarriedForward',
+                        ],
+                    ],
+                    [
+                        'canonical_keys' => [],
+                        'reason' => 'A carry-back election must be explicit; no numeric loss balance may imply it.',
+                        'claim_targets' => ['IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/TradingLossesCarriedBack'],
+                    ],
+                ],
+            ];
+        }
+        if ($targetType === self::TARGET_COMPUTATION
+            && in_array($version, ['2024', '2025'], true) && $artifactVersion === 'V1.0.0') {
+            return [
+                'profile_name' => 'reviewed_ct_computation_' . $version . '_v1_0_0',
+                'natural_identity' => ['taxonomy_version' => $version, 'artifact_version' => 'V1.0.0'],
+                'mappings' => [
+                    ['canonical_key' => 'identity.company_name', 'local_name' => 'CompanyName', 'period_type' => 'instant'],
+                    ['canonical_key' => 'filing_identity.utr', 'local_name' => 'TaxReference', 'period_type' => 'instant'],
+                    ['canonical_key' => 'ct_period.start_date', 'local_name' => 'StartOfPeriodCoveredByReturn', 'period_type' => 'instant'],
+                    ['canonical_key' => 'ct_period.end_date', 'local_name' => 'EndOfPeriodCoveredByReturn', 'period_type' => 'instant'],
+                    ['canonical_key' => 'computation.summary.accounting_profit', 'local_name' => 'ProfitLossPerAccounts'],
+                    ['canonical_key' => 'computation.summary.disallowable_add_backs', 'local_name' => 'AdjustmentsMiscellaneousExpensesPerAccounts'],
+                    ['canonical_key' => 'computation.summary.capital_add_backs', 'local_name' => 'AdjustmentsCapitalExpenditure'],
+                    ['canonical_key' => 'computation.summary.depreciation_add_back', 'local_name' => 'AdjustmentsDepreciation'],
+                    ['canonical_key' => 'computation.summary.capital_allowances', 'local_name' => 'TotalCapitalAllowances'],
+                    ['canonical_key' => 'computation.summary.taxable_before_losses', 'local_name' => 'ProfitsBeforeOtherDeductionsAndReliefs'],
+                    ['canonical_key' => 'computation.summary.losses_brought_forward', 'local_name' => 'TradingLossesBroughtForward'],
+                    ['canonical_key' => 'computation.summary.losses_used', 'local_name' => 'TradingLossesBroughtForwardAmountUsedAgainstTotalProfits'],
+                    ['canonical_key' => 'computation.summary.taxable_profit', 'local_name' => 'TotalProfitsChargeableToCorporationTax'],
+                    ['canonical_key' => 'computation.summary.ordinary_corporation_tax', 'local_name' => 'CorporationTaxChargeable'],
+                    ['canonical_key' => 'computation.summary.s455_tax', 'local_name' => 'TaxPayableOnLoansToParticipators'],
+                    ['canonical_key' => 'computation.summary.estimated_corporation_tax', 'local_name' => 'NetTaxPayable'],
+                ],
+                'unsupported_decisions' => [],
+            ];
+        }
+        return null;
+    }
+
+    /**
+     * Seed and activate an exact reviewed template. Unknown future natural
+     * identities receive a draft clone only and therefore fail closed.
+     */
+    public function prepareMappingsForPackage(string $targetType, int $packageId, string $actor = 'system'): int
+    {
+        $this->assertTarget($targetType);
+        if ($packageId <= 0) { throw new \InvalidArgumentException('A package id is required.'); }
+        $packageTable = $targetType === self::TARGET_RIM ? 'hmrc_ct_rim_packages' : 'hmrc_ct_computation_packages';
+        $package = \InterfaceDB::fetchOne(
+            'SELECT * FROM ' . $packageTable . ' WHERE id = :id LIMIT 1',
+            ['id' => $packageId]
+        );
+        if (!is_array($package)) { throw new \RuntimeException('The mapping package was not found.'); }
+        $version = $targetType === self::TARGET_RIM
+            ? (string)$package['form_version']
+            : (string)$package['taxonomy_version'];
+        $template = $this->reviewedTemplate($targetType, $version, (string)$package['artifact_version']);
+        if ($template === null) {
+            $column = $targetType === self::TARGET_RIM ? 'rim_package_id' : 'computation_package_id';
+            $draft = \InterfaceDB::fetchOne(
+                'SELECT id FROM ct_filing_mapping_profiles
+                 WHERE target_type = :target AND ' . $column . ' = :package_id AND status = :draft
+                 ORDER BY id DESC LIMIT 1',
+                ['target' => $targetType, 'package_id' => $packageId, 'draft' => 'draft']
+            );
+            return is_array($draft) ? (int)$draft['id'] : $this->cloneDraft($targetType, $packageId, $actor);
+        }
+        $active = $this->activeProfile($targetType, $packageId);
+        if (is_array($active) && (string)$active['profile_name'] === (string)$template['profile_name']) {
+            return (int)$active['id'];
+        }
+        $column = $targetType === self::TARGET_RIM ? 'rim_package_id' : 'computation_package_id';
+        $profile = \InterfaceDB::fetchOne(
+            'SELECT * FROM ct_filing_mapping_profiles
+             WHERE target_type = :target AND ' . $column . ' = :package_id
+               AND profile_name = :name AND status IN (:draft, :validated)
+             ORDER BY revision_no DESC, id DESC LIMIT 1',
+            [
+                'target' => $targetType,
+                'package_id' => $packageId,
+                'name' => (string)$template['profile_name'],
+                'draft' => 'draft',
+                'validated' => 'validated',
+            ]
+        );
+        if (!is_array($profile)) {
+            $revision = (int)(\InterfaceDB::fetchColumn(
+                'SELECT COALESCE(MAX(revision_no), 0) + 1 FROM ct_filing_mapping_profiles
+                 WHERE target_type = :target AND profile_name = :name',
+                ['target' => $targetType, 'name' => (string)$template['profile_name']]
+            ) ?: 1);
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO ct_filing_mapping_profiles
+                 (target_type, rim_package_id, computation_package_id, profile_name, revision_no, status,
+                  content_hash, compatibility_status, created_by)
+                 VALUES (:target, :rim_id, :computation_id, :name, :revision, :status, :hash, :compatibility, :actor)',
+                [
+                    'target' => $targetType,
+                    'rim_id' => $targetType === self::TARGET_RIM ? $packageId : null,
+                    'computation_id' => $targetType === self::TARGET_COMPUTATION ? $packageId : null,
+                    'name' => (string)$template['profile_name'],
+                    'revision' => $revision,
+                    'status' => 'draft',
+                    'hash' => hash('sha256', 'empty'),
+                    'compatibility' => 'pending',
+                    'actor' => $actor,
+                ]
+            );
+            $profileId = $this->lastInsertId();
+            $this->audit($profileId, 'created', $actor, ['reviewed_natural_identity' => $template['natural_identity']]);
+            $profile = $this->profile($profileId);
+        }
+        $profileId = (int)$profile['id'];
+        if ((string)$profile['status'] === 'draft') {
+            $sourceRows = \InterfaceDB::fetchAll(
+                'SELECT canonical_key, value_type, source_section, is_required
+                 FROM ct_filing_canonical_sources WHERE target_scope IN (:both, :target)',
+                ['both' => 'both', 'target' => $targetType]
+            );
+            $sources = [];
+            foreach ($sourceRows as $source) { $sources[(string)$source['canonical_key']] = $source; }
+            foreach ((array)$template['mappings'] as $index => $mapping) {
+                $canonicalKey = (string)$mapping['canonical_key'];
+                $source = $sources[$canonicalKey] ?? null;
+                if (!is_array($source)) {
+                    throw new \RuntimeException('Reviewed mapping source is absent from the canonical inventory: ' . $canonicalKey . '.');
+                }
+                $input = [
+                    'canonical_key' => $canonicalKey,
+                    'value_type' => (string)$source['value_type'],
+                    'null_policy' => !empty($source['is_required']) ? 'error' : 'omit',
+                    'is_required' => !empty($source['is_required']) ? 1 : 0,
+                    'sign_multiplier' => 1,
+                    'sort_order' => ($index + 1) * 10,
+                ];
+                if ($targetType === self::TARGET_RIM) {
+                    $input['target_xpath'] = (string)$mapping['target_xpath'];
+                } else {
+                    $concept = $this->reviewedConcept($packageId, (string)$mapping['local_name']);
+                    $input += [
+                        'taxonomy_concept' => (string)$concept['qname'],
+                        'period_type' => (string)($mapping['period_type'] ?? $concept['period_type'] ?? 'duration'),
+                        'context_profile' => 'ct_period',
+                        'unit_ref' => (string)$source['value_type'] === 'numeric' ? 'GBP' : null,
+                        'decimals_value' => (string)$source['value_type'] === 'numeric' ? '2' : null,
+                        'presentation_section' => (string)$source['source_section'],
+                        'presentation_label' => (string)$source['canonical_key'],
+                    ];
+                }
+                $this->saveMapping($targetType, $profileId, $input, $actor);
+            }
+            $validation = $this->validateProfile($profileId, $actor);
+            if (empty($validation['success'])) {
+                throw new \RuntimeException('The reviewed mapping template is incompatible: ' . implode(' ', (array)$validation['errors']));
+            }
+        }
+        $profile = $this->profile($profileId);
+        if ((string)$profile['status'] === 'validated') {
+            $this->activateProfile($profileId, $actor);
+        }
+        return $profileId;
+    }
+
+    /**
      * Resolves a mapping profile only against a verified frozen CT-period model.
      * No tax calculation or ledger service is reachable through this operation.
      */
@@ -101,6 +312,47 @@ final class CtFilingMappingService
         }
 
         $facts = (array)($filingModel['facts'] ?? []);
+        $lossesUsed = $facts['computation.summary.losses_used'] ?? null;
+        if ($targetType === self::TARGET_RIM
+            && (is_int($lossesUsed) || is_float($lossesUsed))
+            && (float)$lossesUsed > 0.0) {
+            $decisionAmount = $facts['filing_decisions.trading_losses_brought_forward_used'] ?? null;
+            $hasBox160Mapping = false;
+            foreach ($mappings as $mapping) {
+                if ((string)($mapping['canonical_key'] ?? '') === 'filing_decisions.trading_losses_brought_forward_used'
+                    && (string)($mapping['target_xpath'] ?? '') === 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/Income/Trading/LossesBroughtForward') {
+                    $hasBox160Mapping = true;
+                    break;
+                }
+            }
+            $approvedSameTradeUse = (string)($facts['filing_decisions.loss_relief_treatment'] ?? '')
+                    === 'trading_brought_forward_against_same_trade_profit'
+                && (is_int($decisionAmount) || is_float($decisionAmount))
+                && is_finite((float)$decisionAmount)
+                && abs((float)$decisionAmount - (float)$lossesUsed) < 0.005
+                && $hasBox160Mapping;
+            if (!$approvedSameTradeUse) {
+                return [
+                    'success' => false,
+                    'errors' => [
+                        'A positive aggregate losses-used value requires an explicit CT600 claim decision: '
+                        . 'box 160 (trading losses brought forward), box 275 (TradingLosses), and box 285 '
+                        . '(TradingLossesCarriedForward) cannot be inferred safely.',
+                    ],
+                    'basis_version' => (string)$filingModel['basis_version'],
+                    'basis_hash' => (string)$filingModel['basis_hash'],
+                    'computation_run_id' => (int)$filingModel['run']['run_id'],
+                    'ct_period_id' => (int)($filingModel['model']['ct_period']['id'] ?? 0),
+                    'canonical_values' => [],
+                    'mappings' => [],
+                    'blocked_claim_targets' => [
+                        'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/Income/Trading/LossesBroughtForward',
+                        'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/TradingLosses',
+                        'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/TradingLossesCarriedForward',
+                    ],
+                ];
+            }
+        }
         $resolved = [];
         $canonicalValues = [];
         $errors = [];
@@ -215,7 +467,7 @@ final class CtFilingMappingService
                 'created_by' => $actor,
             ]
         );
-        $profileId = (int)\InterfaceDB::lastInsertId();
+        $profileId = $this->lastInsertId();
         if (is_array($source)) {
             $this->copyMappings($targetType, (int)$source['id'], $profileId, $packageId);
         }
@@ -243,7 +495,7 @@ final class CtFilingMappingService
         $seen = [];
         foreach ($mappings as $mapping) {
             $source = trim((string)($mapping['canonical_key'] ?? ''));
-            if ($source === '' || isset($seen[$source])) {
+            if ($source === '' || ($target !== self::TARGET_RIM && isset($seen[$source]))) {
                 $errors[] = $source === '' ? 'A mapping has no canonical source.' : 'Canonical source is mapped more than once: ' . $source;
             }
             $seen[$source] = true;
@@ -365,13 +617,35 @@ final class CtFilingMappingService
         $required = [];
         foreach ($inventory as $item) {
             $key = $target === self::TARGET_RIM ? (string)$item['component_path'] : (string)$item['qname'];
-            $available[$key] = true;
-            if (!empty($item['is_required'])) {
+            $available[$key] = $item;
+            $isLeafTarget = $target !== self::TARGET_RIM
+                || !array_key_exists('is_leaf', $item)
+                || !empty($item['is_leaf']);
+            if (!empty($item['is_required']) && $isLeafTarget) {
                 $required[$key] = true;
             }
         }
         $missingTargets = array_values(array_filter(array_unique($targets), static fn(string $item): bool => !isset($available[$item])));
         $unmappedRequired = array_values(array_filter(array_keys($required), static fn(string $item): bool => !in_array($item, $targets, true)));
+        $nonLeafTargets = [];
+        $unresolvedNumericTargets = [];
+        $abstractConceptTargets = [];
+        foreach ($mappings as $mapping) {
+            $key = $target === self::TARGET_RIM ? (string)$mapping['target_xpath'] : (string)$mapping['taxonomy_concept'];
+            $item = $available[$key] ?? null;
+            if (!is_array($item)) { continue; }
+            if ($target === self::TARGET_RIM) {
+                if (array_key_exists('is_leaf', $item) && empty($item['is_leaf'])) {
+                    $nonLeafTargets[] = $key;
+                }
+                if (in_array((string)($mapping['value_type'] ?? ''), ['numeric', 'integer'], true)
+                    && trim((string)($item['data_type'] ?? '')) === '') {
+                    $unresolvedNumericTargets[] = $key;
+                }
+            } elseif (!empty($item['is_abstract']) || !empty($item['is_dimension'])) {
+                $abstractConceptTargets[] = $key;
+            }
+        }
         $errors = [];
         if ($inventory === []) {
             $errors[] = 'The selected package has no catalogued schema or taxonomy inventory.';
@@ -379,8 +653,14 @@ final class CtFilingMappingService
         if ($missingTargets !== []) {
             $errors[] = count($missingTargets) . ' mapping target(s) do not exist in the selected package.';
         }
-        if ($unmappedRequired !== []) {
-            $errors[] = count($unmappedRequired) . ' required package target(s) are unmapped.';
+        if ($nonLeafTargets !== []) {
+            $errors[] = count(array_unique($nonLeafTargets)) . ' RIM mapping target(s) are structural wrappers rather than leaf values.';
+        }
+        if ($unresolvedNumericTargets !== []) {
+            $errors[] = count(array_unique($unresolvedNumericTargets)) . ' numeric RIM mapping target(s) have no resolved datatype.';
+        }
+        if ($abstractConceptTargets !== []) {
+            $errors[] = count(array_unique($abstractConceptTargets)) . ' computation mapping target(s) are abstract or dimensional concepts.';
         }
         $sourceRows = \InterfaceDB::tableExists('ct_filing_canonical_sources') ? \InterfaceDB::fetchAll(
             'SELECT canonical_key, value_type, source_section, is_required
@@ -428,6 +708,9 @@ final class CtFilingMappingService
         return [
             'errors' => $errors,
             'missing_targets' => $missingTargets,
+            'non_leaf_targets' => array_values(array_unique($nonLeafTargets)),
+            'unresolved_numeric_targets' => array_values(array_unique($unresolvedNumericTargets)),
+            'abstract_or_dimension_targets' => array_values(array_unique($abstractConceptTargets)),
             'unmapped_required_targets' => $unmappedRequired,
             'unmapped_canonical_sources' => $unmappedSources,
             'invalid_canonical_sources' => array_values(array_unique($invalidSources)),
@@ -463,6 +746,27 @@ final class CtFilingMappingService
         );
     }
 
+    private function reviewedConcept(int $packageId, string $localName): array
+    {
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT * FROM hmrc_ct_computation_concepts
+             WHERE package_id = :package_id AND local_name = :local_name AND is_abstract = 0
+             ORDER BY namespace_uri, qname',
+            ['package_id' => $packageId, 'local_name' => $localName]
+        );
+        $computational = array_values(array_filter(
+            $rows,
+            static fn(array $row): bool => str_contains(strtolower((string)$row['namespace_uri']), '/ct/comp/')
+        ));
+        if (count($computational) === 1) { return $computational[0]; }
+        if (count($rows) === 1) { return $rows[0]; }
+        throw new \RuntimeException(
+            count($rows) === 0
+                ? 'The reviewed CT computation concept is absent: ' . $localName . '.'
+                : 'The reviewed CT computation concept is ambiguous: ' . $localName . '.'
+        );
+    }
+
     private function refreshContentHash(int $profileId): void
     {
         $profile = $this->profile($profileId);
@@ -473,6 +777,14 @@ final class CtFilingMappingService
         }
         unset($row);
         \InterfaceDB::prepareExecute('UPDATE ct_filing_mapping_profiles SET content_hash = :hash WHERE id = :id', ['hash' => hash('sha256', (string)json_encode($rows, JSON_UNESCAPED_SLASHES)), 'id' => $profileId]);
+    }
+
+    private function lastInsertId(): int
+    {
+        $sql = strtolower(\InterfaceDB::driverName()) === 'sqlite'
+            ? 'SELECT last_insert_rowid()'
+            : 'SELECT LAST_INSERT_ID()';
+        return (int)(\InterfaceDB::fetchColumn($sql) ?: 0);
     }
 
     private function profile(int $profileId): array

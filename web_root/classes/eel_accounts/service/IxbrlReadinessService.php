@@ -264,9 +264,11 @@ final class IxbrlReadinessService
             'Required FRS 105 profile facts present',
             $factsCurrent && $missingProfileFacts === [],
             ['generate', 'filing'],
-            $factsCurrent && $missingProfileFacts === []
-                ? 'The current snapshot contains every required identity and statutory profile fact.'
-                : 'Missing required fact keys: ' . implode(', ', $missingProfileFacts) . '.'
+            !$factsCurrent
+                ? 'The generated facts are not current and must be rebuilt before their required keys can be checked.'
+                : ($missingProfileFacts === []
+                    ? 'The current snapshot contains every required identity and statutory profile fact.'
+                    : 'Missing required fact keys: ' . implode(', ', $missingProfileFacts) . '.')
         );
 
         $generated = $factsCurrent

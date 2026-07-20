@@ -96,7 +96,9 @@ final class IxbrlAction implements ActionInterfaceFramework
                 );
             }
 
-            if (in_array($intent, ['generate_computation_ixbrl', 'validate_computation_ixbrl'], true)) {
+            if ($intent === 'generate_all_filing_ixbrl') {
+                $result = $this->generateAllFilingIxbrl($companyId, $accountingPeriodId);
+            } elseif (in_array($intent, ['generate_computation_ixbrl', 'validate_computation_ixbrl'], true)) {
                 $result = $intent === 'generate_computation_ixbrl'
                     ? $this->generateComputation($companyId, $accountingPeriodId, $ctPeriodId)
                     : $this->validateComputation($companyId, $accountingPeriodId, $ctPeriodId);
@@ -246,6 +248,96 @@ final class IxbrlAction implements ActionInterfaceFramework
             $result['messages'] = ['Computations iXBRL generated and externally validated for CT period #' . $ctPeriodId . '.'];
         }
         return $result;
+    }
+
+    private function generateAllFilingIxbrl(int $companyId, int $accountingPeriodId): array
+    {
+        $readiness = (new \eel_accounts\Service\IxbrlReadinessService())
+            ->getReadiness($companyId, $accountingPeriodId);
+        if (empty($readiness['can_generate'])) {
+            return [
+                'success' => false,
+                'errors' => (array)($readiness['generation_errors'] ?? ['The accounts iXBRL is not ready to generate.']),
+            ];
+        }
+
+        $projection = (new \eel_accounts\Service\CorporationTaxPeriodService())
+            ->projectForAccountingPeriod($companyId, $accountingPeriodId);
+        $periods = array_values(array_filter(
+            (array)($projection['periods'] ?? []),
+            static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'
+        ));
+        if ($periods === []) {
+            return ['success' => false, 'errors' => ['No current CT periods are available for computations generation.']];
+        }
+
+        $errors = [];
+        $periodIds = [];
+        $computationService = new \eel_accounts\Service\IxbrlTaxComputationService();
+        foreach ($periods as $period) {
+            $ctPeriodId = (int)($period['ct_period_id'] ?? $period['id'] ?? 0);
+            if ($ctPeriodId <= 0) {
+                $errors[] = 'A projected CT period has no valid identifier.';
+                continue;
+            }
+
+            $status = $computationService->status($companyId, $accountingPeriodId, $ctPeriodId);
+            if (empty($status['ready'])) {
+                $periodErrors = array_values(array_unique(array_merge(
+                    (array)($status['errors'] ?? []),
+                    (array)($status['artifact_errors'] ?? [])
+                )));
+                $errors[] = 'CT period #' . $ctPeriodId . ': '
+                    . (string)($periodErrors[0] ?? 'the computation iXBRL is not ready to generate.');
+                continue;
+            }
+            $periodIds[] = $ctPeriodId;
+        }
+        if ($errors !== []) {
+            return ['success' => false, 'errors' => array_values(array_unique($errors))];
+        }
+
+        $accounts = $this->generatePreview($companyId, $accountingPeriodId);
+        if (empty($accounts['success'])) {
+            return $accounts;
+        }
+
+        $warnings = (array)($accounts['warnings'] ?? []);
+        $messages = [$warnings === []
+            ? 'Accounts iXBRL generated and validated.'
+            : 'Accounts iXBRL generated; review its external-validation warning.'];
+        $generatedPeriods = 0;
+        foreach ($periodIds as $ctPeriodId) {
+            $computation = $this->generateComputation($companyId, $accountingPeriodId, $ctPeriodId);
+            if (empty($computation['success'])) {
+                foreach ((array)($computation['errors'] ?? ['Computations iXBRL generation failed.']) as $error) {
+                    $errors[] = 'CT period #' . $ctPeriodId . ': ' . (string)$error;
+                }
+                continue;
+            }
+            $generatedPeriods++;
+            $warnings = array_merge($warnings, (array)($computation['warnings'] ?? []));
+        }
+
+        if ($errors !== []) {
+            $warnings[] = 'Some filing artifacts were generated successfully; resolve the errors and use this action again.';
+            return [
+                'success' => false,
+                'errors' => array_values(array_unique($errors)),
+                'warnings' => array_values(array_unique($warnings)),
+            ];
+        }
+
+        $messages[] = $generatedPeriods === 1
+            ? 'The computation iXBRL for 1 CT period was generated and validated.'
+            : 'The computation iXBRLs for ' . $generatedPeriods . ' CT periods were generated and validated.';
+
+        return [
+            'success' => true,
+            'errors' => [],
+            'messages' => $messages,
+            'warnings' => array_values(array_unique($warnings)),
+        ];
     }
 
     private function validateComputation(int $companyId, int $accountingPeriodId, int $ctPeriodId): array

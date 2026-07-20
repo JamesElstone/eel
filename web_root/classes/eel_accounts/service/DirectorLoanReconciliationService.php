@@ -58,7 +58,8 @@ final class DirectorLoanReconciliationService
         }
 
         $errors = [];
-        $periodEnd = (string)((array)($context['accounting_period'] ?? [])['period_end'] ?? '');
+        $accountingPeriod = (array)($context['accounting_period'] ?? []);
+        $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
         if ((int)($journal['is_posted'] ?? 0) !== 1) {
             $errors[] = 'The Director Loan offset journal is not posted.';
         }

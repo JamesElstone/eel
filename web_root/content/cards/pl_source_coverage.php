@@ -58,18 +58,14 @@ final class _pl_source_coverageCard extends CardBaseFramework
             . (int)($coverageSummary['covered_journal_count'] ?? 0) . ' of '
             . (int)($coverageSummary['posted_journal_count'] ?? 0) . ' posted journals; '
             . (int)($coverageSummary['uncovered_journal_count'] ?? 0) . ' uncovered.</div>';
+        $failureRows = $this->evidenceFailureRows($coverageSummary);
         $failureHtml = '';
-        foreach ((array)($coverageSummary['evidence_failures'] ?? []) as $failure) {
-            if (!is_array($failure)) {
-                continue;
-            }
-            $failureHtml .= '<li>Journal ' . (int)($failure['journal_id'] ?? 0) . ' — '
-                . HelperFramework::escape((string)($failure['source_type'] ?? 'unknown')) . ' / '
-                . HelperFramework::escape((string)($failure['source_ref'] ?? 'no reference')) . ': '
-                . HelperFramework::escape((string)($failure['reason'] ?? 'Source evidence could not be verified.')) . '</li>';
-        }
-        if ($failureHtml !== '') {
-            $failureHtml = '<div class="panel-soft"><div class="eyebrow">Unverified journal evidence</div><ul class="settings-list">' . $failureHtml . '</ul></div>';
+        if ($failureRows !== []) {
+            $failureHtml = '<div class="panel-soft"><div class="eyebrow">Unverified journal evidence</div>'
+                . $this->evidenceFailureTable($failureRows)->render($context, [
+                    'cards[]' => (array)($context['page']['page_cards'] ?? []),
+                ])
+                . '</div>';
         }
 
         return '<div class="settings-stack">' . $previewNote . $coverageNote . $failureHtml . '<div class="table-scroll"><table><thead><tr><th>Source</th><th>Status</th><th>Journals</th><th>Debits</th><th>Credits</th></tr></thead><tbody>' . $html . '</tbody></table></div></div>';
@@ -78,5 +74,44 @@ final class _pl_source_coverageCard extends CardBaseFramework
     private function money(array $companySettings, mixed $value): string
     {
         return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
+    }
+
+    /** @return list<array{journal_id: int, source_type: string, source_ref: string, reason: string}> */
+    private function evidenceFailureRows(array $coverageSummary): array
+    {
+        $rows = [];
+        foreach ((array)($coverageSummary['evidence_failures'] ?? []) as $failure) {
+            if (!is_array($failure)) {
+                continue;
+            }
+
+            $rows[] = [
+                'journal_id' => (int)($failure['journal_id'] ?? 0),
+                'source_type' => (string)($failure['source_type'] ?? 'unknown'),
+                'source_ref' => (string)($failure['source_ref'] ?? 'no reference'),
+                'reason' => (string)($failure['reason'] ?? 'Source evidence could not be verified.'),
+            ];
+        }
+
+        return $rows;
+    }
+
+    private function evidenceFailureTable(array $rows): TableFramework
+    {
+        return TableFramework::make('pl_source_coverage_evidence', $rows)
+            ->filename('unverified-journal-evidence')
+            ->exports(true)
+            ->exportLimit(max(1, count($rows)))
+            ->empty('No unverified journal evidence remains.')
+            ->column(
+                'journal_id',
+                'Journal',
+                html: static fn(array $row): string => HelperFramework::escape('#' . (int)($row['journal_id'] ?? 0)),
+                export: static fn(array $row): string => (string)(int)($row['journal_id'] ?? 0),
+                exportType: 'number'
+            )
+            ->textColumn('source_type', 'Source')
+            ->textColumn('source_ref', 'Reference')
+            ->textColumn('reason', 'Reason');
     }
 }

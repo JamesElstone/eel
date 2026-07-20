@@ -29,6 +29,58 @@ final class DirectorLoanReconciliationService
         return $this->fetchContext($companyId, $accountingPeriodId);
     }
 
+    /** @return array{success: bool, errors: list<string>} */
+    public function verifyJournalEvidence(int $companyId, int $accountingPeriodId, int $journalId): array
+    {
+        $journal = \InterfaceDB::fetchOne(
+            'SELECT journal_date, is_posted
+             FROM journals
+             WHERE id = :journal_id
+               AND company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+             LIMIT 1',
+            [
+                'journal_id' => $journalId,
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+            ]
+        );
+        if (!is_array($journal)) {
+            return ['success' => false, 'errors' => ['The Director Loan offset journal could not be found in the selected period.']];
+        }
+
+        $context = $this->fetchContext($companyId, $accountingPeriodId);
+        if (empty($context['available'])) {
+            return [
+                'success' => false,
+                'errors' => (array)($context['errors'] ?? ['The Director Loan evidence context is unavailable.']),
+            ];
+        }
+
+        $errors = [];
+        $periodEnd = (string)((array)($context['accounting_period'] ?? [])['period_end'] ?? '');
+        if ((int)($journal['is_posted'] ?? 0) !== 1) {
+            $errors[] = 'The Director Loan offset journal is not posted.';
+        }
+        if ($periodEnd !== '' && (string)($journal['journal_date'] ?? '') !== $periodEnd) {
+            $errors[] = 'The Director Loan offset journal date does not match the period end.';
+        }
+        if (empty($context['has_activity'])) {
+            $errors[] = 'The Director Loan evidence context has no activity for this period.';
+        }
+        foreach ((array)($context['warnings'] ?? []) as $warning) {
+            $errors[] = (string)$warning;
+        }
+        if (abs((float)($context['pending_adjustment_amount'] ?? 0)) >= 0.005) {
+            $errors[] = 'The posted Director Loan reclassification is not current with the calculated period-end position.';
+        }
+
+        return [
+            'success' => $errors === [],
+            'errors' => array_values(array_unique(array_filter(array_map('strval', $errors)))),
+        ];
+    }
+
     public function fetchContext(int $companyId, int $accountingPeriodId): array
     {
         $statement = ($this->directorLoanService ?? new DirectorLoanService())

@@ -240,7 +240,7 @@ final class JournalSourceEvidenceService
 
         $journalIds = array_values(array_unique(array_map('intval', array_keys($journalSourceRefs))));
         $rows = \InterfaceDB::fetchAll(
-            'SELECT journal_id, accounting_period_id, journal_tag, journal_key
+            'SELECT journal_id, accounting_period_id, journal_tag, journal_key, entry_mode
              FROM journal_entry_metadata
              WHERE company_id = ?
                AND accounting_period_id = ?
@@ -248,6 +248,7 @@ final class JournalSourceEvidenceService
             array_merge([$companyId, $accountingPeriodId], $journalIds)
         );
         $metadataRefs = [];
+        $metadataModes = [];
         foreach ($rows as $row) {
             $tag = (string)($row['journal_tag'] ?? '');
             $key = (string)($row['journal_key'] ?? '');
@@ -256,6 +257,7 @@ final class JournalSourceEvidenceService
                 'meta:' . $tag . ':' . $key,
                 'meta:' . $tag . ':' . $periodId . ':' . $key,
             ];
+            $metadataModes[(int)($row['journal_id'] ?? 0)] = trim((string)($row['entry_mode'] ?? ''));
         }
 
         foreach ($journalSourceRefs as $journalId => $sourceRef) {
@@ -269,6 +271,23 @@ final class JournalSourceEvidenceService
                 (array)($metadataRefs[(int)$journalId] ?? []),
                 true
             );
+            $entryMode = (string)($metadataModes[(int)$journalId] ?? '');
+            $tag = '';
+            if (preg_match('/^meta:([^:]+):/', (string)$sourceRef, $matches) === 1) {
+                $tag = (string)$matches[1];
+            }
+            $systemGeneratedVerification = $metadataMatches && $entryMode === 'system_generated'
+                ? $this->verifySystemGeneratedJournal($tag, $journal, $companyId, $accountingPeriodId)
+                : null;
+            if (is_array($systemGeneratedVerification)) {
+                $results[(int)$journalId] = [
+                    'verified' => !empty($systemGeneratedVerification['success']),
+                    'reason' => !empty($systemGeneratedVerification['success'])
+                        ? (string)$systemGeneratedVerification['reason']
+                        : (string)($systemGeneratedVerification['errors'][0] ?? 'System-generated journal evidence could not be verified.'),
+                ];
+                continue;
+            }
             $verified = false;
             $results[(int)$journalId] = [
                 'verified' => $verified,
@@ -279,6 +298,44 @@ final class JournalSourceEvidenceService
                 },
             ];
         }
+    }
+
+    /** @return array{success: bool, reason?: string, errors?: list<string>}|null */
+    private function verifySystemGeneratedJournal(
+        string $tag,
+        array $journal,
+        int $companyId,
+        int $accountingPeriodId
+    ): ?array {
+        if ($tag === 'director_loan_offset') {
+            $result = (new DirectorLoanReconciliationService())->verifyJournalEvidence(
+                $companyId,
+                $accountingPeriodId,
+                (int)($journal['id'] ?? 0)
+            );
+
+            return [
+                'success' => !empty($result['success']),
+                'reason' => 'Verified by the Director Loan year-end calculation and current period-end review.',
+                'errors' => (array)($result['errors'] ?? []),
+            ];
+        }
+
+        if (in_array($tag, ['prepayment_deferral', 'prepayment_release', 'prepayment_correction'], true)) {
+            $result = (new PrepaymentPostingService())->verifyJournalEvidence(
+                $companyId,
+                $accountingPeriodId,
+                (int)($journal['id'] ?? 0)
+            );
+
+            return [
+                'success' => !empty($result['success']),
+                'reason' => 'Verified by the automated prepayment schedule and posting integrity checks.',
+                'errors' => (array)($result['errors'] ?? []),
+            ];
+        }
+
+        return null;
     }
 
     /** @param array<int, array{verified: bool, reason: string}> $results */

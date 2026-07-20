@@ -38,6 +38,44 @@ final class PrepaymentPostingService
         return $this->validateState($companyId, $accountingPeriodId, false, true, true);
     }
 
+    /** @return array{success: bool, errors: list<string>} */
+    public function verifyJournalEvidence(int $companyId, int $accountingPeriodId, int $journalId): array
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || $journalId <= 0) {
+            return ['success' => false, 'errors' => ['The prepayment journal evidence context is invalid.']];
+        }
+
+        if (!($this->scheduleService ?? new PrepaymentScheduleService())->hasSchema()
+            || !\InterfaceDB::tableExists('journal_entry_metadata')) {
+            return ['success' => false, 'errors' => ['The automated prepayment posting schema is unavailable.']];
+        }
+
+        $posting = \InterfaceDB::fetchOne(
+            'SELECT ps.review_id
+             FROM prepayment_schedule_postings psp
+             INNER JOIN prepayment_schedules ps ON ps.id = psp.schedule_id
+             WHERE ps.company_id = :company_id
+               AND psp.accounting_period_id = :accounting_period_id
+               AND psp.journal_id = :journal_id
+             LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'journal_id' => $journalId,
+            ]
+        );
+        if (!is_array($posting)) {
+            return ['success' => false, 'errors' => ['The posted journal is not linked to an automated prepayment schedule.']];
+        }
+
+        $errors = $this->postingIntegrityErrors((int)($posting['review_id'] ?? 0), $journalId);
+
+        return [
+            'success' => $errors === [],
+            'errors' => array_values(array_unique(array_filter(array_map('strval', $errors)))),
+        ];
+    }
+
     /** @return array<string, mixed> */
     private function validateState(
         int $companyId,
@@ -449,10 +487,17 @@ final class PrepaymentPostingService
     }
 
     /** @return list<string> */
-    private function postingIntegrityErrors(int $reviewId): array
+    private function postingIntegrityErrors(int $reviewId, ?int $journalId = null): array
     {
         if (!\InterfaceDB::tableExists('journal_entry_metadata')) {
             return ['Journal metadata is required for automated prepayment postings.'];
+        }
+        $journalCondition = $journalId !== null && $journalId > 0
+            ? ' AND psp.journal_id = :journal_id'
+            : '';
+        $params = ['review_id' => $reviewId];
+        if ($journalCondition !== '') {
+            $params['journal_id'] = $journalId;
         }
         $rows = \InterfaceDB::fetchAll(
             'SELECT psp.id AS posting_id, psp.schedule_id, psp.schedule_period_id,
@@ -477,8 +522,9 @@ final class PrepaymentPostingService
              LEFT JOIN journals j ON j.id = psp.journal_id
              LEFT JOIN journal_entry_metadata jem ON jem.journal_id = j.id
              WHERE ps.review_id = :review_id
+             ' . $journalCondition . '
              ORDER BY psp.id',
-            ['review_id' => $reviewId]
+            $params
         );
         $errors = [];
         $scheduleIds = array_values(array_unique(array_map(

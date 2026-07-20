@@ -325,10 +325,6 @@ final class CompanySettingsService
             $settingsStore->set('default_expense_nominal_id', $settings['default_expense_nominal_id'] ?? '', 'int');
             $settingsStore->set('tools_small_equipment_nominal_id', $settings['tools_small_equipment_nominal_id'] ?? '', 'int');
             $settingsStore->set('prepayment_asset_nominal_id', $settings['prepayment_asset_nominal_id'], 'int');
-            $directorLoanLiabilityNominalId = $this->directorLoanLiabilityNominalSetting($settings);
-            $settingsStore->set('director_loan_asset_nominal_id', $settings['director_loan_asset_nominal_id'] ?? '', 'int');
-            $settingsStore->set('director_loan_liability_nominal_id', $directorLoanLiabilityNominalId, 'int');
-            $settingsStore->set('director_loan_nominal_id', $directorLoanLiabilityNominalId, 'int');
             $settingsStore->set('participator_loan_asset_nominal_id', $settings['participator_loan_asset_nominal_id'] ?? '', 'int');
             $settingsStore->set('participator_loan_liability_nominal_id', $settings['participator_loan_liability_nominal_id'] ?? '', 'int');
             $settingsStore->set('vat_nominal_id', $settings['vat_nominal_id'] ?? '', 'int');
@@ -378,8 +374,6 @@ final class CompanySettingsService
             'default_expense_nominal_id',
             'tools_small_equipment_nominal_id',
             'prepayment_asset_nominal_id',
-            'director_loan_asset_nominal_id',
-            'director_loan_liability_nominal_id',
             'participator_loan_asset_nominal_id',
             'participator_loan_liability_nominal_id',
             'vat_nominal_id',
@@ -397,9 +391,6 @@ final class CompanySettingsService
             }
 
             $settings[$key] = (string)$suggestions[$key]['id'];
-            if ($key === 'director_loan_liability_nominal_id') {
-                $settings['director_loan_nominal_id'] = (string)$suggestions[$key]['id'];
-            }
             $applied = true;
         }
 
@@ -577,15 +568,12 @@ final class CompanySettingsService
                     && $row['account_type'] === 'asset'
                     && $row['subtype_code'] === 'prepayments'
             ),
-            'director_loan_asset_nominal_id' => $this->directorLoanAssetNominalSuggestion($normalised),
-            'director_loan_liability_nominal_id' => $this->directorLoanLiabilityNominalSuggestion($normalised),
-            'director_loan_nominal_id' => $this->directorLoanLiabilityNominalSuggestion($normalised),
             'participator_loan_asset_nominal_id' => $this->firstMatchingNominal($normalised, static function (array $row): bool {
                 return $row['account_type'] === 'asset' && $row['subtype_code'] === 'participator_loan_asset';
-            }),
+            }) ?? $this->directorLoanAssetNominalSuggestion($normalised),
             'participator_loan_liability_nominal_id' => $this->firstMatchingNominal($normalised, static function (array $row): bool {
                 return $row['account_type'] === 'liability' && $row['subtype_code'] === 'participator_loan_liability';
-            }),
+            }) ?? $this->directorLoanLiabilityNominalSuggestion($normalised),
             'vat_nominal_id' => $this->firstMatchingNominal($normalised, static function (array $row): bool {
                 return $row['id'] > 0
                     && ($row['subtype_code'] === 'vat_control'

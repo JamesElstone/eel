@@ -382,11 +382,8 @@ final class TrialBalanceService
         $uncategorisedExposure = 0.0;
         $corporationTaxBalance = 0.0;
 
-        $directorLoanAssetNominalId = (int)($settings['director_loan_asset_nominal_id'] ?? 0);
-        $directorLoanLiabilityNominalId = (int)($settings['director_loan_liability_nominal_id'] ?? 0);
-        if ($directorLoanLiabilityNominalId <= 0) {
-            $directorLoanLiabilityNominalId = (int)($settings['director_loan_nominal_id'] ?? 0);
-        }
+        $directorLoanAssetNominalId = (int)($settings['participator_loan_asset_nominal_id'] ?? 0);
+        $directorLoanLiabilityNominalId = (int)($settings['participator_loan_liability_nominal_id'] ?? 0);
         $vatNominalId = (int)($settings['vat_nominal_id'] ?? 0);
         $uncategorisedNominalId = (int)($settings['uncategorised_nominal_id'] ?? 0);
         $defaultBankNominalId = (int)($settings['default_bank_nominal_id'] ?? 0);

@@ -45,12 +45,12 @@ final class _director_loan_stateCard extends CardBaseFramework
 
     public function title(): string
     {
-        return 'Director Loan Statement';
+        return 'Participator Loan Statement';
     }
 
     public function helper(array $context): string
     {
-        return 'Assign each posted Director Loan control-account entry to the director whose loan account it belongs to. The transaction counterparty remains separate.';
+        return 'Assign each posted Participator Loan control-account entry to the eligible party whose loan account it belongs to. Eligibility is checked on the transaction date.';
     }
 
     protected function additionalInvalidationFacts(): array
@@ -96,6 +96,10 @@ final class _director_loan_stateCard extends CardBaseFramework
         $statement = (array)($context['services']['directorLoanStatement'] ?? []);
         $presentation = (array)($context['services']['directorLoanReportingPresentation'] ?? []);
         if (empty($statement['success'])) {
+            if (!empty($statement['missing_control_nominals'])) {
+                return '<div class="panel-soft warn"><div class="helper">Configure both Participator Loan control nominals in Company Nominals.</div>'
+                    . '<div class="actions-row"><a class="button" href="?page=companies&amp;show_card=companies_nominals">Configure Participator Loan nominals</a></div></div>';
+            }
             return $this->errors((array)($statement['errors'] ?? ['Director loan statement is unavailable.']));
         }
 
@@ -110,8 +114,8 @@ final class _director_loan_stateCard extends CardBaseFramework
                 <a class="button" href="https://www.gov.uk/hmrc-internal-manuals/employment-income-manual/eim26198" target="_blank" rel="noopener noreferrer">HMRC Guidance on Netting Director Loan Balances</a>
             </div>
             <div class="month-grid">
-                ' . $this->stat('Gross Director Loan Asset', $this->money($settings, $statement['asset_receivable'] ?? 0)) . '
-                ' . $this->stat('Gross Director Loan Liability', $this->money($settings, $statement['liability_payable'] ?? 0)) . '
+                ' . $this->stat('Gross Participator Loan Asset', $this->money($settings, $statement['asset_receivable'] ?? 0)) . '
+                ' . $this->stat('Gross Participator Loan Liability', $this->money($settings, $statement['liability_payable'] ?? 0)) . '
                 ' . $this->stat('Calculated reclassification', $this->money($settings, $statement['desired_reclassification'] ?? 0)) . '
                 ' . $this->stat('Net position', $this->money($settings, $statement['net_position'] ?? 0)) . '
                 ' . $this->stat('Gross loan asset (not s455)', $this->money($settings, $statement['potential_s455_exposure'] ?? 0)) . '
@@ -127,7 +131,7 @@ final class _director_loan_stateCard extends CardBaseFramework
                 $accountingPeriodId
             ) . '
             <section class="panel-soft settings-stack">
-                <div class="eyebrow">Per-director position</div>
+                <div class="eyebrow">Per-party position</div>
                 ' . $this->configuredPositionTable($context)->render($context, [
                     'cards[]' => (array)($context['page']['page_cards'] ?? [$this->key()]),
                     'company_id' => $companyId,
@@ -135,7 +139,7 @@ final class _director_loan_stateCard extends CardBaseFramework
                 ]) . '
             </section>
             <section class="panel-soft settings-stack">
-                <div class="eyebrow">Director Attribution</div>
+                <div class="eyebrow">Participator Loan Party</div>
                 ' . $this->configuredAttributionTable($context)->render($context, [
                     'cards[]' => (array)($context['page']['page_cards'] ?? [$this->key()]),
                     'company_id' => $companyId,
@@ -404,7 +408,7 @@ final class _director_loan_stateCard extends CardBaseFramework
             )
             ->column(
                 'director_id',
-                'Director loan account',
+                'Participator loan account',
                 html: fn(array $row): string => $this->attributionForm(
                     $row,
                     $directors,
@@ -442,23 +446,23 @@ final class _director_loan_stateCard extends CardBaseFramework
         int $accountingPeriodId
     ): string {
         $currentDirectorId = (int)($entry['director_id'] ?? 0);
-        $options = '<option value="" disabled' . ($currentDirectorId <= 0 ? ' selected' : '') . '>Choose director</option>';
-        foreach ($directors as $director) {
+        $options = '<option value="" disabled' . ($currentDirectorId <= 0 ? ' selected' : '') . '>Choose party</option>';
+        foreach ((new \eel_accounts\Service\OwnershipPartyService())->effectiveParties($companyId, (string)($entry['journal_date'] ?? '')) as $director) {
             $directorId = (int)($director['id'] ?? 0);
             $options .= '<option value="' . $directorId . '"'
                 . ($directorId === $currentDirectorId ? ' selected' : '')
-                . '>' . HelperFramework::escape($this->directorLabel($director)) . '</option>';
+                . '>' . HelperFramework::escape((string)$director['legal_name'] . ((int)($director['linked_director_id'] ?? 0) > 0 ? ' (Director)' : '')) . '</option>';
         }
 
         $isLocked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
         return '<form method="post" data-ajax="true" class="actions-row">
             ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="YearEnd">
-            <input type="hidden" name="intent" value="set_director_loan_attribution">
+            <input type="hidden" name="intent" value="set_participator_loan_attribution">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
             <input type="hidden" name="journal_line_id" value="' . (int)($entry['journal_line_id'] ?? 0) . '">
-            <select class="input' . ($isLocked ? ' control-disabled' : '') . '" name="director_id" required' . ($isLocked ? ' disabled aria-disabled="true"' : '') . '>' . $options . '</select>
+            <select class="input' . ($isLocked ? ' control-disabled' : '') . '" name="party_id" required' . ($isLocked ? ' disabled aria-disabled="true"' : '') . '>' . $options . '</select>
         </form>';
     }
 

@@ -12,7 +12,7 @@ final class DirectorLoanAction implements ActionInterfaceFramework
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
         $intent = trim((string)$request->input('intent', $request->input('global_action', '')));
-        if (!in_array($intent, ['save_director_loan_reporting_presentation', 'mark_participator_loan_transaction', 'save_s455_review'], true)) {
+        if (!in_array($intent, ['save_director_loan_reporting_presentation', 'save_s455_review'], true)) {
             return ActionResultFramework::none();
         }
 
@@ -21,13 +21,6 @@ final class DirectorLoanAction implements ActionInterfaceFramework
 
         try {
             $result = match ($intent) {
-                'mark_participator_loan_transaction' => (new \eel_accounts\Service\ParticipatorLoanService())->assignTransaction(
-                    $companyId,
-                    $accountingPeriodId,
-                    (int)$request->input('transaction_id', 0),
-                    (int)$request->input('party_id', 0),
-                    $this->actor($request)
-                ),
                 'save_s455_review' => (new \eel_accounts\Service\S455ReviewService())->saveReview(
                     $companyId,
                     $accountingPeriodId,
@@ -54,7 +47,6 @@ final class DirectorLoanAction implements ActionInterfaceFramework
             $messages[] = [
                 'type' => 'success',
                 'message' => match ($intent) {
-                    'mark_participator_loan_transaction' => 'Participator-loan source payment saved.',
                     'save_s455_review' => 's455 review saved.',
                     default => !empty($result['changed'])
                         ? 'Director Loan reporting presentation saved. Companies House and iXBRL figures will use the new repayment horizon.'

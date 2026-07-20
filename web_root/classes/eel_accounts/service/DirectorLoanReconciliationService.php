@@ -360,14 +360,14 @@ final class DirectorLoanReconciliationService
             return [
                 [
                     'nominal_account_id' => $liabilityNominalId,
-                    'director_id' => $directorId,
+                    'party_id' => $directorId,
                     'debit' => $amount,
                     'credit' => '0.00',
                     'line_description' => $description,
                 ],
                 [
                     'nominal_account_id' => $assetNominalId,
-                    'director_id' => $directorId,
+                    'party_id' => $directorId,
                     'debit' => '0.00',
                     'credit' => $amount,
                     'line_description' => $description,
@@ -378,14 +378,14 @@ final class DirectorLoanReconciliationService
         return [
             [
                 'nominal_account_id' => $assetNominalId,
-                'director_id' => $directorId,
+                'party_id' => $directorId,
                 'debit' => $amount,
                 'credit' => '0.00',
                 'line_description' => $description . ' reversal',
             ],
             [
                 'nominal_account_id' => $liabilityNominalId,
-                'director_id' => $directorId,
+                'party_id' => $directorId,
                 'debit' => '0.00',
                 'credit' => $amount,
                 'line_description' => $description . ' reversal',

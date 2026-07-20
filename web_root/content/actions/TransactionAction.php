@@ -243,7 +243,7 @@ final class TransactionAction implements ActionInterfaceFramework
         } elseif ($interAccountMarker !== null) {
             $errors[] = 'Cancel the inter-account match before changing this transaction categorisation.';
         } elseif ($isDirectorLoanAction && $isTransferTransaction) {
-            $errors[] = 'Transfer rows cannot be marked as director loans.';
+            $errors[] = 'Transfer rows cannot be marked as participator loans.';
         } elseif ($isDirectorLoanAction && trim((string)($directorLoanResolution['error'] ?? '')) !== '') {
             $errors[] = (string)$directorLoanResolution['error'];
         } elseif (
@@ -320,7 +320,7 @@ final class TransactionAction implements ActionInterfaceFramework
                         'save_transaction_category' => $isTransferTransaction
                             ? 'Transfer account saved.'
                             : 'Manual categorisation saved.',
-                        'mark_director_loan' => 'Director loan categorisation saved.',
+                        'mark_director_loan' => 'Participator loan categorisation saved.',
                         default => 'Manual categorisation saved.',
                     };
                 } else {
@@ -1004,7 +1004,7 @@ final class TransactionAction implements ActionInterfaceFramework
         if ($companyId <= 0) {
             return [
                 'nominal_account_id' => null,
-                'error' => 'Select a company before marking director loan transactions.',
+            'error' => 'Select a company before marking participator loan transactions.',
             ];
         }
 
@@ -1012,32 +1012,29 @@ final class TransactionAction implements ActionInterfaceFramework
         if (abs($amount) < 0.005) {
             return [
                 'nominal_account_id' => null,
-                'error' => 'Director loan shortcut requires a non-zero transaction amount.',
+            'error' => 'Participator loan shortcut requires a non-zero transaction amount.',
             ];
         }
 
         $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
         if ($amount < 0) {
-            $nominalId = self::positiveInt($settings['director_loan_asset_nominal_id'] ?? '');
+            $nominalId = self::positiveInt($settings['participator_loan_asset_nominal_id'] ?? '');
 
             return $nominalId > 0
                 ? ['nominal_account_id' => $nominalId, 'error' => '']
                 : [
                     'nominal_account_id' => null,
-                    'error' => 'Set the Director Loan Asset nominal before marking an outgoing transaction as a director loan.',
+                    'error' => 'Set the Participator Loan Asset nominal before marking an outgoing transaction as a participator loan.',
                 ];
         }
 
-        $nominalId = self::positiveInt($settings['director_loan_liability_nominal_id'] ?? '');
-        if ($nominalId <= 0) {
-            $nominalId = self::positiveInt($settings['director_loan_nominal_id'] ?? '');
-        }
+        $nominalId = self::positiveInt($settings['participator_loan_liability_nominal_id'] ?? '');
 
         return $nominalId > 0
             ? ['nominal_account_id' => $nominalId, 'error' => '']
             : [
                 'nominal_account_id' => null,
-                'error' => 'Set the Director Loan Liability nominal before marking an incoming transaction as a director loan.',
+                'error' => 'Set the Participator Loan Liability nominal before marking an incoming transaction as a participator loan.',
             ];
     }
 

@@ -303,10 +303,9 @@ final class S455ReviewService
             (int)($settings['participator_loan_asset_nominal_id'] ?? 0),
             (int)($settings['participator_loan_liability_nominal_id'] ?? 0),
         ]));
-        $directorIds = (new DirectorLoanAttributionService())->controlNominalIds($companyId)['all'];
-        $allIds = array_values(array_unique(array_merge($participatorIds, $directorIds)));
+        $allIds = $participatorIds;
         if ($allIds === []) {
-            return ['rows' => [], 'errors' => ['Configure the Director Loan and Participator Loan control nominals.']];
+            return ['rows' => [], 'errors' => ['Configure the Participator Loan control nominals.']];
         }
         $placeholders = implode(',', array_fill(0, count($allIds), '?'));
         $transactionSource = \InterfaceDB::driverName() === 'sqlite'

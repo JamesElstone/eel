@@ -49,11 +49,9 @@ final class DirectorLoanService
         $assetNominal = $this->nominal((int)$controls['asset']);
         $liabilityNominal = $this->nominal((int)$controls['liability']);
         $errors = [];
-        if ($assetNominal === null) {
-            $errors[] = 'Map one Director Loan Asset control nominal in Company Nominals.';
-        }
-        if ($liabilityNominal === null) {
-            $errors[] = 'Map one Director Loan Liability control nominal in Company Nominals.';
+        $missingControlNominals = $assetNominal === null || $liabilityNominal === null;
+        if ($missingControlNominals) {
+            $errors[] = 'Configure both Participator Loan control nominals in Company Nominals.';
         }
         if ($errors !== []) {
             return [
@@ -62,6 +60,7 @@ final class DirectorLoanService
                 'accounting_period' => $period,
                 'asset_nominal' => $assetNominal,
                 'liability_nominal' => $liabilityNominal,
+                'missing_control_nominals' => $missingControlNominals,
             ];
         }
 
@@ -81,7 +80,17 @@ final class DirectorLoanService
             (int)$liabilityNominal['id']
         );
 
-        $directors = (new CompanyDirectorService())->fetchForCompany($companyId);
+        $ownership = (new OwnershipPartyService())->fetchSummary($companyId, $periodEnd);
+        $directors = array_map(static function (array $party): array {
+            return [
+                'id' => (int)$party['id'],
+                'company_id' => (int)$party['company_id'],
+                'full_name' => (string)$party['legal_name'] . ((int)($party['linked_director_id'] ?? 0) > 0 ? ' (Director)' : ''),
+                'is_active' => 1,
+                'appointed_on' => '',
+                'resigned_on' => '',
+            ];
+        }, array_values(array_filter((array)($ownership['parties'] ?? []), static fn(mixed $party): bool => is_array($party))));
         $directorMap = [];
         foreach ($directors as $director) {
             $directorMap[(int)$director['id']] = $director;
@@ -419,7 +428,7 @@ final class DirectorLoanService
             'SELECT jl.id AS journal_line_id,
                     jl.journal_id,
                     jl.nominal_account_id,
-                    jl.director_id,
+                    jl.party_id AS director_id,
                     jl.debit,
                     jl.credit,
                     COALESCE(jl.line_description, \'\') AS line_description,
@@ -428,8 +437,8 @@ final class DirectorLoanService
                     j.source_type,
                     COALESCE(j.source_ref, \'\') AS source_ref,
                     COALESCE(jem.journal_tag, \'\') AS journal_tag,
-                    cd.company_id AS director_company_id,
-                    cd.full_name AS director_name,
+                    cp.company_id AS director_company_id,
+                    COALESCE(cp.legal_name, \'Unattributed\') AS director_name,
                     t.id AS transaction_id,
                     COALESCE(t.counterparty_name, \'\') AS counterparty_name,
                     ec.id AS expense_claim_id,
@@ -442,7 +451,7 @@ final class DirectorLoanService
              FROM journals j
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              LEFT JOIN journal_entry_metadata jem ON jem.journal_id = j.id
-             LEFT JOIN company_directors cd ON cd.id = jl.director_id
+             LEFT JOIN company_parties cp ON cp.id = jl.party_id AND cp.company_id = j.company_id
              LEFT JOIN transactions t
                ON j.source_type = \'bank_csv\'
               AND j.source_ref LIKE \'transaction:%\'
@@ -473,7 +482,7 @@ final class DirectorLoanService
         int $liabilityNominalId
     ): array {
         $rows = \InterfaceDB::fetchAll(
-            'SELECT COALESCE(jl.director_id, 0) AS director_id,
+            'SELECT COALESCE(jl.party_id, 0) AS director_id,
                     SUM(CASE
                       WHEN jl.nominal_account_id = :asset_nominal_id THEN jl.credit - jl.debit
                       WHEN jl.nominal_account_id = :liability_nominal_id THEN jl.debit - jl.credit
@@ -487,7 +496,7 @@ final class DirectorLoanService
                AND j.journal_date <= :period_end
                AND jem.journal_tag = :journal_tag
                AND jl.nominal_account_id IN (:asset_nominal_id_match, :liability_nominal_id_match)
-             GROUP BY COALESCE(jl.director_id, 0)',
+             GROUP BY COALESCE(jl.party_id, 0)',
             [
                 'asset_nominal_id' => $assetNominalId,
                 'liability_nominal_id' => $liabilityNominalId,

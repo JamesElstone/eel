@@ -85,12 +85,12 @@ final class YearEndAction implements ActionInterfaceFramework
                     $this->adjustmentPayload($request),
                     $actor
                 ),
-                'set_director_loan_attribution' => (new \eel_accounts\Service\DirectorLoanAttributionService())->assignJournalLine(
+                'set_participator_loan_attribution' => (new \eel_accounts\Service\DirectorLoanAttributionService())->assignJournalLine(
                     $companyId,
                     (int)$request->input('journal_line_id', 0),
-                    (int)$request->input('director_id', 0) ?: null,
+                    (int)$request->input('party_id', 0) ?: null,
                     $actor,
-                    (string)$request->input('attribution_reason', 'Director loan statement attribution.')
+                    (string)$request->input('attribution_reason', 'Participator loan statement attribution.')
                 ),
                 'save_director_loan_year_end_review' => (new \eel_accounts\Service\DirectorLoanReconciliationService())->saveYearEndReview(
                     $companyId,
@@ -230,7 +230,7 @@ final class YearEndAction implements ActionInterfaceFramework
             'revoke_empty_month' => 'Empty month confirmation revoked.',
             'save_opening_balance' => 'Opening balance journal saved.',
             'create_adjustment' => 'Year-end adjustment posted.',
-            'set_director_loan_attribution' => 'Director loan account attribution saved.',
+            'set_participator_loan_attribution' => 'Participator loan account attribution saved.',
             'save_director_loan_year_end_review' => 'Director Loan Year End Review saved.',
             'save_tax_readiness_acknowledgement' => 'Tax readiness approval saved.',
             'save_expense_position_acknowledgement' => 'Expense position approval saved.',
@@ -251,7 +251,7 @@ final class YearEndAction implements ActionInterfaceFramework
     private function requiresActionVatSupportScopeCheck(string $intent): bool
     {
         // Expense approval performs this guard once at its mutation boundary.
-        return !in_array($intent, ['save_expense_position_acknowledgement', 'set_director_loan_attribution'], true);
+        return !in_array($intent, ['save_expense_position_acknowledgement', 'set_participator_loan_attribution'], true);
     }
 
     private function requiresUnlockedPeriod(string $intent): bool

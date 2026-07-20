@@ -55,15 +55,11 @@ final class _companies_nominalsCard extends CardBaseFramework
         }
 
         $settings = (array)($context['company']['settings'] ?? []);
-        if (trim((string)($settings['director_loan_liability_nominal_id'] ?? '')) === ''
-            && trim((string)($settings['director_loan_nominal_id'] ?? '')) !== '') {
-            $settings['director_loan_liability_nominal_id'] = $settings['director_loan_nominal_id'];
-        }
         $nominalAccounts = (array)($context['services']['company_nominals'] ?? []);
         $nominalSuggestions = $this->buildNominalDefaultSuggestions($nominalAccounts, $settings);
 
         $suggestionsHtml = '';
-        if ($nominalSuggestions !== []) {
+        {
             $suggestionItemsHtml = '';
 
             $suggestionLabels = [
@@ -73,8 +69,6 @@ final class _companies_nominalsCard extends CardBaseFramework
                 'default_expense_nominal_id' => 'Expense claims payable nominal',
                 'tools_small_equipment_nominal_id' => 'Tools & Small Equipment nominal',
                 'prepayment_asset_nominal_id' => 'Prepayments asset nominal',
-                'director_loan_asset_nominal_id' => 'Director Loan Asset nominal',
-                'director_loan_liability_nominal_id' => 'Director Loan Liability nominal',
                 'participator_loan_asset_nominal_id' => 'Participator Loan Asset nominal',
                 'participator_loan_liability_nominal_id' => 'Participator Loan Liability nominal',
                 'vat_nominal_id' => 'VAT control nominal',
@@ -103,10 +97,10 @@ final class _companies_nominalsCard extends CardBaseFramework
 
             $suggestionsHtml = '
                 <div class="panel-soft warn">
-                    <h4 class="card-title">Suggested Nominal Assignments:</h4>
+                    <h4 class="card-title">Assign system defaults</h4>
                     <span class="helper">This is a suggested assignment based on Good Practice.</span>
                     <div class="list">
-                        ' . $suggestionItemsHtml . '
+                        ' . ($suggestionItemsHtml !== '' ? $suggestionItemsHtml : '<div class="helper">No system defaults are available for the current nominal accounts.</div>') . '
                     </div>
                     <div>
                         <form method="post" data-ajax="true">
@@ -114,7 +108,7 @@ final class _companies_nominalsCard extends CardBaseFramework
                             <input type="hidden" name="card_action" value="Nominals">
                             <input type="hidden" name="intent" value="apply_nominal_suggestions">
                             <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)($context['company']['id'] ?? 0)) . '">
-                            <button class="button primary" type="submit">Use Suggested Assignments</button>
+                            <button class="button primary" type="submit"' . ($suggestionItemsHtml === '' ? ' disabled' : '') . '>Assign system defaults</button>
                         </form>
                     </div>
                 </div>
@@ -129,7 +123,7 @@ final class _companies_nominalsCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="Nominals">
                 <input type="hidden" name="intent" value="save_nominals">
                 <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)($context['company']['id'] ?? 0)) . '">
-                <section data-state-fields="default_bank_nominal_id,default_sales_nominal_id,default_trade_nominal_id,default_expense_nominal_id,tools_small_equipment_nominal_id,prepayment_asset_nominal_id,director_loan_asset_nominal_id,director_loan_liability_nominal_id,participator_loan_asset_nominal_id,participator_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id,corporation_tax_expense_nominal_id,corporation_tax_liability_nominal_id,' . HelperFramework::escape($helperStateFields) . '" data-state-target="save_default_nominals">
+                <section data-state-fields="default_bank_nominal_id,default_sales_nominal_id,default_trade_nominal_id,default_expense_nominal_id,tools_small_equipment_nominal_id,prepayment_asset_nominal_id,participator_loan_asset_nominal_id,participator_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id,corporation_tax_expense_nominal_id,corporation_tax_liability_nominal_id,' . HelperFramework::escape($helperStateFields) . '" data-state-target="save_default_nominals">
                     <div class="form-grid">
                         <div class="form-row">
                             <label for="default_bank_nominal_id">Default Bank nominal</label>
@@ -171,20 +165,6 @@ final class _companies_nominalsCard extends CardBaseFramework
                             <select class="select" id="prepayment_asset_nominal_id" name="prepayment_asset_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['prepayment_asset_nominal_id'] ?? '')) . '">
                                 <option value="">Select nominal account</option>
                                 ' . $this->prepaymentNominalOptions($nominalAccounts, (string)($settings['prepayment_asset_nominal_id'] ?? '')) . '
-                            </select>
-                        </div>
-                        <div class="form-row">
-                            <label for="director_loan_asset_nominal_id">Director Loan Asset nominal</label>
-                            <select class="select" id="director_loan_asset_nominal_id" name="director_loan_asset_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['director_loan_asset_nominal_id'] ?? '')) . '">
-                                <option value="">Select nominal account</option>
-                                ' . $this->nominalOptions($nominalAccounts, (string)($settings['director_loan_asset_nominal_id'] ?? '')) . '
-                            </select>
-                        </div>
-                        <div class="form-row">
-                            <label for="director_loan_liability_nominal_id">Director Loan Liability nominal</label>
-                            <select class="select" id="director_loan_liability_nominal_id" name="director_loan_liability_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['director_loan_liability_nominal_id'] ?? '')) . '">
-                                <option value="">Select nominal account</option>
-                                ' . $this->nominalOptions($nominalAccounts, (string)($settings['director_loan_liability_nominal_id'] ?? '')) . '
                             </select>
                         </div>
                         <div class="form-row">
@@ -346,10 +326,10 @@ final class _companies_nominalsCard extends CardBaseFramework
                     && $row['account_type'] === 'asset'
                     && $row['subtype_code'] === 'prepayments')
                 : null,
-            'director_loan_asset_nominal_id' => !$this->hasAssignedNominal($settings, 'director_loan_asset_nominal_id')
+            'participator_loan_asset_nominal_id' => !$this->hasAssignedNominal($settings, 'participator_loan_asset_nominal_id')
                 ? $this->directorLoanAssetNominalSuggestion($normalised)
                 : null,
-            'director_loan_liability_nominal_id' => !$this->hasAssignedNominal($settings, 'director_loan_liability_nominal_id')
+            'participator_loan_liability_nominal_id' => !$this->hasAssignedNominal($settings, 'participator_loan_liability_nominal_id')
                 ? $this->directorLoanLiabilityNominalSuggestion($normalised)
                 : null,
             'vat_nominal_id' => !$this->hasAssignedNominal($settings, 'vat_nominal_id')

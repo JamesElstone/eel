@@ -79,7 +79,7 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
         foreach ([
             'counterparty' => 'External Counterparty',
             'former director' => 'Former Director (former director)',
-            'attribution intent' => 'name="intent" value="set_director_loan_attribution"',
+            'attribution intent' => 'name="intent" value="set_participator_loan_attribution"',
             'reporting intent' => 'name="intent" value="save_director_loan_reporting_presentation"',
             'within-year choice' => 'name="classification" value="within_one_year" checked required',
             'after-year choice' => 'name="classification" value="after_more_than_one_year" required',
@@ -91,16 +91,16 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
             }
         }
 
-        $harness->assertSame('Assign each posted Director Loan control-account entry to the director whose loan account it belongs to. The transaction counterparty remains separate.', $card->helper([]));
+        $harness->assertSame('Assign each posted Participator Loan control-account entry to the eligible party whose loan account it belongs to. Eligibility is checked on the transaction date.', $card->helper([]));
         $harness->assertTrue(str_contains($html, 'External Counterparty'));
         $harness->assertTrue(str_contains($html, 'https://www.gov.uk/hmrc-internal-manuals/employment-income-manual/eim26198'));
         $harness->assertTrue(str_contains($html, 'target="_blank" rel="noopener noreferrer"'));
         $harness->assertTrue(str_contains($html, 'Primary Director'));
         $harness->assertSame(false, str_contains($html, 'For example,'));
         $harness->assertTrue(str_contains($html, 'Former Director (former director)'));
-        $harness->assertTrue(str_contains($html, 'name="intent" value="set_director_loan_attribution"'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="set_participator_loan_attribution"'));
         $harness->assertTrue(str_contains($html, 'name="journal_line_id" value="123"'));
-        $harness->assertTrue(str_contains($html, '<select class="input" name="director_id" required>'));
+        $harness->assertTrue(str_contains($html, '<select class="input" name="party_id" required>'));
         $harness->assertTrue(str_contains($html, 'value="9" selected'));
         $harness->assertSame(false, str_contains($html, '<button class="button button-inline" type="submit">Save</button>'));
         $harness->assertTrue(str_contains($html, 'Calculated reclassification'));

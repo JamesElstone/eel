@@ -18,13 +18,13 @@ final class DirectorLoanAttributionService
         }
 
         $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
-        $asset = (int)($settings['director_loan_asset_nominal_id'] ?? 0);
-        $liability = (int)($settings['director_loan_liability_nominal_id'] ?? $settings['director_loan_nominal_id'] ?? 0);
+        $asset = (int)($settings['participator_loan_asset_nominal_id'] ?? 0);
+        $liability = (int)($settings['participator_loan_liability_nominal_id'] ?? 0);
         if ($asset <= 0) {
-            $asset = $this->uniqueSubtypeNominalId('director_loan_asset');
+            $asset = $this->uniqueSubtypeNominalId('participator_loan_asset');
         }
         if ($liability <= 0) {
-            $liability = $this->uniqueSubtypeNominalId('director_loan_liability');
+            $liability = $this->uniqueSubtypeNominalId('participator_loan_liability');
         }
         $ids = array_values(array_unique(array_filter([$asset, $liability], static fn(int $id): bool => $id > 0)));
 
@@ -38,41 +38,41 @@ final class DirectorLoanAttributionService
             && in_array($nominalAccountId, $this->controlNominalIds($companyId)['all'], true);
     }
 
-    public function normaliseDirectorId(int $companyId, ?int $nominalAccountId, ?int $directorId): ?int
+    public function normalisePartyId(int $companyId, ?int $nominalAccountId, ?int $partyId, string $date): ?int
     {
         if (!$this->isDirectorLoanNominal($companyId, $nominalAccountId)) {
             return null;
         }
 
-        $directorId = (int)$directorId;
-        if ($directorId <= 0) {
-            throw new \RuntimeException('Select the director loan account for this entry.');
+        $partyId = (int)$partyId;
+        if ($partyId <= 0) {
+            throw new \RuntimeException('Select the participator loan account for this entry.');
         }
-
-        (new CompanyDirectorService())->requireForCompany($companyId, $directorId);
-        return $directorId;
+        (new OwnershipPartyService())->requireEffectiveParty($companyId, $partyId, $date);
+        return $partyId;
     }
 
     public function assignJournalLine(
         int $companyId,
         int $journalLineId,
-        ?int $directorId,
+        ?int $partyId,
         string $changedBy = 'web_app',
-        string $reason = 'Director loan statement attribution.'
+        string $reason = 'Participator loan statement attribution.'
     ): array {
         if ($companyId <= 0 || $journalLineId <= 0) {
-            return ['success' => false, 'errors' => ['Select a valid director loan entry.']];
+            return ['success' => false, 'errors' => ['Select a valid participator loan entry.']];
         }
 
         $line = \InterfaceDB::fetchOne(
             'SELECT jl.id,
                     jl.journal_id,
                     jl.nominal_account_id,
-                    jl.director_id,
+                    jl.party_id,
                     jl.debit,
                     jl.credit,
                     COALESCE(jl.line_description, \'\') AS line_description,
                     j.company_id,
+                    j.journal_date,
                     j.source_type,
                     COALESCE(j.source_ref, \'\') AS source_ref
              FROM journal_lines jl
@@ -83,17 +83,17 @@ final class DirectorLoanAttributionService
             ['journal_line_id' => $journalLineId, 'company_id' => $companyId]
         );
         if (!is_array($line) || !$this->isDirectorLoanNominal($companyId, (int)$line['nominal_account_id'])) {
-            return ['success' => false, 'errors' => ['The selected journal line is not a Director Loan control-account entry for this company.']];
+            return ['success' => false, 'errors' => ['The selected journal line is not a Participator Loan control-account entry for this company.']];
         }
 
-        $directorId = (int)$directorId > 0 ? (int)$directorId : null;
-        if ($directorId === null) {
-            return ['success' => false, 'changed' => false, 'errors' => ['Select the director loan account for this entry.']];
+        $partyId = (int)$partyId > 0 ? (int)$partyId : null;
+        if ($partyId === null) {
+            return ['success' => false, 'changed' => false, 'errors' => ['Select the participator loan account for this entry.']];
         }
-        (new CompanyDirectorService())->requireForCompany($companyId, $directorId);
+        (new OwnershipPartyService())->requireEffectiveParty($companyId, $partyId, (string)$line['journal_date']);
 
-        $oldDirectorId = (int)($line['director_id'] ?? 0) > 0 ? (int)$line['director_id'] : null;
-        if ($oldDirectorId === $directorId) {
+        $oldPartyId = (int)($line['party_id'] ?? 0) > 0 ? (int)$line['party_id'] : null;
+        if ($oldPartyId === $partyId) {
             return ['success' => true, 'changed' => false, 'errors' => []];
         }
 
@@ -104,19 +104,19 @@ final class DirectorLoanAttributionService
 
         try {
             \InterfaceDB::prepareExecute(
-                'UPDATE journal_lines SET director_id = :director_id WHERE id = :id',
-                ['director_id' => $directorId, 'id' => $journalLineId]
+                'UPDATE journal_lines SET party_id = :party_id WHERE id = :id',
+                ['party_id' => $partyId, 'id' => $journalLineId]
             );
             $this->recordChange(
                 $companyId,
                 'journal_line',
                 $journalLineId,
-                $oldDirectorId,
-                $directorId,
+                $oldPartyId,
+                $partyId,
                 $changedBy,
                 $reason
             );
-            $this->propagateToSource($line, $directorId, $changedBy, $reason);
+            $this->propagateToSource($line, $partyId, $changedBy, $reason);
 
             if ($ownsTransaction) {
                 \InterfaceDB::commit();
@@ -136,38 +136,38 @@ final class DirectorLoanAttributionService
         int $companyId,
         string $sourceType,
         int $sourceId,
-        ?int $oldDirectorId,
-        ?int $newDirectorId,
+        ?int $oldPartyId,
+        ?int $newPartyId,
         string $changedBy,
         string $reason
     ): void {
-        $oldDirectorId = (int)$oldDirectorId > 0 ? (int)$oldDirectorId : null;
-        $newDirectorId = (int)$newDirectorId > 0 ? (int)$newDirectorId : null;
+        $oldPartyId = (int)$oldPartyId > 0 ? (int)$oldPartyId : null;
+        $newPartyId = (int)$newPartyId > 0 ? (int)$newPartyId : null;
         if (
             $companyId <= 0
             || $sourceId <= 0
-            || $oldDirectorId === $newDirectorId
+            || $oldPartyId === $newPartyId
             || !$this->hasAuditSchema()
         ) {
             return;
         }
 
         \InterfaceDB::prepareExecute(
-            'INSERT INTO director_loan_attribution_audit (
-                company_id, source_type, source_id, old_director_id,
-                new_director_id, changed_by, reason, changed_at
+            'INSERT INTO participator_loan_attribution_audit (
+                company_id, source_type, source_id, old_party_id,
+                new_party_id, changed_by, reason, changed_at
              ) VALUES (
-                :company_id, :source_type, :source_id, :old_director_id,
-                :new_director_id, :changed_by, :reason, CURRENT_TIMESTAMP
+                :company_id, :source_type, :source_id, :old_party_id,
+                :new_party_id, :changed_by, :reason, CURRENT_TIMESTAMP
              )',
             [
                 'company_id' => $companyId,
                 'source_type' => trim($sourceType),
                 'source_id' => $sourceId,
-                'old_director_id' => $oldDirectorId,
-                'new_director_id' => $newDirectorId,
+                'old_party_id' => $oldPartyId,
+                'new_party_id' => $newPartyId,
                 'changed_by' => trim($changedBy) !== '' ? trim($changedBy) : 'web_app',
-                'reason' => trim($reason) !== '' ? trim($reason) : 'Director loan attribution changed.',
+                'reason' => trim($reason) !== '' ? trim($reason) : 'Participator loan attribution changed.',
             ]
         );
     }
@@ -175,7 +175,7 @@ final class DirectorLoanAttributionService
     public function mapControlNominalsIfUnambiguous(int $companyId): array
     {
         if ($companyId <= 0) {
-            return ['mapped' => [], 'warnings' => ['Select a company before mapping director loan control accounts.']];
+            return ['mapped' => [], 'warnings' => ['Select a company before mapping participator loan control accounts.']];
         }
 
         $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
@@ -184,8 +184,8 @@ final class DirectorLoanAttributionService
         $warnings = [];
         foreach (
             [
-                'director_loan_asset_nominal_id' => 'director_loan_asset',
-                'director_loan_liability_nominal_id' => 'director_loan_liability',
+                'participator_loan_asset_nominal_id' => 'participator_loan_asset',
+                'participator_loan_liability_nominal_id' => 'participator_loan_liability',
             ] as $setting => $subtype
         ) {
             if ((int)($current[$setting] ?? 0) > 0) {
@@ -203,9 +203,6 @@ final class DirectorLoanAttributionService
             if (count($rows) === 1) {
                 $nominalId = (int)$rows[0]['id'];
                 $settings->set($setting, $nominalId, 'int');
-                if ($setting === 'director_loan_liability_nominal_id') {
-                    $settings->set('director_loan_nominal_id', $nominalId, 'int');
-                }
                 $mapped[$setting] = $nominalId;
             } elseif (count($rows) !== 1) {
                 $warnings[] = 'The ' . str_replace('_', ' ', $subtype) . ' control nominal could not be mapped unambiguously.';
@@ -219,7 +216,7 @@ final class DirectorLoanAttributionService
     private function hasAuditSchema(): bool
     {
         try {
-            return \InterfaceDB::tableExists('director_loan_attribution_audit');
+            return \InterfaceDB::tableExists('participator_loan_attribution_audit');
         } catch (\Throwable) {
             return false;
         }
@@ -242,7 +239,7 @@ final class DirectorLoanAttributionService
         }
     }
 
-    private function propagateToSource(array $line, ?int $directorId, string $changedBy, string $reason): void
+    private function propagateToSource(array $line, ?int $partyId, string $changedBy, string $reason): void
     {
         $companyId = (int)$line['company_id'];
         $sourceRef = trim((string)($line['source_ref'] ?? ''));
@@ -253,7 +250,7 @@ final class DirectorLoanAttributionService
         if ((string)$line['source_type'] === 'bank_csv' && preg_match('/^transaction:(\d+)$/', $sourceRef, $matches) === 1) {
             $transactionId = (int)$matches[1];
             $splitRows = \InterfaceDB::fetchAll(
-                'SELECT tsl.id, tsl.director_id
+                'SELECT tsl.id
                  FROM transaction_splits ts
                  INNER JOIN transaction_split_lines tsl ON tsl.split_id = ts.id
                  WHERE ts.transaction_id = :transaction_id
@@ -271,67 +268,28 @@ final class DirectorLoanAttributionService
             if (count($splitRows) === 1) {
                 $row = $splitRows[0];
                 \InterfaceDB::prepareExecute(
-                    'UPDATE transaction_split_lines SET director_id = :director_id, updated_at = CURRENT_TIMESTAMP WHERE id = :id',
-                    ['director_id' => $directorId, 'id' => (int)$row['id']]
+                    'UPDATE transactions SET party_id = :party_id, updated_at = CURRENT_TIMESTAMP WHERE id = :id',
+                    ['party_id' => $partyId, 'id' => $transactionId]
                 );
-                $this->recordChange($companyId, 'transaction_split_line', (int)$row['id'], (int)($row['director_id'] ?? 0) ?: null, $directorId, $changedBy, $reason);
+                $this->recordChange($companyId, 'transaction', $transactionId, null, $partyId, $changedBy, $reason);
                 return;
             }
 
             $transaction = \InterfaceDB::fetchOne(
-                'SELECT id, director_id FROM transactions WHERE id = :id AND company_id = :company_id LIMIT 1',
+                'SELECT id, party_id FROM transactions WHERE id = :id AND company_id = :company_id LIMIT 1',
                 ['id' => $transactionId, 'company_id' => $companyId]
             );
             if (is_array($transaction)) {
                 \InterfaceDB::prepareExecute(
-                    'UPDATE transactions SET director_id = :director_id, updated_at = CURRENT_TIMESTAMP WHERE id = :id',
-                    ['director_id' => $directorId, 'id' => $transactionId]
+                    'UPDATE transactions SET party_id = :party_id, updated_at = CURRENT_TIMESTAMP WHERE id = :id',
+                    ['party_id' => $partyId, 'id' => $transactionId]
                 );
-                $this->recordChange($companyId, 'transaction', $transactionId, (int)($transaction['director_id'] ?? 0) ?: null, $directorId, $changedBy, $reason);
+                $this->recordChange($companyId, 'transaction', $transactionId, (int)($transaction['party_id'] ?? 0) ?: null, $partyId, $changedBy, $reason);
             }
             return;
         }
 
-        if ((string)$line['source_type'] === 'expense_register') {
-            $expenseRows = \InterfaceDB::fetchAll(
-                'SELECT ecl.id, ecl.director_id
-                 FROM expense_claims ec
-                 INNER JOIN expense_claim_lines ecl ON ecl.expense_claim_id = ec.id
-                 WHERE ec.company_id = :company_id
-                   AND ec.posted_journal_id = :journal_id
-                   AND ecl.nominal_account_id = :nominal_account_id
-                   AND ROUND(ecl.amount, 2) = :amount
-                   AND (:description = \'\' OR ecl.description = :description_match)',
-                [
-                    'company_id' => $companyId,
-                    'journal_id' => (int)$line['journal_id'],
-                    'nominal_account_id' => $nominalId,
-                    'amount' => number_format($amount, 2, '.', ''),
-                    'description' => $description,
-                    'description_match' => $description,
-                ]
-            );
-            if (count($expenseRows) === 1) {
-                $row = $expenseRows[0];
-                \InterfaceDB::prepareExecute(
-                    'UPDATE expense_claim_lines SET director_id = :director_id, updated_at = CURRENT_TIMESTAMP WHERE id = :id',
-                    ['director_id' => $directorId, 'id' => (int)$row['id']]
-                );
-                $this->recordChange($companyId, 'expense_claim_line', (int)$row['id'], (int)($row['director_id'] ?? 0) ?: null, $directorId, $changedBy, $reason);
-            }
-            return;
-        }
-
-        $voucher = \InterfaceDB::fetchOne(
-            'SELECT id, director_id FROM dividend_vouchers WHERE company_id = :company_id AND journal_id = :journal_id LIMIT 1',
-            ['company_id' => $companyId, 'journal_id' => (int)$line['journal_id']]
-        );
-        if (is_array($voucher)) {
-            \InterfaceDB::prepareExecute(
-                'UPDATE dividend_vouchers SET director_id = :director_id, updated_at = CURRENT_TIMESTAMP WHERE id = :id',
-                ['director_id' => $directorId, 'id' => (int)$voucher['id']]
-            );
-            $this->recordChange($companyId, 'dividend_voucher', (int)$voucher['id'], (int)($voucher['director_id'] ?? 0) ?: null, $directorId, $changedBy, $reason);
-        }
+        // Manual, expense, and dividend journals retain their source records.
+        // The journal line is the party-attribution source of truth for them.
     }
 }

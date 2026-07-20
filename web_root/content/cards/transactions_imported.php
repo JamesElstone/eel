@@ -1306,31 +1306,27 @@ final class _transactions_importedCard extends CardBaseFramework
         if ($isPeriodLocked) {
             $disabledReason = 'Period locked';
         } elseif (abs($amount) < 0.005) {
-            $disabledReason = 'Director loan shortcut requires a non-zero amount';
+            $disabledReason = 'Participator loan shortcut requires a non-zero amount';
         } elseif ($this->directorLoanNominalId($settings, $amount) <= 0) {
             $disabledReason = $amount < 0
-                ? 'Set Director Loan Asset nominal in Company Nominals'
-                : 'Set Director Loan Liability nominal in Company Nominals';
+                ? 'Set Participator Loan Asset nominal in Company Nominals'
+                : 'Set Participator Loan Liability nominal in Company Nominals';
         }
 
         if ($disabledReason !== '') {
-            return '<button class="button" type="button" disabled title="' . HelperFramework::escape($disabledReason) . '">Director Loan</button>';
+            return '<button class="button" type="button" disabled title="' . HelperFramework::escape($disabledReason) . '">Participator Loan</button>';
         }
 
-        return '<button class="button" type="submit" name="global_action" value="mark_director_loan"' . $journalRebuildAttributes . '>Director Loan</button>';
+        return '<button class="button" type="submit" name="global_action" value="mark_director_loan"' . $journalRebuildAttributes . '>Participator Loan</button>';
     }
 
     private function directorLoanNominalId(array $settings, float $amount): int
     {
         if ($amount < 0) {
-            return $this->positiveSettingId($settings['director_loan_asset_nominal_id'] ?? '');
+            return $this->positiveSettingId($settings['participator_loan_asset_nominal_id'] ?? '');
         }
 
-        $liabilityNominalId = $this->positiveSettingId($settings['director_loan_liability_nominal_id'] ?? '');
-
-        return $liabilityNominalId > 0
-            ? $liabilityNominalId
-            : $this->positiveSettingId($settings['director_loan_nominal_id'] ?? '');
+        return $this->positiveSettingId($settings['participator_loan_liability_nominal_id'] ?? '');
     }
 
     private function positiveSettingId(mixed $value): int

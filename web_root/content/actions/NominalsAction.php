@@ -276,10 +276,6 @@ final class NominalsAction implements ActionInterfaceFramework
         try {
             $settingsStore = new \eel_accounts\Store\CompanySettingsStore($companyId);
             $settingsService = new \eel_accounts\Service\CompanySettingsService();
-            $directorLoanLiabilityNominalId = trim((string)$request->post('director_loan_liability_nominal_id', ''));
-            if ($directorLoanLiabilityNominalId === '') {
-                $directorLoanLiabilityNominalId = trim((string)$request->post('director_loan_nominal_id', ''));
-            }
             $settings = [
                 'default_bank_nominal_id' => trim((string)$request->post('default_bank_nominal_id', '')),
                 'default_sales_nominal_id' => trim((string)$request->post('default_sales_nominal_id', '')),
@@ -287,9 +283,6 @@ final class NominalsAction implements ActionInterfaceFramework
                 'default_expense_nominal_id' => trim((string)$request->post('default_expense_nominal_id', '')),
                 'tools_small_equipment_nominal_id' => trim((string)$request->post('tools_small_equipment_nominal_id', '')),
                 'prepayment_asset_nominal_id' => trim((string)$request->post('prepayment_asset_nominal_id', '')),
-                'director_loan_asset_nominal_id' => trim((string)$request->post('director_loan_asset_nominal_id', '')),
-                'director_loan_liability_nominal_id' => $directorLoanLiabilityNominalId,
-                'director_loan_nominal_id' => $directorLoanLiabilityNominalId,
                 'participator_loan_asset_nominal_id' => trim((string)$request->post('participator_loan_asset_nominal_id', '')),
                 'participator_loan_liability_nominal_id' => trim((string)$request->post('participator_loan_liability_nominal_id', '')),
                 'vat_nominal_id' => trim((string)$request->post('vat_nominal_id', '')),
@@ -367,8 +360,6 @@ final class NominalsAction implements ActionInterfaceFramework
             'default_expense_nominal_id' => 'Expense claims payable',
             'tools_small_equipment_nominal_id' => 'Tools & Small Equipment',
             'prepayment_asset_nominal_id' => 'Prepayments asset',
-            'director_loan_asset_nominal_id' => 'Director loan asset',
-            'director_loan_liability_nominal_id' => 'Director loan liability',
             'participator_loan_asset_nominal_id' => 'Participator loan asset',
             'participator_loan_liability_nominal_id' => 'Participator loan liability',
             'vat_nominal_id' => 'VAT control',

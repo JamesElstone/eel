@@ -55,6 +55,7 @@ final class _profit_loss extends PageContextFramework
             ],
             [
                 'tab' => 'Breakdown',
+                'on_demand' => true,
                 'cards' => [
                     'pl_income_breakdown',
                     'pl_expense_breakdown',
@@ -63,18 +64,21 @@ final class _profit_loss extends PageContextFramework
             ],
             [
                 'tab' => 'Data Quality',
+                'on_demand' => true,
                 'cards' => [
                     'pl_source_coverage',
                 ],
             ],
             [
                 'tab' => 'Reserve Review',
+                'on_demand' => true,
                 'cards' => [
                     'reserve_review',
                 ],
             ],
             [
                 'tab' => 'Profit & Loss Confirmation',
+                'on_demand' => true,
                 'cards' => [
                     'year_end_profit_loss_confirm',
                 ],

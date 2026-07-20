@@ -73,14 +73,20 @@ final class YearEndMetricsService
             return [];
         }
 
-        $settings = [];
-        foreach (\InterfaceDB::fetchAll( 'SELECT setting, value
-             FROM company_settings
-             WHERE company_id = :company_id', ['company_id' => $companyId]) as $row) {
-            $settings[(string)$row['setting']] = (string)($row['value'] ?? '');
-        }
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'year-end-metrics.company-settings',
+            (string)$companyId,
+            static function () use ($companyId): array {
+                $settings = [];
+                foreach (\InterfaceDB::fetchAll( 'SELECT setting, value
+                     FROM company_settings
+                     WHERE company_id = :company_id', ['company_id' => $companyId]) as $row) {
+                    $settings[(string)$row['setting']] = (string)($row['value'] ?? '');
+                }
 
-        return $settings;
+                return $settings;
+            }
+        );
     }
 
     public function buildMonthTiles(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {

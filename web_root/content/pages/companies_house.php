@@ -48,6 +48,7 @@ final class _companies_house extends PageContextFramework
             ],
             [
                 'tab' => 'Year End Confirmation',
+                'on_demand' => true,
                 'cards' => [
                     'year_end_companies_house_comparison',
                 ],

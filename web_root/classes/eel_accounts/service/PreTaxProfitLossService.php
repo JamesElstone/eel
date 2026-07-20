@@ -23,6 +23,12 @@ final class PreTaxProfitLossService
         $ledgerService = $this->ledgerService ?? new PeriodLedgerReadService();
         $scope = $ledgerService->scope($companyId, $accountingPeriodId, $asAtDate, $fromDate);
         $key = $scope->cacheKey() . ':' . md5(serialize([$depreciationPreview, $prepaymentPreview]));
+        if (\eel_accounts\Support\RequestCache::has('pre-tax-profit-loss.result', $key)) {
+            return $this->results[$key] = (array)\eel_accounts\Support\RequestCache::get(
+                'pre-tax-profit-loss.result',
+                $key
+            );
+        }
         if (isset($this->results[$key])) {
             return $this->results[$key];
         }
@@ -168,7 +174,7 @@ final class PreTaxProfitLossService
         $grossProfit = round($income - $costOfSales, 2);
         $profitBeforeTax = round($grossProfit - $operatingExpenses, 2);
 
-        return $this->results[$key] = [
+        $result = [
             'scope' => $scope,
             'dataset' => $dataset,
             'income_total' => $income,
@@ -193,6 +199,10 @@ final class PreTaxProfitLossService
             'unknown_treatment_amount' => round($unknownAmount, 2),
             'journal_count' => $dataset->journalCount,
         ];
+
+        $this->results[$key] = $result;
+
+        return (array)\eel_accounts\Support\RequestCache::put('pre-tax-profit-loss.result', $key, $result);
     }
 
     public function clearRuntimeCache(): void

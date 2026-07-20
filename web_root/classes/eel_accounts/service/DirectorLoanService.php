@@ -35,6 +35,11 @@ final class DirectorLoanService
 
     public function fetchStatement(int $companyId, int $accountingPeriodId): array
     {
+        $requestCacheKey = $companyId . ':' . $accountingPeriodId;
+        if (\eel_accounts\Support\RequestCache::has('director-loan.statement', $requestCacheKey)) {
+            return (array)\eel_accounts\Support\RequestCache::get('director-loan.statement', $requestCacheKey);
+        }
+
         $period = $this->accountingPeriod($companyId, $accountingPeriodId);
         if ($period === null) {
             return $this->error('The selected accounting period could not be found for this company.');
@@ -202,7 +207,7 @@ final class DirectorLoanService
             || abs($assetReceivable) >= 0.005
             || abs($liabilityPayable) >= 0.005;
 
-        return [
+        $result = [
             'success' => true,
             'available' => true,
             'accounting_period' => $period,
@@ -238,6 +243,12 @@ final class DirectorLoanService
             'default_currency_symbol' => (new CompanySettingsService())->defaultCurrencySymbol($settings),
             'date_format' => (string)($settings['date_format'] ?? 'd/m/Y'),
         ];
+
+        return (array)\eel_accounts\Support\RequestCache::put(
+            'director-loan.statement',
+            $requestCacheKey,
+            $result
+        );
     }
 
     public function fetchPositionSummary(int $companyId, int $accountingPeriodId): array
@@ -400,9 +411,9 @@ final class DirectorLoanService
         int $assetNominalId,
         int $liabilityNominalId
     ): array {
-        $transactionSourceExpression = \InterfaceDB::driverName() === 'sqlite'
-            ? '\'transaction:\' || t.id'
-            : 'CONCAT(\'transaction:\', t.id)';
+        $transactionIdExpression = \InterfaceDB::driverName() === 'sqlite'
+            ? 'CAST(SUBSTR(j.source_ref, 13) AS INTEGER)'
+            : 'CAST(SUBSTRING(j.source_ref, 13) AS UNSIGNED)';
 
         return \InterfaceDB::fetchAll(
             'SELECT jl.id AS journal_line_id,
@@ -434,7 +445,8 @@ final class DirectorLoanService
              LEFT JOIN company_directors cd ON cd.id = jl.director_id
              LEFT JOIN transactions t
                ON j.source_type = \'bank_csv\'
-              AND j.source_ref = ' . $transactionSourceExpression . '
+              AND j.source_ref LIKE \'transaction:%\'
+              AND t.id = ' . $transactionIdExpression . '
              LEFT JOIN expense_claims ec ON ec.posted_journal_id = j.id
              WHERE j.company_id = :company_id
                AND j.is_posted = 1

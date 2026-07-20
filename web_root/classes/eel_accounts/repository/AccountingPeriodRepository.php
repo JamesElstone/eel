@@ -18,12 +18,16 @@ final class AccountingPeriodRepository
             return [];
         }
 
-        return \InterfaceDB::fetchAll(
-            'SELECT id, label, period_start, period_end
-             FROM accounting_periods
-             WHERE company_id = :company_id
-             ORDER BY period_start DESC, id DESC',
-            ['company_id' => $companyId]
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'accounting-period.list',
+            (string)$companyId,
+            static fn(): array => \InterfaceDB::fetchAll(
+                'SELECT id, label, period_start, period_end
+                 FROM accounting_periods
+                 WHERE company_id = :company_id
+                 ORDER BY period_start DESC, id DESC',
+                ['company_id' => $companyId]
+            )
         );
     }
 
@@ -33,16 +37,20 @@ final class AccountingPeriodRepository
             return null;
         }
 
-        $row = \InterfaceDB::fetchOne(
-            'SELECT id, company_id, label, period_start, period_end
-             FROM accounting_periods
-             WHERE company_id = :company_id
-               AND id = :id
-             LIMIT 1',
-            [
-                'company_id' => $companyId,
-                'id' => $accountingPeriodId,
-            ]
+        $row = \eel_accounts\Support\RequestCache::remember(
+            'accounting-period.row',
+            $companyId . ':' . $accountingPeriodId,
+            static fn(): array|false => \InterfaceDB::fetchOne(
+                'SELECT id, company_id, label, period_start, period_end
+                 FROM accounting_periods
+                 WHERE company_id = :company_id
+                   AND id = :id
+                 LIMIT 1',
+                [
+                    'company_id' => $companyId,
+                    'id' => $accountingPeriodId,
+                ]
+            )
         );
 
         return is_array($row) ? $row : null;
@@ -70,6 +78,7 @@ final class AccountingPeriodRepository
                 $accountingPeriodId,
                 $companyId,
             ]);
+            $this->forgetRuntimeCache($companyId, $accountingPeriodId);
 
             (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $accountingPeriodId);
             $this->syncPrepaymentSchedules($companyId, $accountingPeriodId);
@@ -164,6 +173,7 @@ final class AccountingPeriodRepository
 
             $id = (int)$find->fetchColumn();
             if ($id > 0) {
+                $this->forgetRuntimeCache($companyId, $id);
                 (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $id);
                 $this->syncPrepaymentSchedules($companyId, $id);
             }
@@ -182,6 +192,7 @@ final class AccountingPeriodRepository
 
             $id = (int)$find->fetchColumn();
             if ($id > 0) {
+                $this->forgetRuntimeCache($companyId, $id);
                 (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $id);
                 $this->syncPrepaymentSchedules($companyId, $id);
             }
@@ -214,5 +225,11 @@ final class AccountingPeriodRepository
         if (empty($result['success'])) {
             throw new \RuntimeException((string)(($result['errors'] ?? [])[0] ?? 'Prepayment schedules could not be synchronised for the accounting period.'));
         }
+    }
+
+    private function forgetRuntimeCache(int $companyId, int $accountingPeriodId): void
+    {
+        \eel_accounts\Support\RequestCache::forget('accounting-period.list', (string)$companyId);
+        \eel_accounts\Support\RequestCache::forget('accounting-period.row', $companyId . ':' . $accountingPeriodId);
     }
 }

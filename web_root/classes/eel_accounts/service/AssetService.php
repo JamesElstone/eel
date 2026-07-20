@@ -1385,6 +1385,11 @@ final class AssetService
     }
 
     public function previewDepreciationRun(int $companyId, int $accountingPeriodId): array {
+        $requestCacheKey = $companyId . ':' . $accountingPeriodId;
+        if (\eel_accounts\Support\RequestCache::has('asset.depreciation-preview', $requestCacheKey)) {
+            return (array)\eel_accounts\Support\RequestCache::get('asset.depreciation-preview', $requestCacheKey);
+        }
+
         if (!$this->hasRequiredSchema()) {
             return ['success' => false, 'errors' => ['Run the fixed asset migration before posting depreciation.']];
         }
@@ -1454,13 +1459,19 @@ final class AssetService
             ];
         }
 
-        return [
+        $result = [
             'success' => true,
             'created' => count($rows),
             'skipped' => $skipped,
             'total_amount' => $total,
             'rows' => $rows,
         ];
+
+        return (array)\eel_accounts\Support\RequestCache::put(
+            'asset.depreciation-preview',
+            $requestCacheKey,
+            $result
+        );
     }
 
     /**

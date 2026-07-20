@@ -43,6 +43,20 @@ final class YearEndClosePreviewService
         ?array $depreciationPreview = null
     ): array
     {
+        $requestCacheKey = \eel_accounts\Support\RequestCache::key(
+            $companyId,
+            $accountingPeriodId,
+            $periodStart,
+            $periodEnd,
+            $depreciationPreview
+        );
+        if (\eel_accounts\Support\RequestCache::has('year-end-close.depreciation-rows', $requestCacheKey)) {
+            return (array)\eel_accounts\Support\RequestCache::get(
+                'year-end-close.depreciation-rows',
+                $requestCacheKey
+            );
+        }
+
         $rows = array_merge(
             $this->postedDepreciationRows($companyId, $accountingPeriodId),
             $this->pendingDepreciationRows($companyId, $accountingPeriodId, $depreciationPreview)
@@ -74,7 +88,11 @@ final class YearEndClosePreviewService
             $allocatedRows[] = $row;
         }
 
-        return $allocatedRows;
+        return (array)\eel_accounts\Support\RequestCache::put(
+            'year-end-close.depreciation-rows',
+            $requestCacheKey,
+            $allocatedRows
+        );
     }
 
     /**
@@ -170,6 +188,22 @@ final class YearEndClosePreviewService
         ?float $profitBeforeTax = null,
         bool $includePriorOpenPeriods = true
     ): array {
+        $requestCacheKey = \eel_accounts\Support\RequestCache::key(
+            $companyId,
+            $accountingPeriodId,
+            $periodEnd,
+            $depreciationPreview,
+            $prepaymentPreview,
+            $profitBeforeTax,
+            $includePriorOpenPeriods
+        );
+        if (\eel_accounts\Support\RequestCache::has('year-end-close.balance-sheet-context', $requestCacheKey)) {
+            return (array)\eel_accounts\Support\RequestCache::get(
+                'year-end-close.balance-sheet-context',
+                $requestCacheKey
+            );
+        }
+
         $targetPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
         if ($targetPeriod === null || (string)($targetPeriod['period_end'] ?? '') === '') {
             return [
@@ -302,12 +336,18 @@ final class YearEndClosePreviewService
             }
         }
 
-        return [
+        $result = [
             'adjustments' => $adjustments,
             'reliable' => $reliable,
             'warnings' => array_values(array_unique($warnings)),
             'periods' => $periodContexts,
         ];
+
+        return (array)\eel_accounts\Support\RequestCache::put(
+            'year-end-close.balance-sheet-context',
+            $requestCacheKey,
+            $result
+        );
     }
 
     private function pendingBalanceSheetAdjustmentsForPeriod(
@@ -362,6 +402,20 @@ final class YearEndClosePreviewService
         string $periodEnd = '',
         ?array $prepaymentPreview = null
     ): array {
+        $requestCacheKey = \eel_accounts\Support\RequestCache::key(
+            $companyId,
+            $accountingPeriodId,
+            $periodStart,
+            $periodEnd,
+            $prepaymentPreview
+        );
+        if (\eel_accounts\Support\RequestCache::has('year-end-close.prepayment-expense-rows', $requestCacheKey)) {
+            return (array)\eel_accounts\Support\RequestCache::get(
+                'year-end-close.prepayment-expense-rows',
+                $requestCacheKey
+            );
+        }
+
         $rows = [];
         $prepaymentPreview ??= (new PrepaymentScheduleService())->fetchPreviewAdjustments($companyId, $accountingPeriodId);
         foreach ($prepaymentPreview as $adjustment) {
@@ -390,7 +444,11 @@ final class YearEndClosePreviewService
                 'schedule_id' => (int)$adjustment['schedule_id'],
             ];
         }
-        return $rows;
+        return (array)\eel_accounts\Support\RequestCache::put(
+            'year-end-close.prepayment-expense-rows',
+            $requestCacheKey,
+            $rows
+        );
     }
 
     public function prepaymentExpenseAdjustmentForPeriod(
@@ -434,6 +492,14 @@ final class YearEndClosePreviewService
 
     private function postedDepreciationRows(int $companyId, int $accountingPeriodId): array
     {
+        $requestCacheKey = $companyId . ':' . $accountingPeriodId;
+        if (\eel_accounts\Support\RequestCache::has('year-end-close.posted-depreciation-rows', $requestCacheKey)) {
+            return (array)\eel_accounts\Support\RequestCache::get(
+                'year-end-close.posted-depreciation-rows',
+                $requestCacheKey
+            );
+        }
+
         if (!$this->tableExists('asset_depreciation_entries') || !$this->tableExists('asset_register')) {
             return [];
         }
@@ -456,7 +522,7 @@ final class YearEndClosePreviewService
             ]
         ) ?: [];
 
-        return array_map(static fn(array $row): array => [
+        $result = array_map(static fn(array $row): array => [
             'asset_id' => (int)($row['asset_id'] ?? 0),
             'asset_code' => (string)($row['asset_code'] ?? ''),
             'accum_dep_nominal_id' => (int)($row['accum_dep_nominal_id'] ?? 0),
@@ -465,6 +531,12 @@ final class YearEndClosePreviewService
             'amount' => round((float)($row['amount'] ?? 0), 2),
             'is_pending' => false,
         ], $rows);
+
+        return (array)\eel_accounts\Support\RequestCache::put(
+            'year-end-close.posted-depreciation-rows',
+            $requestCacheKey,
+            $result
+        );
     }
 
     private function pendingDepreciationRows(
@@ -940,18 +1012,22 @@ final class YearEndClosePreviewService
             return null;
         }
 
-        $row = \InterfaceDB::fetchOne(
-            'SELECT na.id AS nominal_account_id,
-                    COALESCE(na.code, \'\') AS code,
-                    COALESCE(na.name, \'\') AS name,
-                    COALESCE(na.account_type, \'\') AS account_type,
-                    COALESCE(nas.code, \'\') AS subtype_code,
-                    COALESCE(na.tax_treatment, \'\') AS tax_treatment
-             FROM nominal_accounts na
-             LEFT JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
-             WHERE na.id = :id
-             LIMIT 1',
-            ['id' => $nominalId]
+        $row = \eel_accounts\Support\RequestCache::remember(
+            'year-end-close.nominal-by-id',
+            (string)$nominalId,
+            static fn(): array|false => \InterfaceDB::fetchOne(
+                'SELECT na.id AS nominal_account_id,
+                        COALESCE(na.code, \'\') AS code,
+                        COALESCE(na.name, \'\') AS name,
+                        COALESCE(na.account_type, \'\') AS account_type,
+                        COALESCE(nas.code, \'\') AS subtype_code,
+                        COALESCE(na.tax_treatment, \'\') AS tax_treatment
+                 FROM nominal_accounts na
+                 LEFT JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
+                 WHERE na.id = :id
+                 LIMIT 1',
+                ['id' => $nominalId]
+            )
         );
 
         return is_array($row) ? $row : null;
@@ -966,20 +1042,24 @@ final class YearEndClosePreviewService
             $params['account_type'] = $accountType;
         }
 
-        $row = \InterfaceDB::fetchOne(
-            'SELECT na.id AS nominal_account_id,
-                    COALESCE(na.code, \'\') AS code,
-                    COALESCE(na.name, \'\') AS name,
-                    COALESCE(na.account_type, \'\') AS account_type,
-                    COALESCE(nas.code, \'\') AS subtype_code
-             FROM nominal_accounts na
-             LEFT JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
-             WHERE na.code = :code
-               ' . $accountTypeSql . '
-               AND COALESCE(na.is_active, 0) = 1
-             ORDER BY na.id
-             LIMIT 1',
-            $params
+        $row = \eel_accounts\Support\RequestCache::remember(
+            'year-end-close.nominal-by-code',
+            $code . ':' . $accountType,
+            static fn(): array|false => \InterfaceDB::fetchOne(
+                'SELECT na.id AS nominal_account_id,
+                        COALESCE(na.code, \'\') AS code,
+                        COALESCE(na.name, \'\') AS name,
+                        COALESCE(na.account_type, \'\') AS account_type,
+                        COALESCE(nas.code, \'\') AS subtype_code
+                 FROM nominal_accounts na
+                 LEFT JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
+                 WHERE na.code = :code
+                   ' . $accountTypeSql . '
+                   AND COALESCE(na.is_active, 0) = 1
+                 ORDER BY na.id
+                 LIMIT 1',
+                $params
+            )
         );
 
         return is_array($row) ? $row : null;
@@ -991,16 +1071,8 @@ final class YearEndClosePreviewService
             return null;
         }
 
-        $row = \InterfaceDB::fetchOne(
-            'SELECT id, company_id, period_start, period_end
-             FROM accounting_periods
-             WHERE id = :id
-               AND company_id = :company_id
-             LIMIT 1',
-            ['id' => $accountingPeriodId, 'company_id' => $companyId]
-        );
-
-        return is_array($row) ? $row : null;
+        return (new \eel_accounts\Repository\AccountingPeriodRepository())
+            ->fetchAccountingPeriod($companyId, $accountingPeriodId);
     }
 
     private function periodDays(string $start, string $end): int

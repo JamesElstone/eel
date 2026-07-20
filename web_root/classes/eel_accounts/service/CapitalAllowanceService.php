@@ -102,6 +102,13 @@ final class CapitalAllowanceService
             return $this->calculationCache[$companyId];
         }
 
+        if (\eel_accounts\Support\RequestCache::has('capital-allowance.calculation', (string)$companyId)) {
+            return $this->calculationCache[$companyId] = (array)\eel_accounts\Support\RequestCache::get(
+                'capital-allowance.calculation',
+                (string)$companyId
+            );
+        }
+
         if (!$this->hasRequiredSchema()) {
             return [];
         }
@@ -114,13 +121,26 @@ final class CapitalAllowanceService
             $periods = $this->fetchAccountingPeriods($companyId);
             $lockedPeriodIds = $this->immutablePeriodIdsForCompany($companyId, $periods);
 
-            return $this->calculationCache[$companyId] =
-                $this->buildForCompany($companyId, 'none', 0, $lockedPeriodIds);
+            $result = $this->buildForCompany($companyId, 'none', 0, $lockedPeriodIds);
+            $this->calculationCache[$companyId] = $result;
+
+            return (array)\eel_accounts\Support\RequestCache::put(
+                'capital-allowance.calculation',
+                (string)$companyId,
+                $result
+            );
         } catch (\Throwable $exception) {
-            return $this->calculationCache[$companyId] = [
+            $result = [
                 'success' => false,
                 'errors' => [$exception->getMessage()],
             ];
+            $this->calculationCache[$companyId] = $result;
+
+            return (array)\eel_accounts\Support\RequestCache::put(
+                'capital-allowance.calculation',
+                (string)$companyId,
+                $result
+            );
         }
     }
 
@@ -1221,17 +1241,21 @@ final class CapitalAllowanceService
             return false;
         }
 
-        return (int)\InterfaceDB::fetchColumn(
-            'SELECT COUNT(*)
-             FROM corporation_tax_periods
-             WHERE company_id = :company_id
-               AND accounting_period_id = :accounting_period_id
-               AND status IN (\'submitted\', \'accepted\')',
-            [
-                'company_id' => $companyId,
-                'accounting_period_id' => $accountingPeriodId,
-            ]
-        ) > 0;
+        return (bool)\eel_accounts\Support\RequestCache::remember(
+            'capital-allowance.final-ct-status',
+            $companyId . ':' . $accountingPeriodId,
+            static fn(): bool => (int)\InterfaceDB::fetchColumn(
+                'SELECT COUNT(*)
+                 FROM corporation_tax_periods
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                   AND status IN (\'submitted\', \'accepted\')',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                ]
+            ) > 0
+        );
     }
 
     /** @return list<int> */

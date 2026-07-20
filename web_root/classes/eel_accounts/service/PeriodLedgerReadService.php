@@ -10,13 +10,8 @@ final class PeriodLedgerReadService
 
     public function scope(int $companyId, int $accountingPeriodId, ?string $asAtDate = null, ?string $fromDate = null): PeriodLedgerScope
     {
-        $period = \InterfaceDB::fetchOne(
-            'SELECT period_start, period_end
-             FROM accounting_periods
-             WHERE id = :accounting_period_id AND company_id = :company_id
-             LIMIT 1',
-            ['accounting_period_id' => $accountingPeriodId, 'company_id' => $companyId]
-        );
+        $period = (new \eel_accounts\Repository\AccountingPeriodRepository())
+            ->fetchAccountingPeriod($companyId, $accountingPeriodId);
         if (!is_array($period)) {
             throw new \InvalidArgumentException('The selected accounting period could not be found.');
         }
@@ -43,6 +38,18 @@ final class PeriodLedgerReadService
         if (isset($this->datasets[$key])) {
             return $this->datasets[$key];
         }
+
+        $requestDataset = \eel_accounts\Support\RequestCache::remember(
+            'period-ledger.dataset',
+            $key,
+            fn(): PeriodLedgerDataset => $this->fetchUncached($scope)
+        );
+
+        return $this->datasets[$key] = $requestDataset;
+    }
+
+    private function fetchUncached(PeriodLedgerScope $scope): PeriodLedgerDataset
+    {
 
         $monthExpression = \InterfaceDB::driverName() === 'sqlite'
             ? "strftime('%Y-%m-01', j.journal_date)"
@@ -106,7 +113,7 @@ final class PeriodLedgerReadService
             ]
         ) ?: 0);
 
-        return $this->datasets[$key] = new PeriodLedgerDataset($scope, $rows, $journalCount);
+        return new PeriodLedgerDataset($scope, $rows, $journalCount);
     }
 
     public function clearRuntimeCache(): void

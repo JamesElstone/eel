@@ -297,16 +297,20 @@ final class CorporationTaxPeriodService
             return [];
         }
 
-        $periods = \InterfaceDB::fetchAll(
-            'SELECT *
-             FROM corporation_tax_periods
-             WHERE company_id = :company_id
-               AND accounting_period_id = :accounting_period_id
-             ORDER BY sequence_no ASC, id ASC',
-            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+        $periods = \eel_accounts\Support\RequestCache::remember(
+            'corporation-tax-period.rows',
+            $companyId . ':' . $accountingPeriodId,
+            static fn(): array => \InterfaceDB::fetchAll(
+                'SELECT *
+                 FROM corporation_tax_periods
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                 ORDER BY sequence_no ASC, id ASC',
+                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            )
         );
 
-        return $this->withDisplaySequences($companyId, $periods);
+        return $this->withDisplaySequences($companyId, (array)$periods);
     }
 
     /**

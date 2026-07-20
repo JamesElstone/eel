@@ -49,6 +49,24 @@ final class IxbrlBalanceSheetMetricsService
         bool $reportPendingPreviewReliability = false
     ): array
     {
+        $requestCacheKey = \eel_accounts\Support\RequestCache::key(
+            $companyId,
+            $periodStart,
+            $periodEnd,
+            $accountingPeriodId,
+            $depreciationPreview,
+            $prepaymentPreview,
+            $profitBeforeTax,
+            $includePriorOpenPeriodPreviews,
+            $reportPendingPreviewReliability
+        );
+        if (\eel_accounts\Support\RequestCache::has('ixbrl.balance-sheet-metrics', $requestCacheKey)) {
+            return (array)\eel_accounts\Support\RequestCache::get(
+                'ixbrl.balance-sheet-metrics',
+                $requestCacheKey
+            );
+        }
+
         if ($companyId <= 0 || !$this->validDate($periodEnd)) {
             return $this->emptyResult();
         }
@@ -199,7 +217,7 @@ final class IxbrlBalanceSheetMetricsService
             || $pendingPreviewContext === null
             || !empty($pendingPreviewContext['reliable']);
 
-        return [
+        $result = [
             'available' => true,
             'period_start' => $periodStart,
             'period_end' => $periodEnd,
@@ -226,6 +244,12 @@ final class IxbrlBalanceSheetMetricsService
             'director_loan_reporting_presentation' => $directorLoanPresentation,
             'warnings' => array_values(array_unique($warnings)),
         ];
+
+        return (array)\eel_accounts\Support\RequestCache::put(
+            'ixbrl.balance-sheet-metrics',
+            $requestCacheKey,
+            $result
+        );
     }
 
     public function metricAliases(): array
@@ -242,16 +266,8 @@ final class IxbrlBalanceSheetMetricsService
             return null;
         }
 
-        $row = \InterfaceDB::fetchOne(
-            'SELECT id, company_id, period_start, period_end
-             FROM accounting_periods
-             WHERE id = :id
-               AND company_id = :company_id
-             LIMIT 1',
-            ['id' => $accountingPeriodId, 'company_id' => $companyId]
-        );
-
-        return is_array($row) ? $row : null;
+        return (new \eel_accounts\Repository\AccountingPeriodRepository())
+            ->fetchAccountingPeriod($companyId, $accountingPeriodId);
     }
 
     private function applyPendingClosePreviewAdjustments(

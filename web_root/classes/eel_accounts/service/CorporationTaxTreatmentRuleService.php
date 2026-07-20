@@ -81,26 +81,30 @@ final class CorporationTaxTreatmentRuleService
 
         $where = $includeInactive ? '' : ' WHERE is_active = 1';
 
-        return \InterfaceDB::fetchAll(
-            'SELECT id,
-                    rule_code,
-                    rule_version,
-                    priority,
-                    nominal_account_id,
-                    nominal_code,
-                    account_type,
-                    name_contains,
-                    tax_treatment,
-                    effective_from,
-                    effective_to,
-                    source_url,
-                    source_checked_at,
-                    rationale,
-                    review_status,
-                    is_active
-             FROM corporation_tax_treatment_rules'
-             . $where .
-            ' ORDER BY priority ASC, id ASC'
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'corporation-tax-treatment.rules',
+            $includeInactive ? 'all' : 'active',
+            static fn(): array => \InterfaceDB::fetchAll(
+                'SELECT id,
+                        rule_code,
+                        rule_version,
+                        priority,
+                        nominal_account_id,
+                        nominal_code,
+                        account_type,
+                        name_contains,
+                        tax_treatment,
+                        effective_from,
+                        effective_to,
+                        source_url,
+                        source_checked_at,
+                        rationale,
+                        review_status,
+                        is_active
+                 FROM corporation_tax_treatment_rules'
+                 . $where .
+                ' ORDER BY priority ASC, id ASC'
+            )
         );
     }
 
@@ -121,6 +125,7 @@ final class CorporationTaxTreatmentRuleService
             'id' => $ruleId,
         ]);
         $this->activeRuleCache = null;
+        \eel_accounts\Support\RequestCache::forgetNamespace('corporation-tax-treatment.rules');
 
         return $stmt->rowCount() === 1;
     }
@@ -146,6 +151,7 @@ final class CorporationTaxTreatmentRuleService
             'review_status' => $reviewStatus,
             'id' => $ruleId,
         ]);
+        \eel_accounts\Support\RequestCache::forgetNamespace('corporation-tax-treatment.rules');
 
         return $stmt->rowCount() === 1;
     }

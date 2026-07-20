@@ -23,6 +23,19 @@ final class DatedTaxTreatmentLedgerService
             return $this->rows[$key];
         }
 
+        $requestRows = \eel_accounts\Support\RequestCache::remember(
+            'dated-tax-treatment-ledger.rows',
+            $key,
+            fn(): array => $this->fetchUncached($scope)
+        );
+
+        return $this->rows[$key] = (array)$requestRows;
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function fetchUncached(PeriodLedgerScope $scope): array
+    {
+
         $monthExpression = \InterfaceDB::driverName() === 'sqlite'
             ? "strftime('%Y-%m-01', j.journal_date)"
             : "DATE_FORMAT(j.journal_date, '%Y-%m-01')";
@@ -31,7 +44,7 @@ final class DatedTaxTreatmentLedgerService
             ELSE ''
         END";
 
-        return $this->rows[$key] = \InterfaceDB::fetchAll(
+        return \InterfaceDB::fetchAll(
             'SELECT na.id AS nominal_account_id,
                     COALESCE(na.code, \'\') AS code,
                     COALESCE(na.name, \'\') AS name,

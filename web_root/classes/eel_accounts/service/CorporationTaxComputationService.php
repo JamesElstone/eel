@@ -64,6 +64,14 @@ final class CorporationTaxComputationService
     }
 
     public function fetchSummary(int $companyId, int $accountingPeriodId): array {
+        $requestCacheKey = $companyId . ':' . $accountingPeriodId;
+        if (\eel_accounts\Support\RequestCache::has('corporation-tax.accounting-period-summary', $requestCacheKey)) {
+            return (array)\eel_accounts\Support\RequestCache::get(
+                'corporation-tax.accounting-period-summary',
+                $requestCacheKey
+            );
+        }
+
         $scope = $this->vatSupportScope($companyId);
         if (!empty($scope['tax_year_end_read_only'])) {
             return $this->unsupportedVatScopeResult($scope, 'A live accounting-period Corporation Tax computation is not available.');
@@ -112,7 +120,7 @@ final class CorporationTaxComputationService
             $this->prepaymentPreviewWarnings($current)
         )));
 
-        return [
+        $result = [
             'available' => true,
             'accounting_profit' => round((float)$current['accounting_profit'], 2),
             'disallowable_add_backs' => round((float)$current['disallowable_add_backs'], 2),
@@ -170,6 +178,12 @@ final class CorporationTaxComputationService
                 $schedule
             )),
         ];
+
+        return (array)\eel_accounts\Support\RequestCache::put(
+            'corporation-tax.accounting-period-summary',
+            $requestCacheKey,
+            $result
+        );
     }
 
     public function fetchSummaryForCtPeriodId(int $companyId, int $ctPeriodId): array {
@@ -177,31 +191,43 @@ final class CorporationTaxComputationService
         if (isset($this->ctPeriodSummaryCache[$cacheKey])) {
             return $this->ctPeriodSummaryCache[$cacheKey];
         }
+        if (\eel_accounts\Support\RequestCache::has('corporation-tax.ct-period-summary', $cacheKey)) {
+            return $this->ctPeriodSummaryCache[$cacheKey] = (array)\eel_accounts\Support\RequestCache::get(
+                'corporation-tax.ct-period-summary',
+                $cacheKey
+            );
+        }
 
         $scope = $this->vatSupportScope($companyId);
         if (!empty($scope['tax_year_end_read_only'])) {
             if (!empty($scope['scope_evaluation_failed'])) {
-                return $this->ctPeriodSummaryCache[$cacheKey] = $this->unsupportedVatScopeResult(
+                $result = $this->unsupportedVatScopeResult(
                     $scope,
                     'No CT computation was read or generated because the support scope could not be verified.'
                 );
+                $this->ctPeriodSummaryCache[$cacheKey] = $result;
+                return (array)\eel_accounts\Support\RequestCache::put('corporation-tax.ct-period-summary', $cacheKey, $result);
             }
 
             $stored = $this->storedPersistedSummaryForCtPeriodId($companyId, $ctPeriodId);
             if ($stored === null) {
-                return $this->ctPeriodSummaryCache[$cacheKey] = $this->unsupportedVatScopeResult(
+                $result = $this->unsupportedVatScopeResult(
                     $scope,
                     'No persisted historical Corporation Tax computation is available for this CT period.'
                 );
+                $this->ctPeriodSummaryCache[$cacheKey] = $result;
+                return (array)\eel_accounts\Support\RequestCache::put('corporation-tax.ct-period-summary', $cacheKey, $result);
             }
             $stored['vat_support_scope'] = $scope;
 
-            return $this->ctPeriodSummaryCache[$cacheKey] = $stored;
+            $this->ctPeriodSummaryCache[$cacheKey] = $stored;
+            return (array)\eel_accounts\Support\RequestCache::put('corporation-tax.ct-period-summary', $cacheKey, $stored);
         }
 
         $stored = $this->storedLockedSummaryForCtPeriodId($companyId, $ctPeriodId);
         if ($stored !== null) {
-            return $this->ctPeriodSummaryCache[$cacheKey] = $stored;
+            $this->ctPeriodSummaryCache[$cacheKey] = $stored;
+            return (array)\eel_accounts\Support\RequestCache::put('corporation-tax.ct-period-summary', $cacheKey, $stored);
         }
 
         try {
@@ -213,7 +239,14 @@ final class CorporationTaxComputationService
                 'ct_period_id' => $ctPeriodId,
             ];
         }
-        return $this->ctPeriodSummaryCache[$cacheKey] = $this->withComputationPersistenceState($companyId, $ctPeriodId, $summary);
+        $result = $this->withComputationPersistenceState($companyId, $ctPeriodId, $summary);
+        $this->ctPeriodSummaryCache[$cacheKey] = $result;
+
+        return (array)\eel_accounts\Support\RequestCache::put(
+            'corporation-tax.ct-period-summary',
+            $cacheKey,
+            $result
+        );
     }
 
     public function calculateSummaryForCtPeriodId(int $companyId, int $ctPeriodId): array {

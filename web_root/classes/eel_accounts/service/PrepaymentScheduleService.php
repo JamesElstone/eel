@@ -664,6 +664,11 @@ final class PrepaymentScheduleService
      */
     public function fetchPreviewAdjustmentContext(int $companyId, int $accountingPeriodId): array
     {
+        $requestCacheKey = $companyId . ':' . $accountingPeriodId;
+        if (\eel_accounts\Support\RequestCache::has('prepayment.preview-context', $requestCacheKey)) {
+            return (array)\eel_accounts\Support\RequestCache::get('prepayment.preview-context', $requestCacheKey);
+        }
+
         $context = $this->fetchPeriodContext($companyId, $accountingPeriodId);
         if (empty($context['available'])) {
             return [
@@ -721,12 +726,18 @@ final class PrepaymentScheduleService
         }
         $errors = array_values(array_unique(array_filter(array_map('trim', $errors))));
 
-        return [
+        $result = [
             'available' => true,
             'success' => $errors === [],
             'errors' => $errors,
             'adjustments' => $adjustments,
         ];
+
+        return (array)\eel_accounts\Support\RequestCache::put(
+            'prepayment.preview-context',
+            $requestCacheKey,
+            $result
+        );
     }
 
     public function netPostedForReview(int $reviewId): int

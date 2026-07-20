@@ -187,12 +187,14 @@ final class TestPageArchitectureHarness
                 ],
                 [
                     'tab' => 'CT Period Facts',
+                    'on_demand' => true,
                     'cards' => [
                         'tax_ct_period_facts',
                     ],
                 ],
                 [
                     'tab' => 'Year End Review',
+                    'on_demand' => true,
                     'cards' => [
                         'year_end_tax_readiness',
                     ],

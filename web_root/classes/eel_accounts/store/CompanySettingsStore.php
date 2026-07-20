@@ -203,6 +203,7 @@ final class CompanySettingsStore
             }
 
             $this->dirty = [];
+            \eel_accounts\Support\RequestCache::forget('company-settings.rows', (string)$this->companyId);
 
             if ($ownsTransaction) {
                 \InterfaceDB::commit();
@@ -314,15 +315,23 @@ final class CompanySettingsStore
     }
 
     private function loadKeyValueRows(): void {
-        $stmt = \InterfaceDB::prepare(
-            'SELECT setting, type, value
-             FROM company_settings
-             WHERE company_id = ?
-             ORDER BY id'
-        );
-        $stmt->execute([$this->companyId]);
+        $rows = \eel_accounts\Support\RequestCache::remember(
+            'company-settings.rows',
+            (string)$this->companyId,
+            function (): array {
+                $stmt = \InterfaceDB::prepare(
+                    'SELECT setting, type, value
+                     FROM company_settings
+                     WHERE company_id = ?
+                     ORDER BY id'
+                );
+                $stmt->execute([$this->companyId]);
 
-        foreach ($stmt->fetchAll() as $row) {
+                return $stmt->fetchAll() ?: [];
+            }
+        );
+
+        foreach ((array)$rows as $row) {
             $setting = trim((string)($row['setting'] ?? ''));
             $type = strtolower(trim((string)($row['type'] ?? 'char')));
 

@@ -24,7 +24,14 @@ final class AccountingContextService implements \SiteContextProviderInterface
         \PageServiceFramework $services,
         array $pageContext
     ): \SiteContextResultFramework {
+        $requestCacheScope = \eel_accounts\Support\RequestCache::beginFor($request);
         $resolved = $this->resolveSelection($request, $pageContext);
+        \eel_accounts\Support\RequestCache::bindToSessionKeys([
+            self::SESSION_USER_ID,
+            self::SESSION_COMPANY_ID,
+            self::SESSION_ACCOUNTING_PERIOD_ID,
+        ]);
+        $resolved['context']['_eel_accounts_request_cache_scope'] = $requestCacheScope;
 
         return new \SiteContextResultFramework(
             context: $resolved['context'],

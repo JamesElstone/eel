@@ -36,12 +36,16 @@ final class VatSupportScopeService
             $select[] = 'vat_validation_mode';
         }
 
-        $settings = \InterfaceDB::fetchOne(
-            'SELECT ' . implode(', ', $select) . '
-             FROM companies
-             WHERE id = :company_id
-             LIMIT 1',
-            ['company_id' => $companyId]
+        $settings = \eel_accounts\Support\RequestCache::remember(
+            'vat-support.company-settings',
+            (string)$companyId,
+            static fn(): array|false => \InterfaceDB::fetchOne(
+                'SELECT ' . implode(', ', $select) . '
+                 FROM companies
+                 WHERE id = :company_id
+                 LIMIT 1',
+                ['company_id' => $companyId]
+            )
         );
 
         return $this->companyScopeCache[$companyId] = $this->evaluate(is_array($settings) ? $settings : []);
@@ -51,10 +55,12 @@ final class VatSupportScopeService
     {
         if ($companyId === null) {
             $this->companyScopeCache = [];
+            \eel_accounts\Support\RequestCache::forgetNamespace('vat-support.company-settings');
             return;
         }
 
         unset($this->companyScopeCache[$companyId]);
+        \eel_accounts\Support\RequestCache::forget('vat-support.company-settings', (string)$companyId);
     }
 
     public function evaluate(array $settings): array

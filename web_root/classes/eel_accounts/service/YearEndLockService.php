@@ -17,15 +17,19 @@ final class YearEndLockService
             return null;
         }
 
-        $row = \InterfaceDB::fetchOne(
-            'SELECT id, company_id, accounting_period_id,
-                    is_locked, locked_at, locked_by, review_notes,
-                    created_at, updated_at
-             FROM year_end_reviews
-             WHERE company_id = :company_id
-               AND accounting_period_id = :accounting_period_id
-             LIMIT 1',
-            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+        $row = \eel_accounts\Support\RequestCache::remember(
+            'year-end-lock.review',
+            $companyId . ':' . $accountingPeriodId,
+            static fn(): array|false => \InterfaceDB::fetchOne(
+                'SELECT id, company_id, accounting_period_id,
+                        is_locked, locked_at, locked_by, review_notes,
+                        created_at, updated_at
+                 FROM year_end_reviews
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                 LIMIT 1',
+                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            )
         );
 
         return is_array($row) ? $row : null;
@@ -37,18 +41,24 @@ final class YearEndLockService
             return false;
         }
 
-        try {
-            return (int)\InterfaceDB::fetchColumn(
-                'SELECT COALESCE(is_locked, 0)
-                 FROM year_end_reviews
-                 WHERE company_id = :company_id
-                   AND accounting_period_id = :accounting_period_id
-                 LIMIT 1',
-                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
-            ) === 1;
-        } catch (\Throwable) {
-            return false;
-        }
+        return (bool)\eel_accounts\Support\RequestCache::remember(
+            'year-end-lock.is-locked',
+            $companyId . ':' . $accountingPeriodId,
+            static function () use ($companyId, $accountingPeriodId): bool {
+                try {
+                    return (int)\InterfaceDB::fetchColumn(
+                        'SELECT COALESCE(is_locked, 0)
+                         FROM year_end_reviews
+                         WHERE company_id = :company_id
+                           AND accounting_period_id = :accounting_period_id
+                         LIMIT 1',
+                        ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+                    ) === 1;
+                } catch (\Throwable) {
+                    return false;
+                }
+            }
+        );
     }
 
     public function assertUnlocked(int $companyId, int $accountingPeriodId, string $actionLabel = 'change this period'): void

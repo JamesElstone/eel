@@ -437,24 +437,30 @@ final class TaxRateRuleService
             return $this->activeRulesCache[$cacheKey];
         }
 
-        return $this->activeRulesCache[$cacheKey] = \InterfaceDB::fetchAll(
-            'SELECT *
-             FROM tax_rate_rules
-             WHERE tax_domain = :tax_domain
-               AND regime = :regime
-               AND rule_key = :rule_key
-               AND is_active = 1
-               AND period_start <= :period_end
-               AND period_end >= :period_start
-             ORDER BY period_start ASC, source_checked_at DESC, id DESC',
-            [
-                'tax_domain' => $taxDomain,
-                'regime' => $regime,
-                'rule_key' => $ruleKey,
-                'period_start' => $periodStart,
-                'period_end' => $periodEnd,
-            ]
-        ) ?: [];
+        $rules = \eel_accounts\Support\RequestCache::remember(
+            'tax-rate.active-rules',
+            $cacheKey,
+            static fn(): array => \InterfaceDB::fetchAll(
+                'SELECT *
+                 FROM tax_rate_rules
+                 WHERE tax_domain = :tax_domain
+                   AND regime = :regime
+                   AND rule_key = :rule_key
+                   AND is_active = 1
+                   AND period_start <= :period_end
+                   AND period_end >= :period_start
+                 ORDER BY period_start ASC, source_checked_at DESC, id DESC',
+                [
+                    'tax_domain' => $taxDomain,
+                    'regime' => $regime,
+                    'rule_key' => $ruleKey,
+                    'period_start' => $periodStart,
+                    'period_end' => $periodEnd,
+                ]
+            ) ?: []
+        );
+
+        return $this->activeRulesCache[$cacheKey] = (array)$rules;
     }
 
     private function fetchCatalogRows(): array

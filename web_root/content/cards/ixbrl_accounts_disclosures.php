@@ -258,7 +258,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                                     ' . $directorOptions . '
                                 </select>
                             </div>
-                            <button class="button primary" id="save_ixbrl_core_details" type="submit"' . $coreButtonDisabled . '>Save Filling Statement</button>
+                            <button class="button primary" id="save_ixbrl_core_details" type="submit"' . $coreButtonDisabled . '>Save Basic Information</button>
                         </div>
                     </div>
                     </div>

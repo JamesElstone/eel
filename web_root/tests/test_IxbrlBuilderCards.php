@@ -241,12 +241,12 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertFalse(str_contains($html, 'name="prepared_under_small_companies_regime"'));
         $harness->assertTrue(str_contains($html, 'value="James Elstone"'));
         $harness->assertTrue(str_contains($html, 'Required'));
-        $harness->assertTrue(str_contains($html, 'Save Filling Statement'));
+        $harness->assertTrue(str_contains($html, 'Save Basic Information'));
         $harness->assertTrue(str_contains($html, 'data-state-fields="ixbrl_average_number_employees,ixbrl_accounts_approval_date,ixbrl_approving_director_name"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_ixbrl_core_details"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_ixbrl_disclosure_field"'));
         $harness->assertTrue(str_contains($html, 'data-submit-on-change="true"'));
-        $saveButtonPosition = strpos($html, 'Save Filling Statement');
+        $saveButtonPosition = strpos($html, 'Save Basic Information');
         $corePanelEnd = strpos($html, "</form>\n                <div class=\"settings-stack\">");
         $harness->assertTrue($saveButtonPosition !== false && $corePanelEnd !== false && $saveButtonPosition < $corePanelEnd);
         $harness->assertTrue(str_contains($html, '<h3 class="card-title">Account Period Basic Information</h3>'));

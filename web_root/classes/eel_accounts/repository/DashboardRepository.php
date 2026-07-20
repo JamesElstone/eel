@@ -842,8 +842,16 @@ final class DashboardRepository
         ];
 
         if ($keyword !== '') {
-            $where[] = "(t.description LIKE :keyword ESCAPE '\\\\' OR COALESCE(t.reference, '') LIKE :keyword ESCAPE '\\\\')";
+            $keywordCriteria = [
+                "t.description LIKE :keyword ESCAPE '\\\\'",
+                "COALESCE(t.reference, '') LIKE :keyword ESCAPE '\\\\'",
+            ];
             $params['keyword'] = '%' . $this->escapeLike($keyword) . '%';
+            if (ctype_digit($keyword)) {
+                $keywordCriteria[] = 't.id = :keyword_transaction_id';
+                $params['keyword_transaction_id'] = $keyword;
+            }
+            $where[] = '(' . implode(' OR ', $keywordCriteria) . ')';
         }
 
         if ($sourceAccountId > 0) {

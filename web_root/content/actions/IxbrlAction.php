@@ -89,8 +89,7 @@ final class IxbrlAction implements ActionInterfaceFramework
                     [],
                     $changedFacts,
                     [
-                        'Filing basis approval #' . (int)$approved['approval_id']
-                        . ' recorded and iXBRL fact run #' . (int)$approved['fact_run_id'] . ' built.',
+                        'Business Disclosures recorded and Statement of Facts updated.',
                     ],
                     []
                 );

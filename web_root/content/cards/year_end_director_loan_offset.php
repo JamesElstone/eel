@@ -130,8 +130,11 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
             </div>
             ' . $warnings . '
             <section class="settings-stack">
-                ' . $this->positionsTable((array)($review['per_director'] ?? []), $settings) . '
-                ' . $this->taxFlags((array)($review['tax_review'] ?? []), $settings) . '
+                ' . $this->positionsTable(
+                    (array)($review['per_director'] ?? []),
+                    (array)($review['tax_review'] ?? []),
+                    $settings
+                ) . '
                 ' . $this->proposedLines(
                     (array)($review['proposed_lines'] ?? []),
                     $settings,
@@ -142,28 +145,43 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
         </section>';
     }
 
-    private function positionsTable(array $positions, array $settings): string
+    private function positionsTable(array $positions, array $taxReview, array $settings): string
     {
         $visiblePositions = array_values(array_filter(
             $positions,
             fn(mixed $position): bool => !$this->isZeroUnattributedPosition((array)$position)
         ));
-        if ($visiblePositions === []) {
+        $flagsByDirector = [];
+        foreach ((array)($taxReview['director_flags'] ?? []) as $flag) {
+            $flag = (array)$flag;
+            $flagsByDirector[(string)($flag['director_name'] ?? '')] = $flag;
+        }
+        if ($visiblePositions === [] && $flagsByDirector === []) {
             return '<div class="helper">No per-director balances.</div>';
         }
-        $rows = '';
+
+        $positionsByDirector = [];
         foreach ($visiblePositions as $position) {
+            $position = (array)$position;
+            $positionsByDirector[(string)($position['director_name'] ?? 'Unattributed')] = $position;
+        }
+
+        $rows = '';
+        foreach (array_unique(array_merge(array_keys($positionsByDirector), array_keys($flagsByDirector))) as $directorName) {
+            $position = (array)($positionsByDirector[$directorName] ?? []);
+            $flag = (array)($flagsByDirector[$directorName] ?? []);
             $rows .= '<tr>
-                <td>' . HelperFramework::escape((string)($position['director_name'] ?? 'Unattributed')) . '</td>
+                <td>' . HelperFramework::escape($directorName !== '' ? $directorName : 'Unattributed') . '</td>
                 <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['gross_asset'] ?? 0)) . '</td>
                 <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['gross_liability'] ?? 0)) . '</td>
                 <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['desired_reclassification'] ?? 0)) . '</td>
                 <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['net_closing_position'] ?? 0)) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['potential_s455_exposure'] ?? 0)) . '</td>
+                <td>' . ($flag === [] ? '' : (!empty($flag['review_required']) ? '<span class="badge warning">Review required</span>' : '<span class="badge success">No exposure flagged</span>')) . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($settings, $flag['potential_s455_exposure'] ?? ($position['potential_s455_exposure'] ?? 0))) . '</td>
             </tr>';
         }
         return '<div class="panel-soft table-scroll"><table>
-            <thead><tr><th>Director</th><th>Gross asset</th><th>Gross liability</th><th>Reclassification</th><th>Net closing</th><th>Gross asset principal</th></tr></thead>
+            <thead><tr><th>Participator</th><th>Gross asset</th><th>Gross liability</th><th>Reclassification</th><th>Net closing</th><th>Tax flag</th><th>Gross asset principal</th></tr></thead>
             <tbody>' . $rows . '</tbody>
         </table></div>';
     }
@@ -206,26 +224,6 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
         }
 
         return true;
-    }
-
-    private function taxFlags(array $taxReview, array $settings): string
-    {
-        $flags = (array)($taxReview['director_flags'] ?? []);
-        if ($flags === []) {
-            return '<div class="helper">No attributed director balances require a tax flag.</div>';
-        }
-        $rows = '';
-        foreach ($flags as $flag) {
-            $rows .= '<tr>
-                <td>' . HelperFramework::escape((string)($flag['director_name'] ?? '')) . '</td>
-                <td>' . (!empty($flag['review_required']) ? '<span class="badge warning">Review required</span>' : '<span class="badge success">No exposure flagged</span>') . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($settings, $flag['potential_s455_exposure'] ?? 0)) . '</td>
-            </tr>';
-        }
-        return '<div class="panel-soft table-scroll"><table>
-            <thead><tr><th>Director</th><th>Tax flag</th><th>Gross asset principal</th></tr></thead>
-            <tbody>' . $rows . '</tbody>
-        </table></div>';
     }
 
     private function proposedLines(array $lines, array $settings, array $nominals): string

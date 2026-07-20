@@ -82,9 +82,11 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
                 ])
             );
 
-            retainedEarningsCloseSaveReserveReview($fixture);
             $acknowledged = $service->saveAcknowledgement((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], true, 'test');
             $harness->assertSame(true, (bool)($acknowledged['success'] ?? false));
+            $reviewAfterApproval = (new \eel_accounts\Service\DividendReserveClassificationService())
+                ->fetchReviewContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $harness->assertSame(true, (bool)($reviewAfterApproval['snapshot_current'] ?? false));
 
             $posted = $service->postClose((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'test');
             $harness->assertSame(true, (bool)($posted['success'] ?? false));

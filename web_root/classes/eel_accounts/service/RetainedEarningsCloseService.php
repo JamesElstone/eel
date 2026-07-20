@@ -233,6 +233,28 @@ final class RetainedEarningsCloseService
         if (empty($context['available'])) {
             return $context + ['success' => false];
         }
+
+        // The P&L approval is also the approval of the distributable-profit
+        // classifications displayed alongside it.  Capture those current
+        // classifications here so approval does not depend on the user
+        // separately submitting the reserve-review card first.
+        if ($acknowledged && empty((($context['reserve_review'] ?? [])['snapshot_current'] ?? false))) {
+            $treatments = [];
+            foreach ((array)(($context['reserve_review'] ?? [])['rows'] ?? []) as $row) {
+                $nominalAccountId = (int)($row['nominal_account_id'] ?? 0);
+                if ($nominalAccountId > 0) {
+                    $treatments[(string)$nominalAccountId] = (string)($row['treatment'] ?? self::TREATMENT_UNKNOWN);
+                }
+            }
+
+            $reserveReviewResult = (new \eel_accounts\Service\DividendReserveClassificationService())
+                ->saveReview($companyId, $accountingPeriodId, $treatments, $changedBy, (string)(($context['reserve_review'] ?? [])['as_at_date'] ?? ''));
+            if (empty($reserveReviewResult['success'])) {
+                return $reserveReviewResult;
+            }
+            $context = $this->fetchContext($companyId, $accountingPeriodId);
+        }
+
         if (empty($context['can_acknowledge'])) {
             return [
                 'success' => false,
@@ -241,15 +263,6 @@ final class RetainedEarningsCloseService
                 'context' => $context,
             ];
         }
-        if (empty((($context['reserve_review'] ?? [])['snapshot_current'] ?? false))) {
-            return [
-                'success' => false,
-                'status' => 422,
-                'errors' => ['Complete and save the Distributable Profit Review before approving Profit & Loss.'],
-                'context' => $context,
-            ];
-        }
-
         $service = $this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService();
         return $service->save(
             $companyId,

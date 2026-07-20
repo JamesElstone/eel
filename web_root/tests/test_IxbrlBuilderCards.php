@@ -128,6 +128,26 @@ $harness->run(_ixbrl_readinessCard::class, static function (GeneratedServiceClas
     });
 });
 
+$harness->run(_ixbrl_accounts_mappingCard::class, static function (GeneratedServiceClassTestHarness $harness, _ixbrl_accounts_mappingCard $card): void {
+    $harness->check(_ixbrl_accounts_mappingCard::class, 'renders mapping assumptions as a bulleted list', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => ['settings' => []],
+            'ixbrl' => ['accounts_mapping' => [
+                'buckets' => [],
+                'sources' => [],
+                'assumptions' => [
+                    'Balance sheet facts use closing posted-journal balances.',
+                    'Fixed assets require a fixed_asset nominal subtype.',
+                ],
+            ]],
+        ]);
+
+        $harness->assertTrue(str_contains($html, '<ul class="ixbrl-mapping-assumptions">'));
+        $harness->assertTrue(str_contains($html, '<li>Balance sheet facts use closing posted-journal balances.</li>'));
+        $harness->assertTrue(str_contains($html, '<li>Fixed assets require a fixed_asset nominal subtype.</li>'));
+    });
+});
+
 $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (GeneratedServiceClassTestHarness $harness, _ixbrl_accounts_disclosuresCard $card): void {
     $harness->check(_ixbrl_accounts_disclosuresCard::class, 'prefills source-labelled filed suggestions but still requires explicit save', static function () use ($harness, $card): void {
         $services = $card->services();

@@ -47,7 +47,7 @@ final class _ixbrl_accounts_mappingCard extends CardBaseFramework
 
         $assumptions = '';
         foreach ((array)($mapping['assumptions'] ?? []) as $assumption) {
-            $assumptions .= '<div class="helper">' . HelperFramework::escape((string)$assumption) . '</div>';
+            $assumptions .= '<li>' . HelperFramework::escape((string)$assumption) . '</li>';
         }
 
         return '<div class="settings-stack">
@@ -55,7 +55,7 @@ final class _ixbrl_accounts_mappingCard extends CardBaseFramework
                 <thead><tr><th>Bucket</th><th>Amount</th><th>Source explanation</th></tr></thead>
                 <tbody>' . $rows . '</tbody>
             </table></div>
-            <section class="panel-soft">' . $assumptions . '</section>
+            <section class="panel-soft"><ul class="ixbrl-mapping-assumptions">' . $assumptions . '</ul></section>
         </div>';
     }
 

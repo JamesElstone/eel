@@ -27,7 +27,10 @@ $harness->run(_year_end_companies_house_comparisonCard::class, static function (
     });
 
     $harness->check(_year_end_companies_house_comparisonCard::class, 'renders comparison rows and pending approval controls', static function () use ($harness, $card): void {
-        $html = $card->render(companiesHouseComparisonCardContext(null));
+        $context = companiesHouseComparisonCardContext(null);
+        $context['services']['companiesHouseAccountsFiling'] = companiesHouseAccountsFilingContext();
+        $context['services']['companiesHouseComparisonReview']['can_acknowledge'] = true;
+        $html = $card->render($context);
 
         $harness->assertSame(true, str_contains($html, 'Stored filing date: 2026-02-14'));
         $harness->assertSame(true, str_contains($html, 'Fixed assets'));

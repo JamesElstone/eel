@@ -85,11 +85,8 @@ final class _year_end_profit_loss_confirmCard extends CardBaseFramework
         $acknowledgement = (array)($close['acknowledgement'] ?? []);
         $reserveReview = (array)($close['reserve_review'] ?? []);
         $reserveReviewCurrent = !empty($reserveReview['snapshot_current']);
-        $canAcknowledge = !empty($close['can_acknowledge']) && $reserveReviewCurrent;
+        $canAcknowledge = !empty($close['can_acknowledge']);
         $blockedReason = (string)(($close['prior_period_dependency'] ?? [])['detail'] ?? '');
-        if (!empty($close['can_acknowledge']) && !$reserveReviewCurrent) {
-            $blockedReason = 'Complete and save the Distributable Profit Review before approving Profit & Loss.';
-        }
         $dependencyHtml = '';
         foreach ((array)($close['warnings'] ?? []) as $warning) {
             $dependencyHtml .= '<div class="helper"><span class="badge warning">Prior period</span> ' . HelperFramework::escape((string)$warning) . '</div>';
@@ -108,7 +105,7 @@ final class _year_end_profit_loss_confirmCard extends CardBaseFramework
 
         $reserveReviewHtml = $reserveReviewCurrent
             ? '<div class="helper"><span class="badge success">Distributable Profit Review included</span> The approved Profit & Loss basis includes the current reserve classifications as at ' . HelperFramework::escape((string)($reserveReview['as_at_date'] ?? '-')) . '.</div>'
-            : '<div class="helper"><span class="badge warning">Distributable Profit Review required</span> Review and save the reserve classifications before approving Profit & Loss.</div>';
+            : '<div class="helper"><span class="badge warning">Distributable Profit Review will be captured</span> Review the reserve classifications shown above. They will be saved as part of this combined Profit & Loss approval.</div>';
 
         return '<section class="settings-stack" id="year-end-profit-loss-confirm">
             <div class="helper">When the period is locked, the app will carry current profit/loss into 3000 Retained Earnings and reset income and expense nominal balances for the next period (clear them). Original transactions, expense claims, and source journals are not changed.</div>

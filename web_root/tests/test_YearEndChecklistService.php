@@ -59,11 +59,13 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
             $companyId = (int)$fixture['company_id'];
             $accountingPeriodId = (int)$fixture['accounting_period_id'];
 
-            $acknowledged = (new \eel_accounts\Service\RetainedEarningsCloseService())->saveAcknowledgement($companyId, $accountingPeriodId, true, 'test');
+            $acknowledged = (new \eel_accounts\Service\YearEndChecklistService())
+                ->saveRetainedEarningsCloseAcknowledgement($companyId, $accountingPeriodId, true, 'test');
             $harness->assertSame(true, (bool)($acknowledged['success'] ?? false));
             $retainedEarningsContext = (new \eel_accounts\Service\RetainedEarningsCloseService())->fetchContext($companyId, $accountingPeriodId);
             $harness->assertSame(true, (bool)($retainedEarningsContext['acknowledged'] ?? false));
             $harness->assertSame(false, (bool)($retainedEarningsContext['acknowledgement_stale'] ?? true));
+            $harness->assertSame(true, (bool)(($retainedEarningsContext['reserve_review'] ?? [])['snapshot_current'] ?? false));
             $harness->assertSame('800.00', number_format((float)(($retainedEarningsContext['summary'] ?? [])['current_profit_loss'] ?? 0), 2, '.', ''));
 
             $service = new \eel_accounts\Service\YearEndChecklistService();

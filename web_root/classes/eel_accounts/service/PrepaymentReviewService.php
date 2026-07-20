@@ -330,6 +330,8 @@ final class PrepaymentReviewService
             return ['success' => false, 'errors' => [$exception->getMessage()]];
         }
 
+        \eel_accounts\Support\RequestCache::clear();
+
         ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->writeAuditLog(
             $companyId,
             $accountingPeriodId,

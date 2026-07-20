@@ -831,8 +831,57 @@ final class YearEndChecklistService
         }
     }
 
-    public function saveRetainedEarningsCloseAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
-        return $this->saveAcknowledgement($companyId, $accountingPeriodId, 'retained_earnings_close_confirmation', $acknowledged, $note, $changedBy);
+    public function saveRetainedEarningsCloseAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array
+    {
+        // Retained earnings approval owns the combined P&L and distributable
+        // profit approval. Run that service before rebuilding checklist facts,
+        // because the approval itself creates the reserve snapshot.
+        ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())
+            ->assertUnlocked($companyId, $accountingPeriodId, 'change the year-end review confirmation for this period');
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
+
+        try {
+            $acknowledgementService = $this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService();
+            $existing = $acknowledgementService->fetch(
+                $companyId,
+                $accountingPeriodId,
+                'retained_earnings_close_confirmation'
+            );
+            $result = ($this->retainedEarningsCloseService ?? new \eel_accounts\Service\RetainedEarningsCloseService())
+                ->saveAcknowledgement($companyId, $accountingPeriodId, $acknowledged, $changedBy, $note);
+
+            if (empty($result['success'])) {
+                if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                    \InterfaceDB::rollBack();
+                }
+                return $result;
+            }
+
+            ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->writeAuditLog(
+                $companyId,
+                $accountingPeriodId,
+                $acknowledged ? 'review_check_acknowledged' : 'review_check_reopened',
+                $changedBy,
+                $existing,
+                $acknowledged ? (array)($result['acknowledgement'] ?? []) : ['check_code' => 'retained_earnings_close_confirmation', 'acknowledged' => false],
+                trim($note) !== '' ? trim($note) : null
+            );
+
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+
+            return $result;
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+
+            throw $exception;
+        }
     }
 
     public function saveTransactionTailAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $note = '', string $changedBy = 'web_app'): array
@@ -929,15 +978,6 @@ final class YearEndChecklistService
             return ['success' => false, 'errors' => ['The current live review basis could not be verified. Refresh the related workflow and try again.']];
         }
         $basisFacts = (array)($basis['facts'] ?? $basis);
-        if ($acknowledged
-            && $checkCode === 'retained_earnings_close_confirmation'
-            && empty((($basisFacts['reserve_review'] ?? [])['snapshot_current'] ?? false))) {
-            return [
-                'success' => false,
-                'errors' => ['Complete and save the Distributable Profit Review before approving Profit & Loss.'],
-            ];
-        }
-
         $service = $this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService();
         $existing = $service->fetch($companyId, $accountingPeriodId, $checkCode);
         $result = $acknowledged

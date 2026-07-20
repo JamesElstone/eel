@@ -640,7 +640,7 @@ $harness->check('GoldenAccountingCardAuditDefects', 'does not mark a journal wit
     }
 });
 
-$harness->check('GoldenAccountingCardAuditDefects', 'does not treat tagged prepayment metadata as independent proof of journal accounting', static function () use ($harness): void {
+$harness->check('GoldenAccountingCardAuditDefects', 'accepts schedule-linked prepayment journals only when integrity evidence is current', static function () use ($harness): void {
     $coverage = (new \eel_accounts\Service\ProfitLossService())
         ->getSourceCoverage(GoldenAccountsFixture::GOLDEN_COMPANY_ID, 9114);
     $failures = array_values(array_filter(
@@ -650,8 +650,58 @@ $harness->check('GoldenAccountingCardAuditDefects', 'does not treat tagged prepa
             && str_contains((string)($failure['reason'] ?? ''), 'no independent content verifier')
     ));
 
-    $harness->assertCount(2, $failures);
-    $harness->assertSame(false, (bool)(($coverage['coverage_summary'] ?? [])['reconciled'] ?? true));
+    $harness->assertCount(0, $failures);
+    $harness->assertSame(true, (bool)(($coverage['coverage_summary'] ?? [])['reconciled'] ?? false));
+});
+
+$harness->check('GoldenAccountingCardAuditDefects', 'does not accept prepayment metadata when its schedule posting link is missing', static function () use ($harness): void {
+    InterfaceDB::beginTransaction();
+    try {
+        goldenCardAuditPostJournal(
+            99062,
+            9114,
+            '2026-07-16',
+            'manual',
+            'meta:prepayment_deferral:broken-link',
+            91019,
+            91001,
+            10.00,
+            'Golden audit prepayment with missing posting link'
+        );
+        InterfaceDB::prepareExecute(
+            'INSERT INTO journal_entry_metadata (
+                journal_id, company_id, accounting_period_id,
+                journal_tag, journal_key, entry_mode
+             ) VALUES (
+                :journal_id, :company_id, :accounting_period_id,
+                :journal_tag, :journal_key, :entry_mode
+             )',
+            [
+                'journal_id' => 99062,
+                'company_id' => GoldenAccountsFixture::GOLDEN_COMPANY_ID,
+                'accounting_period_id' => 9114,
+                'journal_tag' => 'prepayment_deferral',
+                'journal_key' => 'broken-link',
+                'entry_mode' => 'system_generated',
+            ]
+        );
+
+        \eel_accounts\Support\RequestCache::clear();
+        $coverage = (new \eel_accounts\Service\ProfitLossService())
+            ->getSourceCoverage(GoldenAccountsFixture::GOLDEN_COMPANY_ID, 9114);
+        $failures = array_values(array_filter(
+            (array)(($coverage['coverage_summary'] ?? [])['evidence_failures'] ?? []),
+            static fn(array $failure): bool => str_contains(
+                (string)($failure['reason'] ?? ''),
+                'not linked to an automated prepayment schedule'
+            )
+        ));
+
+        $harness->assertSame(false, (bool)(($coverage['coverage_summary'] ?? [])['reconciled'] ?? true));
+        $harness->assertCount(1, $failures);
+    } finally {
+        goldenCardAuditRollback();
+    }
 });
 
 $harness->check('GoldenAccountingCardAuditDefects', 'retains historical journal balances after a nominal is deactivated', static function () use ($harness): void {

@@ -248,6 +248,9 @@ final class CorporationTaxProvisionService
                 return $result;
             }
 
+            \eel_accounts\Support\RequestCache::clear();
+            $computation->clearRuntimeCaches();
+
             $accountingPeriodPosition = $this->fetchAccountingPeriodPosition($companyId, $accountingPeriodId);
             if (!empty($accountingPeriodPosition['available'])) {
                 $sync = (new \eel_accounts\Service\HmrcObligationService())->syncCtPaymentAmountForAccountingPeriod(

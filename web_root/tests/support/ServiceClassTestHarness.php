@@ -209,6 +209,10 @@ final class GeneratedServiceClassTestHarness
 
     public function check(string $className, string $description, callable $callback): void
     {
+        if (class_exists(\eel_accounts\Support\RequestCache::class)) {
+            \eel_accounts\Support\RequestCache::reset();
+        }
+
         try {
             $callback();
             $this->reportPass($className, $description);
@@ -219,6 +223,9 @@ final class GeneratedServiceClassTestHarness
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();
+            }
+            if (class_exists(\eel_accounts\Support\RequestCache::class)) {
+                \eel_accounts\Support\RequestCache::reset();
             }
             if (class_exists('UploadedFileTestFixture', false)) {
                 UploadedFileTestFixture::cleanup();
@@ -258,8 +265,16 @@ final class GeneratedServiceClassTestHarness
     public function assertSame(mixed $expected, mixed $actual): void
     {
         if ($expected !== $actual) {
+            $caller = [];
+            foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS) as $frame) {
+                if (($frame['file'] ?? '') !== __FILE__) {
+                    $caller = $frame;
+                    break;
+                }
+            }
             throw new RuntimeException(
-                'Assertion failed. Expected ' . var_export($expected, true) . ' but received ' . var_export($actual, true) . '.'
+                'Assertion failed. Expected ' . var_export($expected, true) . ' but received ' . var_export($actual, true)
+                . ' at ' . basename((string)($caller['file'] ?? 'unknown')) . ':' . (int)($caller['line'] ?? 0) . '.'
             );
         }
     }

@@ -153,6 +153,15 @@ final class RequestCache
         }
     }
 
+    /**
+     * Drops memoized read models after a write while preserving the current
+     * request boundary. Subsequent reads in the action must see fresh data.
+     */
+    public static function clear(): void
+    {
+        self::$values = [];
+    }
+
     public static function reset(): void
     {
         self::$request = null;

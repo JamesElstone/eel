@@ -184,6 +184,7 @@ final class YearEndLockService
                     'accounting_period_id' => $accountingPeriodId,
                 ]
             );
+            \eel_accounts\Support\RequestCache::clear();
             $review = $this->fetchReview($companyId, $accountingPeriodId);
             $this->writeAuditLog($companyId, $accountingPeriodId, 'lock', $lockedBy, $existing, $review);
             if ($ownsTransaction) {
@@ -215,6 +216,7 @@ final class YearEndLockService
              WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
             ['updated_at' => $now, 'company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
         );
+        \eel_accounts\Support\RequestCache::clear();
         if (\InterfaceDB::tableExists('corporation_tax_computation_runs')) {
             try {
                 \InterfaceDB::execute(

@@ -28,26 +28,38 @@ $harness->run(
                 $harness->skip('Corporation Tax periods are not available on the default InterfaceDB connection.');
             }
 
-            $row = InterfaceDB::fetchOne(
+            $rows = InterfaceDB::fetchAll(
                 'SELECT company_id, accounting_period_id
                  FROM corporation_tax_periods
                  WHERE status <> :superseded_status
                  ORDER BY company_id ASC, accounting_period_id ASC, sequence_no ASC, id ASC
-                 LIMIT 1',
+                ',
                 ['superseded_status' => 'superseded']
             );
-            if (!is_array($row)) {
+            if ($rows === []) {
                 $harness->skip('No Corporation Tax periods are available for provision comparison.');
             }
 
-            $companyId = (int)$row['company_id'];
-            $accountingPeriodId = (int)$row['accounting_period_id'];
             $computation = new \eel_accounts\Service\CorporationTaxComputationService();
             $provisionService = new \eel_accounts\Service\CorporationTaxProvisionService($computation);
-            $summary = (new \eel_accounts\Service\YearEndTaxReadinessService(null, $computation, $provisionService))
-                ->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
-            if (empty($summary['available'])) {
-                $harness->skip('The selected accounting period has no available CT summary.');
+            $readiness = new \eel_accounts\Service\YearEndTaxReadinessService(null, $computation, $provisionService);
+            $summary = null;
+            $companyId = 0;
+            $accountingPeriodId = 0;
+            foreach ($rows as $row) {
+                $candidate = $readiness->fetchAccountingPeriodCtSummary(
+                    (int)$row['company_id'],
+                    (int)$row['accounting_period_id']
+                );
+                if (!empty($candidate['available'])) {
+                    $companyId = (int)$row['company_id'];
+                    $accountingPeriodId = (int)$row['accounting_period_id'];
+                    $summary = $candidate;
+                    break;
+                }
+            }
+            if (!is_array($summary)) {
+                $harness->skip('No Corporation Tax period has an available summary for provision comparison.');
             }
 
             $fromPrecomputed = $provisionService->fetchAccountingPeriodPosition(

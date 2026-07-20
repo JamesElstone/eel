@@ -185,6 +185,7 @@ final class PrepaymentPostingService
                 if ($ownsTransaction) {
                     \InterfaceDB::commit();
                 }
+                \eel_accounts\Support\RequestCache::clear();
                 return [
                     'success' => true,
                     'errors' => [],
@@ -238,6 +239,7 @@ final class PrepaymentPostingService
             if ($ownsTransaction) {
                 \InterfaceDB::commit();
             }
+            \eel_accounts\Support\RequestCache::clear();
         } catch (\Throwable $exception) {
             if ($ownsTransaction && \InterfaceDB::inTransaction()) {
                 \InterfaceDB::rollBack();
@@ -380,6 +382,7 @@ final class PrepaymentPostingService
             if ($ownsTransaction) {
                 \InterfaceDB::commit();
             }
+            \eel_accounts\Support\RequestCache::clear();
         } catch (\Throwable $exception) {
             if ($ownsTransaction && \InterfaceDB::inTransaction()) {
                 \InterfaceDB::rollBack();

@@ -1006,6 +1006,14 @@ function goldenAssertFollowingPeriodInvariant(
     int $accountingPeriodId,
     string $field
 ): void {
+    // Closing a predecessor correctly changes opening distributable reserves
+    // in later periods. It must not change that later period's own ledger,
+    // tax calculation, or reporting basis, so omit only the inherited reserve
+    // presentation from this immutability comparison.
+    foreach (['retained_earnings_brought_forward', 'distributable_reserves_brought_forward', 'available_distributable_reserves'] as $key) {
+        unset($expected['reporting']['dividends'][$key], $actual['reporting']['dividends'][$key]);
+    }
+
     if ($expected === $actual) {
         return;
     }

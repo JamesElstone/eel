@@ -417,6 +417,7 @@ final class CorporationTaxComputationService
             ];
         }
 
+        \eel_accounts\Support\RequestCache::clear();
         $this->clearRuntimeCaches();
         $periodSync = (new \eel_accounts\Service\CorporationTaxPeriodService())
             ->syncForAccountingPeriod($companyId, $accountingPeriodId);

@@ -52,14 +52,23 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame(false, \eel_accounts\Support\RequestCache::isActive());
                 $harness->assertSame(7, \eel_accounts\Support\RequestCache::remember('test', 'value', $resolver));
 
+                $writeRequest = new stdClass();
+                $writeScope = \eel_accounts\Support\RequestCache::beginFor($writeRequest);
+                $harness->assertSame(8, \eel_accounts\Support\RequestCache::remember('test', 'value', $resolver));
+                \eel_accounts\Support\RequestCache::clear();
+                $harness->assertSame(true, \eel_accounts\Support\RequestCache::isActive());
+                $harness->assertSame(9, \eel_accounts\Support\RequestCache::remember('test', 'value', $resolver));
+                unset($writeScope, $writeRequest);
+                gc_collect_cycles();
+
                 $sessionRequest = new stdClass();
                 $sessionScope = \eel_accounts\Support\RequestCache::beginFor($sessionRequest);
                 $_SESSION['request_cache_test_company'] = 49;
                 \eel_accounts\Support\RequestCache::bindToSessionKeys(['request_cache_test_company']);
-                $harness->assertSame(8, \eel_accounts\Support\RequestCache::remember('test', 'value', $resolver));
+                $harness->assertSame(10, \eel_accounts\Support\RequestCache::remember('test', 'value', $resolver));
                 $_SESSION['request_cache_test_company'] = 50;
                 $harness->assertSame(false, \eel_accounts\Support\RequestCache::isActive());
-                $harness->assertSame(9, \eel_accounts\Support\RequestCache::remember('test', 'value', $resolver));
+                $harness->assertSame(11, \eel_accounts\Support\RequestCache::remember('test', 'value', $resolver));
                 unset($_SESSION['request_cache_test_company'], $sessionScope, $sessionRequest);
 
                 \eel_accounts\Support\RequestCache::reset();

@@ -222,6 +222,33 @@ final class RetainedEarningsCloseService
 
     public function saveAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array
     {
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
+
+        try {
+            $result = $this->saveAcknowledgementInternal($companyId, $accountingPeriodId, $acknowledged, $changedBy, $note);
+            if (empty($result['success'])) {
+                if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                    \InterfaceDB::rollBack();
+                }
+                return $result;
+            }
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+            return $result;
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+            throw $exception;
+        }
+    }
+
+    private function saveAcknowledgementInternal(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy, string $note): array
+    {
         (new \eel_accounts\Service\VatSupportScopeService())
             ->assertTaxAndYearEndSupported($companyId, 'save a retained earnings Year End acknowledgement');
         if (!$acknowledged) {
@@ -243,7 +270,7 @@ final class RetainedEarningsCloseService
             foreach ((array)(($context['reserve_review'] ?? [])['rows'] ?? []) as $row) {
                 $nominalAccountId = (int)($row['nominal_account_id'] ?? 0);
                 if ($nominalAccountId > 0) {
-                    $treatments[(string)$nominalAccountId] = (string)($row['treatment'] ?? self::TREATMENT_UNKNOWN);
+                    $treatments[(string)$nominalAccountId] = (string)($row['treatment'] ?? \eel_accounts\Service\DividendReserveClassificationService::TREATMENT_UNKNOWN);
                 }
             }
 
@@ -338,6 +365,10 @@ final class RetainedEarningsCloseService
             'Year-end close: reset income and expense nominal balances for the next period (clear them). Original source entries are unchanged.',
             $changedBy
         );
+
+        if (!empty($result['success'])) {
+            \eel_accounts\Support\RequestCache::clear();
+        }
 
         return $result + [
             'context' => $context,

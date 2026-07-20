@@ -167,6 +167,8 @@ final class PrepaymentScheduleService
             return ['success' => false, 'errors' => [$exception->getMessage()]];
         }
 
+        \eel_accounts\Support\RequestCache::clear();
+
         return [
             'success' => true,
             'created' => true,

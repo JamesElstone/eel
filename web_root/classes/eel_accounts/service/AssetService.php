@@ -1375,6 +1375,7 @@ final class AssetService
             }
 
             $this->commitAssetMutationTransaction($transaction);
+            \eel_accounts\Support\RequestCache::clear();
         } catch (\Throwable $exception) {
             $this->rollBackAssetMutationTransaction($transaction);
 

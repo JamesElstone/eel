@@ -22,7 +22,7 @@ $harness->run(_year_end_profit_loss_confirmCard::class, static function (Generat
         $harness->assertSame(true, str_contains($html, 'Original transactions, expense claims, and source journals are not changed.'));
         $harness->assertSame(true, str_contains($html, 'Direct equity movements'));
         $harness->assertSame(true, str_contains($html, 'Share capital movement'));
-        $harness->assertSame(true, str_contains($html, 'I confirm that I have reviewed the retained earnings close shown above and approve it as accurate for Year End.'));
+        $harness->assertSame(true, str_contains($html, 'I confirm that I have reviewed the profit and loss close, including the distributable profit review shown above and approve it as accurate for Year End.'));
         $harness->assertSame(true, str_contains($html, 'type="submit" disabled title="Complete and lock the prior accounting period before closing retained earnings."'));
         $harness->assertSame(false, str_contains($html, 'disabled data-year-end-ack-submit'));
         $harness->assertSame(false, str_contains($html, 'Open Year End Confirmation'));
@@ -36,6 +36,27 @@ $harness->run(_year_end_profit_loss_confirmCard::class, static function (Generat
         $harness->assertSame(true, str_contains($html, 'name="retained_earnings_close_acknowledgement" value="0"'));
         $harness->assertSame(true, str_contains($html, 'Revoke approval'));
         $harness->assertSame(false, str_contains($html, 'checked required'));
+    });
+
+    $harness->check(_year_end_profit_loss_confirmCard::class, 'allows combined approval to capture a missing reserve snapshot', static function () use ($harness, $card): void {
+        $html = $card->render(yearEndProfitLossConfirmCardContext(false, false, [
+            'can_acknowledge' => true,
+            'prior_period_dependency' => [
+                'status' => 'first_period',
+                'satisfied' => true,
+                'detail' => 'This is the first recorded accounting period, so no prior-period lock is required.',
+            ],
+            'warnings' => [],
+            'reserve_review' => [
+                'snapshot_current' => false,
+                'status' => 'missing',
+                'as_at_date' => '2025-12-31',
+            ],
+        ]));
+
+        $harness->assertSame(true, str_contains($html, 'Distributable Profit Review will be captured'));
+        $harness->assertSame(true, str_contains($html, 'saved as part of this combined Profit & Loss approval'));
+        $harness->assertSame(true, str_contains($html, 'type="submit" disabled data-year-end-ack-submit'));
     });
 
     $harness->check(_year_end_profit_loss_confirmCard::class, 'warns when agreement is stale', static function () use ($harness, $card): void {

@@ -331,7 +331,7 @@ final class _director_loan_stateCard extends CardBaseFramework
     private function tableHiddenFields(array $context): array
     {
         return [
-            'page' => (string)($context['page']['page_id'] ?? 'director_loans'),
+            'page' => (string)($context['page']['page_id'] ?? 'loans'),
             '_pagination' => '1',
             '_invalidate_fact' => $this->tableInvalidationFact(),
             'cards[]' => [$this->key()],

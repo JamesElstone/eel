@@ -176,7 +176,7 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
         $context = [
             'company' => ['id' => 47, 'accounting_period_id' => 74],
             'page' => [
-                'page_id' => 'director_loans',
+                'page_id' => 'loans',
                 'page_cards' => ['director_loan_state'],
                 'csrf_token' => 'test-csrf-token',
                 'director_loan_state_page' => 1,
@@ -258,7 +258,7 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
         $context = [
             'company' => ['id' => 47, 'accounting_period_id' => 74],
             'page' => [
-                'page_id' => 'director_loans',
+                'page_id' => 'loans',
                 'page_cards' => ['director_loan_state'],
                 'csrf_token' => 'test-csrf-token',
                 'director_loan_state_positions' => 1,

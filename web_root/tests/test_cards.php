@@ -418,7 +418,7 @@ final class TestCardsHarness
             }
         }
 
-        $directorLoansPage = new _director_loans();
+        $directorLoansPage = new _loans();
         $this->assertSame(
             ['director_loan_state', 'director_loan_directors', 'director_loan_s455', 'year_end_director_loan_offset'],
             $directorLoansPage->cards()

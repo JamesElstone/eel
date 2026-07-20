@@ -212,9 +212,9 @@ $harness->check(GoldenAccountingOracle::class, 'matches real journal, trial bala
         goldenCompare($failures, 'profit_loss', 'pl_summary', $periodId, 'operating_expense_total', $expected['profit_loss']['operating_expenses'], $profitLoss['operating_expense_total'] ?? null);
         goldenCompare($failures, 'profit_loss', 'pl_summary', $periodId, 'profit_before_tax', $expected['profit_loss']['profit_before_tax'], $profitLoss['profit_before_tax'] ?? null);
         goldenCompare($failures, 'profit_loss', 'pl_summary', $periodId, 'estimated_corporation_tax', $expected['profit_loss']['estimated_corporation_tax'], $profitLoss['estimated_corporation_tax'] ?? null);
-        goldenCompare($failures, 'director_loans', 'director_loan_state', $periodId, 'opening_balance', $expected['director_loan']['opening'], $directorLoan['opening_balance'] ?? null);
-        goldenCompare($failures, 'director_loans', 'director_loan_state', $periodId, 'movement_in_period', $expected['director_loan']['movement'], $directorLoan['movement_in_period'] ?? null);
-        goldenCompare($failures, 'director_loans', 'director_loan_state', $periodId, 'closing_balance', $expected['director_loan']['closing'], $directorLoan['closing_balance'] ?? null);
+        goldenCompare($failures, 'loans', 'director_loan_state', $periodId, 'opening_balance', $expected['director_loan']['opening'], $directorLoan['opening_balance'] ?? null);
+        goldenCompare($failures, 'loans', 'director_loan_state', $periodId, 'movement_in_period', $expected['director_loan']['movement'], $directorLoan['movement_in_period'] ?? null);
+        goldenCompare($failures, 'loans', 'director_loan_state', $periodId, 'closing_balance', $expected['director_loan']['closing'], $directorLoan['closing_balance'] ?? null);
         goldenCompare($failures, 'tax', 'tax_corporation_tax_summary', $periodId, 'taxable_profit', $expected['corporation_tax']['taxable_profit'], $tax['summary']['taxable_profit'] ?? null);
         goldenCompare($failures, 'tax', 'tax_corporation_tax_summary', $periodId, 'estimated_corporation_tax', $expected['profit_loss']['estimated_corporation_tax'], $tax['summary']['estimated_corporation_tax'] ?? null);
         foreach (['accounting_profit', 'disallowable_add_backs', 'depreciation_add_back', 'capital_allowances', 'taxable_before_losses', 'taxable_profit', 'taxable_loss', 'estimated_corporation_tax', 'estimated_rate', 'losses_brought_forward', 'losses_used', 'losses_carried_forward'] as $field) {

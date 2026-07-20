@@ -656,7 +656,7 @@ final class TrialBalanceService
             'bank_csv' => preg_match('/transaction:(\d+)/', $sourceRef, $matches) === 1
                 ? '?page=transactions'
                 : '?page=transactions',
-            'director_loan_register' => '?page=director_loans',
+            'director_loan_register' => '?page=loans',
             'expense_register', 'expense_claim_post', 'expense_claim_payment_link' => '?page=expense_claims',
             'manual' => '?page=journals',
             default => '?page=journals',
@@ -666,7 +666,7 @@ final class TrialBalanceService
     private function sourceWorkflowPage(string $sourceType): string {
         return match ($sourceType) {
             'bank_csv' => 'transactions',
-            'director_loan_register' => 'director_loans',
+            'director_loan_register' => 'loans',
             'expense_register', 'expense_claim_post', 'expense_claim_payment_link' => 'expense_claims',
             default => 'journals',
         };

@@ -127,7 +127,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
                             'status' => 'warning',
                             'detail_text' => 'Review the director loan tax exposure.',
                             'metric_value' => '£1,000.00',
-                            'action_url' => '?page=director_loans&show_card=year_end_director_loan_offset',
+                            'action_url' => '?page=loans&show_card=year_end_director_loan_offset',
                             'review_clearable' => true,
                         ]],
                         'year_end_accounts_review' => [[

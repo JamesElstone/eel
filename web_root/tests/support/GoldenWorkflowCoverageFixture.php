@@ -100,8 +100,8 @@ final class GoldenWorkflowCoverageFixture
                     self::evidence('prepayment postings', 'SELECT COUNT(*) FROM prepayment_schedule_postings psp INNER JOIN prepayment_schedules ps ON ps.id = psp.schedule_id INNER JOIN prepayment_reviews pr ON pr.id = ps.review_id WHERE pr.company_id = 9100', 1),
                 ],
             ],
-            'director_loans' => [
-                'pages' => ['director_loans'],
+            'loans' => [
+                'pages' => ['loans'],
                 'evidence' => [
                     self::evidence('director-loan journal lines', 'SELECT COUNT(*) FROM journal_lines jl INNER JOIN journals j ON j.id = jl.journal_id WHERE j.company_id IN (9100, 9400) AND jl.nominal_account_id IN (91005, 91006)', 2),
                 ],

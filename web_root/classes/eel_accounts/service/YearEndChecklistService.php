@@ -1311,7 +1311,7 @@ final class YearEndChecklistService
                 : ($directorLoanUnattributedCount > 0
                     ? $directorLoanUnattributedCount . ' unattributed'
                     : $this->money($settings, $directorLoanReview['net_position'] ?? 0)),
-            '?page=director_loans&show_card=year_end_director_loan_offset',
+            '?page=loans&show_card=year_end_director_loan_offset',
             $directorLoanHasActivity ? ($directorLoanReview['confirmation_basis'] ?? null) : null
         ), $reviewAcknowledgements);
         $expensePositionBalance = (float)((($expensePosition['totals'] ?? [])['carried_forward'] ?? 0));
@@ -1547,7 +1547,7 @@ final class YearEndChecklistService
                 ? 'The close-company status and source-payment s455 evidence are confirmed for every CT period.'
                 : (string)(($s455Review['errors'] ?? [])[0] ?? 'Confirm the s455 review for every CT period. If the lock occurs before the repayment deadline, the review uses only evidence available at lock time.'),
             !empty($s455Review['all_confirmed']) ? $this->money($settings, $s455Review['net_tax'] ?? 0) : 'Action required',
-            '?page=director_loans&show_card=director_loan_s455'
+            '?page=loans&show_card=director_loan_s455'
         );
 
         $ctPeriodTaxFactChecks = $this->ctPeriodTaxFactChecks($taxReadiness, $ctPeriodFacts, $s455Review);

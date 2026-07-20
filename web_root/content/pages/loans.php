@@ -7,16 +7,16 @@
  */
 declare(strict_types=1);
 
-final class _director_loans extends PageContextFramework
+final class _loans extends PageContextFramework
 {
     public function id(): string
     {
-        return 'director_loans';
+        return 'loans';
     }
 
     public function title(): string
     {
-        return 'Director Loans';
+        return 'Loans';
     }
 
     public function subtitle(): string

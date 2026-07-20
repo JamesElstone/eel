@@ -419,7 +419,8 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $harness->assertFalse(str_contains($draftHtml, 'name="intent" value="build_ixbrl_facts"'));
             $harness->assertTrue(str_contains($draftHtml, 'Generate Filing Export</button>'));
             $harness->assertTrue(str_contains($draftHtml, 'Generate Filing Export</button>') && str_contains($draftHtml, 'disabled'));
-            $harness->assertTrue(str_contains($draftHtml, 'Run External Validation'));
+            $harness->assertFalse(str_contains($draftHtml, 'Run External Validation'));
+            $harness->assertFalse(str_contains($draftHtml, 'name="intent" value="validate_ixbrl_external"'));
             $harness->assertTrue(str_contains($draftHtml, 'Arelle Status') && str_contains($draftHtml, 'Installed'));
             $harness->assertTrue(str_contains($draftHtml, 'Arelle Validation') && str_contains($draftHtml, 'Failed'));
             $harness->assertTrue(str_contains($draftHtml, 'Review draft only'));
@@ -449,9 +450,21 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         ];
         $draft = $card->render($context);
         $harness->assertTrue(str_contains($draft, 'CT period 2025-01-01 to 2025-12-31'));
+        $harness->assertTrue(str_contains($draft, 'Corporation Tax iXBRL'));
+        $harness->assertTrue(str_contains($draft, '<div class="summary-label">CT period</div>'));
         $harness->assertTrue(str_contains($draft, 'generate_computation_ixbrl'));
         $harness->assertTrue(str_contains($draft, 'validate_computation_ixbrl'));
         $harness->assertFalse(str_contains($draft, 'download_computation_ixbrl'));
+
+        $context['ixbrl']['computation_periods'][0]['status']['errors'] = [
+            'Approve the current disclosures and filing basis before preparing CT filing output.',
+        ];
+        $context['ixbrl']['computation_periods'][0]['status']['artifact_errors'] = [
+            'No current frozen computation artifact exists for this CT period.',
+        ];
+        $withHelpers = $card->render($context);
+        $harness->assertTrue(str_contains($withHelpers, 'class="helper ixbrl-computation-helper">Approve the current disclosures'));
+        $harness->assertTrue(str_contains($withHelpers, 'class="helper ixbrl-computation-helper">No current frozen computation artifact exists'));
 
         $context['ixbrl']['computation_periods'][0]['status']['fileable'] = true;
         $ready = $card->render($context);

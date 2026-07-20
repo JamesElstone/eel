@@ -59,6 +59,14 @@
   margin-bottom: 16px;
 }
 
+.card-body .ixbrl-computation-helper {
+  margin: 16px 0;
+}
+
+.card-body .ixbrl-rebuild-required-helper {
+  margin: 16px 0;
+}
+
 .ixbrl-mapping-assumptions {
   display: grid;
   gap: 8px;

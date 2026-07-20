@@ -29,7 +29,6 @@ final class _ixbrl_generationCard extends CardBaseFramework
         $readiness = (array)($context['ixbrl']['readiness'] ?? []);
         $arelleStatus = (array)($readiness['arelle_status'] ?? []);
         $canGenerate = !empty($readiness['can_generate']);
-        $canValidateExternal = !empty($readiness['can_validate']);
         $readyForFiling = !empty($readiness['ready_for_filing']);
         $canGenerateAll = $canGenerate && $this->allComputationPeriodsReady($context);
         $runFreshness = (array)($run['run_freshness'] ?? []);
@@ -51,6 +50,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . '<button class="button primary" type="submit">Download Filing-ready File</button>'
                 . '</form>'
             : '';
+        $externalSummary = $this->externalSummary($run, $arelleStatus);
 
         return '<div class="settings-stack">
             <section class="panel-soft">
@@ -70,10 +70,9 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 </form>
                 ' . ($canGenerateAll ? '' : '<div class="helper">Approve a generation-ready accounts basis and resolve every CT-period computation blocker first.</div>') . '
             </section>
-            <h3>Accounts iXBRL</h3>
             <section class="panel-soft">
                 <div class="status-head">
-                    <h3 class="card-title">Latest run</h3>
+                    <h3 class="card-title">Accounting iXBRL</h3>
                     <span class="badge ' . HelperFramework::escape($this->statusClass($displayStatus)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($displayStatus, '_')) . '</span>
                 </div>
                 <div class="summary-grid">
@@ -88,33 +87,25 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 </div>
                 <div class="helper">' . HelperFramework::escape((string)($run['error_message'] ?? '')) . '</div>
                 ' . ($stale
-                    ? '<div class="helper"><span class="badge warning">Rebuild required</span> '
+                    ? '<div class="helper ixbrl-rebuild-required-helper"><span class="badge warning">Rebuild required</span> '
                         . HelperFramework::escape((string)($runFreshness['detail'] ?? 'The latest facts are stale.'))
                         . '</div>'
                     : '') . '
-                <div class="helper">' . HelperFramework::escape($this->externalSummary($run, $arelleStatus)) . '</div>
+                ' . ($externalSummary !== '' ? '<div class="helper">' . HelperFramework::escape($externalSummary) . '</div>' : '') . '
                 ' . $this->validationDetails($run) . '
                 ' . (!$readyForFiling && $fileExists
                     ? '<div class="helper"><span class="badge warning">Review draft only</span> The generated file is withheld from filing download until the current file passes every validation and hash check.</div>'
                     : '') . '
+                <form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">
+                    ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
+                    <input type="hidden" name="card_action" value="Ixbrl">
+                    <input type="hidden" name="intent" value="generate_ixbrl_preview">
+                    <input type="hidden" name="company_id" value="' . $companyId . '">
+                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                    <button class="button primary" type="submit"' . ($canGenerate ? '' : ' disabled') . '>Generate Filing Export</button>
+                </form>
             </section>
-            <form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">
-                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-                <input type="hidden" name="card_action" value="Ixbrl">
-                <input type="hidden" name="intent" value="generate_ixbrl_preview">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <button class="button primary" type="submit"' . ($canGenerate ? '' : ' disabled') . '>Generate Filing Export</button>
-            </form>
             ' . $download . '
-            <form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">
-                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-                <input type="hidden" name="card_action" value="Ixbrl">
-                <input type="hidden" name="intent" value="validate_ixbrl_external">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <button class="button" type="submit"' . ($canValidateExternal ? '' : ' disabled') . '>Run External Validation</button>
-            </form>
             ' . $this->computationPeriods($context, $companyId, $accountingPeriodId) . '
         </div>';
     }
@@ -122,7 +113,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
     private function computationPeriods(array $context, int $companyId, int $accountingPeriodId): string
     {
         $periods = (array)($context['ixbrl']['computation_periods'] ?? []);
-        $html = '<h3>Computations iXBRL</h3>';
+        $html = '';
         if ($periods === []) {
             return $html . '<div class="notice warning">No CT periods are available for computations generation.</div>';
         }
@@ -141,17 +132,17 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . '<input type="hidden" name="company_id" value="' . $companyId . '">'
                 . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
                 . '<input type="hidden" name="ct_period_id" value="' . $ctPeriodId . '">';
-            $html .= '<section class="panel-soft"><div class="status-head"><h4>CT period '
-                . HelperFramework::escape($start) . ' to ' . HelperFramework::escape($end) . '</h4><span class="badge '
+            $html .= '<section class="panel-soft"><div class="status-head"><h4>Corporation Tax iXBRL</h4><span class="badge '
                 . ($fileable ? 'success' : ($fresh ? 'warning' : 'muted')) . '">'
                 . ($fileable ? 'Filing ready' : ($fresh ? 'Generated, not fileable' : 'Not generated')) . '</span></div>'
-                . '<div class="summary-grid">'
+                . '<div class="summary-grid four">'
+                . $this->metric('CT period', $start . ' to ' . $end)
                 . $this->metric('Artifact', (string)($run['generated_filename'] ?? 'Not generated'))
                 . $this->metric('Internal validation', $this->validationLabel((string)($run['validation_status'] ?? 'not_run')))
                 . $this->metric('Arelle validation', $this->validationLabel((string)($run['external_validation_status'] ?? 'not_run')))
                 . '</div>';
             foreach (array_values(array_unique(array_merge((array)($status['errors'] ?? []), (array)($status['artifact_errors'] ?? [])))) as $error) {
-                $html .= '<div class="notice warning">' . HelperFramework::escape((string)$error) . '</div>';
+                $html .= '<div class="helper ixbrl-computation-helper">' . HelperFramework::escape((string)$error) . '</div>';
             }
             $html .= '<div class="form-row-actions"><form method="post" action="?page=disclosures" data-ajax="true">' . $hidden
                 . '<input type="hidden" name="intent" value="generate_computation_ixbrl"><button class="button primary" type="submit"'
@@ -226,7 +217,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
     {
         $freshness = (array)($run['run_freshness'] ?? []);
         if ($freshness !== [] && (string)($freshness['state'] ?? '') !== 'current') {
-            return 'External validation is unavailable until the iXBRL facts and filing export are rebuilt.';
+            return '';
         }
 
         $status = (string)($run['external_validation_status'] ?? 'not_configured');

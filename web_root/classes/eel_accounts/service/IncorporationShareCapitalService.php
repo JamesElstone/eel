@@ -99,6 +99,7 @@ final class IncorporationShareCapitalService
         $shareClassId = (int)($input['share_class_id'] ?? 0);
         $params = [
             'company_id' => $companyId,
+            'issued_at' => $normalised['issued_at'],
             'share_class' => $normalised['share_class'],
             'currency' => $normalised['currency'],
             'quantity' => $normalised['quantity'],
@@ -118,7 +119,8 @@ final class IncorporationShareCapitalService
 
             \InterfaceDB::prepareExecute(
                 'UPDATE company_incorporation_share_classes
-                 SET share_class = :share_class,
+                 SET issued_at = :issued_at,
+                     share_class = :share_class,
                      currency = :currency,
                      quantity = :quantity,
                      nominal_value_per_share = :nominal_value_per_share,
@@ -135,6 +137,7 @@ final class IncorporationShareCapitalService
             \InterfaceDB::prepareExecute(
                 'INSERT INTO company_incorporation_share_classes (
                     company_id,
+                    issued_at,
                     share_class,
                     currency,
                     quantity,
@@ -146,6 +149,7 @@ final class IncorporationShareCapitalService
                     status
                  ) VALUES (
                     :company_id,
+                    :issued_at,
                     :share_class,
                     :currency,
                     :quantity,
@@ -558,6 +562,7 @@ final class IncorporationShareCapitalService
         }
 
         return [
+            'issued_at' => $this->normaliseIssuedAt($input['issued_at'] ?? null),
             'share_class' => trim((string)($input['share_class'] ?? 'Ordinary')) ?: 'Ordinary',
             'currency' => strtoupper(trim((string)($input['currency'] ?? 'GBP'))) ?: 'GBP',
             'quantity' => $quantity,
@@ -570,6 +575,18 @@ final class IncorporationShareCapitalService
             'source_note' => trim((string)($input['source_note'] ?? '')),
             'document_reference' => trim((string)($input['document_reference'] ?? '')),
         ];
+    }
+
+    private function normaliseIssuedAt(mixed $value): string
+    {
+        $value = trim((string)$value);
+        if ($value === '') {
+            return date('Y-m-d H:i:s');
+        }
+
+        $timestamp = strtotime($value);
+
+        return $timestamp === false ? date('Y-m-d H:i:s') : date('Y-m-d H:i:s', $timestamp);
     }
 
     private function validateShareInput(array $input): array

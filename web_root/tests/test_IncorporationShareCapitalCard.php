@@ -18,9 +18,11 @@ $harness->run(_incorporation_share_capitalCard::class, static function (
         $context = incorporationShareCapitalCardContext([
             [
                 'id' => 12,
+                'issued_at' => '2026-07-20 09:30:00',
                 'share_class' => 'Ordinary',
                 'currency' => 'GBP',
                 'quantity' => 100,
+                'allocated' => 60,
                 'nominal_value_per_share' => '5.000000',
                 'paid_value_per_share' => '5.000000',
                 'unpaid_value_per_share' => '0.000000',
@@ -35,8 +37,12 @@ $harness->run(_incorporation_share_capitalCard::class, static function (
         $tables = $card->tables($context);
 
         $harness->assertTrue(($tables[0] ?? null) instanceof TableFramework);
+        $harness->assertSame(true, str_contains($html, '>Date<'));
+        $harness->assertSame(true, str_contains($html, '2026-07-20'));
         $harness->assertSame(true, str_contains($html, 'Class of shares'));
         $harness->assertSame(true, str_contains($html, 'Number allotted'));
+        $harness->assertSame(true, str_contains($html, 'Allocated'));
+        $harness->assertSame(true, str_contains($html, '>60<'));
         $harness->assertSame(true, str_contains($html, 'Aggregate nominal value'));
         $harness->assertSame(true, str_contains($html, '500'));
         $harness->assertSame(true, str_contains($html, 'Total aggregate unpaid'));
@@ -44,10 +50,16 @@ $harness->run(_incorporation_share_capitalCard::class, static function (
         $harness->assertSame(true, str_contains($html, 'Prescribed particulars'));
         $harness->assertSame(true, str_contains($html, 'FULL RIGHTS REGARDING VOTING, PAYMENT OF DIVIDENDS AND DISTRIBUTIONS'));
         $harness->assertSame(true, str_contains($html, 'Review payment'));
-        $harness->assertSame(false, str_contains($html, 'name="share_class"'));
-        $harness->assertSame(false, str_contains($html, 'name="quantity"'));
+        $harness->assertSame(true, str_contains($html, 'class="incorporation-share-new-row"'));
+        $harness->assertSame(true, str_contains($html, 'Current time'));
+        $harness->assertSame(true, str_contains($html, 'name="share_class" value="Ordinary"'));
+        $harness->assertSame(true, str_contains($html, 'name="aggregate_nominal_value"'));
+        $harness->assertSame(true, str_contains($html, 'name="total_aggregate_unpaid"'));
+        $harness->assertSame(true, str_contains($html, 'Add Share Class'));
+        $harness->assertSame(true, strrpos($html, 'incorporation-share-new-row') > strpos($html, 'Review payment'));
+        $harness->assertSame(true, str_contains($html, 'name="quantity"'));
         $harness->assertSame(false, str_contains($html, 'name="nominal_value_per_share"'));
-        $harness->assertSame(false, str_contains($html, '<textarea'));
+        $harness->assertSame(true, str_contains($html, '<textarea'));
         $harness->assertSame(false, str_contains($html, 'Save Share Class'));
         $harness->assertSame(false, str_contains($html, 'Mark Not Paid Up'));
         $harness->assertSame(false, str_contains($html, 'mark_shares_unpaid'));
@@ -56,6 +68,7 @@ $harness->run(_incorporation_share_capitalCard::class, static function (
         $csv = $tables[0]->exportCsv();
         $harness->assertSame(true, str_contains($csv, 'Ordinary'));
         $harness->assertSame(true, str_contains($csv, '500'));
+        $harness->assertSame(true, str_contains($csv, '60'));
         $harness->assertSame(false, str_contains($csv, '<input'));
     });
 
@@ -101,6 +114,18 @@ function incorporationShareCapitalCardContext(array $shareClasses): array
             'incorporationShares' => [
                 'available' => true,
                 'share_classes' => $shareClasses,
+            ],
+            'ownership' => [
+                'available' => true,
+                'reconciliation' => [
+                    'rows' => array_map(
+                        static fn(array $shareClass): array => [
+                            'share_class_id' => (int)($shareClass['id'] ?? 0),
+                            'held_quantity' => (int)($shareClass['allocated'] ?? 0),
+                        ],
+                        $shareClasses
+                    ),
+                ],
             ],
         ],
     ];

@@ -55,6 +55,7 @@ TEXT;
             $harness->assertSame('GBP', (string)($draft['currency'] ?? ''));
             $harness->assertSame('500', (string)($draft['aggregate_nominal_value'] ?? ''));
             $harness->assertSame('0', (string)($draft['total_aggregate_unpaid'] ?? ''));
+            $harness->assertSame('2022-09-05 00:00:00', (string)($draft['issued_at'] ?? ''));
             $harness->assertSame($filename, (string)($draft['document_reference'] ?? ''));
             $harness->assertSame('5', (string)($draft['source_values']['paid_value_per_share'] ?? ''));
         });

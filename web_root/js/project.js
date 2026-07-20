@@ -133,6 +133,52 @@
         });
     }
 
+    function initialiseOwnershipPartyForms(root = document) {
+        const forms = root.querySelectorAll ? root.querySelectorAll('[data-ownership-party-form="true"]') : [];
+
+        forms.forEach((form) => {
+            if (!(form instanceof HTMLFormElement) || form.dataset.ownershipPartyBound === '1') {
+                return;
+            }
+
+            const status = form.querySelector('[data-ownership-director-status]');
+            const directorName = form.querySelector('[data-ownership-director-name]');
+            const directorLegalName = form.querySelector('[data-ownership-director-legal-name]');
+            const nonDirectorName = form.querySelector('[data-ownership-non-director-name]');
+            const directorPartyType = form.querySelector('[data-ownership-director-party-type]');
+            const partyType = form.querySelector('[data-ownership-party-type]');
+
+            if (!(status instanceof HTMLSelectElement)
+                || !(directorName instanceof HTMLSelectElement)
+                || !(directorLegalName instanceof HTMLInputElement)
+                || !(nonDirectorName instanceof HTMLInputElement)
+                || !(directorPartyType instanceof HTMLInputElement)
+                || !(partyType instanceof HTMLSelectElement)) {
+                return;
+            }
+
+            const sync = () => {
+                const isDirector = status.value === 'director';
+                directorName.hidden = !isDirector;
+                directorName.disabled = !isDirector;
+                directorName.required = isDirector;
+                directorLegalName.disabled = !isDirector;
+                directorLegalName.value = isDirector ? String(directorName.selectedOptions[0]?.textContent || '').trim() : '';
+                nonDirectorName.hidden = isDirector;
+                nonDirectorName.disabled = isDirector;
+                nonDirectorName.required = !isDirector;
+                directorPartyType.disabled = !isDirector;
+                partyType.disabled = isDirector;
+                partyType.value = isDirector ? 'individual' : partyType.value;
+            };
+
+            status.addEventListener('change', sync);
+            directorName.addEventListener('change', sync);
+            form.dataset.ownershipPartyBound = '1';
+            sync();
+        });
+    }
+
     function initialiseHmrcNoticeRequiredFields(root = document) {
         const stateSections = root.querySelectorAll
             ? root.querySelectorAll('[data-state-target="save_hmrc_notice_button"][data-state-fields]')
@@ -1149,6 +1195,7 @@
 
     initialiseManualAssetLegalWarnings(document);
     initialiseDefaultCondensedTables(document);
+    initialiseOwnershipPartyForms(document);
     initialiseHmrcNoticeRequiredFields(document);
     initialiseDirectorLoanOffsetAcknowledgements(document);
     initialiseUploadProcessingIndicators(document);
@@ -1168,6 +1215,7 @@
                 if (node instanceof HTMLElement) {
                     initialiseManualAssetLegalWarnings(node);
                     initialiseDefaultCondensedTables(node);
+                    initialiseOwnershipPartyForms(node);
                     initialiseHmrcNoticeRequiredFields(node);
                     initialiseDirectorLoanOffsetAcknowledgements(node);
                     initialiseUploadProcessingIndicators(node);

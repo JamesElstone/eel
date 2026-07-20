@@ -56,7 +56,6 @@ final class _incorporation_sharesCard extends CardBaseFramework
         $draftShareClass = (array)($context['incorporation_shares']['draft_share_class'] ?? []);
 
         return '<section class="settings-stack" id="incorporation-add-shares">
-            <div class="helper">Enter the Statement of Capital totals from the Companies House incorporation filing. These are to be taken from the original incorporation filing document and the ledger will calculate the per-share values from the totals entered.</div>
             ' . $this->shareForm($companyId, $draftShareClass, (array)(($context['company'] ?? [])['settings'] ?? [])) . '
         </section>';
     }

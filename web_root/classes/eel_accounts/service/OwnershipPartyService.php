@@ -127,6 +127,25 @@ final class OwnershipPartyService
         }
         if ($linkedDirectorId > 0) {
             (new CompanyDirectorService())->requireForCompany($companyId, $linkedDirectorId);
+
+            if ($partyId <= 0) {
+                $existingPartyId = (int)
+                    \InterfaceDB::fetchColumn(
+                        'SELECT id
+                         FROM company_parties
+                         WHERE company_id = :company_id
+                           AND linked_director_id = :linked_director_id
+                         LIMIT 1',
+                        [
+                            'company_id' => $companyId,
+                            'linked_director_id' => $linkedDirectorId,
+                        ]
+                    );
+
+                if ($existingPartyId > 0) {
+                    $partyId = $existingPartyId;
+                }
+            }
         }
         if ($partyId > 0) {
             $this->requireParty($companyId, $partyId);
@@ -219,6 +238,99 @@ final class OwnershipPartyService
                 'source_note' => $this->nullableText($input['source_note'] ?? null),
             ]
         );
+        return ['success' => true, 'errors' => []];
+    }
+
+    /**
+     * Records initial director shareholdings, creating the linked ownership party
+     * and shareholder role where they do not already exist.
+     */
+    public function saveDirectorShareholdings(int $companyId, int $shareClassId, array $shareholdings): array
+    {
+        if ($companyId <= 0 || !$this->schemaAvailable() || !$this->shareClassBelongsToCompany($companyId, $shareClassId)) {
+            return ['success' => false, 'errors' => ['Select a company and a valid share class.']];
+        }
+
+        $entries = [];
+        foreach ($shareholdings as $directorId => $shareholding) {
+            $quantity = (int)($shareholding['quantity'] ?? 0);
+            if ($quantity <= 0) {
+                continue;
+            }
+            $issuedOn = $this->normaliseDate($shareholding['issued_on'] ?? null);
+            if ($issuedOn === null) {
+                return ['success' => false, 'errors' => ['Enter the issue date for every director with shares.']];
+            }
+            $entries[] = ['director_id' => (int)$directorId, 'quantity' => $quantity, 'issued_on' => $issuedOn];
+        }
+        if ($entries === []) {
+            return ['success' => false, 'errors' => ['Enter shares for at least one director.']];
+        }
+
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
+        try {
+            foreach ($entries as $entry) {
+                $director = (new CompanyDirectorService())->requireForCompany($companyId, $entry['director_id']);
+                $party = \InterfaceDB::fetchOne(
+                    'SELECT id FROM company_parties WHERE company_id = :company_id AND linked_director_id = :director_id ORDER BY id LIMIT 1',
+                    ['company_id' => $companyId, 'director_id' => $entry['director_id']]
+                );
+                $partyId = (int)($party['id'] ?? 0);
+                if ($partyId <= 0) {
+                    $partyResult = $this->saveParty([
+                        'company_id' => $companyId,
+                        'legal_name' => (string)$director['full_name'],
+                        'party_type' => 'individual',
+                        'linked_director_id' => $entry['director_id'],
+                        'source_note' => 'Created when recording a director shareholding.',
+                    ]);
+                    if (empty($partyResult['success'])) {
+                        throw new \RuntimeException((string)(($partyResult['errors'] ?? ['Unable to save ownership party.'])[0]));
+                    }
+                    $partyId = (int)$partyResult['party_id'];
+                }
+
+                $hasShareholderRole = (int)\InterfaceDB::fetchColumn(
+                    "SELECT COUNT(*) FROM company_party_roles WHERE company_id = :company_id AND party_id = :party_id AND role_type = 'shareholder' AND effective_from <= :issued_on AND (effective_to IS NULL OR effective_to >= :issued_on)",
+                    ['company_id' => $companyId, 'party_id' => $partyId, 'issued_on' => $entry['issued_on']]
+                ) > 0;
+                if (!$hasShareholderRole) {
+                    $roleResult = $this->saveRole([
+                        'company_id' => $companyId,
+                        'party_id' => $partyId,
+                        'role_type' => 'shareholder',
+                        'effective_from' => $entry['issued_on'],
+                    ]);
+                    if (empty($roleResult['success'])) {
+                        throw new \RuntimeException((string)(($roleResult['errors'] ?? ['Unable to save shareholder role.'])[0]));
+                    }
+                }
+
+                $holdingResult = $this->saveHolding([
+                    'company_id' => $companyId,
+                    'party_id' => $partyId,
+                    'share_class_id' => $shareClassId,
+                    'quantity' => $entry['quantity'],
+                    'effective_from' => $entry['issued_on'],
+                    'source_note' => 'Recorded from the directors’ shareholdings form.',
+                ]);
+                if (empty($holdingResult['success'])) {
+                    throw new \RuntimeException((string)(($holdingResult['errors'] ?? ['Unable to save shareholding.'])[0]));
+                }
+            }
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+            return ['success' => false, 'errors' => [$exception->getMessage()]];
+        }
+
         return ['success' => true, 'errors' => []];
     }
 

@@ -55,6 +55,7 @@ final class CompaniesHouseInitialShareholdingExtractionService
                 'quantity' => (string)$quantity,
                 'aggregate_nominal_value' => $this->decimalValue($quantity * $nominalValue),
                 'total_aggregate_unpaid' => $this->decimalValue($quantity * $unpaidValue),
+                'issued_at' => $this->sourceDocumentDate($companyId, $status),
                 'document_reference' => (string)($status['filename'] ?? ''),
                 'source_note' => '',
                 'source_values' => $values,
@@ -106,6 +107,7 @@ final class CompaniesHouseInitialShareholdingExtractionService
             'quantity' => (string)($draft['quantity'] ?? ''),
             'aggregate_nominal_value' => (string)($draft['aggregate_nominal_value'] ?? ''),
             'total_aggregate_unpaid' => (string)($draft['total_aggregate_unpaid'] ?? ''),
+            'issued_at' => (string)($draft['issued_at'] ?? ''),
             'source_note' => (string)($draft['source_note'] ?? ''),
             'document_reference' => (string)($draft['document_reference'] ?? ''),
         ], 'companies_house');
@@ -148,6 +150,21 @@ final class CompaniesHouseInitialShareholdingExtractionService
         }
 
         return (string)$matches['section'];
+    }
+
+    private function sourceDocumentDate(int $companyId, array $status): string
+    {
+        $filename = (string)($status['filename'] ?? '');
+        if (preg_match('/(?<!\d)(\d{4}-\d{2}-\d{2})(?!\d)/', $filename, $matches) === 1) {
+            return $matches[1] . ' 00:00:00';
+        }
+
+        $company = (new \eel_accounts\Repository\CompanyRepository())->fetchCompanyDetails($companyId);
+        $incorporationDate = trim((string)($company['incorporation_date'] ?? ''));
+
+        return preg_match('/^\d{4}-\d{2}-\d{2}$/', $incorporationDate) === 1
+            ? $incorporationDate . ' 00:00:00'
+            : '';
     }
 
     private function extractText(string $pdfPath): string

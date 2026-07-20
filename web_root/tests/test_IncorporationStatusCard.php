@@ -34,7 +34,7 @@ $harness->run(_incorporation_statusCard::class, static function (
             ],
         ]);
 
-        $harness->assertSame(true, str_contains($html, 'Shares not paid up'));
+        $harness->assertSame(false, str_contains($html, 'Shares not paid up'));
         $harness->assertSame(true, str_contains($html, 'class="summary-grid four"'));
         $harness->assertSame(true, str_contains($html, 'Unpaid share capital'));
         $harness->assertSame(true, str_contains($html, '500'));

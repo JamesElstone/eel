@@ -57,5 +57,8 @@ $harness->run(_incorporation_sharesCard::class, static function (
         $harness->assertSame(true, str_contains($html, 'name="total_aggregate_unpaid" value="0"'));
         $harness->assertSame(true, str_contains($html, 'name="document_reference" value="12344321_newinc_2022-09-05.pdf"'));
         $harness->assertSame(true, str_contains($html, 'Prescribed particulars (text note)'));
+        $harness->assertSame(false, str_contains($html, '<h4 class="card-title">Add shares</h4>'));
+        $harness->assertSame(false, str_contains($html, 'Share reconciliation at'));
+        $harness->assertSame(false, str_contains($html, '<th>Class</th><th>Issued</th><th>Held</th><th>Status</th>'));
     });
 });

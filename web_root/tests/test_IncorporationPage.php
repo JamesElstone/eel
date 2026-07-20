@@ -14,21 +14,17 @@ $harness->run(_incorporation::class, static function (
     GeneratedServiceClassTestHarness $harness,
     _incorporation $page
 ): void {
-    $harness->check(_incorporation::class, 'places recorded share capital on the Status tab', static function () use ($harness, $page): void {
+    $harness->check(_incorporation::class, 'combines status and recorded share capital on the first Shares tab', static function () use ($harness, $page): void {
         $layout = $page->cardLayout();
-        $statusCards = [];
         $sharesCards = [];
 
         foreach ($layout as $tab) {
-            if (($tab['tab'] ?? '') === 'Status') {
-                $statusCards = (array)($tab['cards'] ?? []);
-            }
             if (($tab['tab'] ?? '') === 'Shares') {
                 $sharesCards = (array)($tab['cards'] ?? []);
             }
         }
 
-        $harness->assertSame(['incorporation_status', 'incorporation_share_capital'], $statusCards);
-        $harness->assertSame(['incorporation_shares'], $sharesCards);
+        $harness->assertSame('Shares', (string)($layout[0]['tab'] ?? ''));
+        $harness->assertSame(['incorporation_status', 'incorporation_share_capital'], $sharesCards);
     });
 });

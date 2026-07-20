@@ -460,6 +460,7 @@ DROP TABLE IF EXISTS `company_incorporation_share_classes`;
 CREATE TABLE `company_incorporation_share_classes` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
+  `issued_at` datetime DEFAULT NULL,
   `share_class` varchar(100) NOT NULL DEFAULT 'Ordinary',
   `currency` varchar(10) NOT NULL DEFAULT 'GBP',
   `quantity` int(11) NOT NULL,

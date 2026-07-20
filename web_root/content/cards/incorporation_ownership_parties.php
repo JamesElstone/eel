@@ -12,6 +12,11 @@ final class _incorporation_ownership_partiesCard extends CardBaseFramework
     public function key(): string { return 'incorporation_ownership_parties'; }
     public function title(): string { return 'Ownership & Parties'; }
 
+    public function helper(array $context): string
+    {
+        return 'Ownership records are entered and maintained by people, not created automatically. They are effective-dated, so ending a holding keeps the history needed for earlier Corporation Tax periods.';
+    }
+
     public function services(): array
     {
         return [[
@@ -41,7 +46,7 @@ final class _incorporation_ownership_partiesCard extends CardBaseFramework
         }
 
         $partyOptions = $this->partyOptions((array)$summary['parties']);
-        $directorOptions = $this->directorOptions((array)$summary['directors']);
+        $directorOptions = $this->directorOptions((array)$summary['directors'], (array)$summary['parties']);
         $shareClassOptions = $this->shareClassOptions((array)$summary['share_classes']);
         $rows = '';
         foreach ((array)$summary['parties'] as $party) {
@@ -64,20 +69,9 @@ final class _incorporation_ownership_partiesCard extends CardBaseFramework
         if ($rows === '') {
             $rows = '<tr><td colspan="5" class="helper">No ownership parties have been recorded.</td></tr>';
         }
-        $reconciliationRows = '';
-        foreach ((array)($summary['reconciliation']['rows'] ?? []) as $row) {
-            $reconciliationRows .= '<tr><td>' . HelperFramework::escape((string)$row['share_class']) . '</td>'
-                . '<td class="numeric">' . (int)$row['issued_quantity'] . '</td>'
-                . '<td class="numeric">' . (int)$row['held_quantity'] . '</td>'
-                . '<td><span class="badge ' . ((string)$row['status'] === 'reconciled' ? 'success' : 'warning') . '">'
-                . HelperFramework::escape(HelperFramework::labelFromKey((string)$row['status'], '_')) . '</span></td></tr>';
-        }
-
         return '<section class="settings-stack" id="ownership-parties">'
-            . '<div class="helper">Ownership is human-maintained and effective-dated. Ending a holding preserves the history used by earlier CT periods.</div>'
-            . '<table class="table"><thead><tr><th>Party</th><th>Type</th><th>Linked director</th><th>Roles</th><th>Holdings</th></tr></thead><tbody>' . $rows . '</tbody></table>'
-            . '<h4 class="card-title">Share reconciliation at ' . HelperFramework::escape((string)$summary['as_of']) . '</h4>'
-            . '<table class="table"><thead><tr><th>Class</th><th>Issued</th><th>Held</th><th>Status</th></tr></thead><tbody>' . $reconciliationRows . '</tbody></table>'
+            . '<div class="panel-soft"><table class="table"><thead><tr><th>Party</th><th>Type</th><th>Linked director</th><th>Roles</th><th>Holdings</th></tr></thead><tbody>' . $rows . '</tbody></table></div>'
+            . $this->directorShareholdingsForm($companyId, (array)$summary['directors'], $shareClassOptions)
             . $this->partyForm($companyId, $directorOptions)
             . $this->roleForm($companyId, $partyOptions)
             . $this->endRoleForm($companyId, (array)$summary['parties'])
@@ -88,15 +82,46 @@ final class _incorporation_ownership_partiesCard extends CardBaseFramework
 
     private function partyForm(int $companyId, string $directorOptions): string
     {
-        return '<form method="post" data-ajax="true" class="panel-soft settings-stack">'
+        return '<form method="post" data-ajax="true" data-ownership-party-form="true" class="panel-soft settings-stack">'
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="Incorporation"><input type="hidden" name="intent" value="save_ownership_party">'
-            . '<input type="hidden" name="company_id" value="' . $companyId . '"><h4 class="card-title">Add ownership party</h4>'
-            . '<div class="form-grid"><div class="form-row"><label>Legal name</label><input class="input" name="legal_name" required></div>'
-            . '<div class="form-row"><label>Party type</label><select class="select" name="party_type"><option value="individual">Individual</option><option value="company">Company</option><option value="trust">Trust</option><option value="partnership">Partnership</option><option value="other">Other</option></select></div>'
-            . '<div class="form-row"><label>Linked director (confirmed identity)</label><select class="select" name="linked_director_id"><option value="">Not linked</option>' . $directorOptions . '</select></div>'
-            . '<div class="form-row"><label>Evidence note</label><input class="input" name="source_note"></div></div>'
-            . '<div class="actions-row"><button class="button primary" type="submit">Add party</button></div></form>';
+            . '<input type="hidden" name="company_id" value="' . $companyId . '"><h4 class="card-title">Add ownership details</h4>'
+            . '<table class="table"><thead><tr><th>Director status</th><th>Owner name</th><th>Owner basis</th><th>Notes</th><th></th></tr></thead><tbody><tr>'
+            . '<td><select class="select" name="director_status" data-ownership-director-status data-no-submit-on-change="true"><option value="director">Director</option><option value="non_director">Non-Director</option></select></td>'
+            . '<td><input type="hidden" name="legal_name" data-ownership-director-legal-name><select class="select" name="linked_director_id" data-ownership-director-name data-no-submit-on-change="true" required><option value="">Select director</option>' . $directorOptions . '</select><input class="input" name="legal_name" data-ownership-non-director-name required hidden></td>'
+            . '<td><input type="hidden" name="party_type" value="individual" data-ownership-director-party-type><select class="select" name="party_type" data-ownership-party-type data-no-submit-on-change="true" disabled><option value="individual" selected>Individual</option><option value="company">Company</option><option value="trust">Trust</option><option value="partnership">Partnership</option><option value="other">Other</option></select></td>'
+            . '<td><input class="input" name="source_note"></td>'
+            . '<td class="cell-fit"><button class="button primary" type="submit">Add ownership details</button></td>'
+            . '</tr></tbody></table></form>';
+    }
+
+    private function directorShareholdingsForm(int $companyId, array $directors, string $shareClassOptions): string
+    {
+        if ($directors === []) {
+            return '<div class="helper">Synchronise the company directors from Companies House before recording their shareholdings.</div>';
+        }
+        if ($shareClassOptions === '') {
+            return '<div class="helper">Add the company’s share capital before recording directors’ shareholdings.</div>';
+        }
+
+        $rows = '';
+        foreach ($directors as $director) {
+            $directorId = (int)($director['id'] ?? 0);
+            if ($directorId <= 0) {
+                continue;
+            }
+            $rows .= '<tr><td>' . HelperFramework::escape((string)($director['full_name'] ?? '')) . '</td>'
+                . '<td><input class="input" type="number" min="0" name="director_shareholdings[' . $directorId . '][quantity]" value="0"></td>'
+                . '<td><input class="input" type="date" name="director_shareholdings[' . $directorId . '][issued_on]"></td></tr>';
+        }
+
+        return '<form method="post" data-ajax="true" class="panel-soft settings-stack">'
+            . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+            . '<input type="hidden" name="card_action" value="Incorporation"><input type="hidden" name="intent" value="save_director_shareholdings">'
+            . '<input type="hidden" name="company_id" value="' . $companyId . '"><h4 class="card-title">Record directors’ shareholdings</h4>'
+            . '<div class="form-grid"><div class="form-row"><label>Share class</label><select class="select" name="share_class_id" required><option value="">Select</option>' . $shareClassOptions . '</select></div></div>'
+            . '<table class="table"><thead><tr><th>Director</th><th>Shares held</th><th>Issued on</th></tr></thead><tbody>' . $rows . '</tbody></table>'
+            . '<div class="actions-row"><button class="button primary" type="submit">Save directors’ shareholdings</button></div></form>';
     }
 
     private function roleForm(int $companyId, string $partyOptions): string
@@ -171,10 +196,26 @@ final class _incorporation_ownership_partiesCard extends CardBaseFramework
         return $html;
     }
 
-    private function directorOptions(array $directors): string
+    private function directorOptions(array $directors, array $parties = []): string
     {
+        $linkedDirectorIds = [];
+        foreach ($parties as $party) {
+            $linkedDirectorId = (int)($party['linked_director_id'] ?? 0);
+            if ($linkedDirectorId > 0) {
+                $linkedDirectorIds[$linkedDirectorId] = true;
+            }
+        }
+
         $html = '';
-        foreach ($directors as $director) { $html .= '<option value="' . (int)$director['id'] . '">' . HelperFramework::escape((string)$director['full_name']) . '</option>'; }
+        foreach ($directors as $director) {
+            $directorId = (int)($director['id'] ?? 0);
+            if ($directorId <= 0 || isset($linkedDirectorIds[$directorId])) {
+                continue;
+            }
+
+            $html .= '<option value="' . $directorId . '">' . HelperFramework::escape((string)$director['full_name']) . '</option>';
+        }
+
         return $html;
     }
 

@@ -43,14 +43,7 @@ final class IncorporationAction implements ActionInterfaceFramework
                 (int)$request->input('transaction_id', 0)
             ),
             'clear_share_payment_match' => $service->clearPaymentMatch($companyId, $shareClassId),
-            'save_ownership_party' => $ownership->saveParty([
-                'company_id' => $companyId,
-                'party_id' => (int)$request->input('party_id', 0),
-                'legal_name' => (string)$request->input('legal_name', ''),
-                'party_type' => (string)$request->input('party_type', 'individual'),
-                'linked_director_id' => (int)$request->input('linked_director_id', 0),
-                'source_note' => (string)$request->input('source_note', ''),
-            ]),
+            'save_ownership_party' => $ownership->saveParty($this->ownershipPartyInput($request, $companyId)),
             'save_ownership_role' => $ownership->saveRole([
                 'company_id' => $companyId,
                 'party_id' => (int)$request->input('party_id', 0),
@@ -73,6 +66,11 @@ final class IncorporationAction implements ActionInterfaceFramework
                 'effective_to' => (string)$request->input('effective_to', ''),
                 'source_note' => (string)$request->input('source_note', ''),
             ]),
+            'save_director_shareholdings' => $ownership->saveDirectorShareholdings(
+                $companyId,
+                $shareClassId,
+                (array)$request->input('director_shareholdings', [])
+            ),
             'end_shareholding' => $ownership->endHolding(
                 $companyId,
                 (int)$request->input('holding_id', 0),
@@ -114,9 +112,35 @@ final class IncorporationAction implements ActionInterfaceFramework
             'save_ownership_role' => 'Effective ownership role saved.',
             'end_ownership_role' => 'Ownership role end date saved.',
             'save_shareholding' => 'Shareholding saved.',
+            'save_director_shareholdings' => 'Directors’ shareholdings saved.',
             'end_shareholding' => 'Shareholding end date saved.',
             default => 'Incorporation details updated.',
         };
+    }
+
+    private function ownershipPartyInput(RequestFramework $request, int $companyId): array
+    {
+        $directorStatus = (string)$request->input('director_status', 'non_director');
+        $linkedDirectorId = (int)$request->input('linked_director_id', 0);
+        $legalName = (string)$request->input('legal_name', '');
+        $partyType = (string)$request->input('party_type', 'individual');
+
+        if ($directorStatus === 'director') {
+            $director = (new \eel_accounts\Service\CompanyDirectorService())->requireForCompany($companyId, $linkedDirectorId);
+            $legalName = (string)($director['full_name'] ?? '');
+            $partyType = 'individual';
+        } else {
+            $linkedDirectorId = 0;
+        }
+
+        return [
+            'company_id' => $companyId,
+            'party_id' => (int)$request->input('party_id', 0),
+            'legal_name' => $legalName,
+            'party_type' => $partyType,
+            'linked_director_id' => $linkedDirectorId,
+            'source_note' => (string)$request->input('source_note', ''),
+        ];
     }
 
     private function populateShareDraftFromNewinc(int $companyId): ActionResultFramework

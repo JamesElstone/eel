@@ -16,7 +16,7 @@ final class _incorporation_statusCard extends CardBaseFramework
 
     public function title(): string
     {
-        return 'Incorporation Status';
+        return 'Share Status';
     }
 
     public function services(): array
@@ -50,10 +50,8 @@ final class _incorporation_statusCard extends CardBaseFramework
 
         $settings = (array)(($context['company'] ?? [])['settings'] ?? []);
         $totals = (array)($summary['totals'] ?? []);
-        $status = (string)($summary['status'] ?? 'missing');
 
         return '<section class="settings-stack" id="incorporation-status">
-            <div class="status-head"><span class="badge ' . HelperFramework::escape($this->badgeClass($status)) . '">' . HelperFramework::escape($this->statusLabel($status)) . '</span></div>
             <div class="summary-grid four">
                 ' . $this->summaryCard('Issued nominal capital', $this->money($settings, $totals['issued_nominal_total'] ?? 0)) . '
                 ' . $this->summaryCard('Expected paid total', $this->money($settings, $totals['expected_paid_total'] ?? 0)) . '
@@ -66,26 +64,6 @@ final class _incorporation_statusCard extends CardBaseFramework
     private function summaryCard(string $label, string $value): string
     {
         return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
-    }
-
-    private function statusLabel(string $status): string
-    {
-        return match ($status) {
-            'complete' => 'Paid and matched',
-            'shares_not_paid_up' => 'Shares not paid up',
-            'payment_unmatched' => 'Payment not matched',
-            default => 'Not recorded',
-        };
-    }
-
-    private function badgeClass(string $status): string
-    {
-        return match ($status) {
-            'complete' => 'success',
-            'shares_not_paid_up' => 'warning',
-            'payment_unmatched' => 'warning',
-            default => 'danger',
-        };
     }
 
     private function money(array $companySettings, float|int|string|null $value): string

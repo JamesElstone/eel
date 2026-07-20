@@ -147,6 +147,11 @@ final class YearEndAction implements ActionInterfaceFramework
                     $accountingPeriodId,
                     $actor
                 ),
+                'repair_legacy_director_loan_offset' => (new \eel_accounts\Service\DirectorLoanReconciliationService())->repairLegacyOffset(
+                    $companyId,
+                    $accountingPeriodId,
+                    $actor
+                ),
                 default => ['success' => false, 'errors' => ['Unknown year-end action.']],
             };
         } catch (Throwable $exception) {
@@ -223,7 +228,9 @@ final class YearEndAction implements ActionInterfaceFramework
             'lock_period' => 'Year-end close tasks completed, pre-close backup created'
                 . (trim((string)(($result['backup'] ?? [])['filename'] ?? '')) !== '' ? ': ' . (string)$result['backup']['filename'] : '')
                 . ', and accounting period locked.',
-            'unlock_period' => 'Accounting period unlocked.',
+            'unlock_period' => !empty(($result['legacy_director_loan_repair'] ?? [])['repaired'])
+                ? 'Accounting period unlocked and the legacy Director Loan offset was repaired.'
+                : 'Accounting period unlocked.',
             'save_notes' => 'Year-end notes saved.',
             'confirm_empty_month' => 'Empty month confirmation saved.',
             'confirm_empty_months' => 'Empty month confirmations saved.',
@@ -239,6 +246,9 @@ final class YearEndAction implements ActionInterfaceFramework
             'acknowledge_review_check' => 'Year-end approval saved.',
             'reopen_review_check' => 'Year-end approval revoked.',
             'post_director_loan_offset' => 'Director loan control reclassification journal posted.',
+            'repair_legacy_director_loan_offset' => !empty($result['repaired'])
+                ? 'Legacy Director Loan offset journal repaired.'
+                : 'No legacy Director Loan offset repair was needed.',
             default => 'Year-end readiness updated.',
         };
     }
@@ -271,6 +281,7 @@ final class YearEndAction implements ActionInterfaceFramework
             'acknowledge_review_check',
             'reopen_review_check',
             'post_director_loan_offset',
+            'repair_legacy_director_loan_offset',
         ], true);
     }
 

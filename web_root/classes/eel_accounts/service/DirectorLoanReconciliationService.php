@@ -14,6 +14,8 @@ final class DirectorLoanReconciliationService
     public const OFFSET_JOURNAL_TAG = 'director_loan_offset';
     public const OFFSET_JOURNAL_KEY = 'primary';
     public const OFFSET_JOURNAL_DESCRIPTION = 'Director loan control reclassification';
+    public const LEGACY_REPAIR_JOURNAL_KEY_PREFIX = 'legacy-unattributed-reversal:';
+    public const LEGACY_REPAIR_JOURNAL_DESCRIPTION = 'Legacy Director Loan offset reversal';
     public const YEAR_END_ACKNOWLEDGEMENT_CODE = 'director_loan_year_end_review';
 
     public function __construct(
@@ -105,13 +107,21 @@ final class DirectorLoanReconciliationService
         );
         $evaluation = $ackService->evaluate($acknowledgement, $basis, false);
 
+        $legacyOffset = $this->legacyUnattributedOffset(
+            $companyId,
+            (string)($statement['accounting_period']['period_end'] ?? ''),
+            (int)($statement['asset_nominal']['id'] ?? 0),
+            (int)($statement['liability_nominal']['id'] ?? 0)
+        );
         $unresolvedPosted = 0.0;
+        $legacyNetAmount = 0.0;
         $proposedLines = [];
         foreach ((array)$statement['per_director'] as $position) {
             $directorId = (int)($position['director_id'] ?? 0);
             $posted = round((float)($position['posted_reclassification'] ?? 0), 2);
             if ($directorId <= 0) {
                 $unresolvedPosted = round($unresolvedPosted + abs($posted), 2);
+                $legacyNetAmount = round($legacyNetAmount + $posted, 2);
                 continue;
             }
 
@@ -176,13 +186,17 @@ final class DirectorLoanReconciliationService
             'pending_adjustment_amount' => $pendingAmount,
             'proposed_lines' => $proposedLines,
             'legacy_unresolved_reclassification_amount' => $unresolvedPosted,
+            'legacy_unresolved_reclassification_net_amount' => $legacyNetAmount,
+            'legacy_unresolved_source_journal_ids' => (array)$legacyOffset['journal_ids'],
             'confirmation_basis' => $basis,
             'acknowledgement' => $acknowledgement,
             'acknowledgement_state' => (string)($evaluation['state'] ?? 'absent'),
             'acknowledgement_current' => $confirmationCurrent,
             'acknowledged_at' => (string)($acknowledgement['acknowledged_at'] ?? ''),
             'acknowledged_by' => (string)($acknowledgement['acknowledged_by'] ?? ''),
-            'can_confirm' => !empty($statement['has_activity']) && $unattributedCount === 0,
+            'can_confirm' => !empty($statement['has_activity'])
+                && $unattributedCount === 0
+                && $unresolvedPosted < 0.005,
             'can_post' => $canPost,
             'post_blocked_reason' => $this->postBlockedReason(
                 $statement,
@@ -227,7 +241,10 @@ final class DirectorLoanReconciliationService
             return ['success' => false, 'errors' => ['There is no Director Loan activity or balance requiring confirmation.']];
         }
         if (empty($context['can_confirm'])) {
-            return ['success' => false, 'errors' => ['Attribute every Director Loan entry to a valid same-company director before confirming the facts.']];
+            $errors = abs((float)($context['legacy_unresolved_reclassification_amount'] ?? 0)) >= 0.005
+                ? ['Repair the legacy Director Loan offset journal before confirming the facts.']
+                : ['Attribute every Director Loan entry to a valid same-company director before confirming the facts.'];
+            return ['success' => false, 'errors' => $errors];
         }
 
         return $service->save(
@@ -287,11 +304,188 @@ final class DirectorLoanReconciliationService
         return $result;
     }
 
+    /**
+     * Reverse the combined legacy offset that has no director attribution without changing its source journals.
+     *
+     * @return array{success: bool, repaired?: bool, already_current?: bool, journal?: array|null, errors?: list<string>, context?: array}
+     */
+    public function repairLegacyOffset(int $companyId, int $accountingPeriodId, string $changedBy = 'web_app'): array
+    {
+        $scopeBlock = (new VatSupportScopeService())
+            ->mutationBlockResult($companyId, 'repair the legacy Director Loan offset journal');
+        if ($scopeBlock !== null) {
+            return $scopeBlock;
+        }
+
+        ($this->lockService ?? new YearEndLockService())
+            ->assertUnlocked($companyId, $accountingPeriodId, 'repair the legacy Director Loan offset journal');
+
+        $context = $this->fetchContext($companyId, $accountingPeriodId);
+        if (empty($context['available'])) {
+            return ['success' => false, 'errors' => (array)($context['errors'] ?? ['The Director Loan evidence context is unavailable.'])];
+        }
+
+        $netAmount = round((float)($context['legacy_unresolved_reclassification_net_amount'] ?? 0), 2);
+        if (abs($netAmount) < 0.005) {
+            return ['success' => true, 'already_current' => true, 'context' => $context];
+        }
+
+        $period = (array)($context['accounting_period'] ?? []);
+        $periodEnd = trim((string)($period['period_end'] ?? ''));
+        $assetNominalId = (int)(($context['asset_nominal'] ?? [])['id'] ?? 0);
+        $liabilityNominalId = (int)(($context['liability_nominal'] ?? [])['id'] ?? 0);
+        if ($periodEnd === '' || $assetNominalId <= 0 || $liabilityNominalId <= 0) {
+            return ['success' => false, 'errors' => ['The legacy Director Loan offset cannot be repaired because its period or control accounts are unavailable.']];
+        }
+
+        $sourceJournalIds = array_values(array_unique(array_filter(array_map('intval', (array)(
+            $context['legacy_unresolved_source_journal_ids'] ?? []
+        )), static fn(int $id): bool => $id > 0)));
+        $repairKey = self::LEGACY_REPAIR_JOURNAL_KEY_PREFIX . substr(hash(
+            'sha256',
+            $accountingPeriodId . ':' . number_format($netAmount, 2, '.', '') . ':' . implode(',', $sourceJournalIds)
+        ), 0, 24);
+        $notes = 'Reverses the combined net legacy Director Loan control-account offset with no deterministic director attribution.'
+            . ' Source journal IDs: ' . ($sourceJournalIds !== [] ? implode(', ', $sourceJournalIds) : 'none') . '.';
+
+        $result = ($this->journalService ?? new ManualJournalService())->saveTaggedJournal(
+            $companyId,
+            $accountingPeriodId,
+            self::OFFSET_JOURNAL_TAG,
+            $repairKey,
+            $periodEnd,
+            self::LEGACY_REPAIR_JOURNAL_DESCRIPTION,
+            $this->legacyReversalLines($assetNominalId, $liabilityNominalId, $netAmount),
+            'system_generated',
+            count($sourceJournalIds) === 1 ? $sourceJournalIds[0] : null,
+            null,
+            $notes,
+            $changedBy
+        );
+        if (empty($result['success'])) {
+            return $result;
+        }
+
+        $journal = is_array($result['journal'] ?? null) ? $result['journal'] : null;
+        ($this->lockService ?? new YearEndLockService())->writeAuditLog(
+            $companyId,
+            $accountingPeriodId,
+            'director_loan_legacy_offset_repaired',
+            $changedBy,
+            [
+                'legacy_unresolved_reclassification_net_amount' => number_format($netAmount, 2, '.', ''),
+                'source_journal_ids' => $sourceJournalIds,
+            ],
+            [
+                'repair_journal_id' => (int)($journal['id'] ?? 0),
+                'repair_journal_key' => $repairKey,
+                'reversed_net_amount' => number_format(-$netAmount, 2, '.', ''),
+            ],
+            $notes
+        );
+
+        return [
+            'success' => true,
+            'repaired' => true,
+            'journal' => $journal,
+            'context' => $this->fetchContext($companyId, $accountingPeriodId),
+        ];
+    }
+
     public function confirmationBasisForContext(array $context): ?array
     {
         return isset($context['confirmation_basis']) && is_array($context['confirmation_basis'])
             ? $context['confirmation_basis']
             : null;
+    }
+
+    /** @return array{net_amount: float, journal_ids: list<int>} */
+    private function legacyUnattributedOffset(
+        int $companyId,
+        string $periodEnd,
+        int $assetNominalId,
+        int $liabilityNominalId
+    ): array {
+        if ($companyId <= 0 || $periodEnd === '' || $assetNominalId <= 0 || $liabilityNominalId <= 0) {
+            return ['net_amount' => 0.0, 'journal_ids' => []];
+        }
+
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT j.id AS journal_id,
+                    SUM(CASE
+                      WHEN jl.nominal_account_id = :asset_nominal_id THEN jl.credit - jl.debit
+                      WHEN jl.nominal_account_id = :liability_nominal_id THEN jl.debit - jl.credit
+                      ELSE 0
+                    END) / 2 AS posted_amount
+             FROM journal_entry_metadata jem
+             INNER JOIN journals j ON j.id = jem.journal_id
+             INNER JOIN journal_lines jl ON jl.journal_id = j.id
+             WHERE j.company_id = :company_id
+               AND j.is_posted = 1
+               AND j.journal_date <= :period_end
+               AND jem.journal_tag = :journal_tag
+               AND jl.party_id IS NULL
+               AND jl.nominal_account_id IN (:asset_nominal_id_match, :liability_nominal_id_match)
+             GROUP BY j.id
+             HAVING ABS(SUM(CASE
+               WHEN jl.nominal_account_id = :asset_nominal_id_having THEN jl.credit - jl.debit
+               WHEN jl.nominal_account_id = :liability_nominal_id_having THEN jl.debit - jl.credit
+               ELSE 0
+             END) / 2) >= 0.005
+             ORDER BY j.journal_date ASC, j.id ASC',
+            [
+                'company_id' => $companyId,
+                'period_end' => $periodEnd,
+                'journal_tag' => self::OFFSET_JOURNAL_TAG,
+                'asset_nominal_id' => $assetNominalId,
+                'liability_nominal_id' => $liabilityNominalId,
+                'asset_nominal_id_match' => $assetNominalId,
+                'liability_nominal_id_match' => $liabilityNominalId,
+                'asset_nominal_id_having' => $assetNominalId,
+                'liability_nominal_id_having' => $liabilityNominalId,
+            ]
+        );
+
+        $netAmount = 0.0;
+        $journalIds = [];
+        foreach ($rows as $row) {
+            $amount = round((float)($row['posted_amount'] ?? 0), 2);
+            if (abs($amount) < 0.005) {
+                continue;
+            }
+            $netAmount = round($netAmount + $amount, 2);
+            $journalId = (int)($row['journal_id'] ?? 0);
+            if ($journalId > 0) {
+                $journalIds[] = $journalId;
+            }
+        }
+
+        if (abs($netAmount) < 0.005) {
+            return ['net_amount' => 0.0, 'journal_ids' => []];
+        }
+
+        return [
+            'net_amount' => $netAmount,
+            'journal_ids' => array_values(array_unique($journalIds)),
+        ];
+    }
+
+    /** @return list<array{nominal_account_id: int, party_id: null, debit: string, credit: string, line_description: string}> */
+    private function legacyReversalLines(int $assetNominalId, int $liabilityNominalId, float $legacyNetAmount): array
+    {
+        $amount = number_format(abs($legacyNetAmount), 2, '.', '');
+        $description = 'Reverse legacy unattributed Director Loan offset';
+        if ($legacyNetAmount > 0) {
+            return [
+                ['nominal_account_id' => $assetNominalId, 'party_id' => null, 'debit' => $amount, 'credit' => '0.00', 'line_description' => $description],
+                ['nominal_account_id' => $liabilityNominalId, 'party_id' => null, 'debit' => '0.00', 'credit' => $amount, 'line_description' => $description],
+            ];
+        }
+
+        return [
+            ['nominal_account_id' => $liabilityNominalId, 'party_id' => null, 'debit' => $amount, 'credit' => '0.00', 'line_description' => $description],
+            ['nominal_account_id' => $assetNominalId, 'party_id' => null, 'debit' => '0.00', 'credit' => $amount, 'line_description' => $description],
+        ];
     }
 
     private function confirmationBasis(
@@ -315,8 +509,13 @@ final class DirectorLoanReconciliationService
         }
 
         $directorFacts = [];
+        $legacyUnresolvedNetAmount = 0.0;
         foreach ((array)$statement['per_director'] as $position) {
             if ((int)($position['director_id'] ?? 0) <= 0) {
+                $legacyUnresolvedNetAmount = round(
+                    $legacyUnresolvedNetAmount + (float)($position['posted_reclassification'] ?? 0),
+                    2
+                );
                 continue;
             }
             $directorFacts[] = [
@@ -342,6 +541,7 @@ final class DirectorLoanReconciliationService
             'director_facts' => $directorFacts,
             'unattributed_count' => (int)$statement['unattributed_count'],
             'invalid_director_count' => (int)$statement['invalid_director_count'],
+            'legacy_unresolved_reclassification_net_amount' => number_format($legacyUnresolvedNetAmount, 2, '.', ''),
             'potential_s455_exposure_amount' => number_format((float)($taxReview['exposure_amount'] ?? 0), 2, '.', ''),
             'desired_reclassification_amount' => number_format((float)$statement['desired_reclassification'], 2, '.', ''),
         ]);

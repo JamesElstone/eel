@@ -690,6 +690,29 @@ final class YearEndChecklistService
         return $result;
     }
 
+    private function rollbackUnlockTransaction(array $transaction, array $result): array
+    {
+        if (!empty($transaction['owns_transaction'])) {
+            if (\InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+        } else {
+            $savepoint = trim((string)($transaction['savepoint'] ?? ''));
+            if ($savepoint !== '' && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::execute('ROLLBACK TO SAVEPOINT ' . $savepoint);
+                \InterfaceDB::execute('RELEASE SAVEPOINT ' . $savepoint);
+            }
+        }
+        \eel_accounts\Support\RequestCache::clear();
+
+        $errors = (array)($result['errors'] ?? []);
+        $errors[] = 'The accounting period was not unlocked.';
+        $result['success'] = false;
+        $result['errors'] = array_values(array_unique(array_map('strval', $errors)));
+
+        return $result;
+    }
+
     private function applyDirectorLoanOffsetBeforeLock(int $companyId, int $accountingPeriodId, array $checklist, string $changedBy): array {
         $offsetService = new \eel_accounts\Service\DirectorLoanReconciliationService();
         $offsetContext = $offsetService->fetchContext($companyId, $accountingPeriodId);
@@ -1011,15 +1034,28 @@ final class YearEndChecklistService
             return $checklistResult;
         }
 
-        $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
-        $result = $lock->unlockPeriod($companyId, $accountingPeriodId, $changedBy, $notes);
-        if (empty($result['success'])) {
-            return $result;
-        }
+        $transaction = $this->beginLockTransaction();
+        try {
+            $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
+            $result = $lock->unlockPeriod($companyId, $accountingPeriodId, $changedBy, $notes);
+            if (empty($result['success'])) {
+                return $this->rollbackUnlockTransaction($transaction, $result);
+            }
 
-        return $result + [
-            'checklist' => $this->fetchChecklist($companyId, $accountingPeriodId),
-        ];
+            $legacyRepair = (new \eel_accounts\Service\DirectorLoanReconciliationService())
+                ->repairLegacyOffset($companyId, $accountingPeriodId, $changedBy);
+            if (empty($legacyRepair['success'])) {
+                return $this->rollbackUnlockTransaction($transaction, $legacyRepair);
+            }
+
+            $this->commitLockTransaction($transaction);
+            return $result + [
+                'legacy_director_loan_repair' => $legacyRepair,
+                'checklist' => $this->fetchChecklist($companyId, $accountingPeriodId),
+            ];
+        } catch (\Throwable $exception) {
+            return $this->rollbackUnlockTransaction($transaction, ['success' => false, 'errors' => [$exception->getMessage()]]);
+        }
     }
 
     public function recalculateChecklist(int $companyId, int $accountingPeriodId, string $changedBy = 'web_app'): array {

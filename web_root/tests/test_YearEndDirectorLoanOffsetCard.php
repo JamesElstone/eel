@@ -96,6 +96,30 @@ $harness->run(_year_end_director_loan_offsetCard::class, static function (Genera
         $harness->assertTrue(str_contains($html, 'passes automatically'));
         $harness->assertSame(false, str_contains($html, 'save_director_loan_year_end_review'));
     });
+
+    $harness->check(_year_end_director_loan_offsetCard::class, 'blocks confirmation and offers repair for an unresolved legacy offset', static function () use ($harness, $card): void {
+        $html = $card->render(yearEndDirectorLoanReviewCardContext([
+            'available' => true,
+            'has_activity' => true,
+            'can_confirm' => false,
+            'asset_receivable' => 0,
+            'liability_payable' => 0,
+            'desired_reclassification_amount' => 0,
+            'posted_reclassification_amount' => 125,
+            'pending_adjustment_amount' => 0,
+            'potential_s455_exposure' => 0,
+            'legacy_unresolved_reclassification_amount' => 125,
+            'warnings' => ['A legacy Director Loan offset journal cannot be attributed deterministically and remains an unresolved historical accounting record.'],
+            'per_director' => [],
+            'tax_review' => ['director_flags' => []],
+            'proposed_lines' => [],
+        ]));
+
+        $harness->assertTrue(str_contains($html, 'Repair legacy offset'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="repair_legacy_director_loan_offset"'));
+        $harness->assertTrue(str_contains($html, 'Repair the legacy Director Loan offset before confirming these facts.'));
+        $harness->assertSame(false, str_contains($html, 'name="intent" value="save_director_loan_year_end_review"'));
+    });
 });
 
 function yearEndDirectorLoanReviewCardContext(array $review): array

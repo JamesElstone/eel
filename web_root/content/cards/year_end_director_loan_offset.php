@@ -63,6 +63,7 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
         $hasActivity = !empty($review['has_activity']);
         $acknowledgement = (array)($review['acknowledgement'] ?? []);
         $acknowledgementCurrent = !empty($review['acknowledgement_current']);
+        $legacyRepairRequired = abs((float)($review['legacy_unresolved_reclassification_amount'] ?? 0)) >= 0.005;
 
         $warnings = '';
         foreach ((array)($review['warnings'] ?? []) as $warning) {
@@ -70,6 +71,11 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
                 continue;
             }
             $warnings .= '<div class="panel-soft warn helper">' . HelperFramework::escape((string)$warning) . '</div>';
+        }
+        if ($legacyRepairRequired) {
+            $warnings .= $locked
+                ? '<div class="panel-soft warn helper">This period will automatically post an auditable legacy-offset reversal when it is unlocked. The original journal will remain unchanged.</div>'
+                : $this->legacyRepairAction($companyId, $accountingPeriodId);
         }
 
         $confirmation = '';
@@ -86,6 +92,12 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
                         . '.</div>
                 </section>'
                 : '<div class="panel-soft warn helper">No Director Loan Year End confirmation was recorded before this period was locked.</div>';
+        } elseif ($legacyRepairRequired) {
+            $confirmation = '<section class="panel-soft warn settings-stack">
+                <div class="eyebrow">Year End Confirmation</div>
+                <div class="summary-value">Repair the legacy Director Loan offset before confirming these facts.</div>
+                <div class="helper">The repair reverses the combined unattributed historical offset without changing its source journals. Confirm the refreshed facts after it completes.</div>
+            </section>';
         } elseif (!empty($review['can_confirm'])) {
             $confirmation = \eel_accounts\Renderer\YearEndApprovalRenderer::render([
                 'subject' => 'Director Loan Year End facts',
@@ -154,6 +166,25 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
             <thead><tr><th>Director</th><th>Gross asset</th><th>Gross liability</th><th>Reclassification</th><th>Net closing</th><th>Gross asset principal</th></tr></thead>
             <tbody>' . $rows . '</tbody>
         </table></div>';
+    }
+
+    private function legacyRepairAction(int $companyId, int $accountingPeriodId): string
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return '';
+        }
+
+        return '<section class="panel-soft warn settings-stack">
+            <div class="eyebrow">Legacy offset repair</div>
+            <div class="helper">Post an auditable net reversal for the legacy offset. The historical source journals will not be changed.</div>
+            <form method="post" data-ajax="true" class="actions-row">
+                <input type="hidden" name="card_action" value="YearEnd">
+                <input type="hidden" name="intent" value="repair_legacy_director_loan_offset">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <button class="button primary" type="submit">Repair legacy offset</button>
+            </form>
+        </section>';
     }
 
     private function isZeroUnattributedPosition(array $position): bool

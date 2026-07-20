@@ -83,6 +83,71 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
         });
     });
 
+    $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'repairs the combined legacy unattributed offset once and preserves its source journal', static function () use ($harness, $service): void {
+        directorLoanReclassificationWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            $legacy = (new \eel_accounts\Service\ManualJournalService())->saveTaggedJournal(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                \eel_accounts\Service\DirectorLoanReconciliationService::OFFSET_JOURNAL_TAG,
+                'legacy-source',
+                '2025-12-31',
+                'Legacy Director Loan offset',
+                [
+                    [
+                        'nominal_account_id' => (int)$fixture['liability_nominal_id'],
+                        'debit' => '125.00',
+                        'credit' => '0.00',
+                        'line_description' => 'Legacy offset',
+                    ],
+                    [
+                        'nominal_account_id' => (int)$fixture['asset_nominal_id'],
+                        'debit' => '0.00',
+                        'credit' => '125.00',
+                        'line_description' => 'Legacy offset',
+                    ],
+                ],
+                'system_generated',
+                null,
+                null,
+                'Legacy fixture',
+                'test'
+            );
+            $harness->assertSame(true, (bool)($legacy['success'] ?? false));
+            $legacyJournalId = (int)(($legacy['journal'] ?? [])['id'] ?? 0);
+
+            $before = $service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $harness->assertSame('125.00', directorLoanReclassificationMoney($before['legacy_unresolved_reclassification_amount'] ?? 0));
+            $harness->assertSame('125.00', directorLoanReclassificationMoney($before['legacy_unresolved_reclassification_net_amount'] ?? 0));
+            $harness->assertSame([$legacyJournalId], (array)($before['legacy_unresolved_source_journal_ids'] ?? []));
+            $blocked = $service->saveYearEndReview((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], true, 'test');
+            $harness->assertSame(false, (bool)($blocked['success'] ?? true));
+
+            $repaired = $service->repairLegacyOffset((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'test');
+            $harness->assertSame(true, (bool)($repaired['success'] ?? false));
+            $harness->assertSame(true, (bool)($repaired['repaired'] ?? false));
+            $harness->assertSame(true, (int)((($repaired['journal'] ?? [])['id'] ?? 0)) > 0);
+            $harness->assertSame(false, (int)((($repaired['journal'] ?? [])['id'] ?? 0)) === $legacyJournalId);
+            $after = $service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $harness->assertSame('0.00', directorLoanReclassificationMoney($after['legacy_unresolved_reclassification_amount'] ?? 0));
+            $harness->assertSame(0, count((array)($after['legacy_unresolved_source_journal_ids'] ?? [])));
+            $harness->assertSame(1, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM journals WHERE id = :journal_id', ['journal_id' => $legacyJournalId]));
+
+            $again = $service->repairLegacyOffset((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'test');
+            $harness->assertSame(true, (bool)($again['success'] ?? false));
+            $harness->assertSame(true, (bool)($again['already_current'] ?? false));
+            $harness->assertSame(2, (int)InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM journal_entry_metadata
+                 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id
+                   AND journal_tag = :journal_tag',
+                [
+                    'company_id' => (int)$fixture['company_id'],
+                    'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                    'journal_tag' => \eel_accounts\Service\DirectorLoanReconciliationService::OFFSET_JOURNAL_TAG,
+                ]
+            ));
+        });
+    });
+
     $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'makes the confirmation stale when attribution changes but not when its journal posts', static function () use ($harness, $service): void {
         directorLoanReclassificationWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
             $assetLineId = directorLoanReclassificationInsertLine($fixture, (int)$fixture['asset_nominal_id'], 100.00, 0.00, (int)$fixture['primary_director_id'], 'asset');
@@ -164,6 +229,8 @@ function directorLoanReclassificationWithFixture(GeneratedServiceClassTestHarnes
         $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
         $settings->set('director_loan_asset_nominal_id', $assetNominalId, 'int');
         $settings->set('director_loan_liability_nominal_id', $liabilityNominalId, 'int');
+        $settings->set('participator_loan_asset_nominal_id', $assetNominalId, 'int');
+        $settings->set('participator_loan_liability_nominal_id', $liabilityNominalId, 'int');
         $settings->flush();
         InterfaceDB::prepareExecute(
             'INSERT INTO accounting_periods (company_id, label, period_start, period_end)

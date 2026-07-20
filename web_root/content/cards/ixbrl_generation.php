@@ -50,8 +50,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . '<button class="button primary" type="submit">Download Filing-ready File</button>'
                 . '</form>'
             : '';
-        $externalSummary = $this->externalSummary($run, $arelleStatus);
-
+        $artifact = $download !== '' ? $download : 'Not generated';
         return '<div class="settings-stack">
             <section class="panel-soft">
                 <div class="status-head">
@@ -84,6 +83,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     ' . $this->metric('Arelle Status', !empty($arelleStatus['installed']) ? 'Installed' : 'Not Installed') . '
                     ' . $this->metric('Arelle Validation', $this->validationLabel((string)($run['external_validation_status'] ?? 'not_run'))) . '
                     ' . $this->metric('Arelle Validated At', (string)($run['external_validated_at'] ?? '')) . '
+                    ' . $this->metricHtml('Artifact', $artifact) . '
                 </div>
                 <div class="helper">' . HelperFramework::escape((string)($run['error_message'] ?? '')) . '</div>
                 ' . ($stale
@@ -91,7 +91,6 @@ final class _ixbrl_generationCard extends CardBaseFramework
                         . HelperFramework::escape((string)($runFreshness['detail'] ?? 'The latest facts are stale.'))
                         . '</div>'
                     : '') . '
-                ' . ($externalSummary !== '' ? '<div class="helper">' . HelperFramework::escape($externalSummary) . '</div>' : '') . '
                 ' . $this->validationDetails($run) . '
                 ' . (!$readyForFiling && $fileExists
                     ? '<div class="helper"><span class="badge warning">Review draft only</span> The generated file is withheld from filing download until the current file passes every validation and hash check.</div>'
@@ -105,7 +104,6 @@ final class _ixbrl_generationCard extends CardBaseFramework
                         <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                         <button class="button primary" type="submit"' . ($canGenerate ? '' : ' disabled') . '>Generate Accounting Period iXBRL</button>
                     </form>
-                    ' . $download . '
                 </div>
             </section>
             ' . $this->computationPeriods($context, $companyId, $accountingPeriodId) . '
@@ -134,12 +132,17 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . '<input type="hidden" name="company_id" value="' . $companyId . '">'
                 . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
                 . '<input type="hidden" name="ct_period_id" value="' . $ctPeriodId . '">';
+            $artifact = $fileable
+                ? '<form method="post" action="?page=disclosures">' . $hidden
+                    . '<input type="hidden" name="intent" value="download_computation_ixbrl">'
+                    . '<button class="button compact" type="submit">Download iXBRL File</button></form>'
+                : (trim((string)($run['generated_filename'] ?? '')) !== '' ? 'Generated, not filing-ready' : 'Not generated');
             $html .= '<section class="panel-soft"><div class="status-head"><h4>Corporation Tax iXBRL</h4><span class="badge '
                 . ($fileable ? 'success' : ($fresh ? 'warning' : 'muted')) . '">'
                 . ($fileable ? 'Filing ready' : ($fresh ? 'Generated, not fileable' : 'Not generated')) . '</span></div>'
                 . '<div class="summary-grid four">'
                 . $this->metric('CT period', $start . ' to ' . $end)
-                . $this->metric('Artifact', (string)($run['generated_filename'] ?? 'Not generated'))
+                . $this->metricHtml('Artifact', $artifact)
                 . $this->metric('Internal validation', $this->validationLabel((string)($run['validation_status'] ?? 'not_run')))
                 . $this->metric('Arelle validation', $this->validationLabel((string)($run['external_validation_status'] ?? 'not_run')))
                 . '</div>';
@@ -160,14 +163,6 @@ final class _ixbrl_generationCard extends CardBaseFramework
             $html .= '<div class="form-row-actions"><form method="post" action="?page=disclosures" data-ajax="true">' . $hidden
                 . '<input type="hidden" name="intent" value="generate_computation_ixbrl"><button class="button primary" type="submit"'
                 . ($ready ? '' : ' disabled') . '>Generate Corporation Tax Period iXBRL</button></form>';
-            if ($fresh) {
-                $html .= '<form method="post" action="?page=disclosures" data-ajax="true">' . $hidden
-                    . '<input type="hidden" name="intent" value="validate_computation_ixbrl"><button class="button" type="submit">Validate again</button></form>';
-            }
-            if ($fileable) {
-                $html .= '<form method="post" action="?page=disclosures">' . $hidden
-                    . '<input type="hidden" name="intent" value="download_computation_ixbrl"><button class="button" type="submit">Download</button></form>';
-            }
             $html .= '</div></section>';
         }
         return $html;
@@ -194,6 +189,11 @@ final class _ixbrl_generationCard extends CardBaseFramework
     private function metric(string $label, string $value): string
     {
         return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+    }
+
+    private function metricHtml(string $label, string $value): string
+    {
+        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . $value . '</div></div>';
     }
 
     private function statusClass(string $status): string
@@ -224,37 +224,6 @@ final class _ixbrl_generationCard extends CardBaseFramework
             'filing_export' => 'Filing Export',
             default => $type === '' ? 'Not Generated' : HelperFramework::labelFromKey($type, '_'),
         };
-    }
-
-    private function externalSummary(array $run, array $arelleStatus = []): string
-    {
-        $freshness = (array)($run['run_freshness'] ?? []);
-        if ($freshness !== [] && (string)($freshness['state'] ?? '') !== 'current') {
-            return '';
-        }
-
-        $status = (string)($run['external_validation_status'] ?? 'not_configured');
-        $errors = json_decode((string)($run['external_validation_errors_json'] ?? '[]'), true);
-        $warnings = json_decode((string)($run['external_validation_warnings_json'] ?? '[]'), true);
-        $errorCount = is_array($errors) ? count($errors) : 0;
-        $warningCount = is_array($warnings) ? count($warnings) : 0;
-        $logPath = (string)($run['external_validation_log_path'] ?? '');
-
-        if ($status === 'not_configured' && !empty($arelleStatus['installed'])) {
-            return 'Arelle is installed; this export has not been externally validated yet.';
-        }
-
-        if ($status === 'passed' && $warningCount > 0) {
-            return 'Arelle reported ' . $warningCount . ' warning(s).';
-        }
-        if ($status === 'failed') {
-            return 'Arelle external validation failed with ' . $errorCount . ' error(s).';
-        }
-        if ($status === 'error') {
-            return 'Arelle external validation could not be completed.';
-        }
-
-        return 'Arelle external validation has not been configured or run.';
     }
 
     private function validationDetails(array $run): string

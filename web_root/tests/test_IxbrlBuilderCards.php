@@ -417,6 +417,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $draftHtml = $card->render($context);
             $harness->assertFalse(str_contains($draftHtml, 'Build / Refresh Facts'));
             $harness->assertFalse(str_contains($draftHtml, 'name="intent" value="build_ixbrl_facts"'));
+            $harness->assertFalse(str_contains($draftHtml, 'Arelle external validation has not been configured or run.'));
             $harness->assertTrue(str_contains($draftHtml, 'Generate Accounting Period iXBRL</button>'));
             $harness->assertTrue(str_contains($draftHtml, 'Generate Accounting Period iXBRL</button>') && str_contains($draftHtml, 'disabled'));
             $harness->assertFalse(str_contains($draftHtml, 'Run External Validation'));
@@ -424,6 +425,8 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $harness->assertTrue(str_contains($draftHtml, 'Arelle Status') && str_contains($draftHtml, 'Installed'));
             $harness->assertTrue(str_contains($draftHtml, 'Arelle Validation') && str_contains($draftHtml, 'Failed'));
             $harness->assertTrue(str_contains($draftHtml, 'Review draft only'));
+            $harness->assertTrue(str_contains($draftHtml, '<div class="summary-label">Artifact</div>'));
+            $harness->assertTrue(str_contains($draftHtml, '<div class="summary-value">Not generated</div>'));
             $harness->assertFalse(str_contains($draftHtml, 'Download Filing-ready File'));
 
             $context['ixbrl']['readiness']['can_generate'] = true;
@@ -454,8 +457,10 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(str_contains($draft, '<div class="summary-label">CT period</div>'));
         $harness->assertTrue(str_contains($draft, 'generate_computation_ixbrl'));
         $harness->assertTrue(str_contains($draft, 'Generate Corporation Tax Period iXBRL</button>'));
-        $harness->assertTrue(str_contains($draft, 'validate_computation_ixbrl'));
+        $harness->assertFalse(str_contains($draft, 'validate_computation_ixbrl'));
         $harness->assertFalse(str_contains($draft, 'download_computation_ixbrl'));
+        $harness->assertTrue(str_contains($draft, 'Generated, not filing-ready'));
+        $harness->assertFalse(str_contains($draft, 'draft.xhtml'));
 
         $context['ixbrl']['computation_periods'][0]['status']['errors'] = [
             'Approve the current disclosures and filing basis before preparing CT filing output.',
@@ -480,6 +485,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         $context['ixbrl']['computation_periods'][0]['status']['fileable'] = true;
         $ready = $card->render($context);
         $harness->assertTrue(str_contains($ready, 'download_computation_ixbrl'));
+        $harness->assertTrue(str_contains($ready, 'Download iXBRL File</button>'));
     });
     $harness->check(_ixbrl_generationCard::class, 'offers one combined filing generation action only when every artifact can be built', static function () use ($harness, $card): void {
         $context = [

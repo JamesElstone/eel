@@ -15,7 +15,7 @@ final class TaxRateRuleService
     public const CORPORATION_TAX_SOURCE_URL = \eel_accounts\Service\CorporationTaxRateRuleService::SOURCE_URL;
     public const CAPITAL_ALLOWANCE_WDA_SOURCE_URL = 'https://www.gov.uk/work-out-capital-allowances/rates-and-pools';
     public const CAPITAL_ALLOWANCE_AIA_SOURCE_URL = 'https://www.gov.uk/capital-allowances/annual-investment-allowance';
-    public const FRS105_THRESHOLDS_SOURCE_URL = 'https://www.gov.uk/annual-accounts/microentities-small-and-dormant-companies';
+    public const FRS105_THRESHOLDS_SOURCE_URL = 'https://www.gov.uk/government/publications/life-of-a-company-annual-requirements/life-of-a-company-part-1-accounts';
 
     /** @var array<string, array<int, array<string, mixed>>> */
     private array $activeRulesCache = [];
@@ -143,9 +143,10 @@ final class TaxRateRuleService
         );
 
         $frs105Html = $this->fetchSourceHtml(self::FRS105_THRESHOLDS_SOURCE_URL);
-        $catalogRules = array_merge(
-            $catalogRules,
-            $this->parseFrs105ThresholdsHtml($frs105Html, self::FRS105_THRESHOLDS_SOURCE_URL, $checkedAt)
+        $frs105Rules = $this->parseFrs105ThresholdsHtml(
+            $frs105Html,
+            self::FRS105_THRESHOLDS_SOURCE_URL,
+            $checkedAt
         );
 
         $ownsTransaction = !\InterfaceDB::inTransaction();
@@ -154,6 +155,7 @@ final class TaxRateRuleService
         }
 
         try {
+            $this->replaceActiveFrs105ThresholdRules($frs105Rules);
             foreach ($catalogRules as $rule) {
                 $this->deactivateSupersededRules($rule);
                 $this->upsertRule($rule);
@@ -190,22 +192,92 @@ final class TaxRateRuleService
         $text = $this->normaliseText(strip_tags($html));
         $sourceUpdatedAt = $this->extractSourceUpdatedAt($html);
         $checkedAt = $this->checkedAt($checkedAt);
-        $turnover = $this->thresholdAmount($text, '/turnover\s+of\s+((?:GBP|£)\s*[0-9,.]+\s*(?:million)?)\s+or\s+less/i');
-        $balanceSheet = $this->thresholdAmount($text, '/((?:GBP|£)\s*[0-9,.]+\s*(?:million)?)\s+or\s+less\s+on\s+its\s+balance\s+sheet/i');
-        $employees = null;
-        if (preg_match('/([0-9]+)\s+employees?\s+or\s+less/i', $text, $matches) === 1) {
-            $employees = (float)$matches[1];
+        $bands = $this->frs105ThresholdBands($text);
+        if (count($bands) < 2) {
+            throw new \RuntimeException('The GOV.UK FRS 105 threshold page did not contain complete dated micro-entity threshold bands.');
         }
 
-        if ($turnover === null || $balanceSheet === null || $employees === null) {
-            throw new \RuntimeException('The GOV.UK FRS 105 threshold page did not contain all turnover, balance-sheet and employee thresholds.');
+        $rules = [];
+        foreach ($bands as $band) {
+            foreach ([
+                'turnover' => ['FRS 105 micro-entity turnover threshold', (float)$band['turnover']],
+                'balance_sheet_total' => ['FRS 105 micro-entity balance-sheet threshold', (float)$band['balance_sheet_total']],
+                'employees' => ['FRS 105 micro-entity employee threshold', (float)$band['employees']],
+            ] as $key => [$label, $amount]) {
+                $rules[] = $this->catalogRule(
+                    'company_size',
+                    'frs105_micro_entity',
+                    $key,
+                    $label,
+                    (string)$band['period_start'],
+                    (string)$band['period_end'],
+                    'amount',
+                    null,
+                    $amount,
+                    null,
+                    $sourceUrl,
+                    $sourceUpdatedAt,
+                    $checkedAt,
+                    'Parsed from the GOV.UK micro-entity thresholds page.'
+                );
+            }
         }
 
-        return [
-            $this->catalogRule('company_size', 'frs105_micro_entity', 'turnover', 'FRS 105 micro-entity turnover threshold', '2025-04-06', null, 'amount', null, $turnover, null, $sourceUrl, $sourceUpdatedAt, $checkedAt, 'Parsed from the GOV.UK micro-entity thresholds page.'),
-            $this->catalogRule('company_size', 'frs105_micro_entity', 'balance_sheet_total', 'FRS 105 micro-entity balance-sheet threshold', '2025-04-06', null, 'amount', null, $balanceSheet, null, $sourceUrl, $sourceUpdatedAt, $checkedAt, 'Parsed from the GOV.UK micro-entity thresholds page.'),
-            $this->catalogRule('company_size', 'frs105_micro_entity', 'employees', 'FRS 105 micro-entity employee threshold', '2025-04-06', null, 'amount', null, $employees, null, $sourceUrl, $sourceUpdatedAt, $checkedAt, 'Parsed from the GOV.UK micro-entity thresholds page.'),
+        return $rules;
+    }
+
+    /** @return array<int, array{period_start: string, period_end: string, turnover: float, balance_sheet_total: float, employees: float}> */
+    private function frs105ThresholdBands(string $text): array
+    {
+        if (preg_match('/9\.1\s+Conditions to qualify as a micro-entity(?<section>.*?)(?=9\.2\s+Companies that cannot prepare|$)/i', $text, $section) === 1) {
+            $text = (string)$section['section'];
+        }
+        $bands = [];
+        $patterns = [
+            ['pattern' => '/For accounting periods that begin on or after\s+(?<start>\d{1,2}\s+[A-Za-z]+\s+\d{4})(?<body>.*?)(?=For accounting periods|$)/i', 'open_ended' => true],
+            ['pattern' => '/For accounting periods beginning between\s+(?<start>\d{1,2}\s+[A-Za-z]+\s+\d{4})\s+and\s+(?<end>\d{1,2}\s+[A-Za-z]+\s+\d{4})(?<body>.*?)(?=For accounting periods|$)/i', 'open_ended' => false],
         ];
+        foreach ($patterns as $definition) {
+            $matchCount = preg_match_all((string)$definition['pattern'], $text, $matches, \PREG_SET_ORDER);
+            if ($matchCount === false || $matchCount === 0) {
+                continue;
+            }
+            foreach ($matches as $match) {
+                $start = $this->parseDate((string)($match['start'] ?? ''));
+                if (!$start instanceof \DateTimeImmutable) {
+                    continue;
+                }
+                $end = !empty($definition['open_ended'])
+                    ? null
+                    : $this->parseDate((string)($match['end'] ?? ''));
+                if (!$end instanceof \DateTimeImmutable && empty($definition['open_ended'])) {
+                    continue;
+                }
+                $periodStart = $start->format('Y-m-d');
+                $periodEnd = $end instanceof \DateTimeImmutable ? $end->format('Y-m-d') : '9999-12-31';
+                $body = (string)($match['body'] ?? '');
+                $turnover = $this->thresholdAmount($body, '/turnover\s+(?:of\s+)?((?:GBP|£)\s*[0-9,.]+\s*(?:million)?)\s+(?:or\s+less|no\s+more\s+than)/i')
+                    ?? $this->thresholdAmount($body, '/turnover\s+(?:of\s+)?(?:or\s+less|no\s+more\s+than)\s+((?:GBP|£)\s*[0-9,.]+\s*(?:million)?)/i');
+                $balanceSheet = $this->thresholdAmount($body, '/((?:GBP|£)\s*[0-9,.]+\s*(?:million)?)\s+(?:or\s+less|no\s+more\s+than)\s+on\s+(?:its\s+)?balance\s+sheet/i')
+                    ?? $this->thresholdAmount($body, '/balance\s+sheet(?:\s+total)?\s+(?:or\s+less|no\s+more\s+than)\s+((?:GBP|£)\s*[0-9,.]+\s*(?:million)?)/i');
+                $employees = preg_match('/([0-9]+)\s+employees?\s+(?:or\s+less|on\s+average|no\s+more\s+than)/i', $body, $employeeMatches) === 1
+                    ? (float)$employeeMatches[1]
+                    : null;
+                if ($turnover === null || $balanceSheet === null || $employees === null) {
+                    continue;
+                }
+                $bands[] = [
+                    'period_start' => $periodStart,
+                    'period_end' => $periodEnd,
+                    'turnover' => $turnover,
+                    'balance_sheet_total' => $balanceSheet,
+                    'employees' => $employees,
+                ];
+            }
+        }
+
+        usort($bands, static fn(array $a, array $b): int => strcmp($a['period_start'], $b['period_start']));
+        return $bands;
     }
 
     /** @return array<string, mixed>|null */
@@ -611,6 +683,33 @@ final class TaxRateRuleService
                 'rule_version' => (string)$rule['rule_version'],
             ]
         );
+    }
+
+    /** @param array<int, array<string, mixed>> $rules */
+    private function replaceActiveFrs105ThresholdRules(array $rules): void
+    {
+        if (count($rules) < 6) {
+            throw new \RuntimeException('Complete FRS 105 threshold bands are required before replacing active rules.');
+        }
+        foreach ($rules as $rule) {
+            if (($rule['tax_domain'] ?? '') !== 'company_size'
+                || ($rule['regime'] ?? '') !== 'frs105_micro_entity') {
+                throw new \RuntimeException('Only FRS 105 micro-entity threshold rules can replace the active FRS 105 set.');
+            }
+        }
+
+        \InterfaceDB::prepareExecute(
+            'UPDATE tax_rate_rules
+             SET is_active = 0,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE tax_domain = :tax_domain
+               AND regime = :regime
+               AND is_active = 1',
+            ['tax_domain' => 'company_size', 'regime' => 'frs105_micro_entity']
+        );
+        foreach ($rules as $rule) {
+            $this->upsertRule($rule);
+        }
     }
 
     private function upsertRule(array $rule): void

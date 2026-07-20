@@ -146,6 +146,7 @@ final class IxbrlAccountsDisclosureService
                 $missing
             )),
             'disclosures' => $disclosures,
+            'updated_by_display_name' => $this->updatedByDisplayName($row),
             'stored' => $row !== null,
             'year_end_locked' => (new YearEndLockService())->isLocked($companyId, $accountingPeriodId),
             'trading_status_evidence' => $tradingEvidence,
@@ -935,6 +936,28 @@ final class IxbrlAccountsDisclosureService
         }
 
         return $row;
+    }
+
+    private function updatedByDisplayName(?array $row): string
+    {
+        $actor = trim((string)($row['updated_by'] ?? ''));
+        if ($actor === '') {
+            return '';
+        }
+        if (preg_match('/^user:(\d+)$/D', $actor, $matches) === 1) {
+            try {
+                $user = (new \UserAuthenticationService())->userById((int)$matches[1]);
+                $displayName = trim((string)($user['display_name'] ?? ''));
+                return $displayName !== '' ? $displayName : 'Unknown user';
+            } catch (\Throwable) {
+                return 'Unknown user';
+            }
+        }
+        if (str_starts_with($actor, 'user:')) {
+            return 'Unknown user';
+        }
+
+        return $actor === 'web_app' ? 'Web app' : $actor;
     }
 
     private function disclosureValues(array $row): array

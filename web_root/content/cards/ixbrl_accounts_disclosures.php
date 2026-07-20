@@ -103,6 +103,14 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         $coreButtonDisabled = ' disabled' . ($controlDisabled ? ' aria-disabled="true"' : '');
         $missing = (array)($result['missing_labels'] ?? []);
         $periodEnd = (string)(($result['accounting_period'] ?? [])['period_end'] ?? '');
+        $dateFormat = (string)($company['settings']['date_format'] ?? 'd/m/Y');
+        if (!in_array($dateFormat, ['Y-m-d', 'd/m/Y', 'd-m-Y', 'd/m/y', 'd-m-y'], true)) {
+            $dateFormat = 'd/m/Y';
+        }
+        $periodEndDate = \DateTimeImmutable::createFromFormat('!Y-m-d', $periodEnd);
+        $periodEndDisplay = $periodEndDate instanceof \DateTimeImmutable && $periodEndDate->format('Y-m-d') === $periodEnd
+            ? $periodEndDate->format($dateFormat)
+            : 'the accounting period end';
         $tradingEvidence = (array)($result['trading_status_evidence'] ?? []);
         $hasTradingEvidence = !empty($tradingEvidence['has_previous_trading_evidence']);
         $tradingAnswers = (array)($result['trading_status_answers'] ?? []);
@@ -128,14 +136,19 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         }
         $dormancy = (array)($result['dormancy'] ?? []);
         $dormancyCalculated = !empty($dormancy['calculated']);
+        $salesNominalCode = trim((string)($dormancy['sales_nominal_code'] ?? ''));
+        $salesNominalName = trim((string)($dormancy['sales_nominal_name'] ?? ''));
+        $salesNominalLabel = $salesNominalCode !== ''
+            ? 'Nominal ' . $salesNominalCode . ($salesNominalName !== '' ? ' ' . $salesNominalName : '')
+            : 'the configured Sales nominal';
         $dormancyLabel = $dormancyCalculated
             ? ((int)($dormancy['entity_dormant'] ?? 0) === 1
                 ? 'Dormant during Accounting Period'
                 : 'Not Dormant during Accounting Period')
             : 'Not available';
         $dormancyDetail = $dormancyCalculated
-            ? 'Based on gross posted sales of ' . number_format((float)($dormancy['gross_sales'] ?? 0), 2) . ' on '
-                . (string)($dormancy['sales_nominal_code'] ?? 'the configured Sales nominal') . '.'
+            ? 'Based on gross posted sales of £' . number_format((float)($dormancy['gross_sales'] ?? 0), 2) . ' on '
+                . $salesNominalLabel . '.'
             : (string)($dormancy['error'] ?? 'Configure a default Sales nominal to calculate this status.');
         $smallCompanies = (array)($result['small_companies_regime'] ?? []);
         $smallCompaniesAvailable = !empty($smallCompanies['available']);
@@ -147,6 +160,10 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
             : (string)($smallCompanies['error'] ?? 'Enter the accounting figures and refresh to calculate this status.');
         $thresholdPeriod = (array)($smallCompanies['threshold_effective_period'] ?? []);
         $thresholdMeta = '';
+        $updatedAt = trim((string)($disclosures['updated_at'] ?? ''));
+        $updatedBy = trim((string)($result['updated_by_display_name'] ?? ''));
+        $updatedAtDisplay = $updatedAt !== '' ? $updatedAt : 'Not yet saved';
+        $updatedByDisplay = $updatedBy !== '' ? $updatedBy : 'Not yet saved';
         if ($smallCompaniesAvailable) {
             $thresholdMeta = '<div class="helper">Source: ' . HelperFramework::escape((string)($smallCompanies['threshold_source'] ?? ''))
                 . '; effective from ' . HelperFramework::escape((string)($thresholdPeriod['start'] ?? ''))
@@ -164,32 +181,26 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
             <input type="hidden" name="accounting_standard" value="FRS_105">
             <section class="panel-soft">
                 <div class="status-head">
-                    <h3 class="card-title">Period-specific filing statements</h3>
+                    <h3 class="card-title">Account Period Basic Information</h3>
                     <span class="badge ' . ($complete ? 'success' : 'danger') . '">' . ($complete ? 'Complete' : 'Required') . '</span>
                 </div>
                 ' . $sourceSummary . '
                 ' . ($missing !== []
                     ? '<div class="helper">Still required: ' . HelperFramework::escape(implode(', ', $missing)) . '.</div>'
-                    : '<div class="helper">Last updated ' . HelperFramework::escape((string)($disclosures['updated_at'] ?? '')) . ' by ' . HelperFramework::escape((string)($disclosures['updated_by'] ?? '')) . '.</div>') . '
+                    : '') . '
                 ' . $profileErrors . '
             ' . (!$yearEndLocked
                 ? '<div class="standout helper">Complete and lock Year End before confirming the accounts disclosures.</div>'
                 : '') . '
                     <div class="form-grid" data-state-fields="ixbrl_average_number_employees,ixbrl_accounts_approval_date,ixbrl_approving_director_name" data-state-target="save_ixbrl_core_details">
-                    <div class="form-row">
-                        <label>Accounting standard</label>
-                        <input class="input" value="FRS 105" readonly' . $disabledAttribute . '>
-                    </div>
-                    <div class="form-row">
-                        <label for="ixbrl_average_number_employees">Average number of employees</label>
-                        <input class="input" id="ixbrl_average_number_employees" name="average_number_employees" type="number" min="0" step="1" required value="' . HelperFramework::escape($this->nullableValue($display['average_number_employees'] ?? null)) . '" data-state-default="' . HelperFramework::escape($this->nullableValue($display['average_number_employees'] ?? null)) . '"' . $disabledAttribute . '>
-                    </div>
-                    <div class="form-row">
-                        <label for="ixbrl_accounts_approval_date">Accounts approval date</label>
-                        <div class="actions-row actions-row-nowrap">
-                            <input class="input" id="ixbrl_accounts_approval_date" name="accounts_approval_date" type="date" required value="' . HelperFramework::escape((string)($display['accounts_approval_date'] ?? '')) . '" data-state-default="' . HelperFramework::escape((string)($display['accounts_approval_date'] ?? '')) . '"' . $disabledAttribute . '>
-                            <button class="button primary" type="button" data-set-today-for="ixbrl_accounts_approval_date"' . $disabledAttribute . '>Today</button>
-                        </div>
+                    <div class="form-row full table-scroll">
+                        <table><tbody>
+                            <tr><th scope="row"><label>Accounting standard</label></th><td><input class="input" value="FRS 105" readonly' . $disabledAttribute . '></td></tr>
+                            <tr><th scope="row"><label for="ixbrl_average_number_employees">Average number of employees</label></th><td><input class="input" id="ixbrl_average_number_employees" name="average_number_employees" type="number" min="0" step="1" required value="' . HelperFramework::escape($this->nullableValue($display['average_number_employees'] ?? null)) . '" data-state-default="' . HelperFramework::escape($this->nullableValue($display['average_number_employees'] ?? null)) . '"' . $disabledAttribute . '></td></tr>
+                            <tr><th scope="row"><label for="ixbrl_accounts_approval_date">Accounts approval date</label></th><td><div class="actions-row actions-row-nowrap"><input class="input" id="ixbrl_accounts_approval_date" name="accounts_approval_date" type="date" required value="' . HelperFramework::escape((string)($display['accounts_approval_date'] ?? '')) . '" data-state-default="' . HelperFramework::escape((string)($display['accounts_approval_date'] ?? '')) . '"' . $disabledAttribute . '><button class="button primary" type="button" data-set-today-for="ixbrl_accounts_approval_date"' . $disabledAttribute . '>Today</button></div></td></tr>
+                            <tr><th scope="row">Last updated on</th><td>' . HelperFramework::escape($updatedAtDisplay) . '</td></tr>
+                            <tr><th scope="row">Last updated by</th><td>' . HelperFramework::escape($updatedByDisplay) . '</td></tr>
+                        </tbody></table>
                     </div>
                     <div class="form-row full">
                         ' . $this->yesNo(
@@ -199,7 +210,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                             $controlDisabled
                         ) . '
                         ' . ($hasTradingEvidence
-                            ? '<div class="helper">Previous trading is evidenced automatically by ' . HelperFramework::escape($this->tradingEvidenceSummary($tradingEvidence)) . '. A No answer will therefore be stored as No longer trading.</div>'
+                            ? ''
                             : '<div data-ixbrl-ever-traded-panel="true">'
                                 . $this->yesNo(
                                     'has_ever_traded',
@@ -208,20 +219,24 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                                     $controlDisabled
                                 )
                                 . '</div>') . '
-                        <div class="helper">Trading status is calculated from these answers and available ledger or filed-account evidence. Dormancy is assessed separately.</div>
+                        <div class="helper">If a company is marked as not trading on ' . HelperFramework::escape($periodEndDisplay) . ', it automatically calculates Never Traded versus No Longer Trading status based on any historical Sales posted.</div>
                     </div>
-                    <div class="form-row">
-                        <label for="ixbrl_approving_director_name">Approving director</label>
-                        <select class="select" id="ixbrl_approving_director_name" name="approving_director_name" required data-state-default="' . HelperFramework::escape((string)($display['approving_director_name'] ?? '')) . '"' . $disabledAttribute . '>
-                            ' . $directorOptions . '
-                        </select>
+                    <div class="form-row full">
+                        <div class="actions-row actions-row-nowrap ixbrl-core-details-actions">
+                            <div class="mini-field">
+                                <label for="ixbrl_approving_director_name">Approving Director</label>
+                                <select class="select" id="ixbrl_approving_director_name" name="approving_director_name" required data-state-default="' . HelperFramework::escape((string)($display['approving_director_name'] ?? '')) . '"' . $disabledAttribute . '>
+                                    ' . $directorOptions . '
+                                </select>
+                            </div>
+                            <button class="button primary" id="save_ixbrl_core_details" type="submit"' . $coreButtonDisabled . '>Save Filling Statement</button>
+                        </div>
                     </div>
                     </div>
-                    <div class="actions-row"><button class="button primary" id="save_ixbrl_core_details" type="submit"' . $coreButtonDisabled . '>Save core details</button></div>
                 </section>
             </form>
                 <div class="settings-stack">
-                    <section class="panel-soft">
+                    <section class="panel-soft ixbrl-dormancy-summary">
                         <div class="status-head">
                             <h4 class="card-title">Was the company dormant for this accounting period?</h4>
                         </div>
@@ -233,9 +248,11 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                             <h4 class="card-title">Were these accounts prepared under the small companies regime?</h4>
                             <span class="badge ' . ($smallCompaniesAvailable && !empty($smallCompanies['qualifies']) ? 'success' : 'danger') . '">' . HelperFramework::escape($smallCompaniesLabel) . '</span>
                         </div>
-                        <div class="helper">Calculated from the accounting-period turnover, balance-sheet total, and average employees; all three FRS 105 tests are required. This result is read-only.</div>
-                        <div class="helper">' . HelperFramework::escape($smallCompaniesDetail) . '</div>
-                        ' . $thresholdMeta . '
+                        <div class="ixbrl-small-companies-detail">
+                            <div class="helper">Calculated from the accounting-period turnover, balance-sheet total, and average employees; all three FRS 105 tests are required. This result is read-only.</div>
+                            <div class="helper">' . HelperFramework::escape($smallCompaniesDetail) . '</div>
+                            ' . $thresholdMeta . '
+                        </div>
                         ' . $this->yesNo('audit_exempt_section_477', 'Is the company claiming audit exemption under section 477 of the Companies Act 2006?', $display['audit_exempt_section_477'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
                         ' . $this->yesNo('directors_acknowledge_responsibilities', 'Do the directors acknowledge their Companies Act responsibilities for the records and accounts?', $display['directors_acknowledge_responsibilities'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
                         ' . $this->yesNo('members_have_not_required_audit', 'Do the members confirm that no audit is required under section 476?', $display['members_have_not_required_audit'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '

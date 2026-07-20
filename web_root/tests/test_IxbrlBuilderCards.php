@@ -134,7 +134,7 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertSame('fetch', (string)($services[0]['method'] ?? ''));
 
         $html = $card->render([
-            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'company' => ['id' => 49, 'accounting_period_id' => 79, 'settings' => ['date_format' => 'Y-m-d']],
             'services' => ['ixbrl_accounts_disclosures' => [
                 'available' => true,
                 'complete' => false,
@@ -143,6 +143,7 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
                 'missing_labels' => ['average number of employees'],
                 'accounting_period' => ['period_end' => '2025-05-31'],
                 'disclosures' => ['accounting_standard' => 'FRS_105'],
+                'updated_by_display_name' => '',
                 'suggested_disclosures' => [
                     'average_number_employees' => 1,
                     'entity_trading_status' => 'trading',
@@ -167,6 +168,7 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
                     'entity_dormant' => 0,
                     'gross_sales' => 125.00,
                     'sales_nominal_code' => '4000',
+                    'sales_nominal_name' => 'Sales',
                 ],
             ]],
         ]);
@@ -182,6 +184,9 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, 'value="2025-05-29"'));
         $harness->assertTrue(str_contains($html, 'data-set-today-for="ixbrl_accounts_approval_date">Today</button>'));
         $harness->assertTrue(str_contains($html, 'Was the company still trading on 2025-05-31?'));
+        $harness->assertTrue(str_contains($html, 'If a company is marked as not trading on 2025-05-31, it automatically calculates Never Traded versus No Longer Trading status based on any historical Sales posted.'));
+        $harness->assertFalse(str_contains($html, 'Previous trading is evidenced automatically'));
+        $harness->assertFalse(str_contains($html, 'Trading status is calculated from these answers'));
         $harness->assertTrue(str_contains($html, 'name="is_still_trading" value="1" required checked'));
         $harness->assertTrue(str_contains($html, 'Has the company ever traded?'));
         $harness->assertFalse(str_contains($html, 'name="entity_trading_status"'));
@@ -189,22 +194,28 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, '<option value="James Elstone" selected>James Elstone</option>'));
         $harness->assertFalse(str_contains($html, '<datalist'));
         $harness->assertTrue(str_contains($html, 'Was the company dormant for this accounting period?'));
+        $harness->assertTrue(str_contains($html, 'panel-soft ixbrl-dormancy-summary'));
         $harness->assertTrue(str_contains($html, 'Not Dormant during Accounting Period'));
-        $harness->assertTrue(str_contains($html, 'gross posted sales of 125.00'));
+        $harness->assertTrue(str_contains($html, 'gross posted sales of £125.00 on Nominal 4000 Sales'));
         $harness->assertFalse(str_contains($html, 'name="entity_dormant"'));
         $harness->assertTrue(str_contains($html, 'all three FRS 105 tests are required'));
+        $harness->assertTrue(str_contains($html, 'class="ixbrl-small-companies-detail"'));
         $harness->assertFalse(str_contains($html, 'name="prepared_under_small_companies_regime"'));
         $harness->assertTrue(str_contains($html, 'value="James Elstone"'));
         $harness->assertTrue(str_contains($html, 'Required'));
-        $harness->assertTrue(str_contains($html, 'Save core details'));
+        $harness->assertTrue(str_contains($html, 'Save Filling Statement'));
         $harness->assertTrue(str_contains($html, 'data-state-fields="ixbrl_average_number_employees,ixbrl_accounts_approval_date,ixbrl_approving_director_name"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_ixbrl_core_details"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_ixbrl_disclosure_field"'));
         $harness->assertTrue(str_contains($html, 'data-submit-on-change="true"'));
-        $saveButtonPosition = strpos($html, 'Save core details');
+        $saveButtonPosition = strpos($html, 'Save Filling Statement');
         $corePanelEnd = strpos($html, "</form>\n                <div class=\"settings-stack\">");
         $harness->assertTrue($saveButtonPosition !== false && $corePanelEnd !== false && $saveButtonPosition < $corePanelEnd);
-        $harness->assertTrue(str_contains($html, '<h3 class="card-title">Period-specific filing statements</h3>'));
+        $harness->assertTrue(str_contains($html, '<h3 class="card-title">Account Period Basic Information</h3>'));
+        $harness->assertTrue(str_contains($html, '<th scope="row">Last updated on</th><td>Not yet saved</td>'));
+        $harness->assertTrue(str_contains($html, '<th scope="row">Last updated by</th><td>Not yet saved</td>'));
+        $harness->assertTrue(str_contains($html, '>Approving Director</label>'));
+        $harness->assertTrue(str_contains($html, 'actions-row actions-row-nowrap ixbrl-core-details-actions'));
         $harness->assertTrue(str_contains($html, 'FRS 105 Notes'));
         $harness->assertTrue(str_contains($html, 'not inferred or prefilled from Companies House'));
         foreach ([
@@ -229,7 +240,9 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
                 'stored' => true,
                 'year_end_locked' => true,
                 'missing_labels' => [],
+                'updated_by_display_name' => 'James Elstone',
                 'disclosures' => [
+                    'updated_at' => '2026-07-17 15:07:40',
                     'micro_entity_eligibility_confirmed' => 1,
                     'going_concern_basis_appropriate' => 1,
                     'has_material_off_balance_sheet_arrangements' => 1,
@@ -255,6 +268,9 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
             'name="has_director_advances_credits_or_guarantees" value="0" required checked'
         ));
         $harness->assertTrue(str_contains($html, 'cannot build accounts for this positive-note disclosure'));
+        $harness->assertTrue(str_contains($html, '<th scope="row">Last updated on</th><td>2026-07-17 15:07:40</td>'));
+        $harness->assertTrue(str_contains($html, '<th scope="row">Last updated by</th><td>James Elstone</td>'));
+        $harness->assertFalse(str_contains($html, 'user:261'));
     });
 
     $harness->check(_ixbrl_accounts_disclosuresCard::class, 'keeps disclosures visible but disabled until Year End is locked', static function () use ($harness, $card): void {

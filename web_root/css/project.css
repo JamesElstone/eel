@@ -26,6 +26,25 @@
   min-width: 0;
 }
 
+.ixbrl-core-details-actions {
+  align-items: flex-end;
+}
+
+.ixbrl-core-details-actions .button {
+  margin-bottom: 0;
+}
+
+.ixbrl-dormancy-summary {
+  display: grid;
+  gap: 10px;
+}
+
+.ixbrl-small-companies-detail {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0;
+}
+
 .form-row {
   padding-bottom: 0;
 }

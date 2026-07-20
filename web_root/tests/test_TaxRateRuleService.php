@@ -63,16 +63,25 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $aiaRules = $service->parseAnnualInvestmentAllowanceHtml($aiaHtml, 'https://example.test/aia', '2026-07-07');
             $harness->assertSame(true, taxRateRuleTestHasRule($aiaRules, 'capital_allowances', 'plant_machinery', 'aia_annual_limit', 1000000.0, 'amount_value'));
 
-            $frsHtml = '<html><body><p>Micro-entities</p><ul>
+            $frsHtml = '<html><body><h3>For accounting periods that begin on or after 6 April 2025</h3><p>A micro-entity must meet at least 2 of the following conditions:</p><ul>
                 <li>a turnover of £1 million or less</li>
                 <li>£500,000 or less on its balance sheet</li>
                 <li>10 employees or less</li>
+            </ul><h3>For accounting periods beginning between 30 September 2013 and 5 April 2025</h3><p>A micro-entity must have met at least 2 of the following conditions:</p><ul>
+                <li>an annual turnover no more than £632,000</li>
+                <li>a balance sheet total no more than £316,000</li>
+                <li>no more than 10 employees on average</li>
             </ul></body></html>';
             $frsRules = $service->parseFrs105ThresholdsHtml($frsHtml, 'https://example.test/frs105', '2026-07-17');
-            $harness->assertSame(3, count($frsRules));
+            $harness->assertSame(6, count($frsRules));
             $harness->assertSame(true, taxRateRuleTestHasRule($frsRules, 'company_size', 'frs105_micro_entity', 'turnover', 1000000.0, 'amount_value'));
             $harness->assertSame(true, taxRateRuleTestHasRule($frsRules, 'company_size', 'frs105_micro_entity', 'balance_sheet_total', 500000.0, 'amount_value'));
             $harness->assertSame(true, taxRateRuleTestHasRule($frsRules, 'company_size', 'frs105_micro_entity', 'employees', 10.0, 'amount_value'));
+            $harness->assertSame(true, taxRateRuleTestHasRule($frsRules, 'company_size', 'frs105_micro_entity', 'turnover', 632000.0, 'amount_value'));
+            $harness->assertSame(true, taxRateRuleTestHasRule($frsRules, 'company_size', 'frs105_micro_entity', 'balance_sheet_total', 316000.0, 'amount_value'));
+            $harness->assertSame('2013-09-30', (string)($frsRules[0]['period_start'] ?? ''));
+            $harness->assertSame('2025-04-05', (string)($frsRules[0]['period_end'] ?? ''));
+            $harness->assertSame('2025-04-06', (string)($frsRules[3]['period_start'] ?? ''));
             $malformedFailed = false;
             try {
                 $service->parseFrs105ThresholdsHtml('<p>broken source</p>');
@@ -80,6 +89,64 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $malformedFailed = true;
             }
             $harness->assertSame(true, $malformedFailed);
+        });
+
+        $harness->check(\eel_accounts\Service\TaxRateRuleService::class, 'replaces active FRS 105 thresholds only with complete parsed bands', static function () use ($harness, $service): void {
+            \InterfaceDB::beginTransaction();
+            try {
+                $service->ensureSchema();
+                \InterfaceDB::prepareExecute(
+                    'INSERT INTO tax_rate_rules (
+                        tax_domain, regime, rule_key, rule_label, period_start, period_end, value_type,
+                        amount_value, source_url, source_checked_at, rule_version, is_active, notes
+                     ) VALUES (
+                        :domain, :regime, :rule_key, :rule_label, :period_start, :period_end, :value_type,
+                        :amount_value, :source_url, :source_checked_at, :rule_version, 1, :notes
+                     )',
+                    [
+                        'domain' => 'company_size',
+                        'regime' => 'frs105_micro_entity',
+                        'rule_key' => 'turnover',
+                        'rule_label' => 'Legacy FRS 105 turnover threshold',
+                        'period_start' => '1900-01-01',
+                        'period_end' => '9999-12-31',
+                        'value_type' => 'amount',
+                        'amount_value' => 1.00,
+                        'source_url' => 'https://example.test/legacy',
+                        'source_checked_at' => '2026-01-01',
+                        'rule_version' => 'legacy-' . bin2hex(random_bytes(4)),
+                        'notes' => 'Legacy fixture.',
+                    ]
+                );
+                $html = '<h3>For accounting periods beginning between 30 September 2013 and 5 April 2025</h3><ul><li>turnover no more than £632,000</li><li>£316,000 no more than on its balance sheet</li><li>10 employees on average</li></ul><h3>For accounting periods that begin on or after 6 April 2025</h3><ul><li>turnover no more than £1 million</li><li>£500,000 no more than on its balance sheet</li><li>10 employees on average</li></ul>';
+                $rules = $service->parseFrs105ThresholdsHtml($html, 'https://example.test/frs105', '2026-07-17');
+                $replacement = new ReflectionMethod($service, 'replaceActiveFrs105ThresholdRules');
+                $incompleteFailed = false;
+                try {
+                    $replacement->invoke($service, array_slice($rules, 0, 3));
+                } catch (ReflectionException|RuntimeException) {
+                    $incompleteFailed = true;
+                }
+                $harness->assertSame(true, $incompleteFailed);
+                $harness->assertSame(1, (int)\InterfaceDB::fetchColumn(
+                    'SELECT COUNT(*) FROM tax_rate_rules WHERE tax_domain = :domain AND regime = :regime AND period_start = :period_start AND is_active = 1',
+                    ['domain' => 'company_size', 'regime' => 'frs105_micro_entity', 'period_start' => '1900-01-01']
+                ));
+                $replacement->invoke($service, $rules);
+
+                $harness->assertSame(6, (int)\InterfaceDB::fetchColumn(
+                    'SELECT COUNT(*) FROM tax_rate_rules WHERE tax_domain = :domain AND regime = :regime AND is_active = 1',
+                    ['domain' => 'company_size', 'regime' => 'frs105_micro_entity']
+                ));
+                $harness->assertSame(0, (int)\InterfaceDB::fetchColumn(
+                    'SELECT COUNT(*) FROM tax_rate_rules WHERE tax_domain = :domain AND regime = :regime AND period_start = :period_start AND is_active = 1',
+                    ['domain' => 'company_size', 'regime' => 'frs105_micro_entity', 'period_start' => '1900-01-01']
+                ));
+            } finally {
+                if (\InterfaceDB::inTransaction()) {
+                    \InterfaceDB::rollBack();
+                }
+            }
         });
 
         $harness->check(\eel_accounts\Service\TaxRateRuleService::class, 'weighted lookup reads active rule rows', static function () use ($harness, $service): void {

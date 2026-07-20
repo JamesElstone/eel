@@ -62,6 +62,61 @@ final class CompaniesHouseInitialShareholdingExtractionService
         ];
     }
 
+    /**
+     * Imports the incorporation statement of capital once it has been downloaded.
+     * Existing share classes are deliberately left untouched: incorporation capital
+     * is static, and a later Companies House synchronisation must not overwrite a
+     * user-reviewed or manually corrected record.
+     */
+    public function importForCompany(int $companyId): array
+    {
+        $draftResult = $this->draftForCompany($companyId);
+        if (empty($draftResult['success'])) {
+            return $draftResult + ['imported' => false, 'skipped' => false];
+        }
+
+        $shareCapitalService = new \eel_accounts\Service\IncorporationShareCapitalService();
+        $summary = $shareCapitalService->fetchSummary($companyId);
+        if (empty($summary['available'])) {
+            return [
+                'success' => false,
+                'errors' => (array)($summary['errors'] ?? ['Formation share capital is not available.']),
+                'draft' => (array)($draftResult['draft'] ?? []),
+                'imported' => false,
+                'skipped' => false,
+            ];
+        }
+
+        if ((array)($summary['share_classes'] ?? []) !== []) {
+            return [
+                'success' => true,
+                'errors' => [],
+                'draft' => (array)($draftResult['draft'] ?? []),
+                'imported' => false,
+                'skipped' => true,
+            ];
+        }
+
+        $draft = (array)($draftResult['draft'] ?? []);
+        $saveResult = $shareCapitalService->saveShareClass([
+            'company_id' => $companyId,
+            'share_class_id' => 0,
+            'share_class' => (string)($draft['share_class'] ?? ''),
+            'currency' => (string)($draft['currency'] ?? 'GBP'),
+            'quantity' => (string)($draft['quantity'] ?? ''),
+            'aggregate_nominal_value' => (string)($draft['aggregate_nominal_value'] ?? ''),
+            'total_aggregate_unpaid' => (string)($draft['total_aggregate_unpaid'] ?? ''),
+            'source_note' => (string)($draft['source_note'] ?? ''),
+            'document_reference' => (string)($draft['document_reference'] ?? ''),
+        ], 'companies_house');
+
+        return $saveResult + [
+            'draft' => $draft,
+            'imported' => !empty($saveResult['success']),
+            'skipped' => false,
+        ];
+    }
+
     public function parseInitialShareholdings(string $text): array
     {
         $section = $this->initialShareholdingsSection($text);

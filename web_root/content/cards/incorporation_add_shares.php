@@ -57,7 +57,6 @@ final class _incorporation_add_sharesCard extends CardBaseFramework
 
         return '<section class="settings-stack" id="incorporation-add-shares">
             <div class="helper">Enter the Statement of Capital totals from the Companies House incorporation filing. These are to be taken from the original incorporation filing document and the ledger will calculate the per-share values from the totals entered.</div>
-            ' . $this->newincDraftButton($companyId) . '
             ' . $this->shareForm($companyId, $draftShareClass, (array)(($context['company'] ?? [])['settings'] ?? [])) . '
         </section>';
     }
@@ -113,17 +112,6 @@ final class _incorporation_add_sharesCard extends CardBaseFramework
                 </div>
             </form>
         ';
-    }
-
-    private function newincDraftButton(int $companyId): string
-    {
-        return '<form method="post" data-ajax="true" class="actions-row">
-                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-            <input type="hidden" name="card_action" value="Incorporation">
-            <input type="hidden" name="intent" value="populate_incorporation_shares_from_newinc">
-            <input type="hidden" name="company_id" value="' . $companyId . '">
-            <button class="button secondary" type="submit">Pull data from Companies House NEWINC Filled Document</button>
-        </form>';
     }
 
     private function currencyOptions(string $selectedCurrency, array $companySettings): string

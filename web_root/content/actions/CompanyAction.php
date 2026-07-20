@@ -171,6 +171,7 @@ final class CompanyAction implements ActionInterfaceFramework
 
             if ($companyNumber !== '') {
                 $this->appendCompaniesHousePdfDownloadMessages($flashMessages, $companyId, $companyNumber, $environment);
+                $this->appendInitialShareholdingImportMessages($flashMessages, $companyId);
 
                 try {
                     $ingestionResult = (new \eel_accounts\Service\CompaniesHouseAccountsIngestionService(environment: $environment))
@@ -336,6 +337,7 @@ final class CompanyAction implements ActionInterfaceFramework
 
             try {
                 $this->appendCompaniesHousePdfDownloadMessages($flashMessages, $companyId, $companyNumber, $environment);
+                $this->appendInitialShareholdingImportMessages($flashMessages, $companyId);
 
                 $ingestionResult = (new \eel_accounts\Service\CompaniesHouseAccountsIngestionService(environment: $environment))
                     ->ingestForCompany($companyId, $companyNumber);
@@ -1183,6 +1185,36 @@ final class CompanyAction implements ActionInterfaceFramework
                 'type' => 'error',
                 'message' => 'Stored company details were updated, but Companies House PDF download failed: '
                     . $exception->getMessage(),
+            ];
+        }
+    }
+
+    private function appendInitialShareholdingImportMessages(array &$flashMessages, int $companyId): void
+    {
+        try {
+            $result = (new \eel_accounts\Service\CompaniesHouseInitialShareholdingExtractionService())
+                ->importForCompany($companyId);
+        } catch (Throwable $exception) {
+            $flashMessages[] = [
+                'type' => 'warning',
+                'message' => 'Formation share capital could not be imported automatically: ' . $exception->getMessage(),
+            ];
+
+            return;
+        }
+
+        if (!empty($result['success'])) {
+            if (!empty($result['imported'])) {
+                $flashMessages[] = 'Formation share capital was imported automatically from the NEWINC incorporation document.';
+            }
+
+            return;
+        }
+
+        foreach ((array)($result['errors'] ?? []) as $error) {
+            $flashMessages[] = [
+                'type' => 'warning',
+                'message' => 'Formation share capital could not be imported automatically: ' . (string)$error,
             ];
         }
     }

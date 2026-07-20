@@ -14,7 +14,7 @@ $harness->run(_incorporation_add_sharesCard::class, static function (
     GeneratedServiceClassTestHarness $harness,
     _incorporation_add_sharesCard $card
 ): void {
-    $harness->check(_incorporation_add_sharesCard::class, 'renders NEWINC PDF draft button and populates the new share form from context', static function () use ($harness, $card): void {
+    $harness->check(_incorporation_add_sharesCard::class, 'renders the new share form from context without a manual NEWINC import button', static function () use ($harness, $card): void {
         $html = $card->render([
             'company' => [
                 'id' => 7,
@@ -42,8 +42,8 @@ $harness->run(_incorporation_add_sharesCard::class, static function (
             ],
         ]);
 
-        $harness->assertSame(true, str_contains($html, 'populate_incorporation_shares_from_newinc'));
-        $harness->assertSame(true, str_contains($html, 'Pull data from Companies House NEWINC Filled Document'));
+        $harness->assertSame(false, str_contains($html, 'populate_incorporation_shares_from_newinc'));
+        $harness->assertSame(false, str_contains($html, 'Pull data from Companies House NEWINC Filled Document'));
         $harness->assertSame(true, str_contains($html, 'id="incorporation-share-form-new"'));
         $harness->assertSame(true, str_contains($html, 'class="incorporation-share-add-form"'));
         $harness->assertSame(true, str_contains($html, 'class="incorporation-share-fields"'));

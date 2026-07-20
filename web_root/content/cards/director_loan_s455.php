@@ -88,7 +88,7 @@ final class _director_loan_s455Card extends CardBaseFramework
             . '<h4 class="card-title">Identify a participator-loan source payment</h4><div class="form-grid">'
             . '<div class="form-row"><label>Transaction ID</label><input class="input" type="number" min="1" name="transaction_id" required></div>'
             . '<div class="form-row"><label>Ownership party</label><select class="select" name="party_id" required><option value="">Select</option>' . $partyOptions . '</select></div></div>'
-            . '<div class="helper">The party must have an effective shareholder, participator, or associate role on the transaction date.</div>'
+            . '<div class="helper">The party must have an effective share allocation, Participator relationship, or Associate relationship on the transaction date.</div>'
             . '<div class="actions-row"><button class="button primary" type="submit">Mark source payment</button></div></form>';
     }
 

@@ -312,9 +312,24 @@ final class _transaction_searchCard extends CardBaseFramework
                     </select>
                 </div>
                 <button class="button primary" type="submit">Search</button>
+                ' . $this->accountingPeriodPill($context) . '
                 <a class="button" href="?page=transactions&amp;show_card=transaction_search">Clear</a>
             </div>
         </form>';
+    }
+
+    private function accountingPeriodPill(array $context): string
+    {
+        $period = (array)($context['accounting_period'] ?? []);
+        $start = trim((string)($period['period_start'] ?? ''));
+        $end = trim((string)($period['period_end'] ?? ''));
+        if ($start === '' || $end === '') {
+            return '<span class="pill">No accounting period selected</span>';
+        }
+
+        return '<span class="pill">Accounting period: '
+            . HelperFramework::escape(HelperFramework::displayDate($start) . ' to ' . HelperFramework::displayDate($end))
+            . '</span>';
     }
 
     private function periodPostConfirmationForm(array $context, array $queryRows): string

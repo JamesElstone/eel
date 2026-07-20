@@ -93,7 +93,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
     private function acknowledgementHtml(bool $acknowledged, string $state, string $acknowledgedAt, string $acknowledgedBy, string $note, int $companyId, int $accountingPeriodId): string
     {
         return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
-            'subject' => 'Corporation Tax basis',
+            'subject' => 'Corporation Tax basis, including the associated-company count for every CT period',
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
             'acknowledged' => $acknowledged,

@@ -91,6 +91,10 @@ final class IncorporationShareCapitalService
         if ($companyId <= 0) {
             $errors[] = 'Select a company before saving incorporation shares.';
         }
+        $periodEnd = $this->accountingPeriodEnd($companyId, (int)($input['accounting_period_id'] ?? 0));
+        if ($periodEnd !== null && substr((string)$normalised['issued_at'], 0, 10) > $periodEnd) {
+            $errors[] = 'The share issue date must be on or before the selected accounting period end date.';
+        }
 
         if ($errors !== []) {
             return ['success' => false, 'errors' => $errors];
@@ -587,6 +591,15 @@ final class IncorporationShareCapitalService
         $timestamp = strtotime($value);
 
         return $timestamp === false ? date('Y-m-d H:i:s') : date('Y-m-d H:i:s', $timestamp);
+    }
+
+    private function accountingPeriodEnd(int $companyId, int $accountingPeriodId): ?string
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return null;
+        }
+        $period = (new \eel_accounts\Repository\AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        return is_array($period) ? trim((string)($period['period_end'] ?? '')) ?: null : null;
     }
 
     private function validateShareInput(array $input): array

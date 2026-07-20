@@ -115,13 +115,7 @@ final class _incorporation_payment_matchingCard extends CardBaseFramework
             ? '<div class="helper warning">' . HelperFramework::escape($this->invalidMatchMessage((string)($currentMatch['match_invalid_reason'] ?? ''))) . '</div>'
             : '';
         $matchHtml = is_array($currentMatch)
-            ? '<div class="panel-soft">
-                <div class="eyebrow">Current match</div>
-                <div><strong>' . HelperFramework::escape($this->money($settings, $currentMatch['matched_amount'] ?? 0)) . '</strong> from transaction #' . (int)($currentMatch['transaction_id'] ?? 0) . '</div>
-                <div class="helper">' . HelperFramework::escape(HelperFramework::displayDate((string)($currentMatch['txn_date'] ?? '')) . ' ' . (string)($currentMatch['description'] ?? '')) . '</div>
-                ' . $matchWarning . '
-                ' . $this->clearForm($companyId, $shareClassId) . '
-            </div>'
+            ? $this->currentMatchesTable($companyId, $shareClassId, $settings, $currentMatch, $matchWarning)
             : '<div class="helper">No incoming share payment has been matched yet.</div>';
 
         return '<div class="panel-soft stack">
@@ -137,6 +131,33 @@ final class _incorporation_payment_matchingCard extends CardBaseFramework
             ' . ($hasValidMatch ? '' : '<h3 class="card-title">Candidate Payments</h3>'
                 . $this->configuredCandidateTable($companyId, $settings, $shareClass, $context)->render($context, $this->tableHiddenFields($context))) . '
         </div>';
+    }
+
+    private function currentMatchesTable(
+        int $companyId,
+        int $shareClassId,
+        array $settings,
+        array $currentMatch,
+        string $matchWarning
+    ): string {
+        return '<div class="panel-soft"><h4 class="card-title">Current Matches</h4>'
+            . '<table class="table"><thead><tr><th>Date</th><th>Transaction</th><th>Description</th><th>Amount</th><th>Manage</th></tr></thead><tbody><tr>'
+            . '<td>' . HelperFramework::escape(HelperFramework::displayDate((string)($currentMatch['txn_date'] ?? ''))) . '</td>'
+            . '<td>' . $this->transactionSearchLink((int)($currentMatch['transaction_id'] ?? 0)) . '</td>'
+            . '<td>' . HelperFramework::escape((string)($currentMatch['description'] ?? '')) . '</td>'
+            . '<td class="numeric">' . HelperFramework::escape($this->money($settings, $currentMatch['matched_amount'] ?? 0)) . '</td>'
+            . '<td class="cell-fit">' . $this->clearForm($companyId, $shareClassId) . '</td>'
+            . '</tr></tbody></table>' . $matchWarning . '</div>';
+    }
+
+    private function transactionSearchLink(int $transactionId): string
+    {
+        if ($transactionId <= 0) {
+            return '—';
+        }
+
+        return '<a class="button" href="?page=transactions&amp;show_card=transaction_search&amp;transaction_search_keyword='
+            . $transactionId . '">#' . $transactionId . '</a>';
     }
 
     private function configuredCandidateTable(int $companyId, array $settings, array $shareClass, array $context): TableFramework

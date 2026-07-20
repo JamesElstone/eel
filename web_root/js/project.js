@@ -179,6 +179,42 @@
         });
     }
 
+    function initialiseShareAllocationForms(root = document) {
+        const forms = root.querySelectorAll ? root.querySelectorAll('[data-share-allocation-form="true"]') : [];
+
+        forms.forEach((form) => {
+            if (!(form instanceof HTMLFormElement) || form.dataset.shareAllocationBound === '1') {
+                return;
+            }
+
+            const issuedShares = form.querySelector('[data-share-allocation-issued-shares]');
+            const quantity = form.querySelector('[data-share-allocation-quantity]');
+            if (!(issuedShares instanceof HTMLSelectElement) || !(quantity instanceof HTMLInputElement)) {
+                return;
+            }
+
+            const sync = () => {
+                const remaining = Number(issuedShares.selectedOptions[0]?.dataset.remainingShares || '');
+                if (Number.isFinite(remaining) && remaining > 0) {
+                    quantity.max = String(remaining);
+                    quantity.disabled = false;
+                    if (Number(quantity.value) > remaining) {
+                        quantity.value = String(remaining);
+                    }
+                    return;
+                }
+
+                quantity.value = '';
+                quantity.removeAttribute('max');
+                quantity.disabled = issuedShares.value !== '';
+            };
+
+            issuedShares.addEventListener('change', sync);
+            form.dataset.shareAllocationBound = '1';
+            sync();
+        });
+    }
+
     function initialiseHmrcNoticeRequiredFields(root = document) {
         const stateSections = root.querySelectorAll
             ? root.querySelectorAll('[data-state-target="save_hmrc_notice_button"][data-state-fields]')
@@ -1196,6 +1232,7 @@
     initialiseManualAssetLegalWarnings(document);
     initialiseDefaultCondensedTables(document);
     initialiseOwnershipPartyForms(document);
+    initialiseShareAllocationForms(document);
     initialiseHmrcNoticeRequiredFields(document);
     initialiseDirectorLoanOffsetAcknowledgements(document);
     initialiseUploadProcessingIndicators(document);
@@ -1216,6 +1253,7 @@
                     initialiseManualAssetLegalWarnings(node);
                     initialiseDefaultCondensedTables(node);
                     initialiseOwnershipPartyForms(node);
+                    initialiseShareAllocationForms(node);
                     initialiseHmrcNoticeRequiredFields(node);
                     initialiseDirectorLoanOffsetAcknowledgements(node);
                     initialiseUploadProcessingIndicators(node);

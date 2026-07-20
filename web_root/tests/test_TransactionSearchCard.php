@@ -24,6 +24,10 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
                 'default_currency_symbol' => '&#36;',
             ],
         ],
+        'accounting_period' => [
+            'period_start' => '2026-04-01',
+            'period_end' => '2027-03-31',
+        ],
         'transaction_search' => [
             'keyword' => 'Northstar',
             'amount' => '42.50',
@@ -103,6 +107,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $harness->assertTrue(str_contains($html, '<option value="post_pending">Awaiting post confirmation</option>'));
         $harness->assertTrue(str_contains($html, '<option value="confirmed">Correct</option>'));
         $harness->assertTrue(str_contains($html, 'name="_invalidate_fact" value="transaction.search"'));
+        $harness->assertTrue(str_contains($html, 'Accounting period: 01/04/26 to 31/03/27'));
         $harness->assertSame(false, str_contains($html, 'Post All Checked Auto Decisions'));
         $harness->assertSame(false, str_contains($html, 'name="post_scope" value="period"'));
         $harness->assertTrue(str_contains($html, '<option value="">Any</option>'));

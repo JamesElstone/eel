@@ -110,29 +110,32 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
             'cards[]' => (array)($context['page']['page_cards'] ?? []),
         ]);
 
-        return $this->newShareForm($companyId, $formId)
-            . str_replace('</tbody>', $this->newShareRow($formId, (array)($context['incorporation_shares']['draft_share_class'] ?? []), (array)(($context['company'] ?? [])['settings'] ?? [])) . '</tbody>', $tableHtml);
+        $accountingPeriod = (array)($context['accounting_period'] ?? []);
+        return $this->newShareForm($companyId, $formId, (int)($accountingPeriod['id'] ?? 0))
+            . str_replace('</tbody>', $this->newShareRow($formId, (array)($context['incorporation_shares']['draft_share_class'] ?? []), (array)(($context['company'] ?? [])['settings'] ?? []), (string)($accountingPeriod['period_end'] ?? '')) . '</tbody>', $tableHtml);
     }
 
-    private function newShareForm(int $companyId, string $formId): string
+    private function newShareForm(int $companyId, string $formId, int $accountingPeriodId): string
     {
         return '<form id="' . HelperFramework::escape($formId) . '" method="post" data-ajax="true">'
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="Incorporation">'
             . '<input type="hidden" name="intent" value="save_incorporation_shares">'
             . '<input type="hidden" name="company_id" value="' . $companyId . '">'
+            . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
             . '<input type="hidden" name="share_class_id" value="0">'
             . '</form>';
     }
 
-    private function newShareRow(string $formId, array $draftShareClass, array $companySettings): string
+    private function newShareRow(string $formId, array $draftShareClass, array $companySettings, string $periodEnd): string
     {
         $field = static fn(string $name): string => HelperFramework::escape($formId . '-' . $name);
         $form = HelperFramework::escape($formId);
         $currency = strtoupper(trim((string)($draftShareClass['currency'] ?? 'GBP'))) ?: 'GBP';
+        $issueDate = $this->newShareIssueDate($draftShareClass, $periodEnd);
 
         return '<tr class="incorporation-share-new-row">'
-            . '<td class="helper">Current time</td>'
+            . '<td><input class="input" form="' . $form . '" type="date" id="' . $field('issued-at') . '" name="issued_at" value="' . HelperFramework::escape($issueDate) . '" max="' . HelperFramework::escape($periodEnd) . '" aria-label="Date" required></td>'
             . '<td><input class="input" form="' . $form . '" id="' . $field('share-class') . '" name="share_class" value="' . HelperFramework::escape((string)($draftShareClass['share_class'] ?? 'Ordinary')) . '" aria-label="Class of shares"></td>'
             . '<td><select class="select" form="' . $form . '" id="' . $field('currency') . '" name="currency" aria-label="Currency">' . $this->currencyOptions($currency, $companySettings) . '</select></td>'
             . '<td><input class="input" form="' . $form . '" inputmode="numeric" pattern="[0-9,]*" id="' . $field('quantity') . '" name="quantity" value="' . HelperFramework::escape((string)($draftShareClass['quantity'] ?? '')) . '" aria-label="Number allotted"></td>'
@@ -159,6 +162,16 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
         $timestamp = strtotime((string)$issuedAt);
 
         return $timestamp === false ? '' : date('Y-m-d', $timestamp);
+    }
+
+    private function newShareIssueDate(array $draftShareClass, string $periodEnd): string
+    {
+        $draftDate = $this->issueDate($draftShareClass['issued_at'] ?? null);
+        if ($draftDate !== '') {
+            return $draftDate;
+        }
+        $today = date('Y-m-d');
+        return $periodEnd !== '' && $periodEnd < $today ? $periodEnd : $today;
     }
 
     private function table(array $context): TableFramework

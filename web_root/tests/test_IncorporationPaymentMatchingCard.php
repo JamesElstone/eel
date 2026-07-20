@@ -60,6 +60,10 @@ $harness->run(_incorporation_payment_matchingCard::class, static function (
         $harness->assertSame(true, str_contains($html, 'Candidate Payments'));
         $harness->assertSame(false, str_contains($html, 'Candidate receipts'));
         $harness->assertSame(true, str_contains($html, 're-categorised away from Ordinary Share Capital'));
+        $harness->assertSame(true, str_contains($html, 'Current Matches'));
+        $harness->assertSame(true, str_contains($html, '<th>Transaction</th>'));
+        $harness->assertSame(true, str_contains($html, '<th>Manage</th>'));
+        $harness->assertSame(true, str_contains($html, 'class="button" href="?page=transactions&amp;show_card=transaction_search&amp;transaction_search_keyword=44">#44</a>'));
         $harness->assertSame(true, str_contains($html, 'clear_share_payment_match'));
         $harness->assertSame(true, str_contains($html, 'match_share_payment'));
         $harness->assertSame(false, str_contains($html, 'save_incorporation_shares'));

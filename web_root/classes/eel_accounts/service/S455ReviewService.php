@@ -59,6 +59,8 @@ final class S455ReviewService
         $liabilitiesByParty = [];
         $movements = [];
         $errors = (array)$evidence['errors'];
+        $ownership = new OwnershipPartyService();
+        $eligibility = [];
         foreach ((array)$evidence['rows'] as $row) {
             $partyId = (int)($row['party_id'] ?? 0);
             $date = (string)$row['txn_date'];
@@ -67,6 +69,15 @@ final class S455ReviewService
                     $errors[] = 'Loan transaction #' . (int)($row['transaction_id'] ?? 0) . ' is not linked to a confirmed ownership party.';
                 }
                 continue;
+            }
+            $eligibilityKey = $partyId . '|' . $date;
+            if (!array_key_exists($eligibilityKey, $eligibility)) {
+                $eligibility[$eligibilityKey] = $ownership->isEffectiveParty($companyId, $partyId, $date);
+            }
+            if (!$eligibility[$eligibilityKey]) {
+                $errors[] = 'Loan transaction #' . (int)($row['transaction_id'] ?? 0)
+                    . ' is linked to ' . (string)($row['party_name'] ?? 'a party')
+                    . ', but that party is not an effective shareholder, participator, or associate on ' . $date . '.';
             }
             $amount = round((float)($row['amount'] ?? 0), 2);
             $kind = (string)$row['cash_direction'];

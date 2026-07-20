@@ -15,7 +15,7 @@ final class GoldenCardComparisonRegistry
             'dividends' => ['dividend_capacity', 'dividend_vouchers', 'dividend_declare', 'dividend_history'],
             'expense_claims' => ['expense_statistics', 'expense_claimants', 'expense_add_claimant', 'expenses_state', 'expense_claim_create', 'expense_claim_editor', 'expense_search', 'year_end_expenses_confirmation'],
             'HMRC' => ['hmrc_obligations_summary', 'hmrc_obligations_action_panel', 'hmrc_obligations_timeline', 'hmrc_obligations_period_checklist', 'hmrc_fines_table', 'hmrc_submission_unavailable'],
-            'incorporation' => ['incorporation_status', 'incorporation_share_capital', 'incorporation_payment_matching', 'incorporation_ownership_parties'],
+            'incorporation' => ['incorporation_status', 'incorporation_share_capital', 'incorporation_payment_matching', 'incorporation_ownership_parties', 'incorporation_share_allocation', 'incorporation_relationships'],
             'disclosures' => ['ixbrl_readiness', 'ixbrl_accounts_disclosures', 'ixbrl_accounts_mapping', 'ixbrl_facts_preview', 'ixbrl_generation'],
             'journal' => ['journals_list', 'journal_cut_offs', 'journal_cut_off_confirmation'],
             'minutes' => ['company_minutes'],

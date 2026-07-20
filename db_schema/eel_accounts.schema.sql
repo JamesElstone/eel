@@ -923,7 +923,7 @@ CREATE TABLE `company_party_roles` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
   `party_id` bigint(20) NOT NULL,
-  `role_type` enum('shareholder','participator','associate') NOT NULL,
+  `role_type` enum('participator','associate') NOT NULL,
   `effective_from` date NOT NULL,
   `effective_to` date DEFAULT NULL,
   `source_note` text DEFAULT NULL,
@@ -3463,6 +3463,8 @@ SELECT DISTINCT existing_permission.`role_id`, new_card.`card_key`
 FROM `role_card_permissions` existing_permission
 INNER JOIN (
   SELECT 'incorporation_ownership_parties' AS `card_key`
+  UNION ALL SELECT 'incorporation_share_allocation'
+  UNION ALL SELECT 'incorporation_relationships'
   UNION ALL SELECT 'tax_ct_period_facts'
   UNION ALL SELECT 'director_loan_s455'
 ) new_card

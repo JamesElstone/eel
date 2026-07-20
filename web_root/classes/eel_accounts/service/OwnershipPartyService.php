@@ -12,7 +12,7 @@ namespace eel_accounts\Service;
 final class OwnershipPartyService
 {
     private const PARTY_TYPES = ['individual', 'company', 'trust', 'partnership', 'other'];
-    private const ROLE_TYPES = ['shareholder', 'participator', 'associate'];
+    private const ROLE_TYPES = ['participator', 'associate'];
 
     public function fetchSummary(int $companyId, ?string $asOf = null): array
     {
@@ -90,16 +90,36 @@ final class OwnershipPartyService
         }
 
         return \InterfaceDB::fetchAll(
-            "SELECT DISTINCT p.id, p.legal_name, p.party_type, p.linked_director_id
+            "SELECT p.id, p.legal_name, p.party_type, p.linked_director_id
              FROM company_parties p
-             INNER JOIN company_party_roles r ON r.party_id = p.id AND r.company_id = p.company_id
              WHERE p.company_id = :company_id
-               AND r.role_type IN ('shareholder','participator','associate')
-               AND r.effective_from <= :as_of
-               AND (r.effective_to IS NULL OR r.effective_to >= :as_of)
+               AND (
+                   EXISTS (
+                       SELECT 1 FROM company_shareholdings h
+                       WHERE h.company_id = p.company_id AND h.party_id = p.id
+                         AND h.effective_from <= :as_of
+                         AND (h.effective_to IS NULL OR h.effective_to >= :as_of)
+                   ) OR EXISTS (
+                       SELECT 1 FROM company_party_roles r
+                       WHERE r.company_id = p.company_id AND r.party_id = p.id
+                         AND r.role_type IN ('participator','associate')
+                         AND r.effective_from <= :as_of
+                         AND (r.effective_to IS NULL OR r.effective_to >= :as_of)
+                   )
+               )
              ORDER BY p.legal_name, p.id",
             ['company_id' => $companyId, 'as_of' => $date]
         );
+    }
+
+    public function isEffectiveParty(int $companyId, int $partyId, string $date): bool
+    {
+        foreach ($this->effectiveParties($companyId, $date) as $party) {
+            if ((int)$party['id'] === $partyId) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public function requireEffectiveParty(int $companyId, int $partyId, string $date): array
@@ -189,10 +209,10 @@ final class OwnershipPartyService
         $roleType = strtolower(trim((string)($input['role_type'] ?? '')));
         $from = $this->normaliseDate($input['effective_from'] ?? null);
         $to = $this->normaliseDate($input['effective_to'] ?? null);
-        $this->requireParty($companyId, $partyId);
         if (!in_array($roleType, self::ROLE_TYPES, true) || $from === null || ($to !== null && $to < $from)) {
             return ['success' => false, 'errors' => ['Enter a valid role and effective date range.']];
         }
+        $this->requireParty($companyId, $partyId);
         $this->assertRangeUnlocked($companyId, $from, $to);
         \InterfaceDB::prepareExecute(
             'INSERT INTO company_party_roles (company_id, party_id, role_type, effective_from, effective_to, source_note)
@@ -218,8 +238,21 @@ final class OwnershipPartyService
         $from = $this->normaliseDate($input['effective_from'] ?? null);
         $to = $this->normaliseDate($input['effective_to'] ?? null);
         $this->requireParty($companyId, $partyId);
+        if ($from === null && $this->shareClassBelongsToCompany($companyId, $shareClassId)) {
+            $from = $this->shareIssueDate($companyId, $shareClassId);
+        }
         if ($quantity <= 0 || $from === null || ($to !== null && $to < $from) || !$this->shareClassBelongsToCompany($companyId, $shareClassId)) {
-            return ['success' => false, 'errors' => ['Enter a valid share class, positive quantity, and effective date range.']];
+            return ['success' => false, 'errors' => ['Select issued shares with an issue date and enter a positive quantity.']];
+        }
+        $issuedQuantity = $this->issuedShareQuantity($companyId, $shareClassId);
+        $allocatedQuantity = $this->allocatedShareQuantity($companyId, $shareClassId, $from);
+        if ($issuedQuantity === null || $allocatedQuantity + $quantity > $issuedQuantity) {
+            $remaining = max(0, (int)$issuedQuantity - $allocatedQuantity);
+            return ['success' => false, 'errors' => ['Only ' . $remaining . ' shares remain available to allocate from this issue.']];
+        }
+        $periodEnd = $this->accountingPeriodEnd($companyId, (int)($input['accounting_period_id'] ?? 0));
+        if ($periodEnd !== null && $from > $periodEnd) {
+            return ['success' => false, 'errors' => ['The shareholding effective date must be on or before the selected accounting period end date.']];
         }
         $this->assertRangeUnlocked($companyId, $from, $to);
         \InterfaceDB::prepareExecute(
@@ -238,99 +271,6 @@ final class OwnershipPartyService
                 'source_note' => $this->nullableText($input['source_note'] ?? null),
             ]
         );
-        return ['success' => true, 'errors' => []];
-    }
-
-    /**
-     * Records initial director shareholdings, creating the linked ownership party
-     * and shareholder role where they do not already exist.
-     */
-    public function saveDirectorShareholdings(int $companyId, int $shareClassId, array $shareholdings): array
-    {
-        if ($companyId <= 0 || !$this->schemaAvailable() || !$this->shareClassBelongsToCompany($companyId, $shareClassId)) {
-            return ['success' => false, 'errors' => ['Select a company and a valid share class.']];
-        }
-
-        $entries = [];
-        foreach ($shareholdings as $directorId => $shareholding) {
-            $quantity = (int)($shareholding['quantity'] ?? 0);
-            if ($quantity <= 0) {
-                continue;
-            }
-            $issuedOn = $this->normaliseDate($shareholding['issued_on'] ?? null);
-            if ($issuedOn === null) {
-                return ['success' => false, 'errors' => ['Enter the issue date for every director with shares.']];
-            }
-            $entries[] = ['director_id' => (int)$directorId, 'quantity' => $quantity, 'issued_on' => $issuedOn];
-        }
-        if ($entries === []) {
-            return ['success' => false, 'errors' => ['Enter shares for at least one director.']];
-        }
-
-        $ownsTransaction = !\InterfaceDB::inTransaction();
-        if ($ownsTransaction) {
-            \InterfaceDB::beginTransaction();
-        }
-        try {
-            foreach ($entries as $entry) {
-                $director = (new CompanyDirectorService())->requireForCompany($companyId, $entry['director_id']);
-                $party = \InterfaceDB::fetchOne(
-                    'SELECT id FROM company_parties WHERE company_id = :company_id AND linked_director_id = :director_id ORDER BY id LIMIT 1',
-                    ['company_id' => $companyId, 'director_id' => $entry['director_id']]
-                );
-                $partyId = (int)($party['id'] ?? 0);
-                if ($partyId <= 0) {
-                    $partyResult = $this->saveParty([
-                        'company_id' => $companyId,
-                        'legal_name' => (string)$director['full_name'],
-                        'party_type' => 'individual',
-                        'linked_director_id' => $entry['director_id'],
-                        'source_note' => 'Created when recording a director shareholding.',
-                    ]);
-                    if (empty($partyResult['success'])) {
-                        throw new \RuntimeException((string)(($partyResult['errors'] ?? ['Unable to save ownership party.'])[0]));
-                    }
-                    $partyId = (int)$partyResult['party_id'];
-                }
-
-                $hasShareholderRole = (int)\InterfaceDB::fetchColumn(
-                    "SELECT COUNT(*) FROM company_party_roles WHERE company_id = :company_id AND party_id = :party_id AND role_type = 'shareholder' AND effective_from <= :issued_on AND (effective_to IS NULL OR effective_to >= :issued_on)",
-                    ['company_id' => $companyId, 'party_id' => $partyId, 'issued_on' => $entry['issued_on']]
-                ) > 0;
-                if (!$hasShareholderRole) {
-                    $roleResult = $this->saveRole([
-                        'company_id' => $companyId,
-                        'party_id' => $partyId,
-                        'role_type' => 'shareholder',
-                        'effective_from' => $entry['issued_on'],
-                    ]);
-                    if (empty($roleResult['success'])) {
-                        throw new \RuntimeException((string)(($roleResult['errors'] ?? ['Unable to save shareholder role.'])[0]));
-                    }
-                }
-
-                $holdingResult = $this->saveHolding([
-                    'company_id' => $companyId,
-                    'party_id' => $partyId,
-                    'share_class_id' => $shareClassId,
-                    'quantity' => $entry['quantity'],
-                    'effective_from' => $entry['issued_on'],
-                    'source_note' => 'Recorded from the directors’ shareholdings form.',
-                ]);
-                if (empty($holdingResult['success'])) {
-                    throw new \RuntimeException((string)(($holdingResult['errors'] ?? ['Unable to save shareholding.'])[0]));
-                }
-            }
-            if ($ownsTransaction) {
-                \InterfaceDB::commit();
-            }
-        } catch (\Throwable $exception) {
-            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
-                \InterfaceDB::rollBack();
-            }
-            return ['success' => false, 'errors' => [$exception->getMessage()]];
-        }
-
         return ['success' => true, 'errors' => []];
     }
 
@@ -421,29 +361,10 @@ final class OwnershipPartyService
             return ['available' => false, 'pass' => false, 'errors' => ['The accounting period could not be found.']];
         }
         $reconciliation = $this->reconciliation($companyId, (string)$period['period_end']);
-        $unownedHoldings = (int)\InterfaceDB::fetchColumn(
-            'SELECT COUNT(*)
-             FROM company_shareholdings h
-             WHERE h.company_id = :company_id
-               AND h.effective_from <= :as_of
-               AND (h.effective_to IS NULL OR h.effective_to >= :as_of)
-               AND NOT EXISTS (
-                   SELECT 1 FROM company_party_roles r
-                   WHERE r.company_id = h.company_id
-                     AND r.party_id = h.party_id
-                     AND r.role_type = \'shareholder\'
-                     AND r.effective_from <= :as_of
-                     AND (r.effective_to IS NULL OR r.effective_to >= :as_of)
-               )',
-            ['company_id' => $companyId, 'as_of' => (string)$period['period_end']]
-        );
-        $errors = $unownedHoldings > 0
-            ? [$unownedHoldings . ' effective shareholding record(s) do not have an effective shareholder role at period end.']
-            : [];
         return [
             'available' => true,
-            'pass' => !empty($reconciliation['pass']) && $unownedHoldings === 0,
-            'errors' => $errors,
+            'pass' => !empty($reconciliation['pass']),
+            'errors' => [],
             'reconciliation' => $reconciliation,
         ];
     }
@@ -506,7 +427,7 @@ final class OwnershipPartyService
     private function shareClasses(int $companyId): array
     {
         return \InterfaceDB::fetchAll(
-            'SELECT id, share_class, currency, quantity FROM company_incorporation_share_classes WHERE company_id = :company_id ORDER BY share_class, id',
+            'SELECT id, share_class, currency, quantity, issued_at FROM company_incorporation_share_classes WHERE company_id = :company_id ORDER BY issued_at, share_class, id',
             ['company_id' => $companyId]
         );
     }
@@ -517,6 +438,43 @@ final class OwnershipPartyService
             'SELECT COUNT(*) FROM company_incorporation_share_classes WHERE id = :id AND company_id = :company_id',
             ['id' => $shareClassId, 'company_id' => $companyId]
         ) === 1;
+    }
+
+    private function shareIssueDate(int $companyId, int $shareClassId): ?string
+    {
+        $issuedAt = trim((string)\InterfaceDB::fetchColumn(
+            'SELECT issued_at FROM company_incorporation_share_classes WHERE id = :id AND company_id = :company_id',
+            ['id' => $shareClassId, 'company_id' => $companyId]
+        ));
+        return $this->normaliseDate(substr($issuedAt, 0, 10));
+    }
+
+    private function issuedShareQuantity(int $companyId, int $shareClassId): ?int
+    {
+        $quantity = \InterfaceDB::fetchColumn(
+            'SELECT quantity FROM company_incorporation_share_classes WHERE id = :id AND company_id = :company_id',
+            ['id' => $shareClassId, 'company_id' => $companyId]
+        );
+        return $quantity === false || $quantity === null ? null : (int)$quantity;
+    }
+
+    private function allocatedShareQuantity(int $companyId, int $shareClassId, string $asOf): int
+    {
+        return (int)\InterfaceDB::fetchColumn(
+            'SELECT COALESCE(SUM(quantity), 0) FROM company_shareholdings
+             WHERE company_id = :company_id AND share_class_id = :share_class_id
+               AND effective_from <= :as_of AND (effective_to IS NULL OR effective_to >= :as_of)',
+            ['company_id' => $companyId, 'share_class_id' => $shareClassId, 'as_of' => $asOf]
+        );
+    }
+
+    private function accountingPeriodEnd(int $companyId, int $accountingPeriodId): ?string
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return null;
+        }
+        $period = (new \eel_accounts\Repository\AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        return is_array($period) ? trim((string)($period['period_end'] ?? '')) ?: null : null;
     }
 
     private function effectiveOn(array $row, string $date): bool

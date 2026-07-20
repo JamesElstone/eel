@@ -11,5 +11,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(false, (bool)($summary['available'] ?? true));
             $harness->assertSame([], $service->effectiveParties(0, '2026-07-19'));
         });
+        $harness->check(get_class($service), 'rejects legacy shareholder roles', static function () use ($harness, $service): void {
+            $result = $service->saveRole([
+                'role_type' => 'shareholder',
+                'effective_from' => '2026-07-19',
+            ]);
+            $harness->assertSame(false, (bool)($result['success'] ?? true));
+        });
     }
 );

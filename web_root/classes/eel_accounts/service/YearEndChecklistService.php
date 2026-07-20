@@ -1539,17 +1539,6 @@ final class YearEndChecklistService
             '?page=incorporation&show_card=incorporation_ownership_parties'
         );
         $sections['corporation_tax_readiness'][] = $this->makeCheck(
-            'ct_period_associated_company_facts',
-            'CT-period associated-company facts',
-            'fail',
-            !empty($ctPeriodFacts['available']) && !empty($ctPeriodFacts['all_confirmed']) ? 'pass' : 'fail',
-            !empty($ctPeriodFacts['available']) && !empty($ctPeriodFacts['all_confirmed'])
-                ? 'The associated-company count has been confirmed separately for every CT period.'
-                : (string)(($ctPeriodFacts['errors'] ?? [])[0] ?? 'Confirm the associated-company count for every CT period.'),
-            !empty($ctPeriodFacts['all_confirmed']) ? 'Confirmed' : 'Action required',
-            '?page=corporation_tax&show_card=tax_ct_period_facts'
-        );
-        $sections['corporation_tax_readiness'][] = $this->makeCheck(
             's455_period_review',
             'Participator-loan s455 review',
             'fail',
@@ -1718,8 +1707,6 @@ final class YearEndChecklistService
             && $taxProvisionAvailable
             && !empty($ownershipReadiness['available'])
             && !empty($ownershipReadiness['pass'])
-            && !empty($ctPeriodFacts['available'])
-            && !empty($ctPeriodFacts['all_confirmed'])
             && !empty($s455Review['available'])
             && !empty($s455Review['all_confirmed'])
             && $ctPeriodTaxFactsPass
@@ -1825,9 +1812,6 @@ final class YearEndChecklistService
             if ($summary === [] || empty($summary['available'])) {
                 $errors[] = 'The CT-period computation is unavailable.';
             }
-            if ($fact === [] || empty($fact['confirmed'])) {
-                $errors[] = 'The associated-company facts are not confirmed.';
-            }
             if ($s455Period === [] || empty($s455Period['confirmed'])) {
                 $errors[] = 'The participator-loan s455 review is not confirmed.';
             }
@@ -1878,7 +1862,7 @@ final class YearEndChecklistService
                 'fail',
                 $errors === [] ? 'pass' : 'fail',
                 $errors === []
-                    ? 'The available computation, associated-company facts, s455 review and amount-affecting diagnostics are resolved for this CT period.'
+                    ? 'The available computation, associated-company count, s455 review and amount-affecting diagnostics are resolved for this CT period.'
                     : implode(' ', $errors),
                 $errors === [] ? 'Resolved' : count($errors) . ' issue' . (count($errors) === 1 ? '' : 's'),
                 '?page=corporation_tax&ct_period_id=' . $ctPeriodId . '&show_card=tax_warnings'

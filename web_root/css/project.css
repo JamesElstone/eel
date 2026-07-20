@@ -2929,6 +2929,89 @@
   white-space: nowrap;
 }
 
+.share-allocation-add-form {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.share-allocation-fields {
+  align-items: flex-end;
+  display: flex;
+  flex-flow: row nowrap;
+  gap: 10px;
+  min-width: max-content;
+  padding-bottom: 0;
+}
+
+.share-allocation-fields > .form-row {
+  display: grid;
+  flex: 0 1 fit-content;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  padding-bottom: 0;
+}
+
+.share-allocation-fields .input,
+.share-allocation-fields .select {
+  max-width: 100%;
+  width: fit-content;
+}
+
+.share-allocation-fields [name="party_id"] {
+  min-width: 18ch;
+}
+
+.share-allocation-fields [name="share_class_id"] {
+  min-width: 34ch;
+}
+
+.share-allocation-fields [name="quantity"] {
+  min-width: 8ch;
+  width: 8ch;
+}
+
+.share-allocation-actions {
+  flex: 0 0 auto;
+}
+
+.share-allocation-actions .button {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
+.share-allocation-manage-form {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-width: max-content;
+}
+
+.share-allocation-manage-form .input {
+  min-width: 10rem;
+}
+
+.share-allocation-manage-form .button {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
+.incorporation-relationships-manage-form {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-width: max-content;
+}
+
+.incorporation-relationships-manage-form .input {
+  min-width: 10rem;
+}
+
+.incorporation-relationships-manage-form .button {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
 .transaction-search-amount-total span {
   color: var(--muted);
 }

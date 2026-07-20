@@ -25,7 +25,9 @@ final class IncorporationAction implements ActionInterfaceFramework
         $result = match ($intent) {
             'save_incorporation_shares' => $service->saveShareClass([
                 'company_id' => $companyId,
+                'accounting_period_id' => (int)$request->input('accounting_period_id', 0),
                 'share_class_id' => $shareClassId,
+                'issued_at' => (string)$request->input('issued_at', ''),
                 'share_class' => (string)$request->input('share_class', 'Ordinary'),
                 'currency' => (string)$request->input('currency', 'GBP'),
                 'quantity' => (string)$request->input('quantity', '0'),
@@ -46,6 +48,7 @@ final class IncorporationAction implements ActionInterfaceFramework
             'save_ownership_party' => $ownership->saveParty($this->ownershipPartyInput($request, $companyId)),
             'save_ownership_role' => $ownership->saveRole([
                 'company_id' => $companyId,
+                'accounting_period_id' => (int)$request->input('accounting_period_id', 0),
                 'party_id' => (int)$request->input('party_id', 0),
                 'role_type' => (string)$request->input('role_type', ''),
                 'effective_from' => (string)$request->input('effective_from', ''),
@@ -66,11 +69,6 @@ final class IncorporationAction implements ActionInterfaceFramework
                 'effective_to' => (string)$request->input('effective_to', ''),
                 'source_note' => (string)$request->input('source_note', ''),
             ]),
-            'save_director_shareholdings' => $ownership->saveDirectorShareholdings(
-                $companyId,
-                $shareClassId,
-                (array)$request->input('director_shareholdings', [])
-            ),
             'end_shareholding' => $ownership->endHolding(
                 $companyId,
                 (int)$request->input('holding_id', 0),
@@ -112,7 +110,6 @@ final class IncorporationAction implements ActionInterfaceFramework
             'save_ownership_role' => 'Effective ownership role saved.',
             'end_ownership_role' => 'Ownership role end date saved.',
             'save_shareholding' => 'Shareholding saved.',
-            'save_director_shareholdings' => 'Directors’ shareholdings saved.',
             'end_shareholding' => 'Shareholding end date saved.',
             default => 'Incorporation details updated.',
         };

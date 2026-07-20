@@ -908,6 +908,11 @@
   border-color: #f5d08a;
 }
 
+.summary-card.danger {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
 .summary-card.pl-profit-before-tax-positive {
   background: var(--success-soft);
   border-color: var(--success);
@@ -2115,6 +2120,10 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
+}
+
+.director-loan-reporting-presentation {
+  margin-top: 14px;
 }
 
 .prepayments-summary-grid {

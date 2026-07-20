@@ -115,11 +115,12 @@ final class _director_loan_stateCard extends CardBaseFramework
                 ' . $this->stat('Calculated reclassification', $this->money($settings, $statement['desired_reclassification'] ?? 0)) . '
                 ' . $this->stat('Net position', $this->money($settings, $statement['net_position'] ?? 0)) . '
                 ' . $this->stat('Gross loan asset (not s455)', $this->money($settings, $statement['potential_s455_exposure'] ?? 0)) . '
-                ' . $this->stat('Unattributed entries', (string)($unattributedCount + $invalidCount)) . '
+                ' . $this->stat(
+                    'Unattributed entries',
+                    (string)($unattributedCount + $invalidCount),
+                    ($unattributedCount + $invalidCount) > 0 ? 'danger' : ''
+                ) . '
             </div>
-            ' . (($unattributedCount + $invalidCount) > 0
-                ? ''
-                : '<div class="panel-soft success helper">All Director Loan entries relevant to this period have a valid same-company director attribution.</div>') . '
             ' . $this->reportingPresentation(
                 $presentation,
                 $companyId,
@@ -186,7 +187,7 @@ final class _director_loan_stateCard extends CardBaseFramework
                 . '. This prevents a later settings change from rewriting the period\'s statutory presentation.</div>'
             : '';
 
-        return '<section class="panel-soft settings-stack">
+        return '<section class="panel-soft settings-stack director-loan-reporting-presentation">
             <div class="status-head">
                 <div>
             <div class="eyebrow">Statutory Repayment Presentation</div>
@@ -419,7 +420,7 @@ final class _director_loan_stateCard extends CardBaseFramework
         $sourceLabel = trim((string)($entry['source_label'] ?? ''));
         $sourceUrl = trim((string)($entry['source_url'] ?? ''));
         $sourceHtml = $sourceUrl !== ''
-            ? '<a href="' . HelperFramework::escape($sourceUrl) . '">' . HelperFramework::escape($sourceLabel) . '</a>'
+            ? '<a class="button" href="' . HelperFramework::escape($sourceUrl) . '">' . HelperFramework::escape($sourceLabel) . '</a>'
             : HelperFramework::escape($sourceLabel);
 
         return $sourceHtml . (!empty($entry['is_opening']) ? ' <span class="badge">Opening</span>' : '');
@@ -485,9 +486,9 @@ final class _director_loan_stateCard extends CardBaseFramework
         return (string)($this->invalidationFacts()[0] ?? 'director.loan.state');
     }
 
-    private function stat(string $label, string $value): string
+    private function stat(string $label, string $value, string $class = ''): string
     {
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+        return '<div class="summary-card' . ($class !== '' ? ' ' . HelperFramework::escape($class) : '') . '"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
     }
 
     private function money(array $settings, mixed $value): string

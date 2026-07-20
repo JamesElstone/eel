@@ -10,7 +10,7 @@ declare(strict_types=1);
 final class _director_loan_s455Card extends CardBaseFramework
 {
     public function key(): string { return 'director_loan_s455'; }
-    public function title(): string { return 'Participator loans (s455)'; }
+    public function title(): string { return 'Participator Loans (S455)'; }
     public function helper(array $context): string
     {
         return 'This is a live s455 estimate based on correctly attributed cash transactions and the close-company result calculated from effective ownership and relationship records.';
@@ -36,13 +36,22 @@ final class _director_loan_s455Card extends CardBaseFramework
             return '<div class="helper">' . HelperFramework::escape((string)(($s455['errors'] ?? [])[0] ?? 's455 review is unavailable.')) . '</div>';
         }
         $settings = (array)($context['company']['settings'] ?? []);
-        $html = '<section class="settings-stack" id="director-loan-s455">';
+        $html = '<section class="settings-stack" id="director-loan-s455">
+            <div class="actions-row">
+                <a class="button button-inline" href="https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm60102" target="_blank" rel="noopener noreferrer">HMRC: Close Company Definition</a>
+                <a class="button button-inline" href="https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm61505" target="_blank" rel="noopener noreferrer">HMRC: Section 455</a>
+            </div>';
         foreach ((array)$s455['periods'] as $period) {
             if (empty($period['available'])) { continue; }
             $html .= '<section class="panel-soft settings-stack">'
-                . '<div class="actions-row"><h4 class="card-title">Tax Period ' . (int)$period['sequence_no'] . ': ' . HelperFramework::escape((string)$period['period_start']) . ' to ' . HelperFramework::escape((string)$period['period_end']) . '</h4>'
-                . '<span class="badge ' . (!empty($period['close_status_calculated']) ? 'success' : 'warning') . '">' . (!empty($period['close_status_calculated']) ? 'Close status calculated' : 'Ownership data needed') . '</span></div>'
                 . '<div class="summary-grid">'
+                . $this->stat('Tax Period ' . (int)$period['sequence_no'], (string)$period['period_start'] . ' to ' . (string)$period['period_end'])
+                . $this->stat('Close-Company Status', !empty($period['close_status_calculated']) ? 'Calculated' : 'Ownership data needed')
+                . $this->stat(
+                    's455 exposure',
+                    (float)($period['gross_tax'] ?? 0) > 0 ? 'Exposure' : 'No exposure',
+                    (float)($period['gross_tax'] ?? 0) > 0 ? 'warn' : 'success'
+                )
                 . $this->stat('Closing principal', $this->money($settings, $period['gross_principal']))
                 . $this->stat('Gross s455 tax', $this->money($settings, $period['gross_tax']))
                 . $this->stat('Cash repayments known', $this->money($settings, $period['qualifying_repayments']))
@@ -67,9 +76,9 @@ final class _director_loan_s455Card extends CardBaseFramework
             . ' may reduce this s455 position. A repayment is counted only when the party, timing, and statutory eligibility checks pass. This is guidance only and does not block Year End from closing.</div></div>';
     }
 
-    private function stat(string $label, string $value): string
+    private function stat(string $label, string $value, string $variant = ''): string
     {
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+        return '<div class="summary-card ' . HelperFramework::escape($variant) . '"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
     }
     private function money(array $settings, mixed $value): string
     {

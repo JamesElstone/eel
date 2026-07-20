@@ -118,12 +118,13 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
             </div>
             ' . $warnings . '
             <section class="settings-stack">
-                <div class="eyebrow">Per-director facts</div>
                 ' . $this->positionsTable((array)($review['per_director'] ?? []), $settings) . '
-                <div class="eyebrow">Tax flags</div>
                 ' . $this->taxFlags((array)($review['tax_review'] ?? []), $settings) . '
-                <div class="eyebrow">Calculated control-account reclassification</div>
-                ' . $this->proposedLines((array)($review['proposed_lines'] ?? []), $settings) . '
+                ' . $this->proposedLines(
+                    (array)($review['proposed_lines'] ?? []),
+                    $settings,
+                    [(array)($review['asset_nominal'] ?? []), (array)($review['liability_nominal'] ?? [])]
+                ) . '
             </section>
             ' . $confirmation . '
         </section>';
@@ -131,11 +132,15 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
 
     private function positionsTable(array $positions, array $settings): string
     {
-        if ($positions === []) {
+        $visiblePositions = array_values(array_filter(
+            $positions,
+            fn(mixed $position): bool => !$this->isZeroUnattributedPosition((array)$position)
+        ));
+        if ($visiblePositions === []) {
             return '<div class="helper">No per-director balances.</div>';
         }
         $rows = '';
-        foreach ($positions as $position) {
+        foreach ($visiblePositions as $position) {
             $rows .= '<tr>
                 <td>' . HelperFramework::escape((string)($position['director_name'] ?? 'Unattributed')) . '</td>
                 <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['gross_asset'] ?? 0)) . '</td>
@@ -149,6 +154,27 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
             <thead><tr><th>Director</th><th>Gross asset</th><th>Gross liability</th><th>Reclassification</th><th>Net closing</th><th>Gross asset principal</th></tr></thead>
             <tbody>' . $rows . '</tbody>
         </table></div>';
+    }
+
+    private function isZeroUnattributedPosition(array $position): bool
+    {
+        if (trim((string)($position['director_name'] ?? 'Unattributed')) !== 'Unattributed') {
+            return false;
+        }
+
+        foreach ([
+            'gross_asset',
+            'gross_liability',
+            'desired_reclassification',
+            'net_closing_position',
+            'potential_s455_exposure',
+        ] as $key) {
+            if ((float)($position[$key] ?? 0) !== 0.0) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function taxFlags(array $taxReview, array $settings): string
@@ -171,21 +197,31 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
         </table></div>';
     }
 
-    private function proposedLines(array $lines, array $settings): string
+    private function proposedLines(array $lines, array $settings, array $nominals): string
     {
         if ($lines === []) {
             return '<div class="helper">No additional reclassification journal is currently required.</div>';
         }
+        $nominalLabels = [];
+        foreach ($nominals as $nominal) {
+            $nominalId = (int)($nominal['id'] ?? 0);
+            if ($nominalId > 0) {
+                $nominalLabels[$nominalId] = trim((string)($nominal['code'] ?? '') . ' ' . (string)($nominal['name'] ?? ''));
+            }
+        }
         $rows = '';
         foreach ($lines as $line) {
+            $nominalId = (int)($line['nominal_account_id'] ?? 0);
+            $nominal = $nominalLabels[$nominalId] ?? ('Nominal #' . $nominalId);
             $rows .= '<tr>
                 <td>' . HelperFramework::escape((string)($line['line_description'] ?? '')) . '</td>
+                <td>' . HelperFramework::escape($nominal) . '</td>
                 <td class="numeric">' . HelperFramework::escape($this->money($settings, $line['debit'] ?? 0)) . '</td>
                 <td class="numeric">' . HelperFramework::escape($this->money($settings, $line['credit'] ?? 0)) . '</td>
             </tr>';
         }
         return '<div class="panel-soft table-scroll"><table>
-            <thead><tr><th>Attributed line</th><th>Debit</th><th>Credit</th></tr></thead>
+            <thead><tr><th>Attributed line</th><th>Nominal</th><th>Debit</th><th>Credit</th></tr></thead>
             <tbody>' . $rows . '</tbody>
         </table></div>';
     }

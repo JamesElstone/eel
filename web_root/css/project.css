@@ -908,6 +908,11 @@
   border-color: #f5d08a;
 }
 
+.summary-card.success {
+  background: var(--success-soft);
+  border-color: var(--success);
+}
+
 .summary-card.danger {
   background: var(--danger-soft);
   border-color: var(--danger);

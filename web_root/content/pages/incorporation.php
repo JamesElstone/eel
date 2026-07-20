@@ -35,6 +35,7 @@ final class _incorporation extends PageContextFramework
             'incorporation_status',
             'incorporation_share_capital',
             'incorporation_payment_matching',
+            'director_loan_directors',
             'incorporation_ownership_parties',
             'incorporation_share_allocation',
             'incorporation_relationships',
@@ -55,6 +56,12 @@ final class _incorporation extends PageContextFramework
                 'tab' => 'Paying Up',
                 'cards' => [
                     'incorporation_payment_matching',
+                ],
+            ],
+            [
+                'tab' => 'Directors',
+                'cards' => [
+                    'director_loan_directors',
                 ],
             ],
             [

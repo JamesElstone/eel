@@ -10,11 +10,11 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-$harness->run(_incorporation_add_sharesCard::class, static function (
+$harness->run(_incorporation_sharesCard::class, static function (
     GeneratedServiceClassTestHarness $harness,
-    _incorporation_add_sharesCard $card
+    _incorporation_sharesCard $card
 ): void {
-    $harness->check(_incorporation_add_sharesCard::class, 'renders the new share form from context without a manual NEWINC import button', static function () use ($harness, $card): void {
+    $harness->check(_incorporation_sharesCard::class, 'renders the new share form from context without a manual NEWINC import button', static function () use ($harness, $card): void {
         $html = $card->render([
             'company' => [
                 'id' => 7,
@@ -23,7 +23,7 @@ $harness->run(_incorporation_add_sharesCard::class, static function (
                     'default_currency_symbol' => '&#163;',
                 ],
             ],
-            'incorporation_add_shares' => [
+            'incorporation_shares' => [
                 'draft_share_class' => [
                     'share_class' => 'ORDINARY',
                     'currency' => 'GBP',

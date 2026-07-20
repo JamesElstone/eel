@@ -29,6 +29,6 @@ $harness->run(_incorporation::class, static function (
         }
 
         $harness->assertSame(['incorporation_status', 'incorporation_share_capital'], $statusCards);
-        $harness->assertSame(['incorporation_add_shares'], $sharesCards);
+        $harness->assertSame(['incorporation_shares'], $sharesCards);
     });
 });

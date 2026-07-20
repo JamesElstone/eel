@@ -7,11 +7,11 @@
  */
 declare(strict_types=1);
 
-final class _incorporation_add_sharesCard extends CardBaseFramework
+final class _incorporation_sharesCard extends CardBaseFramework
 {
     public function key(): string
     {
-        return 'incorporation_add_shares';
+        return 'incorporation_shares';
     }
 
     public function title(): string
@@ -53,7 +53,7 @@ final class _incorporation_add_sharesCard extends CardBaseFramework
             return '<section class="settings-stack"><div class="helper">' . HelperFramework::escape((string)(($summary['errors'] ?? [])[0] ?? 'Formation share capital is not available.')) . '</div></section>';
         }
 
-        $draftShareClass = (array)($context['incorporation_add_shares']['draft_share_class'] ?? []);
+        $draftShareClass = (array)($context['incorporation_shares']['draft_share_class'] ?? []);
 
         return '<section class="settings-stack" id="incorporation-add-shares">
             <div class="helper">Enter the Statement of Capital totals from the Companies House incorporation filing. These are to be taken from the original incorporation filing document and the ledger will calculate the per-share values from the totals entered.</div>

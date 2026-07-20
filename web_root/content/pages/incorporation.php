@@ -33,7 +33,7 @@ final class _incorporation extends PageContextFramework
     {
         return [
             'incorporation_status',
-            'incorporation_add_shares',
+            'incorporation_shares',
             'incorporation_share_capital',
             'incorporation_payment_matching',
             'incorporation_ownership_parties',
@@ -53,7 +53,7 @@ final class _incorporation extends PageContextFramework
             [
                 'tab' => 'Shares',
                 'cards' => [
-                    'incorporation_add_shares',
+                    'incorporation_shares',
                 ],
             ],
             [

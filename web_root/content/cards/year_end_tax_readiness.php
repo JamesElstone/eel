@@ -201,13 +201,13 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         $html = '<section class="stack">
             <h3 class="card-title">CT Periods In This Accounting Period</h3>';
         foreach ($periods as $period) {
-            $html .= $this->ctPeriodHtml($companySettings, $period, $companyId, $accountingPeriodId);
+            $html .= $this->ctPeriodHtml($companySettings, $period);
         }
 
         return $html . '</section>';
     }
 
-    private function ctPeriodHtml(array $companySettings, array $period, int $companyId, int $accountingPeriodId): string
+    private function ctPeriodHtml(array $companySettings, array $period): string
     {
         $diagnostics = array_values(array_filter(
             (array)($period['hard_gate_diagnostics'] ?? []),
@@ -217,7 +217,6 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         $basisStatus = $diagnosticCount === 0
             ? $this->badge('success', 'Ready')
             : $this->badge('danger', $diagnosticCount . ' action' . ($diagnosticCount === 1 ? '' : 's') . ' required');
-        $periodButton = $this->periodTaxWorkflowButton($period, $companyId, $accountingPeriodId);
 
         return '<section class="panel-soft stack">
             <h3 class="card-title">' . HelperFramework::escape($this->periodTitle($period)) . '</h3>
@@ -239,7 +238,6 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             <h3 class="card-title">Rate Bands</h3>
             ' . $this->rateBandsHtml($companySettings, $period) . '
             ' . $this->diagnosticsHtml($diagnostics, 'Adjustments required for this CT period', 'No amount-affecting issues remain for this CT period.') . '
-            ' . ($periodButton !== '' ? '<div class="actions-row">' . $periodButton . '</div>' : '') . '
         </section>';
     }
 
@@ -311,25 +309,6 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             <h3 class="card-title">Tax Basis Review And Approval</h3>
             ' . $acknowledgementForm . '
         </section>';
-    }
-
-    private function periodTaxWorkflowButton(array $period, int $companyId, int $accountingPeriodId): string
-    {
-        $ctPeriodId = (int)($period['ct_period_id'] ?? 0);
-        if ($ctPeriodId <= 0) {
-            return '';
-        }
-
-        return \eel_accounts\Renderer\WorkflowHandoffRenderer::button(
-            'tax',
-            'Open this CT period in Tax Workflow',
-            [
-                'company_id' => $companyId,
-                'accounting_period_id' => $accountingPeriodId,
-                'ct_period_id' => $ctPeriodId,
-            ],
-            'button'
-        );
     }
 
     private function summaryGrid(array $items): string

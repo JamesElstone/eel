@@ -68,12 +68,13 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             ? $review['acknowledgement']
             : null;
         $mismatchCount = (int)($review['mismatch_count'] ?? 0);
+        $ctPeriodFacts = (array)($review['ct_period_facts'] ?? []);
         $filing = (array)($context['services']['companiesHouseAccountsFiling'] ?? []);
 
         return '<section class="settings-stack" id="year-end-companies-house-comparison">
-            ' . $this->renderComparisonPanel($comparison, $companySettings) . '
-            ' . $this->renderAcknowledgementPanel($companyId, $accountingPeriodId, $comparison, $acknowledgement, $access, $mismatchCount, $review) . '
             ' . $this->renderAccountsFilingPanel($companyId, $accountingPeriodId, $filing, $access) . '
+            ' . $this->renderComparisonPanel($comparison, $companySettings) . '
+            ' . $this->renderAcknowledgementPanel($companyId, $accountingPeriodId, $comparison, $acknowledgement, $access, $mismatchCount, $review, $ctPeriodFacts) . '
         </section>';
     }
 
@@ -101,7 +102,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         $submission = is_array($filing['submission'] ?? null) ? $filing['submission'] : null;
         $status = $this->submissionStatus($submission);
 
-        $summary = '<div class="summary-grid">'
+        $summary = '<div class="summary-grid four">'
             . $this->metric('Accounting period', $this->periodLabel((array)($filing['accounting_period'] ?? [])))
             . $this->metric('Original filing document', $this->originalDocumentLabel($eligibility))
             . $this->metric('Detected filing channel', HelperFramework::labelFromKey((string)($eligibility['detected_channel'] ?? $eligibility['original_filing_channel'] ?? 'unknown'), '_'))
@@ -261,7 +262,8 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         ?array $acknowledgement,
         array $access,
         int $mismatchCount,
-        array $review
+        array $review,
+        array $ctPeriodFacts = []
     ): string {
         if (empty($comparison['available'])) {
             return $this->panel('Approval', '<div class="helper">A Companies House filing must be available before a mismatch can be approved.</div>');
@@ -272,13 +274,17 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         }
 
         $isAcknowledged = !empty($acknowledgement['current']);
+        $ctPeriodBlockers = $this->ctPeriodConfirmationBlockers($ctPeriodFacts);
+        $disabledReason = $ctPeriodBlockers !== []
+            ? implode(' ', $ctPeriodBlockers)
+            : (string)($review['acknowledgement_blocked_reason'] ?? '');
         $form = \eel_accounts\Renderer\YearEndApprovalRenderer::render([
             'subject' => 'Companies House comparison',
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
             'locked' => !empty($access['is_locked']),
-            'disabled' => empty($review['can_acknowledge']),
-            'disabledReason' => (string)($review['acknowledgement_blocked_reason'] ?? ''),
+            'disabled' => empty($review['can_acknowledge']) || $ctPeriodBlockers !== [],
+            'disabledReason' => $disabledReason,
             'acknowledged' => $isAcknowledged,
             'acknowledgementState' => (string)($acknowledgement['state'] ?? ''),
             'acknowledgedAt' => (string)($acknowledgement['acknowledged_at'] ?? ''),
@@ -300,6 +306,31 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             </div>
             ' . $form . '
         </section>';
+    }
+
+    private function ctPeriodConfirmationBlockers(array $facts): array
+    {
+        if (!array_key_exists('available', $facts)) {
+            return [];
+        }
+
+        if (empty($facts['available'])) {
+            $error = trim((string)(($facts['errors'] ?? [])[0] ?? ''));
+            return $error !== '' ? [$error] : ['Confirm the associated-company count for every CT period.'];
+        }
+
+        $blockers = [];
+        foreach ((array)($facts['periods'] ?? []) as $period) {
+            if (!is_array($period) || !empty($period['confirmed'])) {
+                continue;
+            }
+
+            $sequence = (int)($period['display_sequence_no'] ?? $period['sequence_no'] ?? 0);
+            $label = $sequence > 0 ? 'CT Period ' . $sequence : 'CT period';
+            $blockers[] = $label . ': Confirm the associated-company count for this CT period.';
+        }
+
+        return array_values(array_unique($blockers));
     }
 
     private function eligibilityForm(int $companyId, int $accountingPeriodId, array $eligibility, bool $locked = false): string
@@ -454,7 +485,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             $productionSoftware = trim((string)($evidence['production_software'] ?? ''));
             $filingDate = trim((string)($evidence['filing_date'] ?? ''));
             $receivedAt = trim((string)($evidence['received_at'] ?? ''));
-            $html = '<div class="summary-grid">'
+            $html = '<div class="summary-grid four">'
                 . $this->metric('Original filing software', $productionSoftware)
                 . $this->metric('Original filing date', $filingDate)
                 . $this->metric('Eligibility response reference', $reference)
@@ -479,7 +510,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             return '';
         }
 
-        return '<div class="summary-grid">'
+        return '<div class="summary-grid four">'
             . $this->metric('Prepared file', (string)($artifact['filename'] ?? $artifact['generated_filename'] ?? ''))
             . $this->metric('Artifact SHA-256', (string)($artifact['sha256'] ?? $artifact['revised_artifact_sha256'] ?? $artifact['output_sha256'] ?? ''))
             . $this->metric('Basis SHA-256', (string)($artifact['basis_hash'] ?? ''))
@@ -494,7 +525,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             return '';
         }
 
-        return '<div class="summary-grid">'
+        return '<div class="summary-grid four">'
             . $this->metric('Submission number', (string)($submission['submission_number'] ?? ''))
             . $this->metric('Gateway reference', (string)($submission['gateway_reference'] ?? $submission['gateway_submission_reference'] ?? $submission['companies_house_reference'] ?? ''))
             . $this->metric('Gateway status', (string)($submission['gateway_status'] ?? $submission['raw_gateway_status'] ?? $submission['raw_status'] ?? $submission['lifecycle'] ?? $submission['status'] ?? ''))

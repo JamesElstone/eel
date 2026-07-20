@@ -35,6 +35,31 @@ $harness->run(_year_end_companies_house_comparisonCard::class, static function (
         $harness->assertSame(true, str_contains($html, 'name="intent" value="acknowledge_review_check"'));
         $harness->assertSame(true, str_contains($html, 'name="check_code" value="companies_house_mismatch_acknowledgement"'));
         $harness->assertSame(true, str_contains($html, 'I confirm that I have reviewed the Companies House comparison shown above and approve it as accurate for Year End.'));
+        $harness->assertSame(true, strpos($html, 'Companies House Revised Accounts Filing') < strpos($html, 'Companies House Comparison'));
+        $harness->assertSame(true, str_contains($html, 'class="summary-grid four"'));
+    });
+
+    $harness->check(_year_end_companies_house_comparisonCard::class, 'disables approval until all CT-period associated-company counts are confirmed', static function () use ($harness, $card): void {
+        $context = companiesHouseComparisonCardContext(null);
+        $context['services']['companiesHouseComparisonReview']['can_acknowledge'] = true;
+        $context['services']['companiesHouseComparisonReview']['ct_period_facts'] = [
+            'available' => true,
+            'periods' => [
+                ['sequence_no' => 1, 'confirmed' => false],
+                ['sequence_no' => 2, 'confirmed' => false],
+            ],
+        ];
+
+        $html = $card->render($context);
+        $harness->assertSame(true, str_contains($html, 'CT Period 1: Confirm the associated-company count for this CT period.'));
+        $harness->assertSame(true, str_contains($html, 'CT Period 2: Confirm the associated-company count for this CT period.'));
+        $harness->assertSame(true, str_contains($html, 'data-year-end-ack-checkbox disabled'));
+        $harness->assertSame(true, str_contains($html, 'title="CT Period 1: Confirm the associated-company count for this CT period. CT Period 2: Confirm the associated-company count for this CT period."'));
+
+        $context['services']['companiesHouseComparisonReview']['ct_period_facts']['periods'][0]['confirmed'] = true;
+        $context['services']['companiesHouseComparisonReview']['ct_period_facts']['periods'][1]['confirmed'] = true;
+        $confirmedHtml = $card->render($context);
+        $harness->assertSame(false, str_contains($confirmedHtml, 'data-year-end-ack-checkbox disabled'));
     });
 
     $harness->check(_year_end_companies_house_comparisonCard::class, 'renders no-approval and unavailable states', static function () use ($harness, $card): void {

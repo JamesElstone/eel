@@ -408,6 +408,8 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         }
         $harness->assertTrue(!empty($provision['success']));
 
+        goldenSaveReserveReviewForClose($companyId, $periodId);
+
         $checklist = new \eel_accounts\Service\YearEndChecklistService();
         $acknowledgement = $checklist->saveRetainedEarningsCloseAcknowledgement(
             $companyId,
@@ -581,6 +583,8 @@ function goldenClosePeriodForFollowingPeriodControl(
         ->postProvisionsForAccountingPeriod($companyId, $accountingPeriodId, 'golden_following_period_control');
     $harness->assertTrue(!empty($provision['success']));
 
+    goldenSaveReserveReviewForClose($companyId, $accountingPeriodId);
+
     $acknowledgement = (new \eel_accounts\Service\YearEndChecklistService())
         ->saveRetainedEarningsCloseAcknowledgement(
             $companyId,
@@ -602,6 +606,50 @@ function goldenClosePeriodForFollowingPeriodControl(
     $lock = (new \eel_accounts\Service\YearEndLockService())
         ->lockPeriod($companyId, $accountingPeriodId, 'golden_following_period_control');
     $harness->assertTrue(!empty($lock['success']));
+}
+
+function goldenSaveReserveReviewForClose(int $companyId, int $accountingPeriodId): void
+{
+    $period = InterfaceDB::fetchOne(
+        'SELECT period_end
+         FROM accounting_periods
+         WHERE company_id = :company_id
+           AND id = :accounting_period_id
+         LIMIT 1',
+        [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+        ]
+    );
+    $review = (new \eel_accounts\Service\DividendReserveClassificationService())
+        ->fetchReviewContext($companyId, $accountingPeriodId, (string)($period['period_end'] ?? ''));
+    if (empty($review['available'])) {
+        throw new RuntimeException('AP ' . $accountingPeriodId . ' reserve review unavailable: ' . implode(' ', (array)($review['errors'] ?? [])));
+    }
+
+    $treatments = [];
+    foreach ((array)($review['rows'] ?? []) as $row) {
+        $nominalId = (int)($row['nominal_account_id'] ?? 0);
+        if ($nominalId > 0) {
+            $treatments[(string)$nominalId] = (string)($row['treatment'] ?? 'unknown');
+        }
+    }
+
+    $saved = (new \eel_accounts\Service\DividendReserveClassificationService())->saveReview(
+        $companyId,
+        $accountingPeriodId,
+        $treatments,
+        'golden_year_end_test',
+        (string)($period['period_end'] ?? '')
+    );
+    if (empty($saved['success'])) {
+        throw new RuntimeException('AP ' . $accountingPeriodId . ' reserve review save failed: ' . implode(' ', (array)($saved['errors'] ?? [])));
+    }
+    $verified = (new \eel_accounts\Service\DividendReserveClassificationService())
+        ->fetchReviewContext($companyId, $accountingPeriodId, (string)($period['period_end'] ?? ''));
+    if (empty($verified['snapshot_current'])) {
+        throw new RuntimeException('AP ' . $accountingPeriodId . ' reserve review did not remain current after save.');
+    }
 }
 
 /** @return array<string, mixed> */

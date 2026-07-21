@@ -34,7 +34,6 @@ final class _tax_artifacts extends PageContextFramework
         return [
             'tax_rates_ct',
             'tax_rates_ct600_rim',
-            'tax_rates_ct_computation_taxonomy',
             'tax_rates_vat',
             'tax_thresholds_vat',
             'tax_treatment_rules',

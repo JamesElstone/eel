@@ -68,7 +68,9 @@ require_once PROJECT_ROOT . 'third_party' . DIRECTORY_SEPARATOR . 'arelle' . DIR
         $harness->check(ArelleIxbrlValidator::class, 'uses project-local package cache and offline flags', static function () use ($harness): void {
             $fixture = arelleValidatorFixture('success');
             $validator = new ArelleIxbrlValidator($fixture['config'], $fixture['root']);
-            $result = $validator->validate($fixture['ixbrl']);
+            $additionalPackage = $fixture['root'] . DIRECTORY_SEPARATOR . 'hmrc-ct.zip';
+            file_put_contents($additionalPackage, 'verified HMRC package fixture');
+            $result = $validator->validate($fixture['ixbrl'], [$additionalPackage]);
             $log = (string)file_get_contents((string)($result['log_path'] ?? ''));
 
             $harness->assertTrue(str_contains($log, '--cacheDirectory'));
@@ -76,6 +78,17 @@ require_once PROJECT_ROOT . 'third_party' . DIRECTORY_SEPARATOR . 'arelle' . DIR
             $harness->assertTrue(str_contains($log, '--validationExitCode'));
             $harness->assertTrue(str_contains($log, '--package'));
             $harness->assertTrue(str_contains($log, 'test-taxonomy.zip'));
+            $harness->assertTrue(str_contains($log, 'hmrc-ct.zip'));
+        });
+
+        $harness->check(ArelleIxbrlValidator::class, 'rejects missing or non-ZIP additional packages', static function () use ($harness): void {
+            $fixture = arelleValidatorFixture('success');
+            $validator = new ArelleIxbrlValidator($fixture['config'], $fixture['root']);
+            foreach ([$fixture['root'] . DIRECTORY_SEPARATOR . 'missing.zip', 'https://www.hmrc.gov.uk/taxonomy.zip'] as $package) {
+                $result = $validator->validate($fixture['ixbrl'], [$package]);
+                $harness->assertSame(false, $result['ok'] ?? true);
+                $harness->assertSame('error', $result['status'] ?? '');
+            }
         });
     }
 );

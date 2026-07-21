@@ -44,6 +44,18 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             (array)$computation2024['natural_identity']
         );
         $h->assertSame((array)$computation['mappings'], (array)$computation2024['mappings']);
+        $computationMappings = [];
+        foreach ((array)$computation2024['mappings'] as $mapping) {
+            $computationMappings[(string)$mapping['local_name']] = $mapping;
+        }
+        $h->assertSame(
+            \eel_accounts\Service\CtFilingMappingService::CONTEXT_HMRC_CT_UK_TRADE,
+            (string)$computationMappings['ProfitLossPerAccounts']['context_profile']
+        );
+        $h->assertSame(
+            \eel_accounts\Service\CtFilingMappingService::CONTEXT_HMRC_CT_COMPANY,
+            (string)$computationMappings['NetTaxPayable']['context_profile']
+        );
         $h->assertSame(null, $service->reviewedTemplate(\eel_accounts\Service\CtFilingMappingService::TARGET_COMPUTATION, '2026', 'V1.0.0'));
     });
     $h->check($service::class, 'fails both targets closed without a sealed frozen model', static function () use ($h, $service): void {

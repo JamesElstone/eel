@@ -67,7 +67,13 @@ final class IxbrlGeneratorService
         if ($numeric) {
             $decimals = (string)($fact['decimals'] ?? '2');
             $attributes .= ' unitRef="' . $this->escape((string)($fact['unit_ref'] ?? 'GBP')) . '" decimals="' . $this->escape($decimals) . '"';
-            return '<ix:nonFraction' . $attributes . '>' . number_format((float)$fact['value'], max(0, (int)$decimals), '.', '') . '</ix:nonFraction>';
+            $precision = max(0, (int)$decimals);
+            $value = (float)$fact['value'];
+            $rendered = number_format(abs($value), $precision, '.', '');
+            if ($value < 0.0 && (float)$rendered !== 0.0) {
+                $attributes .= ' sign="-"';
+            }
+            return '<ix:nonFraction' . $attributes . '>' . $rendered . '</ix:nonFraction>';
         }
         return '<ix:nonNumeric' . $attributes . '>' . $this->escape((string)$fact['value']) . '</ix:nonNumeric>';
     }
@@ -203,8 +209,28 @@ final class IxbrlGeneratorService
             }
             $dimensions .= '<xbrldi:explicitMember dimension="' . $this->escape((string)$dimension) . '">' . $this->escape((string)$member) . '</xbrldi:explicitMember>';
         }
-        $scenario = $dimensions === '' ? '' : '<xbrli:scenario>' . $dimensions . '</xbrli:scenario>';
-        return '<xbrli:context id="' . $this->escape($id) . '"><xbrli:entity><xbrli:identifier scheme="' . $this->escape((string)($context['scheme'] ?? 'http://www.companieshouse.gov.uk/')) . '">' . $this->escape($identifier) . '</xbrli:identifier></xbrli:entity><xbrli:period>' . $period . '</xbrli:period>' . $scenario . '</xbrli:context>';
+        foreach ((array)($context['typed_dimensions'] ?? []) as $typedDimension) {
+            $typedDimension = (array)$typedDimension;
+            $dimension = trim((string)($typedDimension['dimension'] ?? ''));
+            $domain = trim((string)($typedDimension['domain'] ?? ''));
+            $value = trim((string)($typedDimension['value'] ?? ''));
+            if (!$this->validQName($dimension) || !$this->validQName($domain) || $value === '') {
+                throw new \InvalidArgumentException('Invalid typed XBRL dimension mapping.');
+            }
+            $dimensions .= '<xbrldi:typedMember dimension="' . $this->escape($dimension) . '"><' . $domain . '>'
+                . $this->escape($value) . '</' . $domain . '></xbrldi:typedMember>';
+        }
+        $container = trim((string)($context['dimension_container'] ?? 'scenario')) ?: 'scenario';
+        if (!in_array($container, ['segment', 'scenario'], true)) {
+            throw new \InvalidArgumentException('Invalid XBRL dimension container.');
+        }
+        $segment = $dimensions !== '' && $container === 'segment'
+            ? '<xbrli:segment>' . $dimensions . '</xbrli:segment>'
+            : '';
+        $scenario = $dimensions !== '' && $container === 'scenario'
+            ? '<xbrli:scenario>' . $dimensions . '</xbrli:scenario>'
+            : '';
+        return '<xbrli:context id="' . $this->escape($id) . '"><xbrli:entity><xbrli:identifier scheme="' . $this->escape((string)($context['scheme'] ?? 'http://www.companieshouse.gov.uk/')) . '">' . $this->escape($identifier) . '</xbrli:identifier>' . $segment . '</xbrli:entity><xbrli:period>' . $period . '</xbrli:period>' . $scenario . '</xbrli:context>';
     }
 
     private function renderUnit(array $unit): string

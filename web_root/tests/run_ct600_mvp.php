@@ -16,6 +16,8 @@ $patterns = [
     'test_CsrfFormCoverage.php',
     'test_HmrcCorporationTaxSubmissionService.php',
     'test_HmrcCtComputationCatalogueService.php',
+    'test_HmrcCtComputationDownloadService.php',
+    'test_HmrcCtComputationPackageDeleteService.php',
     'test_HmrcCtTransactionEngineClient.php',
     'test_HmrcSubmissionPackageService.php',
     'test_HmrcSubmissionUi.php',

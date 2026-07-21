@@ -96,7 +96,7 @@ final class IxbrlExternalValidationService
     }
 
     /** Validate an immutable derived artifact without changing an ordinary generation run. */
-    public function validateArtifact(string $path): array
+    public function validateArtifact(string $path, array $taxonomyPackages = []): array
     {
         $path = trim($path);
         if ($path === '' || !is_file($path)) {
@@ -136,7 +136,7 @@ final class IxbrlExternalValidationService
 
         require_once $adapterPath;
         $validator = new \ArelleIxbrlValidator($this->validatorConfigPath, $this->validatorRootPath);
-        $result = $validator->validate($path);
+        $result = $validator->validate($path, $taxonomyPackages);
         $hashAfterValidation = hash_file('sha256', $path);
         if (!is_string($hashAfterValidation)
             || !hash_equals($hashBeforeValidation, strtolower($hashAfterValidation))) {

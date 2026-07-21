@@ -17,7 +17,7 @@ final class ArelleIxbrlValidator
     ) {
     }
 
-    public function validate(string $ixbrlPath): array
+    public function validate(string $ixbrlPath, array $additionalPackages = []): array
     {
         $started = microtime(true);
         $ixbrlPath = trim($ixbrlPath);
@@ -55,12 +55,23 @@ final class ArelleIxbrlValidator
             return $this->result(false, 'error', ['Could not create Arelle cache directory.'], [], '', $started);
         }
 
+        $packages = $this->configuredPackages((array)($config['packages'] ?? []));
+        foreach ($additionalPackages as $additionalPackage) {
+            $additionalPackage = trim((string)$additionalPackage);
+            $resolved = $additionalPackage !== '' ? realpath($additionalPackage) : false;
+            if ($resolved === false || !is_file($resolved) || strtolower(pathinfo($resolved, PATHINFO_EXTENSION)) !== 'zip') {
+                return $this->result(false, 'error', ['An additional Arelle taxonomy package is missing or invalid.'], [], '', $started);
+            }
+            $packages[] = $resolved;
+        }
+        $packages = array_values(array_unique($packages));
+
         $timeout = max(1, (int)($config['timeout_seconds'] ?? 180));
         $command = $this->buildCommand(
             $arelleCommand,
             $ixbrlPath,
             (array)($config['flags'] ?? ['--validate']),
-            $this->configuredPackages((array)($config['packages'] ?? [])),
+            $packages,
             $cachePath,
             !array_key_exists('offline', $config) || !empty($config['offline'])
         );

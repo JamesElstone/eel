@@ -20,6 +20,38 @@ final class HmrcCtRimZipService
         return $xsdCount;
     }
 
+    /** Return the safely-normalised uncompressed file inventory without extracting it. */
+    public function inventory(string $path): array
+    {
+        $content = $this->readArchive($path);
+        [$endRecord, $contentLength] = $this->endRecord($content);
+        $offset = (int)$endRecord['central_offset'];
+        $entries = [];
+        for ($index = 0; $index < (int)$endRecord['entries_total']; $index++) {
+            [$header, $entryName, $nextOffset] = $this->centralEntry($content, $offset, $contentLength);
+            $entries[] = [$header, $entryName];
+            $offset = $nextOffset;
+        }
+        $topLevelPrefix = $this->commonTopLevelPrefix($entries);
+        $inventory = [];
+        foreach ($entries as [$header, $archiveEntryName]) {
+            $entryName = $topLevelPrefix !== null ? substr($archiveEntryName, strlen($topLevelPrefix)) : $archiveEntryName;
+            if ($entryName === '' || str_ends_with($entryName, '/')) {
+                continue;
+            }
+            $data = $this->entryData($content, $contentLength, $header);
+            if (isset($inventory[$entryName])) {
+                throw new \RuntimeException('The HMRC CT600 RIM archive contains duplicate file paths.');
+            }
+            $inventory[$entryName] = [
+                'archive_path' => $entryName,
+                'file_size' => strlen($data),
+                'sha256' => hash('sha256', $data),
+            ];
+        }
+        return array_values($inventory);
+    }
+
     public function extract(string $path, string $directory): void
     {
         $content = $this->readArchive($path);
@@ -40,22 +72,7 @@ final class HmrcCtRimZipService
             $entryName = $topLevelPrefix !== null ? substr($archiveEntryName, strlen($topLevelPrefix)) : $archiveEntryName;
             if ($entryName === '') { continue; }
             $target = $this->safeTarget($directory, $entryName);
-            $localOffset = (int)$header['local_offset'];
-            if ($localOffset < 0 || $localOffset + 30 > $contentLength || substr($content, $localOffset, 4) !== "PK\x03\x04") {
-                throw new \RuntimeException('The HMRC CT600 RIM archive entry is malformed.');
-            }
-            $localHeader = unpack('Vsignature/vversion/vflags/vmethod/vtime/vdate/Vcrc/Vcompressed_size/Vuncompressed_size/vname_length/vextra_length', substr($content, $localOffset, 30));
-            if (!is_array($localHeader)) { throw new \RuntimeException('The HMRC CT600 RIM archive entry is malformed.'); }
-            $dataOffset = $localOffset + 30 + (int)$localHeader['name_length'] + (int)$localHeader['extra_length'];
-            $compressedSize = (int)$header['compressed_size'];
-            $uncompressedSize = (int)$header['uncompressed_size'];
-            if ($dataOffset < 0 || $compressedSize < 0 || $dataOffset + $compressedSize > $contentLength) { throw new \RuntimeException('The HMRC CT600 RIM archive entry is malformed.'); }
-            $entryData = substr($content, $dataOffset, $compressedSize);
-            $method = (int)$header['method'];
-            $data = $method === 0 ? $entryData : ($method === 8 ? @gzinflate($entryData) : false);
-            if (!is_string($data) || strlen($data) !== $uncompressedSize || !hash_equals(sprintf('%08x', (int)$header['crc']), hash('crc32b', $data))) {
-                throw new \RuntimeException('The HMRC CT600 RIM archive entry failed verification.');
-            }
+            $data = $this->entryData($content, $contentLength, $header);
             if (str_ends_with($entryName, '/')) {
                 if (!is_dir($target) && !mkdir($target, 0775, true) && !is_dir($target)) { throw new \RuntimeException('The HMRC CT600 RIM archive directory could not be created.'); }
             } else {
@@ -124,6 +141,30 @@ final class HmrcCtRimZipService
         $entryName = str_replace('\\', '/', substr($content, $nameOffset, $nameLength));
         $this->assertSafeEntryName($entryName);
         return [$header, $entryName, $nextOffset];
+    }
+
+    private function entryData(string $content, int $contentLength, array $header): string
+    {
+        $localOffset = (int)$header['local_offset'];
+        if ($localOffset < 0 || $localOffset + 30 > $contentLength || substr($content, $localOffset, 4) !== "PK\x03\x04") {
+            throw new \RuntimeException('The HMRC CT600 RIM archive entry is malformed.');
+        }
+        $localHeader = unpack('Vsignature/vversion/vflags/vmethod/vtime/vdate/Vcrc/Vcompressed_size/Vuncompressed_size/vname_length/vextra_length', substr($content, $localOffset, 30));
+        if (!is_array($localHeader)) { throw new \RuntimeException('The HMRC CT600 RIM archive entry is malformed.'); }
+        $dataOffset = $localOffset + 30 + (int)$localHeader['name_length'] + (int)$localHeader['extra_length'];
+        $compressedSize = (int)$header['compressed_size'];
+        $uncompressedSize = (int)$header['uncompressed_size'];
+        if ($dataOffset < 0 || $compressedSize < 0 || $dataOffset + $compressedSize > $contentLength) {
+            throw new \RuntimeException('The HMRC CT600 RIM archive entry is malformed.');
+        }
+        $entryData = substr($content, $dataOffset, $compressedSize);
+        $method = (int)$header['method'];
+        $data = $method === 0 ? $entryData : ($method === 8 ? @gzinflate($entryData) : false);
+        if (!is_string($data) || strlen($data) !== $uncompressedSize
+            || !hash_equals(sprintf('%08x', (int)$header['crc']), hash('crc32b', $data))) {
+            throw new \RuntimeException('The HMRC CT600 RIM archive entry failed verification.');
+        }
+        return $data;
     }
 
     private function safeTarget(string $directory, string $entryName): string

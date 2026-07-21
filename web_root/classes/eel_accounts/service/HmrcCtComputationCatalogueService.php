@@ -54,6 +54,28 @@ final class HmrcCtComputationCatalogueService
         if ($files === []) {
             return null;
         }
+        $root = realpath(trim((string)($package['local_path'] ?? '')));
+        if ($root === false || !is_dir($root)) {
+            return null;
+        }
+        $actualPaths = [];
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS)
+        );
+        foreach ($iterator as $file) {
+            if ($file->isFile()) {
+                $actualPaths[] = str_replace('\\', '/', substr($file->getPathname(), strlen($root) + 1));
+            }
+        }
+        $recordedPaths = array_map(
+            static fn(array $file): string => str_replace('\\', '/', (string)($file['archive_path'] ?? '')),
+            $files
+        );
+        sort($actualPaths, SORT_STRING);
+        sort($recordedPaths, SORT_STRING);
+        if ($actualPaths !== $recordedPaths) {
+            return null;
+        }
         foreach ($files as $file) {
             $path = (string)($file['extracted_path'] ?? '');
             $recorded = strtolower((string)($file['sha256'] ?? ''));
@@ -64,6 +86,58 @@ final class HmrcCtComputationCatalogueService
         }
         $actual = $this->inventoryHash($files);
         return hash_equals($expected, $actual) ? $actual : null;
+    }
+
+    /**
+     * Return the published entry-point URI and the matching verified taxonomy
+     * package required by an offline validator.
+     *
+     * @return array{schema_ref:string, package_archive:string, package_hash:string}
+     */
+    public function validationResources(array $package): array
+    {
+        if ((string)($package['package_state'] ?? '') !== 'verified') {
+            throw new \RuntimeException('The selected computation taxonomy is not verified.');
+        }
+        $packageHash = $this->verifiedPackageHash($package);
+        if ($packageHash === null) {
+            throw new \RuntimeException('The selected computation-taxonomy inventory is missing or has changed.');
+        }
+        $root = realpath(trim((string)($package['local_path'] ?? '')));
+        if ($root === false || !is_dir($root)) {
+            throw new \RuntimeException('The selected computation-taxonomy directory was not found.');
+        }
+        $manifest = $this->inspectDirectory($root);
+        $schemaRef = trim((string)($manifest['entry_point_href'] ?? ''));
+        $manifestEntryPoint = realpath(trim((string)($manifest['entry_point_path'] ?? '')));
+        $storedEntryPoint = realpath(trim((string)($package['entry_point_path'] ?? '')));
+        $parts = $schemaRef !== '' ? parse_url($schemaRef) : false;
+        if (empty($manifest['has_manifest'])
+            || !is_array($parts)
+            || !in_array(strtolower((string)($parts['scheme'] ?? '')), ['http', 'https'], true)
+            || strtolower((string)($parts['host'] ?? '')) !== 'www.hmrc.gov.uk'
+            || $manifestEntryPoint === false
+            || $storedEntryPoint === false
+            || !hash_equals(strtolower($storedEntryPoint), strtolower($manifestEntryPoint))
+            || (string)($manifest['taxonomy_version'] ?? '') !== (string)($package['taxonomy_version'] ?? '')
+            || strtoupper((string)($manifest['artifact_version'] ?? '')) !== strtoupper((string)($package['artifact_version'] ?? ''))) {
+            throw new \RuntimeException('The verified computation taxonomy no longer matches its HMRC package manifest.');
+        }
+
+        $archive = dirname($root) . DIRECTORY_SEPARATOR . basename($root) . '.zip';
+        $archive = realpath($archive);
+        if ($archive === false || !is_file($archive)) {
+            throw new \RuntimeException('The verified computation-taxonomy ZIP is missing. Refresh and install the HMRC filing artefacts.');
+        }
+        if (!$this->archiveMatchesInventory($archive, $packageHash)) {
+            throw new \RuntimeException('The computation-taxonomy ZIP does not match the verified extracted inventory.');
+        }
+
+        return [
+            'schema_ref' => $schemaRef,
+            'package_archive' => $archive,
+            'package_hash' => $packageHash,
+        ];
     }
 
     public function savePackage(array $input): int
@@ -485,5 +559,15 @@ final class HmrcCtComputationCatalogueService
             $files
         );
         return hash('sha256', (string)json_encode($inventory, JSON_UNESCAPED_SLASHES));
+    }
+
+    private function archiveMatchesInventory(string $archivePath, string $expectedHash): bool
+    {
+        try {
+            $files = (new HmrcCtRimZipService())->inventory($archivePath);
+        } catch (\Throwable) {
+            return false;
+        }
+        return $files !== [] && hash_equals(strtolower($expectedHash), $this->inventoryHash($files));
     }
 }

@@ -8,6 +8,8 @@ final class CtFilingMappingService
 {
     public const TARGET_RIM = 'ct600_rim';
     public const TARGET_COMPUTATION = 'computation_ixbrl';
+    public const CONTEXT_HMRC_CT_COMPANY = 'hmrc_ct_company';
+    public const CONTEXT_HMRC_CT_UK_TRADE = 'hmrc_ct_uk_trade';
 
     public function fetchProfiles(?string $targetType = null): array
     {
@@ -110,22 +112,22 @@ final class CtFilingMappingService
                 'profile_name' => 'reviewed_ct_computation_' . $version . '_v1_0_0',
                 'natural_identity' => ['taxonomy_version' => $version, 'artifact_version' => 'V1.0.0'],
                 'mappings' => [
-                    ['canonical_key' => 'identity.company_name', 'local_name' => 'CompanyName', 'period_type' => 'instant'],
-                    ['canonical_key' => 'filing_identity.utr', 'local_name' => 'TaxReference', 'period_type' => 'instant'],
-                    ['canonical_key' => 'ct_period.start_date', 'local_name' => 'StartOfPeriodCoveredByReturn', 'period_type' => 'instant'],
-                    ['canonical_key' => 'ct_period.end_date', 'local_name' => 'EndOfPeriodCoveredByReturn', 'period_type' => 'instant'],
-                    ['canonical_key' => 'computation.summary.accounting_profit', 'local_name' => 'ProfitLossPerAccounts'],
-                    ['canonical_key' => 'computation.summary.disallowable_add_backs', 'local_name' => 'AdjustmentsMiscellaneousExpensesPerAccounts'],
-                    ['canonical_key' => 'computation.summary.capital_add_backs', 'local_name' => 'AdjustmentsCapitalExpenditure'],
-                    ['canonical_key' => 'computation.summary.depreciation_add_back', 'local_name' => 'AdjustmentsDepreciation'],
-                    ['canonical_key' => 'computation.summary.capital_allowances', 'local_name' => 'TotalCapitalAllowances'],
-                    ['canonical_key' => 'computation.summary.taxable_before_losses', 'local_name' => 'ProfitsBeforeOtherDeductionsAndReliefs'],
-                    ['canonical_key' => 'computation.summary.losses_brought_forward', 'local_name' => 'TradingLossesBroughtForward'],
-                    ['canonical_key' => 'computation.summary.losses_used', 'local_name' => 'TradingLossesBroughtForwardAmountUsedAgainstTotalProfits'],
-                    ['canonical_key' => 'computation.summary.taxable_profit', 'local_name' => 'TotalProfitsChargeableToCorporationTax'],
-                    ['canonical_key' => 'computation.summary.ordinary_corporation_tax', 'local_name' => 'CorporationTaxChargeable'],
-                    ['canonical_key' => 'computation.summary.s455_tax', 'local_name' => 'TaxPayableOnLoansToParticipators'],
-                    ['canonical_key' => 'computation.summary.estimated_corporation_tax', 'local_name' => 'NetTaxPayable'],
+                    ['canonical_key' => 'identity.company_name', 'local_name' => 'CompanyName', 'period_type' => 'instant', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
+                    ['canonical_key' => 'filing_identity.utr', 'local_name' => 'TaxReference', 'period_type' => 'instant', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
+                    ['canonical_key' => 'ct_period.start_date', 'local_name' => 'StartOfPeriodCoveredByReturn', 'period_type' => 'instant', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
+                    ['canonical_key' => 'ct_period.end_date', 'local_name' => 'EndOfPeriodCoveredByReturn', 'period_type' => 'instant', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
+                    ['canonical_key' => 'computation.summary.accounting_profit', 'local_name' => 'ProfitLossPerAccounts', 'context_profile' => self::CONTEXT_HMRC_CT_UK_TRADE],
+                    ['canonical_key' => 'computation.summary.disallowable_add_backs', 'local_name' => 'AdjustmentsMiscellaneousExpensesPerAccounts', 'context_profile' => self::CONTEXT_HMRC_CT_UK_TRADE],
+                    ['canonical_key' => 'computation.summary.capital_add_backs', 'local_name' => 'AdjustmentsCapitalExpenditure', 'context_profile' => self::CONTEXT_HMRC_CT_UK_TRADE],
+                    ['canonical_key' => 'computation.summary.depreciation_add_back', 'local_name' => 'AdjustmentsDepreciation', 'context_profile' => self::CONTEXT_HMRC_CT_UK_TRADE],
+                    ['canonical_key' => 'computation.summary.capital_allowances', 'local_name' => 'TotalCapitalAllowances', 'context_profile' => self::CONTEXT_HMRC_CT_UK_TRADE],
+                    ['canonical_key' => 'computation.summary.taxable_before_losses', 'local_name' => 'ProfitsBeforeOtherDeductionsAndReliefs', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
+                    ['canonical_key' => 'computation.summary.losses_brought_forward', 'local_name' => 'TradingLossesBroughtForward', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
+                    ['canonical_key' => 'computation.summary.losses_used', 'local_name' => 'TradingLossesBroughtForwardAmountUsedAgainstTotalProfits', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
+                    ['canonical_key' => 'computation.summary.taxable_profit', 'local_name' => 'TotalProfitsChargeableToCorporationTax', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
+                    ['canonical_key' => 'computation.summary.ordinary_corporation_tax', 'local_name' => 'CorporationTaxChargeable', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
+                    ['canonical_key' => 'computation.summary.s455_tax', 'local_name' => 'TaxPayableOnLoansToParticipators', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
+                    ['canonical_key' => 'computation.summary.estimated_corporation_tax', 'local_name' => 'NetTaxPayable', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
                 ],
                 'unsupported_decisions' => [],
             ];
@@ -236,7 +238,7 @@ final class CtFilingMappingService
                     $input += [
                         'taxonomy_concept' => (string)$concept['qname'],
                         'period_type' => (string)($mapping['period_type'] ?? $concept['period_type'] ?? 'duration'),
-                        'context_profile' => 'ct_period',
+                        'context_profile' => (string)($mapping['context_profile'] ?? self::CONTEXT_HMRC_CT_COMPANY),
                         'unit_ref' => (string)$source['value_type'] === 'numeric' ? 'GBP' : null,
                         'decimals_value' => (string)$source['value_type'] === 'numeric' ? '2' : null,
                         'presentation_section' => (string)$source['source_section'],

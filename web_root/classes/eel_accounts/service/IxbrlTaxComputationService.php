@@ -14,6 +14,31 @@ final class IxbrlTaxComputationService
         'losses' => 40,
         'tax_liability' => 50,
     ];
+    private const LEGACY_TRADE_CONCEPTS = [
+        'ProfitLossPerAccounts',
+        'AdjustmentsMiscellaneousExpensesPerAccounts',
+        'AdjustmentsCapitalExpenditure',
+        'AdjustmentsDepreciation',
+        'TotalCapitalAllowances',
+    ];
+    private const LEGACY_REVIEWED_CONCEPTS = [
+        'CompanyName',
+        'TaxReference',
+        'StartOfPeriodCoveredByReturn',
+        'EndOfPeriodCoveredByReturn',
+        'ProfitLossPerAccounts',
+        'AdjustmentsMiscellaneousExpensesPerAccounts',
+        'AdjustmentsCapitalExpenditure',
+        'AdjustmentsDepreciation',
+        'TotalCapitalAllowances',
+        'ProfitsBeforeOtherDeductionsAndReliefs',
+        'TradingLossesBroughtForward',
+        'TradingLossesBroughtForwardAmountUsedAgainstTotalProfits',
+        'TotalProfitsChargeableToCorporationTax',
+        'CorporationTaxChargeable',
+        'TaxPayableOnLoansToParticipators',
+        'NetTaxPayable',
+    ];
 
     public function generateFilingExport(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
     {
@@ -23,11 +48,12 @@ final class IxbrlTaxComputationService
         }
         $run = (array)$model['run'];
         $runId = (int)$run['run_id'];
-        $package = (new HmrcCtComputationCatalogueService())->resolveForPeriod((string)$run['period_start'], (string)$run['period_end']);
+        $catalogue = new HmrcCtComputationCatalogueService();
+        $package = $catalogue->resolveForPeriod((string)$run['period_start'], (string)$run['period_end']);
         if (!is_array($package)) {
             return $this->failRun($runId, 'No verified HMRC computation-taxonomy package with a combined CT/DPL entry point applies to this CT period.');
         }
-        $packageHash = (new HmrcCtComputationCatalogueService())->verifiedPackageHash($package);
+        $packageHash = $catalogue->verifiedPackageHash($package);
         if ($packageHash === null) {
             return $this->failRun($runId, 'The applicable computation-taxonomy package is missing, changed or has no verified inventory hash.');
         }
@@ -53,7 +79,13 @@ final class IxbrlTaxComputationService
         $generator = new IxbrlGeneratorService();
         $artifact = null;
         try {
-            $rendered = $this->renderMappedDocument($generator, $model, $package, (array)$mappedFacts['mappings']);
+            $validationResources = $catalogue->validationResources($package);
+            $rendered = $this->renderMappedDocument(
+                $generator,
+                $model,
+                (array)$mappedFacts['mappings'],
+                (string)$validationResources['schema_ref']
+            );
             $errors = $generator->validateStructure($rendered['xhtml'], [$rendered['schema_ref']]);
             if ($errors !== []) {
                 throw new \RuntimeException(implode(' ', $errors));
@@ -67,7 +99,10 @@ final class IxbrlTaxComputationService
                 $runId,
                 $rendered['xhtml']
             );
-            $external = (new IxbrlExternalValidationService())->validateArtifact((string)$artifact['path']);
+            $external = (new IxbrlExternalValidationService())->validateArtifact(
+                (string)$artifact['path'],
+                [(string)$validationResources['package_archive']]
+            );
             $externalStatus = (string)($external['status'] ?? 'error');
             $validatorVersion = trim((string)($external['version'] ?? ''));
             $validatedHash = strtolower(trim((string)($external['validated_sha256'] ?? '')));
@@ -186,14 +221,21 @@ final class IxbrlTaxComputationService
         $run = (array)$status['run'];
         $path = (string)$run['generated_path'];
         $package = (array)$status['package'];
-        $entryPoint = trim((string)(($package['combined_dpl_entry_point_path'] ?? null) ?: ($package['entry_point_path'] ?? '')));
-        $schemaRef = 'file:///' . str_replace(['\\', ' '], ['/', '%20'], $entryPoint);
+        try {
+            $validationResources = (new HmrcCtComputationCatalogueService())->validationResources($package);
+        } catch (\Throwable $exception) {
+            return $this->failRun((int)$run['id'], $exception->getMessage());
+        }
+        $schemaRef = (string)$validationResources['schema_ref'];
         $xhtml = file_get_contents($path);
         $internalErrors = is_string($xhtml) ? (new IxbrlGeneratorService())->validateStructure($xhtml, [$schemaRef]) : ['The artifact could not be read.'];
         if ($internalErrors !== []) {
             return $this->failRun((int)$run['id'], implode(' ', $internalErrors));
         }
-        $external = (new IxbrlExternalValidationService())->validateArtifact($path);
+        $external = (new IxbrlExternalValidationService())->validateArtifact(
+            $path,
+            [(string)$validationResources['package_archive']]
+        );
         $validatorVersion = trim((string)($external['version'] ?? ''));
         $validatedHash = strtolower(trim((string)($external['validated_sha256'] ?? '')));
         $passed = (string)($external['status'] ?? '') === 'passed'
@@ -211,7 +253,12 @@ final class IxbrlTaxComputationService
         return ['success' => $passed, 'errors' => $passed ? [] : ((array)($external['errors'] ?? []) !== [] ? (array)$external['errors'] : ['Arelle validation did not return a complete validator identity and matching artifact hash.']), 'warnings' => (array)($external['warnings'] ?? [])];
     }
 
-    private function renderMappedDocument(IxbrlGeneratorService $generator, array $model, array $package, array $mappings): array
+    private function renderMappedDocument(
+        IxbrlGeneratorService $generator,
+        array $model,
+        array $mappings,
+        string $schemaRef
+    ): array
     {
         $run = (array)$model['run'];
         $report = $this->buildReportModel($model, $mappings);
@@ -223,24 +270,36 @@ final class IxbrlTaxComputationService
                 throw new \RuntimeException('A computation mapping was not resolved from the frozen filing model.');
             }
             $value = $mapping['source_value'];
-            $dimensions = json_decode((string)($mapping['dimensions_json'] ?? ''), true);
-            $dimensions = is_array($dimensions) ? $dimensions : [];
-            $contextId = 'ct_' . substr(hash('sha256', (string)$mapping['period_type'] . '|' . json_encode($dimensions)), 0, 12);
+            $concept = (string)$mapping['taxonomy_concept'];
+            [$prefix] = explode(':', $concept, 2);
+            $contextProfile = $this->contextProfile($mapping);
+            $contextDefinition = $this->contextDefinition($contextProfile, $prefix, $model);
+            $mappedDimensions = json_decode((string)($mapping['dimensions_json'] ?? ''), true);
+            $mappedDimensions = is_array($mappedDimensions) ? $mappedDimensions : [];
+            foreach ($mappedDimensions as $dimension => $member) {
+                if (!is_string($dimension) || !is_string($member)) {
+                    throw new \RuntimeException('A computation mapping contains invalid explicit dimensions.');
+                }
+                if (isset($contextDefinition['dimensions'][$dimension])
+                    && (string)$contextDefinition['dimensions'][$dimension] !== $member) {
+                    throw new \RuntimeException('A computation mapping cannot override a reviewed HMRC context dimension.');
+                }
+                $contextDefinition['dimensions'][$dimension] = $member;
+            }
+            $contextId = 'ct_' . substr(hash('sha256', (string)$mapping['period_type'] . '|'
+                . (string)json_encode($contextDefinition, JSON_UNESCAPED_SLASHES)), 0, 12);
             if (!isset($contexts[$contextId])) {
                 $contexts[$contextId] = [
                     'id' => $contextId,
                     'identifier' => (string)$model['model']['identity']['company_number'],
                     'start_date' => (string)$run['period_start'],
                     'end_date' => (string)$run['period_end'],
-                    'dimensions' => $dimensions,
-                ];
+                ] + $contextDefinition;
                 if ((string)$mapping['period_type'] === 'instant') {
                     unset($contexts[$contextId]['start_date'], $contexts[$contextId]['end_date']);
                     $contexts[$contextId]['instant'] = (string)$run['period_end'];
                 }
             }
-            $concept = (string)$mapping['taxonomy_concept'];
-            [$prefix] = explode(':', $concept, 2);
             $namespaces[$prefix] = (string)$mapping['namespace_uri'];
             $numeric = in_array((string)$mapping['value_type'], ['numeric', 'integer'], true);
             if ($numeric && $value !== null) {
@@ -260,16 +319,14 @@ final class IxbrlTaxComputationService
         if ($sections === []) {
             throw new \RuntimeException('The active profile produced no Inline XBRL facts.');
         }
-        $body = '<main><h1>' . $generator->escape((string)$report['title']) . '</h1><p>CT period ' . $generator->escape((string)$report['period_start']) . ' to ' . $generator->escape((string)$report['period_end']) . '</p>';
+        $body = '<div class="ct-report"><h1>' . $generator->escape((string)$report['title']) . '</h1><p>CT period ' . $generator->escape((string)$report['period_start']) . ' to ' . $generator->escape((string)$report['period_end']) . '</p>';
         foreach ($sections as $section => $rows) {
-            $body .= '<section><h2>' . $generator->escape(ucwords(str_replace('_', ' ', $section))) . '</h2><table><tbody>' . implode('', $rows) . '</tbody></table></section>';
+            $body .= '<div class="ct-section"><h2>' . $generator->escape(ucwords(str_replace('_', ' ', $section))) . '</h2><table><tbody>' . implode('', $rows) . '</tbody></table></div>';
         }
-        $body .= '</main>';
-        $entryPoint = trim((string)($package['combined_dpl_entry_point_path'] ?: $package['entry_point_path']));
-        if ($entryPoint === '' || !is_file($entryPoint)) {
-            throw new \RuntimeException('The configured combined CT/DPL taxonomy entry point was not found.');
+        $body .= '</div>';
+        if (!str_starts_with($schemaRef, 'http://www.hmrc.gov.uk/')) {
+            throw new \RuntimeException('The verified HMRC computation-taxonomy schema reference is invalid.');
         }
-        $schemaRef = 'file:///' . str_replace(['\\', ' '], ['/', '%20'], $entryPoint);
         return ['schema_ref' => $schemaRef, 'xhtml' => $generator->renderDocument([
             'title' => 'Corporation Tax computation',
             'namespaces' => $namespaces,
@@ -278,6 +335,57 @@ final class IxbrlTaxComputationService
             'units' => [['id' => 'GBP', 'measure' => 'iso4217:GBP']],
             'body' => $body,
         ])];
+    }
+
+    private function contextProfile(array $mapping): string
+    {
+        $profile = trim((string)($mapping['context_profile'] ?? ''));
+        if (in_array($profile, [
+            CtFilingMappingService::CONTEXT_HMRC_CT_COMPANY,
+            CtFilingMappingService::CONTEXT_HMRC_CT_UK_TRADE,
+        ], true)) {
+            return $profile;
+        }
+        $localName = trim((string)($mapping['local_name'] ?? ''));
+        if ($profile === 'ct_period' && in_array($localName, self::LEGACY_REVIEWED_CONCEPTS, true)) {
+            return in_array($localName, self::LEGACY_TRADE_CONCEPTS, true)
+                ? CtFilingMappingService::CONTEXT_HMRC_CT_UK_TRADE
+                : CtFilingMappingService::CONTEXT_HMRC_CT_COMPANY;
+        }
+        throw new \RuntimeException('The computation mapping uses an unsupported HMRC context profile.');
+    }
+
+    private function contextDefinition(string $profile, string $prefix, array $model): array
+    {
+        $companyDimensions = [
+            $prefix . ':BusinessTypeDimension' => $prefix . ':Company',
+            $prefix . ':DetailedAnalysisDimension' => $prefix . ':Item1',
+        ];
+        if ($profile === CtFilingMappingService::CONTEXT_HMRC_CT_COMPANY) {
+            return [
+                'dimension_container' => 'segment',
+                'dimensions' => $companyDimensions,
+                'typed_dimensions' => [],
+            ];
+        }
+        $companyName = trim((string)($model['model']['identity']['company_name'] ?? ''));
+        if ($profile !== CtFilingMappingService::CONTEXT_HMRC_CT_UK_TRADE || $companyName === '') {
+            throw new \RuntimeException('The reviewed UK-trade HMRC context requires the company name.');
+        }
+        return [
+            'dimension_container' => 'segment',
+            'dimensions' => [
+                $prefix . ':BusinessTypeDimension' => $prefix . ':Trade',
+                $prefix . ':DetailedAnalysisDimension' => $prefix . ':Item1',
+                $prefix . ':LossReformDimension' => $prefix . ':Post-lossReform',
+                $prefix . ':TerritoryDimension' => $prefix . ':UK',
+            ],
+            'typed_dimensions' => [[
+                'dimension' => $prefix . ':BusinessNameDimension',
+                'domain' => $prefix . ':BusinessNameDomain',
+                'value' => $companyName,
+            ]],
+        ];
     }
 
     /** Build the human-readable report solely from the verified frozen model and its resolved mappings. */

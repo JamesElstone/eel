@@ -8,7 +8,7 @@ final class _director_loan_ct600aCard extends CardBaseFramework
     public function title(): string { return 'CT600A Evidence and Section 464A Review'; }
     public function helper(array $context): string
     {
-        return 'Record non-cash and prior-period CT600A events, resolve section 464C risks, and retain an auditable section 464A conclusion. This records tax evidence; it does not infer whether an avoidance arrangement exists.';
+        return 'CT600A figures are derived from posted loan transactions and journals. To correct a later movement, select the following accounting period, then use Loans → Participator Loan Statement → Participator Loan Party.';
     }
     public function services(): array
     {
@@ -61,68 +61,10 @@ final class _director_loan_ct600aCard extends CardBaseFramework
             foreach ((array)($ct['evidence_warnings'] ?? []) as $warning) {
                 $html .= '<div class="panel-soft warn helper">' . HelperFramework::escape((string)$warning) . '</div>';
             }
-            $html .= $this->eventsTable((array)($ct['events'] ?? []), $companyId, $periodId)
-                . $this->eventForm($data, $ctId, $companyId, $periodId)
-                . $this->reviewForm((array)$data['questions'], $review, $ctId, $companyId, $periodId)
+            $html .= $this->reviewForm((array)$data['questions'], $review, $ctId, $companyId, $periodId)
                 . '</section>';
         }
         return $html . '</div>';
-    }
-
-    private function eventsTable(array $events, int $companyId, int $periodId): string
-    {
-        if ($events === []) {
-            return '<div class="helper">No manual CT600A events have been recorded. Ordinary bank-backed loan movements remain in the s455 evidence.</div>';
-        }
-        $rows = '';
-        foreach ($events as $event) {
-            $rows .= '<tr><td>' . HelperFramework::escape(str_replace('_', ' ', (string)$event['event_kind'])) . '</td><td>'
-                . HelperFramework::escape((string)$event['event_date']) . '</td><td>'
-                . HelperFramework::escape((string)($event['origin_date'] ?? '')) . '</td><td>'
-                . HelperFramework::escape((string)$event['party_name']) . '</td><td>£' . number_format((float)$event['amount'], 2)
-                . '</td><td>' . HelperFramework::escape((string)$event['evidence_reference']) . '</td><td>
-                <form method="post" action="?page=loans" data-ajax="true">'
-                . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-                    <input type="hidden" name="card_action" value="Ct600a"><input type="hidden" name="intent" value="delete_ct600a_event">
-                    <input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $periodId . '">
-                    <input type="hidden" name="event_id" value="' . (int)$event['id'] . '"><button class="button button-inline danger" type="submit">Remove</button>
-                </form></td></tr>';
-        }
-        return '<div class="table-wrap"><table><thead><tr><th>Event</th><th>Date</th><th>Original date</th><th>Party</th><th>Amount</th><th>Evidence</th><th></th></tr></thead><tbody>' . $rows . '</tbody></table></div>';
-    }
-
-    private function eventForm(array $data, int $ctId, int $companyId, int $periodId): string
-    {
-        $parties = '';
-        foreach ((array)($data['parties'] ?? []) as $party) {
-            $parties .= '<option value="' . (int)$party['id'] . '">' . HelperFramework::escape((string)$party['legal_name']) . '</option>';
-        }
-        return '<details class="panel-soft"><summary>Add a release, write-off, prior balance, later repayment or section 464A event</summary>
-            <form class="settings-stack" method="post" action="?page=loans" data-ajax="true">'
-            . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-                <input type="hidden" name="card_action" value="Ct600a"><input type="hidden" name="intent" value="save_ct600a_event">
-                <input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $periodId . '">
-                <input type="hidden" name="ct_period_id" value="' . $ctId . '"><input type="hidden" name="originating_ct_period_id" value="' . $ctId . '">
-                <div class="form-grid">
-                    <div class="form-row"><label>Event type</label><select class="input" name="event_kind" required>
-                        <option value="opening_outstanding">Opening outstanding from prior return</option><option value="release">Formal release</option>
-                        <option value="write_off">Write-off</option><option value="later_repayment">Later repayment</option>
-                        <option value="s464a_benefit">Section 464A benefit</option><option value="s464a_return_payment">Section 464A return payment</option>
-                    </select></div>
-                    <div class="form-row"><label>Participator or associate</label><select class="input" name="party_id" required>' . $parties . '</select></div>
-                    <div class="form-row"><label>Event date</label><input class="input" type="date" name="event_date" required></div>
-                    <div class="form-row"><label>Original loan or benefit date</label><input class="input" type="date" name="origin_date"><div class="helper">Required for repayments, releases, write-offs and return payments so relief uses the original rate.</div></div>
-                    <div class="form-row"><label>Amount</label><input class="input" type="number" min="0.01" step="0.01" name="amount" required></div>
-                    <div class="form-row"><label>Evidence source</label><select class="input" name="source_type" required><option value="bank_transaction">Bank transaction</option><option value="journal">Posted journal</option><option value="prior_return">Prior return</option><option value="manual_evidence">Manual evidence</option></select></div>
-                    <div class="form-row"><label>Source id (when applicable)</label><input class="input" type="number" min="1" name="source_id"></div>
-                    <div class="form-row"><label>Evidence reference</label><input class="input" name="evidence_reference" maxlength="255" required></div>
-                    <div class="form-row"><label>Section 464C matching</label><select class="input" name="matching_status"><option value="clear">Clear — no replacement extraction</option><option value="potential_464c">Potential match — unresolved</option><option value="confirmed_464c">Confirmed match — no relief</option></select></div>
-                    <div class="form-row"><label>Approved by</label><input class="input" name="approved_by" required></div>
-                    <div class="form-row"><label>Approver role</label><select class="input" name="approval_role"><option value="director">Director</option><option value="adviser">Adviser</option></select></div>
-                </div>
-                <div class="form-row"><label>Explanation</label><textarea class="input" name="explanation" rows="3" required></textarea></div>
-                <button class="button primary" type="submit">Add CT600A event</button>
-            </form></details>';
     }
 
     private function reviewForm(array $questions, array $review, int $ctId, int $companyId, int $periodId): string
@@ -140,7 +82,7 @@ final class _director_loan_ct600aCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="Ct600a"><input type="hidden" name="intent" value="save_ct600a_review">
                 <input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $periodId . '">
                 <input type="hidden" name="ct_period_id" value="' . $ctId . '"><h4 class="card-title">Section 464A and 464C declaration</h4>
-                <div class="helper">Answer the risk questions from the company records and your knowledge of non-cash or indirect arrangements. A Yes answer must be represented by an approved section 464A benefit event before filing.</div>'
+                <div class="helper">Answer the risk questions from the company records and posted transaction or journal evidence. This review does not create tax evidence.</div>'
             . $fields . '<div class="form-grid"><div class="form-row"><label>Approver name</label><input class="input" name="approved_by" value="'
             . HelperFramework::escape((string)($review['approved_by'] ?? '')) . '" required></div><div class="form-row"><label>Approver role</label>
                 <select class="input" name="approver_role"><option value="director"' . ((string)($review['approver_role'] ?? 'director') === 'director' ? ' selected' : '')

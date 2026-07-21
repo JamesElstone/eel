@@ -65,7 +65,8 @@ final class IxbrlAccountsFilingApprovalService
         int $companyId,
         int $accountingPeriodId,
         string $approvedBy,
-        string $note = ''
+        string $note = '',
+        ?\Closure $progress = null
     ): array {
         $this->assertSchemaReady();
         $approvedBy = trim($approvedBy);
@@ -76,11 +77,12 @@ final class IxbrlAccountsFilingApprovalService
             throw new \RuntimeException('Filing approval must own its transaction so every stage can be rolled back atomically.');
         }
 
-        return (array)\InterfaceDB::transaction(function () use ($companyId, $accountingPeriodId, $approvedBy, $note): array {
+        return (array)\InterfaceDB::transaction(function () use ($companyId, $accountingPeriodId, $approvedBy, $note, $progress): array {
             $candidate = $this->candidate($companyId, $accountingPeriodId, true);
             $disclosure = (array)$candidate['disclosure'];
             $yearEnd = (array)$candidate['year_end'];
 
+            $progress?->__invoke('Recording the approved accounts filing basis…', 20);
             \InterfaceDB::prepareExecute(
                 'INSERT INTO ixbrl_accounts_filing_approvals (
                     company_id, accounting_period_id, disclosure_id, disclosure_revision,
@@ -120,7 +122,15 @@ final class IxbrlAccountsFilingApprovalService
             }
 
             $ctBasisIds = [];
-            foreach ((array)$candidate['ct_periods'] as $period) {
+            $ctPeriods = array_values((array)$candidate['ct_periods']);
+            $ctPeriodCount = count($ctPeriods);
+            foreach ($ctPeriods as $ctPeriodIndex => $period) {
+                $percent = 35 + (int)floor(($ctPeriodIndex / max(1, $ctPeriodCount)) * 35);
+                $progress?->__invoke(
+                    'Creating the locked Corporation Tax filing basis for period '
+                    . ($ctPeriodIndex + 1) . ' of ' . $ctPeriodCount . '…',
+                    $percent
+                );
                 $model = $this->ctModel($candidate, $period, $approvalId, $approvedBy);
                 \InterfaceDB::prepareExecute(
                     'INSERT INTO ct_period_filing_bases (
@@ -156,6 +166,7 @@ final class IxbrlAccountsFilingApprovalService
                 $ctBasisIds[] = $ctBasisId;
             }
 
+            $progress?->__invoke('Building the immutable accounts iXBRL fact snapshot…', 78);
             $factRunId = $this->factBuilder !== null
                 ? (int)($this->factBuilder)(
                     $companyId,
@@ -171,6 +182,7 @@ final class IxbrlAccountsFilingApprovalService
                     $approvalId,
                     (string)$candidate['basis_hash']
                 );
+            $progress?->__invoke('Verifying the approval and fact snapshot…', 95);
             $this->verifyPersisted($approvalId, $factRunId, $candidate, $ctBasisIds);
 
             return [

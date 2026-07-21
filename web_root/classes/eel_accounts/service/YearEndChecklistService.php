@@ -303,7 +303,13 @@ final class YearEndChecklistService
         return $topIssues;
     }
 
-    public function lockPeriod(int $companyId, int $accountingPeriodId, string $lockedBy = 'web_app', bool $backupPermitted = false): array {
+    public function lockPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        string $lockedBy = 'web_app',
+        bool $backupPermitted = false,
+        ?\Closure $progress = null
+    ): array {
         $scopeError = $this->vatSupportScopeMutationError($companyId, 'close this accounting period');
         if ($scopeError !== null) {
             return $scopeError;
@@ -312,6 +318,7 @@ final class YearEndChecklistService
         $transaction = $this->beginLockTransaction();
 
         try {
+            $progress?->__invoke('Running live year-end preflight checks…', 0);
             $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId);
             if (empty($checklistResult['success'])) {
                 return $this->rollbackLockTransaction($transaction, $checklistResult);
@@ -333,6 +340,7 @@ final class YearEndChecklistService
             }
 
             try {
+                $progress?->__invoke('Creating and verifying the pre-close database backup…', 12);
                 $backup = ($this->backupCreator ?? new \eel_accounts\Service\DatabaseBackupService())->createBackup();
                 if (trim((string)($backup['filename'] ?? '')) === ''
                     || (int)($backup['size_bytes'] ?? 0) <= 0
@@ -348,6 +356,7 @@ final class YearEndChecklistService
                 ]);
             }
 
+            $progress?->__invoke('Applying the Director Loan offset…', 25);
             $directorLoanOffsetResult = $this->applyDirectorLoanOffsetBeforeLock($companyId, $accountingPeriodId, $checklist, $lockedBy);
             if (empty($directorLoanOffsetResult['success'])) {
                 return $this->rollbackLockTransaction($transaction, [
@@ -359,6 +368,7 @@ final class YearEndChecklistService
                 ]);
             }
 
+            $progress?->__invoke('Posting prepayment journals…', 35);
             $prepaymentResult = (new \eel_accounts\Service\PrepaymentPostingService())
                 ->postForAccountingPeriod($companyId, $accountingPeriodId, $lockedBy);
             if (empty($prepaymentResult['success'])) {
@@ -372,6 +382,7 @@ final class YearEndChecklistService
                 ]);
             }
 
+            $progress?->__invoke('Posting depreciation…', 45);
             $depreciationResult = ($this->assetService ?? new \eel_accounts\Service\AssetService())->runDepreciation($companyId, $accountingPeriodId);
             if (empty($depreciationResult['success'])) {
                 return $this->rollbackLockTransaction($transaction, [
@@ -385,6 +396,7 @@ final class YearEndChecklistService
                 ]);
             }
 
+            $progress?->__invoke('Revalidating the approved Corporation Tax basis…', 55);
             $taxFreezeAfterAdjustments = $this->revalidateApprovedTaxBasis($companyId, $accountingPeriodId);
             if (empty($taxFreezeAfterAdjustments['success'])) {
                 return $this->rollbackLockTransaction($transaction, [
@@ -399,6 +411,7 @@ final class YearEndChecklistService
                 ]);
             }
 
+            $progress?->__invoke('Posting Corporation Tax provisions…', 65);
             $ctProvisionResult = ($this->corporationTaxProvisionService ?? new \eel_accounts\Service\CorporationTaxProvisionService())
                 ->postProvisionsForAccountingPeriod($companyId, $accountingPeriodId, $lockedBy);
             if (empty($ctProvisionResult['success'])) {
@@ -414,6 +427,7 @@ final class YearEndChecklistService
                 ]);
             }
 
+            $progress?->__invoke('Posting the retained earnings close…', 75);
             $retainedEarningsCloseResult = ($this->retainedEarningsCloseService ?? new \eel_accounts\Service\RetainedEarningsCloseService())
                 ->postClose($companyId, $accountingPeriodId, $lockedBy);
             if (empty($retainedEarningsCloseResult['success'])) {
@@ -430,6 +444,7 @@ final class YearEndChecklistService
                 ]);
             }
 
+            $progress?->__invoke('Confirming the final Corporation Tax position…', 82);
             $finalTaxFreeze = $this->revalidateApprovedTaxBasis($companyId, $accountingPeriodId, true);
             if (empty($finalTaxFreeze['success'])) {
                 return $this->rollbackLockTransaction($transaction, [
@@ -446,6 +461,7 @@ final class YearEndChecklistService
                 ]);
             }
 
+            $progress?->__invoke('Recording Corporation Tax close evidence…', 88);
             $taxPersistenceResult = (new \eel_accounts\Service\CorporationTaxComputationService())
                 ->persistSummariesForYearEndLock($companyId, $accountingPeriodId);
             if (empty($taxPersistenceResult['success'])) {
@@ -463,11 +479,13 @@ final class YearEndChecklistService
                 ]);
             }
 
+            $progress?->__invoke('Locking the accounting period…', 92);
             $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
             $result = $lock->lockPeriod($companyId, $accountingPeriodId, $lockedBy);
             if (empty($result['success'])) {
                 return $this->rollbackLockTransaction($transaction, $result);
             }
+            $progress?->__invoke('Freezing section 455 evidence…', 95);
             $s455Freeze = (new \eel_accounts\Service\S455ReviewService())
                 ->freezeForYearEndLock($companyId, $accountingPeriodId);
             if (empty($s455Freeze['success'])) {
@@ -477,6 +495,7 @@ final class YearEndChecklistService
                     'errors' => (array)($s455Freeze['errors'] ?? ['The s455 evidence cut-off could not be frozen at the Year End lock timestamp.']),
                 ]);
             }
+            $progress?->__invoke('Sealing Corporation Tax filing bases…', 97);
             $filingBasisSeal = (new \eel_accounts\Service\CorporationTaxComputationService())
                 ->sealSummariesForYearEndLock($companyId, $accountingPeriodId);
             if (empty($filingBasisSeal['success'])) {
@@ -502,6 +521,8 @@ final class YearEndChecklistService
             ];
 
             $this->commitLockTransaction($transaction);
+
+            $progress?->__invoke('Finalising the locked accounting period…', 99);
 
             return $result;
         } catch (\Throwable $exception) {

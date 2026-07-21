@@ -78,11 +78,16 @@ final class IxbrlAction implements ActionInterfaceFramework
                 );
             }
             if ($intent === 'approve_ixbrl_accounts_filing_basis') {
+                $progress = $services->actionProgress();
+                $progress->report('Validating the approved accounts filing basis…', 0);
                 $approved = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())->approveAndBuildFacts(
                     $companyId,
                     $accountingPeriodId,
                     $this->actor($request),
-                    trim((string)$request->input('approval_note', ''))
+                    trim((string)$request->input('approval_note', '')),
+                    static function (string $message, int $percent) use ($progress): void {
+                        $progress->report($message, $percent);
+                    }
                 );
                 return $this->result(
                     true,
@@ -96,11 +101,26 @@ final class IxbrlAction implements ActionInterfaceFramework
             }
 
             if ($intent === 'generate_all_filing_ixbrl') {
-                $result = $this->generateAllFilingIxbrl($companyId, $accountingPeriodId);
+                $result = $this->generateAllFilingIxbrl(
+                    $companyId,
+                    $accountingPeriodId,
+                    $services->actionProgress()
+                );
             } elseif (in_array($intent, ['generate_computation_ixbrl', 'validate_computation_ixbrl'], true)) {
-                $result = $intent === 'generate_computation_ixbrl'
-                    ? $this->generateComputation($companyId, $accountingPeriodId, $ctPeriodId)
-                    : $this->validateComputation($companyId, $accountingPeriodId, $ctPeriodId);
+                if ($intent === 'generate_computation_ixbrl') {
+                    $progress = $services->actionProgress();
+                    $progress->report('Generating the Corporation Tax period iXBRL…', 0);
+                    $result = $this->generateComputation(
+                        $companyId,
+                        $accountingPeriodId,
+                        $ctPeriodId,
+                        static function () use ($progress): void {
+                            $progress->report('Running Arelle validation for the Corporation Tax period iXBRL…', 70);
+                        }
+                    );
+                } else {
+                    $result = $this->validateComputation($companyId, $accountingPeriodId, $ctPeriodId);
+                }
             } else {
                 $readiness = (new \eel_accounts\Service\IxbrlReadinessService())->getReadiness($companyId, $accountingPeriodId);
                 $result = match ($intent) {
@@ -108,7 +128,7 @@ final class IxbrlAction implements ActionInterfaceFramework
                         ? $this->buildFacts($companyId, $accountingPeriodId)
                         : ['success' => false, 'errors' => (array)($readiness['blocking_errors'] ?? ['iXBRL facts cannot be built yet.'])],
                     'generate_ixbrl_preview' => !empty($readiness['can_generate'])
-                        ? $this->generatePreview($companyId, $accountingPeriodId)
+                        ? $this->generatePreview($companyId, $accountingPeriodId, $services->actionProgress(), 0, 70)
                         : ['success' => false, 'errors' => (array)($readiness['generation_errors'] ?? ['The iXBRL filing export cannot be generated yet.'])],
                     'validate_ixbrl_external' => !empty($readiness['can_validate'])
                         ? $this->validateExternal($companyId, $accountingPeriodId)
@@ -169,14 +189,26 @@ final class IxbrlAction implements ActionInterfaceFramework
         return ['success' => true, 'errors' => [], 'messages' => ['iXBRL facts built for run #' . $runId . '.']];
     }
 
-    private function generatePreview(int $companyId, int $accountingPeriodId): array
+    private function generatePreview(
+        int $companyId,
+        int $accountingPeriodId,
+        ?ActionProgressFramework $progress = null,
+        ?int $generationPercent = null,
+        ?int $validationPercent = null
+    ): array
     {
+        if ($generationPercent !== null) {
+            $progress?->report('Generating the accounts iXBRL…', $generationPercent);
+        }
         $result = (new \eel_accounts\Service\IxbrlAccountingService())->generateFilingExport($companyId, $accountingPeriodId);
         if (empty($result['success'])) {
             return $result;
         }
 
         $result['messages'] = ['iXBRL filing export generated.'];
+        if ($validationPercent !== null) {
+            $progress?->report('Running Arelle validation for the accounts iXBRL…', $validationPercent);
+        }
         $external = (new \eel_accounts\Service\IxbrlExternalValidationService())
             ->validateLatestRun($companyId, $accountingPeriodId);
         if ((string)($external['status'] ?? '') === 'passed') {
@@ -239,18 +271,27 @@ final class IxbrlAction implements ActionInterfaceFramework
         exit;
     }
 
-    private function generateComputation(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
-    {
+    private function generateComputation(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        ?\Closure $beforeExternalValidation = null
+    ): array {
         $result = (new \eel_accounts\Service\IxbrlTaxComputationService())
-            ->generateFilingExport($companyId, $accountingPeriodId, $ctPeriodId);
+            ->generateFilingExport($companyId, $accountingPeriodId, $ctPeriodId, $beforeExternalValidation);
         if (!empty($result['success'])) {
             $result['messages'] = ['Computations iXBRL generated and externally validated for CT period #' . $ctPeriodId . '.'];
         }
         return $result;
     }
 
-    private function generateAllFilingIxbrl(int $companyId, int $accountingPeriodId): array
+    private function generateAllFilingIxbrl(
+        int $companyId,
+        int $accountingPeriodId,
+        ActionProgressFramework $progress
+    ): array
     {
+        $progress->report('Checking accounts iXBRL filing readiness…', 0);
         $readiness = (new \eel_accounts\Service\IxbrlReadinessService())
             ->getReadiness($companyId, $accountingPeriodId);
         if (empty($readiness['can_generate'])) {
@@ -260,6 +301,7 @@ final class IxbrlAction implements ActionInterfaceFramework
             ];
         }
 
+        $progress->report('Checking Corporation Tax period readiness…', 15);
         $projection = (new \eel_accounts\Service\CorporationTaxPeriodService())
             ->projectForAccountingPeriod($companyId, $accountingPeriodId);
         $periods = array_values(array_filter(
@@ -296,7 +338,7 @@ final class IxbrlAction implements ActionInterfaceFramework
             return ['success' => false, 'errors' => array_values(array_unique($errors))];
         }
 
-        $accounts = $this->generatePreview($companyId, $accountingPeriodId);
+        $accounts = $this->generatePreview($companyId, $accountingPeriodId, $progress, 30, 42);
         if (empty($accounts['success'])) {
             return $accounts;
         }
@@ -306,8 +348,27 @@ final class IxbrlAction implements ActionInterfaceFramework
             ? 'Accounts iXBRL generated and validated.'
             : 'Accounts iXBRL generated; review its external-validation warning.'];
         $generatedPeriods = 0;
-        foreach ($periodIds as $ctPeriodId) {
-            $computation = $this->generateComputation($companyId, $accountingPeriodId, $ctPeriodId);
+        $periodCount = count($periodIds);
+        foreach ($periodIds as $periodIndex => $ctPeriodId) {
+            $generationPercent = 45 + (int)floor(($periodIndex / $periodCount) * 50);
+            $validationPercent = 45 + (int)floor((($periodIndex + 0.5) / $periodCount) * 50);
+            $progress->report(
+                'Generating iXBRL for Corporation Tax period '
+                . ($periodIndex + 1) . ' of ' . $periodCount . '…',
+                $generationPercent
+            );
+            $computation = $this->generateComputation(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId,
+                static function () use ($progress, $periodIndex, $periodCount, $validationPercent): void {
+                    $progress->report(
+                        'Running Arelle validation for Corporation Tax period '
+                        . ($periodIndex + 1) . ' of ' . $periodCount . '…',
+                        $validationPercent
+                    );
+                }
+            );
             if (empty($computation['success'])) {
                 foreach ((array)($computation['errors'] ?? ['Computations iXBRL generation failed.']) as $error) {
                     $errors[] = 'CT period #' . $ctPeriodId . ': ' . (string)$error;
@@ -327,6 +388,7 @@ final class IxbrlAction implements ActionInterfaceFramework
             ];
         }
 
+        $progress->report('Finalising the filing iXBRL set…', 98);
         $messages[] = $generatedPeriods === 1
             ? 'The computation iXBRL for 1 CT period was generated and validated.'
             : 'The computation iXBRLs for ' . $generatedPeriods . ' CT periods were generated and validated.';

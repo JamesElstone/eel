@@ -18,7 +18,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
         return 'Generates the iXBRL export from the approved facts, checks it internally and with Arelle, and enables the download when the export is filing-ready.';
     }
 
-    protected function additionalInvalidationFacts(): array { return ['page.context']; }
+    protected function additionalInvalidationFacts(): array { return ['ixbrl.generation', 'page.context']; }
 
     public function render(array $context): string
     {

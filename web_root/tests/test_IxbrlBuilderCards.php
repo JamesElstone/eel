@@ -520,8 +520,9 @@ $harness->run(IxbrlAction::class, static function (GeneratedServiceClassTestHarn
         $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content'
             . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'IxbrlAction.php');
         $harness->assertTrue(str_contains($source, "\$intent === 'generate_all_filing_ixbrl'"));
-        $harness->assertTrue(str_contains($source, '$this->generatePreview($companyId, $accountingPeriodId)'));
-        $harness->assertTrue(str_contains($source, '$this->generateComputation($companyId, $accountingPeriodId, $ctPeriodId)'));
+        $harness->assertTrue(str_contains($source, '$this->generatePreview('));
+        $harness->assertTrue(str_contains($source, '$this->generateComputation('));
         $harness->assertTrue(str_contains($source, 'projectForAccountingPeriod($companyId, $accountingPeriodId)'));
+        $harness->assertTrue(str_contains($source, '$services->actionProgress()'));
     });
 });

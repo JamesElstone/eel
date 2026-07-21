@@ -50,7 +50,7 @@ final class YearEndAction implements ActionInterfaceFramework
 
             $result = match ($intent) {
                 'recalculate' => (new \eel_accounts\Service\YearEndChecklistService())->recalculateChecklist($companyId, $accountingPeriodId, $actor),
-                'lock_period' => (new \eel_accounts\Service\YearEndChecklistService())->lockPeriod($companyId, $accountingPeriodId, $actor, true),
+                'lock_period' => $this->lockPeriodWithProgress($companyId, $accountingPeriodId, $actor, $services->actionProgress()),
                 'unlock_period' => (new \eel_accounts\Service\YearEndChecklistService())->unlockPeriod($companyId, $accountingPeriodId, $actor),
                 'save_notes' => (new \eel_accounts\Service\YearEndChecklistService())->saveNotes($companyId, $accountingPeriodId, (string)$request->input('review_notes', ''), $actor),
                 'confirm_empty_month' => (new \eel_accounts\Service\EmptyMonthConfirmationService())->confirmMonth(
@@ -185,6 +185,23 @@ final class YearEndAction implements ActionInterfaceFramework
         }
 
         return 'web_app';
+    }
+
+    private function lockPeriodWithProgress(
+        int $companyId,
+        int $accountingPeriodId,
+        string $actor,
+        ActionProgressFramework $progress
+    ): array {
+        return (new \eel_accounts\Service\YearEndChecklistService())->lockPeriod(
+            $companyId,
+            $accountingPeriodId,
+            $actor,
+            true,
+            static function (string $message, int $percent) use ($progress): void {
+                $progress->report($message, $percent);
+            }
+        );
     }
 
     private function result(bool $success, array $errors = [], string $successMessage = '', ?array $changedFacts = null): ActionResultFramework

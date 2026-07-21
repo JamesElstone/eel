@@ -40,7 +40,12 @@ final class IxbrlTaxComputationService
         'NetTaxPayable',
     ];
 
-    public function generateFilingExport(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
+    public function generateFilingExport(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        ?\Closure $beforeExternalValidation = null
+    ): array
     {
         $model = (new CtPeriodFilingModelService())->build($companyId, $accountingPeriodId, $ctPeriodId);
         if (empty($model['available'])) {
@@ -99,6 +104,7 @@ final class IxbrlTaxComputationService
                 $runId,
                 $rendered['xhtml']
             );
+            $beforeExternalValidation?->__invoke();
             $external = (new IxbrlExternalValidationService())->validateArtifact(
                 (string)$artifact['path'],
                 [(string)$validationResources['package_archive']]

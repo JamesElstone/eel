@@ -105,8 +105,14 @@ final class Ct600aService
         $separateL2pClaims = [];
         $blocking = [];
         $evidenceWarnings = [];
+        $unattributedLoanMovementCount = 0;
         foreach ((array)($s455['errors'] ?? []) as $s455Error) {
             $message = (string)$s455Error;
+            if (str_starts_with($message, 'Loan transaction #')
+                && str_contains($message, 'is not linked to a confirmed ownership party.')) {
+                $unattributedLoanMovementCount++;
+                continue;
+            }
             $reviewResolvesNonCash = str_contains($message, 'non-cash or unsupported loan movement')
                 && (float)($s455['gross_principal'] ?? 0) < 0.005
                 && !empty($review['current']) && !empty($review['complete'])
@@ -116,6 +122,9 @@ final class Ct600aService
             } else {
                 $blocking[] = $message;
             }
+        }
+        if ($unattributedLoanMovementCount > 0) {
+            $blocking[] = $this->unattributedLoanMovementMessage($unattributedLoanMovementCount);
         }
         foreach ((array)($review['errors'] ?? []) as $error) { $blocking[] = (string)$error; }
 
@@ -236,6 +245,15 @@ final class Ct600aService
         ];
         $json = $this->canonicalJson($model);
         return $model + ['basis_hash' => hash('sha256', $json), 'complete' => $model['blocking_errors'] === []];
+    }
+
+    private function unattributedLoanMovementMessage(int $count): string
+    {
+        $label = $count === 1 ? 'movement is' : 'movements are';
+
+        return $count . ' bank loan ' . $label . ' not linked to a confirmed ownership party. '
+            . 'Review and correctly code the loan statement. If this CT period has a section 455 charge, '
+            . 'correctly coding repayments in a following accounting period may reduce the tax due by establishing repayment relief.';
     }
 
     /** @return array<string,mixed> */

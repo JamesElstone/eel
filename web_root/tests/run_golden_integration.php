@@ -13,6 +13,7 @@ $files = array_map(
     static fn(string $name): string => __DIR__ . DIRECTORY_SEPARATOR . $name,
     [
         'test_GoldenAccountingOracle.php',
+        'test_GoldenCt600aLifecycle.php',
         'test_GoldenYearEndLifecycle.php',
         'test_GoldenAccountingCardAuditDefects.php',
         'test_GoldenAccountsFixture.php',

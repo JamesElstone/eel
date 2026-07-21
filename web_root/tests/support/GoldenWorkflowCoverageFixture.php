@@ -106,6 +106,13 @@ final class GoldenWorkflowCoverageFixture
                     self::evidence('director-loan journal lines', 'SELECT COUNT(*) FROM journal_lines jl INNER JOIN journals j ON j.id = jl.journal_id WHERE j.company_id IN (9100, 9400) AND jl.nominal_account_id IN (91005, 91006)', 2),
                 ],
             ],
+            'ct600a' => [
+                'pages' => ['loans', 'profit_loss', 'corporation_tax', 'year_end', 'tax_artifacts'],
+                'evidence' => [
+                    self::evidence('transaction-backed participator loan movements', 'SELECT COUNT(*) FROM transactions WHERE company_id = 9800 AND nominal_account_id = 91006', 3),
+                    self::evidence('confirmed participator-linked loan journal lines', 'SELECT COUNT(*) FROM journal_lines jl INNER JOIN journals j ON j.id = jl.journal_id WHERE j.company_id = 9800 AND jl.nominal_account_id = 91006 AND jl.party_id = 980101', 3),
+                ],
+            ],
             'dividends_incorporation_and_minutes' => [
                 'pages' => ['dividends', 'incorporation', 'minutes'],
                 'evidence' => [

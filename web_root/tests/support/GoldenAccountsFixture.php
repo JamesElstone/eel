@@ -19,6 +19,13 @@ final class GoldenAccountsFixture
     public const EMPTY_COMPANY_ID = 9200;
     public const WARNING_COMPANY_ID = 9300;
     public const COMPLETE_COMPANY_ID = 9400;
+    public const CT600A_COMPANY_ID = 9800;
+    public const CT600A_ACCOUNTING_PERIOD_ID = 9811;
+    public const CT600A_FOLLOWING_ACCOUNTING_PERIOD_ID = 9812;
+    public const CT600A_LATER_RELIEF_ACCOUNTING_PERIOD_ID = 9813;
+    public const CT600A_L2P_ACCOUNTING_PERIOD_ID = 9814;
+    public const CT600A_DIRECTOR_ID = 980001;
+    public const CT600A_PARTY_ID = 980101;
 
     /** @var array<int, array<string, mixed>> */
     private static array $fourPeriodPrepaymentEvidence = [];
@@ -45,6 +52,7 @@ final class GoldenAccountsFixture
             self::seedNominals();
             self::seedCompanies();
             self::seedGoldenCompany();
+            self::seedCt600aCompany();
             self::seedScenarioPeriods();
             GoldenWorkflowCoverageFixture::seed();
 
@@ -98,6 +106,7 @@ final class GoldenAccountsFixture
                 'empty' => self::EMPTY_COMPANY_ID,
                 'warning' => self::WARNING_COMPANY_ID,
                 'complete' => self::COMPLETE_COMPANY_ID,
+                'ct600a' => self::CT600A_COMPANY_ID,
             ],
             'periods' => $periods,
             'nominals' => [
@@ -124,6 +133,17 @@ final class GoldenAccountsFixture
             'privacy' => [
                 'live_rows_copied' => false,
                 'synthetic_marker' => 'GOLDEN-TEST-',
+            ],
+            'ct600a_scenario' => [
+                'accounting_period_ids' => [
+                    self::CT600A_ACCOUNTING_PERIOD_ID,
+                    self::CT600A_FOLLOWING_ACCOUNTING_PERIOD_ID,
+                    self::CT600A_LATER_RELIEF_ACCOUNTING_PERIOD_ID,
+                    self::CT600A_L2P_ACCOUNTING_PERIOD_ID,
+                ],
+                'loan_amount' => 10000.00,
+                'period_end_repayment' => 2000.00,
+                'early_repayment' => 5000.00,
             ],
             'card_expectations' => $cardExpectations,
             'feature_coverage' => GoldenWorkflowCoverageFixture::coverageManifest(),
@@ -221,6 +241,7 @@ final class GoldenAccountsFixture
             self::EMPTY_COMPANY_ID => 'Empty Scenario Test Limited',
             self::WARNING_COMPANY_ID => 'Warning Scenario Test Limited',
             self::COMPLETE_COMPANY_ID => 'Completed Scenario Test Limited',
+            self::CT600A_COMPANY_ID => 'CT600A Scenario Test Limited',
         ] as $id => $name) {
             self::insert('companies', [
                 'id' => $id, 'company_name' => $name, 'company_number' => 'T' . $id,
@@ -297,6 +318,185 @@ final class GoldenAccountsFixture
         self::seedHmrcPenaltyLifecycle();
         self::seedFourPeriodPrepayment();
         self::seedCrossPeriodPrepayment();
+    }
+
+    private static function seedCt600aCompany(): void
+    {
+        InterfaceDB::prepareExecute(
+            'UPDATE companies
+             SET companies_house_type = :type,
+                 companies_house_jurisdiction = :jurisdiction,
+                 registered_office_address_line_1 = :address,
+                 registered_office_locality = :locality,
+                 registered_office_postal_code = :postcode,
+                 registered_office_country = :country,
+                 company_number = :company_number
+             WHERE id = :company_id',
+            [
+                'company_id' => self::CT600A_COMPANY_ID,
+                'type' => 'ltd',
+                'jurisdiction' => 'england-wales',
+                'address' => '1 Golden CT600A Street',
+                'locality' => 'Testford',
+                'postcode' => 'TE5 1AA',
+                'country' => 'United Kingdom',
+                'company_number' => '98009800',
+            ]
+        );
+        self::insert('company_directors', [
+            'id' => self::CT600A_DIRECTOR_ID,
+            'company_id' => self::CT600A_COMPANY_ID,
+            'source' => 'companies_house',
+            'external_key' => 'golden-ct600a-director',
+            'full_name' => 'Golden CT600A Director',
+            'officer_role' => 'director',
+            'appointed_on' => '2022-09-05',
+            'is_active' => 1,
+        ]);
+        self::insert('company_parties', [
+            'id' => self::CT600A_PARTY_ID,
+            'company_id' => self::CT600A_COMPANY_ID,
+            'party_type' => 'individual',
+            'legal_name' => 'Golden CT600A Director',
+            'linked_director_id' => self::CT600A_DIRECTOR_ID,
+            'source_note' => 'Synthetic CT600A participator fixture.',
+        ]);
+        self::insert('company_party_roles', [
+            'id' => 980201,
+            'company_id' => self::CT600A_COMPANY_ID,
+            'party_id' => self::CT600A_PARTY_ID,
+            'role_type' => 'participator',
+            'effective_from' => '2022-09-05',
+            'effective_to' => null,
+            'source_note' => 'Synthetic CT600A participator fixture.',
+        ]);
+        self::insert('company_accounts', [
+            'id' => 9820,
+            'company_id' => self::CT600A_COMPANY_ID,
+            'account_name' => 'Golden CT600A Current Account',
+            'account_type' => 'bank',
+            'institution_name' => 'Synthetic Test Bank',
+            'account_identifier' => 'TEST-98-00-00-00000000',
+            'nominal_account_id' => 91001,
+            'is_active' => 1,
+        ]);
+        foreach ([
+            [9805, 'participator_loan_asset_nominal_id', '91006'],
+            [9806, 'participator_loan_liability_nominal_id', '91005'],
+            [9807, 'corporation_tax_expense_nominal_id', '91008'],
+            [9808, 'corporation_tax_liability_nominal_id', '91009'],
+            [9809, 'default_currency', 'GBP'],
+            [9810, 'utr', '1234567890'],
+        ] as [$id, $setting, $value]) {
+            self::insert('company_settings', [
+                'id' => $id,
+                'company_id' => self::CT600A_COMPANY_ID,
+                'setting' => $setting,
+                'type' => $setting === 'default_currency' ? 'char' : 'int',
+                'value' => $value,
+            ]);
+        }
+
+        foreach ([
+            ['id' => self::CT600A_ACCOUNTING_PERIOD_ID, 'label' => '05/09/2022 to 30/09/2023', 'start' => '2022-09-05', 'end' => '2023-09-30'],
+            ['id' => self::CT600A_FOLLOWING_ACCOUNTING_PERIOD_ID, 'label' => '01/10/2023 to 30/09/2024', 'start' => '2023-10-01', 'end' => '2024-09-30'],
+            ['id' => self::CT600A_LATER_RELIEF_ACCOUNTING_PERIOD_ID, 'label' => '01/10/2024 to 30/09/2025', 'start' => '2024-10-01', 'end' => '2025-09-30'],
+            ['id' => self::CT600A_L2P_ACCOUNTING_PERIOD_ID, 'label' => '01/10/2025 to 30/09/2026', 'start' => '2025-10-01', 'end' => '2026-09-30'],
+        ] as $period) {
+            self::insertPeriod(self::CT600A_COMPANY_ID, $period);
+        }
+
+        self::seedCt600aStatementUpload(9831, self::CT600A_ACCOUNTING_PERIOD_ID, '2023-06-01');
+        self::seedCt600aStatementUpload(9832, self::CT600A_FOLLOWING_ACCOUNTING_PERIOD_ID, '2024-03-01');
+        self::seedCt600aTransaction(9841, 9851, 9831, self::CT600A_ACCOUNTING_PERIOD_ID, '2023-03-01', 25000.00, 91002, 'Synthetic CT600A trading receipt');
+        self::seedCt600aTransaction(9842, 9852, 9831, self::CT600A_ACCOUNTING_PERIOD_ID, '2023-06-01', -10000.00, 91006, 'Synthetic participator loan advanced');
+        self::seedCt600aTransaction(9843, 9853, 9831, self::CT600A_ACCOUNTING_PERIOD_ID, '2023-08-01', 2000.00, 91006, 'Synthetic participator loan repayment before year end');
+        self::seedCt600aTransaction(9844, 9854, 9832, self::CT600A_FOLLOWING_ACCOUNTING_PERIOD_ID, '2024-03-01', 5000.00, 91006, 'Synthetic participator loan repayment within nine months');
+    }
+
+    private static function seedCt600aStatementUpload(int $id, int $accountingPeriodId, string $date): void
+    {
+        self::insert('statement_uploads', [
+            'id' => $id,
+            'company_id' => self::CT600A_COMPANY_ID,
+            'accounting_period_id' => $accountingPeriodId,
+            'account_id' => 9820,
+            'source_type' => 'bank_account',
+            'workflow_status' => 'completed',
+            'statement_month' => substr($date, 0, 7) . '-01',
+            'original_filename' => 'GOLDEN-CT600A-' . $id . '.csv',
+            'stored_filename' => 'golden-ct600a-' . $id . '.csv',
+            'file_sha256' => hash('sha256', 'GOLDEN-CT600A-' . $id),
+            'date_range_start' => $date,
+            'date_range_end' => $date,
+            'rows_parsed' => 1,
+            'rows_inserted' => 1,
+            'rows_valid' => 1,
+            'rows_committed' => 1,
+            'committed_at' => $date . ' 12:00:00',
+        ]);
+    }
+
+    private static function seedCt600aTransaction(
+        int $transactionId,
+        int $journalId,
+        int $statementUploadId,
+        int $accountingPeriodId,
+        string $date,
+        float $amount,
+        int $nominalId,
+        string $description
+    ): void {
+        self::insert('transactions', [
+            'id' => $transactionId,
+            'company_id' => self::CT600A_COMPANY_ID,
+            'accounting_period_id' => $accountingPeriodId,
+            'statement_upload_id' => $statementUploadId,
+            'account_id' => 9820,
+            'txn_date' => $date,
+            'txn_type' => 'Synthetic',
+            'description' => $description,
+            'reference' => 'GOLDEN-CT600A-' . $transactionId,
+            'amount' => $amount,
+            'currency' => 'GBP',
+            'source_type' => 'statement_csv',
+            'source_account_label' => 'Golden CT600A Current Account',
+            'balance' => 0.00,
+            'counterparty_name' => $nominalId === 91006 ? 'Golden CT600A Director' : 'Synthetic CT600A Customer',
+            'dedupe_hash' => hash('sha256', 'GOLDEN-CT600A-' . $transactionId),
+            'nominal_account_id' => $nominalId,
+            'party_id' => $nominalId === 91006 ? self::CT600A_PARTY_ID : null,
+            'category_status' => 'manual',
+            'document_download_status' => 'skipped',
+        ]);
+
+        $value = abs($amount);
+        $loanMovement = $nominalId === 91006;
+        $lines = $loanMovement
+            ? ($amount < 0
+                ? [[91006, $value, 0.00, self::CT600A_PARTY_ID], [91001, 0.00, $value, null]]
+                : [[91001, $value, 0.00, null], [91006, 0.00, $value, self::CT600A_PARTY_ID]])
+            : [[91001, $value, 0.00, null], [$nominalId, 0.00, $value, null]];
+        self::insert('journals', [
+            'id' => $journalId,
+            'company_id' => self::CT600A_COMPANY_ID,
+            'accounting_period_id' => $accountingPeriodId,
+            'source_type' => 'bank_csv',
+            'source_ref' => 'transaction:' . $transactionId,
+            'journal_date' => $date,
+            'description' => $description,
+            'is_posted' => 1,
+        ]);
+        foreach ($lines as [$lineNominalId, $debit, $credit, $partyId]) {
+            self::insert('journal_lines', [
+                'journal_id' => $journalId,
+                'nominal_account_id' => $lineNominalId,
+                'party_id' => $partyId,
+                'debit' => $debit,
+                'credit' => $credit,
+                'line_description' => $description,
+            ]);
+        }
     }
 
     private static function seedFourPeriodPrepayment(): void

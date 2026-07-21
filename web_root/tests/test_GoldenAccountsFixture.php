@@ -25,6 +25,34 @@ $harness->check(GoldenAccountsFixture::class, 'builds deterministic synthetic ac
     $harness->assertSame(19, InterfaceDB::countWhere('transactions', 'company_id', GoldenAccountsFixture::GOLDEN_COMPANY_ID));
 });
 
+$harness->check(GoldenAccountsFixture::class, 'seeds a confirmed, transaction-backed CT600A scenario without manual tax events', static function () use ($harness): void {
+    $manifest = GoldenAccountsFixture::build();
+    $companyId = GoldenAccountsFixture::CT600A_COMPANY_ID;
+    $periodIds = (array)($manifest['ct600a_scenario']['accounting_period_ids'] ?? []);
+
+    $harness->assertSame([
+        GoldenAccountsFixture::CT600A_ACCOUNTING_PERIOD_ID,
+        GoldenAccountsFixture::CT600A_FOLLOWING_ACCOUNTING_PERIOD_ID,
+        GoldenAccountsFixture::CT600A_LATER_RELIEF_ACCOUNTING_PERIOD_ID,
+        GoldenAccountsFixture::CT600A_L2P_ACCOUNTING_PERIOD_ID,
+    ], $periodIds);
+    $harness->assertSame(4, InterfaceDB::countWhere('accounting_periods', 'company_id', $companyId));
+    $harness->assertSame(4, InterfaceDB::countWhere('transactions', 'company_id', $companyId));
+    $harness->assertSame(3, (int)InterfaceDB::fetchColumn(
+        'SELECT COUNT(*) FROM transactions WHERE company_id = :company_id AND nominal_account_id = :nominal_id AND party_id = :party_id',
+        ['company_id' => $companyId, 'nominal_id' => 91006, 'party_id' => GoldenAccountsFixture::CT600A_PARTY_ID]
+    ));
+    $harness->assertSame(3, (int)InterfaceDB::fetchColumn(
+        'SELECT COUNT(*) FROM journal_lines jl INNER JOIN journals j ON j.id = jl.journal_id
+         WHERE j.company_id = :company_id AND jl.nominal_account_id = :nominal_id AND jl.party_id = :party_id',
+        ['company_id' => $companyId, 'nominal_id' => 91006, 'party_id' => GoldenAccountsFixture::CT600A_PARTY_ID]
+    ));
+    $harness->assertSame(0, (int)InterfaceDB::fetchColumn(
+        'SELECT COUNT(*) FROM corporation_tax_ct600a_events WHERE company_id = :company_id',
+        ['company_id' => $companyId]
+    ));
+});
+
 $harness->check(GoldenAccountsFixture::class, 'apportions one cross-period prepayment by inclusive service days', static function () use ($harness): void {
     GoldenAccountsFixture::build();
     $review = InterfaceDB::fetchOne(

@@ -289,7 +289,12 @@ final class Ct600BuilderService
                     'CompanyTaxCalculation/CorporationTaxChargeable/FinancialYear/Details/Profit'
                 );
                 $displayRate = $this->taxRate($band['tax_rate_percent'] ?? null);
-                $displayTax = round((float)$displayProfit * ((float)$displayRate / 100), 2);
+                // HMRC's financial-year profit field is whole pounds, while the
+                // frozen CT calculation is apportionable to pence.  Preserve the
+                // approved band tax rather than recalculating it from a rounded
+                // display value; otherwise a split period can alter the return
+                // by several pence during serialization.
+                $displayTax = round((float)($band['gross_tax'] ?? 0), 2);
                 $serializedGrossTax += $displayTax;
                 $this->element($document, $details, 'Profit', $displayProfit);
                 $this->element($document, $details, 'TaxRate', $displayRate);
@@ -302,7 +307,7 @@ final class Ct600BuilderService
         $serializedGrossTax = round($serializedGrossTax, 2);
         if (abs($serializedGrossTax - (float)($calculationModel['gross_corporation_tax'] ?? 0)) > 0.009) {
             throw new \RuntimeException(
-                'The whole-pound CT600 financial-year profits do not reconcile to the frozen gross Corporation Tax.'
+                'The frozen CT600 financial-year tax bands do not reconcile to the gross Corporation Tax.'
             );
         }
         $netCorporationTax = $this->mapped(

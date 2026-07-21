@@ -152,21 +152,6 @@ final class Ct600aService
     private function displayModelForPeriod(int $companyId, int $accountingPeriodId, array $period): array
     {
         $ctPeriodId = (int)($period['id'] ?? 0);
-        if (in_array((string)($period['status'] ?? ''), ['submitted', 'accepted'], true)) {
-            $frozen = (new CtPeriodFilingModelService())->build($companyId, $accountingPeriodId, $ctPeriodId);
-            if (!empty($frozen['available'])) {
-                $ct600a = (array)((($frozen['model'] ?? [])['ct600a'] ?? []));
-                return $ct600a + [
-                    'available' => true,
-                    'sequence_no' => (int)($period['sequence_no'] ?? 0),
-                    'ct_period_id' => $ctPeriodId,
-                    'period_start' => (string)($period['period_start'] ?? ''),
-                    'period_end' => (string)($period['period_end'] ?? ''),
-                    'immutable' => true,
-                ];
-            }
-        }
-
         return $this->build($companyId, $accountingPeriodId, $ctPeriodId);
     }
 
@@ -210,7 +195,7 @@ final class Ct600aService
         $events = $this->withReliefDueDates($companyId, $events, 'event_date');
         $review = $this->reviewStatus($companyId, $accountingPeriodId);
         $model = $this->buildFromEvidence($period, $s455, $events, $review, $asOfDate);
-        return $model + [
+        $result = $model + [
             'available' => true,
             'sequence_no' => (int)$period['sequence_no'],
             'ct_period_id' => $ctPeriodId,
@@ -220,6 +205,98 @@ final class Ct600aService
             'events' => $events,
             's455' => $s455,
         ];
+        if (!in_array((string)($period['status'] ?? ''), ['submitted', 'accepted'], true)) {
+            return $result;
+        }
+
+        // The return liability is immutable once filed.  Continue deriving
+        // post-filing repayment evidence only for a separate L2P position;
+        // it must never reopen A45/A70/A80 on the submitted return.
+        $frozenCt600a = $this->frozenCt600aForFiledPeriod($companyId, $accountingPeriodId, $ctPeriodId);
+        if ($frozenCt600a === null) {
+            // Accepted records predating the immutable filing-basis feature
+            // remain readable through the legacy calculation.  Once a basis
+            // exists, however, a damaged or unverifiable one must fail closed.
+            if ($this->filedBasisExists($companyId, $accountingPeriodId, $ctPeriodId)) {
+                $result['available'] = false;
+                $result['errors'] = ['The immutable CT600A filing basis could not be verified.'];
+            }
+            return $result;
+        }
+        $liveClaims = (array)($result['separate_l2p_claim_events'] ?? []);
+        $liveL2pRelief = (float)($result['separate_l2p_relief_due'] ?? 0);
+        $liveWarnings = (array)($result['evidence_warnings'] ?? []);
+        $frozenWarnings = (array)($frozenCt600a['evidence_warnings'] ?? []);
+        $result = array_replace($result, $frozenCt600a);
+        $result['separate_l2p_claim_events'] = $liveClaims;
+        $result['separate_l2p_relief_due'] = $liveL2pRelief;
+        $result['evidence_warnings'] = array_values(array_unique(array_merge($frozenWarnings, $liveWarnings)));
+        $result['immutable'] = true;
+        return $result;
+    }
+
+    /** @return null|array<string,mixed> */
+    private function frozenCt600aForFiledPeriod(int $companyId, int $accountingPeriodId, int $ctPeriodId): ?array
+    {
+        if (!\InterfaceDB::tableExists('ct_period_filing_bases')
+            || !\InterfaceDB::tableExists('ixbrl_accounts_filing_approvals')) {
+            return null;
+        }
+        $row = \InterfaceDB::fetchOne(
+            'SELECT b.basis_version, b.basis_hash, b.basis_json, b.calculation_basis_hash,
+                    a.basis_hash AS approval_basis_hash
+             FROM ct_period_filing_bases b
+             INNER JOIN ixbrl_accounts_filing_approvals a ON a.id = b.filing_approval_id
+             WHERE b.company_id = :company_id
+               AND b.accounting_period_id = :period_id
+               AND b.ct_period_id = :ct_period_id
+             ORDER BY b.id DESC LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'period_id' => $accountingPeriodId,
+                'ct_period_id' => $ctPeriodId,
+            ]
+        );
+        if (!is_array($row)) {
+            return null;
+        }
+        $model = json_decode((string)($row['basis_json'] ?? ''), true);
+        if (!is_array($model)
+            || (int)($model['ct_period']['id'] ?? 0) !== $ctPeriodId
+            || !is_array($model['ct600a'] ?? null)) {
+            return null;
+        }
+        $canonical = $this->filingBasisCanonicalJson($model);
+        $hash = hash(
+            'sha256',
+            CtPeriodFilingModelService::BASIS_VERSION . '|'
+            . (string)($row['approval_basis_hash'] ?? '') . '|'
+            . (string)($row['calculation_basis_hash'] ?? '') . '|'
+            . $canonical
+        );
+        if ((string)($row['basis_version'] ?? '') !== CtPeriodFilingModelService::BASIS_VERSION
+            || !hash_equals((string)($row['basis_hash'] ?? ''), $hash)) {
+            return null;
+        }
+        return (array)$model['ct600a'];
+    }
+
+    private function filedBasisExists(int $companyId, int $accountingPeriodId, int $ctPeriodId): bool
+    {
+        if (!\InterfaceDB::tableExists('ct_period_filing_bases')) {
+            return false;
+        }
+        return (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*) FROM ct_period_filing_bases
+             WHERE company_id = :company_id
+               AND accounting_period_id = :period_id
+               AND ct_period_id = :ct_period_id',
+            [
+                'company_id' => $companyId,
+                'period_id' => $accountingPeriodId,
+                'ct_period_id' => $ctPeriodId,
+            ]
+        ) > 0;
     }
 
     /**
@@ -739,6 +816,19 @@ final class Ct600aService
     { $d=\DateTimeImmutable::createFromFormat('!Y-m-d',$date); return $d!==false&&$d->format('Y-m-d')===$date; }
     private function schemaReady(): bool
     { return \InterfaceDB::tableExists('corporation_tax_ct600a_events')&&\InterfaceDB::tableExists('corporation_tax_ct600a_accounting_reviews'); }
+    private function filingBasisCanonicalJson(array $value): string
+    {
+        $normalise = function (mixed $item) use (&$normalise): mixed {
+            if (!is_array($item)) { return $item; }
+            if (!array_is_list($item)) { ksort($item, SORT_STRING); }
+            foreach ($item as $key => $child) { $item[$key] = $normalise($child); }
+            return $item;
+        };
+        return (string)json_encode(
+            $normalise($value),
+            JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION
+        );
+    }
     private function canonicalJson(array $value): string
     {
         $sort=function(mixed $item)use(&$sort):mixed{if(!is_array($item)){return $item;}if(!array_is_list($item)){ksort($item,SORT_STRING);}foreach($item as $k=>$v){$item[$k]=$sort($v);}return $item;};

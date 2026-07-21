@@ -11,12 +11,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(_year_end_director_loan_offsetCard::class, static function (GeneratedServiceClassTestHarness $harness, _year_end_director_loan_offsetCard $card): void {
-    $harness->check(_year_end_director_loan_offsetCard::class, 'uses one factual year-end review service', static function () use ($harness, $card): void {
+    $harness->check(_year_end_director_loan_offsetCard::class, 'uses the factual year-end review and CT600A declaration services', static function () use ($harness, $card): void {
         $services = $card->services();
-        $harness->assertCount(1, $services);
+        $harness->assertCount(2, $services);
         $harness->assertSame('directorLoanReview', (string)($services[0]['key'] ?? ''));
         $harness->assertSame(\eel_accounts\Service\DirectorLoanReconciliationService::class, (string)($services[0]['service'] ?? ''));
         $harness->assertSame('fetchYearEndConfirmationContext', (string)($services[0]['method'] ?? ''));
+        $harness->assertSame('ct600a', (string)($services[1]['key'] ?? ''));
+        $harness->assertSame(\eel_accounts\Service\Ct600aService::class, (string)($services[1]['service'] ?? ''));
+        $harness->assertSame('fetchForAccountingPeriod', (string)($services[1]['method'] ?? ''));
         $harness->assertSame('Director Loan Year End Review', $card->title());
     });
 
@@ -95,6 +98,28 @@ $harness->run(_year_end_director_loan_offsetCard::class, static function (Genera
 
         $harness->assertTrue(str_contains($html, 'passes automatically'));
         $harness->assertSame(false, str_contains($html, 'save_director_loan_year_end_review'));
+    });
+
+    $harness->check(_year_end_director_loan_offsetCard::class, 'places each CT600A declaration before the Year End Confirmation', static function () use ($harness, $card): void {
+        $context = yearEndDirectorLoanReviewCardContext([
+            'available' => true, 'has_activity' => true, 'can_confirm' => true,
+            'asset_receivable' => 0, 'liability_payable' => 0, 'desired_reclassification_amount' => 0,
+            'posted_reclassification_amount' => 0, 'pending_adjustment_amount' => 0, 'potential_s455_exposure' => 0,
+            'warnings' => [], 'per_director' => [], 'tax_review' => ['director_flags' => []], 'proposed_lines' => [],
+        ]);
+        $context['services']['ct600a'] = [
+            'available' => true,
+            'questions' => ['missing_parties' => 'Are any participators missing?'],
+            'periods' => [[
+                'ct_period_id' => 9, 'sequence_no' => 1,
+                'review' => ['answers' => [], 'approver_role' => 'director'],
+            ]],
+        ];
+        $html = $card->render($context);
+
+        $harness->assertTrue(str_contains($html, 'Section 464A and 464C declaration — CT period 1'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="save_ct600a_review"'));
+        $harness->assertSame(true, strpos($html, 'Section 464A and 464C declaration') < strpos($html, 'Year End Confirmation'));
     });
 
     $harness->check(_year_end_director_loan_offsetCard::class, 'blocks confirmation and offers repair for an unresolved legacy offset', static function () use ($harness, $card): void {

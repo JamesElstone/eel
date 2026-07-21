@@ -42,7 +42,6 @@ final class _director_loan_ct600aCard extends CardBaseFramework
             $ctId = (int)($ct['ct_period_id'] ?? 0);
             $errors = (array)($ct['blocking_errors'] ?? []);
             $complete = !array_key_exists('complete', $ct) ? $errors === [] : !empty($ct['complete']);
-            $review = (array)($ct['review'] ?? []);
             $html .= '<section class="panel-soft settings-stack"><div class="status-head"><h3 class="card-title">CT period '
                 . (int)$ct['sequence_no'] . ' — ' . HelperFramework::escape((string)$ct['period_start']) . ' to '
                 . HelperFramework::escape((string)$ct['period_end']) . '</h3><span class="badge '
@@ -61,8 +60,7 @@ final class _director_loan_ct600aCard extends CardBaseFramework
             foreach ((array)($ct['evidence_warnings'] ?? []) as $warning) {
                 $html .= '<div class="panel-soft warn helper">' . HelperFramework::escape((string)$warning) . '</div>';
             }
-            $html .= $this->reviewForm((array)$data['questions'], $review, $ctId, $companyId, $periodId)
-                . '</section>';
+            $html .= '</section>';
         }
         return $html . '</div>';
     }

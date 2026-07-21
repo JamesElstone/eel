@@ -10,7 +10,7 @@ namespace eel_accounts\Service;
  */
 final class Ct600ReturnModelService
 {
-    public const MODEL_VERSION = 'ct600-return-model-v1';
+    public const MODEL_VERSION = 'ct600-return-model-v2';
 
     private ?\Closure $filingModelLoader;
     private ?\Closure $rimResolver;
@@ -88,7 +88,11 @@ final class Ct600ReturnModelService
         $mappingInput = $filing;
         $mappingInput['facts'] = array_replace(
             (array)($filing['facts'] ?? []),
-            $this->flatten(['ct600' => $returnModel])
+            $this->flatten(['ct600' => $returnModel]),
+            [
+                'computation.summary.s455_tax' => (float)($returnModel['ct600a']['tax_payable'] ?? 0),
+                'computation.summary.estimated_corporation_tax' => (float)$returnModel['amounts']['tax_payable'],
+            ]
         );
         $mapped = $this->mapFacts($mappingInput, $profile);
         if (empty($mapped['success'])) {
@@ -114,6 +118,9 @@ final class Ct600ReturnModelService
             'computation_hash' => (string)($model['computation']['hash'] ?? ''),
             'accounts_report_basis_version' => (string)($model['accounts_report']['basis_version'] ?? ''),
             'accounts_report_basis_hash' => (string)($model['accounts_report']['basis_hash'] ?? ''),
+            'corporation_tax_filing_scope_hash' => (string)($model['corporation_tax_filing_scope']['basis_hash'] ?? ''),
+            'ct600a_basis_hash' => (string)($model['ct600a']['basis_hash'] ?? ''),
+            'ct600a_review_hash' => (string)($model['ct600a']['review']['basis_hash'] ?? ''),
             'rim_package_id' => $packageId,
             'rim_form_version' => (string)($rim['form_version'] ?? ''),
             'rim_artifact_version' => (string)($rim['artifact_version'] ?? ''),
@@ -161,6 +168,9 @@ final class Ct600ReturnModelService
         $taxableLoss = $this->number($summary, 'taxable_loss');
         $ordinaryTax = $this->number($summary, 'ordinary_corporation_tax');
         $taxPayable = $this->number($summary, 'estimated_corporation_tax');
+        $ct600a = (array)($model['ct600a'] ?? []);
+        $ct600aTax = round((float)($ct600a['tax_payable'] ?? 0), 2);
+        $taxPayable = round($ordinaryTax + $ct600aTax, 2);
         $taxBands = array_values((array)($decisions['tax_calculation_bands'] ?? []));
         $grossTax = round(array_sum(array_map(
             static fn(array $band): float => (float)($band['gross_tax'] ?? 0),
@@ -192,7 +202,7 @@ final class Ct600ReturnModelService
                 'accounts_same_period' => (bool)$decisions['accounts_same_period'],
                 'computations' => (bool)$decisions['computations_attached'],
                 'computations_same_period' => (bool)$decisions['computations_same_period'],
-                'supplementary_pages' => [],
+                'supplementary_pages' => array_values((array)($decisions['supplementary_pages'] ?? [])),
             ],
             'calculation' => [
                 'loss_relief_treatment' => (string)$decisions['loss_relief_treatment'],
@@ -231,6 +241,7 @@ final class Ct600ReturnModelService
                 'tax_chargeable' => $taxPayable,
                 'tax_payable' => $taxPayable,
             ],
+            'ct600a' => $ct600a,
         ];
     }
 
@@ -303,7 +314,8 @@ final class Ct600ReturnModelService
             || empty($decisions['accounts_attached'])
             || empty($decisions['computations_attached'])
             || empty($decisions['computations_same_period'])
-            || (array)($decisions['supplementary_pages'] ?? []) !== []) {
+            || !in_array((array)($decisions['supplementary_pages'] ?? []), [[], ['CT600A']], true)
+            || (!empty($model['ct600a']['required']) !== ((array)($decisions['supplementary_pages'] ?? []) === ['CT600A']))) {
             $errors[] = 'The approved filing decisions are outside the original ordinary-company CT600 MVP.';
         }
         $summary = (array)($model['computation']['summary'] ?? []);
@@ -366,13 +378,12 @@ final class Ct600ReturnModelService
     private function supplementaryPageReasons(array $model): array
     {
         $reasons = [];
-        $summary = (array)($model['computation']['summary'] ?? []);
-        if ((float)($summary['s455_tax'] ?? 0) > 0.004) {
-            $reasons[] = 'loans to participators / s455 tax (CT600A)';
-        }
         foreach ($this->flatten($model) as $key => $value) {
             $normalisedKey = strtolower((string)$key);
             $signalsSupplement = preg_match('/(?:^|\.)(?:ct600[a-p]_required|supplementary_page_required|requires_supplementary_pages)$/', $normalisedKey) === 1;
+            if (str_ends_with($normalisedKey, 'ct600a_required')) {
+                continue;
+            }
             if ($signalsSupplement && ($value === true || is_numeric($value) && (float)$value != 0.0 || is_string($value) && trim($value) !== '')) {
                 $reasons[] = str_replace('_', ' ', (string)$key);
             }

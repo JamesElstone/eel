@@ -34,6 +34,7 @@ final class _loans extends PageContextFramework
         return [
             'director_loan_state',
             'director_loan_s455',
+            'director_loan_ct600a',
             'year_end_director_loan_offset',
         ];
     }
@@ -51,6 +52,7 @@ final class _loans extends PageContextFramework
                 'tab' => 'Participator loans (s455)',
                 'cards' => [
                     'director_loan_s455',
+                    'director_loan_ct600a',
                 ],
             ],
             [

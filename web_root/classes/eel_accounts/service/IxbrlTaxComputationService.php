@@ -69,9 +69,14 @@ final class IxbrlTaxComputationService
         if (preg_match('/^[a-f0-9]{64}$/i', (string)($profile['content_hash'] ?? '')) !== 1) {
             return $this->failRun($runId, 'The active computation mapping profile has no valid content hash.');
         }
+        $mappingModel = $model;
+        $ct600aTax = round((float)($model['model']['ct600a']['tax_payable'] ?? 0), 2);
+        $ordinaryTax = round((float)($model['model']['computation']['summary']['ordinary_corporation_tax'] ?? 0), 2);
+        $mappingModel['facts']['computation.summary.s455_tax'] = $ct600aTax;
+        $mappingModel['facts']['computation.summary.estimated_corporation_tax'] = round($ordinaryTax + $ct600aTax, 2);
         $mappedFacts = (new CtFilingMappingService())->mapFrozenFacts(
             CtFilingMappingService::TARGET_COMPUTATION,
-            $model,
+            $mappingModel,
             $profile
         );
         if (empty($mappedFacts['success'])) {
@@ -329,6 +334,7 @@ final class IxbrlTaxComputationService
         foreach ($sections as $section => $rows) {
             $body .= '<div class="ct-section"><h2>' . $generator->escape(ucwords(str_replace('_', ' ', $section))) . '</h2><table><tbody>' . implode('', $rows) . '</tbody></table></div>';
         }
+        $body .= $this->renderSupportingSchedules($generator, $model);
         $body .= '</div>';
         if (!str_starts_with($schemaRef, 'http://www.hmrc.gov.uk/')) {
             throw new \RuntimeException('The verified HMRC computation-taxonomy schema reference is invalid.');
@@ -341,6 +347,58 @@ final class IxbrlTaxComputationService
             'units' => [['id' => 'GBP', 'measure' => 'iso4217:GBP']],
             'body' => $body,
         ])];
+    }
+
+    private function renderSupportingSchedules(IxbrlGeneratorService $generator, array $filing): string
+    {
+        $model = (array)($filing['model'] ?? []);
+        $summary = (array)($model['computation']['summary'] ?? []);
+        $breakdown = (array)($summary['capital_allowance_breakdown'] ?? []);
+        $assets = array_values(array_filter((array)($breakdown['asset_calculations'] ?? []), static fn(mixed $row): bool =>
+            is_array($row) && (string)($row['allowance_type'] ?? '') === 'aia' && (float)($row['allowance_amount'] ?? 0) >= 0.005
+        ));
+        $html = '';
+        if ($assets !== []) {
+            $total = round(array_sum(array_map(static fn(array $row): float => (float)($row['allowance_amount'] ?? 0), $assets)), 2);
+            $expected = round((float)($model['filing_decisions']['aia_claimed_in_trade'] ?? 0), 2);
+            if (abs($total - $expected) > 0.009) {
+                throw new \RuntimeException('The asset-level AIA schedule does not reconcile to the frozen CT600 AIA claim.');
+            }
+            $rows = '';
+            foreach ($assets as $asset) {
+                $rows .= '<tr><td>' . $generator->escape((string)($asset['asset_code'] ?? $asset['asset_id'] ?? '')) . '</td>'
+                    . '<td>' . $generator->escape((string)($asset['description'] ?? 'Plant and machinery')) . '</td>'
+                    . '<td>' . $generator->escape((string)($asset['purchase_date'] ?? '')) . '</td>'
+                    . '<td>' . $generator->escape(number_format((float)($asset['addition_amount'] ?? 0), 2, '.', ',')) . '</td>'
+                    . '<td>' . $generator->escape(number_format((float)($asset['allowance_amount'] ?? 0), 2, '.', ',')) . '</td></tr>';
+            }
+            $html .= '<div class="ct-section"><h2>Annual Investment Allowance schedule</h2><table><thead><tr><th>Asset</th><th>Description</th><th>Acquired</th><th>Qualifying expenditure (£)</th><th>AIA claimed (£)</th></tr></thead><tbody>'
+                . $rows . '<tr><th colspan="4">Total AIA claimed</th><td>' . $generator->escape(number_format($total, 2, '.', ',')) . '</td></tr></tbody></table></div>';
+        }
+        $ct600a = (array)($model['ct600a'] ?? []);
+        if (!empty($ct600a['required'])) {
+            $html .= '<div class="ct-section"><h2>CT600A loans and arrangements schedule</h2>';
+            $html .= $this->supportingTable($generator, 'Part 1 — loans and benefits', (array)($ct600a['part1']['rows'] ?? []), 'amount');
+            $html .= $this->supportingTable($generator, 'Part 2 — relief within nine months', (array)($ct600a['part2']['rows'] ?? []), null);
+            $html .= $this->supportingTable($generator, 'Part 3 — relief due now', (array)($ct600a['part3']['rows'] ?? []), null);
+            $html .= '<table><tbody><tr><th>A75 total outstanding</th><td>' . $generator->escape(number_format((float)($ct600a['total_loans_outstanding'] ?? 0), 2, '.', ','))
+                . '</td></tr><tr><th>A80 tax payable</th><td>' . $generator->escape(number_format((float)($ct600a['tax_payable'] ?? 0), 2, '.', ',')) . '</td></tr></tbody></table></div>';
+        }
+        return $html;
+    }
+
+    private function supportingTable(IxbrlGeneratorService $generator, string $title, array $rows, ?string $amountKey): string
+    {
+        if ($rows === []) { return ''; }
+        $body = '';
+        foreach ($rows as $row) {
+            $amount = $amountKey !== null ? (float)($row[$amountKey] ?? 0)
+                : (float)($row['amount_repaid'] ?? 0) + (float)($row['amount_released_or_written_off'] ?? 0);
+            $body .= '<tr><td>' . $generator->escape((string)($row['name'] ?? 'Participator')) . '</td><td>'
+                . $generator->escape((string)($row['date'] ?? '')) . '</td><td>'
+                . $generator->escape(number_format($amount, 2, '.', ',')) . '</td></tr>';
+        }
+        return '<h3>' . $generator->escape($title) . '</h3><table><thead><tr><th>Participator or associate</th><th>Date</th><th>Amount (£)</th></tr></thead><tbody>' . $body . '</tbody></table>';
     }
 
     private function contextProfile(array $mapping): string

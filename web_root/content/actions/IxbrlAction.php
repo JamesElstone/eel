@@ -77,6 +77,22 @@ final class IxbrlAction implements ActionInterfaceFramework
                     []
                 );
             }
+            if ($intent === 'save_ct_filing_scope_answer') {
+                $result = (new \eel_accounts\Service\CorporationTaxFilingScopeService())->saveAnswer(
+                    $companyId,
+                    $accountingPeriodId,
+                    trim((string)$request->input('scope_field', '')),
+                    trim((string)$request->input('scope_answer', '')),
+                    $this->actor($request)
+                );
+                return $this->result(
+                    !empty($result['success']),
+                    (array)($result['errors'] ?? []),
+                    $changedFacts,
+                    !empty($result['success']) ? ['Corporation Tax filing scope updated. Approve the revised filing basis before generating or filing.'] : [],
+                    []
+                );
+            }
             if ($intent === 'approve_ixbrl_accounts_filing_basis') {
                 $progress = $services->actionProgress();
                 $progress->report('Validating the approved accounts filing basis…', 0);

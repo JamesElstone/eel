@@ -38,6 +38,8 @@ function ct600_builder_test_mappings(array $amounts): array
                 . 'NetCorporationTaxLiability',
         'tax_chargeable'
             => 'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/TaxChargeable',
+        'loans_to_participators'
+            => 'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/LoansToParticipators',
         'aia' => 'IRenvelope/CompanyTaxReturn/AllowancesAndCharges/AIACapitalAllowancesInc',
         'main_pool_allowance'
             => 'IRenvelope/CompanyTaxReturn/AllowancesAndCharges/MachineryAndPlantMainPool/'
@@ -332,6 +334,46 @@ function ct600_builder_test_assert_official_schema(
                     $zeroXpath->query('/ct:IRenvelope/ct:CompanyTaxReturn/ct:LossesDeficitsAndExcess')?->length
                 );
                 ct600_builder_test_assert_official_schema($harness, (string)$zero['xml']);
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Service\Ct600BuilderService::class,
+            'serializes a full CT600A page and validates it against the official schema',
+            static function () use ($harness): void {
+                $return = ct600_builder_test_return([
+                    'chargeable_profits' => '1000',
+                    'net_corporation_tax' => '190.00',
+                    'net_corporation_tax_liability' => '190.00',
+                    'loans_to_participators' => '303.75',
+                    'tax_chargeable' => '493.75',
+                    'tax_payable' => '493.75',
+                    'trading_profit' => '1000',
+                    'net_trading_profits' => '1000',
+                    'profits_before_other_deductions' => '1000',
+                    'profits_before_donations' => '1000',
+                ], [[
+                    'financial_year' => '2023', 'profit' => 1000.0, 'tax_rate_percent' => 19.0,
+                    'gross_tax' => 190.0, 'basis' => 'flat_main_rate',
+                ]]);
+                $return['model']['attachments']['supplementary_pages'] = ['CT600A'];
+                $return['model']['ct600a'] = [
+                    'required' => true,
+                    'before_end_period' => false,
+                    'part1' => ['rows' => [['name' => 'Jamie Example', 'amount' => 1000.0, 'tax' => 337.5]], 'total_loans' => 1000.0, 'tax_chargeable' => 337.5],
+                    'part2' => ['rows' => [['name' => 'Jamie Example', 'amount_repaid' => 100.0, 'amount_released_or_written_off' => 0.0, 'date' => '2024-03-01']], 'total_repaid' => 100.0, 'total_released_or_written_off' => 0.0, 'total' => 100.0, 'relief_due' => 33.75],
+                    'part3' => ['rows' => [], 'total_repaid' => 0.0, 'total_released_or_written_off' => 0.0, 'total' => 0.0, 'relief_due' => 0.0],
+                    'total_loans_outstanding' => 1000.0,
+                    'tax_payable' => 303.75,
+                    'relief_due' => false,
+                ];
+                $result = ct600_builder_test_build($return, 997016);
+                $harness->assertSame(true, (bool)($result['ok'] ?? false));
+                $xpath = ct600_builder_test_xpath((string)$result['xml']);
+                $harness->assertSame('yes', $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/ct:ReturnInfoSummary/ct:SupplementaryPages/ct:CT600A)'));
+                $harness->assertSame('303.75', $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/ct:LoansByCloseCompanies/ct:TaxPayable)'));
+                $harness->assertSame('1000.00', $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/ct:LoansByCloseCompanies/ct:TotalLoansOutstanding)'));
+                ct600_builder_test_assert_official_schema($harness, (string)$result['xml']);
             }
         );
 

@@ -216,6 +216,10 @@ final class Ct600BuilderService
         );
         $computations = $this->element($document, $summary, 'Computations');
         $this->element($document, $computations, 'ThisPeriodComputations', 'yes');
+        if (in_array('CT600A', (array)($model['attachments']['supplementary_pages'] ?? []), true)) {
+            $pages = $this->element($document, $summary, 'SupplementaryPages');
+            $this->element($document, $pages, 'CT600A', 'yes');
+        }
 
         if (isset($values['IRenvelope/CompanyTaxReturn/Turnover/Total'])) {
             $turnover = $this->element($document, $companyReturn, 'Turnover');
@@ -324,6 +328,13 @@ final class Ct600BuilderService
         if ($this->positive($values, $netLiabilityPath)) {
             $this->element($document, $outstanding, 'NetCorporationTaxLiability', $values[$netLiabilityPath]);
         }
+        $loansPath = 'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/LoansToParticipators';
+        if ($this->positive($values, $loansPath)) {
+            $this->element($document, $outstanding, 'LoansToParticipators', $values[$loansPath]);
+        }
+        if (!empty($model['ct600a']['relief_due'])) {
+            $this->element($document, $outstanding, 'CT600AreliefDue', 'yes');
+        }
         $taxChargeablePath = 'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/TaxChargeable';
         if ($this->positive($values, $taxChargeablePath)) {
             $this->element($document, $outstanding, 'TaxChargeable', $values[$taxChargeablePath]);
@@ -388,7 +399,68 @@ final class Ct600BuilderService
         $this->element($document, $declaration, 'AcceptDeclaration', 'yes');
         $this->element($document, $declaration, 'Name', $declarationName);
         $this->element($document, $declaration, 'Status', $declarationStatus);
+        if (in_array('CT600A', (array)($model['attachments']['supplementary_pages'] ?? []), true)) {
+            $this->serializeCt600a($document, $companyReturn, (array)$model['ct600a']);
+        }
         return $document;
+    }
+
+    private function serializeCt600a(\DOMDocument $document, \DOMElement $companyReturn, array $model): void
+    {
+        $page = $this->element($document, $companyReturn, 'LoansByCloseCompanies');
+        $this->element($document, $page, 'BeforeEndPeriod', !empty($model['before_end_period']) ? 'yes' : 'no');
+        $part1 = (array)($model['part1'] ?? []);
+        $part1Rows = array_values((array)($part1['rows'] ?? []));
+        if ($part1Rows !== []) {
+            $section = $this->element($document, $page, 'LoansInformation');
+            foreach ($part1Rows as $row) {
+                if ((float)($row['amount'] ?? 0) < 0.005) { continue; }
+                $loan = $this->element($document, $section, 'Loan');
+                $this->element($document, $loan, 'Name', $this->ct600aName((string)($row['name'] ?? 'Participator')));
+                $this->element($document, $loan, 'AmountOfLoan', $this->wholePounds($row['amount'], 'LoansByCloseCompanies/LoansInformation/Loan/AmountOfLoan'));
+            }
+            $this->element($document, $section, 'TotalLoans', $this->wholePounds($part1['total_loans'] ?? 0, 'LoansByCloseCompanies/LoansInformation/TotalLoans'));
+            $this->element($document, $section, 'TaxChargeable', $this->poundPence($part1['tax_chargeable'] ?? 0, 'LoansByCloseCompanies/LoansInformation/TaxChargeable'));
+        }
+        $this->serializeCt600aRelief($document, $page, 'ReliefEarlierThan', (array)($model['part2'] ?? []));
+        $this->serializeCt600aRelief($document, $page, 'LoanLaterReliefNow', (array)($model['part3'] ?? []));
+        if ((float)($model['total_loans_outstanding'] ?? 0) >= 0.005) {
+            $this->element($document, $page, 'TotalLoansOutstanding', $this->wholePounds($model['total_loans_outstanding'], 'LoansByCloseCompanies/TotalLoansOutstanding'));
+        }
+        $this->element($document, $page, 'TaxPayable', $this->poundPence($model['tax_payable'] ?? 0, 'LoansByCloseCompanies/TaxPayable'));
+    }
+
+    private function serializeCt600aRelief(\DOMDocument $document, \DOMElement $page, string $elementName, array $sectionModel): void
+    {
+        $rows = array_values((array)($sectionModel['rows'] ?? []));
+        if ($rows === []) { return; }
+        $section = $this->element($document, $page, $elementName);
+        foreach ($rows as $row) {
+            $loan = $this->element($document, $section, 'Loan');
+            $this->element($document, $loan, 'Name', $this->ct600aName((string)($row['name'] ?? 'Participator')));
+            if ((float)($row['amount_repaid'] ?? 0) >= 0.005) {
+                $this->element($document, $loan, 'AmountRepaid', $this->wholePounds($row['amount_repaid'], 'LoansByCloseCompanies/' . $elementName . '/Loan/AmountRepaid'));
+            }
+            if ((float)($row['amount_released_or_written_off'] ?? 0) >= 0.005) {
+                $this->element($document, $loan, 'AmountReleasedOrWrittenOff', $this->wholePounds($row['amount_released_or_written_off'], 'LoansByCloseCompanies/' . $elementName . '/Loan/AmountReleasedOrWrittenOff'));
+            }
+            $this->element($document, $loan, 'Date', (string)$row['date']);
+        }
+        if ((float)($sectionModel['total_repaid'] ?? 0) >= 0.005) {
+            $this->element($document, $section, 'TotalAmountRepaid', $this->wholePounds($sectionModel['total_repaid'], 'LoansByCloseCompanies/' . $elementName . '/TotalAmountRepaid'));
+        }
+        if ((float)($sectionModel['total_released_or_written_off'] ?? 0) >= 0.005) {
+            $this->element($document, $section, 'TotalAmountReleasedOrWritten', $this->wholePounds($sectionModel['total_released_or_written_off'], 'LoansByCloseCompanies/' . $elementName . '/TotalAmountReleasedOrWritten'));
+        }
+        $this->element($document, $section, 'TotalLoans', $this->wholePounds($sectionModel['total'] ?? 0, 'LoansByCloseCompanies/' . $elementName . '/TotalLoans'));
+        $this->element($document, $section, 'ReliefDue', $this->poundPence($sectionModel['relief_due'] ?? 0, 'LoansByCloseCompanies/' . $elementName . '/ReliefDue'));
+    }
+
+    private function ct600aName(string $name): string
+    {
+        $name = trim($name);
+        if (mb_strlen($name) < 2) { throw new \RuntimeException('A CT600A participator name must contain at least two characters.'); }
+        return mb_substr($name, 0, 56);
     }
 
     /** @return array<string,string> */

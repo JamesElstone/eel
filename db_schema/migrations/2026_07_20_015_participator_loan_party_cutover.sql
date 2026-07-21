@@ -27,14 +27,19 @@ DELETE FROM director_loan_attribution_audit;
 
 UPDATE journal_lines jl
 INNER JOIN journals j ON j.id = jl.journal_id
-LEFT JOIN company_settings asset ON asset.company_id = j.company_id
-  AND asset.setting IN ('director_loan_asset_nominal_id', 'participator_loan_asset_nominal_id')
-LEFT JOIN company_settings liability ON liability.company_id = j.company_id
-  AND liability.setting IN ('director_loan_liability_nominal_id', 'director_loan_nominal_id', 'participator_loan_liability_nominal_id')
 SET jl.director_id = NULL, jl.party_id = NULL
-WHERE jl.nominal_account_id IN (
-  CAST(COALESCE(asset.value, '') AS UNSIGNED),
-  CAST(COALESCE(liability.value, '') AS UNSIGNED)
+WHERE EXISTS (
+  SELECT 1
+  FROM company_settings loan_setting
+  WHERE loan_setting.company_id = j.company_id
+    AND loan_setting.setting IN (
+      'director_loan_asset_nominal_id',
+      'director_loan_liability_nominal_id',
+      'director_loan_nominal_id',
+      'participator_loan_asset_nominal_id',
+      'participator_loan_liability_nominal_id'
+    )
+    AND loan_setting.value = CAST(jl.nominal_account_id AS CHAR)
 );
 
 UPDATE transactions t
@@ -42,14 +47,19 @@ INNER JOIN journals j ON j.company_id = t.company_id
   AND j.source_type = 'bank_csv'
   AND j.source_ref = CONCAT('transaction:', t.id)
 INNER JOIN journal_lines jl ON jl.journal_id = j.id
-LEFT JOIN company_settings asset ON asset.company_id = t.company_id
-  AND asset.setting IN ('director_loan_asset_nominal_id', 'participator_loan_asset_nominal_id')
-LEFT JOIN company_settings liability ON liability.company_id = t.company_id
-  AND liability.setting IN ('director_loan_liability_nominal_id', 'director_loan_nominal_id', 'participator_loan_liability_nominal_id')
 SET t.director_id = NULL, t.party_id = NULL
-WHERE jl.nominal_account_id IN (
-  CAST(COALESCE(asset.value, '') AS UNSIGNED),
-  CAST(COALESCE(liability.value, '') AS UNSIGNED)
+WHERE EXISTS (
+  SELECT 1
+  FROM company_settings loan_setting
+  WHERE loan_setting.company_id = t.company_id
+    AND loan_setting.setting IN (
+      'director_loan_asset_nominal_id',
+      'director_loan_liability_nominal_id',
+      'director_loan_nominal_id',
+      'participator_loan_asset_nominal_id',
+      'participator_loan_liability_nominal_id'
+    )
+    AND loan_setting.value = CAST(jl.nominal_account_id AS CHAR)
 );
 
 DELETE FROM company_settings

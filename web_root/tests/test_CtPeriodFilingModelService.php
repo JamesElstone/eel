@@ -741,6 +741,28 @@ function ctPeriodFilingModelFixture(
         if (empty($savedDisclosures['success'])) {
             throw new RuntimeException('CT filing disclosures failed: ' . implode(' ', (array)($savedDisclosures['errors'] ?? [])));
         }
+        $scopeService = new \eel_accounts\Service\CorporationTaxFilingScopeService();
+        foreach (array_keys($scopeService->definitions()) as $scopeField) {
+            $savedScope = $scopeService->saveAnswer($companyId, $accountingPeriodId, $scopeField, 'no', 'test');
+            if (empty($savedScope['success'])) {
+                throw new RuntimeException('CT filing scope failed: ' . implode(' ', (array)($savedScope['errors'] ?? [])));
+            }
+        }
+        $ct600aService = new \eel_accounts\Service\Ct600aService();
+        foreach ($ctPeriodIds as $ctPeriodId) {
+            $savedReview = $ct600aService->saveReview(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId,
+                array_fill_keys(array_keys($ct600aService->reviewQuestions()), 'no'),
+                'director',
+                'Fixture Director',
+                'No section 464A arrangements in the synthetic fixture.'
+            );
+            if (empty($savedReview['success'])) {
+                throw new RuntimeException('CT600A review failed: ' . implode(' ', (array)($savedReview['errors'] ?? [])));
+            }
+        }
         if ($approve) {
             $filingApproval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
                 ->approveAndBuildFacts($companyId, $accountingPeriodId, 'test', 'CT filing model fixture.');

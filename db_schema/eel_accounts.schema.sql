@@ -1103,6 +1103,83 @@ CREATE TABLE `corporation_tax_s455_reviews` (
   CONSTRAINT `fk_ct_s455_review_ct_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- CT600A supplementary-page evidence and filing-scope confirmations.
+DROP TABLE IF EXISTS `corporation_tax_ct600a_reviews`;
+DROP TABLE IF EXISTS `corporation_tax_ct600a_events`;
+DROP TABLE IF EXISTS `corporation_tax_scope_confirmations`;
+CREATE TABLE `corporation_tax_scope_confirmations` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `scope_version` varchar(50) NOT NULL,
+  `answers_json` longtext NOT NULL,
+  `revision` int(11) NOT NULL DEFAULT 1,
+  `confirmed_by` varchar(100) DEFAULT NULL,
+  `confirmed_at` datetime DEFAULT NULL,
+  `basis_hash` char(64) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ct_scope_period` (`company_id`,`accounting_period_id`),
+  CONSTRAINT `fk_ct_scope_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct_scope_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE `corporation_tax_ct600a_events` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `ct_period_id` int(11) NOT NULL,
+  `originating_ct_period_id` int(11) DEFAULT NULL,
+  `party_id` bigint(20) NOT NULL,
+  `event_kind` enum('opening_outstanding','release','write_off','later_repayment','s464a_benefit','s464a_return_payment') NOT NULL,
+  `event_date` date NOT NULL,
+  `origin_date` date DEFAULT NULL,
+  `amount` decimal(14,2) NOT NULL,
+  `source_type` enum('bank_transaction','journal','prior_return','manual_evidence') NOT NULL,
+  `source_id` bigint(20) DEFAULT NULL,
+  `evidence_reference` varchar(255) NOT NULL,
+  `explanation` text NOT NULL,
+  `matching_status` enum('clear','potential_464c','confirmed_464c') NOT NULL DEFAULT 'clear',
+  `approval_role` enum('director','adviser') NOT NULL,
+  `approved_by` varchar(100) NOT NULL,
+  `approved_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_ct600a_event_period` (`company_id`,`accounting_period_id`,`ct_period_id`,`event_date`),
+  KEY `idx_ct600a_event_origin` (`originating_ct_period_id`),
+  KEY `idx_ct600a_event_party` (`party_id`,`event_date`),
+  CONSTRAINT `fk_ct600a_event_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct600a_event_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct600a_event_ct_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct600a_event_origin` FOREIGN KEY (`originating_ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct600a_event_party` FOREIGN KEY (`party_id`) REFERENCES `company_parties` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `chk_ct600a_event_amount` CHECK (`amount` > 0),
+  CONSTRAINT `chk_ct600a_event_dates` CHECK (`origin_date` is null or `origin_date` <= `event_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE `corporation_tax_ct600a_reviews` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `ct_period_id` int(11) NOT NULL,
+  `review_version` varchar(50) NOT NULL,
+  `answers_json` longtext NOT NULL,
+  `approver_role` enum('director','adviser') NOT NULL,
+  `approved_by` varchar(100) NOT NULL,
+  `confirmation_note` text DEFAULT NULL,
+  `evidence_manifest_json` longtext NOT NULL,
+  `basis_hash` char(64) NOT NULL,
+  `confirmed_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ct600a_review_period` (`ct_period_id`),
+  KEY `idx_ct600a_review_company_period` (`company_id`,`accounting_period_id`),
+  CONSTRAINT `fk_ct600a_review_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct600a_review_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct600a_review_ct_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 --
 -- Table structure for table `corporation_tax_computation_runs`
 --

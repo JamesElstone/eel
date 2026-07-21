@@ -193,16 +193,28 @@ function ct600_return_model_test_service(array $filing): \eel_accounts\Service\C
 
         $h->check(
             \eel_accounts\Service\Ct600ReturnModelService::class,
-            'fails closed when the frozen facts require a supplementary CT600A page',
+            'supports a frozen structured CT600A page without inferring it from s455 alone',
             static function () use ($h): void {
                 $filing = ct600_return_model_test_filing();
                 $filing['model']['computation']['summary']['s455_tax'] = 25.0;
+                $filing['model']['filing_decisions']['supplementary_pages'] = ['CT600A'];
+                $filing['model']['filing_decisions']['ct600a_tax_payable'] = 25.0;
+                $filing['model']['filing_decisions']['ct600a_relief_due'] = false;
+                $filing['model']['ct600a'] = [
+                    'required' => true,
+                    'before_end_period' => false,
+                    'part1' => ['rows' => [['party_id' => 1, 'name' => 'Test Participator', 'amount' => 100.0, 'tax' => 25.0]], 'total_loans' => 100.0, 'tax_chargeable' => 25.0],
+                    'part2' => ['rows' => [], 'total_repaid' => 0.0, 'total_released_or_written_off' => 0.0, 'total' => 0.0, 'relief_due' => 0.0],
+                    'part3' => ['rows' => [], 'total_repaid' => 0.0, 'total_released_or_written_off' => 0.0, 'total' => 0.0, 'relief_due' => 0.0],
+                    'total_loans_outstanding' => 100.0,
+                    'tax_payable' => 25.0,
+                    'relief_due' => false,
+                ];
                 $result = ct600_return_model_test_service($filing)->build(49, 79, 6);
 
-                $h->assertSame(false, (bool)$result['ok']);
-                $errors = implode(' ', (array)$result['errors']);
-                $h->assertTrue(str_contains($errors, 'supplementary CT600 page'));
-                $h->assertTrue(str_contains($errors, 'CT600A'));
+                $h->assertSame(true, (bool)$result['ok']);
+                $h->assertSame(['CT600A'], $result['model']['attachments']['supplementary_pages']);
+                $h->assertSame(25.0, (float)$result['model']['ct600a']['tax_payable']);
             }
         );
     }

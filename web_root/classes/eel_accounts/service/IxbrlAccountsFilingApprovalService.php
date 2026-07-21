@@ -7,8 +7,8 @@ namespace eel_accounts\Service;
 /** Freezes the complete post-Year-End filing basis and builds its accounts facts atomically. */
 final class IxbrlAccountsFilingApprovalService
 {
-    public const BASIS_VERSION = 'accounts-filing-approval-v3';
-    public const CT_BASIS_VERSION = 'ct-period-filing-model-v7';
+    public const BASIS_VERSION = 'accounts-filing-approval-v4';
+    public const CT_BASIS_VERSION = 'ct-period-filing-model-v8';
     private const REQUIRED_AUDIT_AREAS = [
         'accounting_profit', 'expense_treatments', 'depreciation_capital',
         'capital_allowances', 'losses', 'tax_liability',
@@ -241,6 +241,10 @@ final class IxbrlAccountsFilingApprovalService
         if (empty($profile['available']) || empty($profile['pass'])) {
             throw new \RuntimeException((string)(($profile['errors'] ?? [])[0] ?? 'The FRS 105 filing profile is not supported.'));
         }
+        $filingScope = (new CorporationTaxFilingScopeService())->fetch($companyId, $accountingPeriodId);
+        if (empty($filingScope['available']) || empty($filingScope['complete'])) {
+            throw new \RuntimeException((string)(($filingScope['errors'] ?? [])[0] ?? 'Complete the Corporation Tax supplementary-page scope review.'));
+        }
         $report = (new IxbrlAccountsReportService())->build($companyId, $accountingPeriodId);
         $companySettings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
         $utr = preg_replace('/\s+/', '', trim((string)($companySettings['utr'] ?? ''))) ?? '';
@@ -277,6 +281,12 @@ final class IxbrlAccountsFilingApprovalService
                 'revision' => (int)$disclosure['revision'],
                 'values' => (array)$report['basis']['disclosures'],
             ],
+            'corporation_tax_filing_scope' => [
+                'scope_version' => CorporationTaxFilingScopeService::SCOPE_VERSION,
+                'revision' => (int)$filingScope['revision'],
+                'answers' => (array)$filingScope['answers'],
+                'basis_hash' => (string)$filingScope['basis_hash'],
+            ],
             'supported_return_profile' => (array)$profile['supported_return_profile'],
             'profile_diagnostics' => [
                 'checks' => (array)$profile['checks'],
@@ -298,6 +308,9 @@ final class IxbrlAccountsFilingApprovalService
                 'tax_audit_snapshot_id' => (int)$period['snapshot_id'],
                 'tax_audit_basis_version' => (string)$period['snapshot_basis_version'],
                 'tax_audit_basis_hash' => (string)$period['snapshot_basis_hash'],
+                'ct600a_required' => !empty($period['ct600a']['required']),
+                'ct600a_basis_hash' => (string)$period['ct600a']['basis_hash'],
+                'ct600a_review_hash' => (string)($period['ct600a']['review']['basis_hash'] ?? ''),
             ], $periods),
         ];
         $json = $this->canonicalJson($basis);
@@ -309,6 +322,7 @@ final class IxbrlAccountsFilingApprovalService
             'disclosure' => $disclosure,
             'report' => $report,
             'profile' => $profile,
+            'filing_scope' => $filingScope,
             'ct_periods' => $periods,
         ];
     }
@@ -346,6 +360,11 @@ final class IxbrlAccountsFilingApprovalService
             $row['summary'] = $summary;
             $row['calculation_basis_version'] = (string)$seal['basis_version'];
             $row['calculation_basis_hash'] = $hash;
+            $row['ct600a'] = (new Ct600aService())->build($companyId, $accountingPeriodId, (int)$row['id']);
+            if (empty($row['ct600a']['available']) || empty($row['ct600a']['complete'])) {
+                throw new \RuntimeException((string)(($row['ct600a']['blocking_errors'] ?? $row['ct600a']['errors'] ?? [])[0]
+                    ?? 'Complete the CT600A evidence and section 464A review for CT period ' . (int)$row['sequence_no'] . '.'));
+            }
         }
         unset($row);
         return $rows;
@@ -416,10 +435,12 @@ final class IxbrlAccountsFilingApprovalService
             'filing_identity' => (array)$basis['filing_identity'],
             'accounts_facts' => (array)$basis['accounts_facts'],
             'accounts_report' => (array)$basis['accounts_report'],
+            'corporation_tax_filing_scope' => (array)$basis['corporation_tax_filing_scope'],
             'filing_decisions' => $this->filingDecisions(
                 $summary,
                 $sameAccountsPeriod,
-                count((array)$candidate['ct_periods']) > 1
+                count((array)$candidate['ct_periods']) > 1,
+                (array)$period['ct600a']
             ),
             'accounting_period' => (array)$basis['accounting_period'],
             'ct_period' => [
@@ -442,6 +463,7 @@ final class IxbrlAccountsFilingApprovalService
                 'summary' => $summary,
             ],
             'audit' => $areas,
+            'ct600a' => (array)$period['ct600a'],
         ];
         $json = $this->canonicalJson($model);
         return ['basis_json' => $json, 'basis_hash' => hash('sha256', self::CT_BASIS_VERSION . '|' . (string)$candidate['basis_hash'] . '|' . (string)$period['calculation_basis_hash'] . '|' . $json)];
@@ -454,7 +476,7 @@ final class IxbrlAccountsFilingApprovalService
      *
      * @return array<string,mixed>
      */
-    private function filingDecisions(array $summary, bool $sameAccountsPeriod, bool $multipleReturns): array
+    private function filingDecisions(array $summary, bool $sameAccountsPeriod, bool $multipleReturns, array $ct600a): array
     {
         foreach ([
             'taxable_before_losses', 'taxable_profit', 'taxable_loss',
@@ -495,7 +517,9 @@ final class IxbrlAccountsFilingApprovalService
             'accounts_same_period' => $sameAccountsPeriod,
             'computations_attached' => true,
             'computations_same_period' => true,
-            'supplementary_pages' => [],
+            'supplementary_pages' => !empty($ct600a['required']) ? ['CT600A'] : [],
+            'ct600a_tax_payable' => round((float)($ct600a['tax_payable'] ?? 0), 2),
+            'ct600a_relief_due' => !empty($ct600a['relief_due']),
             'loss_relief_treatment' => $lossesUsed > 0.0
                 ? 'trading_brought_forward_against_same_trade_profit'
                 : 'none',

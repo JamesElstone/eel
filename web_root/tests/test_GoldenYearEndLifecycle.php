@@ -519,6 +519,28 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         }
         $harness->assertTrue((new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $periodId));
         ixbrl_test_complete_disclosures($companyId, $periodId, 'golden_year_end_test');
+        $scopeService = new \eel_accounts\Service\CorporationTaxFilingScopeService();
+        foreach (array_keys($scopeService->definitions()) as $scopeField) {
+            $savedScope = $scopeService->saveAnswer($companyId, $periodId, $scopeField, 'no', 'golden_year_end_test');
+            if (empty($savedScope['success'])) {
+                throw new RuntimeException('Golden filing scope failed: ' . implode(' ', (array)($savedScope['errors'] ?? [])));
+            }
+        }
+        $ct600aService = new \eel_accounts\Service\Ct600aService();
+        foreach ($ctPeriods as $ctPeriod) {
+            $review = $ct600aService->saveReview(
+                $companyId,
+                $periodId,
+                (int)$ctPeriod['id'],
+                array_fill_keys(array_keys($ct600aService->reviewQuestions()), 'no'),
+                'director',
+                'Golden Fixture Director',
+                'No section 464A arrangements in the synthetic golden fixture.'
+            );
+            if (empty($review['success'])) {
+                throw new RuntimeException('Golden CT600A review failed: ' . implode(' ', (array)($review['errors'] ?? [])));
+            }
+        }
         $filingApproval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
             ->approveAndBuildFacts($companyId, $periodId, 'golden_year_end_test', 'Golden lifecycle filing approval.');
         $harness->assertTrue((int)($filingApproval['approval_id'] ?? 0) > 0);

@@ -36,7 +36,12 @@ final class S455ReviewService
         ];
     }
 
-    public function calculate(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
+    public function calculate(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        ?string $evidenceCutoff = null
+    ): array
     {
         $period = $this->ctPeriod($companyId, $accountingPeriodId, $ctPeriodId);
         if ($period === null) {
@@ -44,10 +49,11 @@ final class S455ReviewService
         }
         $closeCompany = (new OwnershipPartyService())->closeCompanyStatus($companyId, (string)$period['period_end']);
         $closeCompanyStatus = (string)($closeCompany['status'] ?? 'unconfirmed');
-        $lock = (new YearEndLockService())->fetchReview($companyId, $accountingPeriodId);
-        $lockedAt = !empty($lock['is_locked']) ? trim((string)($lock['locked_at'] ?? '')) : '';
         $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
-        $cutoff = $lockedAt !== '' ? $lockedAt : $now;
+        $cutoff = trim((string)$evidenceCutoff);
+        if ($cutoff === '') {
+            $cutoff = $now;
+        }
         $deadline = (new \DateTimeImmutable((string)$period['period_end']))->modify('+9 months +1 day')->format('Y-m-d');
         $windowEnd = (new \DateTimeImmutable($deadline))->modify('-1 day')->format('Y-m-d');
         $windowStatus = substr($cutoff, 0, 10) >= $deadline ? 'window_complete' : 'provisional_window_open';
@@ -58,6 +64,7 @@ final class S455ReviewService
         $lotsByParty = [];
         $liabilitiesByParty = [];
         $movements = [];
+        $repaymentAllocations = [];
         $errors = (array)$evidence['errors'];
         $ownership = new OwnershipPartyService();
         $eligibility = [];
@@ -115,6 +122,16 @@ final class S455ReviewService
                         $lot['remaining'] = round((float)$lot['remaining'] - $applied, 2);
                         $remainingReceipt = round($remainingReceipt - $applied, 2);
                         $settled += $applied;
+                        $repaymentAllocations[] = [
+                            'loan_transaction_id' => (int)$lot['transaction_id'],
+                            'repayment_transaction_id' => (int)($row['transaction_id'] ?? 0),
+                            'party_id' => $partyId,
+                            'party_name' => (string)($row['party_name'] ?? $lot['party_name'] ?? ''),
+                            'loan_date' => (string)$lot['origin_date'],
+                            'repayment_date' => $date,
+                            'amount' => round($applied, 2),
+                            'rate' => (float)$lot['rate'],
+                        ];
                     }
                     unset($lot);
                 }
@@ -187,6 +204,7 @@ final class S455ReviewService
                 'amount' => round((float)($row['amount'] ?? 0), 2),
                 'cash_direction' => (string)($row['cash_direction'] ?? ''),
             ], $movements),
+            'repayment_allocations' => $repaymentAllocations,
             'errors' => array_values(array_unique($errors)),
             'gross_principal' => $grossPrincipal,
             'gross_tax' => $grossTax,
@@ -240,7 +258,12 @@ final class S455ReviewService
         $frozen = [];
         foreach ($periods as $period) {
             $ctPeriodId = (int)($period['id'] ?? 0);
-            $calculation = $this->calculate($companyId, $accountingPeriodId, $ctPeriodId);
+            $calculation = $this->calculate(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId,
+                (string)$lock['locked_at']
+            );
             $this->persistCalculation(
                 $calculation,
                 (string)$calculation['close_company_status']

@@ -39,7 +39,7 @@ final class _tax_ct600_rim_mappingsCard extends CardBaseFramework
     {
         $status = (string)$profile['status']; $html = '';
         foreach (($status === 'draft' ? ['validate' => 'Validate'] : ($status === 'validated' ? ['activate' => 'Activate'] : ($status === 'active' ? ['retire' => 'Retire'] : []))) as $intent => $label) {
-            $html .= '<form method="post" data-ajax="true" style="display:inline">' . $this->hidden($intent) . '<input type="hidden" name="profile_id" value="' . (int)$profile['id'] . '"><button class="button button-inline" type="submit">' . $label . '</button></form> ';
+            $html .= '<form method="post" data-ajax="true" class="ct-filing-mapping-action-form">' . $this->hidden($intent) . '<input type="hidden" name="profile_id" value="' . (int)$profile['id'] . '"><button class="button button-inline" type="submit">' . $label . '</button></form> ';
         }
         return $html;
     }

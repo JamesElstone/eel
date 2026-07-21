@@ -3271,6 +3271,10 @@
   cursor: not-allowed;
 }
 
+.ct-filing-mapping-action-form {
+  display: inline;
+}
+
 @media (max-width: 900px) {
   .dividend-capacity-overview {
     grid-template-columns: 1fr;

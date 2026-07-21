@@ -6,6 +6,7 @@ final class _tax_frc_taxonomyCard extends CardBaseFramework
     public function key(): string { return 'tax_frc_taxonomy'; }
     public function title(): string { return 'FRC accounts iXBRL taxonomy'; }
     public function services(): array { return [['key' => 'packages', 'service' => \eel_accounts\Service\FrcTaxonomyPackageService::class, 'method' => 'fetchPackages']]; }
+    public function handleError(string $serviceKey, array $error, array $context): string { return ''; }
     protected function additionalInvalidationFacts(): array { return ['frc.taxonomy', 'ixbrl.readiness', 'ixbrl.generation', 'page.context']; }
     public function helper(array $context): string { return 'Install the official FRC taxonomy package used by Arelle for offline validation of FRS 105 accounts iXBRL.'; }
     public function render(array $context): string

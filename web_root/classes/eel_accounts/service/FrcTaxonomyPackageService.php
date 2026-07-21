@@ -40,18 +40,13 @@ final class FrcTaxonomyPackageService
         if ($temporary === false) { throw new \RuntimeException('Could not create a temporary FRC taxonomy download file.'); }
         try {
             $this->download($url, $temporary);
-            $zip = new \ZipArchive();
-            if ($zip->open($temporary) !== true) { throw new \RuntimeException('The downloaded FRC taxonomy is not a valid ZIP file.'); }
             $entry = 'FRS-102/2026-01-01/FRS-102-2026-01-01.xsd';
-            $hasEntry = false;
-            for ($index = 0; $index < $zip->numFiles; $index++) {
-                $name = str_replace('\\', '/', (string)$zip->getNameIndex($index));
-                if (strtolower($name) === strtolower($entry) || str_ends_with(strtolower($name), '/' . strtolower($entry))) {
-                    $hasEntry = true;
-                    break;
-                }
-            }
-            $zip->close();
+            $inventory = (new HmrcCtRimZipService())->inventory($temporary);
+            $hasEntry = in_array(
+                strtolower($entry),
+                array_map(static fn(array $file): string => strtolower((string)($file['archive_path'] ?? '')), $inventory),
+                true
+            );
             if (!$hasEntry) { throw new \RuntimeException('The FRC taxonomy package does not contain the required FRS-102 2026 entry point.'); }
             $sha256 = hash_file('sha256', $temporary);
             if (!is_string($sha256) || $sha256 === '') { throw new \RuntimeException('The downloaded FRC taxonomy could not be fingerprinted.'); }

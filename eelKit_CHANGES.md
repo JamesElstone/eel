@@ -1,5 +1,34 @@
 # eelKit Changes
 
+## Streamed card-action progress
+
+Feature name: `streamed_card_action_progress`.
+
+Shared card actions can now publish transient progress messages while their existing synchronous AJAX request is running. The first message switches that request to an NDJSON response stream and opens an “Action progress” overlay above the page's existing AJAX blur. The read-only progress textarea uses a black background, green monospace text, and follows new messages automatically. It closes when the action's normal AJAX result has been applied or when the action fails.
+
+Actions opt in at runtime; no marker interface or form attribute is required:
+
+```php
+public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
+{
+    $progress = $services->actionProgress();
+
+    $progress->report('Loading transactions…');
+    // Perform a measurable stage.
+
+    $progress->report('Matching records…', 40);
+    // Perform another measurable stage.
+
+    return ActionResultFramework::success(['transactions.updated']);
+}
+```
+
+`report()` accepts a non-empty message and an optional integer percentage from `0` through `100`. Actions that never call it retain the existing `application/json` response byte-for-byte. Once streaming begins, eelKit emits ordered `progress` events and wraps the usual page/card AJAX delta in a terminal `complete` event. Public-safe exceptions become terminal `error` events; the browser then uses the normal AJAX error and flash handling.
+
+Progress is request-local and intentionally not persisted or replayed. Reloading, navigating away, or losing the connection loses the progress display and may interrupt the synchronous action. A single indivisible database query cannot expose internal milestones, so actions should report before and after measurable stages.
+
+Apache/PHP-FPM must permit incremental output. Disable PHP output buffering and zlib compression for the FPM pool, configure the FastCGI worker with `flushpackets=on`, and prevent response compression for requests carrying `X-EelKit-Progress-Stream: 1`. The FreeBSD installation guide contains a complete example.
+
 ## Database metadata and SQL runtime efficiency
 
 Feature name: `database_runtime_efficiency`.

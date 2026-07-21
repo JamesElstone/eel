@@ -122,6 +122,10 @@ set_exception_handler(static function (Throwable $exception): void {
 
     $message = eel_public_exception_message($exception);
 
+    if (class_exists(ActionProgressFramework::class) && ActionProgressFramework::failActive($message)) {
+        return;
+    }
+
     $payload = [
         'success' => false,
         'errors' => [$message],

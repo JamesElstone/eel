@@ -172,7 +172,11 @@ The default listener is:
 user = www
 group = www
 listen = 127.0.0.1:9000
+php_admin_value[output_buffering] = Off
+php_admin_value[zlib.output_compression] = Off
 ```
+
+The output settings allow eelKit card actions to flush opt-in NDJSON progress events as they are reported. Reload PHP-FPM after changing the pool configuration.
 
 ## 7. Configure Apache Document Root
 
@@ -202,11 +206,19 @@ ServerName eelKit.int.elstone.net:80
         SetHandler "proxy:fcgi://127.0.0.1:9000"
     </FilesMatch>
 
+    <Proxy "fcgi://127.0.0.1:9000">
+        ProxySet flushpackets=on
+    </Proxy>
+
+    SetEnvIf X-EelKit-Progress-Stream "^1$" no-gzip=1
+
     ErrorLog "/var/log/httpd-eelKit-error.log"
     CustomLog "/var/log/httpd-eelKit-access.log" combined
 </VirtualHost>
 EOF
 ```
+
+`flushpackets=on` forwards PHP-FPM output incrementally. The `no-gzip` rule applies only to AJAX card-action requests that advertise progress-stream support, preventing `mod_deflate` from buffering their small progress events. If another reverse proxy sits in front of Apache, disable response buffering for `application/x-ndjson` there as well.
 
 Only `/usr/local/eelKit/web_root` should be public.
 

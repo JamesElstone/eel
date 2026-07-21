@@ -261,6 +261,10 @@ $pageServices->setSiteContextCoordinator(SiteContextCoordinatorFramework::fromCo
 $response = $page->handle($request, $pageServices);
 
 // Send page and cards back to the client.
+if ($pageServices->actionProgress()->complete($response)) {
+    return;
+}
+
 eel_index_send_response($response);
 
 // == EOL ==

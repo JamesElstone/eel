@@ -66,3 +66,20 @@ $harness->check('CssFramework', 'styles ajax pending blur for page stacks and ca
         $harness->assertTrue(str_contains($css, $expected));
     }
 });
+
+$harness->check('CssFramework', 'styles long action progress above blurred content in black and green', function () use ($harness): void {
+    $css = (string)file_get_contents(APP_CSS . 'index.css');
+
+    foreach ([
+        '.long-action-progress-region',
+        '.long-action-progress-overlay',
+        '.long-action-progress-output',
+        'z-index: 2100;',
+        'background: #000;',
+        'color: #39ff14;',
+        'font-family: ui-monospace',
+        'overflow-y: auto;',
+    ] as $expected) {
+        $harness->assertTrue(str_contains($css, $expected));
+    }
+});

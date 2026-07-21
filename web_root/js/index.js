@@ -805,7 +805,7 @@
     async function afBuildHeaders(url, optionsHeaders) {
         const headers = new Headers(optionsHeaders || {});
         headers.set('X-Requested-With', 'XMLHttpRequest');
-        headers.set('Accept', 'application/json');
+        headers.set('Accept', 'application/json, application/x-ndjson');
 
         if (afIsSameOrigin(url)) {
             const values = await afGatherAntiFraudValues();
@@ -1054,11 +1054,180 @@
         replaceFlash(`<div class="alert ${className}">${escapeHtml(message)}</div>`);
     }
 
+    function createActionProgressController() {
+        let panel = null;
+        let textarea = null;
+
+        const ensureOverlay = () => {
+            if (panel instanceof HTMLElement && textarea instanceof HTMLTextAreaElement) {
+                return;
+            }
+
+            let region = document.querySelector('.long-action-progress-region');
+            if (!(region instanceof HTMLElement)) {
+                region = document.createElement('div');
+                region.className = 'long-action-progress-region';
+                region.setAttribute('aria-live', 'polite');
+                document.body.appendChild(region);
+            }
+
+            panel = document.createElement('section');
+            panel.className = 'long-action-progress-overlay';
+            panel.setAttribute('role', 'status');
+
+            const title = document.createElement('div');
+            title.className = 'long-action-progress-title';
+            title.textContent = 'Action progress';
+
+            textarea = document.createElement('textarea');
+            textarea.className = 'long-action-progress-output';
+            textarea.readOnly = true;
+            textarea.setAttribute('aria-label', 'Action progress messages');
+            textarea.setAttribute('spellcheck', 'false');
+
+            panel.append(title, textarea);
+            region.appendChild(panel);
+        };
+
+        return {
+            report(event) {
+                ensureOverlay();
+
+                const message = String(event?.message || '');
+                const percent = Number.isInteger(event?.percent)
+                    ? ` (${String(event.percent)}%)`
+                    : '';
+                const line = `${message}${percent}`;
+
+                textarea.value += `${textarea.value === '' ? '' : '\n'}${line}`;
+                textarea.scrollTop = textarea.scrollHeight;
+            },
+            close() {
+                const region = panel instanceof HTMLElement ? panel.parentElement : null;
+                panel?.remove();
+
+                if (region instanceof HTMLElement && region.childElementCount === 0) {
+                    region.remove();
+                }
+
+                panel = null;
+                textarea = null;
+            },
+        };
+    }
+
+    function isNdjsonResponse(contentType) {
+        return String(contentType || '').toLowerCase().includes('application/x-ndjson');
+    }
+
+    function createAjaxNdjsonParser(progressController = null) {
+        let buffer = '';
+        let completePayload = null;
+        let terminal = false;
+
+        const consumeLine = (line) => {
+            if (line.trim() === '') {
+                return;
+            }
+
+            if (terminal) {
+                throw new Error('The action progress stream contained data after its terminal event.');
+            }
+
+            let event = null;
+            try {
+                event = JSON.parse(line);
+            } catch (error) {
+                throw new Error('The action progress stream contained malformed JSON.');
+            }
+
+            if (!event || typeof event !== 'object' || Array.isArray(event)) {
+                throw new Error('The action progress stream contained an invalid event.');
+            }
+
+            if (event.type === 'progress' && typeof event.message === 'string') {
+                progressController?.report(event);
+                return;
+            }
+
+            if (event.type === 'complete' && event.payload && typeof event.payload === 'object') {
+                completePayload = event.payload;
+                terminal = true;
+                return;
+            }
+
+            if (event.type === 'error') {
+                const message = typeof event.message === 'string' && event.message.trim() !== ''
+                    ? event.message
+                    : 'The action could not be completed.';
+                terminal = true;
+                throw createAjaxError(500, {
+                    success: false,
+                    errors: [message],
+                });
+            }
+
+            throw new Error('The action progress stream contained an unsupported event.');
+        };
+
+        return {
+            push(chunk) {
+                buffer += String(chunk || '');
+
+                let newlinePosition = buffer.indexOf('\n');
+                while (newlinePosition >= 0) {
+                    const line = buffer.slice(0, newlinePosition).replace(/\r$/, '');
+                    buffer = buffer.slice(newlinePosition + 1);
+                    consumeLine(line);
+                    newlinePosition = buffer.indexOf('\n');
+                }
+            },
+            finish(chunk = '') {
+                this.push(chunk);
+
+                if (buffer.trim() !== '') {
+                    consumeLine(buffer.replace(/\r$/, ''));
+                    buffer = '';
+                }
+
+                if (!terminal || completePayload === null) {
+                    throw new Error('The action progress stream ended before completion.');
+                }
+
+                return completePayload;
+            },
+        };
+    }
+
+    async function readAjaxNdjsonResponse(response, progressController = null) {
+        if (!response.body || typeof response.body.getReader !== 'function') {
+            throw new Error('This browser cannot read the action progress stream.');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        const parser = createAjaxNdjsonParser(progressController);
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) {
+                break;
+            }
+
+            parser.push(decoder.decode(value, { stream: true }));
+        }
+
+        return parser.finish(decoder.decode());
+    }
+
     async function sendXhr(url, options = {}) {
         const headers = await afBuildHeaders(url, options.headers);
 
         return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
+            let streamParser = null;
+            let streamResponseLength = 0;
+            let streamError = null;
             xhr.open(options.method || 'GET', url, true);
 
             headers.forEach((value, name) => {
@@ -1069,7 +1238,42 @@
                 }
             });
 
+            const consumeStreamProgress = () => {
+                if (!isNdjsonResponse(xhr.getResponseHeader('Content-Type')) || streamError !== null) {
+                    return;
+                }
+
+                streamParser = streamParser || createAjaxNdjsonParser(options.progress);
+                const responseText = String(xhr.responseText || '');
+                const chunk = responseText.slice(streamResponseLength);
+                streamResponseLength = responseText.length;
+
+                try {
+                    streamParser.push(chunk);
+                } catch (error) {
+                    streamError = error;
+                }
+            };
+
+            xhr.onprogress = consumeStreamProgress;
+
             xhr.onload = () => {
+                consumeStreamProgress();
+
+                if (isNdjsonResponse(xhr.getResponseHeader('Content-Type'))) {
+                    if (streamError !== null) {
+                        reject(streamError);
+                        return;
+                    }
+
+                    try {
+                        resolve((streamParser || createAjaxNdjsonParser(options.progress)).finish());
+                    } catch (error) {
+                        reject(error);
+                    }
+                    return;
+                }
+
                 let payload = null;
 
                 try {
@@ -1100,16 +1304,26 @@
     async function sendAjax(url, options = {}) {
         options = ajaxOptionsWithSiteContext(options);
 
-        if (options.transport === 'xhr') {
-            return sendXhr(url, options);
+        const transport = options.transport;
+        const progress = options.progress || null;
+        const requestOptions = { ...options };
+        delete requestOptions.transport;
+        delete requestOptions.progress;
+
+        if (transport === 'xhr') {
+            return sendXhr(url, { ...requestOptions, progress });
         }
 
-        const headers = await afBuildHeaders(url, options.headers);
+        const headers = await afBuildHeaders(url, requestOptions.headers);
         const response = await fetch(url, {
-            ...options,
+            ...requestOptions,
             credentials: 'same-origin',
             headers,
         });
+
+        if (isNdjsonResponse(response.headers.get('Content-Type'))) {
+            return readAjaxNdjsonResponse(response, progress);
+        }
 
         const payload = await response.json();
 
@@ -3391,7 +3605,10 @@
         }
 
         const requestBody = method === 'GET' ? null : JSON.stringify(formDataToJsonPayload(formData));
-        const requestHeaders = method === 'GET' ? undefined : { 'Content-Type': 'application/json' };
+        const requestHeaders = method === 'GET' ? undefined : {
+            'Content-Type': 'application/json',
+            'X-EelKit-Progress-Stream': '1',
+        };
         const requestPayload = method === 'GET' ? null : formDataToJsonPayload(formData);
         const ajaxNonce = requiresAjaxNonce(method, requestPayload) ? reserveAjaxNonce() : null;
 
@@ -3401,6 +3618,7 @@
 
         const restoreProcessingState = beginButtonProcessingState(event.submitter);
         const restorePendingBlur = beginAjaxPendingBlur(form);
+        const actionProgress = createActionProgressController();
 
         try {
             const payload = await sendAjax(requestUrl, {
@@ -3408,6 +3626,7 @@
                 body: method === 'GET' ? null : JSON.stringify(requestPayload),
                 headers: requestHeaders,
                 transport: form.dataset.ajaxTransport === 'xhr' ? 'xhr' : 'fetch',
+                progress: actionProgress,
             });
 
             completeAjaxNonce(ajaxNonce, payload?.ajax_nonce);
@@ -3449,6 +3668,7 @@
 
             console.error(error);
         } finally {
+            actionProgress.close();
             clearTableExportClipboardIntent(event.submitter);
             restorePendingBlur();
             delete form.dataset.ajaxPendingBlurOverride;

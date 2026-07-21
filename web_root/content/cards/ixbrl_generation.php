@@ -56,7 +56,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 <div class="status-head">
                     <div>
                         <h3 class="card-title">Complete filing set</h3>
-                        <div class="helper">Generate and validate the accounts iXBRL and every computation iXBRL for this accounting period in one operation.</div>
+                        <div class="helper ixbrl-complete-filing-set-helper">Generate and validate the accounts iXBRL and every computation iXBRL for this accounting period in one operation.</div>
                     </div>
                 </div>
                 <form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">

@@ -5,6 +5,7 @@ final class TaxArtifactsRefreshAction implements ActionInterfaceFramework
 {
     /** @var list<array{label: string, action: class-string<ActionInterfaceFramework>, intent: string}> */
     private const STAGES = [
+        ['label' => 'HMRC tax rates and FRS 105 thresholds', 'action' => TaxRatesAction::class, 'intent' => 'refresh_hmrc_rates'],
         ['label' => 'HMRC CT filing artefacts', 'action' => TaxRatesAction::class, 'intent' => 'hmrc_ct_artifacts_refresh'],
         ['label' => 'FRC accounts taxonomy', 'action' => FrcTaxonomyAction::class, 'intent' => 'refresh_frc_taxonomy'],
         ['label' => 'Companies House filing schemas', 'action' => CompaniesHouseSchemaArtifactsAction::class, 'intent' => 'refresh_companies_house_accounts_schemas'],

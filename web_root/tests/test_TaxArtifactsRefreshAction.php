@@ -10,6 +10,7 @@ $harness->run(TaxArtifactsRefreshAction::class, static function (GeneratedServic
         $stages = $reflection->getConstant('STAGES');
 
         $harness->assertSame([
+            'refresh_hmrc_rates',
             'hmrc_ct_artifacts_refresh',
             'refresh_frc_taxonomy',
             'refresh_companies_house_accounts_schemas',

@@ -71,7 +71,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             $result = match ($intent) {
                 'record_gateway_eligibility' => $this->recordEligibility($request, $companyId, $accountingPeriodId),
                 'prepare_revised_accounts' => $this->prepareRevision($request, $companyId, $accountingPeriodId),
-                'submit_revised_accounts' => $this->submitRevision($request, $companyId, $accountingPeriodId),
+                'submit_revised_accounts' => $this->submitRevision($request, $companyId, $accountingPeriodId, $services->actionProgress()),
                 'refresh_revised_accounts_status' => $this->refreshStatus($request, $companyId, $accountingPeriodId),
             };
         } catch (Throwable $exception) {
@@ -163,7 +163,8 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
     private function submitRevision(
         RequestFramework $request,
         int $companyId,
-        int $accountingPeriodId
+        int $accountingPeriodId,
+        ActionProgressFramework $progress
     ): array {
         $submissionId = (int)$request->input('submission_id', 0);
         $companyAuthCode = trim((string)$request->input('company_auth_code', ''));
@@ -195,7 +196,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             }
         }
 
-        return $this->service()->submitRevision($submissionId, $companyAuthCode, $this->actor($request));
+        return $this->service()->submitRevision($submissionId, $companyAuthCode, $this->actor($request), $progress);
     }
 
     private function refreshStatus(RequestFramework $request, int $companyId, int $accountingPeriodId): array

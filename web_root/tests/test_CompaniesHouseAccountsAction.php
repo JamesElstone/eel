@@ -203,7 +203,7 @@ final class CompaniesHouseAccountsActionFakeService
         return $this->context;
     }
 
-    public function submitRevision(int $submissionId, string $companyAuthCode, string $actor): array
+    public function submitRevision(int $submissionId, string $companyAuthCode, string $actor, mixed $progress = null): array
     {
         $this->calls[] = compact('submissionId', 'companyAuthCode', 'actor') + [
             'method' => 'submitRevision',

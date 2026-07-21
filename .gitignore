@@ -16,3 +16,7 @@
 /outbound/
 /third_party/hmrc/ct600-rim/
 /third_party/hmrc/ct-computation/
+# Downloaded Companies House XML Gateway schema snapshots
+/third_party/companies_house/schema/.refresh.lock
+/third_party/companies_house/schema/.staging/
+/third_party/companies_house/schema/snapshots/

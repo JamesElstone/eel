@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace eel_accounts\Service;
 
 use eel_accounts\Client\CompaniesHouseAccountsGatewayClient;
+use eel_accounts\Client\CompaniesHouseAccountsGatewayTransportInterface;
 use eel_accounts\Store\AccountingConfigurationStore;
 
 final class CompaniesHouseAccountsSubmissionService
@@ -21,8 +22,9 @@ final class CompaniesHouseAccountsSubmissionService
     public function __construct(
         private readonly ?IxbrlReadinessService $readinessService = null,
         private readonly ?IxbrlRevisedAccountsArtifactService $artifactService = null,
-        private readonly ?CompaniesHouseAccountsGatewayClient $gatewayClient = null,
+        private readonly ?CompaniesHouseAccountsGatewayTransportInterface $gatewayClient = null,
         private readonly ?YearEndLockService $lockService = null,
+        private readonly ?CompaniesHouseSchemaCurrentnessInterface $schemaService = null,
     ) {
     }
 
@@ -395,7 +397,7 @@ final class CompaniesHouseAccountsSubmissionService
         ];
     }
 
-    public function submitRevision(int $submissionId, string $companyAuthCode, string $actor): array
+    public function submitRevision(int $submissionId, string $companyAuthCode, string $actor, mixed $progress = null): array
     {
         $submission = $this->submission($submissionId);
         if ($submission === null) {
@@ -443,16 +445,58 @@ final class CompaniesHouseAccountsSubmissionService
         }
 
         $actor = $this->actor($actor);
+        $declarations = json_decode((string)$submission['revision_declarations_json'], true);
+        $dateSigned = is_array($declarations)
+            ? trim((string)($declarations['revision_approval_date'] ?? ''))
+            : '';
+        $payload = [
+            'company_number' => trim((string)$submission['company_number']),
+            'company_name' => trim((string)$submission['company_name']),
+            'company_authentication_code' => $companyAuthCode,
+            'submission_number' => (string)$submission['submission_number'],
+            'date_signed' => $dateSigned,
+            'accounts_xml' => $accountsXml,
+            'filename' => 'Accounts-' . (string)$submission['submission_number'] . '.xhtml',
+            'customer_reference' => 'EEL' . (int)$submission['company_id'] . 'AP' . (int)$submission['accounting_period_id'],
+            'language' => 'EN',
+            'company_type' => 'EW',
+        ];
+        try {
+            $this->reportProgress($progress, 'Refreshing Companies House filing schemas before submission.', 5);
+            $schema = ($this->schemaService ?? new CompaniesHouseAccountsSchemaService())->ensureCurrent($progress);
+            $manifest = strtolower(trim((string)($schema['manifest_sha256'] ?? '')));
+            $snapshotId = (int)($schema['snapshot_id'] ?? 0);
+            if ($snapshotId <= 0 || !preg_match('/^[a-f0-9]{64}$/', $manifest)) {
+                throw new \RuntimeException('Companies House did not produce a verified accounts schema snapshot.');
+            }
+            $this->reportProgress($progress, 'Building and validating the exact Companies House request.', 75);
+            $gateway = $this->gatewayClient ?? new CompaniesHouseAccountsGatewayClient();
+            $preparedRequest = $gateway->prepareAccounts($payload, $mode, $manifest);
+            if ($preparedRequest->schemaSnapshotId() !== $snapshotId
+                || !hash_equals($manifest, $preparedRequest->schemaManifestSha256())) {
+                throw new \RuntimeException('The prepared request was validated against a different Companies House schema snapshot.');
+            }
+        } catch (\Throwable $exception) {
+            $message = 'Companies House pre-submission validation failed; nothing was sent. ' . $exception->getMessage();
+            $this->recordEvent($submissionId, 'schema_validation_failed', 'error', 'prepared', null, $message, $actor);
+            return $this->failure($message);
+        }
+
         $now = gmdate('Y-m-d H:i:s');
         \InterfaceDB::prepareExecute(
             'UPDATE ' . self::SUBMISSIONS_TABLE . '
              SET lifecycle = :lifecycle, submitted_by = :actor, submitted_at = :submitted_at,
+                 schema_snapshot_id = :schema_snapshot_id, schema_manifest_sha256 = :schema_manifest,
+                 schema_validated_at = :schema_validated_at,
                  status_updated_at = :status_updated_at, updated_at = :updated_at
              WHERE id = :id AND lifecycle = :expected_lifecycle',
             [
                 'lifecycle' => 'submitting',
                 'actor' => $actor,
                 'submitted_at' => $now,
+                'schema_snapshot_id' => $snapshotId,
+                'schema_manifest' => $manifest,
+                'schema_validated_at' => $now,
                 'status_updated_at' => $now,
                 'updated_at' => $now,
                 'id' => $submissionId,
@@ -464,22 +508,8 @@ final class CompaniesHouseAccountsSubmissionService
             return $this->failure('The submission state changed before it could be sent.');
         }
 
-        $declarations = json_decode((string)$submission['revision_declarations_json'], true);
-        $dateSigned = is_array($declarations)
-            ? trim((string)($declarations['revision_approval_date'] ?? ''))
-            : '';
-        $result = ($this->gatewayClient ?? new CompaniesHouseAccountsGatewayClient())->submitAccounts([
-            'company_number' => trim((string)$submission['company_number']),
-            'company_name' => trim((string)$submission['company_name']),
-            'company_authentication_code' => $companyAuthCode,
-            'submission_number' => (string)$submission['submission_number'],
-            'date_signed' => $dateSigned,
-            'accounts_xml' => $accountsXml,
-            'filename' => 'Accounts-' . (string)$submission['submission_number'] . '.xhtml',
-            'customer_reference' => 'EEL' . (int)$submission['company_id'] . 'AP' . (int)$submission['accounting_period_id'],
-            'language' => 'EN',
-            'company_type' => 'EW',
-        ], $mode);
+        $this->reportProgress($progress, 'Sending the already validated Companies House request.', 90);
+        $result = $gateway->sendPreparedAccounts($preparedRequest);
 
         $success = !empty($result['success']);
         $transportUnknown = !empty($result['transport_unknown']);
@@ -915,6 +945,15 @@ final class CompaniesHouseAccountsSubmissionService
             'transport_unknown' => !empty($result['transport_unknown']),
             'gateway_errors' => (array)($result['gateway_errors'] ?? []),
         ];
+    }
+
+    private function reportProgress(mixed $progress, string $message, int $percent): void
+    {
+        if ($progress instanceof \ActionProgressFramework) {
+            $progress->report($message, $percent);
+        } elseif (is_callable($progress)) {
+            $progress($message, $percent);
+        }
     }
 
     private function actor(string $actor): string

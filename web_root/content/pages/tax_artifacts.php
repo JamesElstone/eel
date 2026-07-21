@@ -21,7 +21,7 @@ final class _tax_artifacts extends PageContextFramework
 
     public function subtitle(): string
     {
-        return 'Review sourced Corporation Tax rules, VAT rates, VAT registration thresholds and FRS 105 size thresholds.';
+        return 'Review sourced tax rules, filing artefacts, VAT rates, VAT registration thresholds and FRS 105 size thresholds.';
     }
 
     public function hiddenSiteContextSelectors(): array
@@ -34,6 +34,7 @@ final class _tax_artifacts extends PageContextFramework
         return [
             'tax_rates_ct',
             'tax_rates_ct600_rim',
+            'tax_companies_house_accounts_schemas',
             'tax_rates_vat',
             'tax_thresholds_vat',
             'tax_treatment_rules',

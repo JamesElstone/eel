@@ -169,6 +169,7 @@ $harness->run(_year_end_companies_house_comparisonCard::class, static function (
         $harness->assertSame(true, str_contains($html, 'name="company_auth_code"'));
         $harness->assertSame(true, str_contains($html, 'SUBMIT LIVE REVISED ACCOUNTS'));
         $harness->assertSame(false, str_contains($html, 'value="secret-code"'));
+        $harness->assertSame(false, str_contains($html, 'name="company_auth_code" minlength="6" maxlength="8" pattern="[A-Za-z0-9]{6,8}" required autocomplete="off" disabled'));
     });
 
     $harness->check(_year_end_companies_house_comparisonCard::class, 'renders asynchronous and terminal gateway states', static function () use ($harness, $card): void {

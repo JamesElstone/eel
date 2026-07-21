@@ -20,6 +20,10 @@ $migration = (string)file_get_contents(
 $masterSchema = (string)file_get_contents(
     $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'eel_accounts.schema.sql'
 );
+$schemaMigration = (string)file_get_contents(
+    $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
+    . DIRECTORY_SEPARATOR . '2026_07_21_001_companies_house_accounts_schemas.sql'
+);
 
 $harness->check(
     'Companies House accounts filing schema',
@@ -29,6 +33,10 @@ $harness->check(
             'companies_house_accounts_eligibility',
             'companies_house_accounts_submissions',
             'companies_house_accounts_submission_events',
+            'companies_house_schema_catalogue',
+            'companies_house_schema_snapshots',
+            'companies_house_schema_files',
+            'companies_house_schema_dependencies',
         ] as $table) {
             $harness->assertTrue(InterfaceDB::tableExists($table));
         }
@@ -44,8 +52,23 @@ $harness->check(
             'idempotency_key',
             'rejection_code',
             'examiner_comments',
+            'schema_snapshot_id',
+            'schema_manifest_sha256',
+            'schema_validated_at',
         ] as $column) {
             $harness->assertTrue(InterfaceDB::columnExists('companies_house_accounts_submissions', $column));
+        }
+    }
+);
+
+$harness->check(
+    'Companies House accounts filing schema',
+    'schema refresh migration and master schema retain snapshot provenance',
+    static function () use ($harness, $schemaMigration, $masterSchema): void {
+        foreach ([$schemaMigration, $masterSchema] as $schema) {
+            foreach (['companies_house_schema_catalogue','companies_house_schema_snapshots','companies_house_schema_files','companies_house_schema_dependencies','schema_snapshot_id','schema_manifest_sha256','schema_validated_at'] as $token) {
+                $harness->assertTrue(str_contains($schema, $token));
+            }
         }
     }
 );

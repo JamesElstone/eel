@@ -132,7 +132,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
                 'warning',
                 $summary
                     . '<div class="helper">Record Companies House&rsquo;s written decision for this exact original filing before preparing revised accounts.</div>'
-                    . $this->eligibilityForm($companyId, $accountingPeriodId, $eligibility, $locked)
+                    . $this->eligibilityForm($companyId, $accountingPeriodId, $eligibility)
             );
         }
 
@@ -157,7 +157,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
                 in_array($status, ['submitting', 'pending'], true) ? 'info' : 'warning',
                 $summary . $this->submissionSummary($submission)
                     . '<div class="helper">' . HelperFramework::escape($detail) . '</div>'
-                    . $this->refreshForm($companyId, $accountingPeriodId, (int)($submission['id'] ?? 0), $locked)
+                    . $this->refreshForm($companyId, $accountingPeriodId, (int)($submission['id'] ?? 0))
             );
         }
 
@@ -173,7 +173,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
                     . $this->messageList($this->submissionErrors($submission), 'Companies House response')
                     . '<div class="helper">Correct the reported issue and prepare a new submission. Do not reuse the rejected submission number.</div>'
                     . (!empty($filing['can_prepare'])
-                        ? $this->prepareForm($companyId, $accountingPeriodId, $eligibility, $locked)
+                        ? $this->prepareForm($companyId, $accountingPeriodId, $eligibility)
                         : $this->messageList($this->blockers($filing), 'Preparation blockers'))
             );
         }
@@ -190,7 +190,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
                     . $this->artifactSummary($preparedArtifact)
                     . $this->messageList($this->blockers($filing), 'Submission blockers')
                     . (!empty($filing['can_submit'])
-                        ? $this->submitForm($companyId, $accountingPeriodId, (int)($submission['id'] ?? 0), $mode, $locked)
+                        ? $this->submitForm($companyId, $accountingPeriodId, (int)($submission['id'] ?? 0), $mode)
                         : '')
             );
         }
@@ -209,7 +209,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             'success',
             $summary
                 . '<div class="helper">Preparing creates an immutable revised-accounts artifact for review. It does not submit anything to Companies House.</div>'
-                . $this->prepareForm($companyId, $accountingPeriodId, $eligibility, $locked)
+                . $this->prepareForm($companyId, $accountingPeriodId, $eligibility)
         );
     }
 
@@ -501,6 +501,10 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             . $this->metric('Gateway status', (string)($submission['gateway_status'] ?? $submission['raw_gateway_status'] ?? $submission['raw_status'] ?? $submission['lifecycle'] ?? $submission['status'] ?? ''))
             . $this->metric('Submitted at', (string)($submission['submitted_at'] ?? ''))
             . $this->metric('Last checked', (string)($submission['last_polled_at'] ?? $submission['status_checked_at'] ?? ''))
+            . (!empty($submission['schema_manifest_sha256'])
+                ? $this->metric('Schema manifest SHA-256', (string)$submission['schema_manifest_sha256'])
+                    . $this->metric('Schema validated at', (string)($submission['schema_validated_at'] ?? ''))
+                : '')
             . '</div>';
     }
 

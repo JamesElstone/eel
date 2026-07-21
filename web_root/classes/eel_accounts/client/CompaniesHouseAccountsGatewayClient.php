@@ -39,6 +39,9 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
     /** @var null|\Closure(): string */
     private ?\Closure $transactionIdFactory;
 
+    /** @var null|\Closure(string,string): array */
+    private ?\Closure $requestValidator;
+
     private int $timeoutSeconds;
     private int $maxResponseBytes;
     private int $minimumIntervalMicroseconds;
@@ -49,13 +52,15 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         ?callable $httpTransport = null,
         ?callable $credentialLoader = null,
         ?callable $transactionIdFactory = null,
-        array $config = []
+        array $config = [],
+        ?callable $requestValidator = null
     ) {
         $this->httpTransport = $httpTransport === null ? null : \Closure::fromCallable($httpTransport);
         $this->credentialLoader = $credentialLoader === null ? null : \Closure::fromCallable($credentialLoader);
         $this->transactionIdFactory = $transactionIdFactory === null
             ? null
             : \Closure::fromCallable($transactionIdFactory);
+        $this->requestValidator = $requestValidator === null ? null : \Closure::fromCallable($requestValidator);
         $this->timeoutSeconds = max(1, (int)($config['timeout_seconds'] ?? 30));
         $this->maxResponseBytes = max(1, (int)($config['max_response_bytes'] ?? 2097152));
         $this->minimumIntervalMicroseconds = max(
@@ -64,50 +69,68 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         );
     }
 
-    public function submitAccounts(array $payload, string $environment): array
+    public function prepareAccounts(
+        array $payload,
+        string $environment,
+        string $schemaManifestSha256
+    ): CompaniesHousePreparedAccountsRequest
     {
-        try {
-            $environment = $this->normaliseEnvironment($environment);
-            $credentials = $this->credentials($environment, true);
-            $payload = $this->normaliseSubmissionPayload($payload);
-            $transactionId = $this->transactionId();
-            $requestXml = $this->buildSubmissionRequest($payload, $credentials, $environment, $transactionId);
-        } catch (\Throwable $exception) {
-            return $this->failureResult(
-                $environment,
-                $exception->getMessage(),
-                false,
-                isset($payload['submission_number']) ? (string)$payload['submission_number'] : null
-            );
-        }
-
+        $environment = $this->normaliseEnvironment($environment);
+        $credentials = $this->credentials($environment, true);
+        $payload = $this->normaliseSubmissionPayload($payload);
+        $transactionId = $this->transactionId();
+        $requestXml = $this->buildSubmissionRequest($payload, $credentials, $environment, $transactionId);
         $secrets = $this->secretValues($credentials, (string)$payload['company_authentication_code']);
         $redactedRequest = $this->redactXml($requestXml, $secrets);
 
+        $validation = $this->requestValidator instanceof \Closure
+            ? ($this->requestValidator)($requestXml, $schemaManifestSha256)
+            : (new \eel_accounts\Service\CompaniesHouseAccountsSchemaValidator())
+                ->validateAccountsRequest($requestXml, $schemaManifestSha256);
+        if (empty($validation['success'])
+            || (int)($validation['snapshot_id'] ?? 0) <= 0
+            || !hash_equals(strtolower($schemaManifestSha256), strtolower((string)($validation['manifest_sha256'] ?? '')))) {
+            throw new \RuntimeException('The prepared Companies House request was not validated against the selected schema snapshot.');
+        }
+
+        return new CompaniesHousePreparedAccountsRequest(
+            $environment,
+            (string)$payload['submission_number'],
+            $transactionId,
+            $requestXml,
+            $redactedRequest,
+            $secrets,
+            (int)$validation['snapshot_id'],
+            strtolower($schemaManifestSha256)
+        );
+    }
+
+    public function sendPreparedAccounts(CompaniesHousePreparedAccountsRequest $request): array
+    {
         try {
-            $response = $this->send($requestXml);
+            $response = $this->send($request->requestXml());
         } catch (\Throwable $exception) {
             return array_replace(
                 $this->failureResult(
-                    $environment,
-                    $this->redactText($exception->getMessage(), $secrets),
+                    $request->environment(),
+                    $this->redactText($exception->getMessage(), $request->secrets()),
                     true,
-                    (string)$payload['submission_number']
+                    $request->submissionNumber()
                 ),
                 [
-                    'transaction_id' => $transactionId,
-                    'request_xml' => $redactedRequest,
+                    'transaction_id' => $request->transactionId(),
+                    'request_xml' => $request->redactedRequestXml(),
                 ]
             );
         }
 
         return $this->parseSubmissionResponse(
             $response,
-            $environment,
-            (string)$payload['submission_number'],
-            $transactionId,
-            $redactedRequest,
-            $secrets
+            $request->environment(),
+            $request->submissionNumber(),
+            $request->transactionId(),
+            $request->redactedRequestXml(),
+            $request->secrets()
         );
     }
 

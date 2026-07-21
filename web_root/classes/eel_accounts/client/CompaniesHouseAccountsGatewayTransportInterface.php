@@ -11,7 +11,13 @@ namespace eel_accounts\Client;
 
 interface CompaniesHouseAccountsGatewayTransportInterface
 {
-    public function submitAccounts(array $payload, string $environment): array;
+    public function prepareAccounts(
+        array $payload,
+        string $environment,
+        string $schemaManifestSha256
+    ): CompaniesHousePreparedAccountsRequest;
+
+    public function sendPreparedAccounts(CompaniesHousePreparedAccountsRequest $request): array;
 
     public function getSubmissionStatus(string $submissionNumber, string $environment): array;
 }

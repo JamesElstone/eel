@@ -101,10 +101,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $transport,
                     $credentials,
                     $transactionId,
-                    $config
+                    $config,
+                    static fn(string $xml, string $manifest): array => ['success'=>true,'snapshot_id'=>7,'manifest_sha256'=>$manifest]
                 );
                 $payload = $submissionPayload();
-                $result = $client->submitAccounts($payload, 'TEST');
+                $prepared = $client->prepareAccounts($payload, 'TEST', str_repeat('a', 64));
+                $result = $client->sendPreparedAccounts($prepared);
                 $requestXml = (string)$captured['body'];
 
                 $harness->assertSame(true, $result['success']);
@@ -298,9 +300,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ],
                     $credentials,
                     $transactionId,
-                    $config
+                    $config,
+                    static fn(string $xml, string $manifest): array => ['success'=>true,'snapshot_id'=>7,'manifest_sha256'=>$manifest]
                 );
-                $result = $client->submitAccounts($submissionPayload(), 'TEST');
+                $result = $client->sendPreparedAccounts($client->prepareAccounts($submissionPayload(), 'TEST', str_repeat('a', 64)));
 
                 $harness->assertSame(false, $result['success']);
                 $harness->assertSame(false, $result['transport_unknown']);
@@ -329,14 +332,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $transport,
                     $credentials,
                     $transactionId,
-                    $config
+                    $config,
+                    static fn(string $xml, string $manifest): array => ['success'=>true,'snapshot_id'=>7,'manifest_sha256'=>$manifest]
                 );
-                $result = $client->submitAccounts($submissionPayload(), 'DISABLED');
-
-                $harness->assertSame(false, $result['success']);
-                $harness->assertSame(false, $result['transport_unknown']);
+                try {
+                    $client->prepareAccounts($submissionPayload(), 'DISABLED', str_repeat('a', 64));
+                    $harness->assertTrue(false, 'Invalid environment should throw before transport.');
+                } catch (InvalidArgumentException $exception) {
+                    $harness->assertTrue(str_contains($exception->getMessage(), 'TEST or LIVE'));
+                }
                 $harness->assertSame(false, $called);
-                $harness->assertTrue(str_contains($result['error'], 'TEST or LIVE'));
             }
         );
 
@@ -356,9 +361,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     },
                     $credentials,
                     $transactionId,
-                    $config
+                    $config,
+                    static fn(string $xml, string $manifest): array => ['success'=>true,'snapshot_id'=>7,'manifest_sha256'=>$manifest]
                 );
-                $result = $client->submitAccounts($submissionPayload(), 'TEST');
+                $result = $client->sendPreparedAccounts($client->prepareAccounts($submissionPayload(), 'TEST', str_repeat('a', 64)));
 
                 $harness->assertSame(false, $result['success']);
                 $harness->assertSame(true, $result['transport_unknown']);

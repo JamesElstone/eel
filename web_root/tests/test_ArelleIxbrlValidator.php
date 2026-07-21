@@ -15,7 +15,7 @@ require_once PROJECT_ROOT . 'third_party' . DIRECTORY_SEPARATOR . 'arelle' . DIR
     static function (GeneratedServiceClassTestHarness $harness): void {
         $harness->check(ArelleIxbrlValidator::class, 'reports not configured when config is missing', static function () use ($harness): void {
             $fixture = arelleValidatorFixture();
-            $validator = new ArelleIxbrlValidator($fixture['missing_config'], $fixture['root']);
+            $validator = new ArelleIxbrlValidator([], $fixture['root']);
             $configuration = $validator->configurationStatus();
             $result = $validator->validate($fixture['ixbrl']);
 
@@ -117,26 +117,21 @@ function arelleValidatorFixture(string $mode = 'success'): array
     };
     file_put_contents($cmd, $body);
 
-    $config = $root . DIRECTORY_SEPARATOR . 'arelle.config.php';
-    file_put_contents(
-        $config,
-        '<?php return ' . var_export([
-            'enabled' => true,
-            'arelle_cmd' => $cmd,
-            'timeout_seconds' => 5,
-            'logs_path' => $logs,
-            'cache_path' => $cache,
-            'packages' => [$taxonomies],
-            'offline' => true,
-            'flags' => ['--validate'],
-        ], true) . ';'
-    );
+    $config = [
+        'enabled' => true,
+        'arelle_cmd' => $cmd,
+        'timeout_seconds' => 5,
+        'logs_path' => $logs,
+        'cache_path' => $cache,
+        'packages' => [$taxonomies],
+        'offline' => true,
+        'flags' => ['--validate'],
+    ];
 
     return [
         'root' => $root,
         'logs' => $logs,
         'ixbrl' => $ixbrl,
         'config' => $config,
-        'missing_config' => $root . DIRECTORY_SEPARATOR . 'missing.config.php',
     ];
 }

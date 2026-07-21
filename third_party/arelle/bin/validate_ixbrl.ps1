@@ -6,12 +6,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
-$Logs = Join-Path $Root "logs"
+$Logs = Resolve-Path (Join-Path $Root "..\..\file_logs\arelle") -ErrorAction SilentlyContinue
+if ($null -eq $Logs) { $Logs = Join-Path $Root "..\..\file_logs\arelle" }
 $Cache = Join-Path $Root "runtime\cache"
-$Taxonomies = Join-Path $Root "taxonomies"
+$Taxonomies = Join-Path $Root "..\frc\taxonomies"
 $ArelleCmd = Join-Path $Root "runtime\venv\Scripts\arelleCmdLine.exe"
 
-New-Item -ItemType Directory -Force -Path $Logs, $Cache, $Taxonomies | Out-Null
+New-Item -ItemType Directory -Force -Path $Logs, $Cache | Out-Null
 
 if (!(Test-Path $ArelleCmd)) {
     throw "Arelle command not found at $ArelleCmd. Run install_arelle.bat first."
@@ -27,7 +28,7 @@ $ArelleArguments = @(
     "--cacheDirectory", $Cache,
     "--internetConnectivity=offline"
 )
-foreach ($Package in @(Get-ChildItem -LiteralPath $Taxonomies -Filter "*.zip" -File | Sort-Object FullName)) {
+foreach ($Package in @(Get-ChildItem -LiteralPath $Taxonomies -Filter "*.zip" -File -ErrorAction SilentlyContinue | Sort-Object FullName)) {
     $ArelleArguments += @("--package", $Package.FullName)
 }
 $ArelleArguments += @("--file", $ResolvedFile.Path)

@@ -14,32 +14,20 @@ From the project root:
 third_party\arelle\bin\install_arelle.bat
 ```
 
-Install an official FRC taxonomy package into the project-local validation
-boundary at the same time:
-
-```bat
-third_party\arelle\bin\install_arelle.bat -TaxonomyPackage C:\path\to\FRC-2026-Taxonomy-v1.0.0.zip
-```
-
 The installer creates a local Python virtual environment under:
 
 ```text
 third_party/arelle/runtime/venv
 ```
 
-It installs `arelle-release`, runs a command-line smoke test, validates the
-sample Inline XBRL file in `samples/`, and writes local configuration to:
+It installs `arelle-release`, runs a command-line smoke test, and validates the
+sample Inline XBRL file in `samples/`. Arelle settings are held centrally in
+`secure/app.php` under `arelle`.
 
-```text
-third_party/arelle/config/arelle.config.php
-```
-
-Runtime files, logs, taxonomy packages, and local config are intentionally not
-committed to git.
-
-Validation runs offline. The adapter automatically loads every ZIP under
-`third_party/arelle/taxonomies` and uses `third_party/arelle/runtime/cache`, so
-a filing check never silently depends on a live taxonomy download.
+Validation runs offline. Download and verify the FRC Taxonomy Suite from the
+Tax Artifacts page; the verified package is stored under
+`third_party/frc/taxonomies` and selected by the application, rather than by
+Arelle scanning a private folder.
 
 ## Manual Validation
 
@@ -49,7 +37,8 @@ Validate a generated iXBRL/XHTML file:
 third_party\arelle\bin\validate_ixbrl.bat outbound\ixbrl\accounts_ixbrl_1_1_1.xhtml
 ```
 
-Logs are written to `third_party/arelle/logs/`.
+The script uses managed ZIPs in `third_party/frc/taxonomies`; install one from
+Tax Artifacts first. Logs are written to `file_logs/arelle/`.
 
 ## Licence Boundary
 

@@ -1424,6 +1424,8 @@ CREATE TABLE `ixbrl_generation_runs` (
   `external_validation_log_path` varchar(1000) DEFAULT NULL,
   `external_validated_at` datetime DEFAULT NULL,
   `external_validated_sha256` char(64) DEFAULT NULL,
+  `external_taxonomy_package_id` bigint(20) DEFAULT NULL,
+  `external_taxonomy_sha256` char(64) DEFAULT NULL,
   `generated_filename` varchar(255) DEFAULT NULL,
   `generated_path` varchar(1000) DEFAULT NULL,
   `output_sha256` char(64) DEFAULT NULL,
@@ -1435,6 +1437,7 @@ CREATE TABLE `ixbrl_generation_runs` (
   KEY `idx_ixbrl_runs_company_accounting_period` (`company_id`,`accounting_period_id`),
   KEY `idx_ixbrl_runs_status` (`status`),
   KEY `idx_ixbrl_runs_filing_approval` (`filing_approval_id`),
+  KEY `idx_ixbrl_external_taxonomy` (`external_taxonomy_package_id`),
   CONSTRAINT `fk_ixbrl_runs_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_ixbrl_runs_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -3743,6 +3746,31 @@ ALTER TABLE `hmrc_ct600_submissions`
 ALTER TABLE `companies_house_accounts_submissions`
   ADD KEY `idx_ch_accounts_evidence_bundle` (`evidence_bundle_id`),
   ADD CONSTRAINT `fk_ch_accounts_evidence_bundle` FOREIGN KEY (`evidence_bundle_id`) REFERENCES `filing_evidence_bundles` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+CREATE TABLE `frc_taxonomy_packages` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `taxonomy_version` varchar(32) NOT NULL,
+  `artifact_version` varchar(32) NOT NULL,
+  `source_url` varchar(1000) NOT NULL,
+  `download_url` varchar(1000) DEFAULT NULL,
+  `local_path` varchar(1000) DEFAULT NULL,
+  `sha256` char(64) DEFAULT NULL,
+  `package_state` enum('not_downloaded','verified','failed','stale') NOT NULL DEFAULT 'not_downloaded',
+  `verification_error` text DEFAULT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 0,
+  `published_at` date DEFAULT NULL,
+  `verified_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_frc_taxonomy_identity` (`taxonomy_version`,`artifact_version`),
+  KEY `idx_frc_taxonomy_active` (`is_active`,`package_state`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_21_003_frc_taxonomy_artifacts.sql');
+INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
+SELECT DISTINCT `role_id`, 'tax_frc_taxonomy'
+FROM `role_card_permissions`
+WHERE `card_key` = 'tax_rates_ct600_rim';
 
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 

@@ -38,7 +38,7 @@ final class IxbrlExternalValidationService
         }
 
         require_once $adapterPath;
-        return (new \ArelleIxbrlValidator($this->validatorConfigPath, $this->validatorRootPath))
+        return (new \ArelleIxbrlValidator($this->configuration(), $this->validatorRootPath))
             ->configurationStatus();
     }
 
@@ -135,8 +135,25 @@ final class IxbrlExternalValidationService
         }
 
         require_once $adapterPath;
-        $validator = new \ArelleIxbrlValidator($this->validatorConfigPath, $this->validatorRootPath);
-        $result = $validator->validate($path, $taxonomyPackages);
+        $packages = array_values(array_filter($taxonomyPackages, 'is_string'));
+        $managedPackage = null;
+        if ($packages === []) {
+            $activePackage = (new FrcTaxonomyPackageService())->activePackage();
+            if (!is_array($activePackage)) {
+                return [
+                    'ok' => false, 'status' => 'not_configured', 'validator' => 'arelle', 'version' => '',
+                    'errors' => ['No verified FRC accounts taxonomy package is installed.'], 'warnings' => [], 'log_path' => '', 'duration_ms' => 0, 'validated_sha256' => null,
+                ];
+            }
+            $packages[] = (string)$activePackage['local_path'];
+            $managedPackage = $activePackage;
+        }
+        $validator = new \ArelleIxbrlValidator($this->configuration(), $this->validatorRootPath);
+        $result = $validator->validate($path, $packages);
+        if (is_array($managedPackage)) {
+            $result['taxonomy_package_id'] = (int)$managedPackage['id'];
+            $result['taxonomy_sha256'] = (string)$managedPackage['sha256'];
+        }
         $hashAfterValidation = hash_file('sha256', $path);
         if (!is_string($hashAfterValidation)
             || !hash_equals($hashBeforeValidation, strtolower($hashAfterValidation))) {
@@ -220,6 +237,8 @@ final class IxbrlExternalValidationService
                  external_validation_warnings_json = :warnings,
                  external_validation_log_path = :log_path,
                  external_validated_sha256 = :validated_sha256,
+                 external_taxonomy_package_id = :taxonomy_package_id,
+                 external_taxonomy_sha256 = :taxonomy_sha256,
                  external_validated_at = CURRENT_TIMESTAMP
              WHERE id = :id',
             [
@@ -231,6 +250,8 @@ final class IxbrlExternalValidationService
                 'validated_sha256' => ($result['validated_sha256'] ?? null) !== null
                     ? (string)$result['validated_sha256']
                     : null,
+                'taxonomy_package_id' => (int)($result['taxonomy_package_id'] ?? 0) ?: null,
+                'taxonomy_sha256' => trim((string)($result['taxonomy_sha256'] ?? '')) ?: null,
                 'id' => $runId,
             ]
         );
@@ -245,6 +266,14 @@ final class IxbrlExternalValidationService
             return false;
         }
         $fileHash = hash_file('sha256', $path);
+
+        $storedTaxonomyHash = strtolower(trim((string)($run['external_taxonomy_sha256'] ?? '')));
+        if ($storedTaxonomyHash !== '') {
+            $activePackage = (new FrcTaxonomyPackageService())->activePackage();
+            if (!is_array($activePackage) || !hash_equals($storedTaxonomyHash, strtolower((string)$activePackage['sha256']))) {
+                return false;
+            }
+        }
 
         return is_string($fileHash)
             && hash_equals($outputHash, $validatedHash)
@@ -264,5 +293,14 @@ final class IxbrlExternalValidationService
             'duration_ms' => 0,
             'validated_sha256' => null,
         ];
+    }
+
+    private function configuration(): array
+    {
+        if ($this->validatorConfigPath !== null) {
+            return is_file($this->validatorConfigPath) ? (array)require $this->validatorConfigPath : [];
+        }
+        $configured = \AppConfigurationStore::get('arelle', []);
+        return is_array($configured) ? $configured : [];
     }
 }

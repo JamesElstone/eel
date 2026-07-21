@@ -12,7 +12,7 @@ final class ArelleIxbrlValidator
     private string $validatorVersion = '';
 
     public function __construct(
-        private readonly ?string $configPath = null,
+        private readonly array $config = [],
         private readonly ?string $rootPath = null,
     ) {
     }
@@ -133,14 +133,7 @@ final class ArelleIxbrlValidator
 
     private function loadConfig(): ?array
     {
-        $path = $this->configPath ?? ($this->rootPath() . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'arelle.config.php');
-        if (!is_file($path)) {
-            return null;
-        }
-
-        $config = require $path;
-
-        return is_array($config) ? $config : null;
+        return $this->config === [] ? null : $this->config;
     }
 
     private function rootPath(): string
@@ -150,10 +143,6 @@ final class ArelleIxbrlValidator
 
     private function configuredPackages(array $configuredPackages): array
     {
-        if ($configuredPackages === []) {
-            $configuredPackages = [$this->rootPath() . DIRECTORY_SEPARATOR . 'taxonomies'];
-        }
-
         $packages = [];
         foreach ($configuredPackages as $configuredPackage) {
             $configuredPackage = trim((string)$configuredPackage);

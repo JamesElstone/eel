@@ -14,7 +14,7 @@ Its goal is simple:
 
 ## Requirements
 
-eel turns raw bank statement data into structured financial outputs suitable for FRS 105 micro-entity statutory reporting.
+eel turns raw bank and trade supplier statements into structured financial outputs suitable for FRS 105 micro-entity statutory reporting to both Companies House and HMRC, using a repeatable evidence based approach.
 
 Instead of relying on bank APIs, eel works with **CSV statement uploads**, making it simple, portable, and fully self-hosted.
 

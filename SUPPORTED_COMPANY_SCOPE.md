@@ -95,11 +95,11 @@ VAT accounting, VAT returns and Making Tax Digital (MTD) functionality are outsi
 
 ---
 
-# Director Loans
+# Director and Business Participant Loans
 
 ## Supported
 
-* Director loan ledger
+* Director & Participant loan ledger
 * Loan advances
 * Loan repayments
 * Credit balances

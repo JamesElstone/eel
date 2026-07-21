@@ -23,7 +23,9 @@ final class TaxArtifactsRefreshAction implements ActionInterfaceFramework
 
         $progress = $services->actionProgress();
         $progress->report('Starting tax artefact refresh.', 0);
-        $facts = ['page.context'];
+        // The refresh updates several independent sources. Re-render every page card
+        // after the progress stream completes so no stale status remains visible.
+        $facts = ['page.reload'];
         $messages = [];
         $successfulStages = 0;
 

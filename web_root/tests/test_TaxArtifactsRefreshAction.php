@@ -17,4 +17,10 @@ $harness->run(TaxArtifactsRefreshAction::class, static function (GeneratedServic
             'refresh_hmrc_vat_thresholds',
         ], array_column($stages, 'intent'));
     });
+
+    $harness->check(TaxArtifactsRefreshAction::class, 'requests a full page-card refresh after completing', static function () use ($harness): void {
+        $source = (string)file_get_contents(APP_ROOT . 'content' . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'TaxArtifactsRefreshAction.php');
+
+        $harness->assertTrue(str_contains($source, '$facts = [\'page.reload\'];'));
+    });
 });

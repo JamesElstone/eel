@@ -166,11 +166,11 @@ Remediation: Maintain taxonomy packages and mapping review, retain artifact-hash
 
 VCRI-011 - Companies House filing/readiness
 Reference: Companies House micro-entity accounts guidance allows simpler accounts and requires specific balance sheet statements.
-Implementation evidence: Companies House services and comparison tooling exist; generated facts include micro-entity and audit exemption-style statements.
+Implementation evidence: CompaniesHouseAccountsSubmissionService constructs the accounts submission envelope, validates it against a verified Companies House schema snapshot, records the submission lifecycle, and keeps TEST and LIVE routes distinct. CompaniesHouseAccountsSchemaValidator and its regression test reject an unverified schema manifest; the submission service keeps LIVE filing unavailable until a TEST revised-accounts submission has been accepted. Comparison tooling remains available for reconciliation against filed accounts.
 Status: PARTIAL.
 Assessment: Filed accounts comparison is useful for reconciliation and review.
-Shortfall: The app does not yet produce a Companies House-approved filing package. Legal wording and filing options need validation, especially where micro-entity accounts omit public P&L information but HMRC requires accounts with the tax return.
-Remediation: Separate "Companies House public filing pack" from "HMRC accounts attached to CT600", with different output/validation rules.
+Shortfall: A locally schema-valid package is not evidence of Companies House TEST or LIVE acceptance. Legal wording, filing options, the public micro-entity pack, and the accounts attachment required for the CT600 need external acceptance evidence before this can be treated as a production filing route.
+Remediation: Obtain and retain a controlled TEST acceptance, then separately validate the public Companies House pack and the HMRC CT600 accounts attachment. Do not represent either as LIVE-ready without the corresponding external result.
 
 VCRI-012 - Corporation Tax computation rate engine
 Reference: HMRC rates from 1 April 2023 include 25% main rate, 19% small profits rate, thresholds, marginal relief, associated companies, and period apportionment.
@@ -198,11 +198,11 @@ Remediation: Add end-to-end fixed asset fixtures covering purchase, depreciation
 
 VCRI-015 - Capital allowances
 Reference: HMRC CT rules require correct treatment of AIA, pools, disposals, balancing charges/allowances, cars, private use, and period limits.
-Implementation evidence: AssetService appears to create simplified capital allowance adjustments, and CT600-related code can surface capital allowance figures.
-Status: PARTIAL.
-Assessment: Suitable for an early estimate only.
-Shortfall: The implementation does not cover the full capital allowance regime, including AIA cap/apportionment, main pool/special rate pool, cars, private use, FYA/super-deduction historical rules, disposals, and balancing adjustments.
-Remediation: Treat current output as draft and build a pool-based capital allowances module before relying on CT figures.
+Implementation evidence: CapitalAllowanceService is a CT-period pool engine (capital_allowance_pool_v2), with persisted, hashed main and special-rate pool runs and asset-level calculations. It applies date-sourced AIA limits and WDA rates, handles AIA apportionment, FYA/zero-emission-car treatment, CO2 pool selection, disposals, cessation balancing allowances/charges, and preserves locked evidence. test_GoldenCapitalAllowanceMatrix.php covers those scenarios, including cross-casting asset rows, pools, and the CT computation. Unsupported or incomplete asset facts produce a warning which CorporationTaxHardGateService converts into an amount-affecting hard failure, preventing the filing path from treating the computation as ready.
+Status: OK.
+Assessment: The supported plant, machinery, van, and evidenced car path is calculated from an auditable pool model rather than a simplified adjustment. The earlier shortfall has been met for that product scope.
+Shortfall: None within the supported scope. Regimes or facts not modelled (for example default motor-vehicle coding, incomplete car facts, private-use and other specialist claims) remain outside scope and fail the CT hard gate instead of being silently calculated.
+Remediation: Add a reviewed rule, deterministic fixture, and CT traceability before admitting any additional capital-allowance regime into the supported scope.
 
 VCRI-016 - Losses
 Reference: CT loss carry-forward/use must be tracked consistently and mapped correctly into computations and CT600 boxes.
@@ -246,11 +246,11 @@ Remediation: Add lock-guard tests for every write service touching transactions,
 
 VCRI-021 - Dividends and distributable reserves
 Reference: Dividends require sufficient distributable profits and proper company records.
-Implementation evidence: DividendService exists with declaration/capacity/history/warning concepts.
+Implementation evidence: DividendService calculates capacity from retained earnings, prior locked periods, current reviewed reserve movements, declared dividends, and the CT position. It rejects declarations above available reserves, blocks capacity where the prior close or CT estimate is missing/stale, excludes unrealised gains, records declarations/voids, and provides reliability warnings. test_DividendService.php covers these behaviours.
 Status: PARTIAL.
-Assessment: Directionally useful, especially for a director/shareholder micro-company.
-Shortfall: The legal reserve test is likely simplified. Full treatment should consider cumulative realised profits after tax, prior losses, dividends already declared, share classes, vouchers/minutes, payment dates, and Companies Act requirements.
-Remediation: Add a distributable reserves service driven by locked accounts and retained earnings movements, with generated dividend vouchers/minutes and sign-off.
+Assessment: The supported single-class, ordinary micro-company path has meaningful reserve and ledger controls rather than a simple balance check.
+Shortfall: The app has no demonstrated share-class/right model or complete Companies Act record-generation workflow, so it cannot hard-block every multi-class, preference, or unusual distribution case.
+Remediation: Keep those cases outside the supported product scope. Add an explicit share-capital/right model, generated statutory records, and deterministic legal-scenario fixtures before reclassifying this control as OK.
 
 VCRI-022 - Director loan account
 Reference: Director loan balances can have CT, benefit-in-kind, interest, and disclosure implications.
@@ -262,11 +262,11 @@ Remediation: Continue professional review of the s455/CT600A rules, add scenario
 
 VCRI-023 - VAT and non-VAT scope
 Reference: VAT registration/MTD rules affect accounting and tax workflows where applicable.
-Implementation evidence: README indicates VAT is initially out of scope/not registered; VAT control nominal and readiness settings exist.
-Status: PARTIAL.
-Assessment: It is acceptable to scope a micro-company app as non-VAT registered if that is explicit.
-Shortfall: The app should hard-block or strongly warn if company settings indicate VAT registration or transactions imply VAT obligations beyond the supported scope.
-Remediation: Add a VAT scope gate and clear unsupported-scenario warning.
+Implementation evidence: VatSupportScopeService evaluates a LIVE HMRC-confirmed VAT registration and makes Tax and Year End read-only. It blocks direct CT computations, CT-period mutations, capital-allowance rebuilds, year-end writers, and CT600 builders; it fails closed if scope evaluation itself fails, while leaving ordinary bookkeeping available. test_VatSupportScopeService.php proves these paths and the no-mutation guarantee.
+Status: OK.
+Assessment: The non-VAT product boundary is explicit and enforced at the tax, year-end, and filing mutation points. A VAT-registered company is not silently processed as a supported CT filing case.
+Shortfall: None within the declared non-VAT scope. VAT return/MTD processing remains excluded and is hard-blocked for the affected Tax and Year End workflow.
+Remediation: Only introduce VAT processing with a separately reviewed VAT/MTD implementation and deterministic filing evidence.
 
 VCRI-024 - Companies House filed accounts comparison
 Reference: Prior filed accounts can support opening balances, comparatives, and sanity checks.
@@ -278,7 +278,7 @@ Remediation: Keep comparison as a review control, not as a substitute for valida
 
 VCRI-025 - Testing and assurance
 Reference: Accounting/tax software needs deterministic, rule-level evidence.
-Implementation evidence: The suite now includes deterministic golden accounting/tax oracles and lifecycle coverage, targeted CT600 V3/CT600A schema tests, filing-model and return-model tests, computation iXBRL tests, supplementary-page scope tests, CT600A/s455 scenario tests, tax-rate/treatment tests, and card/UI coverage. The focused VCRI regression set passed on 21 July 2026: test_Ct600BuilderService.php, test_Ct600ReturnModelService.php, test_CtPeriodFilingModelService.php, test_IxbrlTaxComputationService.php, test_CorporationTaxFilingScopeService.php, test_Ct600aService.php, and test_GoldenYearEndLifecycle.php.
+Implementation evidence: The suite now includes deterministic golden accounting/tax oracles and lifecycle coverage, targeted CT600 V3/CT600A schema tests, filing-model and return-model tests, computation iXBRL tests, supplementary-page scope tests, CT600A/s455 scenario tests, tax-rate/treatment tests, capital-allowance pool fixtures, dividend-capacity fixtures, VAT fail-closed mutation tests, and card/UI coverage. The focused VCRI regression set passed on 21 July 2026, including test_CtPeriodFilingModelService.php, test_Ct600BuilderService.php, test_IxbrlTaxComputationService.php, test_GoldenCapitalAllowanceMatrix.php, test_DividendService.php, test_VatSupportScopeService.php, test_Ct600aService.php, and test_GoldenYearEndLifecycle.php.
 Status: PARTIAL.
 Assessment: Assurance has advanced beyond smoke coverage into independent-oracle and expected-output testing for key ledger, tax, filing, and CT600A paths.
 Shortfall: Coverage is not a substitute for external filing acceptance. Further fixtures are still needed for the full range of FRS 105 disclosures, unusual capital allowances, dividends, all supplementary pages, gateway responses, and live operational failure modes.

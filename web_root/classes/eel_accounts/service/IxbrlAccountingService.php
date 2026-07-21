@@ -28,12 +28,21 @@ final class IxbrlAccountingService
             return ['success' => false, 'errors' => [(string)($freshness['detail'] ?? 'Rebuild iXBRL facts before generating.')]];
         }
 
-        $oldGeneratedPath = trim((string)($run['generated_path'] ?? ''));
         $newGeneratedPath = '';
+        $stored = null;
+        $evidenceArtifact = null;
         try {
+            $evidenceArtifact = (new FilingEvidenceService())->reserveArtifact(
+                $companyId,
+                $accountingPeriodId,
+                'accounts_ixbrl',
+                null,
+                ['ixbrl_generation_run_id' => (int)$run['id']]
+            );
             $xhtml = $this->renderXhtml(
                 $builder->getFacts((int)$run['id']),
-                $this->comparativeFactsRequired($companyId, $accountingPeriodId)
+                $this->comparativeFactsRequired($companyId, $accountingPeriodId),
+                (string)$evidenceArtifact['display_id']
             );
             $validationErrors = $this->validateInlineXbrl($xhtml);
             if ($validationErrors !== []) {
@@ -41,7 +50,7 @@ final class IxbrlAccountingService
             }
 
             $artifact = $this->accountingArtifactLocation($companyId, $accountingPeriodId, (int)$run['id']);
-            $stored = (new IxbrlGeneratorService())->storeArtifact(
+            $stored = (new IxbrlGeneratorService())->storeImmutableArtifact(
                 $companyId,
                 (string)$artifact['company_number'],
                 (string)$artifact['period_start'],
@@ -88,11 +97,25 @@ final class IxbrlAccountingService
                     'id' => (int)$run['id'],
                 ]
             );
+            (new FilingEvidenceService())->completeArtifact((int)$evidenceArtifact['id'], [
+                'status' => 'generated',
+                'filename' => $filename,
+                'path' => $path,
+                'sha256' => $hash,
+                'schema_identity' => IxbrlTaxonomyProfileService::SCHEMA_REF,
+                'validation_status' => 'passed',
+                'identifier_embedded' => true,
+                'metadata' => ['ixbrl_generation_run_id' => (int)$run['id']],
+            ]);
 
-            return ['success' => true, 'errors' => [], 'filename' => $filename, 'path' => $path, 'sha256' => $hash];
+            return ['success' => true, 'errors' => [], 'filename' => $filename, 'path' => $path, 'sha256' => $hash,
+                'evidence_artifact_id' => (string)$evidenceArtifact['display_id']];
         } catch (\Throwable $exception) {
-            foreach (array_unique([$oldGeneratedPath, $newGeneratedPath]) as $failedArtifact) {
-                $this->removeManagedArtifact((string)$failedArtifact, $companyId);
+            if (is_array($evidenceArtifact)) {
+                (new FilingEvidenceService())->failArtifact((int)$evidenceArtifact['id'], $exception->getMessage());
+            }
+            if (is_array($stored) && !empty($stored['created']) && $newGeneratedPath !== '') {
+                $this->removeManagedArtifact($newGeneratedPath, $companyId);
             }
             \InterfaceDB::prepareExecute(
                 'UPDATE ixbrl_generation_runs
@@ -237,7 +260,7 @@ final class IxbrlAccountingService
         ) > 0;
     }
 
-    private function renderXhtml(array $facts, bool $comparativeRequired = false): string
+    private function renderXhtml(array $facts, bool $comparativeRequired = false, string $evidenceArtifactId = ''): string
     {
         $indexed = $this->indexFacts($facts);
         $missingFactKeys = [];
@@ -377,7 +400,9 @@ final class IxbrlAccountingService
             . ' xmlns:iso4217="http://www.xbrl.org/2003/iso4217"'
             . $namespaceAttributes
             . ' xml:lang="en">' . "\n"
-            . '<head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/><title>FRS 105 micro-entity accounts</title></head>' . "\n"
+            . '<head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>'
+            . ($evidenceArtifactId !== '' ? '<meta name="eel-evidence-artifact-id" content="' . $this->e($evidenceArtifactId) . '"/>' : '')
+            . '<title>FRS 105 micro-entity accounts</title></head>' . "\n"
             . '<body>' . "\n"
             . '<div style="display:none"><ix:header>' . "\n"
             . ($hidden !== '' ? '<ix:hidden>' . "\n" . $hidden . '</ix:hidden>' . "\n" : '')
@@ -405,6 +430,7 @@ final class IxbrlAccountingService
             . '</div>' . "\n"
             . '<div><h2>Statutory statements and approval</h2>' . $statements . '</div>' . "\n"
             . '<div><h2>Notes</h2>' . $notes . '</div>' . "\n"
+            . ($evidenceArtifactId !== '' ? '<div><p>EEL filing evidence artifact: <strong>' . $this->e($evidenceArtifactId) . '</strong></p></div>' . "\n" : '')
             . '</body></html>' . "\n";
     }
 

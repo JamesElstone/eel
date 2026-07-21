@@ -120,6 +120,12 @@ final class IxbrlAccountsFilingApprovalService
             if ($approvalId <= 0) {
                 throw new \RuntimeException('The filing approval could not be persisted.');
             }
+            (new FilingEvidenceService())->linkApproval(
+                $approvalId,
+                $companyId,
+                $accountingPeriodId,
+                $approvedBy
+            );
 
             $ctBasisIds = [];
             $ctPeriods = array_values((array)$candidate['ct_periods']);

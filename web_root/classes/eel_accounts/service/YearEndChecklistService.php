@@ -506,6 +506,9 @@ final class YearEndChecklistService
                     'corporation_tax_filing_basis' => $filingBasisSeal,
                 ]);
             }
+            $progress?->__invoke('Creating immutable filing evidence…', 98);
+            $filingEvidence = (new \eel_accounts\Service\FilingEvidenceService())
+                ->createForLock($companyId, $accountingPeriodId, $lockedBy);
 
             $result += [
                 'depreciation' => $depreciationResult,
@@ -516,6 +519,7 @@ final class YearEndChecklistService
                 'corporation_tax' => $taxPersistenceResult,
                 's455' => $s455Freeze,
                 'corporation_tax_filing_basis' => $filingBasisSeal,
+                'filing_evidence' => $filingEvidence,
                 'backup' => $backup,
                 'checklist' => $this->fetchChecklist($companyId, $accountingPeriodId),
             ];

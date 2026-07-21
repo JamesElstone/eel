@@ -321,7 +321,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
     {
         $transactionId = $this->transactionIdFactory instanceof \Closure
             ? strtoupper(trim((string)($this->transactionIdFactory)()))
-            : strtoupper(bin2hex(random_bytes(12)));
+            : strtoupper(bin2hex(random_bytes(16)));
 
         if (!preg_match('/^[0-9A-F]{1,32}$/', $transactionId)) {
             throw new \RuntimeException(

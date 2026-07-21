@@ -269,9 +269,23 @@ final class CompaniesHouseAccountsSubmissionService
         }
 
         $actor = $this->actor($actor);
+        try {
+            $evidenceService = new FilingEvidenceService();
+            $evidenceBundle = $evidenceService->ensureCurrentBundle($companyId, $accountingPeriodId, $actor);
+            $evidenceArtifact = $evidenceService->reserveArtifact(
+                $companyId,
+                $accountingPeriodId,
+                'companies_house_revised_accounts_ixbrl',
+                null,
+                ['original_document_id' => $originalDocumentId]
+            );
+        } catch (\Throwable $exception) {
+            return $this->failure('Current filing evidence is required: ' . $exception->getMessage());
+        }
         $artifact = ($this->artifactService ?? new IxbrlRevisedAccountsArtifactService())
-            ->prepare($companyId, $accountingPeriodId, $input);
+            ->prepare($companyId, $accountingPeriodId, $input, (string)$evidenceArtifact['display_id']);
         if (empty($artifact['success'])) {
+            $evidenceService->failArtifact((int)$evidenceArtifact['id'], (string)(($artifact['errors'] ?? [])[0] ?? 'Revised accounts preparation failed.'));
             return [
                 'success' => false,
                 'errors' => (array)($artifact['errors'] ?? ['The revised accounts could not be prepared.']),
@@ -279,6 +293,19 @@ final class CompaniesHouseAccountsSubmissionService
                 'messages' => [],
             ];
         }
+        $validation = (array)($artifact['validation'] ?? []);
+        $evidenceService->completeArtifact((int)$evidenceArtifact['id'], [
+            'status' => 'validated',
+            'filename' => (string)$artifact['filename'],
+            'path' => (string)$artifact['path'],
+            'sha256' => (string)$artifact['sha256'],
+            'schema_identity' => IxbrlTaxonomyProfileService::SCHEMA_REF,
+            'validator_name' => 'arelle',
+            'validator_version' => (string)($validation['version'] ?? ''),
+            'validation_status' => (string)($validation['status'] ?? 'passed'),
+            'identifier_embedded' => true,
+            'metadata' => ['base_run_id' => (int)($artifact['base_run_id'] ?? 0)],
+        ]);
 
         $mode = AccountingConfigurationStore::companiesHouseAccountsFilingMode();
         $environment = $mode === 'LIVE' ? 'LIVE' : 'TEST';
@@ -320,24 +347,26 @@ final class CompaniesHouseAccountsSubmissionService
             $actor,
             $now,
             $companyId,
-            $accountingPeriodId
+            $accountingPeriodId,
+            $evidenceBundle
         ): void {
             \InterfaceDB::prepareExecute(
                 'INSERT INTO ' . self::SUBMISSIONS_TABLE . ' (
-                    eligibility_id, company_id, accounting_period_id, original_document_id,
+                    evidence_bundle_id, eligibility_id, company_id, accounting_period_id, original_document_id,
                     original_transaction_id, original_document_external_id,
                     ixbrl_generation_run_id, environment, filing_type, lifecycle,
                     submission_number, revised_artifact_path, revised_artifact_sha256,
                     basis_hash, idempotency_key, revision_declarations_json,
                     prepared_by, prepared_at, status_updated_at, created_at, updated_at
                  ) VALUES (
-                    :eligibility_id, :company_id, :accounting_period_id, :original_document_id,
+                    :evidence_bundle_id, :eligibility_id, :company_id, :accounting_period_id, :original_document_id,
                     :transaction_id, :external_id, :run_id, :environment, :filing_type,
                     :lifecycle, :submission_number, :artifact_path, :artifact_sha256,
                     :basis_hash, :idempotency_key, :declarations, :prepared_by,
                     :prepared_at, :status_updated_at, :created_at, :updated_at
                  )',
                 [
+                    'evidence_bundle_id' => (int)$evidenceBundle['id'],
                     'eligibility_id' => (int)$eligibility['id'],
                     'company_id' => $companyId,
                     'accounting_period_id' => $accountingPeriodId,
@@ -378,6 +407,14 @@ final class CompaniesHouseAccountsSubmissionService
                 'A revised-accounts artifact was prepared and validated.',
                 $actor,
                 ['artifact_sha256' => (string)$artifact['sha256'], 'basis_hash' => (string)$artifact['basis_hash']]
+            );
+            (new FilingEvidenceService())->recordEvent(
+                (int)$evidenceBundle['id'],
+                'companies_house_prepared',
+                'success',
+                $actor,
+                'A Companies House revised-accounts artifact was prepared.',
+                ['submission_id' => (int)$row['id'], 'environment' => $environment]
             );
         });
 
@@ -476,6 +513,28 @@ final class CompaniesHouseAccountsSubmissionService
                 || !hash_equals($manifest, $preparedRequest->schemaManifestSha256())) {
                 throw new \RuntimeException('The prepared request was validated against a different Companies House schema snapshot.');
             }
+            $evidenceService = new FilingEvidenceService();
+            $requestEvidence = $evidenceService->reserveArtifact(
+                (int)$submission['company_id'],
+                (int)$submission['accounting_period_id'],
+                'companies_house_govtalk_submit_request',
+                null,
+                ['submission_id' => $submissionId],
+                $preparedRequest->transactionId()
+            );
+            $evidenceService->completeArtifact((int)$requestEvidence['id'], [
+                'status' => 'validated',
+                'filename' => 'companies-house-submission-request-redacted.xml',
+                'sha256' => hash('sha256', $preparedRequest->requestXml()),
+                'schema_identity' => 'Companies House GovTalk accounts filing',
+                'schema_manifest_sha256' => $manifest,
+                'validation_status' => 'passed',
+                'identifier_embedded' => true,
+                'metadata' => [
+                    'submission_id' => $submissionId,
+                    'redacted_sha256' => hash('sha256', $preparedRequest->redactedRequestXml()),
+                ],
+            ]);
         } catch (\Throwable $exception) {
             $message = 'Companies House pre-submission validation failed; nothing was sent. ' . $exception->getMessage();
             $this->recordEvent($submissionId, 'schema_validation_failed', 'error', 'prepared', null, $message, $actor);
@@ -551,6 +610,14 @@ final class CompaniesHouseAccountsSubmissionService
             $this->safeGatewayContext($result),
             (string)($firstError['number'] ?? $firstError['code'] ?? ''),
             (string)($firstError['text'] ?? $firstError['description'] ?? '')
+        );
+        $this->recordFilingEvidenceEvent(
+            $submission,
+            $success ? 'companies_house_acknowledged' : ($transportUnknown ? 'companies_house_transport_uncertain' : 'companies_house_rejected'),
+            $success ? 'success' : 'error',
+            $summary,
+            $actor,
+            ['gateway_reference' => (string)($result['response_transaction_id'] ?? $result['transaction_id'] ?? '')]
         );
 
         return [
@@ -646,6 +713,14 @@ final class CompaniesHouseAccountsSubmissionService
             (string)($firstRejection['code'] ?? ''),
             (string)($firstRejection['description'] ?? ''),
             (string)($examiner['comment'] ?? '')
+        );
+        $this->recordFilingEvidenceEvent(
+            $submission,
+            'companies_house_' . $lifecycle,
+            in_array($lifecycle, ['rejected', 'internal_failure'], true) ? 'error' : ($lifecycle === 'accepted' ? 'success' : 'info'),
+            $summary,
+            $actor,
+            ['raw_status' => $rawStatus]
         );
 
         return [
@@ -932,6 +1007,28 @@ final class CompaniesHouseAccountsSubmissionService
                 'actor' => $actor,
                 'created_at' => gmdate('Y-m-d H:i:s'),
             ]
+        );
+    }
+
+    private function recordFilingEvidenceEvent(
+        array $submission,
+        string $eventType,
+        string $status,
+        string $message,
+        string $actor,
+        array $context = []
+    ): void {
+        $bundleId = (int)($submission['evidence_bundle_id'] ?? 0);
+        if ($bundleId <= 0) {
+            return;
+        }
+        (new FilingEvidenceService())->recordEvent(
+            $bundleId,
+            $eventType,
+            $status,
+            $actor,
+            $message,
+            ['submission_id' => (int)($submission['id'] ?? 0)] + $context
         );
     }
 

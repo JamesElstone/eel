@@ -88,13 +88,22 @@ final class IxbrlTaxComputationService
 
         $generator = new IxbrlGeneratorService();
         $artifact = null;
+        $evidenceArtifact = null;
         try {
+            $evidenceArtifact = (new FilingEvidenceService())->reserveArtifact(
+                $companyId,
+                $accountingPeriodId,
+                'computation_ixbrl',
+                $ctPeriodId,
+                ['computation_run_id' => $runId]
+            );
             $validationResources = $catalogue->validationResources($package);
             $rendered = $this->renderMappedDocument(
                 $generator,
                 $model,
                 (array)$mappedFacts['mappings'],
-                (string)$validationResources['schema_ref']
+                (string)$validationResources['schema_ref'],
+                (string)$evidenceArtifact['display_id']
             );
             $errors = $generator->validateStructure($rendered['xhtml'], [$rendered['schema_ref']]);
             if ($errors !== []) {
@@ -169,6 +178,19 @@ final class IxbrlTaxComputationService
                     'id' => $runId,
                 ]
             );
+            (new FilingEvidenceService())->completeArtifact((int)$evidenceArtifact['id'], [
+                'status' => $fileable ? 'validated' : 'generated',
+                'filename' => (string)$artifact['filename'],
+                'path' => (string)$artifact['path'],
+                'sha256' => (string)$artifact['sha256'],
+                'schema_identity' => (string)$validationResources['schema_ref'],
+                'schema_manifest_sha256' => $packageHash,
+                'validator_name' => 'arelle',
+                'validator_version' => $validatorVersion,
+                'validation_status' => $externalStatus,
+                'identifier_embedded' => true,
+                'metadata' => ['computation_run_id' => $runId, 'mapping_hash' => (string)$profile['content_hash']],
+            ]);
             return [
                 'success' => $fileable,
                 'errors' => $fileable ? [] : ((array)($external['errors'] ?? []) !== []
@@ -179,8 +201,12 @@ final class IxbrlTaxComputationService
                 'path' => $artifact['path'],
                 'sha256' => $artifact['sha256'],
                 'run_id' => $runId,
+                'evidence_artifact_id' => (string)$evidenceArtifact['display_id'],
             ];
         } catch (\Throwable $exception) {
+            if (is_array($evidenceArtifact)) {
+                (new FilingEvidenceService())->failArtifact((int)$evidenceArtifact['id'], $exception->getMessage());
+            }
             if (is_array($artifact) && !empty($artifact['created'])) {
                 $generator->removeManagedArtifact((string)$artifact['path'], $companyId);
             }
@@ -268,7 +294,8 @@ final class IxbrlTaxComputationService
         IxbrlGeneratorService $generator,
         array $model,
         array $mappings,
-        string $schemaRef
+        string $schemaRef,
+        string $evidenceArtifactId = ''
     ): array
     {
         $run = (array)$model['run'];
@@ -335,6 +362,10 @@ final class IxbrlTaxComputationService
             $body .= '<div class="ct-section"><h2>' . $generator->escape(ucwords(str_replace('_', ' ', $section))) . '</h2><table><tbody>' . implode('', $rows) . '</tbody></table></div>';
         }
         $body .= $this->renderSupportingSchedules($generator, $model);
+        if ($evidenceArtifactId !== '') {
+            $body .= '<div class="ct-section"><p>EEL filing evidence artifact: <strong>'
+                . $generator->escape($evidenceArtifactId) . '</strong></p></div>';
+        }
         $body .= '</div>';
         if (!str_starts_with($schemaRef, 'http://www.hmrc.gov.uk/')) {
             throw new \RuntimeException('The verified HMRC computation-taxonomy schema reference is invalid.');
@@ -345,6 +376,7 @@ final class IxbrlTaxComputationService
             'schema_refs' => [$schemaRef],
             'contexts' => array_values($contexts),
             'units' => [['id' => 'GBP', 'measure' => 'iso4217:GBP']],
+            'metadata' => $evidenceArtifactId !== '' ? ['eel-evidence-artifact-id' => $evidenceArtifactId] : [],
             'body' => $body,
         ])];
     }

@@ -37,6 +37,11 @@ $harness->run(\eel_accounts\Service\TaxWorkingsService::class, static function (
         InterfaceDB::beginTransaction();
         try {
             InterfaceDB::prepareExecute(
+                'DELETE FROM filing_evidence_bundles
+                 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            );
+            InterfaceDB::prepareExecute(
                 'DELETE FROM corporation_tax_periods
                  WHERE company_id = :company_id
                    AND accounting_period_id = :accounting_period_id',
@@ -92,6 +97,11 @@ $harness->run(\eel_accounts\Service\TaxWorkingsService::class, static function (
 
         InterfaceDB::beginTransaction();
         try {
+            InterfaceDB::prepareExecute(
+                'DELETE FROM filing_evidence_bundles
+                 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            );
             InterfaceDB::prepareExecute(
                 'DELETE FROM corporation_tax_periods
                  WHERE company_id = :company_id

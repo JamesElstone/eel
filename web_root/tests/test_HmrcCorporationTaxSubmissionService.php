@@ -182,6 +182,31 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'updated_at' => $now,
                     ]
                 );
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO year_end_reviews
+                        (company_id, accounting_period_id, is_locked, locked_at, locked_by)
+                     VALUES (:company_id, :period_id, 1, :locked_at, :locked_by)',
+                    ['company_id' => $companyId, 'period_id' => $accountingPeriodId, 'locked_at' => $now, 'locked_by' => 'test']
+                );
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO filing_evidence_bundles
+                        (evidence_id, company_id, accounting_period_id, evidence_version, application_name,
+                         application_version, calculation_build, locked_at, locked_by, bundle_hash)
+                     VALUES (:evidence_id, :company_id, :period_id, :version, :name,
+                             :app_version, :build, :locked_at, :locked_by, :bundle_hash)',
+                    [
+                        'evidence_id' => 'EEL-FE-00000000000000000000000000098601',
+                        'company_id' => $companyId,
+                        'period_id' => $accountingPeriodId,
+                        'version' => 'filing-evidence-v1',
+                        'name' => 'EEL Accounts tests',
+                        'app_version' => 'test',
+                        'build' => 'test',
+                        'locked_at' => $now,
+                        'locked_by' => 'test',
+                        'bundle_hash' => hash('sha256', 'hmrc-evidence-98601'),
+                    ]
+                );
 
                 try {
                     $manifest = [
@@ -459,6 +484,36 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                 ] as [$sql, $params]) {
                     InterfaceDB::prepareExecute($sql, $params);
                 }
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO year_end_reviews
+                        (company_id, accounting_period_id, is_locked, locked_at, locked_by)
+                     VALUES (:company_id, :period_id, 1, :locked_at, :locked_by)',
+                    [
+                        'company_id' => $companyId,
+                        'period_id' => $accountingPeriodId,
+                        'locked_at' => '2026-07-19 11:00:00',
+                        'locked_by' => 'test',
+                    ]
+                );
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO filing_evidence_bundles
+                        (evidence_id, company_id, accounting_period_id, evidence_version, application_name,
+                         application_version, calculation_build, locked_at, locked_by, bundle_hash)
+                     VALUES (:evidence_id, :company_id, :period_id, :version, :name,
+                             :app_version, :build, :locked_at, :locked_by, :bundle_hash)',
+                    [
+                        'evidence_id' => 'EEL-FE-00000000000000000000000000098611',
+                        'company_id' => $companyId,
+                        'period_id' => $accountingPeriodId,
+                        'version' => 'filing-evidence-v1',
+                        'name' => 'EEL Accounts tests',
+                        'app_version' => 'test',
+                        'build' => 'test',
+                        'locked_at' => '2026-07-19 11:00:00',
+                        'locked_by' => 'test',
+                        'bundle_hash' => hash('sha256', 'hmrc-evidence-98611'),
+                    ]
+                );
 
                 try {
                     $manifest = ['basis' => 'uncertain', 'ct_period_id' => $ctPeriodId];

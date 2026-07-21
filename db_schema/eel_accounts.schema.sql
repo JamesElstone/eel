@@ -392,6 +392,7 @@ DROP TABLE IF EXISTS `companies_house_accounts_submissions`;
 /*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `companies_house_accounts_submissions` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `evidence_bundle_id` bigint(20) DEFAULT NULL,
   `eligibility_id` bigint(20) NOT NULL,
   `company_id` int(11) NOT NULL,
   `accounting_period_id` int(11) NOT NULL,
@@ -1245,6 +1246,9 @@ CREATE TABLE `corporation_tax_audit_snapshots` (
   `ct_period_id` int(11) NOT NULL,
   `basis_version` varchar(50) NOT NULL,
   `basis_hash` char(64) NOT NULL,
+  `calculation_trace_version` varchar(64) DEFAULT NULL,
+  `calculation_trace_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `calculation_trace_json` longtext DEFAULT NULL,
   `snapshot_origin` varchar(32) NOT NULL DEFAULT 'year_end_lock',
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
@@ -1287,6 +1291,7 @@ DROP TABLE IF EXISTS `hmrc_ct600_submissions`;
 /*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `hmrc_ct600_submissions` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `evidence_bundle_id` bigint(20) DEFAULT NULL,
   `company_id` int(11) NOT NULL,
   `accounting_period_id` int(11) NOT NULL,
   `ct_period_id` int(11) DEFAULT NULL,
@@ -3277,6 +3282,7 @@ DROP TABLE IF EXISTS `ct_period_filing_bases`;
 DROP TABLE IF EXISTS `ixbrl_accounts_filing_approvals`;
 CREATE TABLE `ixbrl_accounts_filing_approvals` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `evidence_bundle_id` bigint(20) DEFAULT NULL,
   `company_id` int(11) NOT NULL,
   `accounting_period_id` int(11) NOT NULL,
   `disclosure_id` bigint(20) NOT NULL,
@@ -3631,6 +3637,113 @@ INNER JOIN (
   UNION ALL SELECT 'director_loan_s455'
 ) new_card
 WHERE existing_permission.`card_key` IN ('incorporation_share_capital','tax_rate_bands','director_loan_state');
+DROP TABLE IF EXISTS `filing_evidence_events`;
+DROP TABLE IF EXISTS `filing_evidence_artifacts`;
+DROP TABLE IF EXISTS `filing_evidence_ct_snapshots`;
+DROP TABLE IF EXISTS `filing_evidence_bundles`;
+CREATE TABLE `filing_evidence_bundles` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `evidence_id` varchar(48) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `year_end_review_id` int(11) DEFAULT NULL,
+  `predecessor_bundle_id` bigint(20) DEFAULT NULL,
+  `lifecycle_status` enum('current','reopened','invalidated','superseded') NOT NULL DEFAULT 'current',
+  `evidence_version` varchar(64) NOT NULL,
+  `application_name` varchar(100) NOT NULL,
+  `application_version` varchar(100) NOT NULL,
+  `calculation_build` varchar(100) NOT NULL,
+  `locked_at` datetime NOT NULL,
+  `locked_by` varchar(100) NOT NULL,
+  `bundle_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `legacy_backfill` tinyint(1) NOT NULL DEFAULT 0,
+  `reopened_at` datetime DEFAULT NULL,
+  `superseded_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_filing_evidence_id` (`evidence_id`),
+  KEY `idx_filing_evidence_lock` (`company_id`,`accounting_period_id`,`locked_at`),
+  KEY `idx_filing_evidence_period` (`company_id`,`accounting_period_id`,`id`),
+  KEY `idx_filing_evidence_predecessor` (`predecessor_bundle_id`),
+  CONSTRAINT `fk_filing_evidence_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_filing_evidence_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_filing_evidence_year_end` FOREIGN KEY (`year_end_review_id`) REFERENCES `year_end_reviews` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_filing_evidence_predecessor` FOREIGN KEY (`predecessor_bundle_id`) REFERENCES `filing_evidence_bundles` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE `filing_evidence_ct_snapshots` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `bundle_id` bigint(20) NOT NULL,
+  `ct_period_id` int(11) NOT NULL,
+  `computation_run_id` int(11) NOT NULL,
+  `tax_audit_snapshot_id` bigint(20) NOT NULL,
+  `calculation_basis_version` varchar(64) NOT NULL,
+  `calculation_basis_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `trace_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_filing_evidence_snapshot` (`bundle_id`,`ct_period_id`),
+  KEY `idx_filing_evidence_snapshot_lookup` (`tax_audit_snapshot_id`),
+  CONSTRAINT `fk_filing_evidence_snapshot_bundle` FOREIGN KEY (`bundle_id`) REFERENCES `filing_evidence_bundles` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_filing_evidence_snapshot_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_filing_evidence_snapshot_run` FOREIGN KEY (`computation_run_id`) REFERENCES `corporation_tax_computation_runs` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_filing_evidence_snapshot_audit` FOREIGN KEY (`tax_audit_snapshot_id`) REFERENCES `corporation_tax_audit_snapshots` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE `filing_evidence_artifacts` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `artifact_id` varchar(48) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `transaction_hex` char(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `bundle_id` bigint(20) NOT NULL,
+  `ct_period_id` int(11) DEFAULT NULL,
+  `artifact_role` varchar(64) NOT NULL,
+  `artifact_status` enum('reserved','generated','validated','failed','historical') NOT NULL DEFAULT 'reserved',
+  `filename` varchar(255) DEFAULT NULL,
+  `storage_path` varchar(1000) DEFAULT NULL,
+  `sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `schema_identity` varchar(255) DEFAULT NULL,
+  `schema_manifest_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `generator_name` varchar(100) NOT NULL,
+  `generator_version` varchar(100) NOT NULL,
+  `validator_name` varchar(100) DEFAULT NULL,
+  `validator_version` varchar(100) DEFAULT NULL,
+  `validation_status` varchar(32) DEFAULT NULL,
+  `identifier_embedded` tinyint(1) NOT NULL DEFAULT 0,
+  `legacy_non_embedded` tinyint(1) NOT NULL DEFAULT 0,
+  `metadata_json` longtext DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `completed_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_filing_evidence_artifact_id` (`artifact_id`),
+  UNIQUE KEY `uq_filing_evidence_transaction_hex` (`transaction_hex`),
+  KEY `idx_filing_evidence_artifact_bundle` (`bundle_id`,`artifact_role`,`id`),
+  CONSTRAINT `fk_filing_evidence_artifact_bundle` FOREIGN KEY (`bundle_id`) REFERENCES `filing_evidence_bundles` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_filing_evidence_artifact_ct_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE `filing_evidence_events` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `bundle_id` bigint(20) NOT NULL,
+  `artifact_id` bigint(20) DEFAULT NULL,
+  `event_type` varchar(64) NOT NULL,
+  `event_status` varchar(32) NOT NULL DEFAULT 'info',
+  `actor` varchar(100) NOT NULL,
+  `event_message` text NOT NULL,
+  `event_context_json` longtext DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_filing_evidence_events_bundle` (`bundle_id`,`id`),
+  CONSTRAINT `fk_filing_evidence_event_bundle` FOREIGN KEY (`bundle_id`) REFERENCES `filing_evidence_bundles` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_filing_evidence_event_artifact` FOREIGN KEY (`artifact_id`) REFERENCES `filing_evidence_artifacts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+ALTER TABLE `ixbrl_accounts_filing_approvals`
+  ADD KEY `idx_ixbrl_approval_evidence_bundle` (`evidence_bundle_id`),
+  ADD CONSTRAINT `fk_ixbrl_approval_evidence_bundle` FOREIGN KEY (`evidence_bundle_id`) REFERENCES `filing_evidence_bundles` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `hmrc_ct600_submissions`
+  ADD KEY `idx_hmrc_ct600_evidence_bundle` (`evidence_bundle_id`),
+  ADD CONSTRAINT `fk_hmrc_ct600_evidence_bundle` FOREIGN KEY (`evidence_bundle_id`) REFERENCES `filing_evidence_bundles` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `companies_house_accounts_submissions`
+  ADD KEY `idx_ch_accounts_evidence_bundle` (`evidence_bundle_id`),
+  ADD CONSTRAINT `fk_ch_accounts_evidence_bundle` FOREIGN KEY (`evidence_bundle_id`) REFERENCES `filing_evidence_bundles` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

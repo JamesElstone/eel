@@ -229,6 +229,12 @@ final class YearEndLockService
                 // Deployments apply the CT iXBRL migration independently; runtime freshness still fails closed.
             }
         }
+        (new FilingEvidenceService())->reopenForAccountingPeriod(
+            $companyId,
+            $accountingPeriodId,
+            $changedBy,
+            $notes
+        );
 
         $review = $this->fetchReview($companyId, $accountingPeriodId);
         $this->writeAuditLog($companyId, $accountingPeriodId, 'unlock', $changedBy, $existing, $review, $notes);

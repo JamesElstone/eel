@@ -31,7 +31,7 @@ final class IxbrlRevisedAccountsArtifactService
     ) {
     }
 
-    public function prepare(int $companyId, int $accountingPeriodId, array $input): array
+    public function prepare(int $companyId, int $accountingPeriodId, array $input, string $evidenceArtifactId = ''): array
     {
         $errors = $this->inputErrors($companyId, $accountingPeriodId, $input);
         if ($errors !== []) {
@@ -72,6 +72,7 @@ final class IxbrlRevisedAccountsArtifactService
             'period_end' => $periodEnd,
             'declarations' => $declarations,
             'taxonomy_profile' => IxbrlTaxonomyProfileService::PROFILE,
+            'evidence_artifact_id' => $evidenceArtifactId,
         ];
         $basisHash = hash('sha256', $this->canonicalJson($basis));
 
@@ -79,7 +80,7 @@ final class IxbrlRevisedAccountsArtifactService
         if (!is_string($source) || $source === '') {
             return ['success' => false, 'errors' => ['The ordinary accounts artifact could not be read.'], 'warnings' => []];
         }
-        $transformed = $this->transform($source, $declarations);
+        $transformed = $this->transform($source, $declarations, $evidenceArtifactId);
         if (empty($transformed['success'])) {
             return $transformed;
         }
@@ -135,11 +136,12 @@ final class IxbrlRevisedAccountsArtifactService
             'base_sha256' => (string)($baseArtifact['hash'] ?? ''),
             'declarations' => $declarations,
             'validation' => $validation,
+            'evidence_artifact_id' => $evidenceArtifactId,
         ];
     }
 
     /** @return array{success: bool, errors: array, warnings: array, xhtml?: string} */
-    public function transform(string $sourceXhtml, array $declarations): array
+    public function transform(string $sourceXhtml, array $declarations, string $evidenceArtifactId = ''): array
     {
         $previous = libxml_use_internal_errors(true);
         $document = new \DOMDocument('1.0', 'UTF-8');
@@ -166,6 +168,16 @@ final class IxbrlRevisedAccountsArtifactService
         }
         if (($xpath->query('//xbrli:context[@id="current_period_duration"]')->length ?? 0) !== 1) {
             return ['success' => false, 'errors' => ['The current-period duration context is missing or ambiguous.'], 'warnings' => []];
+        }
+        if ($evidenceArtifactId !== '') {
+            $head = $xpath->query('/xhtml:html/xhtml:head')->item(0);
+            if (!$head instanceof \DOMElement) {
+                return ['success' => false, 'errors' => ['The accounts artifact has no XHTML head.'], 'warnings' => []];
+            }
+            $meta = $document->createElementNS(self::XHTML_NS, 'meta');
+            $meta->setAttribute('name', 'eel-evidence-artifact-id');
+            $meta->setAttribute('content', $evidenceArtifactId);
+            $head->appendChild($meta);
         }
         foreach (self::REVISION_FACTS as $concept) {
             if (($xpath->query('//*[@name="bus:' . $concept . '"]')->length ?? 0) > 0) {
@@ -198,6 +210,11 @@ final class IxbrlRevisedAccountsArtifactService
             $body->insertBefore($section, $firstHeading->nextSibling);
         } else {
             $body->appendChild($section);
+        }
+        if ($evidenceArtifactId !== '') {
+            $footer = $document->createElementNS(self::XHTML_NS, 'p');
+            $footer->appendChild($document->createTextNode('EEL filing evidence artifact: ' . $evidenceArtifactId));
+            $body->appendChild($footer);
         }
 
         $xhtml = $document->saveXML();

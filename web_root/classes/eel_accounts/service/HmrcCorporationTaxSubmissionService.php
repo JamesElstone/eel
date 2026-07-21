@@ -366,6 +366,26 @@ final class HmrcCorporationTaxSubmissionService
         ) {
             return $this->failure('The prepared CT600 package identity does not match the selected CT period.');
         }
+        try {
+            $evidenceBundle = (new FilingEvidenceService())->ensureCurrentBundle(
+                $companyId,
+                (int)$package['accounting_period_id'],
+                $this->actor($actor)
+            );
+            $package['evidence_bundle_id'] = (int)$evidenceBundle['id'];
+            $package['evidence_id'] = (string)$evidenceBundle['evidence_id'];
+            $package['source_manifest']['filing_evidence_id'] = (string)$evidenceBundle['evidence_id'];
+            $manifestJson = $this->canonicalJson((array)$package['source_manifest']);
+            $package['source_manifest_sha256'] = hash('sha256', $manifestJson);
+            $package['package_hash'] = hash('sha256', implode('|', [
+                HmrcSubmissionPackageService::PACKAGE_VERSION,
+                $mode,
+                (string)$package['source_manifest_sha256'],
+                (string)$package['body_sha256'],
+            ]));
+        } catch (\Throwable $exception) {
+            return $this->failure('Current filing evidence is required: ' . $exception->getMessage());
+        }
 
         $manifestHash = (string)$package['source_manifest_sha256'];
         $bodyHash = (string)$package['body_sha256'];
@@ -443,18 +463,26 @@ final class HmrcCorporationTaxSubmissionService
             );
         }
 
+        $govtalkEvidence = (new FilingEvidenceService())->reserveArtifact(
+            $companyId,
+            (int)$package['accounting_period_id'],
+            'hmrc_govtalk_submit_request',
+            $ctPeriodId,
+            ['submission_id' => $submissionId]
+        );
         $result = $this->transport->submit(
             (string)$package['filing_body_xml'],
             (string)$package['utr'],
             $mode,
-            null,
+            (string)$govtalkEvidence['transaction_hex'],
             function (array $request) use (
                 $submissionId,
                 $companyId,
                 $ctPeriodId,
                 $manifestHash,
                 $bodyHash,
-                $actor
+                $actor,
+                $govtalkEvidence
             ): void {
                 // Close the small prepare/send race: the approved source basis
                 // must still be byte-identical at the pre-send boundary.
@@ -514,6 +542,16 @@ final class HmrcCorporationTaxSubmissionService
                     'request_sha256' => (string)$request['request_sha256'],
                     'request_bytes' => (int)$request['request_bytes'],
                 ]);
+                (new FilingEvidenceService())->completeArtifact((int)$govtalkEvidence['id'], [
+                    'status' => 'generated',
+                    'filename' => 'submission-request-redacted.xml',
+                    'path' => $artifact['path'],
+                    'sha256' => (string)$request['request_sha256'],
+                    'schema_identity' => 'GovTalk Document Submission Protocol 2.0 / CT/5',
+                    'validation_status' => 'passed',
+                    'identifier_embedded' => true,
+                    'metadata' => ['submission_id' => $submissionId, 'persisted_redacted_sha256' => $artifact['sha256']],
+                ]);
             }
         );
 
@@ -570,7 +608,7 @@ final class HmrcCorporationTaxSubmissionService
             $now = $this->sqlNow();
             \InterfaceDB::prepareExecute(
                 'INSERT INTO ' . self::SUBMISSIONS . ' (
-                    company_id, accounting_period_id, ct_period_id, mode, environment,
+                    evidence_bundle_id, company_id, accounting_period_id, ct_period_id, mode, environment,
                     status, protocol_state, business_outcome, submission_type,
                     accounts_ixbrl_path, accounts_run_id, accounts_sha256,
                     computations_ixbrl_path, computation_run_id, computations_sha256,
@@ -583,7 +621,7 @@ final class HmrcCorporationTaxSubmissionService
                     declaration_approved_at, declaration_approved_by,
                     approved_package_hash, prepared_by, created_at, updated_at
                  ) VALUES (
-                    :company_id, :accounting_period_id, :ct_period_id, :mode, :environment,
+                    :evidence_bundle_id, :company_id, :accounting_period_id, :ct_period_id, :mode, :environment,
                     :status, :protocol_state, :business_outcome, :submission_type,
                     :accounts_path, :accounts_run_id, :accounts_sha256,
                     :computations_path, :computation_run_id, :computations_sha256,
@@ -597,6 +635,7 @@ final class HmrcCorporationTaxSubmissionService
                     :approved_package_hash, :prepared_by, :created_at, :updated_at
                  )',
                 [
+                    'evidence_bundle_id' => (int)$package['evidence_bundle_id'],
                     'company_id' => (int)$package['company_id'],
                     'accounting_period_id' => (int)$package['accounting_period_id'],
                     'ct_period_id' => (int)$package['ct_period_id'],
@@ -670,6 +709,31 @@ final class HmrcCorporationTaxSubmissionService
                 'source_manifest_sha256' => (string)$package['source_manifest_sha256'],
                 'body_sha256' => (string)$package['body_sha256'],
             ]);
+            $evidence = new FilingEvidenceService();
+            foreach ([
+                ['hmrc_ct600_body', $bodyArtifact, (string)$package['body_sha256']],
+                ['hmrc_source_manifest', $manifestArtifact, hash('sha256', $manifestJson . "\n")],
+            ] as [$role, $storedArtifact, $sha]) {
+                $reserved = $evidence->reserveArtifact(
+                    (int)$package['company_id'],
+                    (int)$package['accounting_period_id'],
+                    (string)$role,
+                    (int)$package['ct_period_id'],
+                    ['submission_id' => $submissionId]
+                );
+                $evidence->completeArtifact((int)$reserved['id'], [
+                    'status' => 'generated',
+                    'filename' => basename((string)$storedArtifact['path']),
+                    'path' => (string)$storedArtifact['path'],
+                    'sha256' => (string)$sha,
+                    'schema_identity' => $role === 'hmrc_ct600_body' ? (string)$package['schema_version'] : 'EEL canonical source manifest',
+                    'validation_status' => 'passed',
+                    'identifier_embedded' => false,
+                    'metadata' => ['submission_id' => $submissionId, 'evidence_id' => (string)($package['evidence_id'] ?? '')],
+                ]);
+            }
+            $evidence->recordEvent((int)$package['evidence_bundle_id'], 'hmrc_prepared', 'success', $this->actor($actor),
+                'An immutable HMRC Corporation Tax package was prepared.', ['submission_id' => $submissionId, 'environment' => $mode]);
 
             return $submissionId;
         });
@@ -733,6 +797,9 @@ final class HmrcCorporationTaxSubmissionService
             $this->event($submissionId, 'error', 'HMRC submission transport outcome is uncertain; automatic retry is blocked.', [
                 'error' => (string)($result['error'] ?? ''),
             ]);
+            $this->recordEvidenceOutcome($submissionId, 'hmrc_transport_uncertain', 'error', $actor, [
+                'error' => (string)($result['error'] ?? ''),
+            ]);
             return $this->commandResult(
                 $submissionId,
                 false,
@@ -760,6 +827,9 @@ final class HmrcCorporationTaxSubmissionService
             $this->event($submissionId, 'info', 'HMRC acknowledged the CT600 submission.', [
                 'correlation_id' => (string)$result['correlation_id'],
                 'poll_interval_seconds' => $interval,
+            ]);
+            $this->recordEvidenceOutcome($submissionId, 'hmrc_acknowledged', 'info', $actor, [
+                'correlation_id' => (string)$result['correlation_id'],
             ]);
             return $this->commandResult($submissionId, true, [], true, $interval);
         }
@@ -799,6 +869,13 @@ final class HmrcCorporationTaxSubmissionService
                 $accepted ? 'success' : 'error',
                 $accepted ? 'HMRC returned a final acceptance.' : 'HMRC returned a final rejection.',
                 ['errors' => (array)($result['errors'] ?? [])]
+            );
+            $this->recordEvidenceOutcome(
+                $submissionId,
+                $accepted ? 'hmrc_accepted' : 'hmrc_rejected',
+                $accepted ? 'success' : 'error',
+                $actor,
+                ['environment' => $environment, 'errors' => (array)($result['errors'] ?? [])]
             );
             $updated = $this->fetchById($submissionId);
             if (!empty($result['cleanup_required']) && is_array($updated)) {
@@ -1037,6 +1114,25 @@ final class HmrcCorporationTaxSubmissionService
         $provided = strtolower(trim((string)($current['source_manifest_sha256'] ?? '')));
         if ($provided !== '' && !hash_equals($manifestHash, $provided)) {
             return ['ok' => false, 'errors' => ['The current source-manifest hash is inconsistent.']];
+        }
+        $ctPeriod = \InterfaceDB::fetchOne(
+            'SELECT accounting_period_id FROM corporation_tax_periods
+             WHERE id = :ct_period_id AND company_id = :company_id LIMIT 1',
+            ['ct_period_id' => $ctPeriodId, 'company_id' => $companyId]
+        );
+        if (is_array($ctPeriod)) {
+            try {
+                $bundle = (new FilingEvidenceService())->currentBundle(
+                    $companyId,
+                    (int)$ctPeriod['accounting_period_id'],
+                    true
+                );
+                $manifest['filing_evidence_id'] = (string)$bundle['evidence_id'];
+                $manifestHash = hash('sha256', $this->canonicalJson($manifest));
+            } catch (\Throwable) {
+                // Status remains available before a legacy locked period has
+                // lazily received its first evidence bundle.
+            }
         }
         $bodyHash = strtolower(trim((string)($current['body_sha256'] ?? '')));
         if (!preg_match('/^[a-f0-9]{64}$/D', $bodyHash)) {
@@ -1599,6 +1695,33 @@ final class HmrcCorporationTaxSubmissionService
         }
         $value = trim((string)$actor);
         return $value !== '' ? mb_substr($value, 0, 100) : 'system';
+    }
+
+    private function recordEvidenceOutcome(
+        int $submissionId,
+        string $eventType,
+        string $status,
+        int|string|null $actor,
+        array $context = []
+    ): void {
+        $submission = $this->fetchById($submissionId);
+        $bundleId = (int)($submission['evidence_bundle_id'] ?? 0);
+        if ($bundleId <= 0) {
+            return;
+        }
+        (new FilingEvidenceService())->recordEvent(
+            $bundleId,
+            $eventType,
+            $status,
+            $this->actor($actor),
+            match ($eventType) {
+                'hmrc_accepted' => 'HMRC accepted the frozen filing package.',
+                'hmrc_rejected' => 'HMRC rejected the frozen filing package.',
+                'hmrc_acknowledged' => 'HMRC acknowledged the frozen filing package.',
+                default => 'The HMRC transmission outcome is uncertain.',
+            },
+            ['submission_id' => $submissionId] + $context
+        );
     }
 
     private function actorUserId(int|string|null $actor): ?int

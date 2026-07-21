@@ -16,6 +16,7 @@ namespace eel_accounts\Service;
 final class TaxAuditBasisService
 {
     public const BASIS_VERSION = 'ct-audit-v1';
+    public const TRACE_VERSION = 'ct-calculation-trace-v1';
 
     private const AREAS = [
         'accounting_profit' => 'Accounting Profit or Loss',
@@ -181,14 +182,19 @@ final class TaxAuditBasisService
             static fn(array $detail): string => (string)$detail['area_hash'],
             $details
         )));
+        $trace = $this->calculationTrace($summary, $details);
+        $traceJson = $this->canonicalJson($trace);
+        $traceHash = hash('sha256', self::TRACE_VERSION . '|' . $traceJson);
 
         \InterfaceDB::prepareExecute(
             'INSERT INTO corporation_tax_audit_snapshots
                 (computation_run_id, company_id, accounting_period_id, ct_period_id,
-                 basis_version, basis_hash, snapshot_origin)
+                 basis_version, basis_hash, calculation_trace_version,
+                 calculation_trace_hash, calculation_trace_json, snapshot_origin)
              VALUES
                 (:run_id, :company_id, :accounting_period_id, :ct_period_id,
-                 :basis_version, :basis_hash, :snapshot_origin)',
+                 :basis_version, :basis_hash, :trace_version,
+                 :trace_hash, :trace_json, :snapshot_origin)',
             [
                 'run_id' => $computationRunId,
                 'company_id' => $companyId,
@@ -196,6 +202,9 @@ final class TaxAuditBasisService
                 'ct_period_id' => $ctPeriodId,
                 'basis_version' => self::BASIS_VERSION,
                 'basis_hash' => $basisHash,
+                'trace_version' => self::TRACE_VERSION,
+                'trace_hash' => $traceHash,
+                'trace_json' => $traceJson,
                 'snapshot_origin' => 'year_end_lock',
             ]
         );
@@ -232,7 +241,76 @@ final class TaxAuditBasisService
             );
         }
 
-        return ['snapshot_id' => $snapshotId, 'basis_hash' => $basisHash, 'areas' => $details];
+        return [
+            'snapshot_id' => $snapshotId,
+            'basis_hash' => $basisHash,
+            'calculation_trace_version' => self::TRACE_VERSION,
+            'calculation_trace_hash' => $traceHash,
+            'areas' => $details,
+        ];
+    }
+
+    /** Freeze a simple, deterministic equation graph whose leaves are the exact audit rows. */
+    private function calculationTrace(array $summary, array $details): array
+    {
+        $nodes = [];
+        foreach ($details as $areaCode => $detail) {
+            $children = [];
+            foreach ((array)($detail['rows'] ?? []) as $index => $row) {
+                $key = $areaCode . '.source.' . ($index + 1);
+                $children[] = $key;
+                $nodes[$key] = [
+                    'key' => $key,
+                    'kind' => 'source',
+                    'label' => (string)($row['label'] ?? $row['source_label'] ?? 'Frozen source'),
+                    'equation' => 'accounting amount + tax adjustment',
+                    'operands' => [
+                        'accounting_amount' => round((float)($row['accounting_amount'] ?? 0), 2),
+                        'tax_adjustment_amount' => round((float)($row['tax_adjustment_amount'] ?? 0), 2),
+                    ],
+                    'result' => round((float)($row['accounting_amount'] ?? 0) + (float)($row['tax_adjustment_amount'] ?? 0), 2),
+                    'rule_code' => (string)($row['rule_code'] ?? ''),
+                    'rule_version' => (string)($row['rule_version'] ?? ''),
+                    'source_type' => (string)($row['source_type'] ?? ''),
+                    'source_id' => (int)($row['source_id'] ?? 0),
+                    'journal_line_id' => (int)($row['journal_line_id'] ?? 0),
+                    'children' => [],
+                ];
+            }
+            $nodeKey = 'area.' . $areaCode;
+            $nodes[$nodeKey] = [
+                'key' => $nodeKey,
+                'kind' => 'calculation_area',
+                'label' => (string)$detail['area_label'],
+                'equation' => 'sum(frozen source rows)',
+                'operands' => ['source_count' => count($children)],
+                'result' => round((float)$detail['amount'], 2),
+                'expected_result' => round((float)$detail['expected_amount'], 2),
+                'children' => $children,
+            ];
+        }
+        $areaKeys = array_map(static fn(string $code): string => 'area.' . $code, array_keys($details));
+        $rootAmount = round((float)(
+            $summary['estimated_corporation_tax']
+            ?? $summary['corporation_tax_chargeable']
+            ?? $summary['tax_liability']
+            ?? 0
+        ), 2);
+        $nodes['corporation_tax_liability'] = [
+            'key' => 'corporation_tax_liability',
+            'kind' => 'root',
+            'label' => 'Corporation Tax liability',
+            'equation' => 'canonical Corporation Tax computation from the frozen accounting and tax areas',
+            'operands' => ['calculation_areas' => count($areaKeys)],
+            'result' => $rootAmount,
+            'children' => $areaKeys,
+        ];
+        ksort($nodes, SORT_STRING);
+        return [
+            'version' => self::TRACE_VERSION,
+            'root' => 'corporation_tax_liability',
+            'nodes' => $nodes,
+        ];
     }
 
     /** @return array<string, mixed> */

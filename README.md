@@ -22,23 +22,24 @@ eel now uses **eelKit** as its upstream application framework. eelKit provides t
 
 ---
 
-## Company Requirements
+## Required Company Scope
 
-To use this system, the company must meet the following criteria:
+Supported Company Scope
 
-- Be registered with Companies House and have a valid company registration number
-- Be active on Companies House (not dissolved or dormant)
-- Have no more than 1 director
-- Qualify as a micro-entity and prepare accounts under FRS 105, the Financial Reporting Standard applicable to the Micro-entities Regime. This generally means meeting at least two of the following limits:
-  - Turnover of not more than GBP 1,000,000
-  - Balance sheet total of not more than GBP 500,000
-  - An average of no more than 10 employees
-- Have a valid UTR (Unique Taxpayer Reference) issued by HMRC
-- Not be VAT registered and remain below VAT registration thresholds
-- Have no financial commitments, guarantees, or contingent liabilities requiring disclosure. Positive disclosures for those unsupported categories block facts and filing generation; director-loan disclosures are derived from the chronological Director Loan Statement.
-- Have (free) developer API access configured for:
-  - HMRC
-  - Companies House
+EEL Accounts is currently designed for UK micro-entity companies with straightforward Corporation Tax affairs. To generate statutory accounts and Corporation Tax submissions, the company must meet all of the following requirements:
+
+- Be registered with Companies House and have a valid company registration number.
+- Be active on the Companies House register.
+- Qualify as a micro-entity and prepare statutory accounts under FRS 105, the Financial Reporting Standard applicable to the Micro-entities Regime. This generally means meeting at least two of the following thresholds:
+   - Annual turnover not exceeding GBP 1,000,000
+   - Balance sheet total not exceeding GBP 500,000
+   - An average of 10 or fewer employees
+   - Have a valid HMRC Unique Taxpayer Reference (UTR).
+   - Not be VAT registered.
+   - Not require statutory disclosures that are not currently supported by EEL Accounts, including financial commitments, guarantees or contingent liabilities. Where unsupported disclosures are identified, statutory accounts generation and Corporation Tax filing are disabled. Director's loan disclosures are generated automatically from the chronological Director Loan Statement.
+   - Have Companies House and HMRC developer credentials configured to enable electronic filing.
+
+**EEL Accounts continuously validates whether a company remains within its supported scope. If the company falls outside that scope, statutory accounts generation and electronic filing are disabled rather than producing filings that may be incomplete or inaccurate. The software provides a clear explanation of the unsupported condition and the filing features that have been disabled, allowing the issue to be resolved before filing.**
 
 ---
 

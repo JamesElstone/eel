@@ -63,19 +63,17 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $h->assertSame(0.0, (float)$model['part2']['relief_due']);
         });
 
-        $h->check($service::class, 'summarises unattributed loan movements without exposing transaction identifiers', static function () use ($h, $service, $period, $review, $base): void {
+        $h->check($service::class, 'keeps unattributed loan movements out of the section 464A message list while retaining the filing block', static function () use ($h, $service, $period, $review, $base): void {
             $s455 = $base;
             $s455['errors'] = [
                 'Loan transaction #5465 is not linked to a confirmed ownership party.',
                 'Loan transaction #6140 is not linked to a confirmed ownership party.',
             ];
             $model = $service->buildFromEvidence($period, $s455, [], $review, '2025-12-31');
-            $errors = (array)$model['blocking_errors'];
 
-            $h->assertCount(1, $errors);
-            $h->assertTrue(str_contains($errors[0], 'repayments in a following accounting period may reduce the tax due'));
-            $h->assertFalse(str_contains($errors[0], '#5465'));
-            $h->assertFalse(str_contains($errors[0], '#6140'));
+            $h->assertSame(2, (int)$model['unattributed_loan_movement_count']);
+            $h->assertSame([], (array)$model['blocking_errors']);
+            $h->assertSame(false, (bool)$model['complete']);
         });
 
         $h->check($service::class, 'reduces period-end loans for an evidenced release before the period end', static function () use ($h, $service, $period, $review, $base): void {

@@ -41,11 +41,12 @@ final class _director_loan_ct600aCard extends CardBaseFramework
         foreach ((array)$data['periods'] as $ct) {
             $ctId = (int)($ct['ct_period_id'] ?? 0);
             $errors = (array)($ct['blocking_errors'] ?? []);
+            $complete = !array_key_exists('complete', $ct) ? $errors === [] : !empty($ct['complete']);
             $review = (array)($ct['review'] ?? []);
             $html .= '<section class="panel-soft settings-stack"><div class="status-head"><h3 class="card-title">CT period '
                 . (int)$ct['sequence_no'] . ' — ' . HelperFramework::escape((string)$ct['period_start']) . ' to '
                 . HelperFramework::escape((string)$ct['period_end']) . '</h3><span class="badge '
-                . ($errors === [] ? 'success' : 'danger') . '">' . ($errors === [] ? 'Ready' : 'Review required') . '</span></div>';
+                . ($complete ? 'success' : 'danger') . '">' . ($complete ? 'Ready' : 'Review required') . '</span></div>';
             $html .= '<div class="summary-grid">'
                 . $this->stat('CT600A required', !empty($ct['required']) ? 'Yes' : 'No')
                 . $this->stat('A15 loans/benefits', $this->money($company, (float)($ct['part1']['total_loans'] ?? 0)))

@@ -123,9 +123,6 @@ final class Ct600aService
                 $blocking[] = $message;
             }
         }
-        if ($unattributedLoanMovementCount > 0) {
-            $blocking[] = $this->unattributedLoanMovementMessage();
-        }
         foreach ((array)($review['errors'] ?? []) as $error) { $blocking[] = (string)$error; }
 
         foreach ((array)($s455['lots'] ?? $s455['basis']['lots'] ?? []) as $lot) {
@@ -242,15 +239,13 @@ final class Ct600aService
             'separate_l2p_claim_events' => $separateL2pClaims,
             'blocking_errors' => array_values(array_unique(array_filter(array_map('strval', $blocking)))),
             'evidence_warnings' => array_values(array_unique($evidenceWarnings)),
+            'unattributed_loan_movement_count' => $unattributedLoanMovementCount,
         ];
         $json = $this->canonicalJson($model);
-        return $model + ['basis_hash' => hash('sha256', $json), 'complete' => $model['blocking_errors'] === []];
-    }
-
-    private function unattributedLoanMovementMessage(): string
-    {
-        return 'If this CT period has a section 455 charge, '
-            . 'correctly coding repayments in a following accounting period may reduce the tax due by establishing repayment relief.';
+        return $model + [
+            'basis_hash' => hash('sha256', $json),
+            'complete' => $model['blocking_errors'] === [] && $unattributedLoanMovementCount === 0,
+        ];
     }
 
     /** @return array<string,mixed> */

@@ -3169,30 +3169,30 @@ ALTER TABLE `ixbrl_generation_runs`
   ADD CONSTRAINT `fk_ixbrl_runs_filing_approval` FOREIGN KEY (`filing_approval_id`) REFERENCES `ixbrl_accounts_filing_approvals` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 --
--- Table structure for table `director_loan_attribution_audit`
+-- Table structure for table `participator_loan_attribution_audit`
 --
 
-DROP TABLE IF EXISTS `director_loan_attribution_audit`;
+DROP TABLE IF EXISTS `participator_loan_attribution_audit`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `director_loan_attribution_audit` (
+CREATE TABLE `participator_loan_attribution_audit` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
   `source_type` varchar(64) NOT NULL,
   `source_id` bigint(20) NOT NULL,
-  `old_director_id` bigint(20) DEFAULT NULL,
-  `new_director_id` bigint(20) DEFAULT NULL,
+  `old_party_id` bigint(20) DEFAULT NULL,
+  `new_party_id` bigint(20) DEFAULT NULL,
   `changed_by` varchar(100) NOT NULL,
   `reason` varchar(255) NOT NULL,
   `changed_at` datetime NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
-  KEY `idx_dla_attribution_audit_source` (`source_type`,`source_id`,`changed_at`),
-  KEY `idx_dla_attribution_audit_company` (`company_id`,`changed_at`),
-  KEY `idx_dla_attribution_audit_old_director` (`old_director_id`),
-  KEY `idx_dla_attribution_audit_new_director` (`new_director_id`),
-  CONSTRAINT `fk_dla_attribution_audit_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_dla_attribution_audit_old_director` FOREIGN KEY (`old_director_id`) REFERENCES `company_directors` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT `fk_dla_attribution_audit_new_director` FOREIGN KEY (`new_director_id`) REFERENCES `company_directors` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+  KEY `idx_pla_attribution_audit_source` (`source_type`,`source_id`,`changed_at`),
+  KEY `idx_pla_attribution_audit_company` (`company_id`,`changed_at`),
+  KEY `idx_pla_attribution_audit_old_party` (`old_party_id`),
+  KEY `idx_pla_attribution_audit_new_party` (`new_party_id`),
+  CONSTRAINT `fk_pla_attribution_audit_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_pla_attribution_audit_old_party` FOREIGN KEY (`old_party_id`) REFERENCES `company_parties` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_pla_attribution_audit_new_party` FOREIGN KEY (`new_party_id`) REFERENCES `company_parties` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 

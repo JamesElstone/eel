@@ -17,11 +17,12 @@ $harness->run(\eel_accounts\Service\DirectorLoanAttributionService::class, stati
     \eel_accounts\Service\DirectorLoanAttributionService $service
 ): void {
     $harness->check(\eel_accounts\Service\DirectorLoanAttributionService::class, 'assigns the journal source of truth and records an audit without changing accounting values', static function () use ($harness, $service): void {
-        foreach (['company_directors', 'company_parties', 'company_party_roles', 'participator_loan_attribution_audit'] as $table) {
+        foreach (['company_directors', 'company_parties', 'company_party_roles'] as $table) {
             if (!InterfaceDB::tableExists($table)) {
                 $harness->skip($table . ' schema is not available.');
             }
         }
+        $harness->assertTrue(InterfaceDB::tableExists('participator_loan_attribution_audit'));
 
         InterfaceDB::beginTransaction();
         try {

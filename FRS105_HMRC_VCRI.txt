@@ -190,11 +190,11 @@ Remediation: Expand the catalogue with accountant-reviewed source/rationale, add
 
 VCRI-014 - Fixed assets, depreciation, and capital allowances
 Reference: Accounts record fixed assets/depreciation; CT generally adds back depreciation and deducts capital allowances where available.
-Implementation evidence: AssetService exists with asset categories, depreciation, disposal, and tax adjustment hooks. The baseline schema and live database now include asset_register and asset_depreciation_entries, and journals.source_type allows asset_register, asset_depreciation, and asset_disposal.
+Implementation evidence: AssetService creates and maintains asset-register records, calculates and posts straight-line/reducing-balance depreciation, prevents posting to locked periods, and posts linked disposal journals while updating the asset status. The schema includes asset_register, asset_depreciation_entries, and asset_disposal_transaction_links; journals retain asset_register, asset_depreciation, and asset_disposal source evidence. test_AssetService.php, test_AssetAction.php, test_GoldenYearEndLifecycle.php, and the capital-allowance matrix exercise the register, depreciation, disposal, journal, CT addback, and pool paths.
 Status: PARTIAL.
-Assessment: The original schema/source blocker has been resolved, so fixed asset workflows are no longer prevented at the database boundary.
-Shortfall: The remaining risk is rule completeness and fixture coverage. Depreciation, disposals, impairment, reconciliation to statutory accounts, and CT adjustment outputs still need fuller scenario tests before relying on them for final accounts or filing.
-Remediation: Add end-to-end fixed asset fixtures covering purchase, depreciation, disposal, impairment/reversal constraints where relevant, journals, trial balance impact, accounts presentation, and CT addback/capital allowance flow.
+Assessment: The original schema/source blocker and the core register-to-journal-to-tax chain have been resolved.
+Shortfall: The supported asset model does not provide an impairment/reversal workflow or a demonstrated statutory-accounts fixed-asset note/reconciliation. These cases are not yet explicitly scope-gated, so this control cannot be marked OK under the supported-scope standard.
+Remediation: Either add an explicit unsupported-scenario hard block for impairment/revaluation cases, or implement those workflows with end-to-end asset-note and CT fixtures. Do not broaden the filing scope before one of those routes is complete.
 
 VCRI-015 - Capital allowances
 Reference: HMRC CT rules require correct treatment of AIA, pools, disposals, balancing charges/allowances, cars, private use, and period limits.
@@ -257,8 +257,8 @@ Reference: Director loan balances can have CT, benefit-in-kind, interest, and di
 Implementation evidence: DirectorLoanService and DLA nominal accounts exist; YearEndMetricsService includes director-loan summary checks; S455ReviewService and Ct600aService provide dated loan evidence, original-rate s455 calculations, section 464A review, section 464C blocking, evidence manifests/hashes, CT600A serialization, and separate L2P-claim routing where appropriate.
 Status: PARTIAL.
 Assessment: Director-loan treatment has progressed from ledger visibility to a controlled CT600A/s455 workflow for the supported path.
-Shortfall: Complex beneficial-loan, close-company, participator, associated-person, write-off, and disclosure cases remain within the explicit review/scope boundary; local tests do not establish legal or HMRC acceptance.
-Remediation: Continue professional review of the s455/CT600A rules, add scenario fixtures as scope expands, and retain hard blocks for incomplete evidence, section 464C risk, stale reviews, and open evidence windows.
+Shortfall: The CT600A/s455 path has deterministic tests for original-rate calculation, relief timing, section 464C blocking, releases and L2P routing, but beneficial-loan, close-company, participator, associated-person, write-off, and disclosure cases remain beyond the model. Those wider cases are not all represented by a hard scope gate.
+Remediation: Retain the existing hard blocks for incomplete evidence, section 464C risk, stale reviews, and open evidence windows. Before marking this OK, add an explicit hard scope gate for every unmodelled director-loan regime (or implement each with reviewed fixtures and output traceability).
 
 VCRI-023 - VAT and non-VAT scope
 Reference: VAT registration/MTD rules affect accounting and tax workflows where applicable.

@@ -32,6 +32,7 @@ final class _tax_artifacts extends PageContextFramework
     public function cards(): array
     {
         return [
+            'tax_artifacts_refresh',
             'tax_rates_ct',
             'tax_rates_ct600_rim',
             'tax_frc_taxonomy',

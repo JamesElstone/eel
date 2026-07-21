@@ -209,7 +209,16 @@ final class TestPageArchitectureHarness
         $page = $this->loadPageCards('tax_artifacts');
 
         $this->assertSame(_tax_artifacts::class, $page::class);
-        $this->assertSame(['tax_rates_ct', 'tax_rates_ct600_rim', 'tax_companies_house_accounts_schemas', 'tax_rates_vat', 'tax_thresholds_vat', 'tax_treatment_rules'], $page->cards());
+        $this->assertSame([
+            'tax_artifacts_refresh',
+            'tax_rates_ct',
+            'tax_rates_ct600_rim',
+            'tax_frc_taxonomy',
+            'tax_companies_house_accounts_schemas',
+            'tax_rates_vat',
+            'tax_thresholds_vat',
+            'tax_treatment_rules',
+        ], $page->cards());
     }
 
     private function testCtFilingMappingsPage(): void

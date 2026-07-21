@@ -22,6 +22,12 @@
         available: [],
         inFlight: new Set(),
     };
+    const longActionPageLockState = {
+        count: 0,
+        layout: null,
+        layoutWasInert: false,
+        previousFocus: null,
+    };
     const cardAutoRefreshState = new WeakMap();
     const afHeaderMap = {
         'Client-Browser-JS-User-Agent': 'X-AntiFraud-Client-Browser-JS-User-Agent',
@@ -1054,9 +1060,61 @@
         replaceFlash(`<div class="alert ${className}">${escapeHtml(message)}</div>`);
     }
 
+    function isLongActionPageLocked() {
+        return longActionPageLockState.count > 0;
+    }
+
+    function acquireLongActionPageLock() {
+        longActionPageLockState.count += 1;
+        if (longActionPageLockState.count > 1) {
+            return;
+        }
+
+        const layout = document.querySelector('.layout');
+        longActionPageLockState.layout = layout instanceof HTMLElement ? layout : null;
+        longActionPageLockState.layoutWasInert = layout instanceof HTMLElement && layout.hasAttribute('inert');
+        longActionPageLockState.previousFocus = document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
+
+        if (layout instanceof HTMLElement && !longActionPageLockState.layoutWasInert) {
+            layout.setAttribute('inert', '');
+        }
+
+        body.classList.add('is-long-action-active');
+    }
+
+    function releaseLongActionPageLock() {
+        if (longActionPageLockState.count <= 0) {
+            return;
+        }
+
+        longActionPageLockState.count -= 1;
+        if (longActionPageLockState.count > 0) {
+            return;
+        }
+
+        const layout = longActionPageLockState.layout;
+        if (layout instanceof HTMLElement && !longActionPageLockState.layoutWasInert) {
+            layout.removeAttribute('inert');
+        }
+
+        body.classList.remove('is-long-action-active');
+
+        const previousFocus = longActionPageLockState.previousFocus;
+        longActionPageLockState.layout = null;
+        longActionPageLockState.layoutWasInert = false;
+        longActionPageLockState.previousFocus = null;
+
+        if (previousFocus instanceof HTMLElement && previousFocus.isConnected) {
+            previousFocus.focus({ preventScroll: true });
+        }
+    }
+
     function createActionProgressController() {
         let panel = null;
         let textarea = null;
+        let lockAcquired = false;
 
         const ensureOverlay = () => {
             if (panel instanceof HTMLElement && textarea instanceof HTMLTextAreaElement) {
@@ -1087,6 +1145,10 @@
 
             panel.append(title, textarea);
             region.appendChild(panel);
+
+            acquireLongActionPageLock();
+            lockAcquired = true;
+            textarea.focus({ preventScroll: true });
         };
 
         return {
@@ -1108,6 +1170,11 @@
 
                 if (region instanceof HTMLElement && region.childElementCount === 0) {
                     region.remove();
+                }
+
+                if (lockAcquired) {
+                    releaseLongActionPageLock();
+                    lockAcquired = false;
                 }
 
                 panel = null;
@@ -1407,12 +1474,16 @@
         return main instanceof HTMLElement ? String(main.dataset.currentPage || '').trim() : '';
     }
 
-    function navigateToAjaxPayloadPage(payload) {
+    function navigateToAjaxPayloadPage(payload, beforeNavigate = null) {
         const nextPage = String(payload?.page || '').trim();
         const nextUrl = String(payload?.url || '').trim();
 
         if (nextPage === '' || nextUrl === '' || nextPage === currentPageId()) {
             return false;
+        }
+
+        if (typeof beforeNavigate === 'function') {
+            beforeNavigate();
         }
 
         window.location.href = nextUrl;
@@ -3631,7 +3702,7 @@
 
             completeAjaxNonce(ajaxNonce, payload?.ajax_nonce);
 
-            if (navigateToAjaxPayloadPage(payload)) {
+            if (navigateToAjaxPayloadPage(payload, () => actionProgress.close())) {
                 return;
             }
 
@@ -3713,6 +3784,10 @@
     });
 
     document.addEventListener('keydown', (event) => {
+        if (isLongActionPageLocked()) {
+            return;
+        }
+
         if (event.key === 'Escape') {
             const maximizedCard = document.querySelector('.card.card-maximized');
             if (maximizedCard instanceof HTMLElement) {
@@ -3782,6 +3857,15 @@
         if (isFormControl(event.target)) {
             syncVisibleWhenField(event.target);
         }
+    });
+
+    window.addEventListener('beforeunload', (event) => {
+        if (!isLongActionPageLocked()) {
+            return;
+        }
+
+        event.preventDefault();
+        event.returnValue = '';
     });
 
     initialiseSidebar(document);

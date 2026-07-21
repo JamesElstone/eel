@@ -570,6 +570,20 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
             'textarea.scrollTop = textarea.scrollHeight;',
             'progress: actionProgress,',
             'actionProgress.close();',
+            'function acquireLongActionPageLock()',
+            'function releaseLongActionPageLock()',
+            "layout.setAttribute('inert', '');",
+            "layout.removeAttribute('inert');",
+            "body.classList.add('is-long-action-active');",
+            "body.classList.remove('is-long-action-active');",
+            'longActionPageLockState.count += 1;',
+            'longActionPageLockState.count -= 1;',
+            'textarea.focus({ preventScroll: true });',
+            'previousFocus.focus({ preventScroll: true });',
+            "window.addEventListener('beforeunload'",
+            "event.returnValue = '';",
+            'if (isLongActionPageLocked())',
+            'navigateToAjaxPayloadPage(payload, () => actionProgress.close())',
         ] as $expected) {
             $harness->assertTrue(str_contains($script, $expected));
         }

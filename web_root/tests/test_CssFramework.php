@@ -79,6 +79,12 @@ $harness->check('CssFramework', 'styles long action progress above blurred conte
         'color: #39ff14;',
         'font-family: ui-monospace',
         'overflow-y: auto;',
+        'pointer-events: auto;',
+        'touch-action: none;',
+        'overscroll-behavior: contain;',
+        'body.is-long-action-active #sidebar-shell',
+        'filter: blur(2px);',
+        'transition: padding 0.2s ease, filter 0.18s ease, opacity 0.18s ease;',
     ] as $expected) {
         $harness->assertTrue(str_contains($css, $expected));
     }

@@ -6,6 +6,10 @@ Feature name: `streamed_card_action_progress`.
 
 Shared card actions can now publish transient progress messages while their existing synchronous AJAX request is running. The first message switches that request to an NDJSON response stream and opens an “Action progress” overlay above the page's existing AJAX blur. The read-only progress textarea uses a black background, green monospace text, and follows new messages automatically. It closes when the action's normal AJAX result has been applied or when the action fails.
 
+While at least one progress overlay is visible, eelKit makes the underlying application layout inert and the full-screen overlay captures pointer, touch, focus, form, and keyboard interaction. The entire sidebar is blurred along with the existing page/card pending scope. eelKit does not change individual controls' `disabled` state, so conditional enabled/disabled state is preserved when the action finishes. Concurrent progress streams share a reference-counted page lock and cannot re-enable the page until the final overlay closes.
+
+Browser Back, refresh, tab close, and external navigation show the browser's standard leave-page confirmation while progress is active. Browsers do not permit applications to customise that message or prevent departure after the user confirms. Framework-directed navigation from a completed AJAX result releases the progress lock before navigating and therefore does not show a stale warning.
+
 Actions opt in at runtime; no marker interface or form attribute is required:
 
 ```php

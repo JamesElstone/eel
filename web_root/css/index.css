@@ -129,7 +129,7 @@ a:not(.button):not(.nav-link):focus-visible {
   background: #0f172a;
   color: #e5eefc;
   padding: 24px 18px;
-  transition: padding 0.2s ease;
+  transition: padding 0.2s ease, filter 0.18s ease, opacity 0.18s ease;
   display: flex;
   flex-direction: column;
   position: sticky;
@@ -875,7 +875,15 @@ body.sidebar-collapsed .sidebar-hide-collapsed-link-initials .nav-link-short {
   justify-items: center;
   gap: 14px;
   padding: 20px;
-  pointer-events: none;
+  pointer-events: auto;
+  touch-action: none;
+  overscroll-behavior: contain;
+  cursor: wait;
+}
+
+body.is-long-action-active #sidebar-shell {
+  filter: blur(2px);
+  opacity: 0.72;
 }
 
 .long-action-progress-overlay {

@@ -640,7 +640,9 @@ final class YearEndChecklistService
 
         if ($requireCurrentProvision) {
             $provision = (array)($taxReadiness['provision'] ?? []);
-            $variance = round((float)($provision['unposted_corporation_tax_adjustment'] ?? 0), 2);
+            $variance = round((float)($provision['unposted_tax_charge_adjustment']
+                ?? $provision['unposted_corporation_tax_adjustment']
+                ?? 0), 2);
             if (empty($provision['available'])
                 || !in_array((string)($provision['status'] ?? ''), ['posted', 'not_required'], true)
                 || abs($variance) >= 0.005) {
@@ -1359,7 +1361,7 @@ final class YearEndChecklistService
                 : ($directorLoanUnattributedCount > 0
                     ? $directorLoanUnattributedCount . ' unattributed'
                     : $this->money($settings, $directorLoanReview['net_position'] ?? 0)),
-            '?page=loans&show_card=year_end_director_loan_offset',
+            '?page=loans&show_card=year_end_loan_confirmation',
             $directorLoanHasActivity ? ($directorLoanReview['confirmation_basis'] ?? null) : null
         ), $reviewAcknowledgements);
         $expensePositionBalance = (float)((($expensePosition['totals'] ?? [])['carried_forward'] ?? 0));
@@ -1655,7 +1657,7 @@ final class YearEndChecklistService
             ? 'A Corporation Tax estimate is needed before the provision can be prepared.'
             : ($taxProvisionAvailable
                 ? ($taxProvisionCurrent
-                    ? 'The 8500 Corporation Tax Expense / 2200 Corporation Tax provision matches the current CT estimate.'
+                    ? 'The Corporation Tax provision and any separate L2P relief receivable match the current return positions.'
                     : 'The final Year End close will post or refresh the CT provision before retained earnings are closed.')
                 : 'The CT provision position could not be prepared for the final Year End close.');
         $sections['corporation_tax_readiness'][] = $this->makeCheck(
@@ -1666,8 +1668,8 @@ final class YearEndChecklistService
             $taxProvisionDetail,
             empty($taxReadiness['available'])
                 ? ''
-                : ('Posted ' . $this->money($settings, $taxProvision['posted_corporation_tax_charge'] ?? 0)
-                    . ' / estimate ' . $this->money($settings, $taxProvision['estimated_corporation_tax'] ?? 0)),
+                : ('Posted net charge ' . $this->money($settings, $taxProvision['posted_tax_charge'] ?? $taxProvision['posted_corporation_tax_charge'] ?? 0)
+                    . ' / estimated net charge ' . $this->money($settings, $taxProvision['estimated_tax_charge'] ?? $taxProvision['estimated_corporation_tax'] ?? 0)),
             '?page=corporation_tax&show_card=year_end_tax_readiness#tax-readiness'
         );
         $sections['corporation_tax_readiness'][] = $this->makeCheck(

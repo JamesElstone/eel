@@ -7,13 +7,13 @@
  */
 declare(strict_types=1);
 
-final class _year_end_director_loan_offsetCard extends CardBaseFramework
+final class _year_end_loan_confirmationCard extends CardBaseFramework
 {
     private const CONFIRMATION_TEXT = 'I confirm the directors, attributed entries, per-director balances, tax flags and calculated control-account reclassification shown above are correct for this accounting period.';
 
     public function key(): string
     {
-        return 'year_end_director_loan_offset';
+        return 'year_end_loan_confirmation';
     }
 
     public function title(): string
@@ -158,39 +158,24 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
             return '';
         }
         $questions = (array)($ct600a['questions'] ?? []);
-        $panels = '';
-        foreach ((array)($ct600a['periods'] ?? []) as $period) {
-            $period = (array)$period;
-            $ctPeriodId = (int)($period['ct_period_id'] ?? 0);
-            if ($ctPeriodId <= 0) {
-                continue;
+        $review = (array)($ct600a['review'] ?? []);
+        $fields = '';
+        foreach ($questions as $key => $question) {
+            $value = (string)($review['answers'][$key] ?? 'yes');
+            if (!in_array($value, ['yes', 'no'], true)) {
+                $value = 'yes';
             }
-            $review = (array)($period['review'] ?? []);
-            $fields = '';
-            foreach ($questions as $key => $question) {
-                $value = (string)($review['answers'][$key] ?? 'yes');
-                if (!in_array($value, ['yes', 'no'], true)) {
-                    $value = 'yes';
-                }
-                $fields .= '<fieldset class="panel-soft"><legend>' . HelperFramework::escape((string)$question) . '</legend><div class="actions-row">'
-                    . $this->ct600aRadio((string)$key, 'no', 'No', $value)
-                    . $this->ct600aRadio((string)$key, 'yes', 'Yes', $value) . '</div></fieldset>';
-            }
-            $panels .= '<section class="panel-soft settings-stack"><div class="eyebrow">Section 464A and 464C declaration — CT period '
-                . (int)($period['sequence_no'] ?? 0) . '</div><div class="helper">Yes is the default and blocks filing. Select No only after resolving the risk through posted transaction or journal evidence.</div>'
-                . '<form class="settings-stack" method="post" action="?page=loans" data-ajax="true">'
-                . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
-                . '<input type="hidden" name="card_action" value="Ct600a"><input type="hidden" name="intent" value="save_ct600a_review">'
-                . '<input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '"><input type="hidden" name="ct_period_id" value="' . $ctPeriodId . '">'
-                . $fields
-                . '<div class="form-grid"><div class="form-row"><label>Approver name</label><input class="input" name="approved_by" value="'
-                . HelperFramework::escape((string)($review['approved_by'] ?? '')) . '" required></div><div class="form-row"><label>Approver role</label><select class="input" name="approver_role"><option value="director"'
-                . ((string)($review['approver_role'] ?? 'director') === 'director' ? ' selected' : '') . '>Director</option><option value="adviser"'
-                . ((string)($review['approver_role'] ?? '') === 'adviser' ? ' selected' : '') . '>Adviser</option></select></div></div>'
-                . '<div class="form-row"><label>Evidence or conclusion note</label><textarea class="input" name="confirmation_note" rows="3">'
-                . HelperFramework::escape((string)($review['confirmation_note'] ?? '')) . '</textarea></div><button class="button primary" type="submit">Save section 464A review</button></form></section>';
+            $fields .= '<fieldset class="panel-soft"><legend>' . HelperFramework::escape((string)$question) . '</legend><div class="actions-row">'
+                . $this->ct600aRadio((string)$key, 'no', 'No', $value)
+                . $this->ct600aRadio((string)$key, 'yes', 'Yes', $value) . '</div></fieldset>';
         }
-        return $panels;
+
+        return '<section class="settings-stack"><form class="settings-stack" method="post" action="?page=loans" data-ajax="true">'
+            . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+            . '<input type="hidden" name="card_action" value="Ct600a"><input type="hidden" name="intent" value="save_ct600a_review">'
+            . '<input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
+            . $fields
+            . '<div class="helper">Selections save automatically. The Year End Confirmation below is the single acknowledgement for this loan and CT600A position.</div></form></section>';
     }
 
     private function ct600aRadio(string $name, string $value, string $label, string $selected): string

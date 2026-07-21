@@ -6,7 +6,7 @@ namespace eel_accounts\Service;
 
 final class CorporationTaxFilingScopeService
 {
-    public const SCOPE_VERSION = 'ct-supplementary-scope-v1';
+    public const SCOPE_VERSION = 'ct-supplementary-scope-v2';
 
     /** @return array<string,array{page:string,label:string,question:string,url:string}> */
     public function definitions(): array
@@ -47,9 +47,9 @@ final class CorporationTaxFilingScopeService
         $answers = is_array($answers) ? $answers : [];
         $errors = [];
         foreach ($this->definitions() as $key => $definition) {
-            $answer = (string)($answers[$key] ?? 'unresolved');
-            if ($answer === 'unresolved' || !in_array($answer, ['no', 'yes', 'unsure'], true)) {
-                $errors[] = $definition['page'] . ' scope has not been confirmed.';
+            $answer = (string)($answers[$key] ?? 'yes');
+            if (!in_array($answer, ['no', 'yes'], true)) {
+                $errors[] = $definition['page'] . ' scope must be answered Yes or No.';
             } elseif ($answer !== 'no') {
                 $errors[] = $definition['page'] . ' may be required: ' . $definition['label'] . '.';
             }
@@ -58,7 +58,7 @@ final class CorporationTaxFilingScopeService
             'scope_version' => self::SCOPE_VERSION,
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
-            'answers' => array_replace(array_fill_keys(array_keys($this->definitions()), 'unresolved'), $answers),
+            'answers' => array_replace(array_fill_keys(array_keys($this->definitions()), 'yes'), $answers),
             'revision' => (int)($row['revision'] ?? 0),
         ];
         $basisJson = $this->canonicalJson($basis);
@@ -87,8 +87,8 @@ final class CorporationTaxFilingScopeService
         if (!isset($this->definitions()[$field])) {
             return ['success' => false, 'errors' => ['Select a recognised CT600 supplementary-page scope question.']];
         }
-        if (!in_array($answer, ['no', 'yes', 'unsure'], true)) {
-            return ['success' => false, 'errors' => ['Choose No, Yes or Unsure.']];
+        if (!in_array($answer, ['no', 'yes'], true)) {
+            return ['success' => false, 'errors' => ['Choose Yes or No.']];
         }
         $actor = trim($actor);
         if ($actor === '') {

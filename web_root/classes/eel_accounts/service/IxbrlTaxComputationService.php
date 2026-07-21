@@ -72,6 +72,10 @@ final class IxbrlTaxComputationService
         $mappingModel = $model;
         $ct600aTax = round((float)($model['model']['ct600a']['tax_payable'] ?? 0), 2);
         $ordinaryTax = round((float)($model['model']['computation']['summary']['ordinary_corporation_tax'] ?? 0), 2);
+        $mappingModel['facts']['return_position.ct600a_a80'] = $ct600aTax;
+        $mappingModel['facts']['return_position.tax_payable'] = round($ordinaryTax + $ct600aTax, 2);
+        // Preserve compatibility with immutable filing bases created under
+        // the previous reviewed mapping profile.
         $mappingModel['facts']['computation.summary.s455_tax'] = $ct600aTax;
         $mappingModel['facts']['computation.summary.estimated_corporation_tax'] = round($ordinaryTax + $ct600aTax, 2);
         $mappedFacts = (new CtFilingMappingService())->mapFrozenFacts(

@@ -1105,6 +1105,7 @@ CREATE TABLE `corporation_tax_s455_reviews` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- CT600A supplementary-page evidence and filing-scope confirmations.
+DROP TABLE IF EXISTS `corporation_tax_ct600a_accounting_reviews`;
 DROP TABLE IF EXISTS `corporation_tax_ct600a_reviews`;
 DROP TABLE IF EXISTS `corporation_tax_ct600a_events`;
 DROP TABLE IF EXISTS `corporation_tax_scope_confirmations`;
@@ -1179,6 +1180,25 @@ CREATE TABLE `corporation_tax_ct600a_reviews` (
   CONSTRAINT `fk_ct600a_review_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_ct600a_review_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_ct600a_review_ct_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE `corporation_tax_ct600a_accounting_reviews` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `review_version` varchar(50) NOT NULL,
+  `answers_json` longtext NOT NULL,
+  `approver_role` enum('director','adviser') NOT NULL,
+  `approved_by` varchar(100) NOT NULL,
+  `confirmation_note` text DEFAULT NULL,
+  `evidence_manifest_json` longtext NOT NULL,
+  `basis_hash` char(64) NOT NULL,
+  `confirmed_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ct600a_accounting_review_period` (`company_id`,`accounting_period_id`),
+  CONSTRAINT `fk_ct600a_accounting_review_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct600a_accounting_review_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --

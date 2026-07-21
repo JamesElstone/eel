@@ -35,7 +35,7 @@ final class _loans extends PageContextFramework
             'director_loan_state',
             'director_loan_s455',
             'director_loan_ct600a',
-            'year_end_director_loan_offset',
+            'year_end_loan_confirmation',
         ];
     }
 
@@ -49,7 +49,7 @@ final class _loans extends PageContextFramework
                 ],
             ],
             [
-                'tab' => 'Participator loans (s455)',
+                'tab' => 'Loans Tax Position',
                 'cards' => [
                     'director_loan_s455',
                     'director_loan_ct600a',
@@ -58,7 +58,7 @@ final class _loans extends PageContextFramework
             [
                 'tab' => 'Year End Confirmation',
                 'cards' => [
-                    'year_end_director_loan_offset',
+                    'year_end_loan_confirmation',
                 ],
             ],
         ];

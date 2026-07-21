@@ -12,7 +12,7 @@ namespace eel_accounts\Service;
 /** Builds the stable, calculation-only Corporation Tax basis approved at Year End. */
 final class YearEndTaxFreezeService
 {
-    public const BASIS_VERSION = 'year_end_ct_freeze_v1';
+    public const BASIS_VERSION = 'year_end_ct_freeze_v2';
 
     /**
      * @param list<array<string, mixed>> $periods
@@ -51,7 +51,9 @@ final class YearEndTaxFreezeService
                 'taxable_profit' => $this->money(array_sum(array_map(static fn(array $period): float => (float)($period['taxable_profit'] ?? 0), $periods))),
                 'ordinary_corporation_tax' => $this->money(array_sum(array_map(static fn(array $period): float => (float)($period['ordinary_corporation_tax'] ?? 0), $periods))),
                 's455_tax' => $this->money(array_sum(array_map(static fn(array $period): float => (float)($period['s455_tax'] ?? 0), $periods))),
+                'ct600a_tax' => $this->money(array_sum(array_map(static fn(array $period): float => (float)($period['ct600a_tax'] ?? 0), $periods))),
                 'corporation_tax_liability' => $this->money(array_sum(array_map(static fn(array $period): float => (float)($period['estimated_corporation_tax'] ?? 0), $periods))),
+                'tax_payable' => $this->money(array_sum(array_map(static fn(array $period): float => (float)($period['tax_payable'] ?? $period['estimated_corporation_tax'] ?? 0), $periods))),
             ],
             'blocking_diagnostic_codes' => array_values(array_map(
                 static fn(array $diagnostic): string => (string)($diagnostic['code'] ?? ''),
@@ -118,7 +120,10 @@ final class YearEndTaxFreezeService
             'associated_company_count' => (int)($period['associated_company_count'] ?? 0),
             'ordinary_corporation_tax' => $this->money($period['ordinary_corporation_tax'] ?? 0),
             's455_tax' => $this->money($period['s455_tax'] ?? 0),
+            'ct600a_tax' => $this->money($period['ct600a_tax'] ?? 0),
             'corporation_tax_liability' => $this->money($period['estimated_corporation_tax'] ?? 0),
+            'tax_payable' => $this->money($period['tax_payable'] ?? $period['estimated_corporation_tax'] ?? 0),
+            'return_position_model_version' => (string)($period['return_position_model_version'] ?? ''),
             'other_treatment_amount' => $this->money($period['other_treatment_amount'] ?? 0),
             'unknown_treatment_amount' => $this->money($period['unknown_treatment_amount'] ?? 0),
             'prepayment_preview_reliable' => !array_key_exists('prepayment_preview_reliable', $period)
@@ -144,6 +149,17 @@ final class YearEndTaxFreezeService
                     continue;
                 }
                 $diagnostics[] = $diagnostic;
+            }
+            foreach ((array)($period['blocking_errors'] ?? []) as $error) {
+                $message = trim((string)$error);
+                if ($message === '') {
+                    continue;
+                }
+                $diagnostics[] = $this->structuralDiagnostic(
+                    'ct_return_position_' . substr(hash('sha256', $message), 0, 12),
+                    $message,
+                    (int)($period['ct_period_id'] ?? 0)
+                );
             }
         }
 

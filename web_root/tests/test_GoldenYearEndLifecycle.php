@@ -59,7 +59,9 @@ $harness->check('GoldenYearEndLifecycle', 'does not leak stale persisted AP80 as
 
         $workings = (new \eel_accounts\Service\TaxWorkingsService())
             ->fetchWorkings($companyId, $ap80, 0);
-        $harness->assertSame(true, (bool)($workings['available'] ?? false));
+        if (empty($workings['available'])) {
+            throw new RuntimeException('Transient AP80 workings failed: ' . implode(' ', (array)($workings['errors'] ?? [])));
+        }
         $harness->assertSame([], (array)($workings['aia_allocation'] ?? []));
         $harness->assertSame(
             '0.00',
@@ -136,6 +138,25 @@ $harness->check('GoldenYearEndLifecycle', 'previews the split-period CT provisio
         $harness->assertSame(true, (bool)($initialSync['success'] ?? false));
         test_confirm_ct_period_facts($companyId, $accountingPeriodId);
         $harness->assertCount(2, (array)($initialSync['periods'] ?? []));
+        $scopeService = new \eel_accounts\Service\CorporationTaxFilingScopeService();
+        foreach (array_keys($scopeService->definitions()) as $scopeField) {
+            $savedScope = $scopeService->saveAnswer($companyId, $accountingPeriodId, $scopeField, 'no', 'golden_preview_test');
+            if (empty($savedScope['success'])) {
+                throw new RuntimeException('Golden preview filing scope failed: ' . implode(' ', (array)($savedScope['errors'] ?? [])));
+            }
+        }
+        $ct600aService = new \eel_accounts\Service\Ct600aService();
+        $review = $ct600aService->saveReview(
+            $companyId,
+            $accountingPeriodId,
+            array_fill_keys(array_keys($ct600aService->reviewQuestions()), 'no'),
+            'director',
+            'Golden Fixture Director',
+            'No section 464A arrangements in the synthetic golden fixture.'
+        );
+        if (empty($review['success'])) {
+            throw new RuntimeException('Golden preview CT600A review failed: ' . implode(' ', (array)($review['errors'] ?? [])));
+        }
         $initialEvidence = (new \eel_accounts\Service\CorporationTaxComputationService())
             ->persistSummariesForYearEndLock($companyId, $accountingPeriodId);
         if (empty($initialEvidence['success'])) {
@@ -334,10 +355,10 @@ $harness->check('GoldenYearEndLifecycle', 'keeps a following-period profit estim
         $harness->assertSame([], (array)($beforeRaw['capital_allowance_asset_calculations'] ?? []));
         $harness->assertCount(1, (array)($beforeRaw['corporation_tax_periods'] ?? []));
         $beforeTax = (array)($before['reporting']['tax'] ?? []);
-        $harness->assertTrue((float)($beforeTax['losses_brought_forward'] ?? 0) > 0);
-        $harness->assertTrue((float)($beforeTax['losses_used'] ?? 0) > 0);
-        $harness->assertTrue((float)($beforeTax['taxable_profit'] ?? 0) > 0);
-        $harness->assertTrue((float)($beforeTax['estimated_corporation_tax'] ?? 0) > 0);
+        $harness->assertSame(true, (float)($beforeTax['losses_brought_forward'] ?? 0) > 0);
+        $harness->assertSame(true, (float)($beforeTax['losses_used'] ?? 0) > 0);
+        $harness->assertSame(true, (float)($beforeTax['taxable_profit'] ?? 0) > 0);
+        $harness->assertSame(true, (float)($beforeTax['estimated_corporation_tax'] ?? 0) > 0);
         goldenAssertFollowingPeriodComplete($harness, $before);
 
         goldenClosePeriodForFollowingPeriodControl($harness, $companyId, $ap79);
@@ -470,6 +491,33 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         $harness->assertSame(number_format((float)$hmrcExpected[$periodId]['taxable_profit'], 2, '.', ''), number_format($ctTaxableProfit, 2, '.', ''));
         $harness->assertSame(number_format((float)$hmrcExpected[$periodId]['corporation_tax'], 2, '.', ''), number_format($ctTax, 2, '.', ''));
 
+        $scopeService = new \eel_accounts\Service\CorporationTaxFilingScopeService();
+        foreach (array_keys($scopeService->definitions()) as $scopeField) {
+            $savedScope = $scopeService->saveAnswer($companyId, $periodId, $scopeField, 'no', 'golden_year_end_test');
+            if (empty($savedScope['success'])) {
+                throw new RuntimeException('Golden filing scope failed: ' . implode(' ', (array)($savedScope['errors'] ?? [])));
+            }
+        }
+        $ct600aService = new \eel_accounts\Service\Ct600aService();
+        $review = $ct600aService->saveReview(
+            $companyId,
+            $periodId,
+            array_fill_keys(array_keys($ct600aService->reviewQuestions()), 'no'),
+            'director',
+            'Golden Fixture Director',
+            'No section 464A arrangements in the synthetic golden fixture.'
+        );
+        if (empty($review['success'])) {
+            throw new RuntimeException('Golden CT600A review failed: ' . implode(' ', (array)($review['errors'] ?? [])));
+        }
+        $periodSync = (new \eel_accounts\Service\CorporationTaxPeriodService())
+            ->syncForAccountingPeriod($companyId, $periodId);
+        if (empty($periodSync['success'])) {
+            throw new RuntimeException('Golden CT-period sync failed: ' . implode(' ', (array)($periodSync['errors'] ?? [])));
+        }
+        $ctPeriods = (new \eel_accounts\Service\CorporationTaxPeriodService())
+            ->fetchForAccountingPeriod($companyId, $periodId);
+
         $beforeLock = goldenYearEndReportingSnapshot($companyId, $periodId);
         InterfaceDB::beginTransaction();
         try {
@@ -519,28 +567,6 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         }
         $harness->assertTrue((new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $periodId));
         ixbrl_test_complete_disclosures($companyId, $periodId, 'golden_year_end_test');
-        $scopeService = new \eel_accounts\Service\CorporationTaxFilingScopeService();
-        foreach (array_keys($scopeService->definitions()) as $scopeField) {
-            $savedScope = $scopeService->saveAnswer($companyId, $periodId, $scopeField, 'no', 'golden_year_end_test');
-            if (empty($savedScope['success'])) {
-                throw new RuntimeException('Golden filing scope failed: ' . implode(' ', (array)($savedScope['errors'] ?? [])));
-            }
-        }
-        $ct600aService = new \eel_accounts\Service\Ct600aService();
-        foreach ($ctPeriods as $ctPeriod) {
-            $review = $ct600aService->saveReview(
-                $companyId,
-                $periodId,
-                (int)$ctPeriod['id'],
-                array_fill_keys(array_keys($ct600aService->reviewQuestions()), 'no'),
-                'director',
-                'Golden Fixture Director',
-                'No section 464A arrangements in the synthetic golden fixture.'
-            );
-            if (empty($review['success'])) {
-                throw new RuntimeException('Golden CT600A review failed: ' . implode(' ', (array)($review['errors'] ?? [])));
-            }
-        }
         $filingApproval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
             ->approveAndBuildFacts($companyId, $periodId, 'golden_year_end_test', 'Golden lifecycle filing approval.');
         $harness->assertTrue((int)($filingApproval['approval_id'] ?? 0) > 0);
@@ -621,9 +647,37 @@ function goldenClosePeriodForFollowingPeriodControl(
         ->postClose($companyId, $accountingPeriodId, 'golden_following_period_control');
     $harness->assertTrue(!empty($retainedEarnings['success']));
 
+    $scopeService = new \eel_accounts\Service\CorporationTaxFilingScopeService();
+    foreach (array_keys($scopeService->definitions()) as $scopeField) {
+        $savedScope = $scopeService->saveAnswer(
+            $companyId,
+            $accountingPeriodId,
+            $scopeField,
+            'no',
+            'golden_following_period_control'
+        );
+        if (empty($savedScope['success'])) {
+            throw new RuntimeException('Following-period CT scope failed: ' . implode(' ', (array)($savedScope['errors'] ?? [])));
+        }
+    }
+    $ct600aService = new \eel_accounts\Service\Ct600aService();
+    $ct600aReview = $ct600aService->saveReview(
+        $companyId,
+        $accountingPeriodId,
+        array_fill_keys(array_keys($ct600aService->reviewQuestions()), 'no'),
+        'director',
+        'Golden Fixture Director',
+        'No section 464A arrangements in the synthetic golden fixture.'
+    );
+    if (empty($ct600aReview['success'])) {
+        throw new RuntimeException('Following-period CT600A review failed: ' . implode(' ', (array)($ct600aReview['errors'] ?? [])));
+    }
+
     $taxPersistence = (new \eel_accounts\Service\CorporationTaxComputationService())
         ->persistSummariesForYearEndLock($companyId, $accountingPeriodId);
-    $harness->assertTrue(!empty($taxPersistence['success']));
+    if (empty($taxPersistence['success'])) {
+        throw new RuntimeException('Following-period CT persistence failed: ' . implode(' ', (array)($taxPersistence['errors'] ?? [])));
+    }
 
     $lock = (new \eel_accounts\Service\YearEndLockService())
         ->lockPeriod($companyId, $accountingPeriodId, 'golden_following_period_control');
@@ -1235,7 +1289,7 @@ function goldenAssertFirstPeriodLockBoundary(GeneratedServiceClassTestHarness $h
         'uploads_validate_commit' => 'selected_upload_lock_state', 'transactions_imported' => 'is_locked',
         'year_end_empty_month_confirmations' => 'YearEndApprovalRenderer', 'year_end_transaction_tail' => 'YearEndApprovalRenderer',
         'expense_claim_editor' => 'isLocked', 'expense_claim_create' => 'isLocked', 'year_end_expenses_confirmation' => 'YearEndApprovalRenderer',
-        'year_end_director_loan_offset' => 'locked', 'dividend_declare' => 'locked', 'reserve_review' => 'locked',
+        'year_end_loan_confirmation' => 'locked', 'dividend_declare' => 'locked', 'reserve_review' => 'locked',
         'asset_create' => 'isLocked', 'asset_reconcile_manual' => 'selected_period_locked', 'not_an_asset' => 'nonAssetReview',
         'prepayments_review' => 'isLocked', 'year_end_prepayment_approvals' => 'locked', 'journal_cut_offs' => 'isLocked',
         'journal_cut_off_confirmation' => 'YearEndApprovalRenderer', 'year_end_profit_loss_confirm' => 'locked',

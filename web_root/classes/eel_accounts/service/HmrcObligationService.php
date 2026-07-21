@@ -125,6 +125,70 @@ final class HmrcObligationService
         return ['success' => true, 'errors' => []];
     }
 
+    /**
+     * Read the operational payment position without changing the return
+     * liability. Payments recorded after a return is calculated reduce only
+     * the amount still payable to HMRC.
+     *
+     * @return array<string,mixed>
+     */
+    public function fetchCtPaymentPositionForAccountingPeriod(int $companyId, int $accountingPeriodId): array
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || !\InterfaceDB::tableExists('hmrc_obligations')) {
+            return [
+                'available' => false,
+                'scope' => 'accounting_period',
+                'amount_due' => null,
+                'amount_paid' => 0.0,
+                'outstanding_amount' => null,
+                'errors' => ['The HMRC Corporation Tax payment obligation is not available.'],
+            ];
+        }
+
+        $row = \InterfaceDB::fetchOne(
+            'SELECT id, amount_due, amount_paid, status, source, source_reference, due_date
+             FROM hmrc_obligations
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND obligation_type = :obligation_type
+             ORDER BY id DESC
+             LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'obligation_type' => 'ct_payment',
+            ]
+        );
+        if (!is_array($row)) {
+            return [
+                'available' => false,
+                'scope' => 'accounting_period',
+                'amount_due' => null,
+                'amount_paid' => 0.0,
+                'outstanding_amount' => null,
+                'errors' => [],
+            ];
+        }
+
+        $amountDue = $row['amount_due'] !== null ? round((float)$row['amount_due'], 2) : null;
+        $amountPaid = round((float)($row['amount_paid'] ?? 0), 2);
+
+        return [
+            'available' => true,
+            'scope' => 'accounting_period',
+            'obligation_id' => (int)$row['id'],
+            'amount_due' => $amountDue,
+            'amount_paid' => $amountPaid,
+            'outstanding_amount' => $amountDue !== null ? round(max(0.0, $amountDue - $amountPaid), 2) : null,
+            'overpaid_amount' => $amountDue !== null ? round(max(0.0, $amountPaid - $amountDue), 2) : 0.0,
+            'status' => (string)($row['status'] ?? ''),
+            'source' => (string)($row['source'] ?? ''),
+            'source_reference' => (string)($row['source_reference'] ?? ''),
+            'due_date' => (string)($row['due_date'] ?? ''),
+            'errors' => [],
+        ];
+    }
+
     public function listObligations(int $companyId, array $filters = []): array
     {
         $this->ensureSchema();

@@ -29,16 +29,20 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $h->assertCount(2, $paths['computation.summary.ordinary_corporation_tax']);
         $h->assertTrue(in_array(
             'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/TaxChargeable',
-            $paths['computation.summary.estimated_corporation_tax'],
+            $paths['return_position.tax_payable'],
             true
         ));
-        $h->assertCount(2, $paths['computation.summary.estimated_corporation_tax']);
+        $h->assertCount(2, $paths['return_position.tax_payable']);
+        $h->assertSame(
+            ['IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/LoansToParticipators'],
+            $paths['return_position.ct600a_a80']
+        );
         $h->assertSame(null, $service->reviewedTemplate(\eel_accounts\Service\CtFilingMappingService::TARGET_RIM, 'V3', 'V1.995'));
         $computation = $service->reviewedTemplate(\eel_accounts\Service\CtFilingMappingService::TARGET_COMPUTATION, '2025', 'V1.0.0');
         $h->assertTrue(is_array($computation));
         $computation2024 = $service->reviewedTemplate(\eel_accounts\Service\CtFilingMappingService::TARGET_COMPUTATION, '2024', 'V1.0.0');
         $h->assertTrue(is_array($computation2024));
-        $h->assertSame('reviewed_ct_computation_2024_v1_0_0', (string)$computation2024['profile_name']);
+        $h->assertSame('reviewed_ct_computation_2024_v1_0_0_return_v2', (string)$computation2024['profile_name']);
         $h->assertSame(
             ['taxonomy_version' => '2024', 'artifact_version' => 'V1.0.0'],
             (array)$computation2024['natural_identity']

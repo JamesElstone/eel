@@ -11,7 +11,7 @@ final class GoldenCardComparisonRegistry
             'companies' => ['companies_company_settings', 'settings_setup_health', 'companies_stored_detail', 'companies_search', 'accounting_periods', 'companies_nominals', 'companies_danger'],
             'companies_house' => ['companies_house_snapshot', 'year_end_companies_house_comparison'],
             'dashboard' => ['overview', 'dashboard_action_queue', 'dashboard_year_end_readiness', 'dashboard_recent_transactions', 'activity'],
-            'loans' => ['director_loan_state', 'director_loan_s455', 'director_loan_ct600a', 'year_end_director_loan_offset'],
+            'loans' => ['director_loan_state', 'director_loan_s455', 'director_loan_ct600a', 'year_end_loan_confirmation'],
             'dividends' => ['dividend_capacity', 'dividend_vouchers', 'dividend_declare', 'dividend_history'],
             'expense_claims' => ['expense_statistics', 'expense_claimants', 'expense_add_claimant', 'expenses_state', 'expense_claim_create', 'expense_claim_editor', 'expense_search', 'year_end_expenses_confirmation'],
             'HMRC' => ['hmrc_obligations_summary', 'hmrc_obligations_action_panel', 'hmrc_obligations_timeline', 'hmrc_obligations_period_checklist', 'hmrc_fines_table', 'hmrc_submission_unavailable'],

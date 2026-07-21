@@ -18,9 +18,9 @@ final class Ct600aAction implements ActionInterfaceFramework
             if($intent==='save_ct600a_review'){
                 $answers=[];
                 foreach(array_keys($service->reviewQuestions()) as $key){$answers[$key]=$request->input($key,'yes');}
-                $result=$service->saveReview($companyId,$periodId,(int)$request->input('ct_period_id',0),$answers,
-                    (string)$request->input('approver_role',''),(string)$request->input('approved_by',''),(string)$request->input('confirmation_note',''));
-                return $this->result(!empty($result['success']),(array)($result['errors']??[]),!empty($result['success'])?'Section 464A review saved. The filing basis must be approved again.':'');
+                $result=$service->saveReview($companyId,$periodId,$answers,
+                    'director',$this->actor($request),'');
+                return $this->result(!empty($result['success']),(array)($result['errors']??[]),!empty($result['success'])?'Section 464A and 464C declaration saved. The filing basis must be approved again.':'');
             }
             return $this->result(false,['Unknown CT600A action.']);
         }catch(Throwable $exception){return $this->result(false,[$exception->getMessage()]);}
@@ -32,5 +32,21 @@ final class Ct600aAction implements ActionInterfaceFramework
         foreach($errors as $error){$flashes[]=['type'=>'error','message'=>(string)$error];}
         if($success&&$message!==''){$flashes[]=['type'=>'success','message'=>$message];}
         return new ActionResultFramework($success,['tax.ct600a','tax.s455','ct.filing','ixbrl.readiness','ixbrl.disclosures','page.context'],$flashes);
+    }
+
+    private function actor(RequestFramework $request): string
+    {
+        try {
+            $session = new SessionAuthenticationService();
+            $session->startSession();
+            $deviceId = trim((string)AntiFraudService::instance($request)->requestValue('Client-Device-ID'));
+            $userId = $session->authenticatedUserId($deviceId !== '' ? $deviceId : null);
+            if ($userId > 0) {
+                return 'user:' . $userId;
+            }
+        } catch (Throwable) {
+        }
+
+        return 'web_app';
     }
 }

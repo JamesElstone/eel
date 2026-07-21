@@ -315,7 +315,7 @@ final class TestCardsHarness
             ],
         ]);
 
-        $this->assertTrue(str_contains($html, 'Estimated corporation tax'));
+        $this->assertTrue(str_contains($html, 'Ordinary Corporation Tax'));
         $this->assertTrue(str_contains($html, '$ 300.00'));
         $this->assertTrue(str_contains($html, 'CT period breakdown'));
         $this->assertTrue(str_contains($html, '1 Jan 2026 to 31 Mar 2026'));
@@ -400,7 +400,7 @@ final class TestCardsHarness
     {
         $yearEndPage = new _year_end();
         $movedCards = [
-            'year_end_director_loan_offset',
+            'year_end_loan_confirmation',
             'year_end_expenses_confirmation',
             'year_end_companies_house_comparison',
             'year_end_empty_month_confirmations',
@@ -420,12 +420,12 @@ final class TestCardsHarness
 
         $directorLoansPage = new _loans();
         $this->assertSame(
-            ['director_loan_state', 'director_loan_s455', 'director_loan_ct600a', 'year_end_director_loan_offset'],
+            ['director_loan_state', 'director_loan_s455', 'director_loan_ct600a', 'year_end_loan_confirmation'],
             $directorLoansPage->cards()
         );
         $this->assertPageTabContains($directorLoansPage, 'Statement', ['director_loan_state']);
-        $this->assertPageTabContains($directorLoansPage, 'Participator loans (s455)', ['director_loan_s455', 'director_loan_ct600a']);
-        $this->assertPageFinalTabContains($directorLoansPage, 'Year End Confirmation', ['year_end_director_loan_offset']);
+        $this->assertPageTabContains($directorLoansPage, 'Loans Tax Position', ['director_loan_s455', 'director_loan_ct600a']);
+        $this->assertPageFinalTabContains($directorLoansPage, 'Year End Confirmation', ['year_end_loan_confirmation']);
 
         $incorporationPage = new _incorporation();
         $this->assertSame('Directors', (string)($incorporationPage->cardLayout()[2]['tab'] ?? ''));

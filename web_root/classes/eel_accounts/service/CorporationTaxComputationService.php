@@ -160,8 +160,6 @@ final class CorporationTaxComputationService
                 ['label' => 'Less losses brought forward utilised', 'amount' => round(0 - (float)$current['loss_utilised'], 2)],
                 ['label' => 'Taxable profit after losses', 'amount' => round((float)$current['taxable_profit'], 2)],
                 ['label' => 'Corporation tax on profits', 'amount' => round((float)($current['ordinary_corporation_tax'] ?? $current['estimated_corporation_tax']), 2)],
-                ['label' => 's455 participator-loan tax', 'amount' => round((float)($current['s455_tax'] ?? 0), 2)],
-                ['label' => 'Estimated corporation tax total', 'amount' => round((float)$current['estimated_corporation_tax'], 2)],
             ],
             'schedule' => array_values(array_map(
                 static fn(array $row): array => [
@@ -283,9 +281,13 @@ final class CorporationTaxComputationService
             $associatedCompanyCount
         );
         $ordinaryCorporationTax = round((float)$rateCalculation['liability'], 2);
-        $s455Tax = (new \eel_accounts\Service\S455ReviewService())
-            ->currentNetTax($companyId, $accountingPeriodId, $ctPeriodId);
-        $estimatedCorporationTax = round($ordinaryCorporationTax + $s455Tax, 2);
+        // Participator-loan tax is deliberately outside the taxable-profit
+        // computation. CorporationTaxReturnPositionService obtains the live
+        // diagnostic from the CT600A evidence model.
+        $s455Tax = 0.0;
+        // This computation is the ordinary profit-tax engine. CT600A A80 is
+        // composed with box 475 by CorporationTaxReturnPositionService.
+        $estimatedCorporationTax = $ordinaryCorporationTax;
         $computationHash = hash('sha256', json_encode([
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
@@ -463,6 +465,25 @@ final class CorporationTaxComputationService
         }
 
         $summaries = (new CorporationTaxHardGateService())->apply($companyId, $summaries);
+        $canonicalSummaries = [];
+        $returnPositions = new CorporationTaxReturnPositionService($this);
+        foreach ($summaries as $summary) {
+            $ctPeriodId = (int)($summary['ct_period_id'] ?? 0);
+            $position = $returnPositions->fetchForCtPeriod(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId,
+                $summary
+            );
+            if (empty($position['available'])) {
+                foreach ((array)($position['errors'] ?? ['The Corporation Tax return position is unavailable.']) as $error) {
+                    $errors[] = 'CT period ' . $ctPeriodId . ': ' . (string)$error;
+                }
+                continue;
+            }
+            $canonicalSummaries[] = array_merge($summary, $position);
+        }
+        $summaries = $canonicalSummaries;
         $freeze = (new YearEndTaxFreezeService())->build(
             $companyId,
             $accountingPeriodId,
@@ -583,7 +604,7 @@ final class CorporationTaxComputationService
                 continue;
             }
             $sealBasis = [
-                'basis_version' => 'ct-calculation-seal-v1',
+                'basis_version' => 'ct-calculation-seal-v2',
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
                 'ct_period_id' => $ctPeriodId,
@@ -1691,8 +1712,6 @@ final class CorporationTaxComputationService
                 ['label' => 'Less losses brought forward utilised', 'amount' => round(0 - (float)$current['loss_utilised'], 2)],
                 ['label' => 'Taxable profit after losses', 'amount' => round((float)$current['taxable_profit'], 2)],
                 ['label' => 'Corporation tax on profits', 'amount' => round((float)($current['ordinary_corporation_tax'] ?? $current['estimated_corporation_tax']), 2)],
-                ['label' => 's455 participator-loan tax', 'amount' => round((float)($current['s455_tax'] ?? 0), 2)],
-                ['label' => 'Estimated corporation tax total', 'amount' => round((float)$current['estimated_corporation_tax'], 2)],
             ],
             'schedule' => array_values(array_map(
                 static fn(array $row): array => [
@@ -1888,8 +1907,36 @@ final class CorporationTaxComputationService
             'capital_allowance_breakdown' => $breakdown,
         ];
 
-        return (new CorporationTaxProvisionService($this))
+        $strictPosition = (new CorporationTaxProvisionService($this))
             ->fetchAccountingPeriodPosition($companyId, $accountingPeriodId);
+        if (!empty($strictPosition['available'])) {
+            return $strictPosition;
+        }
+
+        $position = (new CorporationTaxReturnPositionService($this))
+            ->fetchCurrentAccountingPeriodEstimate(
+                $companyId,
+                $accountingPeriodId,
+                $accountingPeriod,
+                $profitAndLoss,
+                $periodEnd
+            );
+        if (empty($position['available'])) {
+            return $position;
+        }
+
+        $posted = round((float)($profitAndLoss['posted_corporation_tax_charge'] ?? 0), 2);
+        $estimatedCharge = round((float)($position['estimated_tax_charge']
+            ?? $position['tax_payable']
+            ?? 0), 2);
+
+        return array_merge($position, [
+            'posted_corporation_tax_charge' => $posted,
+            'posted_tax_charge' => $posted,
+            'unposted_corporation_tax_adjustment' => round($estimatedCharge - $posted, 2),
+            'unposted_tax_charge_adjustment' => round($estimatedCharge - $posted, 2),
+            'status' => 'preview',
+        ]);
     }
 
     /**

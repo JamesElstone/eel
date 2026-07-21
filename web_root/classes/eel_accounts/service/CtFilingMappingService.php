@@ -60,7 +60,7 @@ final class CtFilingMappingService
         if ($targetType === self::TARGET_RIM
             && $version === 'V3' && $artifactVersion === 'V1.994') {
             return [
-                'profile_name' => 'reviewed_ct600_v3_v1_994',
+                'profile_name' => 'reviewed_ct600_v3_v1_994_return_v2',
                 'natural_identity' => ['form_version' => 'V3', 'artifact_version' => 'V1.994'],
                 'mappings' => [
                     ['canonical_key' => 'identity.company_name', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyInformation/CompanyName'],
@@ -77,10 +77,10 @@ final class CtFilingMappingService
                     ['canonical_key' => 'computation.summary.taxable_profit', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/ChargeableProfits'],
                     ['canonical_key' => 'computation.summary.ordinary_corporation_tax', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/NetCorporationTaxChargeable'],
                     ['canonical_key' => 'filing_decisions.associated_company_count', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/CorporationTaxChargeable/AssociatedCompanies/ThisPeriod'],
-                    ['canonical_key' => 'computation.summary.s455_tax', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/LoansToParticipators'],
+                    ['canonical_key' => 'return_position.ct600a_a80', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/LoansToParticipators'],
                     ['canonical_key' => 'computation.summary.ordinary_corporation_tax', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/NetCorporationTaxLiability'],
-                    ['canonical_key' => 'computation.summary.estimated_corporation_tax', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/TaxChargeable'],
-                    ['canonical_key' => 'computation.summary.estimated_corporation_tax', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/TaxPayable'],
+                    ['canonical_key' => 'return_position.tax_payable', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/TaxChargeable'],
+                    ['canonical_key' => 'return_position.tax_payable', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/TaxPayable'],
                     ['canonical_key' => 'filing_decisions.aia_claimed_in_trade', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/AllowancesAndCharges/AIACapitalAllowancesInc'],
                     ['canonical_key' => 'filing_decisions.special_rate_pool_capital_allowances', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/AllowancesAndCharges/MachineryAndPlantSpecialRatePool/CapitalAllowances'],
                     ['canonical_key' => 'filing_decisions.special_rate_pool_balancing_charges', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/AllowancesAndCharges/MachineryAndPlantSpecialRatePool/BalancingCharges'],
@@ -109,7 +109,7 @@ final class CtFilingMappingService
         if ($targetType === self::TARGET_COMPUTATION
             && in_array($version, ['2024', '2025'], true) && $artifactVersion === 'V1.0.0') {
             return [
-                'profile_name' => 'reviewed_ct_computation_' . $version . '_v1_0_0',
+                'profile_name' => 'reviewed_ct_computation_' . $version . '_v1_0_0_return_v2',
                 'natural_identity' => ['taxonomy_version' => $version, 'artifact_version' => 'V1.0.0'],
                 'mappings' => [
                     ['canonical_key' => 'identity.company_name', 'local_name' => 'CompanyName', 'period_type' => 'instant', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
@@ -126,8 +126,8 @@ final class CtFilingMappingService
                     ['canonical_key' => 'computation.summary.losses_used', 'local_name' => 'TradingLossesBroughtForwardAmountUsedAgainstTotalProfits', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
                     ['canonical_key' => 'computation.summary.taxable_profit', 'local_name' => 'TotalProfitsChargeableToCorporationTax', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
                     ['canonical_key' => 'computation.summary.ordinary_corporation_tax', 'local_name' => 'CorporationTaxChargeable', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
-                    ['canonical_key' => 'computation.summary.s455_tax', 'local_name' => 'TaxPayableOnLoansToParticipators', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
-                    ['canonical_key' => 'computation.summary.estimated_corporation_tax', 'local_name' => 'NetTaxPayable', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
+                    ['canonical_key' => 'return_position.ct600a_a80', 'local_name' => 'TaxPayableOnLoansToParticipators', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
+                    ['canonical_key' => 'return_position.tax_payable', 'local_name' => 'NetTaxPayable', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
                 ],
                 'unsupported_decisions' => [],
             ];

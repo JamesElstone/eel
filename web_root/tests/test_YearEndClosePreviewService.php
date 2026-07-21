@@ -187,6 +187,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $postedClose = $retainedEarningsService->postClose($companyId, $accountingPeriodId, 'test');
                 $harness->assertSame(true, (bool)($postedClose['success'] ?? false));
 
+                yearEndClosePreviewCompleteReturnInputs($companyId, $accountingPeriodId);
                 $persisted = (new \eel_accounts\Service\CorporationTaxComputationService())
                     ->persistSummariesForYearEndLock($companyId, $accountingPeriodId);
                 $harness->assertSame(true, (bool)($persisted['success'] ?? false));
@@ -233,6 +234,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $accountingPeriodId);
                 test_confirm_ct_period_facts($companyId, $accountingPeriodId);
 
+                yearEndClosePreviewCompleteReturnInputs($companyId, $accountingPeriodId);
                 $persisted = $service->persistSummariesForYearEndLock($companyId, $accountingPeriodId);
                 $harness->assertSame(true, (bool)($persisted['success'] ?? false));
                 $harness->assertTrue(InterfaceDB::countWhere('corporation_tax_computation_runs', [
@@ -580,6 +582,29 @@ function yearEndClosePreviewInsertJournal(int $companyId, int $accountingPeriodI
                 'line_description' => 'Year-end close preview fixture',
             ]
         );
+    }
+}
+
+function yearEndClosePreviewCompleteReturnInputs(int $companyId, int $accountingPeriodId): void
+{
+    $scopeService = new \eel_accounts\Service\CorporationTaxFilingScopeService();
+    foreach (array_keys($scopeService->definitions()) as $scopeField) {
+        $saved = $scopeService->saveAnswer($companyId, $accountingPeriodId, $scopeField, 'no', 'test');
+        if (empty($saved['success'])) {
+            throw new RuntimeException('CT filing scope fixture failed: ' . implode(' ', (array)($saved['errors'] ?? [])));
+        }
+    }
+    $ct600aService = new \eel_accounts\Service\Ct600aService();
+    $review = $ct600aService->saveReview(
+        $companyId,
+        $accountingPeriodId,
+        array_fill_keys(array_keys($ct600aService->reviewQuestions()), 'no'),
+        'director',
+        'Fixture Director',
+        'No section 464A arrangements in the synthetic fixture.'
+    );
+    if (empty($review['success'])) {
+        throw new RuntimeException('CT600A fixture review failed: ' . implode(' ', (array)($review['errors'] ?? [])));
     }
 }
 

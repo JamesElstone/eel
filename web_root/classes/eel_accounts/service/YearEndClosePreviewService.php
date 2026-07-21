@@ -796,15 +796,23 @@ final class YearEndClosePreviewService
         }
 
         $estimated = round((float)($estimate['estimated_corporation_tax'] ?? 0), 2);
-        $posted = round((float)($estimate['posted_corporation_tax_charge'] ?? 0), 2);
+        $estimatedTaxCharge = round((float)($estimate['estimated_tax_charge'] ?? $estimated), 2);
+        $ordinaryTax = round((float)($estimate['ordinary_corporation_tax'] ?? 0), 2);
+        $ct600aTax = round((float)($estimate['ct600a_tax'] ?? 0), 2);
+        $posted = round((float)($estimate['posted_tax_charge'] ?? $estimate['posted_corporation_tax_charge'] ?? 0), 2);
         $delta = round(
-            (float)($estimate['unposted_corporation_tax_adjustment'] ?? ($estimated - $posted)),
+            (float)($estimate['unposted_tax_charge_adjustment']
+                ?? $estimate['unposted_corporation_tax_adjustment']
+                ?? ($estimatedTaxCharge - $posted)),
             2
         );
         if (abs($delta) < 0.005) {
             return [
                 'adjustments' => [],
+                'ordinary_corporation_tax' => $ordinaryTax,
+                'ct600a_tax' => $ct600aTax,
                 'estimated_corporation_tax' => $estimated,
+                'estimated_tax_charge' => $estimatedTaxCharge,
                 'posted_corporation_tax_charge' => $posted,
                 'unposted_corporation_tax_adjustment' => 0.0,
                 'reliable' => true,
@@ -818,7 +826,10 @@ final class YearEndClosePreviewService
         if ($expenseNominal === null || $liabilityNominal === null) {
             return [
                 'adjustments' => [],
+                'ordinary_corporation_tax' => $ordinaryTax,
+                'ct600a_tax' => $ct600aTax,
                 'estimated_corporation_tax' => $estimated,
+                'estimated_tax_charge' => $estimatedTaxCharge,
                 'posted_corporation_tax_charge' => $posted,
                 'unposted_corporation_tax_adjustment' => $delta,
                 'reliable' => false,
@@ -855,7 +866,10 @@ final class YearEndClosePreviewService
 
         return [
             'adjustments' => $adjustments,
+            'ordinary_corporation_tax' => $ordinaryTax,
+            'ct600a_tax' => $ct600aTax,
             'estimated_corporation_tax' => $estimated,
+            'estimated_tax_charge' => $estimatedTaxCharge,
             'posted_corporation_tax_charge' => $posted,
             'unposted_corporation_tax_adjustment' => $delta,
             'reliable' => true,

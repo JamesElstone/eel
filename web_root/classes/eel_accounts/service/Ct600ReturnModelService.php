@@ -10,7 +10,7 @@ namespace eel_accounts\Service;
  */
 final class Ct600ReturnModelService
 {
-    public const MODEL_VERSION = 'ct600-return-model-v2';
+    public const MODEL_VERSION = 'ct600-return-model-v3';
 
     private ?\Closure $filingModelLoader;
     private ?\Closure $rimResolver;
@@ -90,6 +90,10 @@ final class Ct600ReturnModelService
             (array)($filing['facts'] ?? []),
             $this->flatten(['ct600' => $returnModel]),
             [
+                'return_position.ct600a_a80' => (float)($returnModel['ct600a']['tax_payable'] ?? 0),
+                'return_position.tax_payable' => (float)$returnModel['amounts']['tax_payable'],
+                // Historical active mapping profiles remain readable until
+                // the reviewed return-v2 profile is prepared and activated.
                 'computation.summary.s455_tax' => (float)($returnModel['ct600a']['tax_payable'] ?? 0),
                 'computation.summary.estimated_corporation_tax' => (float)$returnModel['amounts']['tax_payable'],
             ]
@@ -105,7 +109,7 @@ final class Ct600ReturnModelService
         }
 
         $sourceManifest = [
-            'manifest_version' => 'ct600-source-manifest-v1',
+            'manifest_version' => 'ct600-source-manifest-v2',
             'return_model_version' => self::MODEL_VERSION,
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
@@ -167,7 +171,6 @@ final class Ct600ReturnModelService
         $taxableProfit = $this->number($summary, 'taxable_profit');
         $taxableLoss = $this->number($summary, 'taxable_loss');
         $ordinaryTax = $this->number($summary, 'ordinary_corporation_tax');
-        $taxPayable = $this->number($summary, 'estimated_corporation_tax');
         $ct600a = (array)($model['ct600a'] ?? []);
         $ct600aTax = round((float)($ct600a['tax_payable'] ?? 0), 2);
         $taxPayable = round($ordinaryTax + $ct600aTax, 2);

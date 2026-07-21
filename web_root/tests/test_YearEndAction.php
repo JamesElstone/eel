@@ -226,8 +226,33 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
                 $harness->skip('Tax readiness year-end acknowledgement schema is not available on the default InterfaceDB connection.');
             }
 
+            $companyId = (int)$fixture['company_id'];
+            $accountingPeriodId = (int)$fixture['accounting_period_id'];
+            test_confirm_ct_period_facts($companyId, $accountingPeriodId);
+            $scopeService = new \eel_accounts\Service\CorporationTaxFilingScopeService();
+            foreach (array_keys($scopeService->definitions()) as $scopeField) {
+                $savedScope = $scopeService->saveAnswer(
+                    $companyId,
+                    $accountingPeriodId,
+                    $scopeField,
+                    'no',
+                    'test'
+                );
+                $harness->assertTrue(!empty($savedScope['success']));
+            }
+            $ct600aService = new \eel_accounts\Service\Ct600aService();
+            $savedReview = $ct600aService->saveReview(
+                $companyId,
+                $accountingPeriodId,
+                array_fill_keys(array_keys($ct600aService->reviewQuestions()), 'no'),
+                'director',
+                'Primary Director',
+                ''
+            );
+            $harness->assertTrue(!empty($savedReview['success']));
+
             $result = $instance->handle(
-                yearEndActionDirectorLoanTestRequest((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'save_tax_readiness_acknowledgement'),
+                yearEndActionDirectorLoanTestRequest($companyId, $accountingPeriodId, 'save_tax_readiness_acknowledgement'),
                 createTestPageServiceFramework()
             );
 

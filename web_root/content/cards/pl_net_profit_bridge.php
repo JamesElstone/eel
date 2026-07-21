@@ -28,10 +28,13 @@ final class _pl_net_profit_bridgeCard extends CardBaseFramework
             ['Gross profit', $summary['gross_profit'] ?? 0, 'strong'],
             ['Less operating expenses', -1 * (float)($summary['operating_expense_total'] ?? ($summary['expense_total'] ?? 0)), ''],
             ['Profit before tax', $summary['profit_before_tax'] ?? 0, 'strong'],
-            ['Posted Corporation Tax charge', -1 * (float)($summary['posted_corporation_tax_charge'] ?? 0), ''],
-            ['Profit after posted tax', $summary['profit_after_posted_tax'] ?? ($summary['net_profit'] ?? 0), 'strong'],
-            ['Estimated CT still to post', -1 * (float)($summary['unposted_corporation_tax_adjustment'] ?? 0), ''],
+            ['Ordinary Corporation Tax component [CT600 box 475]', $summary['ordinary_corporation_tax'] ?? 0, ''],
+            ['CT600A component [A80 / CT600 box 480]', $summary['ct600a_tax'] ?? 0, ''],
+            ['L2P relief component', -1 * (float)($summary['l2p_relief_receivable'] ?? 0), ''],
+            ['Less net estimated tax charge', -1 * (float)($summary['estimated_tax_charge'] ?? $summary['estimated_corporation_tax'] ?? 0), ''],
             ['Profit after estimated tax', $summary['profit_after_estimated_tax'] ?? ($summary['net_profit'] ?? 0), 'strong'],
+            ['Of total tax: already posted', $summary['posted_corporation_tax_charge'] ?? 0, ''],
+            ['Of total tax: still to post', $summary['unposted_corporation_tax_adjustment'] ?? 0, ''],
         ];
         $html = '';
         foreach ($rows as $row) {

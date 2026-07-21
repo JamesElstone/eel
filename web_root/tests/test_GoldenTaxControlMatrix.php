@@ -206,6 +206,7 @@ $harness->check('GoldenTaxControlMatrix', 'persists the exact loss checkpoint us
             goldenTaxControlRequireSuccess(
                 (new \eel_accounts\Service\AssetService())->runDepreciation($companyId, $accountingPeriodId)
             );
+            goldenTaxControlCompleteReturnInputs($companyId, $accountingPeriodId);
         }
 
         $priorPersistence = (new \eel_accounts\Service\CorporationTaxComputationService())
@@ -470,6 +471,29 @@ function goldenTaxControlRequireSuccess(array $result): void
     if (empty($result['success'])) {
         throw new RuntimeException(implode(' ', array_map('strval', (array)($result['errors'] ?? ['Golden tax operation failed.']))));
     }
+}
+
+function goldenTaxControlCompleteReturnInputs(int $companyId, int $accountingPeriodId): void
+{
+    $scopeService = new \eel_accounts\Service\CorporationTaxFilingScopeService();
+    foreach (array_keys($scopeService->definitions()) as $scopeField) {
+        goldenTaxControlRequireSuccess($scopeService->saveAnswer(
+            $companyId,
+            $accountingPeriodId,
+            $scopeField,
+            'no',
+            'golden_tax_control'
+        ));
+    }
+    $ct600aService = new \eel_accounts\Service\Ct600aService();
+    goldenTaxControlRequireSuccess($ct600aService->saveReview(
+        $companyId,
+        $accountingPeriodId,
+        array_fill_keys(array_keys($ct600aService->reviewQuestions()), 'no'),
+        'director',
+        'Golden Fixture Director',
+        'No section 464A arrangements in the synthetic golden fixture.'
+    ));
 }
 
 function goldenTaxControlMoney(mixed $amount): string

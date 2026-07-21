@@ -12,6 +12,7 @@ namespace eel_accounts\Service;
 final class CorporationTaxProvisionService
 {
     public const JOURNAL_TAG = 'corporation_tax_provision';
+    public const RELIEF_JOURNAL_TAG = 'corporation_tax_l2p_relief';
 
     public function __construct(private readonly ?CorporationTaxComputationService $computationService = null)
     {
@@ -44,11 +45,21 @@ final class CorporationTaxProvisionService
             return ['available' => false, 'errors' => (array)($summary['errors'] ?? ['The CT estimate is not available.'])];
         }
 
-        return $this->positionFromSummary(
+        $returnPosition = (new CorporationTaxReturnPositionService($computation))->fetchForCtPeriod(
             $companyId,
             $accountingPeriodId,
             $resolvedCtPeriodId,
             $summary
+        );
+        if (empty($returnPosition['available'])) {
+            return ['available' => false, 'errors' => (array)($returnPosition['errors'] ?? ['The Corporation Tax return position is not available.'])];
+        }
+
+        return $this->positionFromSummary(
+            $companyId,
+            $accountingPeriodId,
+            $resolvedCtPeriodId,
+            $returnPosition
         );
     }
 
@@ -58,7 +69,9 @@ final class CorporationTaxProvisionService
             return ['available' => false, 'errors' => (array)($summary['errors'] ?? ['The CT estimate is not available.'])];
         }
 
-        $estimate = round((float)($summary['estimated_corporation_tax'] ?? 0), 2);
+        $estimate = round((float)($summary['tax_payable'] ?? $summary['estimated_corporation_tax'] ?? 0), 2);
+        $ordinaryTax = round((float)($summary['ordinary_corporation_tax'] ?? 0), 2);
+        $ct600aTax = round((float)($summary['ct600a_tax'] ?? (($summary['ct600a'] ?? [])['tax_payable'] ?? 0)), 2);
         $journals = $this->fetchProvisionJournals($companyId, $accountingPeriodId, $ctPeriodId);
         $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
         $expenseNominalId = (int)($settings['corporation_tax_expense_nominal_id'] ?? 0);
@@ -73,6 +86,9 @@ final class CorporationTaxProvisionService
         return [
             'available' => true,
             'ct_period_id' => $ctPeriodId,
+            'ordinary_corporation_tax' => $ordinaryTax,
+            'ct600a_tax' => $ct600aTax,
+            'tax_payable' => $estimate,
             'estimated_corporation_tax' => $estimate,
             'posted_corporation_tax_charge' => $posted,
             'unposted_corporation_tax_adjustment' => $unposted,
@@ -149,17 +165,45 @@ final class CorporationTaxProvisionService
         }
 
         $estimated = round(array_sum(array_map(static fn(array $period): float => (float)($period['estimated_corporation_tax'] ?? 0), $periodPositions)), 2);
+        $ordinaryTax = round(array_sum(array_map(static fn(array $period): float => (float)($period['ordinary_corporation_tax'] ?? 0), $periodPositions)), 2);
+        $ct600aTax = round(array_sum(array_map(static fn(array $period): float => (float)($period['ct600a_tax'] ?? 0), $periodPositions)), 2);
         $posted = round(array_sum(array_map(static fn(array $period): float => (float)($period['posted_corporation_tax_charge'] ?? 0), $periodPositions)), 2);
         $unposted = round($estimated - $posted, 2);
+        $hmrcPayment = (new HmrcObligationService())->fetchCtPaymentPositionForAccountingPeriod($companyId, $accountingPeriodId);
+        $amountPaid = round((float)($hmrcPayment['amount_paid'] ?? 0), 2);
+        $l2pRelief = (new Ct600aService())->fetchL2pReliefForAccountingPeriod($companyId, $accountingPeriodId);
+        $reliefReceivable = !empty($l2pRelief['available'])
+            ? round((float)($l2pRelief['relief_receivable'] ?? 0), 2)
+            : 0.0;
+        $postedRelief = $this->postedL2pRelief($companyId, $accountingPeriodId);
+        $unpostedRelief = round($reliefReceivable - $postedRelief, 2);
+        $estimatedTaxCharge = round($estimated - $reliefReceivable, 2);
+        $postedTaxCharge = round($posted - $postedRelief, 2);
+        $unpostedTaxCharge = round($estimatedTaxCharge - $postedTaxCharge, 2);
 
         return [
             'available' => $errors === [],
             'errors' => $errors,
             'periods' => $periodPositions,
+            'ordinary_corporation_tax' => $ordinaryTax,
+            'ct600a_tax' => $ct600aTax,
+            'tax_payable' => $estimated,
             'estimated_corporation_tax' => $estimated,
             'posted_corporation_tax_charge' => $posted,
             'unposted_corporation_tax_adjustment' => $unposted,
-            'status' => $this->positionStatus($estimated, $posted, $unposted),
+            'hmrc_payment' => $hmrcPayment,
+            'amount_paid' => $amountPaid,
+            'payment_outstanding' => !empty($hmrcPayment['available'])
+                ? round(max(0.0, $estimated - $amountPaid), 2)
+                : null,
+            'l2p_relief' => $l2pRelief,
+            'l2p_relief_receivable' => $reliefReceivable,
+            'posted_l2p_relief' => $postedRelief,
+            'unposted_l2p_relief' => $unpostedRelief,
+            'estimated_tax_charge' => $estimatedTaxCharge,
+            'posted_tax_charge' => $postedTaxCharge,
+            'unposted_tax_charge_adjustment' => $unpostedTaxCharge,
+            'status' => $this->positionStatus($estimatedTaxCharge, $postedTaxCharge, $unpostedTaxCharge),
         ];
     }
 
@@ -238,7 +282,10 @@ final class CorporationTaxProvisionService
                 'system_generated',
                 null,
                 null,
-                'Posted as a delta so the configured Corporation Tax expense and liability nominals match the latest CT estimate at CT period end.',
+                'Posted as a delta so the configured Corporation Tax expense and liability nominals match the latest CT return position at CT period end. '
+                    . 'Ordinary CT [box 475]: ' . number_format((float)($position['ordinary_corporation_tax'] ?? 0), 2, '.', '')
+                    . '; CT600A [A80 / box 480]: ' . number_format((float)($position['ct600a_tax'] ?? 0), 2, '.', '')
+                    . '; total: ' . number_format((float)($position['tax_payable'] ?? 0), 2, '.', '') . '.',
                 $changedBy
             );
             if (empty($result['success'])) {
@@ -326,6 +373,13 @@ final class CorporationTaxProvisionService
             }
         }
 
+        $reliefResult = $this->postL2pReliefForAccountingPeriod($companyId, $accountingPeriodId, $changedBy);
+        if (empty($reliefResult['success'])) {
+            foreach ((array)($reliefResult['errors'] ?? ['The L2P relief receivable could not be posted.']) as $error) {
+                $errors[] = (string)$error;
+            }
+        }
+
         $finalPosition = $this->fetchAccountingPeriodPosition($companyId, $accountingPeriodId);
         if (!empty($finalPosition['available'])) {
             $sync = (new \eel_accounts\Service\HmrcObligationService())->syncCtPaymentAmountForAccountingPeriod(
@@ -346,6 +400,66 @@ final class CorporationTaxProvisionService
             'results' => $results,
             'position' => $finalPosition,
         ];
+    }
+
+    /** @return array<string,mixed> */
+    public function postL2pReliefForAccountingPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        string $changedBy = 'web_app'
+    ): array {
+        $relief = (new Ct600aService())->fetchL2pReliefForAccountingPeriod($companyId, $accountingPeriodId);
+        if (empty($relief['available'])) {
+            return ['success' => false, 'errors' => (array)($relief['errors'] ?? ['The L2P relief position is unavailable.'])];
+        }
+        $required = round((float)($relief['relief_receivable'] ?? 0), 2);
+        $posted = $this->postedL2pRelief($companyId, $accountingPeriodId);
+        $delta = round($required - $posted, 2);
+        if (abs($delta) < 0.005) {
+            return ['success' => true, 'errors' => [], 'skipped' => true, 'relief' => $relief];
+        }
+
+        $accountingPeriod = (new \eel_accounts\Repository\AccountingPeriodRepository())
+            ->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
+            return ['success' => false, 'errors' => ['The accounting period could not be found.']];
+        }
+        $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
+        $expenseNominalId = (int)($settings['corporation_tax_expense_nominal_id'] ?? 0);
+        $liabilityNominalId = (int)($settings['corporation_tax_liability_nominal_id'] ?? 0);
+        if ($expenseNominalId <= 0 || $liabilityNominalId <= 0) {
+            return ['success' => false, 'errors' => ['Corporation Tax expense and liability nominals are required before posting L2P relief.']];
+        }
+
+        $amount = abs($delta);
+        $label = 'L2P relief receivable for ' . (string)($accountingPeriod['period_start'] ?? '')
+            . ' to ' . (string)($accountingPeriod['period_end'] ?? '');
+        $lines = $delta > 0
+            ? [
+                ['nominal_account_id' => $liabilityNominalId, 'debit' => $amount, 'credit' => 0.0, 'line_description' => $label],
+                ['nominal_account_id' => $expenseNominalId, 'debit' => 0.0, 'credit' => $amount, 'line_description' => $label],
+            ]
+            : [
+                ['nominal_account_id' => $expenseNominalId, 'debit' => $amount, 'credit' => 0.0, 'line_description' => $label],
+                ['nominal_account_id' => $liabilityNominalId, 'debit' => 0.0, 'credit' => $amount, 'line_description' => $label],
+            ];
+        $result = (new \eel_accounts\Service\ManualJournalService())->saveTaggedJournal(
+            $companyId,
+            $accountingPeriodId,
+            self::RELIEF_JOURNAL_TAG,
+            $this->reliefJournalKey($accountingPeriodId),
+            (string)$accountingPeriod['period_end'],
+            $delta > 0 ? 'Corporation Tax L2P relief receivable' : 'Corporation Tax L2P relief receivable reversal',
+            $lines,
+            'system_generated',
+            null,
+            null,
+            'Separate transaction-derived L2P relief receivable. This does not rewrite the accepted CT600A A80 amount.',
+            $changedBy
+        );
+        \eel_accounts\Support\RequestCache::clear();
+
+        return $result + ['relief' => $relief];
     }
 
     private function validCtPeriod(
@@ -447,6 +561,56 @@ final class CorporationTaxProvisionService
     private function journalKey(int $ctPeriodId): string
     {
         return 'ct_period_' . $ctPeriodId;
+    }
+
+    private function reliefJournalKey(int $accountingPeriodId): string
+    {
+        return 'accounting_period_' . $accountingPeriodId;
+    }
+
+    private function postedL2pRelief(int $companyId, int $accountingPeriodId): float
+    {
+        $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
+        $expenseNominalId = (int)($settings['corporation_tax_expense_nominal_id'] ?? 0);
+        $amount = 0.0;
+        foreach ($this->fetchL2pReliefJournals($companyId, $accountingPeriodId) as $journal) {
+            $amount -= $this->journalChargeAmount($journal, $expenseNominalId);
+        }
+
+        return round($amount, 2);
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function fetchL2pReliefJournals(int $companyId, int $accountingPeriodId): array
+    {
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT j.id, j.journal_date, j.description, j.is_posted,
+                    jem.journal_tag, jem.journal_key, jem.entry_mode
+             FROM journal_entry_metadata jem
+             INNER JOIN journals j ON j.id = jem.journal_id
+             WHERE jem.company_id = :company_id
+               AND jem.accounting_period_id = :accounting_period_id
+               AND jem.journal_tag = :journal_tag
+               AND jem.journal_key = :journal_key
+               AND j.is_posted = 1
+             ORDER BY j.id ASC',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'journal_tag' => self::RELIEF_JOURNAL_TAG,
+                'journal_key' => $this->reliefJournalKey($accountingPeriodId),
+            ]
+        );
+        foreach ($rows as &$row) {
+            $row['lines'] = \InterfaceDB::fetchAll(
+                'SELECT nominal_account_id, debit, credit FROM journal_lines
+                 WHERE journal_id = :journal_id ORDER BY id',
+                ['journal_id' => (int)$row['id']]
+            );
+        }
+        unset($row);
+
+        return $rows;
     }
 
     private function fetchProvisionJournals(int $companyId, int $accountingPeriodId, int $ctPeriodId): array

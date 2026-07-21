@@ -84,7 +84,10 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
                     'ledger_current_year_profit_loss' => 4500.00,
                     'classified_current_year_profit_loss' => 4500.00,
                     'posted_corporation_tax_charge' => 475.00,
+                    'ordinary_corporation_tax' => 1900.00,
+                    'ct600a_tax' => 575.00,
                     'estimated_corporation_tax' => 2475.00,
+                    'estimated_tax_charge' => 2475.00,
                     'unposted_corporation_tax_adjustment' => 2000.00,
                     'tax_periods' => [
                         ['estimated_corporation_tax' => 1900.00],
@@ -95,10 +98,10 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
             ],
         ]);
 
-        $harness->assertTrue(str_contains($html, 'Estimated Corporation Tax'));
-        $harness->assertTrue(str_contains($html, '£ 1,900.00 + £ 575.00 = £ 2,475.00'));
-        $harness->assertTrue(str_contains($html, 'Unposted Corporation Tax deducted'));
-        $harness->assertTrue(str_contains($html, 'Estimated Corporation Tax £ 2,475.00 - posted Corporation Tax £ 475.00 = £ 2,000.00'));
+        $harness->assertTrue(str_contains($html, 'Corporation Tax payable'));
+        $harness->assertTrue(str_contains($html, 'Ordinary CT £ 1,900.00 + CT600A A80 £ 575.00 = £ 2,475.00'));
+        $harness->assertTrue(str_contains($html, 'Unposted tax charge deducted'));
+        $harness->assertTrue(str_contains($html, 'Estimated total tax charge £ 2,475.00 - posted tax charge £ 475.00 = £ 2,000.00'));
     });
 
     $harness->check(_dividend_capacityCard::class, 'renders warning metric values separately from warning severity', static function () use ($harness, $card): void {

@@ -17,16 +17,27 @@ final class _tax_corporation_tax_summaryCard extends CardBaseFramework
         }
         $summary = (array)$workings['summary'];
         $provision = (array)($workings['provision'] ?? []);
+        $rows = [
+            ['Taxable profit', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['taxable_profit'] ?? 0)],
+            ['Taxable loss', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['taxable_loss'] ?? 0)],
+            ['Ordinary Corporation Tax [CT600 box 475]', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['ordinary_corporation_tax'] ?? 0)],
+            ['Net S455 tax (included within A80)', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['s455_tax'] ?? 0)],
+            ['CT600A net tax payable [A80 / CT600 box 480]', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['ct600a_tax'] ?? 0)],
+            ['Total tax payable [CT600 boxes 510 / 525]', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['tax_payable'] ?? $summary['estimated_corporation_tax'] ?? 0)],
+            ['Effective ordinary CT rate', \eel_accounts\Renderer\TaxCardRenderer::percent($summary['estimated_rate'] ?? 0)],
+            ['Posted CT provision', \eel_accounts\Renderer\TaxCardRenderer::money($context, $provision['posted_corporation_tax_charge'] ?? 0)],
+            ['Unposted P&L impact', \eel_accounts\Renderer\TaxCardRenderer::money($context, $provision['unposted_corporation_tax_adjustment'] ?? 0)],
+        ];
+        if (($summary['payment_outstanding'] ?? null) !== null) {
+            $rows[] = ['HMRC payments recorded for accounting period', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['amount_paid'] ?? 0)];
+            $rows[] = ['HMRC payment outstanding for accounting period', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['payment_outstanding'])];
+        }
+        if ((float)($summary['accounting_period_l2p_relief_receivable'] ?? 0) >= 0.005) {
+            $rows[] = ['Separate L2P relief receivable for accounting period', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['accounting_period_l2p_relief_receivable'])];
+            $rows[] = ['Net tax charge in the accounts for accounting period', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['accounting_period_estimated_tax_charge'] ?? 0)];
+        }
         return \eel_accounts\Renderer\TaxCardRenderer::header('corporation_tax')
-            . \eel_accounts\Renderer\TaxCardRenderer::summaryGrid([
-                ['Taxable profit', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['taxable_profit'] ?? 0)],
-                ['Taxable loss', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['taxable_loss'] ?? 0)],
-                ['Corporation Tax on profits', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['ordinary_corporation_tax'] ?? $summary['estimated_corporation_tax'] ?? 0)],
-                ['s455 participator-loan tax', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['s455_tax'] ?? 0)],
-                ['Estimated Corporation Tax total', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['estimated_corporation_tax'] ?? 0)],
-                ['Effective rate', \eel_accounts\Renderer\TaxCardRenderer::percent($summary['estimated_rate'] ?? 0)],
-                ['Posted CT provision', \eel_accounts\Renderer\TaxCardRenderer::money($context, $provision['posted_corporation_tax_charge'] ?? 0)],
-                ['Unposted P&L impact', \eel_accounts\Renderer\TaxCardRenderer::money($context, $provision['unposted_corporation_tax_adjustment'] ?? 0)],
-            ]);
+            . \eel_accounts\Renderer\TaxCardRenderer::summaryGrid($rows)
+            . '<div class="helper">Net S455 tax is supporting evidence within CT600A A80. It is not added to the total a second time.</div>';
     }
 }

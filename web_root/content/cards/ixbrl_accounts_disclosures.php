@@ -45,14 +45,6 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                 'accountingPeriodId' => ':company.accounting_period_id',
             ],
         ], [
-            'key' => 'corporation_tax_filing_scope',
-            'service' => \eel_accounts\Service\CorporationTaxFilingScopeService::class,
-            'method' => 'fetch',
-            'params' => [
-                'companyId' => ':company.id',
-                'accountingPeriodId' => ':company.accounting_period_id',
-            ],
-        ], [
             'key' => 'ixbrl_filing_approval',
             'service' => \eel_accounts\Service\IxbrlAccountsFilingApprovalService::class,
             'method' => 'status',
@@ -91,7 +83,6 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         $suggestions = (array)($result['suggested_disclosures'] ?? []);
         $suggestionSources = (array)($result['suggestion_sources'] ?? []);
         $directorLoanDisclosure = (array)($context['services']['director_loan_disclosure'] ?? []);
-        $filingScope = (array)($context['services']['corporation_tax_filing_scope'] ?? []);
         $approvalStatus = (array)($context['services']['ixbrl_filing_approval'] ?? []);
         foreach (self::EXPLICIT_SIMPLE_NOTE_FIELDS as $field) {
             unset($suggestions[$field], $suggestionSources[$field]);
@@ -307,46 +298,8 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                         ' . $this->yesNo('has_financial_commitments_guarantees_or_contingencies', 'Are there any financial commitments, guarantees or contingencies requiring disclosure?', $display['has_financial_commitments_guarantees_or_contingencies'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
                     </section>
                 </div>
-                ' . $this->corporationTaxScope($filingScope, $companyId, $accountingPeriodId) . '
                 ' . $this->approvalPanel($approvalStatus, $companyId, $accountingPeriodId) . '
         </div>';
-    }
-
-    private function corporationTaxScope(array $scope, int $companyId, int $accountingPeriodId): string
-    {
-        if (empty($scope['available'])) {
-            return '<section class="panel-soft"><h3 class="card-title">Corporation Tax filing scope</h3><div class="standout helper">'
-                . HelperFramework::escape((string)(($scope['errors'] ?? [])[0] ?? 'The Corporation Tax scope review is unavailable.')) . '</div></section>';
-        }
-        $answers = (array)($scope['answers'] ?? []);
-        $rows = '';
-        foreach ((array)($scope['definitions'] ?? []) as $key => $definition) {
-            $answer = (string)($answers[$key] ?? 'unresolved');
-            $rows .= '<form class="panel-soft" method="post" action="?page=disclosures" data-ajax="true">'
-                . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
-                . '<input type="hidden" name="card_action" value="Ixbrl"><input type="hidden" name="intent" value="save_ct_filing_scope_answer">'
-                . '<input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
-                . '<input type="hidden" name="scope_field" value="' . HelperFramework::escape((string)$key) . '">'
-                . '<div class="status-head"><div><strong>' . HelperFramework::escape((string)$definition['page']) . ': ' . HelperFramework::escape((string)$definition['label']) . '</strong>'
-                . '<div class="helper">' . HelperFramework::escape((string)$definition['question']) . '</div></div>'
-                . '<a class="button button-inline" target="_blank" rel="noopener noreferrer" href="' . HelperFramework::escape((string)$definition['url']) . '">HMRC guidance</a></div>'
-                . '<div class="actions-row">' . $this->scopeRadio((string)$key, 'no', 'No', $answer)
-                . $this->scopeRadio((string)$key, 'yes', 'Yes', $answer)
-                . $this->scopeRadio((string)$key, 'unsure', 'Unsure', $answer) . '</div></form>';
-        }
-        $status = !empty($scope['complete'])
-            ? '<span class="badge success">Confirmed in scope</span>'
-            : '<span class="badge danger">Incomplete or unsupported</span>';
-        return '<section class="panel-soft settings-stack"><div class="status-head"><h3 class="card-title">Corporation Tax filing scope</h3>' . $status . '</div>'
-            . '<div class="helper">CT600A is supported separately. Confirm that none of the other supplementary-page circumstances applies. A Yes or Unsure answer blocks filing.</div>'
-            . $rows . '</section>';
-    }
-
-    private function scopeRadio(string $field, string $value, string $label, string $selected): string
-    {
-        $id = 'ct_scope_' . $field . '_' . $value;
-        return '<label for="' . $id . '"><input id="' . $id . '" type="radio" name="scope_answer" value="' . $value
-            . '" required data-submit-on-change="true"' . ($selected === $value ? ' checked' : '') . '> ' . $label . '</label>';
     }
 
     private function approvalPanel(array $status, int $companyId, int $accountingPeriodId): string

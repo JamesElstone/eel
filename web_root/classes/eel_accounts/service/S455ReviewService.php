@@ -40,7 +40,8 @@ final class S455ReviewService
         int $companyId,
         int $accountingPeriodId,
         int $ctPeriodId,
-        ?string $evidenceCutoff = null
+        ?string $evidenceCutoff = null,
+        ?string $transactionThroughDate = null
     ): array
     {
         $period = $this->ctPeriod($companyId, $accountingPeriodId, $ctPeriodId);
@@ -58,9 +59,14 @@ final class S455ReviewService
         $windowEnd = (new \DateTimeImmutable($deadline))->modify('-1 day')->format('Y-m-d');
         $windowStatus = substr($cutoff, 0, 10) >= $deadline ? 'window_complete' : 'provisional_window_open';
 
+        $transactionThroughDate = trim((string)$transactionThroughDate);
+        $evidenceThroughDate = $transactionThroughDate !== ''
+            ? min(substr($cutoff, 0, 10), $transactionThroughDate)
+            : $windowEnd;
+        $ledgerStart = $this->ledgerStartDate($companyId, (string)$period['period_start']);
         $evidence = $closeCompanyStatus === 'no'
             ? ['rows' => [], 'errors' => []]
-            : $this->cashEvidence($companyId, (string)$period['period_start'], $windowEnd, $cutoff);
+            : $this->cashEvidence($companyId, $ledgerStart, $evidenceThroughDate, $cutoff);
         $lotsByParty = [];
         $liabilitiesByParty = [];
         $movements = [];
@@ -152,12 +158,17 @@ final class S455ReviewService
         }
 
         $lots = [];
+        $allLots = [];
         $grossPrincipal = 0.0;
         $grossTax = 0.0;
         $qualifyingRepayments = 0.0;
         $reliefTax = 0.0;
         foreach ($lotsByParty as $partyLots) {
             foreach ($partyLots as $lot) {
+                $allLot = $lot;
+                $allLot['remaining_at_period_end'] = round((float)$lot['remaining_at_period_end'], 2);
+                $allLot['remaining'] = round((float)$lot['remaining'], 2);
+                $allLots[] = $allLot;
                 if ((string)$lot['origin_date'] < (string)$period['period_start']
                     || (string)$lot['origin_date'] > (string)$period['period_end']) {
                     continue;
@@ -184,12 +195,13 @@ final class S455ReviewService
         $reliefTax = round($reliefTax, 2);
         $netTax = $closeCompanyStatus === 'yes' ? round(max(0, $grossTax - $reliefTax), 2) : 0.0;
         $basis = [
-            'version' => 's455-cash-v1',
+            'version' => 's455-cash-v2',
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
             'ct_period_id' => $ctPeriodId,
             'period_start' => (string)$period['period_start'],
             'period_end' => (string)$period['period_end'],
+            'ledger_start' => $ledgerStart,
             'repayment_deadline' => $deadline,
             'repayment_window_end' => $windowEnd,
             'evidence_cutoff' => $cutoff,
@@ -197,6 +209,7 @@ final class S455ReviewService
             'close_company_status' => $closeCompanyStatus,
             'close_company' => $closeCompany,
             'lots' => $lots,
+            'all_lots' => $allLots,
             'movements' => array_map(static fn(array $row): array => [
                 'transaction_id' => (int)($row['transaction_id'] ?? 0),
                 'party_id' => (int)($row['party_id'] ?? 0),
@@ -205,6 +218,7 @@ final class S455ReviewService
                 'cash_direction' => (string)($row['cash_direction'] ?? ''),
             ], $movements),
             'repayment_allocations' => $repaymentAllocations,
+            'all_repayment_allocations' => $repaymentAllocations,
             'errors' => array_values(array_unique($errors)),
             'gross_principal' => $grossPrincipal,
             'gross_tax' => $grossTax,
@@ -228,6 +242,37 @@ final class S455ReviewService
             'basis' => $basis,
             'basis_hash' => $basisHash,
             'close_status_calculated' => $closeCompanyStatus !== 'unconfirmed',
+        ];
+    }
+
+    /**
+     * Return transaction-derived loan lots and repayment allocations through a
+     * specified date without treating later repayments as early s455 relief.
+     *
+     * @return array<string,mixed>
+     */
+    public function transactionLedgerThrough(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        string $throughDate,
+        ?string $evidenceCutoff = null
+    ): array {
+        $calculation = $this->calculate(
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId,
+            $evidenceCutoff,
+            $throughDate
+        );
+
+        return [
+            'available' => !empty($calculation['available']),
+            'errors' => (array)($calculation['errors'] ?? []),
+            'all_lots' => (array)($calculation['all_lots'] ?? ($calculation['basis']['all_lots'] ?? [])),
+            'repayment_allocations' => (array)($calculation['all_repayment_allocations']
+                ?? ($calculation['basis']['all_repayment_allocations'] ?? [])),
+            'basis_hash' => (string)($calculation['basis_hash'] ?? ''),
         ];
     }
 
@@ -351,6 +396,19 @@ final class S455ReviewService
         return ['rows' => $rows, 'errors' => $errors];
     }
 
+    private function ledgerStartDate(int $companyId, string $fallback): string
+    {
+        $start = (string)\InterfaceDB::fetchColumn(
+            'SELECT MIN(period_start) FROM accounting_periods WHERE company_id = :company_id',
+            ['company_id' => $companyId]
+        );
+
+        $parsed = \DateTimeImmutable::createFromFormat('!Y-m-d', $start);
+        $valid = $parsed !== false && $parsed->format('Y-m-d') === $start;
+
+        return $valid && $start < $fallback ? $start : $fallback;
+    }
+
     private function rateForDate(string $date): ?float
     {
         $rate = \InterfaceDB::fetchColumn(
@@ -425,6 +483,25 @@ final class S455ReviewService
 
     private function ctPeriod(int $companyId, int $accountingPeriodId, int $ctPeriodId): ?array
     {
+        if ($ctPeriodId < 0) {
+            $reference = CorporationTaxPeriodService::decodeTransientReferenceId($ctPeriodId);
+            if ($reference === null || (int)$reference['accounting_period_id'] !== $accountingPeriodId) {
+                return null;
+            }
+            $projection = (new CorporationTaxPeriodService())->projectForAccountingPeriod(
+                $companyId,
+                $accountingPeriodId
+            );
+            foreach ((array)($projection['periods'] ?? []) as $period) {
+                if ((int)($period['id'] ?? 0) !== $ctPeriodId) {
+                    continue;
+                }
+                $period['ct_period_id'] = $ctPeriodId;
+                return $period;
+            }
+            return null;
+        }
+
         $row = \InterfaceDB::fetchOne(
             'SELECT id AS ct_period_id, company_id, accounting_period_id, sequence_no, period_start, period_end
              FROM corporation_tax_periods

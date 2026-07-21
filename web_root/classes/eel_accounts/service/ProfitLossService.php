@@ -46,10 +46,22 @@ final class ProfitLossService
         $estimatedCorporationTax = !empty($provision['available'])
             ? round((float)($provision['estimated_corporation_tax'] ?? 0), 2)
             : $postedCorporationTaxCharge;
-        $unpostedCorporationTaxAdjustment = !empty($provision['available'])
-            ? round((float)($provision['unposted_corporation_tax_adjustment'] ?? 0), 2)
+        $ordinaryCorporationTax = !empty($provision['available'])
+            ? round((float)($provision['ordinary_corporation_tax'] ?? 0), 2)
+            : $postedCorporationTaxCharge;
+        $ct600aTax = !empty($provision['available'])
+            ? round((float)($provision['ct600a_tax'] ?? 0), 2)
             : 0.0;
-        $profitAfterEstimatedTax = round($profitBeforeTax - $estimatedCorporationTax, 2);
+        $l2pReliefReceivable = !empty($provision['available'])
+            ? round((float)($provision['l2p_relief_receivable'] ?? 0), 2)
+            : 0.0;
+        $estimatedTaxCharge = !empty($provision['available'])
+            ? round((float)($provision['estimated_tax_charge'] ?? $estimatedCorporationTax), 2)
+            : $postedCorporationTaxCharge;
+        $unpostedCorporationTaxAdjustment = !empty($provision['available'])
+            ? round((float)($provision['unposted_tax_charge_adjustment'] ?? $provision['unposted_corporation_tax_adjustment'] ?? 0), 2)
+            : 0.0;
+        $profitAfterEstimatedTax = round($profitBeforeTax - $estimatedTaxCharge, 2);
 
         $journalCount = (int)($totals['journal_count'] ?? 0);
         $transactionCount = $this->transactionCount($companyId, $accountingPeriodId, (string)$accountingPeriod['period_start'], $effectiveEnd);
@@ -81,7 +93,11 @@ final class ProfitLossService
             'profit_before_tax' => $profitBeforeTax,
             'corporation_tax_expense_total' => $postedCorporationTaxCharge,
             'posted_corporation_tax_charge' => $postedCorporationTaxCharge,
+            'ordinary_corporation_tax' => $ordinaryCorporationTax,
+            'ct600a_tax' => $ct600aTax,
+            'l2p_relief_receivable' => $l2pReliefReceivable,
             'estimated_corporation_tax' => $estimatedCorporationTax,
+            'estimated_tax_charge' => $estimatedTaxCharge,
             'unposted_corporation_tax_adjustment' => $unpostedCorporationTaxAdjustment,
             'profit_after_posted_tax' => $netProfit,
             'profit_after_estimated_tax' => $profitAfterEstimatedTax,
@@ -733,7 +749,11 @@ final class ProfitLossService
             'profit_before_tax' => 0.0,
             'corporation_tax_expense_total' => 0.0,
             'posted_corporation_tax_charge' => 0.0,
+            'ordinary_corporation_tax' => 0.0,
+            'ct600a_tax' => 0.0,
+            'l2p_relief_receivable' => 0.0,
             'estimated_corporation_tax' => 0.0,
+            'estimated_tax_charge' => 0.0,
             'unposted_corporation_tax_adjustment' => 0.0,
             'profit_after_posted_tax' => 0.0,
             'profit_after_estimated_tax' => 0.0,
@@ -816,36 +836,59 @@ final class ProfitLossService
         try {
             $metrics = new YearEndMetricsService(null, null, null, null, $preTaxService);
             $computation = new CorporationTaxComputationService($metrics);
-            if ($effectiveEnd < (string)($accountingPeriod['period_end'] ?? $effectiveEnd)) {
-                $asAtPeriod = $accountingPeriod;
-                $asAtPeriod['period_end'] = $effectiveEnd;
-                $estimate = $computation->fetchCurrentPeriodEstimate($companyId, $accountingPeriodId, $asAtPeriod, [
-                    'profit_before_tax' => (float)($preTax['profit_before_tax'] ?? 0),
-                    'disallowable_add_backs' => (float)($preTax['disallowable_add_backs'] ?? 0),
-                    'capital_add_backs' => (float)($preTax['capital_add_backs'] ?? 0),
-                    'other_treatment_count' => (int)($preTax['other_treatment_count'] ?? 0),
-                    'unknown_treatment_count' => (int)($preTax['unknown_treatment_count'] ?? 0),
-                    'other_treatment_amount' => round((float)($preTax['other_treatment_amount'] ?? 0), 2),
-                    'unknown_treatment_amount' => round((float)($preTax['unknown_treatment_amount'] ?? 0), 2),
-                    'prepayment_preview_reliable' => !array_key_exists('prepayment_preview_reliable', $preTax)
-                        || !empty($preTax['prepayment_preview_reliable']),
-                    'prepayment_preview_warnings' => array_values(array_unique(array_map(
-                        'strval',
-                        (array)($preTax['prepayment_preview_warnings'] ?? [])
-                    ))),
-                ]);
-                $posted = (float)($preTax['posted_corporation_tax_charge'] ?? 0);
-                $estimated = (float)($estimate['estimated_corporation_tax'] ?? 0);
+            $isAsAtEstimate = $effectiveEnd < (string)($accountingPeriod['period_end'] ?? $effectiveEnd);
+            if (!$isAsAtEstimate) {
+                $persisted = (new CorporationTaxProvisionService($computation))
+                    ->fetchAccountingPeriodPosition($companyId, $accountingPeriodId);
+                if (!empty($persisted['available'])) {
+                    return $persisted;
+                }
+            }
+
+            $estimatePeriod = $accountingPeriod;
+            $estimatePeriod['period_end'] = $effectiveEnd;
+            $estimate = (new CorporationTaxReturnPositionService($computation))
+                ->fetchCurrentAccountingPeriodEstimate(
+                    $companyId,
+                    $accountingPeriodId,
+                    $estimatePeriod,
+                    [
+                        'profit_before_tax' => (float)($preTax['profit_before_tax'] ?? 0),
+                        'disallowable_add_backs' => (float)($preTax['disallowable_add_backs'] ?? 0),
+                        'capital_add_backs' => (float)($preTax['capital_add_backs'] ?? 0),
+                        'other_treatment_count' => (int)($preTax['other_treatment_count'] ?? 0),
+                        'unknown_treatment_count' => (int)($preTax['unknown_treatment_count'] ?? 0),
+                        'other_treatment_amount' => round((float)($preTax['other_treatment_amount'] ?? 0), 2),
+                        'unknown_treatment_amount' => round((float)($preTax['unknown_treatment_amount'] ?? 0), 2),
+                        'prepayment_preview_reliable' => !array_key_exists('prepayment_preview_reliable', $preTax)
+                            || !empty($preTax['prepayment_preview_reliable']),
+                        'prepayment_preview_warnings' => array_values(array_unique(array_map(
+                            'strval',
+                            (array)($preTax['prepayment_preview_warnings'] ?? [])
+                        ))),
+                    ],
+                    $effectiveEnd
+                );
+            $posted = round((float)($preTax['posted_corporation_tax_charge'] ?? 0), 2);
+            if (empty($estimate['available'])) {
                 return [
-                    'available' => !empty($estimate['available']),
-                    'errors' => (array)($estimate['errors'] ?? []),
-                    'estimated_corporation_tax' => $estimated,
+                    'available' => false,
+                    'errors' => (array)($estimate['errors'] ?? ['The Corporation Tax return position is unavailable.']),
+                    'estimated_corporation_tax' => 0.0,
                     'posted_corporation_tax_charge' => $posted,
-                    'unposted_corporation_tax_adjustment' => max(0.0, round($estimated - $posted, 2)),
-                    'status' => 'as_at_estimate',
+                    'unposted_corporation_tax_adjustment' => 0.0,
+                    'status' => 'unavailable',
                 ];
             }
-            return (new CorporationTaxProvisionService($computation))->fetchAccountingPeriodPosition($companyId, $accountingPeriodId);
+
+            $estimated = round((float)($estimate['tax_payable'] ?? 0), 2);
+            $estimatedTaxCharge = round((float)($estimate['estimated_tax_charge'] ?? $estimated), 2);
+            return array_merge($estimate, [
+                'posted_corporation_tax_charge' => $posted,
+                'unposted_corporation_tax_adjustment' => round($estimatedTaxCharge - $posted, 2),
+                'unposted_tax_charge_adjustment' => round($estimatedTaxCharge - $posted, 2),
+                'status' => $isAsAtEstimate ? 'as_at_estimate' : 'estimate',
+            ]);
         } catch (\Throwable $exception) {
             return [
                 'available' => false,
@@ -1029,7 +1072,11 @@ final class ProfitLossService
                 break;
             }
 
-            $summary = $computation->fetchSummaryForCtPeriodId($companyId, $ctPeriodId);
+            $summary = (new CorporationTaxReturnPositionService($computation))->fetchForCtPeriod(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId
+            );
             if (empty($summary['available'])) {
                 $allPeriodEstimatesAvailable = false;
                 break;
@@ -1053,6 +1100,15 @@ final class ProfitLossService
         }
 
         if ($allPeriodEstimatesAvailable) {
+            $relief = (new Ct600aService())->fetchL2pReliefForAccountingPeriod($companyId, $accountingPeriodId);
+            if (!empty($relief['available'])) {
+                $monthStart = substr((string)($accountingPeriod['period_end'] ?? ''), 0, 7) . '-01';
+                $adjustments[$monthStart] = round(
+                    (float)($adjustments[$monthStart] ?? 0)
+                        - (float)($relief['relief_receivable'] ?? 0),
+                    2
+                );
+            }
             return $adjustments;
         }
 
@@ -1071,7 +1127,7 @@ final class ProfitLossService
         $monthStart = substr((string)($accountingPeriod['period_end'] ?? ''), 0, 7) . '-01';
         return [
             $monthStart => round(
-                (float)($position['estimated_corporation_tax'] ?? 0)
+                (float)($position['estimated_tax_charge'] ?? $position['estimated_corporation_tax'] ?? 0)
                     - (float)($preTax['posted_corporation_tax_charge'] ?? 0),
                 2
             ),

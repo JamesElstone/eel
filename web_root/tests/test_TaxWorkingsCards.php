@@ -132,6 +132,7 @@ foreach ($cardClasses as $className) {
                 $harness->assertTrue(str_contains($html, 'HMRC - CTM01405: Apportionment'));
                 $harness->assertTrue(str_contains($html, 'https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim35201'));
                 $harness->assertTrue(str_contains($html, 'https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm01405'));
+                $harness->assertSame(false, str_contains($html, 'Estimated corporation tax'));
             });
         }
 
@@ -161,6 +162,9 @@ foreach ($cardClasses as $className) {
                     $context = taxWorkingsCardsContext();
                     $context['services']['taxWorkings']['summary']['taxable_profit'] = 123.40;
                     $context['services']['taxWorkings']['summary']['ordinary_corporation_tax'] = 123.45;
+                    $context['services']['taxWorkings']['summary']['s455_tax'] = 25.00;
+                    $context['services']['taxWorkings']['summary']['ct600a_tax'] = 25.00;
+                    $context['services']['taxWorkings']['summary']['tax_payable'] = 148.45;
                     $context['services']['taxWorkings']['summary']['estimated_corporation_tax'] = 123.45;
                     $context['services']['taxWorkings']['summary']['computation_persistence'] = ['status' => $mode];
 
@@ -168,6 +172,8 @@ foreach ($cardClasses as $className) {
 
                     $harness->assertTrue(str_contains($html, '$ 123.40'));
                     $harness->assertTrue(str_contains($html, '$ 123.45'));
+                    $harness->assertTrue(str_contains($html, '$ 148.45'));
+                    $harness->assertSame(1, substr_count($html, 'Net S455 tax (included within A80)'));
                 }
             });
             $harness->check($className, 'keeps CT provision posting as a year-end close task', static function () use ($harness, $card): void {
@@ -211,6 +217,10 @@ function taxWorkingsCardsContext(): array
                     'confidence_label' => 'Review required',
                     'taxable_profit' => 12000,
                     'taxable_loss' => 0,
+                    'ordinary_corporation_tax' => 1900,
+                    's455_tax' => 270,
+                    'ct600a_tax' => 270,
+                    'tax_payable' => 2170,
                     'estimated_corporation_tax' => 2280,
                     'estimated_rate' => 0.19,
                     'associated_company_count' => 0,

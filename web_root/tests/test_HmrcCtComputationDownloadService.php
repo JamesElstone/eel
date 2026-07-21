@@ -326,6 +326,19 @@ $harness->run(HmrcCtComputationDownloadService::class, static function (
 
     $h->check($service::class, 'rejects a wrong taxonomy manifest and removes its staging directory', static function () use ($h): void {
         $cache = ct2024DownloadTestDirectory('wrong-manifest');
+        $installedStates = InterfaceDB::tableExists('hmrc_ct_computation_packages')
+            ? InterfaceDB::fetchAll(
+                'SELECT id, package_state FROM hmrc_ct_computation_packages
+                 WHERE taxonomy_version = :taxonomy_version AND artifact_version = :artifact_version',
+                ['taxonomy_version' => '2024', 'artifact_version' => 'V1.0.0']
+            )
+            : [];
+        foreach ($installedStates as $installedState) {
+            InterfaceDB::prepareExecute(
+                'UPDATE hmrc_ct_computation_packages SET package_state = :package_state WHERE id = :id',
+                ['package_state' => 'failed', 'id' => (int)$installedState['id']]
+            );
+        }
         $catalogueCalls = 0;
         $service = new HmrcCtComputationDownloadService(
             static fn(): string => ct2024DownloadTestArchive('2025'),
@@ -344,6 +357,12 @@ $harness->run(HmrcCtComputationDownloadService::class, static function (
             $h->assertSame([], is_array($entries) ? $entries : []);
             $h->assertFalse(is_dir($cache . DIRECTORY_SEPARATOR . 'CT2024-v1.0.0'));
         } finally {
+            foreach ($installedStates as $installedState) {
+                InterfaceDB::prepareExecute(
+                    'UPDATE hmrc_ct_computation_packages SET package_state = :package_state WHERE id = :id',
+                    ['package_state' => (string)$installedState['package_state'], 'id' => (int)$installedState['id']]
+                );
+            }
             ct2024DownloadTestRemoveDirectory($cache);
         }
     });

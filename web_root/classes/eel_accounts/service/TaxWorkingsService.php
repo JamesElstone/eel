@@ -50,18 +50,57 @@ final class TaxWorkingsService
             }
         }
 
+        $vatSupportScope = (new \eel_accounts\Service\VatSupportScopeService())->fetchForCompany($companyId);
+        if (!empty($vatSupportScope['tax_year_end_read_only'])
+            && $ctPeriod !== null
+            && in_array((string)($ctPeriod['status'] ?? ''), ['submitted', 'accepted'], true)) {
+            $historical = $computation->fetchSummaryForCtPeriodId($companyId, $ctPeriodId);
+            if (!empty($historical['available'])) {
+                return $this->historicalSnapshotWorkings($period, $ctPeriod, $historical, $vatSupportScope);
+            }
+        }
+
+        $returnPositionService = new CorporationTaxReturnPositionService($computation);
         $estimate = $ctPeriodId !== 0
-            ? $computation->fetchSummaryForCtPeriodId($companyId, $ctPeriodId)
-            : (new \eel_accounts\Service\YearEndTaxReadinessService($metrics))->fetchCurrentPeriodEstimate($companyId, $accountingPeriodId);
+            ? $returnPositionService->fetchForCtPeriod($companyId, $accountingPeriodId, $ctPeriodId)
+            : $returnPositionService->fetchCurrentAccountingPeriodEstimate(
+                $companyId,
+                $accountingPeriodId,
+                $period
+            );
+        if (empty($estimate['available'])
+            && $ctPeriod !== null
+            && in_array((string)($ctPeriod['status'] ?? ''), ['submitted', 'accepted'], true)) {
+            $historical = $computation->fetchSummaryForCtPeriodId($companyId, $ctPeriodId);
+            if (!empty($historical['available'])) {
+                $historicalScope = $vatSupportScope;
+                $historicalScope['message'] = 'This legacy submitted or accepted CT period has no canonical frozen filing basis; its immutable historical ordinary-tax computation is shown read-only.';
+                $historicalScope['legacy_filing_basis'] = true;
+                return $this->historicalSnapshotWorkings(
+                    $period,
+                    $ctPeriod,
+                    $historical,
+                    $historicalScope
+                );
+            }
+        }
         if (empty($estimate['available'])) {
             return [
                 'available' => false,
                 'errors' => (array)($estimate['errors'] ?? ['Tax workings are not available for this period.']),
             ];
         }
+        if ($ctPeriodId !== 0) {
+            $accountingPeriodPosition = $returnPositionService->fetchForAccountingPeriod($companyId, $accountingPeriodId);
+            if (!empty($accountingPeriodPosition['available'])) {
+                $estimate['amount_paid'] = (float)($accountingPeriodPosition['amount_paid'] ?? 0);
+                $estimate['payment_outstanding'] = $accountingPeriodPosition['payment_outstanding'] ?? null;
+                $estimate['accounting_period_l2p_relief_receivable'] = (float)($accountingPeriodPosition['l2p_relief_receivable'] ?? 0);
+                $estimate['accounting_period_estimated_tax_charge'] = (float)($accountingPeriodPosition['estimated_tax_charge'] ?? $accountingPeriodPosition['tax_payable'] ?? 0);
+            }
+        }
 
-        $vatSupportScope = (array)($estimate['vat_support_scope']
-            ?? (new \eel_accounts\Service\VatSupportScopeService())->fetchForCompany($companyId));
+        $vatSupportScope = (array)($estimate['vat_support_scope'] ?? $vatSupportScope);
         if (!empty($vatSupportScope['tax_year_end_read_only'])) {
             return $this->historicalSnapshotWorkings($period, $ctPeriod, $estimate, $vatSupportScope);
         }
@@ -116,7 +155,7 @@ final class TaxWorkingsService
             'period' => $period,
             'selected_ct_period' => $ctPeriod,
             'summary' => $estimate,
-            'bridge' => (array)($estimate['steps'] ?? []),
+            'bridge' => $this->ordinaryTaxBridge((array)($estimate['steps'] ?? [])),
             'disallowable_add_backs' => (array)($addBackRows['disallowable'] ?? []),
             'capital_add_backs' => (array)($addBackRows['capital'] ?? []),
             'depreciation_add_back' => $this->depreciationRows(
@@ -184,7 +223,7 @@ final class TaxWorkingsService
             'period' => $period,
             'selected_ct_period' => $ctPeriod,
             'summary' => $estimate,
-            'bridge' => (array)($estimate['steps'] ?? []),
+            'bridge' => $this->ordinaryTaxBridge((array)($estimate['steps'] ?? [])),
             'disallowable_add_backs' => [],
             'capital_add_backs' => [],
             'depreciation_add_back' => [],
@@ -201,6 +240,20 @@ final class TaxWorkingsService
             'provision' => [],
             'warnings' => $warnings,
         ];
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function ordinaryTaxBridge(array $steps): array
+    {
+        return array_values(array_filter($steps, static function (mixed $step): bool {
+            if (!is_array($step)) {
+                return false;
+            }
+            $label = strtolower(trim((string)($step['label'] ?? '')));
+            return !str_contains($label, 's455')
+                && !str_contains($label, 'participator-loan tax')
+                && !str_starts_with($label, 'estimated corporation tax');
+        }));
     }
 
     /**

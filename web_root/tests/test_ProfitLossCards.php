@@ -29,6 +29,11 @@ $harness->run(_pl_summaryCard::class, static function (GeneratedServiceClassTest
                 'gross_profit' => 900,
                 'expense_total' => 200,
                 'profit_before_tax' => 700,
+                'ordinary_corporation_tax' => 100,
+                'ct600a_tax' => 25,
+                'l2p_relief_receivable' => 5,
+                'estimated_corporation_tax' => 125,
+                'estimated_tax_charge' => 120,
                 'net_profit' => 700,
                 'profit_margin_percent' => 58.3,
             ],
@@ -258,6 +263,11 @@ $harness->run(_pl_summaryCard::class, static function (GeneratedServiceClassTest
         $harness->assertTrue($profitMarginPosition !== false && $profitBeforeTaxPosition < $profitMarginPosition);
         $harness->assertTrue($incomePosition !== false && $profitMarginPosition < $incomePosition);
         $harness->assertTrue(str_contains($html, '<div class="summary-label">Income</div><div class="summary-value">$ 1,200.00</div>'));
+        $harness->assertTrue(str_contains($html, 'Ordinary Corporation Tax [CT600 box 475]'));
+        $harness->assertTrue(str_contains($html, 'CT600A net tax payable [A80]'));
+        $harness->assertTrue(str_contains($html, 'Total Corporation Tax payable'));
+        $harness->assertTrue(str_contains($html, 'L2P relief receivable'));
+        $harness->assertTrue(str_contains($html, 'Net estimated tax charge'));
         $harness->assertTrue(str_contains($html, '<div class="summary-card pl-profit-before-tax-positive"><div class="summary-label">Profit before tax</div><div class="summary-value">$ 700.00</div></div>'));
         $harness->assertTrue(str_contains($html, '<div class="summary-label">Profit before tax</div><div class="summary-value">$ 700.00</div>'));
         $harness->assertTrue(str_contains($html, 'Missing months'));

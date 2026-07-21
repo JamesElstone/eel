@@ -17,6 +17,12 @@ final class _tax_taxable_profit_bridgeCard extends CardBaseFramework
         }
         $rows = [];
         foreach ((array)($workings['bridge'] ?? []) as $step) {
+            $label = strtolower(trim((string)($step['label'] ?? '')));
+            if (str_contains($label, 's455')
+                || str_contains($label, 'participator-loan tax')
+                || str_starts_with($label, 'estimated corporation tax')) {
+                continue;
+            }
             $rows[] = [
                 \eel_accounts\Renderer\TaxCardRenderer::escape($step['label'] ?? ''),
                 \eel_accounts\Renderer\TaxCardRenderer::escape(\eel_accounts\Renderer\TaxCardRenderer::money($context, $step['amount'] ?? 0)),

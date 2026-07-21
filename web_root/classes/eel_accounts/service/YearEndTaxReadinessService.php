@@ -20,11 +20,7 @@ final class YearEndTaxReadinessService
     }
 
     public function fetchSummary(int $companyId, int $accountingPeriodId): array {
-        $service = $this->taxComputationService ?? new \eel_accounts\Service\CorporationTaxComputationService(
-            $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService()
-        );
-
-        return $service->fetchSummary($companyId, $accountingPeriodId);
+        return $this->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
     }
 
     public function fetchCurrentPeriodEstimate(
@@ -86,7 +82,20 @@ final class YearEndTaxReadinessService
                 continue;
             }
 
-            $periodSummaries[] = array_merge($summary, [
+            $returnPosition = (new CorporationTaxReturnPositionService($service))->fetchForCtPeriod(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId,
+                $summary
+            );
+            if (empty($returnPosition['available'])) {
+                foreach ((array)($returnPosition['errors'] ?? ['The Corporation Tax return position could not be calculated.']) as $error) {
+                    $errors[] = (string)($ctPeriod['display_label'] ?? ('CT period ' . (int)($ctPeriod['sequence_no'] ?? 0))) . ': ' . (string)$error;
+                }
+                continue;
+            }
+
+            $periodSummaries[] = array_merge($summary, $returnPosition, [
                 'ct_period_id' => $ctPeriodId,
                 'accounting_period_id' => $accountingPeriodId,
                 'ct_period_sequence_no' => (int)($ctPeriod['sequence_no'] ?? 0),
@@ -161,6 +170,7 @@ final class YearEndTaxReadinessService
             'taxable_loss',
             'ordinary_corporation_tax',
             's455_tax',
+            'ct600a_tax',
             'estimated_corporation_tax',
             'loss_created_in_period',
             'losses_used',
@@ -176,6 +186,17 @@ final class YearEndTaxReadinessService
         $lastPeriod = (array)end($periods);
         $totals['losses_brought_forward'] = round((float)($firstPeriod['losses_brought_forward'] ?? 0), 2);
         $totals['losses_carried_forward'] = round((float)($lastPeriod['losses_carried_forward'] ?? 0), 2);
+        $totals['estimated_rate'] = (float)$totals['taxable_profit'] > 0.0
+            ? round((float)$totals['ordinary_corporation_tax'] / (float)$totals['taxable_profit'], 6)
+            : 0.0;
+        $totals['ct_rate_bands'] = [];
+        foreach ($periods as $period) {
+            foreach ((array)($period['ct_rate_bands'] ?? []) as $band) {
+                if (is_array($band)) {
+                    $totals['ct_rate_bands'][] = $band;
+                }
+            }
+        }
 
         $totals['other_treatment_count'] = array_sum(array_map(static fn(array $period): int => (int)($period['other_treatment_count'] ?? 0), $periods));
         $totals['unknown_treatment_count'] = array_sum(array_map(static fn(array $period): int => (int)($period['unknown_treatment_count'] ?? 0), $periods));

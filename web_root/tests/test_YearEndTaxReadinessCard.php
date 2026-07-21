@@ -12,6 +12,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServiceClassTestHarness $harness, _year_end_tax_readinessCard $card): void {
+    $harness->assertSame('Year End Corporation Tax Review', $card->title(), 'uses the year-end corporation tax review title');
+
     $harness->check(_year_end_tax_readinessCard::class, 'declares the year-end checklist service needed on the Tax page', static function () use ($harness, $card): void {
         $services = $card->services();
 
@@ -20,6 +22,41 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame('fetchChecklist', (string)($services[0]['method'] ?? ''));
         $harness->assertSame(':company.id', (string)($services[0]['params']['companyId'] ?? ''));
         $harness->assertSame(':company.accounting_period_id', (string)($services[0]['params']['accountingPeriodId'] ?? ''));
+        $harness->assertSame('corporation_tax_filing_scope', (string)($services[1]['key'] ?? ''));
+        $harness->assertSame(\eel_accounts\Service\CorporationTaxFilingScopeService::class, (string)($services[1]['service'] ?? ''));
+        $harness->assertSame('fetch', (string)($services[1]['method'] ?? ''));
+    });
+
+    $harness->check(_year_end_tax_readinessCard::class, 'renders the Corporation Tax filing-scope questions on the tax review card', static function () use ($harness, $card): void {
+        $context = yearEndTaxReadinessCardContext([
+            'available' => true,
+            'provision' => ['available' => true, 'status' => 'not_required'],
+            'periods' => [],
+        ]);
+        $context['services']['corporation_tax_filing_scope'] = [
+            'available' => true,
+            'complete' => false,
+            'answers' => ['ct600b' => 'unresolved'],
+            'definitions' => [
+                'ct600b' => [
+                    'page' => 'CT600B',
+                    'label' => 'Controlled foreign companies',
+                    'question' => 'Does this apply?',
+                    'url' => 'https://www.gov.uk/',
+                ],
+            ],
+        ];
+
+        $html = $card->render($context);
+
+        $harness->assertTrue(str_contains($html, 'Corporation Tax Filling Scope Check'));
+        $harness->assertTrue(str_contains($html, '<th>Supplement ID</th><th>Supplement Name</th><th>Question</th><th>HMRC Guidance</th><th>Answer</th>'));
+        $harness->assertTrue(str_contains($html, 'name="card_action" value="Ixbrl"'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="save_ct_filing_scope_answer"'));
+        $harness->assertTrue(str_contains($html, 'action="?page=corporation_tax"'));
+        $harness->assertTrue(str_contains($html, 'data-submit-on-change="true"'));
+        $harness->assertTrue(str_contains($html, 'value="yes" required data-submit-on-change="true" checked'));
+        $harness->assertSame(false, str_contains($html, 'Unsure'));
     });
 
     $harness->check(_year_end_tax_readinessCard::class, 'renders compact tax readiness status and acknowledgement control', static function () use ($harness, $card): void {
@@ -124,6 +161,8 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(true, str_contains($html, 'CT Periods In This Accounting Period'));
         $harness->assertSame(true, str_contains($html, 'CT Period 1: 05/09/2022 to 04/09/2023'));
         $harness->assertSame(true, str_contains($html, 'CT Period 2: 05/09/2023 to 30/09/2023'));
+        $harness->assertSame(true, str_contains($html, 'Net S455 tax'));
+        $harness->assertSame(true, str_contains($html, 'CT600A net tax payable [A80]'));
         $harness->assertSame(true, str_contains($html, 'Taxable Profit Bridge'));
         $harness->assertSame(true, str_contains($html, 'Accounting profit or loss'));
         $harness->assertSame(true, str_contains($html, 'Add back capital expenditure'));

@@ -92,14 +92,14 @@ final class _pl_monthly_trendCard extends CardBaseFramework
             )
             ->column(
                 'estimated_corporation_tax_adjustment',
-                'Estimated CT adjustment',
+                'Estimated total tax adjustment',
                 html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['estimated_corporation_tax_adjustment'] ?? 0)),
                 export: fn(array $row): string => $this->numberExport($row['estimated_corporation_tax_adjustment'] ?? 0),
                 exportType: 'number'
             )
             ->column(
                 'corporation_tax_expense_total',
-                'Estimated CT total',
+                'Estimated total tax charge',
                 html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['corporation_tax_expense_total'] ?? 0)),
                 export: fn(array $row): string => $this->numberExport($row['corporation_tax_expense_total'] ?? 0),
                 exportType: 'number'

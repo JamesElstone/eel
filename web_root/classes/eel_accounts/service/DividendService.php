@@ -196,7 +196,11 @@ final class DividendService
             'ledger_current_year_profit_loss' => $ledgerProfit,
             'classified_current_year_profit_loss' => $classifiedProfit,
             'posted_corporation_tax_charge' => (float)($taxPosition['posted_corporation_tax_charge'] ?? 0),
+            'ordinary_corporation_tax' => (float)(($taxPosition['tax_totals'] ?? [])['ordinary_corporation_tax'] ?? 0),
+            'ct600a_tax' => (float)(($taxPosition['tax_totals'] ?? [])['ct600a_tax'] ?? 0),
+            'l2p_relief_receivable' => (float)(($taxPosition['tax_totals'] ?? [])['l2p_relief_receivable'] ?? 0),
             'estimated_corporation_tax' => (float)($taxPosition['estimated_corporation_tax'] ?? 0),
+            'estimated_tax_charge' => (float)($taxPosition['estimated_tax_charge'] ?? $taxPosition['estimated_corporation_tax'] ?? 0),
             'unposted_corporation_tax_adjustment' => (float)($taxPosition['unposted_corporation_tax_adjustment'] ?? 0),
             'tax_periods' => (array)($taxPosition['tax_periods'] ?? []),
             'tax_totals' => (array)($taxPosition['tax_totals'] ?? []),
@@ -1151,6 +1155,7 @@ final class DividendService
     {
         $postedCharge = max(0.0, round((float)($preTaxProfitLoss['posted_corporation_tax_charge'] ?? 0), 2));
         $estimate = 0.0;
+        $returnTaxPayable = 0.0;
         $estimateAvailable = false;
         $errors = [];
         $result = [];
@@ -1158,15 +1163,39 @@ final class DividendService
         try {
             $metrics = new YearEndMetricsService(null, null, null, null, $preTaxService);
             $computation = new CorporationTaxComputationService($metrics);
-            $result = $computation->fetchDividendCapacityEstimate(
-                $companyId,
-                $accountingPeriodId,
+            $estimatePeriod = $accountingPeriod;
+            $estimatePeriod['period_end'] = min(
                 $asAtDate,
-                $preTaxProfitLoss
+                (string)($accountingPeriod['period_end'] ?? $asAtDate)
             );
+            $result = (string)$estimatePeriod['period_end'] === (string)($accountingPeriod['period_end'] ?? '')
+                ? $computation->previewProvisionPositionForAccountingPeriod(
+                    $companyId,
+                    $accountingPeriodId,
+                    $estimatePeriod,
+                    $preTaxProfitLoss
+                )
+                : (new CorporationTaxReturnPositionService($computation))
+                    ->fetchCurrentAccountingPeriodEstimate(
+                        $companyId,
+                        $accountingPeriodId,
+                        $estimatePeriod,
+                        $preTaxProfitLoss,
+                        $asAtDate
+                    );
+            if (!empty($result['available'])) {
+                $result['totals'] = [
+                    'ordinary_corporation_tax' => (float)($result['ordinary_corporation_tax'] ?? 0),
+                    'ct600a_tax' => (float)($result['ct600a_tax'] ?? 0),
+                    'l2p_relief_receivable' => (float)($result['l2p_relief_receivable'] ?? 0),
+                    'estimated_corporation_tax' => (float)($result['estimated_corporation_tax'] ?? 0),
+                    'estimated_tax_charge' => (float)($result['estimated_tax_charge'] ?? 0),
+                ];
+            }
             $estimateAvailable = !empty($result['available']);
             if ($estimateAvailable) {
-                $estimate = max(0.0, round((float)($result['estimated_corporation_tax'] ?? 0), 2));
+                $returnTaxPayable = max(0.0, round((float)($result['estimated_corporation_tax'] ?? 0), 2));
+                $estimate = round((float)($result['estimated_tax_charge'] ?? $returnTaxPayable), 2);
             } else {
                 $errors = (array)($result['errors'] ?? []);
             }
@@ -1180,18 +1209,20 @@ final class DividendService
                 'status' => 'ct_estimate_unavailable',
                 'posted_corporation_tax_charge' => $postedCharge,
                 'estimated_corporation_tax' => 0.0,
+                'estimated_tax_charge' => 0.0,
                 'unposted_corporation_tax_adjustment' => 0.0,
                 'detail' => (string)($errors[0] ?? 'Dividend declaration is blocked until a Corporation Tax estimate is available for the selected period.'),
             ];
         }
 
-        $unpostedAdjustment = max(0.0, round($estimate - $postedCharge, 2));
+        $unpostedAdjustment = round($estimate - $postedCharge, 2);
 
         return [
             'reliable' => true,
             'status' => $unpostedAdjustment > 0.0 ? 'ct_estimate_adjusted' : 'ct_posted_or_nil',
             'posted_corporation_tax_charge' => $postedCharge,
-            'estimated_corporation_tax' => $estimate,
+            'estimated_corporation_tax' => $returnTaxPayable,
+            'estimated_tax_charge' => $estimate,
             'unposted_corporation_tax_adjustment' => $unpostedAdjustment,
             'tax_periods' => (array)($result['periods'] ?? []),
             'tax_totals' => (array)($result['totals'] ?? []),

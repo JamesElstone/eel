@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'IxbrlTestFixture.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ParticipatorLoanTestFixture.php';
 
 (new GeneratedServiceClassTestHarness())->run(
     \eel_accounts\Service\CtPeriodFilingModelService::class,
@@ -16,10 +17,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         });
 
         $preExistingNominalIds = array_map('intval', array_column(\InterfaceDB::fetchAll(
-            "SELECT id FROM nominal_accounts WHERE code IN ('1000', '1200', '2100', '4000')"
+            "SELECT id FROM nominal_accounts WHERE code IN ('1000', '1200', '2100', '4000', '6070')"
         ), 'id'));
         $preExistingSubtypeIds = array_map('intval', array_column(\InterfaceDB::fetchAll(
-            "SELECT id FROM nominal_account_subtypes WHERE code IN ('bank', 'director_loan_asset', 'director_loan_liability')"
+            "SELECT id FROM nominal_account_subtypes WHERE code IN ('bank', 'director_loan_asset', 'director_loan_liability', 'overhead')"
         ), 'id'));
 
         $h->check($service::class, 'loads one and two CT periods from one current post-Year-End approval', static function () use ($h, $service): void {
@@ -39,7 +40,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         });
 
         $h->check($service::class, 'derives and freezes two independently fileable CT periods for a long accounting period', static function () use ($h, $service): void {
-            $fixture = ctPeriodFilingModelFixture(2, [], [], [], true, true);
+            $fixture = ctPeriodFilingModelFixture(2, [], [], [], true, true, true);
             $periods = (new \eel_accounts\Service\CorporationTaxPeriodService())
                 ->fetchForAccountingPeriod($fixture['company_id'], $fixture['accounting_period_id']);
             $h->assertCount(2, $periods);
@@ -54,6 +55,50 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $h->assertSame(true, (bool)$second['available']);
             $h->assertTrue((string)$first['basis_hash'] !== (string)$second['basis_hash']);
             $h->assertTrue((int)$first['run']['run_id'] !== (int)$second['run']['run_id']);
+
+            $firstCt600a = (array)($first['model']['ct600a'] ?? []);
+            $secondCt600a = (array)($second['model']['ct600a'] ?? []);
+            $h->assertSame(1000.0, (float)(($firstCt600a['part1'] ?? [])['total_loans'] ?? 0));
+            $h->assertSame(67.5, (float)(($firstCt600a['part2'] ?? [])['relief_due'] ?? 0));
+            $h->assertSame(270.0, (float)($firstCt600a['tax_payable'] ?? 0));
+            $h->assertSame(0.0, (float)(($secondCt600a['part1'] ?? [])['tax_chargeable'] ?? 0));
+            $h->assertSame(800.0, (float)($secondCt600a['total_loans_outstanding'] ?? 0));
+            $h->assertSame(0.0, (float)($secondCt600a['tax_payable'] ?? 0));
+
+            $returnPosition = (new \eel_accounts\Service\CorporationTaxReturnPositionService())
+                ->fetchForAccountingPeriod($fixture['company_id'], $fixture['accounting_period_id']);
+            $h->assertSame(38.0, (float)($returnPosition['ordinary_corporation_tax'] ?? 0));
+            $h->assertSame(270.0, (float)($returnPosition['ct600a_tax'] ?? 0));
+            $h->assertSame(308.0, (float)($returnPosition['tax_payable'] ?? 0));
+
+            $provision = (new \eel_accounts\Service\CorporationTaxProvisionService())
+                ->fetchAccountingPeriodPosition($fixture['company_id'], $fixture['accounting_period_id']);
+            $h->assertSame(true, (bool)($provision['available'] ?? false));
+            $h->assertSame(308.0, (float)($provision['estimated_corporation_tax'] ?? 0));
+            $h->assertSame(308.0, (float)($provision['unposted_corporation_tax_adjustment'] ?? 0));
+
+            $profitAndLoss = (new \eel_accounts\Service\ProfitLossService())
+                ->getProfitLossSummary($fixture['company_id'], $fixture['accounting_period_id']);
+            $h->assertSame(38.0, (float)($profitAndLoss['ordinary_corporation_tax'] ?? 0));
+            $h->assertSame(270.0, (float)($profitAndLoss['ct600a_tax'] ?? 0));
+            $h->assertSame(308.0, (float)($profitAndLoss['estimated_corporation_tax'] ?? 0));
+
+            $readiness = (new \eel_accounts\Service\YearEndTaxReadinessService())
+                ->fetchSummary($fixture['company_id'], $fixture['accounting_period_id']);
+            $h->assertSame(308.0, (float)(($readiness['totals'] ?? [])['estimated_corporation_tax'] ?? 0));
+            $h->assertSame(270.0, (float)(($readiness['totals'] ?? [])['ct600a_tax'] ?? 0));
+
+            $obligationService = new \eel_accounts\Service\HmrcObligationService();
+            $sync = $obligationService->syncCtPaymentAmountForAccountingPeriod(
+                $fixture['company_id'],
+                $fixture['accounting_period_id'],
+                308.0
+            );
+            $h->assertSame(true, (bool)($sync['success'] ?? false));
+            $obligation = $obligationService
+                ->fetchCtPaymentPositionForAccountingPeriod($fixture['company_id'], $fixture['accounting_period_id']);
+            $h->assertSame(308.0, (float)($obligation['amount_due'] ?? 0));
+            $h->assertSame(308.0, (float)($obligation['outstanding_amount'] ?? 0));
 
             $periodService = new \eel_accounts\Service\CorporationTaxPeriodService();
             $h->assertSame(false, (bool)$periodService->canSubmit($fixture['company_id'], (int)$periods[1]['id'])['ok']);
@@ -198,13 +243,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             'DELETE FROM companies WHERE company_name = :name',
             ['name' => 'Approved Filing Fixture']
         );
-        $nominalCleanupSql = "DELETE FROM nominal_accounts WHERE code IN ('1000', '1200', '2100', '4000')";
+        $nominalCleanupSql = "DELETE FROM nominal_accounts WHERE code IN ('1000', '1200', '2100', '4000', '6070')";
         if ($preExistingNominalIds !== []) {
             $nominalCleanupSql .= ' AND id NOT IN (' . implode(',', $preExistingNominalIds) . ')';
         }
         \InterfaceDB::execute($nominalCleanupSql);
         $subtypeCleanupSql = "DELETE FROM nominal_account_subtypes
-            WHERE code IN ('bank', 'director_loan_asset', 'director_loan_liability')";
+            WHERE code IN ('bank', 'director_loan_asset', 'director_loan_liability', 'overhead')";
         if ($preExistingSubtypeIds !== []) {
             $subtypeCleanupSql .= ' AND id NOT IN (' . implode(',', $preExistingSubtypeIds) . ')';
         }
@@ -456,7 +501,8 @@ function ctPeriodFilingModelFixture(
     array $blockers = [],
     array $summaryOverrides = [],
     bool $approve = true,
-    bool $deriveLongPeriod = false
+    bool $deriveLongPeriod = false,
+    bool $withParticipatorLoans = false
 ): array {
     foreach ([
         'companies',
@@ -503,7 +549,46 @@ function ctPeriodFilingModelFixture(
     $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
     $settings->set('default_currency', 'GBP', 'char');
     $settings->flush();
-    StandardNominalTestFixture::ensureNominals(['1000']);
+    StandardNominalTestFixture::ensureNominals(['1000', '6070']);
+    $settings->set('corporation_tax_expense_nominal_id', StandardNominalTestFixture::id('6070'), 'int');
+    $settings->set('corporation_tax_liability_nominal_id', StandardNominalTestFixture::id('2100'), 'int');
+    $settings->flush();
+    if ($withParticipatorLoans) {
+        \InterfaceDB::execute(
+            'INSERT INTO company_directors (company_id, source, external_key, full_name, appointed_on, is_active)
+             VALUES (:company_id, :source, :external_key, :full_name, :appointed_on, 1)',
+            [
+                'company_id' => $companyId,
+                'source' => 'test',
+                'external_key' => 'long-period-director-' . $companyId,
+                'full_name' => 'Long Period Participator',
+                'appointed_on' => $accountingStart,
+            ]
+        );
+        $directorId = ctPeriodFilingModelLastInsertId();
+        $partyId = ParticipatorLoanTestFixture::createPartyForDirector(
+            $companyId,
+            $directorId,
+            'Long Period Participator',
+            $accountingStart
+        );
+        ctPeriodFilingModelBankLoanTransaction(
+            $companyId,
+            $accountingPeriodId,
+            $partyId,
+            '2023-06-01',
+            -1000.00,
+            'long-period-loan-' . $companyId
+        );
+        ctPeriodFilingModelBankLoanTransaction(
+            $companyId,
+            $accountingPeriodId,
+            $partyId,
+            '2023-09-15',
+            200.00,
+            'long-period-repayment-' . $companyId
+        );
+    }
     \InterfaceDB::execute(
         'INSERT INTO journals (company_id, accounting_period_id, source_type, source_ref, journal_date, description, is_posted)
          VALUES (:company_id, :period_id, :source_type, :source_ref, :journal_date, :description, 1)',
@@ -791,19 +876,16 @@ function ctPeriodFilingModelFixture(
             }
         }
         $ct600aService = new \eel_accounts\Service\Ct600aService();
-        foreach ($ctPeriodIds as $ctPeriodId) {
-            $savedReview = $ct600aService->saveReview(
-                $companyId,
-                $accountingPeriodId,
-                $ctPeriodId,
-                array_fill_keys(array_keys($ct600aService->reviewQuestions()), 'no'),
-                'director',
-                'Fixture Director',
-                'No section 464A arrangements in the synthetic fixture.'
-            );
-            if (empty($savedReview['success'])) {
-                throw new RuntimeException('CT600A review failed: ' . implode(' ', (array)($savedReview['errors'] ?? [])));
-            }
+        $savedReview = $ct600aService->saveReview(
+            $companyId,
+            $accountingPeriodId,
+            array_fill_keys(array_keys($ct600aService->reviewQuestions()), 'no'),
+            'director',
+            'Fixture Director',
+            'No section 464A arrangements in the synthetic fixture.'
+        );
+        if (empty($savedReview['success'])) {
+            throw new RuntimeException('CT600A review failed: ' . implode(' ', (array)($savedReview['errors'] ?? [])));
         }
         if ($approve) {
             $filingApproval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
@@ -819,6 +901,90 @@ function ctPeriodFilingModelFixture(
         'manifest_hash' => $manifestHash,
         'filing_approval' => $filingApproval ?? null,
     ];
+}
+
+function ctPeriodFilingModelBankLoanTransaction(
+    int $companyId,
+    int $accountingPeriodId,
+    int $partyId,
+    string $date,
+    float $amount,
+    string $marker
+): void {
+    $fileHash = hash('sha256', 'statement-' . $marker);
+    \InterfaceDB::execute(
+        'INSERT INTO statement_uploads (
+            company_id, accounting_period_id, statement_month, original_filename, stored_filename, file_sha256
+         ) VALUES (
+            :company_id, :accounting_period_id, :statement_month, :original_filename, :stored_filename, :file_sha256
+         )',
+        [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'statement_month' => substr($date, 0, 7) . '-01',
+            'original_filename' => $marker . '.csv',
+            'stored_filename' => $marker . '.csv',
+            'file_sha256' => $fileHash,
+        ]
+    );
+    $uploadId = ctPeriodFilingModelLastInsertId();
+    \InterfaceDB::execute(
+        'INSERT INTO transactions (
+            company_id, accounting_period_id, statement_upload_id, txn_date, description,
+            amount, currency, counterparty_name, dedupe_hash, nominal_account_id, party_id, category_status
+         ) VALUES (
+            :company_id, :accounting_period_id, :statement_upload_id, :txn_date, :description,
+            :amount, :currency, :counterparty_name, :dedupe_hash, :nominal_account_id, :party_id, :category_status
+         )',
+        [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'statement_upload_id' => $uploadId,
+            'txn_date' => $date,
+            'description' => $amount < 0 ? 'Participator loan advanced' : 'Participator loan repayment',
+            'amount' => number_format($amount, 2, '.', ''),
+            'currency' => 'GBP',
+            'counterparty_name' => 'Long Period Participator',
+            'dedupe_hash' => hash('sha256', 'transaction-' . $marker),
+            'nominal_account_id' => StandardNominalTestFixture::id('1200'),
+            'party_id' => $partyId,
+            'category_status' => 'manual',
+        ]
+    );
+    $transactionId = ctPeriodFilingModelLastInsertId();
+    \InterfaceDB::execute(
+        'INSERT INTO journals (company_id, accounting_period_id, source_type, source_ref, journal_date, description, is_posted)
+         VALUES (:company_id, :accounting_period_id, :source_type, :source_ref, :journal_date, :description, 1)',
+        [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'source_type' => 'bank_csv',
+            'source_ref' => 'transaction:' . $transactionId,
+            'journal_date' => $date,
+            'description' => $amount < 0 ? 'Participator loan advanced' : 'Participator loan repayment',
+        ]
+    );
+    $journalId = ctPeriodFilingModelLastInsertId();
+    $loanNominalId = StandardNominalTestFixture::id('1200');
+    $bankNominalId = StandardNominalTestFixture::id('1000');
+    $value = abs($amount);
+    $lines = $amount < 0
+        ? [[$loanNominalId, $value, 0.0, $partyId], [$bankNominalId, 0.0, $value, null]]
+        : [[$bankNominalId, $value, 0.0, null], [$loanNominalId, 0.0, $value, $partyId]];
+    foreach ($lines as [$nominalId, $debit, $credit, $linePartyId]) {
+        \InterfaceDB::execute(
+            'INSERT INTO journal_lines (journal_id, nominal_account_id, party_id, debit, credit, line_description)
+             VALUES (:journal_id, :nominal_account_id, :party_id, :debit, :credit, :line_description)',
+            [
+                'journal_id' => $journalId,
+                'nominal_account_id' => $nominalId,
+                'party_id' => $linePartyId,
+                'debit' => number_format($debit, 2, '.', ''),
+                'credit' => number_format($credit, 2, '.', ''),
+                'line_description' => $marker,
+            ]
+        );
+    }
 }
 
 /** @return array<string, int> */

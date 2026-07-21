@@ -65,8 +65,10 @@ final class _dividend_capacityCard extends CardBaseFramework
             <div class="summary-grid four">
                 ' . $this->summaryCard('Ledger profit / loss', $this->money($companySettings, $capacity['ledger_current_year_profit_loss'] ?? 0)) . '
                 ' . $this->summaryCard('Classified realised profit', $this->money($companySettings, $capacity['classified_current_year_profit_loss'] ?? 0)) . '
-                ' . $this->summaryCard('Estimated Corporation Tax', $this->money($companySettings, $capacity['estimated_corporation_tax'] ?? 0), '', $this->estimatedCorporationTaxHelper($companySettings, $capacity)) . '
-                ' . $this->summaryCard('Unposted Corporation Tax deducted', $this->money($companySettings, $capacity['unposted_corporation_tax_adjustment'] ?? 0), '', $this->unpostedCorporationTaxHelper($companySettings, $capacity)) . '
+                ' . $this->summaryCard('Corporation Tax payable', $this->money($companySettings, $capacity['estimated_corporation_tax'] ?? 0), '', $this->estimatedCorporationTaxHelper($companySettings, $capacity)) . '
+                ' . $this->summaryCard('L2P relief receivable', $this->money($companySettings, $capacity['l2p_relief_receivable'] ?? 0)) . '
+                ' . $this->summaryCard('Net estimated tax charge', $this->money($companySettings, $capacity['estimated_tax_charge'] ?? $capacity['estimated_corporation_tax'] ?? 0)) . '
+                ' . $this->summaryCard('Unposted tax charge deducted', $this->money($companySettings, $capacity['unposted_corporation_tax_adjustment'] ?? 0), '', $this->unpostedCorporationTaxHelper($companySettings, $capacity)) . '
             </div>
             <div class="summary-grid four">' . $this->warningCards($warnings) . '</div>
         </div>';
@@ -125,24 +127,29 @@ final class _dividend_capacityCard extends CardBaseFramework
             return '';
         }
 
+        $ordinary = $this->money($companySettings, $capacity['ordinary_corporation_tax'] ?? 0);
+        $ct600a = $this->money($companySettings, $capacity['ct600a_tax'] ?? 0);
+        $total = $this->money($companySettings, $capacity['estimated_corporation_tax'] ?? 0);
+        $components = 'Ordinary CT ' . $ordinary . ' + CT600A A80 ' . $ct600a . ' = ' . $total;
+
         $amounts = array_map(
             fn(array $period): string => $this->money($companySettings, $period['estimated_corporation_tax'] ?? 0),
             $periods
         );
         if (count($amounts) === 1) {
-            return $amounts[0];
+            return $components;
         }
 
-        return implode(' + ', $amounts) . ' = ' . $this->money($companySettings, $capacity['estimated_corporation_tax'] ?? 0);
+        return $components . '. CT periods: ' . implode(' + ', $amounts) . ' = ' . $total;
     }
 
     private function unpostedCorporationTaxHelper(array $companySettings, array $capacity): string
     {
-        $estimate = $this->money($companySettings, $capacity['estimated_corporation_tax'] ?? 0);
+        $estimate = $this->money($companySettings, $capacity['estimated_tax_charge'] ?? $capacity['estimated_corporation_tax'] ?? 0);
         $posted = $this->money($companySettings, $capacity['posted_corporation_tax_charge'] ?? 0);
         $unposted = $this->money($companySettings, $capacity['unposted_corporation_tax_adjustment'] ?? 0);
 
-        return 'Estimated Corporation Tax ' . $estimate . ' - posted Corporation Tax ' . $posted . ' = ' . $unposted;
+        return 'Estimated total tax charge ' . $estimate . ' - posted tax charge ' . $posted . ' = ' . $unposted;
     }
 
     private function reliabilityWarningPanels(array $warnings, int $companyId, int $accountingPeriodId, bool $inline = false): string

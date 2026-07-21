@@ -7,7 +7,7 @@ namespace eel_accounts\Service;
 final class Ct600aService
 {
     public const REVIEW_VERSION = 'ct600a-review-v2';
-    public const MODEL_VERSION = 'ct600a-model-v1';
+    public const MODEL_VERSION = 'ct600a-model-v2';
     public const RETURN_PAYMENT_RELIEF_CUTOFF = '2024-10-30';
     private const ANSWER_KEYS = [
         'missing_parties',
@@ -39,7 +39,7 @@ final class Ct600aService
     public function fetchForAccountingPeriod(int $companyId, int $accountingPeriodId): array
     {
         if (!$this->schemaReady()) {
-            return ['available' => false, 'errors' => ['Run the CT600A and filing-scope migration.'], 'periods' => []];
+            return ['available' => false, 'errors' => ['Apply database migration 2026_07_21_005_ct600a_accounting_period_review.sql.'], 'periods' => []];
         }
         $periods = \InterfaceDB::fetchAll(
             'SELECT id, sequence_no, period_start, period_end, status FROM corporation_tax_periods
@@ -51,29 +51,165 @@ final class Ct600aService
             'available' => true,
             'errors' => [],
             'questions' => $this->reviewQuestions(),
+            'review' => $this->reviewStatus($companyId, $accountingPeriodId),
             'parties' => (new OwnershipPartyService())->fetchSummary($companyId)['parties'] ?? [],
-            'periods' => array_map(fn(array $period): array => $this->build(
+            'periods' => array_map(fn(array $period): array => $this->displayModelForPeriod(
                 $companyId,
                 $accountingPeriodId,
-                (int)$period['id']
+                $period
             ), $periods),
         ];
     }
 
+    /**
+     * Transaction-derived relief claims on already-filed CT600A returns whose
+     * relief due date belongs to the selected accounting period.
+     *
+     * @return array<string,mixed>
+     */
+    public function fetchL2pReliefForAccountingPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        ?string $asOf = null
+    ): array {
+        $accountingPeriod = \InterfaceDB::fetchOne(
+            'SELECT period_start, period_end FROM accounting_periods
+             WHERE id = :period_id AND company_id = :company_id',
+            ['period_id' => $accountingPeriodId, 'company_id' => $companyId]
+        );
+        if (!is_array($accountingPeriod)) {
+            return ['available' => false, 'errors' => ['The accounting period could not be found.'], 'claims' => []];
+        }
+        $asOfDate = $this->validDate((string)$asOf)
+            ? (string)$asOf
+            : (new \DateTimeImmutable('now'))->format('Y-m-d');
+        $originPeriods = \InterfaceDB::fetchAll(
+            'SELECT id, accounting_period_id, sequence_no, period_start, period_end, status
+             FROM corporation_tax_periods
+             WHERE company_id = :company_id AND status IN (:submitted, :accepted)
+             ORDER BY period_start, sequence_no, id',
+            ['company_id' => $companyId, 'submitted' => 'submitted', 'accepted' => 'accepted']
+        );
+        $claims = [];
+        $errors = [];
+        foreach ($originPeriods as $originPeriod) {
+            $originAccountingPeriodId = (int)($originPeriod['accounting_period_id'] ?? 0);
+            $originCtPeriodId = (int)($originPeriod['id'] ?? 0);
+            if ($originAccountingPeriodId <= 0 || $originCtPeriodId <= 0) {
+                continue;
+            }
+            $model = $this->build($companyId, $originAccountingPeriodId, $originCtPeriodId, $asOfDate);
+            if (empty($model['available'])) {
+                foreach ((array)($model['errors'] ?? []) as $error) {
+                    $errors[] = (string)$error;
+                }
+                continue;
+            }
+            foreach ((array)($model['separate_l2p_claim_events'] ?? []) as $claim) {
+                if (!is_array($claim)) {
+                    continue;
+                }
+                if ((string)($claim['claim_type'] ?? '') !== 'later_l2p') {
+                    continue;
+                }
+                $claimDate = (string)($claim['date'] ?? '');
+                $recognitionDate = $this->validDate((string)($claim['relief_due_date'] ?? ''))
+                    ? (string)$claim['relief_due_date']
+                    : $claimDate;
+                if ($recognitionDate < (string)$accountingPeriod['period_start']
+                    || $recognitionDate > (string)$accountingPeriod['period_end']) {
+                    continue;
+                }
+                $claim['recognition_date'] = $recognitionDate;
+                $claim['originating_ct_period_id'] = $originCtPeriodId;
+                $claim['originating_accounting_period_id'] = $originAccountingPeriodId;
+                $key = $originCtPeriodId . '|'
+                    . (int)($claim['repayment_transaction_id'] ?? 0) . '|'
+                    . (int)($claim['loan_transaction_id'] ?? 0) . '|'
+                    . (int)($claim['party_id'] ?? 0) . '|'
+                    . (string)($claim['source'] ?? '') . '|' . $claimDate . '|'
+                    . number_format((float)($claim['amount_repaid'] ?? 0), 2, '.', '') . '|'
+                    . number_format((float)($claim['amount_released_or_written_off'] ?? 0), 2, '.', '') . '|'
+                    . number_format((float)($claim['relief_tax'] ?? 0), 2, '.', '');
+                $claims[$key] = $claim;
+            }
+        }
+        $claims = array_values($claims);
+
+        return [
+            'available' => $errors === [],
+            'errors' => array_values(array_unique($errors)),
+            'claims' => $claims,
+            'relief_receivable' => round(array_sum(array_map(
+                static fn(array $claim): float => (float)($claim['relief_tax'] ?? 0),
+                $claims
+            )), 2),
+            'basis_hash' => hash('sha256', $this->canonicalJson($claims)),
+        ];
+    }
+
     /** @return array<string,mixed> */
-    public function build(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
+    private function displayModelForPeriod(int $companyId, int $accountingPeriodId, array $period): array
+    {
+        $ctPeriodId = (int)($period['id'] ?? 0);
+        if (in_array((string)($period['status'] ?? ''), ['submitted', 'accepted'], true)) {
+            $frozen = (new CtPeriodFilingModelService())->build($companyId, $accountingPeriodId, $ctPeriodId);
+            if (!empty($frozen['available'])) {
+                $ct600a = (array)((($frozen['model'] ?? [])['ct600a'] ?? []));
+                return $ct600a + [
+                    'available' => true,
+                    'sequence_no' => (int)($period['sequence_no'] ?? 0),
+                    'ct_period_id' => $ctPeriodId,
+                    'period_start' => (string)($period['period_start'] ?? ''),
+                    'period_end' => (string)($period['period_end'] ?? ''),
+                    'immutable' => true,
+                ];
+            }
+        }
+
+        return $this->build($companyId, $accountingPeriodId, $ctPeriodId);
+    }
+
+    /** @return array<string,mixed> */
+    public function build(int $companyId, int $accountingPeriodId, int $ctPeriodId, ?string $asOf = null): array
     {
         if (!$this->schemaReady()) {
-            return ['available' => false, 'errors' => ['Run the CT600A and filing-scope migration.']];
+            return ['available' => false, 'errors' => ['Apply database migration 2026_07_21_005_ct600a_accounting_period_review.sql.']];
         }
         $period = $this->period($companyId, $accountingPeriodId, $ctPeriodId);
         if ($period === null) {
             return ['available' => false, 'errors' => ['The CT period could not be found.']];
         }
-        $s455 = (new S455ReviewService())->calculate($companyId, $accountingPeriodId, $ctPeriodId);
+        $asOfDate = $this->validDate((string)$asOf)
+            ? (string)$asOf
+            : (new \DateTimeImmutable('now'))->format('Y-m-d');
+        $evidenceCutoff = $asOfDate . ' 23:59:59';
+        $s455Service = new S455ReviewService();
+        $s455 = $s455Service->calculate(
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId,
+            $evidenceCutoff
+        );
+        $transactionLedger = $s455Service->transactionLedgerThrough(
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId,
+            $asOfDate,
+            $evidenceCutoff
+        );
+        if (!empty($transactionLedger['available'])) {
+            $s455['all_lots'] = (array)($transactionLedger['all_lots'] ?? []);
+            $s455['all_repayment_allocations'] = $this->withReliefDueDates(
+                $companyId,
+                (array)($transactionLedger['repayment_allocations'] ?? [])
+            );
+            $s455['transaction_ledger_basis_hash'] = (string)($transactionLedger['basis_hash'] ?? '');
+        }
         $events = $this->events($companyId, $accountingPeriodId, $ctPeriodId);
-        $review = $this->reviewStatus($companyId, $accountingPeriodId, $ctPeriodId, $s455, $events);
-        $model = $this->buildFromEvidence($period, $s455, $events, $review, (new \DateTimeImmutable('now'))->format('Y-m-d'));
+        $events = $this->withReliefDueDates($companyId, $events, 'event_date');
+        $review = $this->reviewStatus($companyId, $accountingPeriodId);
+        $model = $this->buildFromEvidence($period, $s455, $events, $review, $asOfDate);
         return $model + [
             'available' => true,
             'sequence_no' => (int)$period['sequence_no'],
@@ -99,6 +235,7 @@ final class Ct600aService
         $reliefEarly = [];
         $reliefLater = [];
         $openingOutstanding = 0.0;
+        $derivedPriorOutstanding = 0.0;
         $openingReductionsAtPeriodEnd = 0.0;
         $eventBeforeEnd = false;
         $returnAlreadyFiled = in_array((string)($period['status'] ?? ''), ['submitted', 'accepted'], true);
@@ -137,25 +274,54 @@ final class Ct600aService
             $partyId = (int)($lot['party_id'] ?? 0);
             $this->addPart1($part1ByParty, $partyId, (string)($lot['party_name'] ?? 'Participator'), $amount, (float)($lot['rate'] ?? 0));
         }
-        foreach ((array)($s455['repayment_allocations'] ?? $s455['basis']['repayment_allocations'] ?? []) as $allocation) {
+        foreach ((array)($s455['all_lots'] ?? $s455['basis']['all_lots'] ?? []) as $lot) {
+            if (!is_array($lot) || (string)($lot['origin_date'] ?? '') >= $start) {
+                continue;
+            }
+            $derivedPriorOutstanding += round((float)($lot['remaining_at_period_end'] ?? 0), 2);
+        }
+        $allRepaymentAllocations = (array)($s455['all_repayment_allocations']
+            ?? $s455['basis']['all_repayment_allocations']
+            ?? $s455['repayment_allocations']
+            ?? $s455['basis']['repayment_allocations']
+            ?? []);
+        foreach ($allRepaymentAllocations as $allocation) {
             if (!is_array($allocation)) { continue; }
             $date = (string)($allocation['repayment_date'] ?? '');
             if ($date <= $end) { continue; }
+            $loanDate = (string)($allocation['loan_date'] ?? '');
+            if ($loanDate !== '' && ($loanDate < $start || $loanDate > $end)) { continue; }
             $row = [
                 'name' => (string)($allocation['party_name'] ?? 'Participator'),
                 'party_id' => (int)($allocation['party_id'] ?? 0),
+                'loan_transaction_id' => (int)($allocation['loan_transaction_id'] ?? 0),
+                'repayment_transaction_id' => (int)($allocation['repayment_transaction_id'] ?? 0),
                 'amount_repaid' => round((float)($allocation['amount'] ?? 0), 2),
                 'amount_released_or_written_off' => 0.0,
                 'date' => $date,
                 'rate' => (float)($allocation['rate'] ?? 0),
                 'source' => 'bank_transaction',
+                'relief_due_date' => (string)($allocation['relief_due_date'] ?? ''),
             ];
             if ($returnAlreadyFiled) {
-                $separateL2pClaims[] = $row;
+                if ($date < $deadline || $this->laterReliefIsDue($row, $asOf)) {
+                    $row['relief_tax'] = round((float)$row['amount_repaid'] * (float)$row['rate'], 2);
+                    $row['claim_type'] = $date < $deadline ? 'early_post_filing_claim' : 'later_l2p';
+                    $separateL2pClaims[] = $row;
+                } else {
+                    $evidenceWarnings[] = 'A later repayment dated ' . $date
+                        . ' is not yet available for a separate L2P relief claim.';
+                }
                 continue;
             }
-            if ($date < $deadline) { $reliefEarly[] = $row; }
-            elseif ($asOf >= (new \DateTimeImmutable($end))->modify('+21 months')->format('Y-m-d')) { $reliefLater[] = $row; }
+            if ($date < $deadline) {
+                $reliefEarly[] = $row;
+            } elseif ($this->laterReliefIsDue($row, $asOf)) {
+                $reliefLater[] = $row;
+            } else {
+                $evidenceWarnings[] = 'A later repayment dated ' . $date
+                    . ' has not reached, or cannot be linked to, its repayment-period Corporation Tax due date.';
+            }
         }
 
         $benefitBalances = [];
@@ -186,13 +352,19 @@ final class Ct600aService
                     continue;
                 }
                 $row = ['name' => $name, 'party_id' => $partyId, 'amount_repaid' => $amount,
-                    'amount_released_or_written_off' => 0.0, 'date' => $date, 'rate' => $rate, 'source' => $kind];
+                    'amount_released_or_written_off' => 0.0, 'date' => $date, 'rate' => $rate, 'source' => $kind,
+                    'relief_due_date' => (string)($event['relief_due_date'] ?? ''),
+                    'repayment_accounting_period_id' => (int)($event['repayment_accounting_period_id'] ?? 0)];
                 if ($returnAlreadyFiled) {
-                    $separateL2pClaims[] = $event;
+                    if ($date < $deadline || $this->laterReliefIsDue($event, $asOf)) {
+                        $row['relief_tax'] = round($amount * $rate, 2);
+                        $row['claim_type'] = $date < $deadline ? 'early_post_filing_claim' : 'later_l2p';
+                        $separateL2pClaims[] = $row;
+                    }
                     continue;
                 }
                 if ($date > $end && $date < $deadline) { $reliefEarly[] = $row; }
-                elseif ($date >= $deadline && $asOf >= (new \DateTimeImmutable($end))->modify('+21 months')->format('Y-m-d')) { $reliefLater[] = $row; }
+                elseif ($date >= $deadline && $this->laterReliefIsDue($event, $asOf)) { $reliefLater[] = $row; }
                 continue;
             }
             if (in_array($kind, ['release', 'write_off', 'later_repayment'], true)) {
@@ -206,13 +378,22 @@ final class Ct600aService
                 $row = ['name' => $name, 'party_id' => $partyId,
                     'amount_repaid' => $kind === 'later_repayment' ? $amount : 0.0,
                     'amount_released_or_written_off' => $kind !== 'later_repayment' ? $amount : 0.0,
-                    'date' => $date, 'rate' => $rate, 'source' => $kind];
+                    'date' => $date, 'rate' => $rate, 'source' => $kind,
+                    'relief_due_date' => (string)($event['relief_due_date'] ?? ''),
+                    'repayment_accounting_period_id' => (int)($event['repayment_accounting_period_id'] ?? 0)];
                 if ($returnAlreadyFiled) {
-                    $separateL2pClaims[] = $event;
+                    if ($date < $deadline || $this->laterReliefIsDue($event, $asOf)) {
+                        $row['relief_tax'] = round(
+                            ((float)$row['amount_repaid'] + (float)$row['amount_released_or_written_off']) * $rate,
+                            2
+                        );
+                        $row['claim_type'] = $date < $deadline ? 'early_post_filing_claim' : 'later_l2p';
+                        $separateL2pClaims[] = $row;
+                    }
                     continue;
                 }
                 if ($date > $end && $date < $deadline) { $reliefEarly[] = $row; }
-                elseif ($date >= $deadline && $asOf >= (new \DateTimeImmutable($end))->modify('+21 months')->format('Y-m-d')) { $reliefLater[] = $row; }
+                elseif ($date >= $deadline && $this->laterReliefIsDue($event, $asOf)) { $reliefLater[] = $row; }
             }
         }
 
@@ -221,7 +402,7 @@ final class Ct600aService
         $a20 = round(array_sum(array_column($part1, 'tax')), 2);
         $a45 = $this->reliefTax($reliefEarly);
         $a70 = $this->reliefTax($reliefLater);
-        $a75 = round($openingOutstanding - $openingReductionsAtPeriodEnd + $a15, 2);
+        $a75 = round($derivedPriorOutstanding + $openingOutstanding - $openingReductionsAtPeriodEnd + $a15, 2);
         $a75 = max(0.0, $a75);
         $a80 = round(max(0.0, $a20 - $a45 - $a70), 2);
         $required = $a15 >= 0.005 || $a45 >= 0.005 || $a70 >= 0.005;
@@ -240,9 +421,16 @@ final class Ct600aService
             'tax_payable' => $a80,
             'relief_due' => $a70 >= 0.005,
             'separate_l2p_claim_events' => $separateL2pClaims,
+            'separate_l2p_relief_due' => round(array_sum(array_map(
+                static fn(array $claim): float => (string)($claim['claim_type'] ?? '') === 'later_l2p'
+                    ? (float)($claim['relief_tax'] ?? 0)
+                    : 0.0,
+                $separateL2pClaims
+            )), 2),
             'blocking_errors' => array_values(array_unique(array_filter(array_map('strval', $blocking)))),
             'evidence_warnings' => array_values(array_unique($evidenceWarnings)),
             'unattributed_loan_movement_count' => $unattributedLoanMovementCount,
+            'derived_prior_period_outstanding' => round($derivedPriorOutstanding, 2),
             'review_complete' => $reviewComplete,
         ];
         $json = $this->canonicalJson($model);
@@ -255,7 +443,7 @@ final class Ct600aService
     }
 
     /** @return array<string,mixed> */
-    public function saveReview(int $companyId, int $accountingPeriodId, int $ctPeriodId, array $answers, string $role, string $approver, string $note): array
+    public function saveReview(int $companyId, int $accountingPeriodId, array $answers, string $role, string $approver, string $note): array
     {
         $role = trim($role); $approver = trim($approver);
         if (!in_array($role, ['director', 'adviser'], true) || $approver === '') {
@@ -267,21 +455,19 @@ final class Ct600aService
             if (!in_array($value, ['yes', 'no'], true)) { $value = 'yes'; }
             $normalised[$key] = $value;
         }
-        $s455 = (new S455ReviewService())->calculate($companyId, $accountingPeriodId, $ctPeriodId);
-        $events = $this->events($companyId, $accountingPeriodId, $ctPeriodId);
-        $manifest = $this->evidenceManifest($s455, $events);
+        $manifest = $this->accountingPeriodEvidenceManifest($companyId, $accountingPeriodId);
         $basis = ['review_version' => self::REVIEW_VERSION, 'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId, 'ct_period_id' => $ctPeriodId,
+            'accounting_period_id' => $accountingPeriodId,
             'answers' => $normalised, 'approver_role' => $role, 'approved_by' => $approver,
             'confirmation_note' => trim($note), 'evidence_manifest' => $manifest];
         $basisHash = hash('sha256', $this->canonicalJson($basis));
-        $sql = 'INSERT INTO corporation_tax_ct600a_reviews
-              (company_id, accounting_period_id, ct_period_id, review_version, answers_json, approver_role,
+        $sql = 'INSERT INTO corporation_tax_ct600a_accounting_reviews
+              (company_id, accounting_period_id, review_version, answers_json, approver_role,
                approved_by, confirmation_note, evidence_manifest_json, basis_hash, confirmed_at)
-             VALUES (:company_id,:period_id,:ct_period_id,:review_version,:answers_json,:role,:approved_by,
-                     :note,:manifest,:basis_hash,CURRENT_TIMESTAMP)';
+             VALUES (:company_id,:period_id,:review_version,:answers_json,:role,:approved_by,
+               :note,:manifest,:basis_hash,CURRENT_TIMESTAMP)';
         $sql .= \InterfaceDB::driverName() === 'sqlite'
-            ? ' ON CONFLICT(ct_period_id) DO UPDATE SET review_version=excluded.review_version, answers_json=excluded.answers_json,
+            ? ' ON CONFLICT(company_id, accounting_period_id) DO UPDATE SET review_version=excluded.review_version, answers_json=excluded.answers_json,
                approver_role=excluded.approver_role, approved_by=excluded.approved_by, confirmation_note=excluded.confirmation_note,
                evidence_manifest_json=excluded.evidence_manifest_json, basis_hash=excluded.basis_hash, confirmed_at=CURRENT_TIMESTAMP'
             : ' ON DUPLICATE KEY UPDATE review_version=VALUES(review_version), answers_json=VALUES(answers_json),
@@ -289,12 +475,12 @@ final class Ct600aService
                evidence_manifest_json=VALUES(evidence_manifest_json), basis_hash=VALUES(basis_hash), confirmed_at=CURRENT_TIMESTAMP';
         \InterfaceDB::prepareExecute(
             $sql,
-            ['company_id'=>$companyId,'period_id'=>$accountingPeriodId,'ct_period_id'=>$ctPeriodId,
+            ['company_id'=>$companyId,'period_id'=>$accountingPeriodId,
              'review_version'=>self::REVIEW_VERSION,'answers_json'=>$this->canonicalJson($normalised),'role'=>$role,
              'approved_by'=>$approver,'note'=>trim($note) !== '' ? trim($note) : null,
              'manifest'=>$this->canonicalJson($manifest),'basis_hash'=>$basisHash]
         );
-        $status = $this->reviewStatus($companyId, $accountingPeriodId, $ctPeriodId, $s455, $events);
+        $status = $this->reviewStatus($companyId, $accountingPeriodId);
         return ['success' => true, 'errors' => [], 'review' => $status];
     }
 
@@ -348,15 +534,19 @@ final class Ct600aService
         return ['success'=>true,'errors'=>[]];
     }
 
-    private function reviewStatus(int $companyId,int $accountingPeriodId,int $ctPeriodId,array $s455,array $events): array
+    private function reviewStatus(int $companyId, int $accountingPeriodId): array
     {
-        $row=\InterfaceDB::fetchOne('SELECT * FROM corporation_tax_ct600a_reviews WHERE ct_period_id=:id',['id'=>$ctPeriodId]);
+        $row=\InterfaceDB::fetchOne(
+            'SELECT * FROM corporation_tax_ct600a_accounting_reviews
+             WHERE company_id=:company_id AND accounting_period_id=:period_id',
+            ['company_id' => $companyId, 'period_id' => $accountingPeriodId]
+        );
         if (!is_array($row)) { return ['stored'=>false,'current'=>false,'complete'=>false,'answers'=>array_fill_keys(self::ANSWER_KEYS,'unresolved'),'errors'=>['Complete and approve the section 464A review.']]; }
         $answers=json_decode((string)$row['answers_json'],true); $answers=is_array($answers)?$answers:[];
         $storedManifest=json_decode((string)$row['evidence_manifest_json'],true); $storedManifest=is_array($storedManifest)?$storedManifest:[];
-        $currentManifest=$this->evidenceManifest($s455,$events);
+        $currentManifest=$this->accountingPeriodEvidenceManifest($companyId, $accountingPeriodId);
         $basis=['review_version'=>self::REVIEW_VERSION,'company_id'=>$companyId,'accounting_period_id'=>$accountingPeriodId,
-            'ct_period_id'=>$ctPeriodId,'answers'=>$answers,'approver_role'=>(string)$row['approver_role'],
+            'answers'=>$answers,'approver_role'=>(string)$row['approver_role'],
             'approved_by'=>(string)$row['approved_by'],'confirmation_note'=>(string)($row['confirmation_note']??''),
             'evidence_manifest'=>$storedManifest];
         $current=(string)$row['review_version']===self::REVIEW_VERSION
@@ -391,6 +581,33 @@ final class Ct600aService
             's455_movement_count'=>count((array)($s455['movements']??$s455['basis']['movements']??[])),
             's455_errors'=>array_values((array)($s455['errors']??[])),
             'events_sha256'=>hash('sha256',$this->canonicalJson($eventBasis)),'event_count'=>count($eventBasis)];
+    }
+
+    private function accountingPeriodEvidenceManifest(int $companyId, int $accountingPeriodId): array
+    {
+        $periods = \InterfaceDB::fetchAll(
+            'SELECT id FROM corporation_tax_periods
+             WHERE company_id=:company_id AND accounting_period_id=:period_id AND status <> :superseded
+             ORDER BY sequence_no, id',
+            ['company_id' => $companyId, 'period_id' => $accountingPeriodId, 'superseded' => 'superseded']
+        );
+        $evidence = [];
+        foreach ($periods as $period) {
+            $ctPeriodId = (int)($period['id'] ?? 0);
+            if ($ctPeriodId <= 0) {
+                continue;
+            }
+            $evidence[] = ['ct_period_id' => $ctPeriodId]
+                + $this->evidenceManifest(
+                    (new S455ReviewService())->calculate($companyId, $accountingPeriodId, $ctPeriodId),
+                    $this->events($companyId, $accountingPeriodId, $ctPeriodId)
+                );
+        }
+
+        return [
+            'manifest_version' => 'ct600a-accounting-period-evidence-v1',
+            'ct_periods' => $evidence,
+        ];
     }
 
     /** @return list<array<string,mixed>> */
@@ -443,8 +660,73 @@ final class Ct600aService
         return false;
     }
 
+    /** @return list<array<string,mixed>> */
+    private function withReliefDueDates(int $companyId, array $rows, string $dateKey = 'repayment_date'): array
+    {
+        $accountingPeriods = \InterfaceDB::fetchAll(
+            'SELECT id, period_start, period_end
+             FROM accounting_periods
+             WHERE company_id = :company_id
+             ORDER BY period_start, id',
+            ['company_id' => $companyId]
+        );
+        foreach ($rows as &$row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $date = (string)($row[$dateKey] ?? '');
+            foreach ($accountingPeriods as $accountingPeriod) {
+                if ($date < (string)$accountingPeriod['period_start'] || $date > (string)$accountingPeriod['period_end']) {
+                    continue;
+                }
+                $row['repayment_accounting_period_id'] = (int)$accountingPeriod['id'];
+                $row['repayment_accounting_period_end'] = (string)$accountingPeriod['period_end'];
+                $row['relief_due_date'] = (new \DateTimeImmutable((string)$accountingPeriod['period_end']))
+                    ->modify('+9 months +1 day')
+                    ->format('Y-m-d');
+                break;
+            }
+        }
+        unset($row);
+
+        return array_values(array_filter($rows, 'is_array'));
+    }
+
+    private function laterReliefIsDue(array $evidence, string $asOf): bool
+    {
+        $dueDate = (string)($evidence['relief_due_date'] ?? '');
+        if (!$this->validDate($dueDate)) {
+            $repaymentPeriodEnd = (string)($evidence['repayment_accounting_period_end'] ?? '');
+            if (!$this->validDate($repaymentPeriodEnd)) {
+                return false;
+            }
+            $dueDate = (new \DateTimeImmutable($repaymentPeriodEnd))
+                ->modify('+9 months +1 day')
+                ->format('Y-m-d');
+        }
+
+        return $this->validDate($asOf) && $asOf >= $dueDate;
+    }
+
     private function period(int $companyId,int $accountingPeriodId,int $ctPeriodId): ?array
     {
+        if ($ctPeriodId < 0) {
+            $reference = CorporationTaxPeriodService::decodeTransientReferenceId($ctPeriodId);
+            if ($reference === null || (int)$reference['accounting_period_id'] !== $accountingPeriodId) {
+                return null;
+            }
+            $projection = (new CorporationTaxPeriodService())->projectForAccountingPeriod(
+                $companyId,
+                $accountingPeriodId
+            );
+            foreach ((array)($projection['periods'] ?? []) as $period) {
+                if ((int)($period['id'] ?? 0) === $ctPeriodId) {
+                    return $period;
+                }
+            }
+            return null;
+        }
+
         $row=\InterfaceDB::fetchOne('SELECT id,sequence_no,period_start,period_end,status FROM corporation_tax_periods WHERE id=:id AND company_id=:company_id AND accounting_period_id=:period_id',
             ['id'=>$ctPeriodId,'company_id'=>$companyId,'period_id'=>$accountingPeriodId]); return is_array($row)?$row:null;
     }
@@ -456,7 +738,7 @@ final class Ct600aService
     private function validDate(string $date): bool
     { $d=\DateTimeImmutable::createFromFormat('!Y-m-d',$date); return $d!==false&&$d->format('Y-m-d')===$date; }
     private function schemaReady(): bool
-    { return \InterfaceDB::tableExists('corporation_tax_ct600a_events')&&\InterfaceDB::tableExists('corporation_tax_ct600a_reviews'); }
+    { return \InterfaceDB::tableExists('corporation_tax_ct600a_events')&&\InterfaceDB::tableExists('corporation_tax_ct600a_accounting_reviews'); }
     private function canonicalJson(array $value): string
     {
         $sort=function(mixed $item)use(&$sort):mixed{if(!is_array($item)){return $item;}if(!array_is_list($item)){ksort($item,SORT_STRING);}foreach($item as $k=>$v){$item[$k]=$sort($v);}return $item;};

@@ -15,8 +15,8 @@ namespace eel_accounts\Service;
  */
 final class TaxAuditBasisService
 {
-    public const BASIS_VERSION = 'ct-audit-v1';
-    public const TRACE_VERSION = 'ct-calculation-trace-v1';
+    public const BASIS_VERSION = 'ct-audit-v2';
+    public const TRACE_VERSION = 'ct-calculation-trace-v2';
 
     private const AREAS = [
         'accounting_profit' => 'Accounting Profit or Loss',
@@ -69,7 +69,11 @@ final class TaxAuditBasisService
             ];
         }
 
-        $summary = (new CorporationTaxComputationService())->fetchSummaryForCtPeriodId($companyId, $ctPeriodId);
+        $summary = (new CorporationTaxReturnPositionService())->fetchForCtPeriod(
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId
+        );
         if (empty($summary['available'])) {
             return [
                 'available' => false,
@@ -172,6 +176,16 @@ final class TaxAuditBasisService
             if (!\InterfaceDB::tableExists($table)) {
                 throw new \RuntimeException('Apply the Tax Audit database migration before locking Year End.');
             }
+        }
+
+        $summary = (new CorporationTaxReturnPositionService())->fetchForCtPeriod(
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId,
+            $summary
+        );
+        if (empty($summary['available'])) {
+            throw new \RuntimeException((string)(($summary['errors'] ?? [])[0] ?? 'The canonical Corporation Tax return position is unavailable.'));
         }
 
         $details = [];
@@ -321,7 +335,20 @@ final class TaxAuditBasisService
         string $areaCode,
         ?array $knownSummary = null
     ): array {
-        $summary = $knownSummary ?? (new CorporationTaxComputationService())->fetchSummaryForCtPeriodId($companyId, $ctPeriodId);
+        $summary = $knownSummary ?? (new CorporationTaxReturnPositionService())->fetchForCtPeriod(
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId
+        );
+        if (is_array($summary)
+            && (string)($summary['return_position_model_version'] ?? '') !== CorporationTaxReturnPositionService::MODEL_VERSION) {
+            $summary = (new CorporationTaxReturnPositionService())->fetchForCtPeriod(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId,
+                $summary
+            );
+        }
         if (empty($summary['available'])) {
             return ['available' => false, 'errors' => (array)($summary['errors'] ?? ['The CT computation is unavailable.'])];
         }
@@ -591,15 +618,18 @@ final class TaxAuditBasisService
                     'associated_company_count' => $summary['associated_company_count'] ?? 0,
                 ]);
         }
-        if (array_key_exists('s455_tax', $summary)) {
+        if (array_key_exists('ct600a_tax', $summary)) {
             $rows[] = $this->auditRow(
-                's455_review',
+                'ct600a_return_position',
                 (int)($summary['ct_period_id'] ?? 0),
                 (string)($summary['period_end'] ?? ''),
-                's455 participator-loan tax',
-                $summary['s455_tax'] ?? 0,
-                $summary['s455_tax'] ?? 0,
-                ['calculation_basis' => 'confirmed_source_payment_review']
+                'CT600A net tax payable [A80 / CT600 box 480]',
+                $summary['ct600a_tax'] ?? 0,
+                $summary['ct600a_tax'] ?? 0,
+                [
+                    'calculation_basis' => 'canonical_ct600a_return_position',
+                    'net_s455_diagnostic' => $summary['s455_tax'] ?? 0,
+                ]
             );
         }
         return $rows;

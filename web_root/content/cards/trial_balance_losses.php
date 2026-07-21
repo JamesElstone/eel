@@ -57,7 +57,7 @@ final class _trial_balance_lossesCard extends CardBaseFramework
 
         return '<div>
             <div class="summary-grid">
-                ' . $this->summaryCard('Estimated corporation tax', $this->money($companySettings, $taxComputation['estimated_corporation_tax'] ?? 0)) . '
+                ' . $this->summaryCard('Ordinary Corporation Tax', $this->money($companySettings, $taxComputation['ordinary_corporation_tax'] ?? $taxComputation['estimated_corporation_tax'] ?? 0)) . '
                 ' . $this->summaryCard('Taxable profit', $this->money($companySettings, $taxComputation['taxable_profit'] ?? 0)) . '
                 ' . $lossCards . '
             </div>
@@ -121,7 +121,7 @@ final class _trial_balance_lossesCard extends CardBaseFramework
             $rows .= '<tr>
                 <td>' . HelperFramework::escape($this->periodLabel($period)) . '</td>
                 <td>' . HelperFramework::escape($this->money($companySettings, $period['taxable_profit'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $period['estimated_corporation_tax'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $period['ordinary_corporation_tax'] ?? $period['estimated_corporation_tax'] ?? 0)) . '</td>
                 <td>' . HelperFramework::escape($this->money($companySettings, $period['loss_created_in_period'] ?? 0)) . '</td>
                 <td>' . HelperFramework::escape($this->money($companySettings, $period['losses_used'] ?? 0)) . '</td>
                 <td>' . HelperFramework::escape($this->money($companySettings, $period['losses_carried_forward'] ?? 0)) . '</td>
@@ -133,7 +133,7 @@ final class _trial_balance_lossesCard extends CardBaseFramework
             <h3 class="card-title">CT period breakdown</h3>
             <div class="table-scroll">
                 <table>
-                    <thead><tr><th>CT period</th><th>Taxable profit</th><th>Estimated CT</th><th>Loss created</th><th>Loss used</th><th>Losses c/f</th><th>Warnings</th></tr></thead>
+                    <thead><tr><th>CT period</th><th>Taxable profit</th><th>Ordinary CT</th><th>Loss created</th><th>Loss used</th><th>Losses c/f</th><th>Warnings</th></tr></thead>
                     <tbody>' . $rows . '</tbody>
                 </table>
             </div>

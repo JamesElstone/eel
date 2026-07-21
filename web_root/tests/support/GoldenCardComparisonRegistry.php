@@ -26,7 +26,7 @@ final class GoldenCardComparisonRegistry
             'corporation_tax' => ['tax_period_selector', 'tax_corporation_tax_summary', 'tax_taxable_profit_bridge', 'tax_prepayment_treatment', 'tax_disallowable_add_backs', 'tax_capital_add_backs', 'tax_depreciation_add_back', 'tax_capital_allowances_summary', 'tax_aia_allocation', 'tax_main_rate_pool', 'tax_special_rate_pool', 'tax_car_co2_treatment', 'tax_disposals_balancing', 'tax_losses', 'tax_rate_bands', 'tax_warnings', 'tax_ct_period_facts', 'year_end_tax_readiness'],
             'tax_audit' => ['tax_audit_areas', 'tax_audit_detail'],
             'tax_artifacts' => ['tax_rates_ct', 'tax_rates_ct600_rim', 'tax_companies_house_accounts_schemas', 'tax_rates_vat', 'tax_thresholds_vat', 'tax_treatment_rules'],
-            'ct_filing_mappings' => ['tax_ct600_rim_mappings', 'tax_ct_computation_mappings'],
+            'filing_mappings' => ['tax_ct600_rim_mappings', 'tax_ct_computation_mappings'],
             'transactions' => ['transactions_monthly_status', 'transaction_category_audit_log', 'transactions_imported', 'transaction_search', 'transactions_rules', 'transactions_rule_form', 'nominals_add_account', 'year_end_empty_month_confirmations', 'year_end_transaction_tail'],
             'trial_balance' => ['trial_balance_state', 'trial_balance_validation', 'trial_balance_losses'],
             'uploads' => ['uploads_statement_coverage', 'uploads_bank_transactions', 'transactions_monthly_status', 'uploads_details', 'statement_field_mapping', 'uploads_validate_commit', 'csv_export'],

@@ -22,7 +22,7 @@ $required = [
     'hmrc_ct_rim_delete',
     'hmrc_ct_computation_delete',
     'Refresh and install HMRC filing artefacts',
-    'CT Filing Mappings',
+    'Filing Mappings',
     'Unsupported',
     'Install required',
     'Awaiting official package',
@@ -97,7 +97,7 @@ foreach (['CT600 return RIM schemas', 'Computation iXBRL taxonomies', 'Install r
 }
 
 $rimTitlePosition = strpos($html, 'CT600 return RIM schemas');
-$linksPosition = strpos($html, 'CT Filing Mappings');
+$linksPosition = strpos($html, 'Filing Mappings');
 $sourcePosition = strpos($html, 'Source updated:');
 if ($rimTitlePosition === false || $linksPosition === false || $sourcePosition === false
     || !($rimTitlePosition < $linksPosition && $linksPosition < $sourcePosition)) {

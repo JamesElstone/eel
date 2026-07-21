@@ -158,7 +158,7 @@ final class _tax_rates_ct600_rimCard extends CardBaseFramework
     private function rimLinks(): string
     {
         return $this->renderLinks([
-            ['CT Filing Mappings', '?page=ct_filing_mappings', false],
+            ['Filing Mappings', '?page=filing_mappings', false],
             ['HMRC - CT600 RIM Artefacts', 'https://www.gov.uk/government/publications/corporation-tax-technical-specifications-ct600-rim-artefacts', true],
             ['HMRC - CT600 Version 3', 'https://www.gov.uk/government/news/new-version-of-company-tax-return-form-introduced', true],
             ['HMRC - CT600 Version 2', 'https://www.gov.uk/government/publications/corporation-tax-company-tax-return-ct600-2008-version-2', true],

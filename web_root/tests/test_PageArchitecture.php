@@ -223,9 +223,9 @@ final class TestPageArchitectureHarness
 
     private function testCtFilingMappingsPage(): void
     {
-        $page = $this->loadPageCards('ct_filing_mappings');
-        $this->assertSame(_ct_filing_mappings::class, $page::class);
-        $this->assertSame('CT Filing Mappings', $page->title());
+        $page = $this->loadPageCards('filing_mappings');
+        $this->assertSame(_filing_mappings::class, $page::class);
+        $this->assertSame('Filing Mappings', $page->title());
         $this->assertSame(['company_id', 'accounting_period_id'], $page->hiddenSiteContextSelectors());
         $this->assertSame(['tax_ct600_rim_mappings', 'tax_ct_computation_mappings'], $page->cards());
 

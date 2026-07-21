@@ -72,10 +72,13 @@ final class _director_loan_ct600aCard extends CardBaseFramework
         $answers = (array)($review['answers'] ?? []);
         $fields = '';
         foreach ($questions as $key => $question) {
-            $value = (string)($answers[$key] ?? 'unresolved');
+            $value = (string)($answers[$key] ?? 'yes');
+            if (!in_array($value, ['yes', 'no'], true)) {
+                $value = 'yes';
+            }
             $fields .= '<fieldset class="panel-soft"><legend>' . HelperFramework::escape((string)$question) . '</legend><div class="actions-row">'
                 . $this->radio((string)$key, 'no', 'No', $value) . $this->radio((string)$key, 'yes', 'Yes', $value)
-                . $this->radio((string)$key, 'unresolved', 'Unresolved', $value) . '</div></fieldset>';
+                . '</div></fieldset>';
         }
         return '<form class="settings-stack" method="post" action="?page=loans" data-ajax="true">'
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '

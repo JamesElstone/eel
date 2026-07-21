@@ -17,7 +17,7 @@ final class Ct600aAction implements ActionInterfaceFramework
         try{
             if($intent==='save_ct600a_review'){
                 $answers=[];
-                foreach(array_keys($service->reviewQuestions()) as $key){$answers[$key]=$request->input($key,'unresolved');}
+                foreach(array_keys($service->reviewQuestions()) as $key){$answers[$key]=$request->input($key,'yes');}
                 $result=$service->saveReview($companyId,$periodId,(int)$request->input('ct_period_id',0),$answers,
                     (string)$request->input('approver_role',''),(string)$request->input('approved_by',''),(string)$request->input('confirmation_note',''));
                 return $this->result(!empty($result['success']),(array)($result['errors']??[]),!empty($result['success'])?'Section 464A review saved. The filing basis must be approved again.':'');

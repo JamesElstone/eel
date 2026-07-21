@@ -6,7 +6,7 @@ namespace eel_accounts\Service;
 
 final class Ct600aService
 {
-    public const REVIEW_VERSION = 'ct600a-review-v1';
+    public const REVIEW_VERSION = 'ct600a-review-v2';
     public const MODEL_VERSION = 'ct600a-model-v1';
     public const RETURN_PAYMENT_RELIEF_CUTOFF = '2024-10-30';
     private const ANSWER_KEYS = [
@@ -26,12 +26,12 @@ final class Ct600aService
     public function reviewQuestions(): array
     {
         return [
-            'missing_parties' => 'Are any participators or associates missing from the ownership and relationship records?',
-            'unrecorded_value' => 'Was any value transferred to a participator or associate outside the recorded loan accounts?',
-            'indirect_benefit' => 'Was any benefit routed through a partnership, trust, connected company, fiduciary or representative?',
-            'noncommercial_value' => 'Were company assets, services, expenses or other value supplied outside a valid commercial, remuneration, dividend or loan treatment?',
-            'tax_avoidance_arrangement' => 'Was the company party to arrangements whose main purpose included avoiding section 455 or obtaining a tax advantage?',
-            'replacement_extraction' => 'Was a repayment or return payment connected with a replacement loan, benefit or other extraction under section 464C?',
+            'missing_parties' => 'Are all participators and associates recorded in the ownership and relationship records?',
+            'unrecorded_value' => 'Is all value transferred to a participator or associate recorded in the loan accounts?',
+            'indirect_benefit' => 'Were no benefits routed through a partnership, trust, connected company, fiduciary or representative?',
+            'noncommercial_value' => 'Were all company assets, services, expenses and other value supplied under valid commercial, remuneration, dividend or loan treatment?',
+            'tax_avoidance_arrangement' => 'Were there no arrangements whose main purpose included avoiding section 455 or obtaining a tax advantage?',
+            'replacement_extraction' => 'Was no repayment or return payment connected with a replacement loan, benefit or other extraction under section 464C?',
         ];
     }
 
@@ -263,8 +263,8 @@ final class Ct600aService
         }
         $normalised = [];
         foreach (self::ANSWER_KEYS as $key) {
-            $value = (string)($answers[$key] ?? 'unresolved');
-            if (!in_array($value, ['yes', 'no', 'unresolved'], true)) { $value = 'unresolved'; }
+            $value = (string)($answers[$key] ?? 'yes');
+            if (!in_array($value, ['yes', 'no'], true)) { $value = 'yes'; }
             $normalised[$key] = $value;
         }
         $s455 = (new S455ReviewService())->calculate($companyId, $accountingPeriodId, $ctPeriodId);
@@ -362,11 +362,14 @@ final class Ct600aService
         $current=(string)$row['review_version']===self::REVIEW_VERSION
             && hash_equals((string)$row['basis_hash'],hash('sha256',$this->canonicalJson($basis)))
             && hash_equals(hash('sha256',$this->canonicalJson($storedManifest)),hash('sha256',$this->canonicalJson($currentManifest)));
-        $errors=[]; $hasBenefit=array_filter($events,static fn(array $event):bool=>(string)$event['event_kind']==='s464a_benefit')!==[];
+        $errors=[];
         foreach (self::ANSWER_KEYS as $key) {
-            $answer=(string)($answers[$key]??'unresolved');
-            if ($answer==='unresolved') { $errors[]=$this->reviewQuestions()[$key].' This remains unresolved.'; }
-            elseif ($answer==='yes' && !$hasBenefit) { $errors[]='The positive '.$key.' answer requires a supported section 464A benefit record or must be resolved.'; }
+            $answer=(string)($answers[$key]??'');
+            if (!in_array($answer, ['yes', 'no'], true)) {
+                $errors[]=$this->reviewQuestions()[$key].' Answer Yes or No.';
+            } elseif ($answer === 'no') {
+                $errors[]=$this->reviewQuestions()[$key].' Resolve this through the posted transaction or journal evidence before filing.';
+            }
         }
         if (!$current) { $errors[]='The section 464A review is stale because its underlying evidence changed.'; }
         return ['stored'=>true,'current'=>$current,'complete'=>$errors===[],'answers'=>$answers,'errors'=>array_values(array_unique($errors)),

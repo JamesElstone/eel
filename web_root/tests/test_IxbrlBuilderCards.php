@@ -452,9 +452,9 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             ],
         ];
         $draft = $card->render($context);
-        $harness->assertTrue(str_contains($draft, 'CT period 2025-01-01 to 2025-12-31'));
         $harness->assertTrue(str_contains($draft, 'Corporation Tax iXBRL'));
         $harness->assertTrue(str_contains($draft, '<div class="summary-label">CT period</div>'));
+        $harness->assertTrue(str_contains($draft, '2025-01-01 to 2025-12-31'));
         $harness->assertTrue(str_contains($draft, 'generate_computation_ixbrl'));
         $harness->assertTrue(str_contains($draft, 'Generate Corporation Tax Period iXBRL</button>'));
         $harness->assertFalse(str_contains($draft, 'validate_computation_ixbrl'));

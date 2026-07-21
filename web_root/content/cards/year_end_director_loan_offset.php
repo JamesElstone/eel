@@ -196,6 +196,7 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
             <div class="eyebrow">Legacy offset repair</div>
             <div class="helper">Post an auditable net reversal for the legacy offset. The historical source journals will not be changed.</div>
             <form method="post" data-ajax="true" class="actions-row">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="YearEnd">
                 <input type="hidden" name="intent" value="repair_legacy_director_loan_offset">
                 <input type="hidden" name="company_id" value="' . $companyId . '">

@@ -17,14 +17,14 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
 ): void {
     $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'calculates the primary director position while preserving the external counterparty', static function () use ($harness, $service): void {
         directorLoanStatementWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
-            $primaryDirectorId = (int)$fixture['primary_director_id'];
-            $otherId = (int)$fixture['other_director_id'];
+            $primaryPartyId = (int)$fixture['primary_party_id'];
+            $otherPartyId = (int)$fixture['other_party_id'];
 
             directorLoanStatementInsertTransactionJournal(
                 $fixture,
                 (int)$fixture['asset_nominal_id'],
                 253.00,
-                $primaryDirectorId,
+                $primaryPartyId,
                 'External Counterparty'
             );
             directorLoanStatementInsertManualLine(
@@ -32,7 +32,7 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
                 (int)$fixture['liability_nominal_id'],
                 0.00,
                 1288.63,
-                $primaryDirectorId,
+                $primaryPartyId,
                 'Primary director funds introduced'
             );
             directorLoanStatementInsertManualLine(
@@ -40,7 +40,7 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
                 (int)$fixture['asset_nominal_id'],
                 100.00,
                 0.00,
-                $otherId,
+                $otherPartyId,
                 'Other director advance'
             );
 
@@ -51,8 +51,8 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
             foreach ((array)($statement['per_director'] ?? []) as $position) {
                 $positions[(int)($position['director_id'] ?? 0)] = $position;
             }
-            $primaryDirector = (array)($positions[$primaryDirectorId] ?? []);
-            $other = (array)($positions[$otherId] ?? []);
+            $primaryDirector = (array)($positions[$primaryPartyId] ?? []);
+            $other = (array)($positions[$otherPartyId] ?? []);
             $externalCounterpartyEntry = array_values(array_filter(
                 (array)($statement['attribution_entries'] ?? []),
                 static fn(array $entry): bool => (string)($entry['counterparty_name'] ?? '') === 'External Counterparty'
@@ -77,7 +77,7 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
             $harness->assertSame('100.00', directorLoanStatementMoney($statement['potential_s455_exposure'] ?? 0));
             $harness->assertSame('100.00', directorLoanStatementMoney($taxReview['exposure_amount'] ?? 0));
             $harness->assertCount(1, $externalCounterpartyEntry);
-            $harness->assertSame($primaryDirectorId, (int)($externalCounterpartyEntry[0]['director_id'] ?? 0));
+            $harness->assertSame($primaryPartyId, (int)($externalCounterpartyEntry[0]['director_id'] ?? 0));
             $harness->assertSame(true, str_contains((string)($externalCounterpartyEntry[0]['source_url'] ?? ''), 'transaction_id='));
         });
     });
@@ -89,7 +89,7 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
                 (int)$fixture['asset_nominal_id'],
                 500.00,
                 0.00,
-                (int)$fixture['primary_director_id'],
+                (int)$fixture['primary_party_id'],
                 'Primary director receivable'
             );
             directorLoanStatementInsertManualLine(
@@ -97,7 +97,7 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
                 (int)$fixture['liability_nominal_id'],
                 0.00,
                 500.00,
-                (int)$fixture['other_director_id'],
+                (int)$fixture['other_party_id'],
                 'Other director payable'
             );
             directorLoanStatementInsertManualLine(
@@ -121,7 +121,7 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
 
 function directorLoanStatementWithFixture(GeneratedServiceClassTestHarness $harness, callable $callback): void
 {
-    foreach (['company_directors', 'journal_lines', 'statement_uploads', 'transactions'] as $table) {
+    foreach (['company_directors', 'company_parties', 'journal_lines', 'statement_uploads', 'transactions'] as $table) {
         if (!InterfaceDB::tableExists($table)) {
             $harness->skip($table . ' schema is not available.');
         }
@@ -142,8 +142,8 @@ function directorLoanStatementWithFixture(GeneratedServiceClassTestHarness $harn
             ['company_number' => 'DLS' . $marker]
         );
         $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
-        $settings->set('director_loan_asset_nominal_id', $assetNominalId, 'int');
-        $settings->set('director_loan_liability_nominal_id', $liabilityNominalId, 'int');
+        $settings->set('participator_loan_asset_nominal_id', $assetNominalId, 'int');
+        $settings->set('participator_loan_liability_nominal_id', $liabilityNominalId, 'int');
         $settings->flush();
         InterfaceDB::prepareExecute(
             'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
@@ -178,9 +178,33 @@ function directorLoanStatementWithFixture(GeneratedServiceClassTestHarness $harn
             'SELECT id FROM company_directors WHERE company_id = :company_id AND full_name = :name',
             ['company_id' => $companyId, 'name' => 'Primary Director']
         );
-        $otherId = (int)InterfaceDB::fetchColumn(
+        $otherDirectorId = (int)InterfaceDB::fetchColumn(
             'SELECT id FROM company_directors WHERE company_id = :company_id AND full_name = :name',
             ['company_id' => $companyId, 'name' => 'Other Director']
+        );
+        foreach ([
+            ['director_id' => $primaryDirectorId, 'name' => 'Primary Director'],
+            ['director_id' => $otherDirectorId, 'name' => 'Other Director'],
+        ] as $party) {
+            InterfaceDB::prepareExecute(
+                'INSERT INTO company_parties (company_id, party_type, legal_name, linked_director_id, source_note)
+                 VALUES (:company_id, :party_type, :legal_name, :linked_director_id, :source_note)',
+                [
+                    'company_id' => $companyId,
+                    'party_type' => 'individual',
+                    'legal_name' => $party['name'],
+                    'linked_director_id' => $party['director_id'],
+                    'source_note' => 'Director Loan Statement test fixture',
+                ]
+            );
+        }
+        $primaryPartyId = (int)InterfaceDB::fetchColumn(
+            'SELECT id FROM company_parties WHERE company_id = :company_id AND linked_director_id = :director_id',
+            ['company_id' => $companyId, 'director_id' => $primaryDirectorId]
+        );
+        $otherPartyId = (int)InterfaceDB::fetchColumn(
+            'SELECT id FROM company_parties WHERE company_id = :company_id AND linked_director_id = :director_id',
+            ['company_id' => $companyId, 'director_id' => $otherDirectorId]
         );
 
         $callback([
@@ -189,8 +213,8 @@ function directorLoanStatementWithFixture(GeneratedServiceClassTestHarness $harn
             'accounting_period_id' => $accountingPeriodId,
             'asset_nominal_id' => $assetNominalId,
             'liability_nominal_id' => $liabilityNominalId,
-            'primary_director_id' => $primaryDirectorId,
-            'other_director_id' => $otherId,
+            'primary_party_id' => $primaryPartyId,
+            'other_party_id' => $otherPartyId,
         ]);
     } finally {
         if (InterfaceDB::inTransaction()) {
@@ -204,7 +228,7 @@ function directorLoanStatementInsertManualLine(
     int $nominalId,
     float $debit,
     float $credit,
-    ?int $directorId,
+    ?int $partyId,
     string $description
 ): int {
     $sourceRef = 'dla-manual:' . $fixture['marker'] . ':' . hash('sha256', $description . microtime(true));
@@ -225,12 +249,12 @@ function directorLoanStatementInsertManualLine(
         ['company_id' => (int)$fixture['company_id'], 'source_ref' => $sourceRef]
     );
     InterfaceDB::prepareExecute(
-        'INSERT INTO journal_lines (journal_id, nominal_account_id, director_id, debit, credit, line_description)
-         VALUES (:journal_id, :nominal_id, :director_id, :debit, :credit, :description)',
+        'INSERT INTO journal_lines (journal_id, nominal_account_id, party_id, debit, credit, line_description)
+         VALUES (:journal_id, :nominal_id, :party_id, :debit, :credit, :description)',
         [
             'journal_id' => $journalId,
             'nominal_id' => $nominalId,
-            'director_id' => $directorId,
+            'party_id' => $partyId,
             'debit' => number_format($debit, 2, '.', ''),
             'credit' => number_format($credit, 2, '.', ''),
             'description' => $description,
@@ -246,7 +270,7 @@ function directorLoanStatementInsertTransactionJournal(
     array $fixture,
     int $nominalId,
     float $amount,
-    int $directorId,
+    int $partyId,
     string $counterparty
 ): void {
     $hash = hash('sha256', 'dla-upload:' . $fixture['marker']);
@@ -272,10 +296,10 @@ function directorLoanStatementInsertTransactionJournal(
     InterfaceDB::prepareExecute(
         'INSERT INTO transactions (
             company_id, accounting_period_id, statement_upload_id, txn_date, description,
-            amount, counterparty_name, dedupe_hash, nominal_account_id, director_id, category_status
+            amount, counterparty_name, dedupe_hash, nominal_account_id, party_id, category_status
          ) VALUES (
             :company_id, :period_id, :upload_id, :txn_date, :description,
-            :amount, :counterparty_name, :dedupe_hash, :nominal_id, :director_id, :category_status
+            :amount, :counterparty_name, :dedupe_hash, :nominal_id, :party_id, :category_status
          )',
         [
             'company_id' => (int)$fixture['company_id'],
@@ -287,7 +311,7 @@ function directorLoanStatementInsertTransactionJournal(
             'counterparty_name' => $counterparty,
             'dedupe_hash' => hash('sha256', 'dla-transaction:' . $fixture['marker']),
             'nominal_id' => $nominalId,
-            'director_id' => $directorId,
+            'party_id' => $partyId,
             'category_status' => 'manual',
         ]
     );
@@ -312,12 +336,12 @@ function directorLoanStatementInsertTransactionJournal(
         ['company_id' => (int)$fixture['company_id'], 'source_ref' => 'transaction:' . $transactionId]
     );
     InterfaceDB::prepareExecute(
-        'INSERT INTO journal_lines (journal_id, nominal_account_id, director_id, debit, credit, line_description)
-         VALUES (:journal_id, :nominal_id, :director_id, :debit, 0.00, :description)',
+        'INSERT INTO journal_lines (journal_id, nominal_account_id, party_id, debit, credit, line_description)
+         VALUES (:journal_id, :nominal_id, :party_id, :debit, 0.00, :description)',
         [
             'journal_id' => $journalId,
             'nominal_id' => $nominalId,
-            'director_id' => $directorId,
+            'party_id' => $partyId,
             'debit' => number_format($amount, 2, '.', ''),
             'description' => 'Funds advanced on the primary director account',
         ]

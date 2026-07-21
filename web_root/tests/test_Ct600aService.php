@@ -73,7 +73,6 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $errors = (array)$model['blocking_errors'];
 
             $h->assertCount(1, $errors);
-            $h->assertTrue(str_contains($errors[0], '2 bank loan movements are not linked'));
             $h->assertTrue(str_contains($errors[0], 'repayments in a following accounting period may reduce the tax due'));
             $h->assertFalse(str_contains($errors[0], '#5465'));
             $h->assertFalse(str_contains($errors[0], '#6140'));

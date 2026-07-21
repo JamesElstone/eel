@@ -124,7 +124,7 @@ final class Ct600aService
             }
         }
         if ($unattributedLoanMovementCount > 0) {
-            $blocking[] = $this->unattributedLoanMovementMessage($unattributedLoanMovementCount);
+            $blocking[] = $this->unattributedLoanMovementMessage();
         }
         foreach ((array)($review['errors'] ?? []) as $error) { $blocking[] = (string)$error; }
 
@@ -247,12 +247,9 @@ final class Ct600aService
         return $model + ['basis_hash' => hash('sha256', $json), 'complete' => $model['blocking_errors'] === []];
     }
 
-    private function unattributedLoanMovementMessage(int $count): string
+    private function unattributedLoanMovementMessage(): string
     {
-        $label = $count === 1 ? 'movement is' : 'movements are';
-
-        return $count . ' bank loan ' . $label . ' not linked to a confirmed ownership party. '
-            . 'Review and correctly code the loan statement. If this CT period has a section 455 charge, '
+        return 'If this CT period has a section 455 charge, '
             . 'correctly coding repayments in a following accounting period may reduce the tax due by establishing repayment relief.';
     }
 

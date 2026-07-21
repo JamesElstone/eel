@@ -41,6 +41,8 @@ EEL Accounts is currently designed for UK micro-entity companies with straightfo
 
 **EEL Accounts continuously validates whether a company remains within its supported scope. If the company falls outside that scope, statutory accounts generation and electronic filing are disabled rather than producing filings that may be incomplete or inaccurate. The software provides a clear explanation of the unsupported condition and the filing features that have been disabled, allowing the issue to be resolved before filing.**
 
+For details of the types of companies supported by EEL Accounts, see the [Supported Company Scope](SUPPORTED_COMPANY_SCOPE.md).
+
 ---
 
 ## Core Workflow

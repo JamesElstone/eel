@@ -267,6 +267,8 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
                 'Companies House accounts_xml must contain between 1 and 30000000 bytes.'
             );
         }
+        (new \eel_accounts\Service\CompaniesHouseIxbrlDocumentPolicyService())
+            ->assertSubmissionCompliant($accountsXml);
 
         $filename = trim((string)($payload['filename'] ?? ('Accounts-' . $submissionNumber . '.xml')));
         if ($filename === '' || strlen($filename) > 32 || preg_match('/[\x00-\x1F\x7F]/', $filename)) {

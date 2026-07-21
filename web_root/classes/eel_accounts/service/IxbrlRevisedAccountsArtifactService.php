@@ -221,6 +221,16 @@ final class IxbrlRevisedAccountsArtifactService
         if (!is_string($xhtml) || $xhtml === '') {
             return ['success' => false, 'errors' => ['The revised XHTML could not be serialised.'], 'warnings' => []];
         }
+        try {
+            $xhtml = (new CompaniesHouseIxbrlDocumentPolicyService())
+                ->canonicaliseGeneratedDocument($xhtml);
+        } catch (\Throwable $exception) {
+            return [
+                'success' => false,
+                'errors' => ['The revised XHTML XML declaration is not Companies House compliant: ' . $exception->getMessage()],
+                'warnings' => [],
+            ];
+        }
 
         $check = new \DOMDocument();
         $previous = libxml_use_internal_errors(true);

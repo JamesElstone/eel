@@ -27,7 +27,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             'company_authentication_code' => 'ABC123',
             'submission_number' => 'AP7901',
             'date_signed' => '2026-07-17',
-            'accounts_xml' => '<?xml version="1.0"?><html>revised accounts</html>',
+            'accounts_xml' => '<?xml version="1.0"?>' . "\n<html>revised accounts</html>",
             'filename' => 'AP79-revised.xml',
             'customer_reference' => 'AP79REVISION',
             'language' => 'EN',
@@ -342,6 +342,44 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $harness->assertTrue(str_contains($exception->getMessage(), 'TEST or LIVE'));
                 }
                 $harness->assertSame(false, $called);
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Client\CompaniesHouseAccountsGatewayClient::class,
+            'rejects a legacy accounts declaration before schema validation or transport',
+            static function () use (
+                $harness,
+                $credentials,
+                $transactionId,
+                $config,
+                $submissionPayload
+            ): void {
+                $transportCalls = 0;
+                $validatorCalls = 0;
+                $client = new \eel_accounts\Client\CompaniesHouseAccountsGatewayClient(
+                    static function (array $request) use (&$transportCalls): array {
+                        $transportCalls++;
+                        return ['status_code'=>500, 'headers'=>[], 'body'=>''];
+                    },
+                    $credentials,
+                    $transactionId,
+                    $config,
+                    static function (string $xml, string $manifest) use (&$validatorCalls): array {
+                        $validatorCalls++;
+                        return ['success'=>true,'snapshot_id'=>7,'manifest_sha256'=>$manifest];
+                    }
+                );
+                $payload = $submissionPayload();
+                $payload['accounts_xml'] = '<?xml version="1.0" encoding="UTF-8"?>' . "\n<html/>";
+                try {
+                    $client->prepareAccounts($payload, 'TEST', str_repeat('a', 64));
+                    $harness->assertTrue(false, 'Legacy declaration should be rejected.');
+                } catch (InvalidArgumentException $exception) {
+                    $harness->assertTrue(str_contains($exception->getMessage(), 'regenerate'));
+                }
+                $harness->assertSame(0, $validatorCalls);
+                $harness->assertSame(0, $transportCalls);
             }
         );
 

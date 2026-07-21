@@ -26,6 +26,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $method->setAccessible(true);
             $xhtml = (string)$method->invoke($service, ixbrlRenderFixtureFacts());
 
+            $harness->assertTrue(str_starts_with($xhtml, '<?xml version="1.0"?>' . "\n"));
+            $harness->assertFalse(str_contains(strtok($xhtml, "\n"), 'encoding='));
             $harness->assertTrue(str_contains($xhtml, '<ix:header>'));
             $harness->assertTrue(str_contains($xhtml, 'FRS-102/2026-01-01/FRS-102-2026-01-01.xsd'));
             $harness->assertTrue(str_contains($xhtml, 'xmlns:core="http://xbrl.frc.org.uk/fr/2026-01-01/core"'));

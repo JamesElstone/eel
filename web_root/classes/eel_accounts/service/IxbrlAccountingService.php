@@ -388,7 +388,7 @@ final class IxbrlAccountingService
             $namespaceAttributes .= ' xmlns:' . $prefix . '="' . $this->e($uri) . '"';
         }
 
-        return '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
+        $xhtml = '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
             . '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">' . "\n"
             . '<html xmlns="http://www.w3.org/1999/xhtml"'
             . ' xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"'
@@ -432,6 +432,9 @@ final class IxbrlAccountingService
             . '<div><h2>Notes</h2>' . $notes . '</div>' . "\n"
             . ($evidenceArtifactId !== '' ? '<div><p>EEL filing evidence artifact: <strong>' . $this->e($evidenceArtifactId) . '</strong></p></div>' . "\n" : '')
             . '</body></html>' . "\n";
+
+        return (new CompaniesHouseIxbrlDocumentPolicyService())
+            ->canonicaliseGeneratedDocument($xhtml);
     }
 
     private function statementTable(array $indexed, array $rows): string

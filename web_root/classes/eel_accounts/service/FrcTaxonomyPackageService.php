@@ -25,6 +25,9 @@ final class FrcTaxonomyPackageService
 
     public function refreshAndInstall(): array
     {
+        if (!\InterfaceDB::tableExists('frc_taxonomy_packages')) {
+            throw new \RuntimeException('Apply database migration 2026_07_21_003_frc_taxonomy_artifacts.sql before refreshing the FRC taxonomy package.');
+        }
         $html = $this->fetch(self::SOURCE_URL);
         if (preg_match('/href=["\']([^"\']+\.zip)["\'][^>]*>[^<]*(?:2026 FRC Taxonomy Suite|FRC Taxonomy Suite 2026)/i', $html, $match) !== 1
             && preg_match('/(?:2026 FRC Taxonomy Suite|FRC Taxonomy Suite 2026).*?href=["\']([^"\']+\.zip)["\']/is', $html, $match) !== 1

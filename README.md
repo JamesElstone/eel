@@ -10,11 +10,21 @@
 
 Its goal is simple:
 
-> Upload bank statements -> categorise transactions -> produce an iXBRL file for electronic CT600 submission to HMRC and Companies House Web Filing.
+> Upload bank and trade supplier statements -> categorise transactions -> produce statutory accounts, Corporation Tax computations and the electronic filing payloads required for HMRC and Companies House.
+
+## Documentation
+
+- [Supported Company Scope](SUPPORTED_COMPANY_SCOPE.md)
+- [Software Quality Management](SOFTWARE_QUALITY_MANAGEMENT.md)
+- [Mathematical Basis](MATHEMATIC_BASIS.md)
+- [PHP Requirements](PHP_REQUIREMENTS.md)
+- [Architecture](ARCHITECTURE.md)
+- [Licence and Third-Party Notices](LICENSE)
+- [Terms](TERMS.md)
 
 ## Requirements
 
-eel turns raw bank and trade supplier statements into structured financial outputs suitable for FRS 105 micro-entity statutory reporting to both Companies House and HMRC, using a repeatable evidence based approach.
+eel turns raw bank and trade supplier statements into structured financial outputs suitable for FRS 105 micro-entity statutory reporting to both Companies House and HMRC, using a repeatable, evidence-based approach.
 
 Instead of relying on bank APIs, eel works with **CSV statement uploads**, making it simple, portable, and fully self-hosted.
 
@@ -22,22 +32,20 @@ eel now uses **eelKit** as its upstream application framework. eelKit provides t
 
 ---
 
-## Required Company Scope
-
-Supported Company Scope
+## Supported Company Scope
 
 EEL Accounts is currently designed for UK micro-entity companies with straightforward Corporation Tax affairs. To generate statutory accounts and Corporation Tax submissions, the company must meet all of the following requirements:
 
 - Be registered with Companies House and have a valid company registration number.
 - Be active on the Companies House register.
 - Qualify as a micro-entity and prepare statutory accounts under FRS 105, the Financial Reporting Standard applicable to the Micro-entities Regime. This generally means meeting at least two of the following thresholds:
-   - Annual turnover not exceeding GBP 1,000,000
-   - Balance sheet total not exceeding GBP 500,000
-   - An average of 10 or fewer employees
-   - Have a valid HMRC Unique Taxpayer Reference (UTR).
-   - Not be VAT registered.
-   - Not require statutory disclosures that are not currently supported by EEL Accounts, including financial commitments, guarantees or contingent liabilities. Where unsupported disclosures are identified, statutory accounts generation and Corporation Tax filing are disabled. Director's loan disclosures are generated automatically from the chronological Director Loan Statement.
-   - Have Companies House and HMRC developer credentials configured to enable electronic filing.
+  - Annual turnover not exceeding **GBP 1,000,000**
+  - Balance sheet total not exceeding **GBP 500,000**
+  - An average of **10 or fewer employees**
+- Have a valid HMRC Unique Taxpayer Reference (UTR).
+- Not be VAT registered.
+- Not require statutory disclosures that are not currently supported by EEL Accounts, including financial commitments, guarantees or contingent liabilities. Where unsupported disclosures are identified, statutory accounts generation and Corporation Tax filing are disabled. Director's loan disclosures are generated automatically from the chronological Director Loan Statement.
+- Have Companies House and HMRC developer credentials configured to enable electronic filing.
 
 **EEL Accounts continuously validates whether a company remains within its supported scope. If the company falls outside that scope, statutory accounts generation and electronic filing are disabled rather than producing filings that may be incomplete or inaccurate. The software provides a clear explanation of the unsupported condition and the filing features that have been disabled, allowing the issue to be resolved before filing.**
 

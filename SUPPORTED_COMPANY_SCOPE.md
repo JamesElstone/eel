@@ -1,4 +1,4 @@
-# Supported Scope
+# Supported Company Scope
 
 This document defines the current supported scope of EEL Accounts.
 
@@ -61,14 +61,13 @@ The supported scope expands over time as additional functionality is implemented
 * iXBRL accounts generation
 * iXBRL computations
 * GovTalk XML generation
-* HMRC online filing
+* HMRC submission workflow integration
 
 ## Planned
 
 The following may be supported in future releases:
 
 * Additional CT600 supplementary pages
-* Future HMRC schema versions
 * Additional tax computations
 
 ---
@@ -81,7 +80,7 @@ The following may be supported in future releases:
 * Company profile retrieval
 * Officer information
 * Filing history retrieval
-* Electronic filing of supported accounts
+* Electronic filing workflow integration for supported accounts
 
 ---
 
@@ -95,16 +94,16 @@ VAT accounting, VAT returns and Making Tax Digital (MTD) functionality are outsi
 
 ---
 
-# Director and Business Participant Loans
+# Director and Participator Loan Accounts
 
 ## Supported
 
-* Director & Participant loan ledger
+* Director and participator loan accounts
 * Loan advances
 * Loan repayments
 * Credit balances
 * Debit balances
-* Director's Loan Statement
+* Director Loan Statement
 * Automatic statutory disclosure generation
 * CT600A calculations
 
@@ -130,13 +129,17 @@ Payroll processing is outside the current scope of EEL Accounts.
 
 # Electronic Filing
 
-## Supported
+## Implemented
 
-* Companies House electronic filing
-* HMRC Corporation Tax submission
-* XML validation
-* iXBRL generation
-* GovTalk message generation
+* CT600 and CT600A payload generation
+* iXBRL accounts and computations
+* GovTalk XML generation
+* Local XML and iXBRL validation
+* Submission workflow integration
+
+## Recognition Status
+
+HMRC live filing has not yet completed the software recognition and live-submission process. Filing functionality must therefore be treated as under development and must not be represented as HMRC-approved or production-recognised.
 
 Developer credentials are required to enable electronic filing.
 
@@ -152,7 +155,7 @@ If a company falls outside the supported scope:
 * Corporation Tax filing may be disabled;
 * Companies House filing may be disabled;
 * the software explains which condition is unsupported; and
-* no filing is generated that EEL Accounts cannot confidently support.
+* no filing is enabled for submission that EEL Accounts cannot confidently support.
 
 ---
 
@@ -181,7 +184,5 @@ EEL Accounts is developed according to the following principles:
 | Filing                 | HMRC            |
 
 ---
-
-**Last Updated:** 2026-07-21
 
 This document describes the supported scope of the current release of EEL Accounts and may change as new functionality becomes available.

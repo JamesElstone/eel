@@ -1,0 +1,419 @@
+FRS 105 / HMRC Verification Cross Reference Index (VCRI)
+========================================================
+
+Project: EEL Accounting App
+Workspace: C:\Users\James\Documents\elstone electricals limited\eel_accounts
+Assessment focus: micro-entity accounts, Corporation Tax computation, CT600/HMRC filing readiness, and implementation evidence across the project.
+Reference standard: FRS 105. FRS 105 is the Financial Reporting Standard applicable to the Micro-entities Regime.
+File name: FRS105_HMRC_VCRI.txt
+Update note: this index was re-baselined on 21 July 2026 against the current project working state. Since the first assessment, the project has added deterministic accounting/tax fixtures; a frozen, integrity-checked filing basis; CT600 V3 construction and local XSD validation; accounts and computation iXBRL generation with structural and Arelle validation gates; a CT600A/s455 evidence and review workflow; and a fail-closed supplementary-page scope review. These are implementation and test results, not HMRC software recognition or evidence of a successful live submission.
+
+Status key:
+- OK: the app has a materially suitable approach for this requirement.
+- PARTIAL: useful foundations exist, but further work is needed before reliance or filing.
+- BLOCKED: the workflow is intentionally or practically prevented from completing.
+
+Important limitation:
+This is an engineering and product verification assessment. It is not formal accounting, audit, legal, or tax advice. Final statutory accounts and Company Tax Returns should be reviewed by a qualified accountant/tax adviser before submission.
+
+
+1. Reference Basis
+------------------
+
+Official references checked:
+
+1. FRC FRS 105 page
+   https://www.frc.org.uk/library/standards-codes-policy/accounting-and-reporting/uk-accounting-standards/frs-105/
+   Relevant baseline: FRS 105 applies to entities using the Micro-entities Regime.
+
+2. FRC FRS 105 September 2024 redacted edition
+   https://media.frc.org.uk/documents/FRS_105_September_2024_Redacted_edition_zZFkzvN.pdf
+   Relevant baseline: micro-entity financial statements prepared under FRS 105 are presumed to give the true and fair view required by law; a complete set includes a Statement of Financial Position and an Income Statement; recognition and measurement are generally historical cost, with revaluation/fair value routes not permitted. Main 2024 amendments are effective for periods beginning on or after 1 January 2026, with early application permitted if applied together.
+
+3. Companies House micro-entity accounts guidance
+   https://www.gov.uk/annual-accounts/microentities-small-and-dormant-companies
+   Relevant baseline: micro-entities may prepare/file simpler accounts and must include the required micro-entity balance sheet statements when using those provisions.
+
+4. HMRC Company Tax Return guide
+   https://www.gov.uk/guidance/company-tax-return-guide
+   Relevant baseline: a Company Tax Return normally consists of the CT600, computations, and accounts. Online filing usually requires accounts and computations in inline XBRL format.
+
+5. HMRC Company Tax Return obligations
+   https://www.gov.uk/guidance/company-tax-return-obligations
+   Relevant baseline: online filing is required for most company returns; accounts and computations must usually be in inline XBRL; the return is normally due 12 months after the accounting period end; Corporation Tax is normally payable 9 months and 1 day after period end for non-large companies.
+
+6. HMRC Corporation Tax rates and allowances
+   https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax
+   Relevant baseline: from 1 April 2023 the main Corporation Tax rate is 25%, with small profits rate and marginal relief rules requiring threshold, associated company, and apportionment handling.
+
+7. HMRC CT600 guide
+   https://www.gov.uk/government/publications/corporation-tax-company-tax-return-guide
+   Relevant baseline: CT600 boxes, supplementary pages, capital allowances, loss claims, and other disclosures need rule-specific mapping.
+
+8. HMRC Corporation Tax accounting periods
+   https://www.gov.uk/corporation-tax-accounting-period
+   Relevant baseline: a Corporation Tax accounting period cannot be longer than 12 months.
+
+
+2. Executive Assessment
+-----------------------
+
+The project has a strong conceptual foundation for a micro-entity bookkeeping and tax preparation tool:
+
+- Ledger-first design is the correct direction.
+- Double-entry journals are the right source of truth.
+- Bank import staging, duplicate controls, source references, and period locks support auditability.
+- Trial balance and year-end readiness services provide useful accounting controls.
+- The system clearly separates bank transactions, journals, nominal accounts, accounting periods, iXBRL runs, CT600 drafts, and HMRC submission records.
+- The HMRC production path is guarded enough that the application should not silently submit an incomplete package.
+
+The current implementation is materially more complete than the original draft-only assessment. It can build a controlled filing basis, generate CT600 V3-shaped XML and accounts/computation iXBRL artifacts, and fail closed when required scope, evidence, integrity, or validation conditions are absent. It remains early-stage software: no successful live HMRC submission or HMRC software recognition is recorded, and no generated artifact should be represented as HMRC-approved or production-recognised.
+
+The highest priority shortfalls are:
+
+1. FRS 105 accounts presentation, comparative information, legal wording, and taxonomy coverage still need continued professional/release review; validation controls do not themselves establish statutory completeness.
+2. CT600 V3 XML and CT600A serialization now have local schema-validation coverage, but HMRC end-to-end acceptance and software recognition remain unproven.
+3. Computation iXBRL is implemented with a controlled taxonomy/mapping path and validation gates; operational reliance still depends on current artifacts passing both internal and Arelle validation.
+4. The Corporation Tax engine remains limited to its documented ordinary-company scope. Augmented profits, ring-fence/special regimes, future-rate maintenance, detailed adjustments, and professional review remain important boundaries.
+5. Loss handling uses tax_loss_carryforwards as the canonical source; tax_loss_pools is removed from the baseline schema and dropped by migration for existing installs.
+6. Fixed-asset and capital-allowance flows now have materially stronger calculation and fixture coverage, but unusual assets, disposals, and regime-specific cases remain subject to scope gates and review.
+7. CT600A/s455 now has an evidence-backed workflow, integrity hashes, section 464A review, section 464C blocking, and separate L2P-claim routing. It is not a substitute for professional review of complex participator-loan cases.
+8. The VCRI no longer relies on the historical zero-journal snapshot: the refreshed local database has posted journals and generated calculation/iXBRL runs. That is a readiness indicator, not evidence of a submitted or accepted return.
+
+
+3. VCRI Control Index
+---------------------
+
+VCRI-001 - Correct accounting standard
+Reference: FRS 105, micro-entities regime.
+Implementation evidence: architecture.md, the accounts/iXBRL page, generated XHTML preview wording, and VCRI file naming now use FRS 105 micro-entity accounts language. The user correction confirms FRS 105 should be the working standard.
+Status: OK.
+Assessment: Project-facing and user-facing language inspected in this pass is now aligned to FRS 105 micro-entity accounts rather than FRS 102.
+Shortfall: None identified in the inspected app text after the wording update. Future pages, generated documents, and tests must preserve this wording.
+Remediation: Keep "FRS 105 micro-entity accounts" as the standard phrase and reserve FRS 102 only for entities not applying FRS 105.
+
+VCRI-002 - Accounting period and CT period model
+Reference: HMRC CT accounting periods cannot exceed 12 months.
+Implementation evidence: ARCHITECTURE.md states that CT periods are derived from confirmed accounting periods. CorporationTaxPeriodService derives and persists sequential statutory CT periods, validates twelve calendar months rather than a fixed 365-day limit, preserves submitted/accepted metadata, and prevents submission of a later CT period until its predecessor is accepted. CtPeriodFilingModelService creates separate immutable CT-period filing bases from a single approved accounting period. test_CtPeriodFilingModelService now exercises a 13-month period from 5 September 2022 to 30 September 2023, deriving 5 September 2022–4 September 2023 and 5–30 September 2023, distinct frozen filing/computation bases, and the filing-order gate. CT600 and computation-iXBRL artifact generation are separately covered by their focused service tests.
+Status: OK.
+Assessment: The system now automatically derives the statutory split and supports separately frozen, fileable CT-period workflows for the documented ordinary-company scope.
+Shortfall: This control does not establish HMRC gateway acceptance, software recognition, or support for tax regimes outside the documented filing scope.
+Remediation: Maintain the long-period regression, calendar-boundary coverage, and strict filing-order gate as CT filing functionality evolves.
+
+VCRI-003 - Ledger-first source of truth
+Reference: FRS 105 accounts must be supported by reliable books and records; CT computations must reconcile to accounts.
+Implementation evidence: architecture.md defines bank plus journals feeding the ledger; TrialBalanceService derives balances from posted journals and journal_lines; journal_lines include checks for one-sided, non-negative debit/credit entries.
+Status: OK.
+Assessment: Conceptually strong. A posted journal ledger is the right base for accounts and tax.
+Shortfall: The observed live database snapshot had zero journals and zero journal_lines, so the current company data was not ready for accounts generation at the time of review.
+Remediation: Complete/verify posting workflow for imported transactions before relying on year-end outputs.
+
+VCRI-004 - Double-entry validation
+Reference: Accounting records should balance and be traceable.
+Implementation evidence: ManualJournalService validates at least two lines, non-zero lines, non-negative amounts, one-sided lines, and total debits equal total credits; TrialBalanceValidationService checks trial balance equality and unposted journals.
+Status: OK.
+Assessment: The core controls are appropriate and auditable.
+Shortfall: More fixture-based tests are needed for edge cases such as reversals, voids, locked periods, transfers, and source rebuilds.
+Remediation: Add regression tests around journal balancing, source immutability, and rebuild behaviour.
+
+VCRI-005 - Bank import, staging, and dedupe
+Reference: CT/accounting records must support source traceability and avoid duplicate income/expense recognition.
+Implementation evidence: statement_uploads, statement_import_rows, transactions.dedupe_hash, workflow status fields, duplicate flags, and source references exist; YearEndMetricsService checks statement continuity and duplicate imports.
+Status: OK.
+Assessment: The import pipeline has good audit foundations.
+Shortfall: It remains dependent on categorisation and posting into journals; imported transactions alone are not accounts.
+Remediation: Keep bank import as source data and ensure posting status is visible and blocking for year-end.
+
+VCRI-006 - Nominal accounts and tax treatment model
+Reference: CT computations require accounting profit adjusted for tax disallowables, capital items, capital allowances, and other tax adjustments.
+Implementation evidence: nominal_accounts include type, subtype, normal_side, and fallback tax_treatment; corporation_tax_treatment_rules now stores priority, matching criteria, effective dates, tax_treatment, source_url, rationale, review_status, and active state. CorporationTaxTreatmentRuleService resolves effective treatment before falling back to nominal_accounts.tax_treatment; YearEndMetricsService uses that resolver for P&L/CT addback grouping. The Tax Rates page includes a Tax Treatment Rules card with enable/disable controls and AJAX review_status selection.
+Status: OK.
+Assessment: The app now has a materially suitable reviewable model for CT estimate treatment: nominal tagging remains the fallback, while sourced treatment rules handle known disallowables, capital items, ordinary revenue fallbacks, and review-required categories.
+Shortfall: Seeded and needs_review rules still require accountant/tax adviser review before filing reliance. The current catalogue is an initial rule set, not a comprehensive CT legislation engine.
+Remediation: Continue adding sourced rules as new nominal categories are introduced, promote reviewed rules to review_status=reviewed after professional review, and add fixture tests for known disallowable and review-required categories.
+
+VCRI-007 - Trial balance and year-end readiness
+Reference: Accounts and CT must reconcile to balanced books for the period.
+Implementation evidence: TrialBalanceService, TrialBalanceValidationService, YearEndMetricsService, and YearEndChecklistService check balance equality, unposted journals, uncategorised exposure, suspense, period completeness, statement continuity, source-to-ledger completeness, and retained earnings.
+Status: OK.
+Assessment: The readiness layer is one of the strongest parts of the app.
+Shortfall: Some checks are advisory rather than hard blockers for all downstream outputs.
+Remediation: Make filing-generation actions require a clean readiness state or explicit accountant override recorded in the audit trail.
+
+VCRI-008 - FRS 105 financial statements
+Reference: FRS 105 requires a Statement of Financial Position and Income Statement prepared under the micro-entities regime.
+Implementation evidence: IxbrlFactBuilderService and IxbrlAccountsMappingService map ledger balances into balance sheet-style buckets and statements; YearEndMetricsService builds P&L and balance sheet summaries.
+Status: PARTIAL.
+Assessment: The app has a useful skeleton for accounts generation.
+Shortfall: The current generated accounts are not a complete FRS 105 statutory accounts pack. Presentation is simplified, prior-year comparatives are incomplete/absent, legal statements are hardcoded or generic, average employees are hardcoded to zero, and equity is derived simplistically from net assets.
+Remediation: Build a final accounts renderer that produces a complete FRS 105 Statement of Financial Position and Income Statement, with comparative period values, validated legal wording, directors/member statements, and reviewable assumptions.
+
+VCRI-009 - FRS 105 measurement basis
+Reference: FRS 105 generally uses historical cost and does not permit revaluation/fair value models available elsewhere.
+Implementation evidence: The application appears cost-led and does not expose revaluation/fair value accounting routes in the inspected services. Fixed asset schema/source support has been added for cost, accumulated depreciation, and depreciation entries.
+Status: OK.
+Assessment: The current approach appears aligned with FRS 105 historical cost simplicity.
+Shortfall: None identified for the measurement-basis direction. Wider asset rule completeness remains covered under VCRI-014 and VCRI-015.
+Remediation: Keep asset accounting cost-led and ensure depreciation, disposal, and impairment logic remain FRS 105-compatible as those workflows are hardened.
+
+VCRI-010 - Inline XBRL accounts
+Reference: HMRC online Company Tax Returns usually require accounts in inline XBRL format.
+Implementation evidence: IxbrlAccountingService, IxbrlGeneratorService, IxbrlFilingArtifactService, IxbrlExternalValidationService, and the accounts filing-approval workflow create an immutable fact basis, produce inline XBRL artifacts, validate their structure, and require a current matching Arelle validation fingerprint before a filing artifact is treated as validated.
+Status: PARTIAL.
+Assessment: The former preview-only position has been remediated into a controlled generation and validation path.
+Shortfall: A structurally/Arelle-validated artifact and a complete statutory FRS 105 accounts pack are separate assurances. Taxonomy mapping, legal wording, comparative presentation, production release evidence, and external acceptance still need continued review.
+Remediation: Maintain taxonomy packages and mapping review, retain artifact-hash checks, and obtain documented external/sandbox acceptance before representing the accounts output as production-ready.
+
+VCRI-011 - Companies House filing/readiness
+Reference: Companies House micro-entity accounts guidance allows simpler accounts and requires specific balance sheet statements.
+Implementation evidence: Companies House services and comparison tooling exist; generated facts include micro-entity and audit exemption-style statements.
+Status: PARTIAL.
+Assessment: Filed accounts comparison is useful for reconciliation and review.
+Shortfall: The app does not yet produce a Companies House-approved filing package. Legal wording and filing options need validation, especially where micro-entity accounts omit public P&L information but HMRC requires accounts with the tax return.
+Remediation: Separate "Companies House public filing pack" from "HMRC accounts attached to CT600", with different output/validation rules.
+
+VCRI-012 - Corporation Tax computation rate engine
+Reference: HMRC rates from 1 April 2023 include 25% main rate, 19% small profits rate, thresholds, marginal relief, associated companies, and period apportionment.
+Implementation evidence: corporation_tax_rate_rules stores versioned financial-year rates and HMRC source metadata. CorporationTaxRateService loads active rules from that table and calculates pre-April 2023 19% flat rate plus post-April 2023 main rate, small profits rate, marginal relief, associated company threshold reduction, and financial-year apportionment; CorporationTaxComputationService calls that service. The Tax Rates card now renders the rate rules through TableFramework with an Active/All filter defaulting to Active, five-row pagination, filtered export support, and a retained HMRC refresh action.
+Status: PARTIAL.
+Assessment: The flat-rate defect has been remediated for ordinary non-ring-fence micro-company estimates, and active versus superseded rate rules are now easier to review in the UI.
+Shortfall: The calculation still assumes non-ring-fence profits and, unless extended, augmented profits equal taxable profits. The new table improves reviewability but does not replace annual rate maintenance, professional review, unusual CT regime handling, or final CT600 box validation.
+Remediation: Add explicit augmented profit inputs, accountant review flags, annual rate-rule migration review, future-rate update tests, and final CT600 traceability from each rate-band calculation.
+
+VCRI-013 - Tax adjustments and disallowables
+Reference: CT starts with accounting profit and adjusts for tax rules.
+Implementation evidence: YearEndMetricsService and CorporationTaxComputationService add disallowables and use accounting_period_adjustments for depreciation addback/capital allowances. corporation_tax_treatment_rules adds a sourced, priority-ordered rule catalogue for client entertainment, depreciation, fixed asset capital treatment, fines/penalties, private/personal costs, donations/charity, legal fees, interest/loan relationship review, ordinary cost of sales, and ordinary expense fallback. The live database contains the initial seeded catalogue and the Tax Rates page exposes enable/disable and review_status controls.
+Status: PARTIAL.
+Assessment: The app has moved from nominal-only treatment to a sourced rule-engine foundation for simple CT adjustments and common review categories.
+Shortfall: The catalogue is still not comprehensive. It does not yet fully model detailed expense-specific legislation, apportionment, related-party rules, full loan relationship restrictions, charitable donation mechanics, capital/revenue distinctions, or final computation/CT600 box traceability. Several rules intentionally remain needs_review.
+Remediation: Expand the catalogue with accountant-reviewed source/rationale, add rule outcome fixture tests, and connect rule decisions to a canonical tax computation object with box-level traceability.
+
+VCRI-014 - Fixed assets, depreciation, and capital allowances
+Reference: Accounts record fixed assets/depreciation; CT generally adds back depreciation and deducts capital allowances where available.
+Implementation evidence: AssetService exists with asset categories, depreciation, disposal, and tax adjustment hooks. The baseline schema and live database now include asset_register and asset_depreciation_entries, and journals.source_type allows asset_register, asset_depreciation, and asset_disposal.
+Status: PARTIAL.
+Assessment: The original schema/source blocker has been resolved, so fixed asset workflows are no longer prevented at the database boundary.
+Shortfall: The remaining risk is rule completeness and fixture coverage. Depreciation, disposals, impairment, reconciliation to statutory accounts, and CT adjustment outputs still need fuller scenario tests before relying on them for final accounts or filing.
+Remediation: Add end-to-end fixed asset fixtures covering purchase, depreciation, disposal, impairment/reversal constraints where relevant, journals, trial balance impact, accounts presentation, and CT addback/capital allowance flow.
+
+VCRI-015 - Capital allowances
+Reference: HMRC CT rules require correct treatment of AIA, pools, disposals, balancing charges/allowances, cars, private use, and period limits.
+Implementation evidence: AssetService appears to create simplified capital allowance adjustments, and CT600-related code can surface capital allowance figures.
+Status: PARTIAL.
+Assessment: Suitable for an early estimate only.
+Shortfall: The implementation does not cover the full capital allowance regime, including AIA cap/apportionment, main pool/special rate pool, cars, private use, FYA/super-deduction historical rules, disposals, and balancing adjustments.
+Remediation: Treat current output as draft and build a pool-based capital allowances module before relying on CT figures.
+
+VCRI-016 - Losses
+Reference: CT loss carry-forward/use must be tracked consistently and mapped correctly into computations and CT600 boxes.
+Implementation evidence: CorporationTaxComputationService writes and reports tax_loss_carryforwards; Ct600BuilderService now reads loss figures from the Corporation Tax computation summary rather than querying tax_loss_pools.
+Status: OK.
+Assessment: Active code paths now use a single canonical loss result for computation and CT600 draft output.
+Shortfall: None identified after confirming tax_loss_pools was empty and unused.
+Remediation: Keep tax_loss_carryforwards as the only loss ledger and avoid reintroducing secondary loss stores.
+
+VCRI-017 - CT600 generation
+Reference: HMRC requires valid CT600 content and supplementary pages where applicable.
+Implementation evidence: Ct600BuilderService builds CT600 V3-form XML from the frozen return model. test_Ct600BuilderService covers deterministic output, loss boxes, multiple financial years, and CT600A serialization; where the locally extracted official V3 XSD is installed, those outputs are schema-validated.
+Status: PARTIAL.
+Assessment: The former internal-draft blocker has been materially remediated for the supported ordinary-company/CT600A path.
+Shortfall: Local XSD validation and unit fixtures do not prove HMRC gateway acceptance, complete supplementary-page coverage, or software recognition. All out-of-scope CT600 pages remain fail-closed through the scope review.
+Remediation: Retain fixture and XSD coverage for each supported box, add sandbox/TIL evidence, and expand scope only after a reviewed implementation and acceptance evidence exist.
+
+VCRI-018 - iXBRL tax computations
+Reference: HMRC online filing normally requires computations in inline XBRL format.
+Implementation evidence: IxbrlTaxComputationService renders computations from the frozen CT-period filing model and reviewed mapping profile, checks contexts/dimensions, requires the verified HMRC taxonomy schema reference, and records internal/Arelle validation results and artifact hashes. test_IxbrlTaxComputationService covers fail-closed operation, context selection, report ordering, and required period dates.
+Status: PARTIAL.
+Assessment: Computation iXBRL is implemented as a controlled artifact path rather than an absent capability.
+Shortfall: It remains unavailable until a current filing basis, taxonomy package, and successful external validation exist; successful HMRC submission and recognition have not been demonstrated.
+Remediation: Maintain validator/package provenance, collect sandbox/TIL evidence, and preserve the fail-closed submission gate until live recognition is complete.
+
+VCRI-019 - HMRC submission package and API
+Reference: HMRC Company Tax Return online filing requires a valid package containing CT600, accounts, and computations.
+Implementation evidence: HmrcSubmissionPackageService and HmrcCorporationTaxSubmissionService enforce current validated accounts/computation artifacts, frozen filing decisions, scope checks, credentials, and recorded submission events. The submission service distinguishes sandbox/TIL validation from live acceptance.
+Status: PARTIAL.
+Assessment: The prerequisite and audit controls have progressed substantially, but the project has no recorded successful live HMRC submission or software-recognition outcome.
+Shortfall: Gateway contract compatibility, TIL/sandbox evidence, operational credentials, live acceptance, and formal recognition remain unproven.
+Remediation: Use the controlled test/sandbox route, retain signed artifact and event evidence, and do not enable or describe live filing as production-ready until the recognised process has completed successfully.
+
+VCRI-020 - Audit trail and period locks
+Reference: Accounts/tax outputs need reproducible evidence and controlled changes after review.
+Implementation evidence: YearEndLockService, audit logs, review notes, recalculation snapshots, mutation guards, source references, and generated run tables exist.
+Status: OK.
+Assessment: The app has strong foundations for auditability.
+Shortfall: Some services need broader lock guard coverage and tests to prevent all period-affecting mutations once locked.
+Remediation: Add lock-guard tests for every write service touching transactions, journals, assets, dividends, expenses, loans, and tax adjustments.
+
+VCRI-021 - Dividends and distributable reserves
+Reference: Dividends require sufficient distributable profits and proper company records.
+Implementation evidence: DividendService exists with declaration/capacity/history/warning concepts.
+Status: PARTIAL.
+Assessment: Directionally useful, especially for a director/shareholder micro-company.
+Shortfall: The legal reserve test is likely simplified. Full treatment should consider cumulative realised profits after tax, prior losses, dividends already declared, share classes, vouchers/minutes, payment dates, and Companies Act requirements.
+Remediation: Add a distributable reserves service driven by locked accounts and retained earnings movements, with generated dividend vouchers/minutes and sign-off.
+
+VCRI-022 - Director loan account
+Reference: Director loan balances can have CT, benefit-in-kind, interest, and disclosure implications.
+Implementation evidence: DirectorLoanService and DLA nominal accounts exist; YearEndMetricsService includes director-loan summary checks; S455ReviewService and Ct600aService provide dated loan evidence, original-rate s455 calculations, section 464A review, section 464C blocking, evidence manifests/hashes, CT600A serialization, and separate L2P-claim routing where appropriate.
+Status: PARTIAL.
+Assessment: Director-loan treatment has progressed from ledger visibility to a controlled CT600A/s455 workflow for the supported path.
+Shortfall: Complex beneficial-loan, close-company, participator, associated-person, write-off, and disclosure cases remain within the explicit review/scope boundary; local tests do not establish legal or HMRC acceptance.
+Remediation: Continue professional review of the s455/CT600A rules, add scenario fixtures as scope expands, and retain hard blocks for incomplete evidence, section 464C risk, stale reviews, and open evidence windows.
+
+VCRI-023 - VAT and non-VAT scope
+Reference: VAT registration/MTD rules affect accounting and tax workflows where applicable.
+Implementation evidence: README indicates VAT is initially out of scope/not registered; VAT control nominal and readiness settings exist.
+Status: PARTIAL.
+Assessment: It is acceptable to scope a micro-company app as non-VAT registered if that is explicit.
+Shortfall: The app should hard-block or strongly warn if company settings indicate VAT registration or transactions imply VAT obligations beyond the supported scope.
+Remediation: Add a VAT scope gate and clear unsupported-scenario warning.
+
+VCRI-024 - Companies House filed accounts comparison
+Reference: Prior filed accounts can support opening balances, comparatives, and sanity checks.
+Implementation evidence: Companies House download/parsing/comparison services and cards exist.
+Status: OK.
+Assessment: This is a useful control and can reduce drift between internal books and filed accounts.
+Shortfall: Comparison does not make generated accounts compliant by itself.
+Remediation: Keep comparison as a review control, not as a substitute for validated statutory accounts generation.
+
+VCRI-025 - Testing and assurance
+Reference: Accounting/tax software needs deterministic, rule-level evidence.
+Implementation evidence: The suite now includes deterministic golden accounting/tax oracles and lifecycle coverage, targeted CT600 V3/CT600A schema tests, filing-model and return-model tests, computation iXBRL tests, supplementary-page scope tests, CT600A/s455 scenario tests, tax-rate/treatment tests, and card/UI coverage. The focused VCRI regression set passed on 21 July 2026: test_Ct600BuilderService.php, test_Ct600ReturnModelService.php, test_CtPeriodFilingModelService.php, test_IxbrlTaxComputationService.php, test_CorporationTaxFilingScopeService.php, test_Ct600aService.php, and test_GoldenYearEndLifecycle.php.
+Status: PARTIAL.
+Assessment: Assurance has advanced beyond smoke coverage into independent-oracle and expected-output testing for key ledger, tax, filing, and CT600A paths.
+Shortfall: Coverage is not a substitute for external filing acceptance. Further fixtures are still needed for the full range of FRS 105 disclosures, unusual capital allowances, dividends, all supplementary pages, gateway responses, and live operational failure modes.
+Remediation: Keep extending the deterministic fixture set, run the complete relevant suites for each filing change, and retain separate external/sandbox validation evidence.
+
+VCRI-026 - Live data readiness snapshot
+Reference: Actual filing outputs require posted ledger data.
+Implementation evidence: A refreshed read-only local count on 21 July 2026 found companies=1, accounting_periods=4, transactions=1,978, journals=2,002, journal_lines=4,264, corporation_tax_computation_runs=4, ixbrl_generation_runs=5, and hmrc_ct600_submissions=0.
+Status: PARTIAL.
+Assessment: The former zero-journal blocker no longer describes the local data state: there is now a posted ledger and generated calculation/iXBRL evidence. The absence of an HMRC submission record remains consistent with the project’s unrecognised early-stage status.
+Shortfall: Counts alone do not prove that a particular company/period is complete, reconciled, within scope, or ready to submit.
+Remediation: Use period-specific year-end, filing-scope, artifact-validation, and professional-review gates before treating any return as submission-ready.
+
+
+4. Material Shortfall Register
+------------------------------
+
+S-001 - Accounts iXBRL production assurance remains incomplete
+Severity: Medium/High.
+Issue: A controlled accounts iXBRL generation and validation path exists, but statutory completeness, external acceptance, release evidence, and software recognition are not yet established.
+Impact: An artifact may be technically validated without being safe to represent as HMRC-approved or a complete statutory accounts pack.
+Fix: Maintain taxonomy and artifact validation, complete presentation/release review, and collect documented sandbox/live-recognition evidence.
+
+S-002 - CT600 gateway acceptance and recognition remain unproven
+Severity: Medium/High.
+Issue: CT600 V3 generation and local XSD validation exist for the supported path, including CT600A, but no live HMRC acceptance or recognition is recorded.
+Impact: Local schema validity is necessary but not enough to establish production filing readiness.
+Fix: Preserve box-level traceability, run controlled sandbox/TIL submissions, and retain evidence before enabling live filing.
+
+S-003 - Computation iXBRL requires current external validation
+Severity: Medium/High.
+Issue: Computation iXBRL generation exists but is deliberately unavailable without a frozen filing basis, approved mapping, current taxonomy resources, and successful structural/Arelle validation.
+Impact: A missing, stale, changed, or failed artifact blocks submission.
+Fix: Maintain package provenance and external validation evidence; collect sandbox/TIL acceptance before production use.
+
+S-004 - Corporation Tax rate engine still needs production hardening
+Severity: Medium/High.
+Issue: The flat 19% rate has been replaced with a database-backed rate engine, but assumptions remain around non-ring-fence profits and augmented profits.
+Impact: Ordinary estimates are materially improved, and the Tax Rates table now exposes active versus superseded rules for review, but unusual CT cases can still be wrong.
+Fix: Add explicit augmented profit handling, special-regime exclusions, future-rate maintenance tests, and CT600 traceability.
+
+S-005 - Loss ledger consolidation complete
+Severity: Resolved.
+Issue: Active CT computation and CT600 draft output now use tax_loss_carryforwards, and tax_loss_pools is removed from the baseline schema with a drop migration for existing installs.
+Impact: Loss handling now has a single canonical table.
+Fix: No further action unless a future loss regime requires an explicit new canonical design.
+
+S-006 - Asset module schema/source alignment complete
+Severity: Resolved / monitor.
+Issue: AssetService now has the required asset_register and asset_depreciation_entries tables, and journals.source_type includes asset_register, asset_depreciation, and asset_disposal.
+Impact: The database boundary no longer blocks asset accounting, depreciation, disposal, or related tax adjustment workflows.
+Fix: No further schema fix is currently required. Continue with rule-level fixtures and capital allowance completeness under VCRI-015.
+
+S-007 - FRS 105 accounts pack incomplete
+Severity: High.
+Issue: Current accounts output is a fact preview/skeleton, not a complete statutory accounts set.
+Impact: The app cannot yet produce final micro-entity accounts.
+Fix: Build final FRS 105 Statement of Financial Position and Income Statement output with comparatives, legal statements, and review workflow.
+
+S-008 - Rule-level tests insufficient
+Severity: Medium/High.
+Issue: Many tests are smoke tests rather than output fixtures.
+Impact: The Tax Rates card now has focused table/filter/pagination coverage, but deeper compliance logic can still break without detection.
+Fix: Add deterministic fixtures for accounts, tax, iXBRL, CT600, and HMRC package outputs.
+
+S-009 - Nominal tax treatment requires review
+Severity: Resolved / monitor.
+Issue: CT treatment previously relied heavily on nominal tax_treatment defaults.
+Impact: Mis-tagged nominals can understate/overstate taxable profits.
+Fix: Initial remediation added corporation_tax_treatment_rules with source_url, rationale, review_status, enable/disable controls, and AJAX review-status editing. Continue accountant review and add outcome fixtures as the catalogue expands.
+
+S-010 - Current company data not posted to ledger
+Severity: Medium.
+Issue: Live snapshot had transactions but no journals.
+Impact: Trial balance/accounts/tax cannot be generated for that data state.
+Fix: Complete categorisation and posting workflows before year-end review.
+
+
+5. Recommended Remediation Sequence
+-----------------------------------
+
+1. Maintain the ordinary-company CT-rate engine: add augmented-profit inputs, special-regime exclusions, annual rate maintenance, and boundary fixtures.
+2. Complete statutory FRS 105 presentation assurance: comparatives, legal statements, disclosures, taxonomy coverage, and reviewed release criteria.
+3. Extend capital-allowance and fixed-asset fixtures for unusual assets, disposals, pools, and accounting/tax reconciliation.
+4. Maintain CT600 V3 and CT600A mappings with official-artifact/XSD fixture coverage; keep unsupported supplementary pages fail-closed.
+5. Maintain current iXBRL taxonomy packages, mapping provenance, artifact hashes, and successful structural/Arelle validation before packaging.
+6. Obtain documented HMRC test-in-live/sandbox and gateway acceptance evidence for the controlled submission path.
+7. Complete the formal HMRC software-recognition and first successful live-submission process before making any production/approval claim.
+8. Extend deterministic fixtures across FRS 105 disclosures, dividends, director loans, all newly supported scope, and operational gateway failure modes.
+9. Run an end-to-end controlled fixture from source import through posted ledger, locked filing basis, validated iXBRL, CT600 V3/CT600A, submission-package gating, and recorded test outcome.
+
+
+6. Suggested Acceptance Test Fixtures
+-------------------------------------
+
+AT-001 - Simple profitable micro-company
+Expected: balanced TB, FRS 105 accounts, CT computation at correct rate, CT liability posted/reconciled.
+
+AT-002 - Post-1 April 2023 profits above small profits threshold
+Expected: 25%/marginal relief handling, associated company threshold input, correct apportionment.
+
+AT-003 - Accounting period longer than 12 months
+Expected: accounting period retained, multiple CT periods generated, separate computations/CT600 outputs.
+
+AT-004 - Fixed asset purchase, depreciation, disposal
+Expected: accounting depreciation, tax depreciation addback, capital allowance/pool movement, disposal/balancing adjustment.
+
+AT-005 - Loss-making year followed by profitable year
+Expected: canonical loss carry-forward and utilisation agrees in computation and CT600 mapping.
+
+AT-006 - Director loan overdrawn at year end
+Expected: DLA warning, s455 review flag, supplementary CT review state.
+
+AT-007 - Dividend declared with insufficient reserves
+Expected: hard warning/block unless accountant override is recorded.
+
+AT-008 - Locked year mutation attempt
+Expected: all period-affecting write services reject mutation or require controlled unlock/audit.
+
+AT-009 - Valid iXBRL accounts and computations
+Expected: external validator accepts accounts and computations.
+
+AT-010 - HMRC package dry run/sandbox
+Expected: package contains schema-valid CT600, accounts iXBRL, computations iXBRL, and records audit events.
+
+
+7. Overall Conclusion
+---------------------
+
+The project is moving in the right architectural direction. Its strongest controls are now the ledger-first model, double-entry validation, import staging/dedupe, deterministic accounting/tax checks, year-end and filing-basis locks, validation-gated iXBRL artifacts, CT600 V3/CT600A generation, and auditable scope/evidence controls.
+
+The main remaining gap is external production assurance, not the absence of a filing implementation. Local generation, schema checks, controlled artifacts, and focused tests are meaningful progress, but they do not establish HMRC gateway acceptance, formal software recognition, or a successful live submission.
+
+Recommended current positioning:
+
+- Suitable for controlled bookkeeping, categorisation, review, calculation, filing-artifact preparation, and evidence-gated test/sandbox workflows within the documented supported scope.
+- Suitable for identifying missing source data, uncategorised transactions, suspense, unposted journals, ledger readiness issues, unresolved scope questions, and stale/failed validation artifacts.
+- Not yet to be represented as HMRC-approved, production-recognised, or proven by a successful live HMRC submission. Final statutory, tax, and filing decisions still require appropriate professional review and the remaining external assurance steps.

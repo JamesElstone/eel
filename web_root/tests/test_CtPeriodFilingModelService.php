@@ -38,6 +38,29 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             }
         });
 
+        $h->check($service::class, 'derives and freezes two independently fileable CT periods for a long accounting period', static function () use ($h, $service): void {
+            $fixture = ctPeriodFilingModelFixture(2, [], [], [], true, true);
+            $periods = (new \eel_accounts\Service\CorporationTaxPeriodService())
+                ->fetchForAccountingPeriod($fixture['company_id'], $fixture['accounting_period_id']);
+            $h->assertCount(2, $periods);
+            $h->assertSame('2022-09-05', (string)$periods[0]['period_start']);
+            $h->assertSame('2023-09-04', (string)$periods[0]['period_end']);
+            $h->assertSame('2023-09-05', (string)$periods[1]['period_start']);
+            $h->assertSame('2023-09-30', (string)$periods[1]['period_end']);
+
+            $first = $service->build($fixture['company_id'], $fixture['accounting_period_id'], (int)$periods[0]['id']);
+            $second = $service->build($fixture['company_id'], $fixture['accounting_period_id'], (int)$periods[1]['id']);
+            $h->assertSame(true, (bool)$first['available']);
+            $h->assertSame(true, (bool)$second['available']);
+            $h->assertTrue((string)$first['basis_hash'] !== (string)$second['basis_hash']);
+            $h->assertTrue((int)$first['run']['run_id'] !== (int)$second['run']['run_id']);
+
+            $periodService = new \eel_accounts\Service\CorporationTaxPeriodService();
+            $h->assertSame(false, (bool)$periodService->canSubmit($fixture['company_id'], (int)$periods[1]['id'])['ok']);
+            \InterfaceDB::prepareExecute('UPDATE corporation_tax_periods SET status = :status WHERE id = :id', ['status' => 'accepted', 'id' => (int)$periods[0]['id']]);
+            $h->assertSame(true, (bool)$periodService->canSubmit($fixture['company_id'], (int)$periods[1]['id'])['ok']);
+        });
+
         $h->check($service::class, 'preserves frozen warnings and gives both filing targets the identical stored basis', static function () use ($h, $service): void {
             $warning = 'Frozen filing-stage warning retained for review.';
             $fixture = ctPeriodFilingModelFixture(1, [$warning]);
@@ -432,7 +455,8 @@ function ctPeriodFilingModelFixture(
     array $warnings = [],
     array $blockers = [],
     array $summaryOverrides = [],
-    bool $approve = true
+    bool $approve = true,
+    bool $deriveLongPeriod = false
 ): array {
     foreach ([
         'companies',
@@ -467,9 +491,11 @@ function ctPeriodFilingModelFixture(
         ]
     );
     $companyId = ctPeriodFilingModelLastInsertId();
+    $accountingStart = $deriveLongPeriod ? '2022-09-05' : '2023-01-01';
+    $accountingEnd = $deriveLongPeriod ? '2023-09-30' : '2023-12-31';
     \InterfaceDB::execute(
         'INSERT INTO accounting_periods (company_id, label, period_start, period_end) VALUES (:company_id, :label, :start, :end)',
-        ['company_id' => $companyId, 'label' => 'Approved filing fixture', 'start' => '2023-01-01', 'end' => '2023-12-31']
+        ['company_id' => $companyId, 'label' => 'Approved filing fixture', 'start' => $accountingStart, 'end' => $accountingEnd]
     );
     $accountingPeriodId = ctPeriodFilingModelLastInsertId();
     $salesNominalId = ixbrl_test_assign_sales_nominal($companyId);
@@ -505,15 +531,31 @@ function ctPeriodFilingModelFixture(
             ['sequence_no' => 2, 'period_start' => '2023-11-01', 'period_end' => '2023-12-31'],
         ]
         : [['sequence_no' => 1, 'period_start' => '2023-01-01', 'period_end' => '2023-12-31']];
+    if ($deriveLongPeriod) {
+        $sync = (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $accountingPeriodId);
+        if (empty($sync['success'])) {
+            throw new RuntimeException('Long-period fixture could not derive CT periods: ' . implode(' ', (array)($sync['errors'] ?? [])));
+        }
+        $periodDefinitions = array_map(static fn(array $period): array => [
+            'sequence_no' => (int)$period['sequence_no'],
+            'period_start' => (string)$period['period_start'],
+            'period_end' => (string)$period['period_end'],
+        ], (array)$sync['periods']);
+    }
     $ctPeriodIds = [];
     $manifestPeriods = [];
     foreach ($periodDefinitions as $period) {
-        \InterfaceDB::execute(
-            'INSERT INTO corporation_tax_periods (company_id, accounting_period_id, sequence_no, period_start, period_end, status)
-             VALUES (:company_id, :accounting_period_id, :sequence_no, :period_start, :period_end, :status)',
-            $period + ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'status' => 'computed']
-        );
-        $ctPeriodId = ctPeriodFilingModelLastInsertId();
+        if ($deriveLongPeriod) {
+            $ctPeriodId = (int)\InterfaceDB::fetchColumn('SELECT id FROM corporation_tax_periods WHERE accounting_period_id = :period_id AND sequence_no = :sequence_no', ['period_id' => $accountingPeriodId, 'sequence_no' => $period['sequence_no']]);
+            \InterfaceDB::prepareExecute('UPDATE corporation_tax_periods SET status = :status WHERE id = :id', ['status' => 'computed', 'id' => $ctPeriodId]);
+        } else {
+            \InterfaceDB::execute(
+                'INSERT INTO corporation_tax_periods (company_id, accounting_period_id, sequence_no, period_start, period_end, status)
+                 VALUES (:company_id, :accounting_period_id, :sequence_no, :period_start, :period_end, :status)',
+                $period + ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'status' => 'computed']
+            );
+            $ctPeriodId = ctPeriodFilingModelLastInsertId();
+        }
         $ctPeriodIds[] = $ctPeriodId;
         $manifestPeriods[] = [
             'ct_period_id' => $ctPeriodId,
@@ -541,8 +583,8 @@ function ctPeriodFilingModelFixture(
             'company' => ['id' => $companyId, 'name' => 'Approved Filing Fixture', 'number' => '12345678'],
             'accounting_period' => [
                 'id' => $accountingPeriodId,
-                'start_date' => '2023-01-01',
-                'end_date' => '2023-12-31',
+                'start_date' => $accountingStart,
+                'end_date' => $accountingEnd,
             ],
             'ct_periods' => array_map(static fn(array $period, int $index): array => [
                 'id' => $ctPeriodIds[$index],

@@ -119,6 +119,7 @@ $harness->run(_year_end_director_loan_offsetCard::class, static function (Genera
 
         $harness->assertTrue(str_contains($html, 'Section 464A and 464C declaration — CT period 1'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_ct600a_review"'));
+        $harness->assertTrue(str_contains($html, 'data-submit-on-change="true"'));
         $harness->assertSame(true, strpos($html, 'Section 464A and 464C declaration') < strpos($html, 'Year End Confirmation'));
     });
 

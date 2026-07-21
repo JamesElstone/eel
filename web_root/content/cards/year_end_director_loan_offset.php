@@ -197,7 +197,7 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
     {
         $id = 'ct600a_' . $name . '_' . $value;
         return '<label for="' . $id . '"><input id="' . $id . '" type="radio" name="' . HelperFramework::escape($name)
-            . '" value="' . $value . '"' . ($selected === $value ? ' checked' : '') . ' required> ' . $label . '</label>';
+            . '" value="' . $value . '" data-submit-on-change="true"' . ($selected === $value ? ' checked' : '') . ' required> ' . $label . '</label>';
     }
 
     private function positionsTable(array $positions, array $taxReview, array $settings): string

@@ -123,7 +123,12 @@ final class Ct600aService
                 $blocking[] = $message;
             }
         }
-        foreach ((array)($review['errors'] ?? []) as $error) { $blocking[] = (string)$error; }
+        foreach ((array)($review['errors'] ?? []) as $error) {
+            $error = (string)$error;
+            if ($error !== 'Complete and approve the section 464A review.') {
+                $blocking[] = $error;
+            }
+        }
 
         foreach ((array)($s455['lots'] ?? $s455['basis']['lots'] ?? []) as $lot) {
             if (!is_array($lot) || (string)($lot['origin_date'] ?? '') < $start || (string)($lot['origin_date'] ?? '') > $end) { continue; }
@@ -223,9 +228,7 @@ final class Ct600aService
         if ($required && (string)($s455['window_status'] ?? $s455['basis']['window_status'] ?? '') === 'provisional_window_open') {
             $blocking[] = 'The nine-month CT600A evidence window remains open until ' . $deadline . '.';
         }
-        if (empty($review['current']) || empty($review['complete'])) {
-            $blocking[] = 'A current, complete section 464A review is required.';
-        }
+        $reviewComplete = !empty($review['current']) && !empty($review['complete']);
         $model = [
             'model_version' => self::MODEL_VERSION,
             'required' => $required,
@@ -240,11 +243,14 @@ final class Ct600aService
             'blocking_errors' => array_values(array_unique(array_filter(array_map('strval', $blocking)))),
             'evidence_warnings' => array_values(array_unique($evidenceWarnings)),
             'unattributed_loan_movement_count' => $unattributedLoanMovementCount,
+            'review_complete' => $reviewComplete,
         ];
         $json = $this->canonicalJson($model);
         return $model + [
             'basis_hash' => hash('sha256', $json),
-            'complete' => $model['blocking_errors'] === [] && $unattributedLoanMovementCount === 0,
+            'complete' => $model['blocking_errors'] === []
+                && $unattributedLoanMovementCount === 0
+                && $reviewComplete,
         ];
     }
 

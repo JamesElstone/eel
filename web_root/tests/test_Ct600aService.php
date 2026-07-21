@@ -76,6 +76,19 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $h->assertSame(false, (bool)$model['complete']);
         });
 
+        $h->check($service::class, 'keeps an incomplete section 464A review out of the error list while retaining the filing block', static function () use ($h, $service, $period, $base): void {
+            $incompleteReview = [
+                'current' => false,
+                'complete' => false,
+                'errors' => ['Complete and approve the section 464A review.'],
+            ];
+            $model = $service->buildFromEvidence($period, $base, [], $incompleteReview, '2025-12-31');
+
+            $h->assertSame([], (array)$model['blocking_errors']);
+            $h->assertSame(false, (bool)$model['review_complete']);
+            $h->assertSame(false, (bool)$model['complete']);
+        });
+
         $h->check($service::class, 'reduces period-end loans for an evidenced release before the period end', static function () use ($h, $service, $period, $review, $base): void {
             $s455 = $base;
             $s455['lots'] = [[

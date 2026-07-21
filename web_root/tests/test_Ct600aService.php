@@ -17,13 +17,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $h->assertSame(0.0, (float)$model['tax_payable']);
         });
 
-        $h->check($service::class, 'uses positive Yes/No section 464A and 464C confirmations', static function () use ($h, $service): void {
+        $h->check($service::class, 'uses Yes/No section 464A and 464C risk declarations', static function () use ($h, $service): void {
             $questions = $service->reviewQuestions();
 
-            $h->assertTrue(str_starts_with((string)$questions['missing_parties'], 'Are all participators'));
-            $h->assertTrue(str_starts_with((string)$questions['unrecorded_value'], 'Is all value'));
-            $h->assertTrue(str_starts_with((string)$questions['indirect_benefit'], 'Were no benefits'));
-            $h->assertTrue(str_starts_with((string)$questions['replacement_extraction'], 'Was no repayment'));
+            $h->assertTrue(str_starts_with((string)$questions['missing_parties'], 'Are any participators'));
+            $h->assertTrue(str_starts_with((string)$questions['unrecorded_value'], 'Was any value'));
+            $h->assertTrue(str_starts_with((string)$questions['indirect_benefit'], 'Was any benefit'));
+            $h->assertTrue(str_starts_with((string)$questions['replacement_extraction'], 'Was a repayment'));
         });
 
         $h->check($service::class, 'calculates Parts 1 and 2 at the original loan rate', static function () use ($h, $service, $period, $review, $base): void {

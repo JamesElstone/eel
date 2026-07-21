@@ -26,12 +26,12 @@ final class Ct600aService
     public function reviewQuestions(): array
     {
         return [
-            'missing_parties' => 'Are all participators and associates recorded in the ownership and relationship records?',
-            'unrecorded_value' => 'Is all value transferred to a participator or associate recorded in the loan accounts?',
-            'indirect_benefit' => 'Were no benefits routed through a partnership, trust, connected company, fiduciary or representative?',
-            'noncommercial_value' => 'Were all company assets, services, expenses and other value supplied under valid commercial, remuneration, dividend or loan treatment?',
-            'tax_avoidance_arrangement' => 'Were there no arrangements whose main purpose included avoiding section 455 or obtaining a tax advantage?',
-            'replacement_extraction' => 'Was no repayment or return payment connected with a replacement loan, benefit or other extraction under section 464C?',
+            'missing_parties' => 'Are any participators or associates missing from the ownership and relationship records?',
+            'unrecorded_value' => 'Was any value transferred to a participator or associate outside the recorded loan accounts?',
+            'indirect_benefit' => 'Was any benefit routed through a partnership, trust, connected company, fiduciary or representative?',
+            'noncommercial_value' => 'Were company assets, services, expenses or other value supplied outside a valid commercial, remuneration, dividend or loan treatment?',
+            'tax_avoidance_arrangement' => 'Was the company party to arrangements whose main purpose included avoiding section 455 or obtaining a tax advantage?',
+            'replacement_extraction' => 'Was a repayment or return payment connected with a replacement loan, benefit or other extraction under section 464C?',
         ];
     }
 
@@ -367,7 +367,7 @@ final class Ct600aService
             $answer=(string)($answers[$key]??'');
             if (!in_array($answer, ['yes', 'no'], true)) {
                 $errors[]=$this->reviewQuestions()[$key].' Answer Yes or No.';
-            } elseif ($answer === 'no') {
+            } elseif ($answer === 'yes') {
                 $errors[]=$this->reviewQuestions()[$key].' Resolve this through the posted transaction or journal evidence before filing.';
             }
         }

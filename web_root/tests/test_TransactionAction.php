@@ -782,8 +782,8 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
 
     $harness->check('TransactionAction', 'mark_director_loan uses the asset nominal for money leaving the bank', function () use ($harness, $createDirectorLoanFixture, $markDirectorLoan, $transactionNominalId, $transactionCategoryStatus): void {
         $fixture = $createDirectorLoanFixture(-250.00, [
-            'director_loan_asset_nominal_id' => 'asset',
-            'director_loan_liability_nominal_id' => 'liability',
+            'participator_loan_asset_nominal_id' => 'asset',
+            'participator_loan_liability_nominal_id' => 'liability',
         ]);
 
         $result = $markDirectorLoan($fixture);
@@ -795,8 +795,8 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
 
     $harness->check('TransactionAction', 'mark_director_loan uses the liability nominal for money entering the bank', function () use ($harness, $createDirectorLoanFixture, $markDirectorLoan, $transactionNominalId): void {
         $fixture = $createDirectorLoanFixture(250.00, [
-            'director_loan_asset_nominal_id' => 'asset',
-            'director_loan_liability_nominal_id' => 'liability',
+            'participator_loan_asset_nominal_id' => 'asset',
+            'participator_loan_liability_nominal_id' => 'liability',
         ]);
 
         $result = $markDirectorLoan($fixture);
@@ -805,15 +805,15 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame($fixture['liability_nominal_id'], $transactionNominalId((int)$fixture['transaction_id']));
     });
 
-    $harness->check('TransactionAction', 'mark_director_loan falls back to the legacy liability setting for money entering the bank', function () use ($harness, $createDirectorLoanFixture, $markDirectorLoan, $transactionNominalId): void {
+    $harness->check('TransactionAction', 'mark_director_loan ignores the legacy liability setting after the participator cutover', function () use ($harness, $createDirectorLoanFixture, $markDirectorLoan, $transactionNominalId): void {
         $fixture = $createDirectorLoanFixture(125.00, [
             'director_loan_nominal_id' => 'legacy',
         ]);
 
         $result = $markDirectorLoan($fixture);
 
-        $harness->assertSame(true, $result->isSuccess());
-        $harness->assertSame($fixture['legacy_nominal_id'], $transactionNominalId((int)$fixture['transaction_id']));
+        $harness->assertSame(false, $result->isSuccess());
+        $harness->assertSame(0, $transactionNominalId((int)$fixture['transaction_id']));
     });
 
     $harness->check('TransactionAction', 'mark_director_loan rejects missing configured nominals without changing the transaction', function () use ($harness, $createDirectorLoanFixture, $markDirectorLoan, $transactionNominalId): void {
@@ -827,7 +827,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
 
     $harness->check('TransactionAction', 'mark_director_loan rejects transfer rows', function () use ($harness, $createDirectorLoanFixture, $markDirectorLoan, $transactionNominalId): void {
         $fixture = $createDirectorLoanFixture(100.00, [
-            'director_loan_liability_nominal_id' => 'liability',
+            'participator_loan_liability_nominal_id' => 'liability',
         ], [
             'source_category' => 'Internal transfer',
         ]);
@@ -840,8 +840,8 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
 
     $harness->check('TransactionAction', 'mark_director_loan rejects zero amount transactions', function () use ($harness, $createDirectorLoanFixture, $markDirectorLoan, $transactionNominalId): void {
         $fixture = $createDirectorLoanFixture(0.00, [
-            'director_loan_asset_nominal_id' => 'asset',
-            'director_loan_liability_nominal_id' => 'liability',
+            'participator_loan_asset_nominal_id' => 'asset',
+            'participator_loan_liability_nominal_id' => 'liability',
         ]);
 
         $result = $markDirectorLoan($fixture);
@@ -852,7 +852,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
 
     $harness->check('TransactionAction', 'mark_director_loan is blocked for locked accounting periods', function () use ($harness, $createDirectorLoanFixture, $markDirectorLoan, $transactionNominalId): void {
         $fixture = $createDirectorLoanFixture(-60.00, [
-            'director_loan_asset_nominal_id' => 'asset',
+            'participator_loan_asset_nominal_id' => 'asset',
         ], [], true);
 
         $result = $markDirectorLoan($fixture);
@@ -863,7 +863,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
 
     $harness->check('TransactionAction', 'mark_director_loan requires confirmation before changing a derived journal transaction', function () use ($harness, $createDirectorLoanFixture, $markDirectorLoan, $transactionNominalId, $insertDerivedJournal): void {
         $fixture = $createDirectorLoanFixture(-90.00, [
-            'director_loan_asset_nominal_id' => 'asset',
+            'participator_loan_asset_nominal_id' => 'asset',
         ]);
         $insertDerivedJournal($fixture);
 
@@ -875,7 +875,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
 
     $harness->check('TransactionAction', 'mark_director_loan rebuilds a derived journal after confirmation', function () use ($harness, $createDirectorLoanFixture, $markDirectorLoan, $transactionNominalId, $insertDerivedJournal): void {
         $fixture = $createDirectorLoanFixture(-95.00, [
-            'director_loan_asset_nominal_id' => 'asset',
+            'participator_loan_asset_nominal_id' => 'asset',
         ]);
         $oldJournalId = $insertDerivedJournal($fixture);
 
@@ -1415,8 +1415,8 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
                 'id' => 1,
                 'accounting_period_id' => 2,
                 'settings' => [
-                    'director_loan_asset_nominal_id' => 1200,
-                    'director_loan_liability_nominal_id' => 2100,
+                    'participator_loan_asset_nominal_id' => 1200,
+                    'participator_loan_liability_nominal_id' => 2100,
                 ],
             ],
             'page' => [
@@ -1482,8 +1482,8 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
                 'id' => 1,
                 'accounting_period_id' => 2,
                 'settings' => [
-                    'director_loan_asset_nominal_id' => 1200,
-                    'director_loan_liability_nominal_id' => 2100,
+                    'participator_loan_asset_nominal_id' => 1200,
+                    'participator_loan_liability_nominal_id' => 2100,
                     'default_currency_symbol' => '&#36;',
                 ],
             ],
@@ -1769,8 +1769,8 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
                 'id' => 1,
                 'accounting_period_id' => 2,
                 'settings' => [
-                    'director_loan_asset_nominal_id' => 1200,
-                    'director_loan_liability_nominal_id' => 2100,
+                    'participator_loan_asset_nominal_id' => 1200,
+                    'participator_loan_liability_nominal_id' => 2100,
                 ],
             ],
             'page' => [
@@ -1923,8 +1923,8 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
                 'id' => 1,
                 'accounting_period_id' => 2,
                 'settings' => [
-                    'director_loan_asset_nominal_id' => 1200,
-                    'director_loan_liability_nominal_id' => 2100,
+                    'participator_loan_asset_nominal_id' => 1200,
+                    'participator_loan_liability_nominal_id' => 2100,
                 ],
             ],
             'page' => [
@@ -2003,7 +2003,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, '<button class="button primary" type="button" disabled title="Period locked">Post Categorised Transactions</button>'));
         $harness->assertSame(false, str_contains($html, 'name="global_action" value="save_transaction_category"'));
         $harness->assertSame(true, str_contains($html, '<button class="button primary" type="button" disabled title="Period locked">Rule</button>'));
-        $harness->assertSame(true, str_contains($html, '<button class="button" type="button" disabled title="Period locked">Director Loan</button>'));
+        $harness->assertSame(true, str_contains($html, '<button class="button" type="button" disabled title="Period locked">Participator Loan</button>'));
         $harness->assertSame(true, str_contains($html, 'type="button" disabled title="Period locked" name="global_action" value="defer_transaction"'));
         $harness->assertSame(true, str_contains($html, '<button class="button" type="button" disabled title="Period locked">Asset</button>'));
         $harness->assertSame(true, str_contains($html, 'View Receipt'));
@@ -2015,7 +2015,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
                 'id' => 1,
                 'accounting_period_id' => 2,
                 'settings' => [
-                    'director_loan_liability_nominal_id' => 2100,
+                    'participator_loan_liability_nominal_id' => 2100,
                 ],
             ],
             'page' => [
@@ -2043,7 +2043,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
             ],
         ]);
 
-        $harness->assertSame(true, str_contains($html, '<button class="button" type="button" disabled title="Set Director Loan Asset nominal in Company Nominals">Director Loan</button>'));
+        $harness->assertSame(true, str_contains($html, '<button class="button" type="button" disabled title="Set Participator Loan Asset nominal in Company Nominals">Participator Loan</button>'));
         $harness->assertSame(false, str_contains($html, 'value="mark_director_loan"'));
     });
 

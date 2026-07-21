@@ -55,7 +55,7 @@ $harness->run(DirectorLoanAction::class, static function (
                 ['company_number' => $companyNumber]
             );
             $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
-            $settings->set('director_loan_liability_nominal_id', $liabilityNominalId, 'int');
+            $settings->set('participator_loan_liability_nominal_id', $liabilityNominalId, 'int');
             $settings->flush();
             InterfaceDB::prepareExecute(
                 'INSERT INTO accounting_periods (company_id, label, period_start, period_end)

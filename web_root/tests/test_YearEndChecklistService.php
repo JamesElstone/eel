@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'StandardNominalTestFixture.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ParticipatorLoanTestFixture.php';
 
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static function (GeneratedServiceClassTestHarness $harness): void {
@@ -1304,9 +1305,14 @@ function yearEndChecklistServiceCreateDirectorLoanOffsetFixture(): array
             'appointed_on' => '2020-01-01',
         ]
     );
+    $directorId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM company_directors WHERE company_id = :company_id ORDER BY id LIMIT 1',
+        ['company_id' => $companyId]
+    );
+    ParticipatorLoanTestFixture::createPartyForDirector($companyId, $directorId, 'Primary Director');
     $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
-    $settings->set('director_loan_asset_nominal_id', $assetNominalId, 'int');
-    $settings->set('director_loan_liability_nominal_id', $liabilityNominalId, 'int');
+    $settings->set('participator_loan_asset_nominal_id', $assetNominalId, 'int');
+    $settings->set('participator_loan_liability_nominal_id', $liabilityNominalId, 'int');
     $settings->flush();
     InterfaceDB::prepareExecute(
         'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
@@ -1636,17 +1642,17 @@ function yearEndChecklistServiceInsertDirectorLoanLineJournal(int $companyId, in
             'source_ref' => $sourceRef,
         ]
     );
-    $directorId = (int)InterfaceDB::fetchColumn(
-        'SELECT id FROM company_directors WHERE company_id = :company_id ORDER BY id LIMIT 1',
+    $partyId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM company_parties WHERE company_id = :company_id ORDER BY id LIMIT 1',
         ['company_id' => $companyId]
     );
     InterfaceDB::prepareExecute(
-        'INSERT INTO journal_lines (journal_id, nominal_account_id, director_id, debit, credit, line_description)
-         VALUES (:journal_id, :nominal_account_id, :director_id, :debit, :credit, :line_description)',
+        'INSERT INTO journal_lines (journal_id, nominal_account_id, party_id, debit, credit, line_description)
+         VALUES (:journal_id, :nominal_account_id, :party_id, :debit, :credit, :line_description)',
         [
             'journal_id' => $journalId,
             'nominal_account_id' => $nominalId,
-            'director_id' => $directorId,
+            'party_id' => $partyId,
             'debit' => number_format($debit, 2, '.', ''),
             'credit' => number_format($credit, 2, '.', ''),
             'line_description' => 'Year end director loan fixture',

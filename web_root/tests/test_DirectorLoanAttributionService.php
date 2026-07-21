@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'StandardNominalTestFixture.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ParticipatorLoanTestFixture.php';
 
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(\eel_accounts\Service\DirectorLoanAttributionService::class, static function (
@@ -16,7 +17,7 @@ $harness->run(\eel_accounts\Service\DirectorLoanAttributionService::class, stati
     \eel_accounts\Service\DirectorLoanAttributionService $service
 ): void {
     $harness->check(\eel_accounts\Service\DirectorLoanAttributionService::class, 'assigns the journal source of truth and records an audit without changing accounting values', static function () use ($harness, $service): void {
-        foreach (['company_directors', 'director_loan_attribution_audit'] as $table) {
+        foreach (['company_directors', 'company_parties', 'company_party_roles', 'participator_loan_attribution_audit'] as $table) {
             if (!InterfaceDB::tableExists($table)) {
                 $harness->skip($table . ' schema is not available.');
             }
@@ -36,10 +37,7 @@ $harness->run(\eel_accounts\Service\DirectorLoanAttributionService::class, stati
                 'SELECT id FROM companies WHERE company_number = :company_number',
                 ['company_number' => 'DAF' . $marker]
             );
-            $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
-            $settings->set('director_loan_asset_nominal_id', $assetNominalId, 'int');
-            $settings->set('director_loan_liability_nominal_id', $liabilityNominalId, 'int');
-            $settings->flush();
+            ParticipatorLoanTestFixture::configureNominals($companyId, $assetNominalId, $liabilityNominalId);
             InterfaceDB::prepareExecute(
                 'INSERT INTO company_directors (
                     company_id, source, external_key, full_name, officer_role, appointed_on, is_active
@@ -58,6 +56,12 @@ $harness->run(\eel_accounts\Service\DirectorLoanAttributionService::class, stati
             $directorId = (int)InterfaceDB::fetchColumn(
                 'SELECT id FROM company_directors WHERE company_id = :company_id',
                 ['company_id' => $companyId]
+            );
+            $partyId = ParticipatorLoanTestFixture::createPartyForDirector(
+                $companyId,
+                $directorId,
+                'Primary Director',
+                '2020-01-01'
             );
             InterfaceDB::prepareExecute(
                 'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
@@ -94,22 +98,22 @@ $harness->run(\eel_accounts\Service\DirectorLoanAttributionService::class, stati
                 ['journal_id' => $journalId]
             );
 
-            $result = $service->assignJournalLine($companyId, $lineId, $directorId, 'test', 'Test attribution.');
+            $result = $service->assignJournalLine($companyId, $lineId, $partyId, 'test', 'Test attribution.');
 
             $harness->assertSame(true, (bool)($result['success'] ?? false));
-            $harness->assertSame($directorId, (int)InterfaceDB::fetchColumn(
-                'SELECT director_id FROM journal_lines WHERE id = :id',
+            $harness->assertSame($partyId, (int)InterfaceDB::fetchColumn(
+                'SELECT party_id FROM journal_lines WHERE id = :id',
                 ['id' => $lineId]
             ));
             $harness->assertSame('253.00', number_format((float)InterfaceDB::fetchColumn(
                 'SELECT debit FROM journal_lines WHERE id = :id',
                 ['id' => $lineId]
             ), 2, '.', ''));
-            $harness->assertSame(1, InterfaceDB::countWhere('director_loan_attribution_audit', [
+            $harness->assertSame(1, InterfaceDB::countWhere('participator_loan_attribution_audit', [
                 'company_id' => $companyId,
                 'source_type' => 'journal_line',
                 'source_id' => $lineId,
-                'new_director_id' => $directorId,
+                'new_party_id' => $partyId,
             ]));
 
             $missing = $service->assignJournalLine($companyId, $lineId, null, 'test');

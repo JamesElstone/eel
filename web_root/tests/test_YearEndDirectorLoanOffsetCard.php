@@ -64,9 +64,9 @@ $harness->run(_year_end_director_loan_offsetCard::class, static function (Genera
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_director_loan_year_end_review"'));
         $harness->assertTrue(str_contains($html, 'name="director_loan_year_end_review" value="1"'));
         $harness->assertTrue(str_contains($html, 'Primary Director'));
-        $harness->assertTrue(str_contains($html, 'Calculated control-account reclassification'));
+        $harness->assertTrue(str_contains($html, 'Calculated reclassification'));
         $harness->assertTrue(str_contains($html, '<div class="panel-soft table-scroll"><table>'));
-        $harness->assertSame(3, substr_count($html, '<div class="panel-soft table-scroll"><table>'));
+        $harness->assertSame(2, substr_count($html, '<div class="panel-soft table-scroll"><table>'));
         $harness->assertSame(false, str_contains($html, '118 Director Loan entries are not attributed'));
         $harness->assertTrue(str_contains($html, 'A separate review warning remains relevant.'));
         $harness->assertSame(false, str_contains($html, 'director_loan_legally_enforceable_right'));

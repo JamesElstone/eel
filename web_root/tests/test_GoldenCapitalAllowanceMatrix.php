@@ -58,13 +58,13 @@ final class GoldenCapitalAllowanceMatrixFixture
         ];
         self::insert('company_settings', [
             'company_id' => $companyId,
-            'setting' => 'director_loan_asset_nominal_id',
+            'setting' => 'participator_loan_asset_nominal_id',
             'type' => 'int',
             'value' => (string)self::nominal('GCA-DLA-' . $companyId, 'Golden CA director loan asset', 'asset', 'other'),
         ]);
         self::insert('company_settings', [
             'company_id' => $companyId,
-            'setting' => 'director_loan_liability_nominal_id',
+            'setting' => 'participator_loan_liability_nominal_id',
             'type' => 'int',
             'value' => (string)self::nominal('GCA-DLL-' . $companyId, 'Golden CA director loan liability', 'liability', 'other'),
         ]);

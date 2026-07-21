@@ -26,9 +26,11 @@ $harness->run(_incorporation::class, static function (
 
         $harness->assertSame('Shares', (string)($layout[0]['tab'] ?? ''));
         $harness->assertSame(['incorporation_status', 'incorporation_share_capital'], $sharesCards);
-        $harness->assertSame('Share Allocation', (string)($layout[3]['tab'] ?? ''));
-        $harness->assertSame(['incorporation_share_allocation'], (array)($layout[3]['cards'] ?? []));
-        $harness->assertSame('Relationships', (string)($layout[4]['tab'] ?? ''));
-        $harness->assertSame(['incorporation_relationships'], (array)($layout[4]['cards'] ?? []));
+        $harness->assertSame('Ownership & Parties', (string)($layout[3]['tab'] ?? ''));
+        $harness->assertSame(['incorporation_ownership_parties'], (array)($layout[3]['cards'] ?? []));
+        $harness->assertSame('Share Allocation', (string)($layout[4]['tab'] ?? ''));
+        $harness->assertSame(['incorporation_share_allocation'], (array)($layout[4]['cards'] ?? []));
+        $harness->assertSame('Relationships', (string)($layout[5]['tab'] ?? ''));
+        $harness->assertSame(['incorporation_relationships'], (array)($layout[5]['cards'] ?? []));
     });
 });

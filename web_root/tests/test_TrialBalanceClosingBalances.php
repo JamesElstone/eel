@@ -34,8 +34,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 );
                 $companyId = (int)InterfaceDB::fetchColumn('SELECT id FROM companies WHERE company_number = :company_number', ['company_number' => 'TBC' . $marker]);
                 $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
-                $settings->set('director_loan_asset_nominal_id', $nominals['1200'], 'int');
-                $settings->set('director_loan_liability_nominal_id', $nominals['2100'], 'int');
+                $settings->set('participator_loan_asset_nominal_id', $nominals['1200'], 'int');
+                $settings->set('participator_loan_liability_nominal_id', $nominals['2100'], 'int');
                 $settings->flush();
                 $periodIds = [];
                 foreach ([

@@ -84,7 +84,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertFalse(in_array('comparative:entity_name', $missing, true));
         });
 
-        $harness->check(\eel_accounts\Service\IxbrlReadinessService::class, 'requires both director loan nominal settings', static function () use ($harness, $service): void {
+        $harness->check(\eel_accounts\Service\IxbrlReadinessService::class, 'requires both participator loan nominal settings', static function () use ($harness, $service): void {
             $method = new ReflectionMethod(\eel_accounts\Service\IxbrlReadinessService::class, 'missingSettings');
             $method->setAccessible(true);
 
@@ -95,19 +95,19 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 'director_loan_nominal_id' => '30',
                 'vat_nominal_id' => '40',
             ]);
-            $harness->assertTrue(in_array('director loan asset nominal', $missing, true));
-            $harness->assertTrue(in_array('director loan liability nominal', $missing, true));
+            $harness->assertTrue(in_array('participator loan asset nominal', $missing, true));
+            $harness->assertTrue(in_array('participator loan liability nominal', $missing, true));
 
             $complete = $method->invoke($service, [
                 'utr' => '1234567890',
                 'default_currency' => 'GBP',
                 'default_bank_nominal_id' => '10',
-                'director_loan_asset_nominal_id' => '30',
-                'director_loan_liability_nominal_id' => '31',
+                'participator_loan_asset_nominal_id' => '30',
+                'participator_loan_liability_nominal_id' => '31',
                 'vat_nominal_id' => '40',
             ]);
-            $harness->assertFalse(in_array('director loan asset nominal', $complete, true));
-            $harness->assertFalse(in_array('director loan liability nominal', $complete, true));
+            $harness->assertFalse(in_array('participator loan asset nominal', $complete, true));
+            $harness->assertFalse(in_array('participator loan liability nominal', $complete, true));
         });
 
         $harness->check(\eel_accounts\Service\IxbrlReadinessService::class, 'surfaces deferred tax as a non-blocking FRS 105 warning', static function () use ($harness, $service): void {

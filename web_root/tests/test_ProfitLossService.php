@@ -39,8 +39,8 @@ $harness->run(\eel_accounts\Service\ProfitLossService::class, static function (G
             $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
             $settings->set('corporation_tax_expense_nominal_id', $taxExpenseNominalId, 'int');
             $settings->set('corporation_tax_liability_nominal_id', $taxLiabilityNominalId, 'int');
-            $settings->set('director_loan_asset_nominal_id', $directorLoanAssetNominalId, 'int');
-            $settings->set('director_loan_liability_nominal_id', $directorLoanLiabilityNominalId, 'int');
+            $settings->set('participator_loan_asset_nominal_id', $directorLoanAssetNominalId, 'int');
+            $settings->set('participator_loan_liability_nominal_id', $directorLoanLiabilityNominalId, 'int');
             $settings->flush();
             InterfaceDB::prepareExecute(
                 'INSERT INTO accounting_periods (company_id, label, period_start, period_end)

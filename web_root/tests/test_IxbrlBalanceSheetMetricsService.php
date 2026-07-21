@@ -366,8 +366,8 @@ function ixbrlDirectorLoanPresentationFixture(): array
         ixbrlBalanceSheetSubtype('capital_reserves', 'Capital and Reserves', 'equity')
     );
     $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
-    $settings->set('director_loan_asset_nominal_id', $directorLoanAsset, 'int');
-    $settings->set('director_loan_liability_nominal_id', $directorLoanLiability, 'int');
+    $settings->set('participator_loan_asset_nominal_id', $directorLoanAsset, 'int');
+    $settings->set('participator_loan_liability_nominal_id', $directorLoanLiability, 'int');
     $settings->flush();
 
     $journalId = ixbrlBalanceSheetJournal(
@@ -386,7 +386,7 @@ function ixbrlDirectorLoanPresentationFixture(): array
     return [
         'company_id' => $companyId,
         'accounting_period_id' => $periodId,
-        'director_loan_asset_nominal_id' => $directorLoanAsset,
-        'director_loan_liability_nominal_id' => $directorLoanLiability,
+        'participator_loan_asset_nominal_id' => $directorLoanAsset,
+        'participator_loan_liability_nominal_id' => $directorLoanLiability,
     ];
 }

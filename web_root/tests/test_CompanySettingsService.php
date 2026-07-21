@@ -222,7 +222,7 @@ $harness->run(\eel_accounts\Service\CompanySettingsService::class, static functi
         $harness->assertSame(14, (int)($suggestions['default_expense_nominal_id']['id'] ?? 0));
     });
 
-    $harness->check(\eel_accounts\Service\CompanySettingsService::class, 'suggests director loan asset and liability nominals separately', static function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\CompanySettingsService::class, 'suggests participator loan asset and liability nominals separately', static function () use ($harness, $service): void {
         $method = new ReflectionMethod(\eel_accounts\Service\CompanySettingsService::class, 'buildNominalDefaultSuggestions');
         $method->setAccessible(true);
 
@@ -231,9 +231,8 @@ $harness->run(\eel_accounts\Service\CompanySettingsService::class, static functi
             ['id' => 5, 'code' => '2100', 'name' => 'Director Loan Liability', 'account_type' => 'liability', 'subtype_code' => 'director_loan_liability'],
         ]);
 
-        $harness->assertSame(3, (int)($suggestions['director_loan_asset_nominal_id']['id'] ?? 0));
-        $harness->assertSame(5, (int)($suggestions['director_loan_liability_nominal_id']['id'] ?? 0));
-        $harness->assertSame(5, (int)($suggestions['director_loan_nominal_id']['id'] ?? 0));
+        $harness->assertSame(3, (int)($suggestions['participator_loan_asset_nominal_id']['id'] ?? 0));
+        $harness->assertSame(5, (int)($suggestions['participator_loan_liability_nominal_id']['id'] ?? 0));
     });
 
     $harness->check(\eel_accounts\Service\CompanySettingsService::class, 'maps legacy director loan setting to liability setting', static function () use ($harness, $service): void {

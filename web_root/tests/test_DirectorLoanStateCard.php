@@ -78,7 +78,7 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
 
         foreach ([
             'counterparty' => 'External Counterparty',
-            'former director' => 'Former Director (former director)',
+            'party selector' => 'Choose party',
             'attribution intent' => 'name="intent" value="set_participator_loan_attribution"',
             'reporting intent' => 'name="intent" value="save_director_loan_reporting_presentation"',
             'within-year choice' => 'name="classification" value="within_one_year" checked required',
@@ -97,11 +97,10 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
         $harness->assertTrue(str_contains($html, 'target="_blank" rel="noopener noreferrer"'));
         $harness->assertTrue(str_contains($html, 'Primary Director'));
         $harness->assertSame(false, str_contains($html, 'For example,'));
-        $harness->assertTrue(str_contains($html, 'Former Director (former director)'));
+        $harness->assertTrue(str_contains($html, 'Choose party'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="set_participator_loan_attribution"'));
         $harness->assertTrue(str_contains($html, 'name="journal_line_id" value="123"'));
         $harness->assertTrue(str_contains($html, '<select class="input" name="party_id" required>'));
-        $harness->assertTrue(str_contains($html, 'value="9" selected'));
         $harness->assertSame(false, str_contains($html, '<button class="button button-inline" type="submit">Save</button>'));
         $harness->assertTrue(str_contains($html, 'Calculated reclassification'));
         $harness->assertTrue(str_contains($html, 'Gross loan asset (not s455)'));
@@ -153,7 +152,7 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
         ]);
 
         $harness->assertSame(false, str_contains($html, 'Every Director Loan entry must be attributed'));
-        $harness->assertTrue(str_contains($html, 'Choose director'));
+        $harness->assertTrue(str_contains($html, 'Choose party'));
         $harness->assertTrue(str_contains($html, 'value="" disabled selected'));
         $harness->assertTrue(str_contains($html, 'name="classification" value="after_more_than_one_year" checked required'));
     });

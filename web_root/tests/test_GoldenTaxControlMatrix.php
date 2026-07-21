@@ -73,7 +73,7 @@ $harness->check('GoldenTaxControlMatrix', 'raises s455 and lock-readiness review
         $harness->assertTrue(!empty($review['review_required']));
         $harness->assertSame('800.00', goldenTaxControlMoney($review['exposure_amount'] ?? 0));
         $harness->assertSame(
-            GoldenAccountsFixture::GOLDEN_DIRECTOR_ID,
+            GoldenAccountsFixture::GOLDEN_PARTY_ID,
             (int)($review['director_flags'][0]['director_id'] ?? 0)
         );
 
@@ -437,8 +437,8 @@ function goldenTaxControlPostJournal(
         [
             [
                 'nominal_account_id' => $debitNominalId,
-                'director_id' => in_array($debitNominalId, [91005, 91006], true)
-                    ? GoldenAccountsFixture::GOLDEN_DIRECTOR_ID
+                'party_id' => in_array($debitNominalId, [91005, 91006], true)
+                    ? GoldenAccountsFixture::GOLDEN_PARTY_ID
                     : null,
                 'debit' => $amount,
                 'credit' => 0.0,
@@ -446,8 +446,8 @@ function goldenTaxControlPostJournal(
             ],
             [
                 'nominal_account_id' => $creditNominalId,
-                'director_id' => in_array($creditNominalId, [91005, 91006], true)
-                    ? GoldenAccountsFixture::GOLDEN_DIRECTOR_ID
+                'party_id' => in_array($creditNominalId, [91005, 91006], true)
+                    ? GoldenAccountsFixture::GOLDEN_PARTY_ID
                     : null,
                 'debit' => 0.0,
                 'credit' => $amount,

@@ -31,8 +31,8 @@ $harness->run(NominalsAction::class, function (GeneratedServiceClassTestHarness 
             'default_expense_nominal_id' => '20',
             'tools_small_equipment_nominal_id' => '21',
             'prepayment_asset_nominal_id' => '22',
-            'director_loan_asset_nominal_id' => '30',
-            'director_loan_liability_nominal_id' => '31',
+            'participator_loan_asset_nominal_id' => '30',
+            'participator_loan_liability_nominal_id' => '31',
             'vat_nominal_id' => '',
             'uncategorised_nominal_id' => '50',
         ], [
@@ -52,8 +52,8 @@ $harness->run(NominalsAction::class, function (GeneratedServiceClassTestHarness 
         $harness->assertSame(true, str_contains($message, 'Expense claims payable: 5000 - Expenses'));
         $harness->assertSame(true, str_contains($message, 'Tools &amp; Small Equipment: 6070 - Tools &amp; Small Equipment'));
         $harness->assertSame(true, str_contains($message, 'Prepayments asset: 1150 - Prepayments'));
-        $harness->assertSame(true, str_contains($message, 'Director loan asset: 1200 - Director Loan Asset'));
-        $harness->assertSame(true, str_contains($message, 'Director loan liability: 2100 - Director Loan Liability'));
+        $harness->assertSame(true, str_contains($message, 'Participator loan asset: 1200 - Director Loan Asset'));
+        $harness->assertSame(true, str_contains($message, 'Participator loan liability: 2100 - Director Loan Liability'));
         $harness->assertSame(true, str_contains($message, 'VAT control: Unassigned'));
         $harness->assertSame(true, str_contains($message, 'Fallback uncategorised: 9999 - Uncategorised'));
     });
@@ -155,8 +155,8 @@ $harness->run(NominalsAction::class, function (GeneratedServiceClassTestHarness 
             'default_expense_nominal_id',
             'tools_small_equipment_nominal_id',
             'prepayment_asset_nominal_id',
-            'director_loan_asset_nominal_id',
-            'director_loan_liability_nominal_id',
+            'participator_loan_asset_nominal_id',
+            'participator_loan_liability_nominal_id',
             'vat_nominal_id',
             'uncategorised_nominal_id',
         ] as $index => $setting) {

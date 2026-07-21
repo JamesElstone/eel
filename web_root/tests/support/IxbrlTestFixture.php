@@ -108,8 +108,8 @@ function ixbrl_test_assign_director_loan_nominals(
         : StandardNominalTestFixture::id('2100');
 
     $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
-    $settings->set('director_loan_asset_nominal_id', $assetNominalId, 'int');
-    $settings->set('director_loan_liability_nominal_id', $liabilityNominalId, 'int');
+    $settings->set('participator_loan_asset_nominal_id', $assetNominalId, 'int');
+    $settings->set('participator_loan_liability_nominal_id', $liabilityNominalId, 'int');
     $settings->flush();
 
     return ['asset' => $assetNominalId, 'liability' => $liabilityNominalId];

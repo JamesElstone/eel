@@ -22,7 +22,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 companiesHouseSnapshotTestInsertJournal($fixture, [
                     [$fixture['fixed_asset_nominal_id'], 1000.00, 0.00],
                     [$fixture['bank_nominal_id'], 5000.00, 0.00],
-                    [$fixture['director_loan_liability_nominal_id'], 0.00, 750.00],
+                    [$fixture['participator_loan_liability_nominal_id'], 0.00, 750.00],
                     [$fixture['long_term_director_loan_nominal_id'], 0.00, 1250.00],
                     [$fixture['equity_nominal_id'], 0.00, 4000.00],
                     [$fixture['income_nominal_id'], 0.00, 300.00],
@@ -74,7 +74,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 companiesHouseSnapshotTestInsertJournal($fixture, [
                     [$fixture['fixed_asset_nominal_id'], 1000.00, 0.00],
                     [$fixture['bank_nominal_id'], 5000.00, 0.00],
-                    [$fixture['director_loan_liability_nominal_id'], 0.00, 750.00],
+                    [$fixture['participator_loan_liability_nominal_id'], 0.00, 750.00],
                     [$fixture['long_term_director_loan_nominal_id'], 0.00, 1250.00],
                     [$fixture['equity_nominal_id'], 0.00, 4000.00],
                 ]);
@@ -143,7 +143,7 @@ function companiesHouseSnapshotTestWithFixture(GeneratedServiceClassTestHarness 
             'accounting_period_id' => $accountingPeriodId,
             'fixed_asset_nominal_id' => companiesHouseSnapshotTestNominal($marker, 'fixed_asset', 'asset', 'fixed_asset'),
             'bank_nominal_id' => companiesHouseSnapshotTestNominal($marker, 'bank', 'asset', 'bank'),
-            'director_loan_liability_nominal_id' => companiesHouseSnapshotTestNominal($marker, 'director_loan_liability', 'liability', 'director_loan_liability'),
+            'participator_loan_liability_nominal_id' => companiesHouseSnapshotTestNominal($marker, 'director_loan_liability', 'liability', 'director_loan_liability'),
             'long_term_director_loan_nominal_id' => companiesHouseSnapshotTestNominal($marker, 'director_loan_long_term_liability', 'liability', 'director_loan_long_term_liability'),
             'equity_nominal_id' => companiesHouseSnapshotTestNominal($marker, 'capital_reserves', 'equity', 'capital_reserves'),
             'income_nominal_id' => companiesHouseSnapshotTestNominal($marker, 'turnover', 'income', 'turnover'),
@@ -151,8 +151,8 @@ function companiesHouseSnapshotTestWithFixture(GeneratedServiceClassTestHarness 
         ];
         $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
         $settings->set(
-            'director_loan_liability_nominal_id',
-            (int)$fixture['director_loan_liability_nominal_id'],
+            'participator_loan_liability_nominal_id',
+            (int)$fixture['participator_loan_liability_nominal_id'],
             'int'
         );
         $settings->flush();

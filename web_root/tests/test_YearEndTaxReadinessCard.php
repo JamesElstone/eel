@@ -132,9 +132,7 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(true, str_contains($html, 'Rate Bands'));
         $harness->assertSame(true, str_contains($html, 'Financial Year (FY)'));
         $harness->assertSame(true, str_contains($html, 'FY2023'));
-        $harness->assertSame(true, str_contains($html, 'Open this CT period in Tax Workflow'));
-        $harness->assertSame(true, str_contains($html, 'name="ct_period_id" value="501"'));
-        $harness->assertSame(true, str_contains($html, 'name="ct_period_id" value="502"'));
+        $harness->assertSame(false, str_contains($html, 'Open this CT period in Tax Workflow'));
         $harness->assertSame(true, str_contains($html, 'summary-grid four'));
         $harness->assertSame(false, str_contains($html, 'Tax Readiness Snapshot'));
         $harness->assertSame(false, str_contains($html, 'Post / Update CT Provisions'));

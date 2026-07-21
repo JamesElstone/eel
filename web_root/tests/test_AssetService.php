@@ -1605,8 +1605,8 @@ function assetServiceTestCreateTaxViewFixture(): array
         ]
     );
     $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
-    $settings->set('director_loan_asset_nominal_id', $directorLoanAssetNominalId, 'int');
-    $settings->set('director_loan_liability_nominal_id', $directorLoanLiabilityNominalId, 'int');
+    $settings->set('participator_loan_asset_nominal_id', $directorLoanAssetNominalId, 'int');
+    $settings->set('participator_loan_liability_nominal_id', $directorLoanLiabilityNominalId, 'int');
     $settings->flush();
     InterfaceDB::prepareExecute(
         'INSERT INTO journals (

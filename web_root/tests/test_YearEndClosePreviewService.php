@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'StandardNominalTestFixture.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ParticipatorLoanTestFixture.php';
 
 (new GeneratedServiceClassTestHarness())->run(
     \eel_accounts\Service\YearEndClosePreviewService::class,
@@ -274,12 +275,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 );
                 $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
                 $settings->set(
-                    'director_loan_asset_nominal_id',
+                    'participator_loan_asset_nominal_id',
                     StandardNominalTestFixture::id('1200'),
                     'int'
                 );
                 $settings->set(
-                    'director_loan_liability_nominal_id',
+                    'participator_loan_liability_nominal_id',
                     StandardNominalTestFixture::id('2100'),
                     'int'
                 );
@@ -303,6 +304,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'SELECT id FROM company_directors WHERE company_id = :company_id',
                     ['company_id' => $companyId]
                 );
+                $partyId = ParticipatorLoanTestFixture::createPartyForDirector($companyId, $directorId, 'Primary Director');
                 foreach ([
                     [$firstPeriodId, '2023-01-01', '2023-12-31'],
                     [$secondPeriodId, '2024-01-01', '2024-12-31'],
@@ -325,8 +327,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'sequential-dla-' . $marker,
                     '2023-12-31',
                     [
-                        [yearEndClosePreviewNominalId('1200'), 100.00, 0.00, $directorId],
-                        [yearEndClosePreviewNominalId('2100'), 0.00, 100.00, $directorId],
+                        [yearEndClosePreviewNominalId('1200'), 100.00, 0.00, $partyId],
+                        [yearEndClosePreviewNominalId('2100'), 0.00, 100.00, $partyId],
                     ]
                 );
 
@@ -346,7 +348,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 ));
                 $harness->assertCount(2, $offsetRows);
                 foreach ($offsetRows as $row) {
-                    $harness->assertSame($directorId, (int)($row['director_id'] ?? 0));
+                    $harness->assertSame($partyId, (int)($row['director_id'] ?? 0));
                 }
                 $offsetPeriods = array_values(array_filter(
                     (array)($laterPeriodContext['periods'] ?? []),
@@ -412,6 +414,8 @@ function yearEndClosePreviewRequireSchema(GeneratedServiceClassTestHarness $harn
         'journal_lines',
         'journal_entry_metadata',
         'company_directors',
+        'company_parties',
+        'company_party_roles',
         'nominal_accounts',
         'nominal_account_subtypes',
         'asset_register',
@@ -454,8 +458,8 @@ function yearEndClosePreviewCreateFixture(): array
         ]
     );
     $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
-    $settings->set('director_loan_asset_nominal_id', yearEndClosePreviewNominalId('1200'), 'int');
-    $settings->set('director_loan_liability_nominal_id', yearEndClosePreviewNominalId('2100'), 'int');
+    $settings->set('participator_loan_asset_nominal_id', yearEndClosePreviewNominalId('1200'), 'int');
+    $settings->set('participator_loan_liability_nominal_id', yearEndClosePreviewNominalId('2100'), 'int');
     $settings->flush();
     InterfaceDB::prepareExecute(
         'INSERT INTO company_directors (
@@ -476,6 +480,7 @@ function yearEndClosePreviewCreateFixture(): array
         'SELECT id FROM company_directors WHERE company_id = :company_id',
         ['company_id' => $companyId]
     );
+    $partyId = ParticipatorLoanTestFixture::createPartyForDirector($companyId, $directorId, 'Primary Director');
 
     yearEndClosePreviewInsertJournal($companyId, $accountingPeriodId, $marker . '-sales', '2025-12-31', [
         [yearEndClosePreviewNominalId('1000'), 1000.00, 0.00],
@@ -486,8 +491,8 @@ function yearEndClosePreviewCreateFixture(): array
         [yearEndClosePreviewNominalId('1000'), 0.00, 457.00],
     ]);
     yearEndClosePreviewInsertJournal($companyId, $accountingPeriodId, $marker . '-director-loan', '2025-12-31', [
-        [yearEndClosePreviewNominalId('1200'), 100.00, 0.00, $directorId],
-        [yearEndClosePreviewNominalId('2100'), 0.00, 100.00, $directorId],
+        [yearEndClosePreviewNominalId('1200'), 100.00, 0.00, $partyId],
+        [yearEndClosePreviewNominalId('2100'), 0.00, 100.00, $partyId],
     ]);
 
     InterfaceDB::prepareExecute(
@@ -564,12 +569,12 @@ function yearEndClosePreviewInsertJournal(int $companyId, int $accountingPeriodI
 
     foreach ($lines as $line) {
         InterfaceDB::prepareExecute(
-            'INSERT INTO journal_lines (journal_id, nominal_account_id, director_id, debit, credit, line_description)
-             VALUES (:journal_id, :nominal_account_id, :director_id, :debit, :credit, :line_description)',
+            'INSERT INTO journal_lines (journal_id, nominal_account_id, party_id, debit, credit, line_description)
+             VALUES (:journal_id, :nominal_account_id, :party_id, :debit, :credit, :line_description)',
             [
                 'journal_id' => $journalId,
                 'nominal_account_id' => (int)$line[0],
-                'director_id' => isset($line[3]) && (int)$line[3] > 0 ? (int)$line[3] : null,
+                'party_id' => isset($line[3]) && (int)$line[3] > 0 ? (int)$line[3] : null,
                 'debit' => number_format((float)$line[1], 2, '.', ''),
                 'credit' => number_format((float)$line[2], 2, '.', ''),
                 'line_description' => 'Year-end close preview fixture',

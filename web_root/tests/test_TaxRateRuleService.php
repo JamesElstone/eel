@@ -95,6 +95,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             \InterfaceDB::beginTransaction();
             try {
                 $service->ensureSchema();
+                $legacyRuleVersion = 'legacy-' . bin2hex(random_bytes(4));
                 \InterfaceDB::prepareExecute(
                     'INSERT INTO tax_rate_rules (
                         tax_domain, regime, rule_key, rule_label, period_start, period_end, value_type,
@@ -114,7 +115,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         'amount_value' => 1.00,
                         'source_url' => 'https://example.test/legacy',
                         'source_checked_at' => '2026-01-01',
-                        'rule_version' => 'legacy-' . bin2hex(random_bytes(4)),
+                        'rule_version' => $legacyRuleVersion,
                         'notes' => 'Legacy fixture.',
                     ]
                 );
@@ -129,8 +130,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 }
                 $harness->assertSame(true, $incompleteFailed);
                 $harness->assertSame(1, (int)\InterfaceDB::fetchColumn(
-                    'SELECT COUNT(*) FROM tax_rate_rules WHERE tax_domain = :domain AND regime = :regime AND period_start = :period_start AND is_active = 1',
-                    ['domain' => 'company_size', 'regime' => 'frs105_micro_entity', 'period_start' => '1900-01-01']
+                    'SELECT COUNT(*) FROM tax_rate_rules WHERE rule_version = :rule_version AND is_active = 1',
+                    ['rule_version' => $legacyRuleVersion]
                 ));
                 $replacement->invoke($service, $rules);
 

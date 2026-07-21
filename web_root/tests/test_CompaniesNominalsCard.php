@@ -55,8 +55,8 @@ $harness->run(_companies_nominalsCard::class, static function (GeneratedServiceC
             'default_expense_nominal_id',
             'tools_small_equipment_nominal_id',
             'prepayment_asset_nominal_id',
-            'director_loan_asset_nominal_id',
-            'director_loan_liability_nominal_id',
+            'participator_loan_asset_nominal_id',
+            'participator_loan_liability_nominal_id',
             'vat_nominal_id',
             'uncategorised_nominal_id',
             'corporation_tax_expense_nominal_id',
@@ -95,12 +95,12 @@ $harness->run(_companies_nominalsCard::class, static function (GeneratedServiceC
         $harness->assertFalse(str_contains($options, 'value="17"'));
     });
 
-    $harness->check(_companies_nominalsCard::class, 'renders and suggests director loan asset and liability fields', static function () use ($harness, $html): void {
-        $harness->assertTrue(str_contains($html, '<label for="director_loan_asset_nominal_id">Director Loan Asset nominal</label>'));
-        $harness->assertTrue(str_contains($html, '<label for="director_loan_liability_nominal_id">Director Loan Liability nominal</label>'));
+    $harness->check(_companies_nominalsCard::class, 'renders and suggests participator loan asset and liability fields', static function () use ($harness, $html): void {
+        $harness->assertTrue(str_contains($html, '<label for="participator_loan_asset_nominal_id">Participator Loan Asset nominal</label>'));
+        $harness->assertTrue(str_contains($html, '<label for="participator_loan_liability_nominal_id">Participator Loan Liability nominal</label>'));
         $harness->assertFalse(str_contains($html, 'name="director_loan_nominal_id"'));
-        $harness->assertTrue(str_contains($html, '<strong>Director Loan Asset nominal</strong><span>1200 Director Loan Asset</span>'));
-        $harness->assertTrue(str_contains($html, '<strong>Director Loan Liability nominal</strong><span>2100 Director Loan Liability</span>'));
+        $harness->assertTrue(str_contains($html, '<strong>Participator Loan Asset nominal</strong><span>1200 Director Loan Asset</span>'));
+        $harness->assertTrue(str_contains($html, '<strong>Participator Loan Liability nominal</strong><span>2100 Director Loan Liability</span>'));
     });
 
     $harness->check(_companies_nominalsCard::class, 'renders shared asset nominal mappings', static function () use ($harness, $html): void {

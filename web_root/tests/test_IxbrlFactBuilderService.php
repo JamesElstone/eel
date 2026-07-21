@@ -405,7 +405,7 @@ function ixbrlFactBuilderDirectorLoanFixture(): array
     );
     $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
     $settings->set('default_currency', 'GBP', 'char');
-    $settings->set('director_loan_liability_nominal_id', $liabilityNominalId, 'int');
+    $settings->set('participator_loan_liability_nominal_id', $liabilityNominalId, 'int');
     $settings->flush();
     ixbrl_test_assign_sales_nominal($companyId);
     ixbrl_test_assign_director_loan_nominals($companyId, 0, $liabilityNominalId);

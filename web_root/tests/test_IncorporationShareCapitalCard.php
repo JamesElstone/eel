@@ -51,7 +51,8 @@ $harness->run(_incorporation_share_capitalCard::class, static function (
         $harness->assertSame(true, str_contains($html, 'FULL RIGHTS REGARDING VOTING, PAYMENT OF DIVIDENDS AND DISTRIBUTIONS'));
         $harness->assertSame(true, str_contains($html, 'Review payment'));
         $harness->assertSame(true, str_contains($html, 'class="incorporation-share-new-row"'));
-        $harness->assertSame(true, str_contains($html, 'Current time'));
+        $harness->assertSame(true, str_contains($html, 'name="issued_at"'));
+        $harness->assertSame(true, str_contains($html, 'type="date"'));
         $harness->assertSame(true, str_contains($html, 'name="share_class" value="Ordinary"'));
         $harness->assertSame(true, str_contains($html, 'name="aggregate_nominal_value"'));
         $harness->assertSame(true, str_contains($html, 'name="total_aggregate_unpaid"'));

@@ -87,7 +87,7 @@ $harness->run(\eel_accounts\Service\DirectorLoanReportingPresentationService::cl
                     ['company_number' => $companyNumber]
                 );
                 $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
-                $settings->set('director_loan_liability_nominal_id', $liabilityNominalId, 'int');
+                $settings->set('participator_loan_liability_nominal_id', $liabilityNominalId, 'int');
                 $settings->flush();
 
                 InterfaceDB::prepareExecute(
@@ -228,7 +228,7 @@ $harness->run(\eel_accounts\Service\DirectorLoanReportingPresentationService::cl
                 );
 
                 $settings->set(
-                    'director_loan_liability_nominal_id',
+                    'participator_loan_liability_nominal_id',
                     $replacementLiabilityNominalId,
                     'int'
                 );

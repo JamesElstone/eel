@@ -15,6 +15,7 @@ final class GoldenAccountsFixture
 {
     public const GOLDEN_COMPANY_ID = 9100;
     public const GOLDEN_DIRECTOR_ID = 910001;
+    public const GOLDEN_PARTY_ID = 910101;
     public const EMPTY_COMPANY_ID = 9200;
     public const WARNING_COMPANY_ID = 9300;
     public const COMPLETE_COMPANY_ID = 9400;
@@ -240,6 +241,23 @@ final class GoldenAccountsFixture
             'appointed_on' => '2022-09-05',
             'is_active' => 1,
         ]);
+        self::insert('company_parties', [
+            'id' => self::GOLDEN_PARTY_ID,
+            'company_id' => self::GOLDEN_COMPANY_ID,
+            'party_type' => 'individual',
+            'legal_name' => 'Golden Test Director',
+            'linked_director_id' => self::GOLDEN_DIRECTOR_ID,
+            'source_note' => 'Synthetic golden participator fixture.',
+        ]);
+        self::insert('company_party_roles', [
+            'id' => 910201,
+            'company_id' => self::GOLDEN_COMPANY_ID,
+            'party_id' => self::GOLDEN_PARTY_ID,
+            'role_type' => 'participator',
+            'effective_from' => '2022-09-05',
+            'effective_to' => null,
+            'source_note' => 'Synthetic golden participator fixture.',
+        ]);
         self::insert('company_accounts', [
             'id' => 9120, 'company_id' => self::GOLDEN_COMPANY_ID, 'account_name' => 'Golden Current Account',
             'account_type' => 'bank', 'institution_name' => 'Synthetic Test Bank',
@@ -252,11 +270,11 @@ final class GoldenAccountsFixture
         ]);
         self::insert('company_settings', [
             'id' => 9195, 'company_id' => self::GOLDEN_COMPANY_ID,
-            'setting' => 'director_loan_asset_nominal_id', 'type' => 'int', 'value' => '91006',
+            'setting' => 'participator_loan_asset_nominal_id', 'type' => 'int', 'value' => '91006',
         ]);
         self::insert('company_settings', [
             'id' => 9196, 'company_id' => self::GOLDEN_COMPANY_ID,
-            'setting' => 'director_loan_liability_nominal_id', 'type' => 'int', 'value' => '91005',
+            'setting' => 'participator_loan_liability_nominal_id', 'type' => 'int', 'value' => '91005',
         ]);
         self::insert('company_settings', [
             'id' => 9197, 'company_id' => self::GOLDEN_COMPANY_ID,
@@ -655,14 +673,14 @@ final class GoldenAccountsFixture
         self::insert('journal_lines', [
             'journal_id' => $id,
             'nominal_account_id' => $debitNominal,
-            'director_id' => in_array($debitNominal, [91005, 91006], true) ? self::GOLDEN_DIRECTOR_ID : null,
+            'party_id' => in_array($debitNominal, [91005, 91006], true) ? self::GOLDEN_PARTY_ID : null,
             'debit' => $amount,
             'credit' => 0,
         ]);
         self::insert('journal_lines', [
             'journal_id' => $id,
             'nominal_account_id' => $creditNominal,
-            'director_id' => in_array($creditNominal, [91005, 91006], true) ? self::GOLDEN_DIRECTOR_ID : null,
+            'party_id' => in_array($creditNominal, [91005, 91006], true) ? self::GOLDEN_PARTY_ID : null,
             'debit' => 0,
             'credit' => $amount,
         ]);

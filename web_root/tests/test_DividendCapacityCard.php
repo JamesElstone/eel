@@ -61,6 +61,8 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
         $harness->assertTrue(str_contains($html, '<td>Distributable Reserves B/F</td><td>Distributable Reserves from the previous accounting period</td><td class="numeric">£ 100.00</td>'));
         $harness->assertTrue(str_contains($html, '<td>Profit after Tax</td><td>The reviewed, distributable portion of current-period profit after deducting any unposted Corporation Tax charge.</td><td class="numeric">£ 50.00</td>'));
         $harness->assertTrue(str_contains($html, '<td>Classified Realised Profit</td><td>The current-period profit accepted by the reserve review as realised/distributable, before the remaining unposted CT adjustment.</td><td class="numeric">£ 50.00</td>'));
+        $harness->assertTrue(str_contains($html, '<td>L2P relief receivable</td><td>Relief receivable for qualifying later repayments; it reduces the tax charge but does not rewrite the accepted CT600A A80 amount.</td><td class="numeric">£ 0.00</td>'));
+        $harness->assertTrue(str_contains($html, '<td>Net estimated tax charge</td><td>Corporation Tax payable less any L2P relief receivable. This is the tax charge used in profit and reserves.</td><td class="numeric">£ 0.00</td>'));
         $harness->assertTrue(str_contains($html, '<span class="badge warning">Warning</span>'));
         $harness->assertTrue(str_contains($html, 'Bank CSV coverage may be incomplete'));
         $harness->assertTrue(str_contains($html, 'Open Related Workflow'));

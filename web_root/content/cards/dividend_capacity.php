@@ -67,8 +67,8 @@ final class _dividend_capacityCard extends CardBaseFramework
                         ' . $this->summaryTableRow('Ledger profit / loss', 'Profit before Tax', $this->money($companySettings, $capacity['ledger_current_year_profit_loss'] ?? 0)) . '
                         ' . $this->summaryTableRow('Classified Realised Profit', 'The current-period profit accepted by the reserve review as realised/distributable, before the remaining unposted CT adjustment.', $this->money($companySettings, $capacity['classified_current_year_profit_loss'] ?? 0)) . '
                         ' . $this->summaryTableRow('Corporation Tax payable', $this->estimatedCorporationTaxHelper($companySettings, $capacity), $this->money($companySettings, $capacity['estimated_corporation_tax'] ?? 0)) . '
-                        ' . $this->summaryTableRow('L2P relief receivable', '—', $this->money($companySettings, $capacity['l2p_relief_receivable'] ?? 0)) . '
-                        ' . $this->summaryTableRow('Net estimated tax charge', '—', $this->money($companySettings, $capacity['estimated_tax_charge'] ?? $capacity['estimated_corporation_tax'] ?? 0)) . '
+                        ' . $this->summaryTableRow('L2P relief receivable', 'Relief receivable for qualifying later repayments; it reduces the tax charge but does not rewrite the accepted CT600A A80 amount.', $this->money($companySettings, $capacity['l2p_relief_receivable'] ?? 0)) . '
+                        ' . $this->summaryTableRow('Net estimated tax charge', 'Corporation Tax payable less any L2P relief receivable. This is the tax charge used in profit and reserves.', $this->money($companySettings, $capacity['estimated_tax_charge'] ?? $capacity['estimated_corporation_tax'] ?? 0)) . '
                         ' . $this->summaryTableRow('Unposted tax charge deducted', $this->unpostedCorporationTaxHelper($companySettings, $capacity), $this->money($companySettings, $capacity['unposted_corporation_tax_adjustment'] ?? 0)) . '
                     </tbody>
                 </table>

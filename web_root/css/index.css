@@ -3631,7 +3631,7 @@ label {
 
 @media print {
   @page {
-    margin: 12mm;
+    margin: 20mm 12mm;
   }
 
   :root {
@@ -3973,10 +3973,42 @@ label {
     padding: 4mm;
   }
 
-  .grid-stats,
+  .grid-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .summary-grid,
   .summary-grid.four {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: block;
+    padding-bottom: 0;
+  }
+
+  .summary-card {
+    display: block;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    break-inside: auto;
+  }
+
+  .summary-card + .summary-card {
+    margin-top: 1.5mm;
+  }
+
+  .summary-card .summary-label,
+  .summary-card .summary-value {
+    display: inline;
+    margin: 0;
+    font-size: 10pt;
+    line-height: 1.35;
+  }
+
+  .summary-card .summary-label {
+    margin-right: 1.5mm;
   }
 
   .content-grid,
@@ -3988,7 +4020,6 @@ label {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .summary-card,
   .stat-card,
   .status-panel,
   .warning-box,
@@ -3998,7 +4029,6 @@ label {
     background: #fff;
   }
 
-  .summary-card,
   .stat-card,
   .status-panel,
   .warning-box {

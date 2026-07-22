@@ -811,6 +811,7 @@ CREATE TABLE `dividend_vouchers` (
   `journal_id` bigint(20) NOT NULL,
   `transaction_id` int(11) DEFAULT NULL,
   `reversal_journal_id` bigint(20) DEFAULT NULL,
+  `shareholder_party_id` bigint(20) DEFAULT NULL,
   `company_name` varchar(255) NOT NULL,
   `shareholder_name` varchar(255) NOT NULL,
   `director_name` varchar(255) NOT NULL,
@@ -832,6 +833,7 @@ CREATE TABLE `dividend_vouchers` (
   UNIQUE KEY `uq_dividend_vouchers_journal` (`journal_id`),
   KEY `idx_dividend_vouchers_company_period` (`company_id`,`accounting_period_id`),
   KEY `idx_dividend_vouchers_transaction` (`transaction_id`),
+  KEY `idx_dividend_vouchers_shareholder_party` (`shareholder_party_id`),
   KEY `idx_dividend_vouchers_director` (`director_id`),
   KEY `idx_dividend_vouchers_reversal_journal` (`reversal_journal_id`),
   CONSTRAINT `fk_dividend_vouchers_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
@@ -1036,6 +1038,9 @@ CREATE TABLE `company_shareholdings` (
   CONSTRAINT `chk_company_shareholdings_quantity` CHECK (`quantity` > 0),
   CONSTRAINT `chk_company_shareholdings_dates` CHECK (`effective_to` is null or `effective_to` >= `effective_from`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+ALTER TABLE `dividend_vouchers`
+  ADD CONSTRAINT `fk_dividend_vouchers_shareholder_party`
+  FOREIGN KEY (`shareholder_party_id`) REFERENCES `company_parties` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 CREATE TABLE `corporation_tax_period_facts` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
@@ -3645,6 +3650,8 @@ INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_19_005_accounts_filing_approvals.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_21_001_companies_house_accounts_schemas.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_22_003_dividend_voucher_shareholder_links.sql');
 INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
 SELECT DISTINCT `role_id`, 'tax_companies_house_accounts_schemas'
 FROM `role_card_permissions`

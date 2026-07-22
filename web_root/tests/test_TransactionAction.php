@@ -1731,6 +1731,34 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
                     'name' => 'Dividends Payable',
                     'account_type' => 'liability',
                 ]],
+                'dividend_declaration_participants' => [
+                    'shareholdings' => [[
+                        'party_id' => 91,
+                        'legal_name' => 'Alex Shareholder',
+                        'share_class' => 'ORDINARY',
+                        'quantity' => 100,
+                        'effective_from' => '2022-01-01',
+                        'effective_to' => null,
+                    ], [
+                        'party_id' => 92,
+                        'legal_name' => 'Former shareholder',
+                        'share_class' => 'ORDINARY',
+                        'quantity' => 50,
+                        'effective_from' => '2020-01-01',
+                        'effective_to' => '2022-01-31',
+                    ]],
+                    'directors' => [[
+                        'id' => 11,
+                        'full_name' => 'Alex Director',
+                        'appointed_on' => '2021-01-01',
+                        'resigned_on' => null,
+                    ], [
+                        'id' => 12,
+                        'full_name' => 'Former director',
+                        'appointed_on' => '2020-01-01',
+                        'resigned_on' => '2022-01-31',
+                    ]],
+                ],
                 'company_accounts' => [],
             ],
         ]);
@@ -1739,7 +1767,13 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="card_action" value="Dividend">'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="intent" value="declare_dividend_from_transaction">'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="transaction_id" value="6171">'));
-        $harness->assertSame(true, str_contains($html, 'form="transaction-dividend-form-6171" formnovalidate'));
+        $harness->assertSame(true, str_contains($html, '<details class="transaction-dividend-declaration">'));
+        $harness->assertSame(true, str_contains($html, 'name="shareholder_party_id" form="transaction-dividend-form-6171" required'));
+        $harness->assertSame(true, str_contains($html, 'Alex Shareholder — 100 ORDINARY'));
+        $harness->assertSame(false, str_contains($html, 'Former shareholder'));
+        $harness->assertSame(true, str_contains($html, 'name="director_id" form="transaction-dividend-form-6171" required'));
+        $harness->assertSame(true, str_contains($html, 'Alex Director'));
+        $harness->assertSame(false, str_contains($html, 'Former director'));
         $harness->assertSame(true, str_contains($html, 'data-chicken-title="Create dividend declaration"'));
         $harness->assertSame(true, str_contains($html, 'The transaction will remain categorised to Dividends Payable.'));
         $harness->assertSame(true, str_contains($html, '<span class="badge success">Dividend created</span>'));

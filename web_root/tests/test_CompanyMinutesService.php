@@ -70,6 +70,9 @@ $harness->run(\eel_accounts\Service\CompanyMinutesService::class, static functio
             $harness->assertCount(2, $rows);
             $harness->assertSame('2026-07-01', (string)($rows[0]['date'] ?? ''));
             $harness->assertSame('dividend_voucher_void', (string)($rows[0]['source_type'] ?? ''));
+            $harness->assertSame(true, str_contains((string)($rows[0]['minutes'] ?? ''), 'Minutes of a dividend decision of Company Minutes Fixture'));
+            $harness->assertSame(true, str_contains((string)($rows[0]['minutes'] ?? ''), 'Authorising director: Fixture Director'));
+            $harness->assertSame(true, str_contains((string)($rows[0]['minutes'] ?? ''), 'Shareholder: Fixture Shareholder'));
             $harness->assertSame(true, str_contains((string)($rows[0]['minutes'] ?? ''), 'declaration minutes dated 2026-06-30'));
             $harness->assertSame(true, str_contains((string)($rows[0]['minutes'] ?? ''), 'Reason: Dividend capacity was uncertain.'));
             $harness->assertSame('2026-06-30', (string)($rows[1]['date'] ?? ''));

@@ -12,7 +12,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->run(_dividend_declareCard::class, static function (GeneratedServiceClassTestHarness $harness, _dividend_declareCard $card): void {
-    $harness->check(_dividend_declareCard::class, 'declares shared capacity and focused reconciliation services', static function () use ($harness, $card): void {
+    $harness->check(_dividend_declareCard::class, 'declares shared capacity and declaration participant services', static function () use ($harness, $card): void {
         $services = $card->services();
         $service = (array)($services[0] ?? []);
         $params = (array)($service['params'] ?? []);
@@ -22,10 +22,10 @@ $harness->run(_dividend_declareCard::class, static function (GeneratedServiceCla
         $harness->assertSame('fetchCapacityContext', $service['method'] ?? null);
         $harness->assertSame(':company.id', $params['companyId'] ?? null);
         $harness->assertSame(':company.accounting_period_id', $params['accountingPeriodId'] ?? null);
-        $candidates = (array)($services[1] ?? []);
-        $harness->assertSame('dividendReconciliationCandidates', $candidates['key'] ?? null);
-        $harness->assertSame(\eel_accounts\Service\DividendService::class, $candidates['service'] ?? null);
-        $harness->assertSame('listDividendReconciliationCandidates', $candidates['method'] ?? null);
+        $participants = (array)($services[1] ?? []);
+        $harness->assertSame('dividendDeclarationParticipants', $participants['key'] ?? null);
+        $harness->assertSame(\eel_accounts\Service\DividendService::class, $participants['service'] ?? null);
+        $harness->assertSame('fetchDeclarationParticipants', $participants['method'] ?? null);
     });
 
     $harness->check(_dividend_declareCard::class, 'renders focused service results', static function () use ($harness, $card): void {
@@ -42,16 +42,27 @@ $harness->run(_dividend_declareCard::class, static function (GeneratedServiceCla
                     ],
                     'is_locked' => false,
                 ],
-                'dividendReconciliationCandidates' => [[
-                    'id' => 92,
-                    'txn_date' => '2026-06-20',
-                    'amount' => -25,
-                    'description' => 'Focused candidate',
-                ]],
+                'dividendDeclarationParticipants' => [
+                    'shareholdings' => [[
+                        'party_id' => 92,
+                        'legal_name' => 'Focused shareholder',
+                        'share_class' => 'ORDINARY',
+                        'quantity' => 100,
+                        'effective_from' => '2026-01-01',
+                        'effective_to' => null,
+                    ]],
+                    'directors' => [[
+                        'id' => 7,
+                        'full_name' => 'Focused director',
+                        'appointed_on' => '2026-01-01',
+                        'resigned_on' => null,
+                    ]],
+                ],
             ],
         ]);
         $harness->assertTrue(str_contains($html, '<option value="92">'));
-        $harness->assertTrue(str_contains($html, 'Focused candidate'));
+        $harness->assertTrue(str_contains($html, 'Focused shareholder'));
+        $harness->assertTrue(str_contains($html, 'Focused director'));
     });
 
     $baseContext = [
@@ -70,21 +81,34 @@ $harness->run(_dividend_declareCard::class, static function (GeneratedServiceCla
                     'period_end' => '2026-06-30',
                 ],
             ],
-            'reconciliation_candidates' => [[
-                'id' => 91,
-                'txn_date' => '2026-06-15',
-                'amount' => -50.00,
-                'description' => 'Dividend payment',
-            ]],
+            'declaration_participants' => [
+                'shareholdings' => [[
+                    'party_id' => 91,
+                    'legal_name' => 'Dividend shareholder',
+                    'share_class' => 'ORDINARY',
+                    'quantity' => 100,
+                    'effective_from' => '2026-01-01',
+                    'effective_to' => null,
+                ]],
+                'directors' => [[
+                    'id' => 12,
+                    'full_name' => 'Dividend director',
+                    'appointed_on' => '2026-01-01',
+                    'resigned_on' => null,
+                ]],
+            ],
         ],
     ];
 
-    $harness->check(_dividend_declareCard::class, 'renders reconciliation candidates when enabled', static function () use ($harness, $card, $baseContext): void {
+    $harness->check(_dividend_declareCard::class, 'renders shareholder and director choices when enabled', static function () use ($harness, $card, $baseContext): void {
         $html = $card->render($baseContext);
 
         $harness->assertTrue(str_contains($html, 'Maximum currently available'));
-        $harness->assertTrue(str_contains($html, '<option value="0">Not reconciled yet - save as draft</option>'));
-        $harness->assertTrue(str_contains($html, '<option value="91">2026-06-15 -'));
+        $harness->assertTrue(str_contains($html, 'name="shareholder_party_id" required'));
+        $harness->assertTrue(str_contains($html, 'Dividend shareholder — 100 ORDINARY'));
+        $harness->assertTrue(str_contains($html, 'name="director_id" required'));
+        $harness->assertTrue(str_contains($html, 'Dividend director'));
+        $harness->assertTrue(str_contains($html, 'name="settlement_target" value="unpaid_dividend_liability"'));
         $harness->assertFalse(str_contains($html, 'Form Disabled - Reason:'));
     });
 
@@ -107,9 +131,9 @@ $harness->run(_dividend_declareCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(str_contains($html, 'Form Disabled - Reason: Dividend declaration is blocked until current-year reserve movements are classified and reviewed.'));
         $harness->assertTrue(str_contains($html, 'id="dividend_declaration_date" type="date" name="declaration_date" value="2026-06-30" min="2026-01-01" max="2026-06-30" disabled'));
         $harness->assertTrue(str_contains($html, 'id="dividend_amount" type="number" name="amount" step="0.01" min="0.01" max="250.00" disabled'));
-        $harness->assertTrue(str_contains($html, 'id="dividend_reconciliation_transaction_id" name="reconciliation_transaction_id" disabled'));
+        $harness->assertTrue(str_contains($html, 'id="dividend_shareholder_party_id" name="shareholder_party_id" required disabled'));
+        $harness->assertTrue(str_contains($html, 'id="dividend_director_id" name="director_id" required disabled'));
         $harness->assertTrue(str_contains($html, 'id="dividend_description" name="description" value="Interim dividend" disabled'));
-        $harness->assertTrue(str_contains($html, 'id="dividend_settlement_target" name="settlement_target" disabled'));
         $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit" disabled>Declare Dividend</button>'));
     });
 
@@ -120,6 +144,6 @@ $harness->run(_dividend_declareCard::class, static function (GeneratedServiceCla
         $html = $card->render($context);
 
         $harness->assertFalse(str_contains($html, 'Form Disabled - Reason:'));
-        $harness->assertFalse(str_contains($html, 'id="dividend_reconciliation_transaction_id" name="reconciliation_transaction_id" disabled'));
+        $harness->assertFalse(str_contains($html, 'id="dividend_shareholder_party_id" name="shareholder_party_id" required disabled'));
     });
 });

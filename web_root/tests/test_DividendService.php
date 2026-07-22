@@ -98,12 +98,13 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
             $harness->skip('Transaction and journal tables are not available on the default InterfaceDB connection.');
         }
         dividend_service_require_reserve_schema($harness);
+        dividend_service_require_declaration_schema($harness);
 
         InterfaceDB::beginTransaction();
         try {
             $fixture = dividend_service_transaction_fixture($service, -129.00, '2150');
 
-            $result = $service->declareDividendFromTransaction($fixture['transaction_id'], $fixture['company_id'], $fixture['accounting_period_id']);
+            $result = $service->declareDividendFromTransaction($fixture['transaction_id'], $fixture['company_id'], $fixture['accounting_period_id'], $fixture['shareholder_party_id'], $fixture['director_id']);
             $harness->assertSame(true, (bool)($result['success'] ?? false));
             $harness->assertSame(false, (bool)($result['already_exists'] ?? false));
             $harness->assertSame('dividend:transaction:' . $fixture['transaction_id'], (string)($result['source_ref'] ?? ''));
@@ -134,7 +135,7 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
                 ]
             ), 2, '.', ''));
 
-            $secondResult = $service->declareDividendFromTransaction($fixture['transaction_id'], $fixture['company_id'], $fixture['accounting_period_id']);
+            $secondResult = $service->declareDividendFromTransaction($fixture['transaction_id'], $fixture['company_id'], $fixture['accounting_period_id'], $fixture['shareholder_party_id'], $fixture['director_id']);
             $harness->assertSame(true, (bool)($secondResult['success'] ?? false));
             $harness->assertSame(true, (bool)($secondResult['already_exists'] ?? false));
             $harness->assertSame($journalId, (int)($secondResult['journal_id'] ?? 0));
@@ -156,6 +157,12 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
             if (InterfaceDB::tableExists('dividend_vouchers')) {
                 $vouchers = $service->listDividendVouchers($fixture['company_id'], $fixture['accounting_period_id']);
                 $harness->assertSame(1, count(array_filter($vouchers, static fn(array $row): bool => (int)($row['journal_id'] ?? 0) === $journalId)));
+                $voucher = InterfaceDB::fetchOne('SELECT shareholder_party_id, director_id, shareholder_name, director_name, minutes_text FROM dividend_vouchers WHERE journal_id = :journal_id', ['journal_id' => $journalId]);
+                $harness->assertSame($fixture['shareholder_party_id'], (int)($voucher['shareholder_party_id'] ?? 0));
+                $harness->assertSame($fixture['director_id'], (int)($voucher['director_id'] ?? 0));
+                $harness->assertSame('Fixture Shareholder ' . $fixture['marker'], (string)($voucher['shareholder_name'] ?? ''));
+                $harness->assertSame('Fixture Director ' . $fixture['marker'], (string)($voucher['director_name'] ?? ''));
+                $harness->assertTrue(str_contains((string)($voucher['minutes_text'] ?? ''), 'Shareholder: Fixture Shareholder ' . $fixture['marker']));
             }
         } finally {
             if (InterfaceDB::inTransaction()) {
@@ -168,11 +175,12 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
         if (!InterfaceDB::tableExists('transactions') || !InterfaceDB::tableExists('journals') || !InterfaceDB::tableExists('journal_lines') || !InterfaceDB::tableExists('dividend_vouchers')) {
             $harness->skip('Dividend voucher, transaction, and journal tables are not available on the default InterfaceDB connection.');
         }
+        dividend_service_require_declaration_schema($harness);
 
         InterfaceDB::beginTransaction();
         try {
             $fixture = dividend_service_transaction_fixture($service, -129.00, '2150');
-            $result = $service->declareDividendFromTransaction($fixture['transaction_id'], $fixture['company_id'], $fixture['accounting_period_id']);
+            $result = $service->declareDividendFromTransaction($fixture['transaction_id'], $fixture['company_id'], $fixture['accounting_period_id'], $fixture['shareholder_party_id'], $fixture['director_id']);
             $harness->assertSame(true, (bool)($result['success'] ?? false));
             $journalId = (int)($result['journal_id'] ?? 0);
 
@@ -280,11 +288,11 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
         InterfaceDB::beginTransaction();
         try {
             $positiveFixture = dividend_service_transaction_fixture($service, 129.00, '2150');
-            $positiveResult = $service->declareDividendFromTransaction($positiveFixture['transaction_id'], $positiveFixture['company_id'], $positiveFixture['accounting_period_id']);
+            $positiveResult = $service->declareDividendFromTransaction($positiveFixture['transaction_id'], $positiveFixture['company_id'], $positiveFixture['accounting_period_id'], 0, 0);
             $harness->assertSame(false, (bool)($positiveResult['success'] ?? true));
 
             $wrongNominalFixture = dividend_service_transaction_fixture($service, -129.00, '5000');
-            $wrongNominalResult = $service->declareDividendFromTransaction($wrongNominalFixture['transaction_id'], $wrongNominalFixture['company_id'], $wrongNominalFixture['accounting_period_id']);
+            $wrongNominalResult = $service->declareDividendFromTransaction($wrongNominalFixture['transaction_id'], $wrongNominalFixture['company_id'], $wrongNominalFixture['accounting_period_id'], 0, 0);
             $harness->assertSame(false, (bool)($wrongNominalResult['success'] ?? true));
         } finally {
             if (InterfaceDB::inTransaction()) {
@@ -298,6 +306,7 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
             $harness->skip('Company and journal tables are not available on the default InterfaceDB connection.');
         }
         dividend_service_require_reserve_schema($harness);
+        dividend_service_require_declaration_schema($harness);
 
         InterfaceDB::beginTransaction();
         try {
@@ -308,6 +317,8 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
                 'accounting_period_id' => $fixture['accounting_period_id'],
                 'declaration_date' => '2022-11-30',
                 'amount' => '100.01',
+                'shareholder_party_id' => $fixture['shareholder_party_id'],
+                'director_id' => $fixture['director_id'],
                 'description' => 'Over-capacity dividend',
                 'settlement_target' => 'unpaid_dividend_liability',
             ]);
@@ -321,11 +332,164 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
         }
     });
 
+    $harness->check(\eel_accounts\Service\DividendService::class, 'requires an effective shareholder and eligible director for each transaction declaration', function () use ($harness, $service): void {
+        dividend_service_require_declaration_schema($harness);
+
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = dividend_service_transaction_fixture($service, -129.00, '2150');
+            $shareClassId = (int)InterfaceDB::fetchColumn(
+                'SELECT id
+                 FROM company_incorporation_share_classes
+                 WHERE company_id = :company_id
+                 ORDER BY id DESC
+                 LIMIT 1',
+                ['company_id' => $fixture['company_id']]
+            );
+            $secondShareholderId = dividend_service_add_shareholder(
+                $fixture['company_id'],
+                $shareClassId,
+                'Second shareholder fixture',
+                '2022-01-01'
+            );
+            $formerShareholderId = dividend_service_add_shareholder(
+                $fixture['company_id'],
+                $shareClassId,
+                'Former shareholder fixture',
+                '2022-01-01',
+                '2022-11-01'
+            );
+            $futureShareholderId = dividend_service_add_shareholder(
+                $fixture['company_id'],
+                $shareClassId,
+                'Future shareholder fixture',
+                '2022-11-03'
+            );
+
+            $participants = $service->fetchDeclarationParticipants($fixture['company_id']);
+            $participantIds = array_map(static fn(array $holding): int => (int)($holding['party_id'] ?? 0), (array)($participants['shareholdings'] ?? []));
+            $harness->assertTrue(in_array($fixture['shareholder_party_id'], $participantIds, true));
+            $harness->assertTrue(in_array($secondShareholderId, $participantIds, true));
+
+            $selectedShareholderResult = $service->declareDividendFromTransaction(
+                $fixture['transaction_id'],
+                $fixture['company_id'],
+                $fixture['accounting_period_id'],
+                $secondShareholderId,
+                $fixture['director_id']
+            );
+            $harness->assertSame(true, (bool)($selectedShareholderResult['success'] ?? false));
+            $harness->assertSame($secondShareholderId, (int)InterfaceDB::fetchColumn(
+                'SELECT shareholder_party_id FROM dividend_vouchers WHERE journal_id = :journal_id',
+                ['journal_id' => (int)($selectedShareholderResult['journal_id'] ?? 0)]
+            ));
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO company_parties (company_id, party_type, legal_name)
+                 VALUES (:company_id, :party_type, :legal_name)',
+                [
+                    'company_id' => $fixture['company_id'],
+                    'party_type' => 'individual',
+                    'legal_name' => 'Non-shareholder fixture party',
+                ]
+            );
+            $nonShareholderId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM company_parties WHERE company_id = :company_id AND legal_name = :legal_name ORDER BY id DESC LIMIT 1',
+                ['company_id' => $fixture['company_id'], 'legal_name' => 'Non-shareholder fixture party']
+            );
+
+            $nonShareholderResult = $service->declareDividendFromTransaction(
+                $fixture['transaction_id'],
+                $fixture['company_id'],
+                $fixture['accounting_period_id'],
+                $nonShareholderId,
+                $fixture['director_id']
+            );
+            $harness->assertSame(false, (bool)($nonShareholderResult['success'] ?? true));
+            $harness->assertTrue(str_contains(implode(' ', (array)($nonShareholderResult['errors'] ?? [])), 'effective holding'));
+
+            foreach ([$formerShareholderId, $futureShareholderId] as $invalidShareholderId) {
+                $result = $service->declareDividendFromTransaction(
+                    $fixture['transaction_id'],
+                    $fixture['company_id'],
+                    $fixture['accounting_period_id'],
+                    $invalidShareholderId,
+                    $fixture['director_id']
+                );
+                $harness->assertSame(false, (bool)($result['success'] ?? true));
+                $harness->assertTrue(str_contains(implode(' ', (array)($result['errors'] ?? [])), 'effective holding'));
+            }
+
+            $otherCompanyFixture = dividend_service_transaction_fixture($service, -50.00, '2150');
+            $otherCompanyResult = $service->declareDividendFromTransaction(
+                $fixture['transaction_id'],
+                $fixture['company_id'],
+                $fixture['accounting_period_id'],
+                $otherCompanyFixture['shareholder_party_id'],
+                $fixture['director_id']
+            );
+            $harness->assertSame(false, (bool)($otherCompanyResult['success'] ?? true));
+            $harness->assertTrue(str_contains(implode(' ', (array)($otherCompanyResult['errors'] ?? [])), 'effective holding'));
+
+            $invalidDirectorResult = $service->declareDividendFromTransaction(
+                $fixture['transaction_id'],
+                $fixture['company_id'],
+                $fixture['accounting_period_id'],
+                $fixture['shareholder_party_id'],
+                0
+            );
+            $harness->assertSame(false, (bool)($invalidDirectorResult['success'] ?? true));
+            $harness->assertTrue(str_contains(implode(' ', (array)($invalidDirectorResult['errors'] ?? [])), 'authorising director'));
+
+            InterfaceDB::prepareExecute(
+                'UPDATE company_directors SET resigned_on = :resigned_on WHERE id = :id',
+                ['resigned_on' => '2022-11-01', 'id' => $fixture['director_id']]
+            );
+            $formerDirectorResult = $service->declareDividendFromTransaction(
+                $fixture['transaction_id'],
+                $fixture['company_id'],
+                $fixture['accounting_period_id'],
+                $fixture['shareholder_party_id'],
+                $fixture['director_id']
+            );
+            $harness->assertSame(false, (bool)($formerDirectorResult['success'] ?? true));
+            $harness->assertTrue(str_contains(implode(' ', (array)($formerDirectorResult['errors'] ?? [])), 'eligible'));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
+    $harness->check(\eel_accounts\Service\DividendService::class, 'does not create a voucher while listing historic dividend journals', function () use ($harness, $service): void {
+        if (!InterfaceDB::tableExists('dividend_vouchers') || !InterfaceDB::tableExists('journals') || !InterfaceDB::tableExists('journal_lines')) {
+            $harness->skip('Dividend voucher and journal tables are not available on the default InterfaceDB connection.');
+        }
+
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = dividend_service_transaction_fixture($service, -129.00, '2150');
+            $journalId = dividend_service_add_legacy_dividend_journal($fixture, $fixture['marker']);
+            $before = (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM dividend_vouchers WHERE journal_id = :journal_id', ['journal_id' => $journalId]);
+
+            $history = $service->listDividends($fixture['company_id'], $fixture['accounting_period_id']);
+
+            $harness->assertTrue(in_array($journalId, array_map(static fn(array $row): int => (int)($row['id'] ?? 0), $history), true));
+            $after = (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM dividend_vouchers WHERE journal_id = :journal_id', ['journal_id' => $journalId]);
+            $harness->assertSame($before, $after);
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
     $harness->check(\eel_accounts\Service\DividendService::class, 'saves unreconciled manual declarations as draft and counts them in capacity', function () use ($harness, $service): void {
         if (!InterfaceDB::tableExists('companies') || !InterfaceDB::tableExists('journals') || !InterfaceDB::tableExists('journal_lines')) {
             $harness->skip('Company and journal tables are not available on the default InterfaceDB connection.');
         }
         dividend_service_require_reserve_schema($harness);
+        dividend_service_require_declaration_schema($harness);
 
         InterfaceDB::beginTransaction();
         try {
@@ -335,6 +499,8 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
                 'accounting_period_id' => $fixture['accounting_period_id'],
                 'declaration_date' => '2022-11-30',
                 'amount' => '40.00',
+                'shareholder_party_id' => $fixture['shareholder_party_id'],
+                'director_id' => $fixture['director_id'],
                 'description' => 'Draft dividend',
                 'settlement_target' => 'unpaid_dividend_liability',
             ]);
@@ -637,6 +803,18 @@ function dividend_service_require_reserve_schema(GeneratedServiceClassTestHarnes
     }
 }
 
+function dividend_service_require_declaration_schema(GeneratedServiceClassTestHarness $harness): void
+{
+    foreach (['company_parties', 'company_shareholdings', 'company_incorporation_share_classes', 'company_directors', 'dividend_vouchers'] as $table) {
+        if (!InterfaceDB::tableExists($table)) {
+            $harness->skip($table . ' table is not available.');
+        }
+    }
+    if (!InterfaceDB::columnExists('dividend_vouchers', 'shareholder_party_id')) {
+        $harness->skip('dividend_vouchers.shareholder_party_id is not available.');
+    }
+}
+
 function dividend_service_require_year_end_schema(GeneratedServiceClassTestHarness $harness): void
 {
     foreach (['year_end_reviews', 'journal_entry_metadata'] as $table) {
@@ -686,12 +864,13 @@ function dividend_service_manual_fixture(\eel_accounts\Service\DividendService $
     dividend_service_add_profit_journal($companyId, $accountingPeriodId, $marker, $profit, $profitDate);
     dividend_service_prepare_ct_periods($companyId, $accountingPeriodId);
     dividend_service_save_reserve_review($companyId, $accountingPeriodId, [], dividend_service_default_review_date($periodStart, $periodEnd));
+    $people = dividend_service_declaration_people_fixture($companyId, $periodStart, $marker);
 
     return [
         'company_id' => $companyId,
         'accounting_period_id' => $accountingPeriodId,
         'marker' => $marker,
-    ];
+    ] + $people;
 }
 function dividend_service_transaction_fixture(\eel_accounts\Service\DividendService $service, float $amount, string $nominalCode): array
 {
@@ -822,10 +1001,12 @@ function dividend_service_transaction_fixture(\eel_accounts\Service\DividendServ
     dividend_service_prepare_ct_periods($companyId, $accountingPeriodId);
     // Fixture profit for transaction dividend capacity.
     dividend_service_save_reserve_review($companyId, $accountingPeriodId, [], '2022-11-02');
+    $people = dividend_service_declaration_people_fixture($companyId, '2022-01-01', $marker);
 
     return [
         'company_id' => $companyId,
         'accounting_period_id' => $accountingPeriodId,
+        'marker' => $marker,
         'transaction_id' => (int)InterfaceDB::fetchColumn(
             'SELECT id FROM transactions WHERE company_id = :company_id AND dedupe_hash = :dedupe_hash ORDER BY id DESC LIMIT 1',
             [
@@ -835,7 +1016,123 @@ function dividend_service_transaction_fixture(\eel_accounts\Service\DividendServ
         ),
         'dividends_paid_id' => $dividendsPaidId,
         'dividends_payable_id' => $dividendsPayableId,
+    ] + $people;
+}
+
+function dividend_service_declaration_people_fixture(int $companyId, string $effectiveFrom, string $marker): array
+{
+    InterfaceDB::prepareExecute(
+        'INSERT INTO company_directors (
+            company_id, source, external_key, full_name, officer_role, appointed_on, is_active
+         ) VALUES (
+            :company_id, :source, :external_key, :full_name, :officer_role, :appointed_on, 1
+         )',
+        [
+            'company_id' => $companyId,
+            'source' => 'test',
+            'external_key' => 'director-' . $marker,
+            'full_name' => 'Fixture Director ' . $marker,
+            'officer_role' => 'director',
+            'appointed_on' => $effectiveFrom,
+        ]
+    );
+    $directorId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM company_directors WHERE company_id = :company_id AND external_key = :external_key ORDER BY id DESC LIMIT 1',
+        ['company_id' => $companyId, 'external_key' => 'director-' . $marker]
+    );
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO company_parties (company_id, party_type, legal_name, linked_director_id)
+         VALUES (:company_id, :party_type, :legal_name, :linked_director_id)',
+        [
+            'company_id' => $companyId,
+            'party_type' => 'individual',
+            'legal_name' => 'Fixture Shareholder ' . $marker,
+            'linked_director_id' => $directorId,
+        ]
+    );
+    $partyId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM company_parties WHERE company_id = :company_id AND legal_name = :legal_name ORDER BY id DESC LIMIT 1',
+        ['company_id' => $companyId, 'legal_name' => 'Fixture Shareholder ' . $marker]
+    );
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO company_incorporation_share_classes (
+            company_id, issued_at, share_class, currency, quantity
+         ) VALUES (
+            :company_id, :issued_at, :share_class, :currency, :quantity
+         )',
+        [
+            'company_id' => $companyId,
+            'issued_at' => $effectiveFrom . ' 00:00:00',
+            'share_class' => 'ORDINARY',
+            'currency' => 'GBP',
+            'quantity' => 100,
+        ]
+    );
+    $shareClassId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM company_incorporation_share_classes WHERE company_id = :company_id ORDER BY id DESC LIMIT 1',
+        ['company_id' => $companyId]
+    );
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO company_shareholdings (
+            company_id, party_id, share_class_id, quantity, effective_from
+         ) VALUES (
+            :company_id, :party_id, :share_class_id, :quantity, :effective_from
+         )',
+        [
+            'company_id' => $companyId,
+            'party_id' => $partyId,
+            'share_class_id' => $shareClassId,
+            'quantity' => 100,
+            'effective_from' => $effectiveFrom,
+        ]
+    );
+
+    return [
+        'shareholder_party_id' => $partyId,
+        'director_id' => $directorId,
     ];
+}
+
+function dividend_service_add_shareholder(
+    int $companyId,
+    int $shareClassId,
+    string $name,
+    string $effectiveFrom,
+    ?string $effectiveTo = null
+): int {
+    InterfaceDB::prepareExecute(
+        'INSERT INTO company_parties (company_id, party_type, legal_name)
+         VALUES (:company_id, :party_type, :legal_name)',
+        [
+            'company_id' => $companyId,
+            'party_type' => 'individual',
+            'legal_name' => $name,
+        ]
+    );
+    $partyId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM company_parties WHERE company_id = :company_id AND legal_name = :legal_name ORDER BY id DESC LIMIT 1',
+        ['company_id' => $companyId, 'legal_name' => $name]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO company_shareholdings (
+            company_id, party_id, share_class_id, quantity, effective_from, effective_to
+         ) VALUES (
+            :company_id, :party_id, :share_class_id, :quantity, :effective_from, :effective_to
+         )',
+        [
+            'company_id' => $companyId,
+            'party_id' => $partyId,
+            'share_class_id' => $shareClassId,
+            'quantity' => 50,
+            'effective_from' => $effectiveFrom,
+            'effective_to' => $effectiveTo,
+        ]
+    );
+
+    return $partyId;
 }
 
 function dividend_service_two_period_fixture(\eel_accounts\Service\DividendService $service): array
@@ -1098,6 +1395,64 @@ function dividend_service_add_profit_journal(int $companyId, int $accountingPeri
             'line_description' => 'Fixture income credit',
         ]
     );
+}
+
+function dividend_service_add_legacy_dividend_journal(array $fixture, string $marker): int
+{
+    $sourceRef = 'dividend:legacy:' . $marker;
+    InterfaceDB::prepareExecute(
+        'INSERT INTO journals (
+            company_id,
+            accounting_period_id,
+            source_type,
+            source_ref,
+            journal_date,
+            description,
+            is_posted,
+            created_at,
+            updated_at
+         ) VALUES (
+            :company_id,
+            :accounting_period_id,
+            :source_type,
+            :source_ref,
+            :journal_date,
+            :description,
+            1,
+            CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP
+         )',
+        [
+            'company_id' => (int)$fixture['company_id'],
+            'accounting_period_id' => (int)$fixture['accounting_period_id'],
+            'source_type' => 'manual',
+            'source_ref' => $sourceRef,
+            'journal_date' => '2022-11-02',
+            'description' => 'Historic dividend journal without voucher',
+        ]
+    );
+    $journalId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM journals WHERE company_id = :company_id AND source_ref = :source_ref ORDER BY id DESC LIMIT 1',
+        ['company_id' => (int)$fixture['company_id'], 'source_ref' => $sourceRef]
+    );
+    foreach ([
+        [(int)$fixture['dividends_paid_id'], '10.00', '0.00', 'Historic dividend debit'],
+        [(int)$fixture['dividends_payable_id'], '0.00', '10.00', 'Historic dividend credit'],
+    ] as $line) {
+        InterfaceDB::prepareExecute(
+            'INSERT INTO journal_lines (journal_id, nominal_account_id, company_account_id, debit, credit, line_description)
+             VALUES (:journal_id, :nominal_account_id, NULL, :debit, :credit, :line_description)',
+            [
+                'journal_id' => $journalId,
+                'nominal_account_id' => $line[0],
+                'debit' => $line[1],
+                'credit' => $line[2],
+                'line_description' => $line[3],
+            ]
+        );
+    }
+
+    return $journalId;
 }
 
 function dividend_service_add_corporation_tax_provision(int $companyId, int $accountingPeriodId, string $marker, float $amount, string $journalDate): void

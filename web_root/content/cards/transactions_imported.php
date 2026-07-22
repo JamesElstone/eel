@@ -55,6 +55,14 @@ final class _transactions_importedCard extends CardBaseFramework
                 ],
             ],
             [
+                'key' => 'dividend_declaration_participants',
+                'service' => \eel_accounts\Service\DividendService::class,
+                'method' => 'fetchDeclarationParticipants',
+                'params' => [
+                    'companyId' => ':company.id',
+                ],
+            ],
+            [
                 'key' => 'year_end_review',
                 'service' => \eel_accounts\Service\YearEndLockService::class,
                 'method' => 'fetchReview',
@@ -115,6 +123,7 @@ final class _transactions_importedCard extends CardBaseFramework
         $nominalAccounts = (array)($services['nominal_accounts'] ?? []);
         $companyAccounts = $this->companyAccounts($services);
         $activeTransferCompanyAccounts = $this->activeTransferCompanyAccounts($services);
+        $dividendDeclarationParticipants = (array)($services['dividend_declaration_participants'] ?? []);
         $isPeriodLocked = $this->isPeriodLocked($services);
         $settings = (array)($company['settings'] ?? []);
         $selectedTransactionMonth = (string)($page['month_key'] ?? '');
@@ -143,6 +152,7 @@ final class _transactions_importedCard extends CardBaseFramework
             $nominalAccounts,
             $companyAccounts,
             $activeTransferCompanyAccounts,
+            $dividendDeclarationParticipants,
             $settings,
             $isPeriodLocked,
             $interAcActiveTransactionId,
@@ -212,6 +222,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 (array)($services['nominal_accounts'] ?? []),
                 $this->companyAccounts($services),
                 $this->activeTransferCompanyAccounts($services),
+                (array)($services['dividend_declaration_participants'] ?? []),
                 (array)($company['settings'] ?? []),
                 $isPeriodLocked,
                 max(0, (int)($page['inter_ac_transaction_id'] ?? 0))
@@ -229,6 +240,7 @@ final class _transactions_importedCard extends CardBaseFramework
         array $nominalAccounts,
         array $companyAccounts,
         array $activeTransferCompanyAccounts,
+        array $dividendDeclarationParticipants,
         array $settings,
         bool $isPeriodLocked,
         int $interAcActiveTransactionId,
@@ -249,6 +261,7 @@ final class _transactions_importedCard extends CardBaseFramework
             $nominalAccounts,
             $companyAccounts,
             $activeTransferCompanyAccounts,
+            $dividendDeclarationParticipants,
             $settings,
             $isPeriodLocked,
             $interAcActiveTransactionId
@@ -394,6 +407,7 @@ final class _transactions_importedCard extends CardBaseFramework
         array $nominalAccounts,
         array $companyAccounts,
         array $activeTransferCompanyAccounts,
+        array $dividendDeclarationParticipants,
         array $settings,
         bool $isPeriodLocked = false,
         int $interAcActiveTransactionId = 0
@@ -522,7 +536,7 @@ final class _transactions_importedCard extends CardBaseFramework
             ->column(
                 'actions',
                 'Create / Set',
-                html: fn(array $row): string => $this->actionsHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $selectedAccountFilter, $settings, $isPeriodLocked, $activeTransferCompanyAccounts, $interAcActiveTransactionId),
+                html: fn(array $row): string => $this->actionsHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $selectedAccountFilter, $settings, $isPeriodLocked, $activeTransferCompanyAccounts, $dividendDeclarationParticipants, $interAcActiveTransactionId),
                 exportable: false
             );
     }
@@ -1058,6 +1072,7 @@ final class _transactions_importedCard extends CardBaseFramework
         array $settings,
         bool $isPeriodLocked,
         array $activeTransferCompanyAccounts,
+        array $dividendDeclarationParticipants,
         int $interAcActiveTransactionId
     ): string
     {
@@ -1101,7 +1116,7 @@ final class _transactions_importedCard extends CardBaseFramework
         $createAssetAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit" form="' . HelperFramework::escape($assetFormId) . '" formnovalidate';
         $createRuleHtml = $isTransferRow ? '' : $this->createRuleButtonHtml($transaction, $isPeriodLocked);
         $directorLoanButtonHtml = $this->directorLoanButtonHtml($transaction, $settings, $isPeriodLocked, $journalRebuildAttributes);
-        $dividendButtonHtml = $this->dividendButtonHtml($transaction, $dividendFormId, $settings, $isPeriodLocked);
+        $dividendButtonHtml = $this->dividendButtonHtml($transaction, $dividendFormId, $settings, $isPeriodLocked, $dividendDeclarationParticipants);
         $interAcButtonHtml = $this->interAccountButtonHtml($transaction, $activeTransferCompanyAccounts, $isPeriodLocked, $interAcActiveTransactionId);
         $isSplitParent = (int)($transaction['has_transaction_split'] ?? 0) === 1;
 
@@ -1244,7 +1259,13 @@ final class _transactions_importedCard extends CardBaseFramework
         return $pendingInput . '<button class="' . HelperFramework::escape($buttonClass) . '"' . $buttonAttributes . ' name="global_action" value="toggle_inter_ac_transaction">Inter A/C Trans.</button>';
     }
 
-    private function dividendButtonHtml(array $transaction, string $dividendFormId, array $settings, bool $isPeriodLocked): string
+    private function dividendButtonHtml(
+        array $transaction,
+        string $dividendFormId,
+        array $settings,
+        bool $isPeriodLocked,
+        array $participants
+    ): string
     {
         if ($this->transactionIsTransferMode($transaction)) {
             return '';
@@ -1254,7 +1275,16 @@ final class _transactions_importedCard extends CardBaseFramework
             return '';
         }
 
+        $declarationDate = (string)($transaction['txn_date'] ?? '');
+        $shareholderOptions = $this->dividendShareholderOptions($participants, $declarationDate);
+        $directorOptions = $this->dividendDirectorOptions($participants, $declarationDate);
         $disabledReason = $this->dividendButtonDisabledReason($transaction, $settings, $isPeriodLocked);
+        if ($disabledReason === '' && $shareholderOptions === '') {
+            $disabledReason = 'Record an effective shareholder on Ownership & Parties first';
+        }
+        if ($disabledReason === '' && $directorOptions === '') {
+            $disabledReason = 'Record an authorising director first';
+        }
         if ($disabledReason !== '') {
             return '<button class="button" type="button" disabled title="' . HelperFramework::escape($disabledReason) . '">Dividend</button>';
         }
@@ -1265,12 +1295,80 @@ final class _transactions_importedCard extends CardBaseFramework
             . ' dated ' . HelperFramework::escape($date)
             . '.<br><br>The transaction will remain categorised to Dividends Payable.';
 
-        return '<button class="button" type="submit" form="' . HelperFramework::escape($dividendFormId) . '" formnovalidate
-                data-chicken-check="true"
-                data-chicken-title="Create dividend declaration"
-                data-chicken-message="' . $message . '"
-                data-chicken-confirm-text="Create Dividend"
-                data-chicken-button-class="button primary">Dividend</button>';
+        return '<details class="transaction-dividend-declaration">
+                <summary class="button">Dividend</summary>
+                <div class="settings-stack panel-soft">
+                    <div class="helper">Payment date: ' . HelperFramework::escape($date) . '; amount: ' . HelperFramework::escape($amount) . '.</div>
+                    <div class="form-row">
+                        <label for="transaction-dividend-shareholder-' . (int)($transaction['id'] ?? 0) . '">Shareholder</label>
+                        <select class="select" id="transaction-dividend-shareholder-' . (int)($transaction['id'] ?? 0) . '" name="shareholder_party_id" form="' . HelperFramework::escape($dividendFormId) . '" required>
+                            <option value="">Select shareholder</option>' . $shareholderOptions . '
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label for="transaction-dividend-director-' . (int)($transaction['id'] ?? 0) . '">Authorising director</label>
+                        <select class="select" id="transaction-dividend-director-' . (int)($transaction['id'] ?? 0) . '" name="director_id" form="' . HelperFramework::escape($dividendFormId) . '" required>
+                            <option value="">Select authorising director</option>' . $directorOptions . '
+                        </select>
+                    </div>
+                    <button class="button primary" type="submit" form="' . HelperFramework::escape($dividendFormId) . '"
+                        data-chicken-check="true"
+                        data-chicken-title="Create dividend declaration"
+                        data-chicken-message="' . $message . '"
+                        data-chicken-confirm-text="Create Dividend"
+                        data-chicken-button-class="button primary">Create Dividend</button>
+                </div>
+            </details>';
+    }
+
+    private function dividendShareholderOptions(array $participants, string $date): string
+    {
+        $labels = [];
+        foreach ((array)($participants['shareholdings'] ?? []) as $holding) {
+            if (!is_array($holding) || !$this->dividendParticipantEffectiveOn($holding, $date)) {
+                continue;
+            }
+            $partyId = (int)($holding['party_id'] ?? 0);
+            $name = trim((string)($holding['legal_name'] ?? ''));
+            if ($partyId <= 0 || $name === '') {
+                continue;
+            }
+            $labels[$partyId]['name'] = $name;
+            $labels[$partyId]['holdings'][] = trim((int)($holding['quantity'] ?? 0) . ' ' . (string)($holding['share_class'] ?? 'shares'));
+        }
+
+        $html = '';
+        foreach ($labels as $partyId => $party) {
+            $html .= '<option value="' . (int)$partyId . '">'
+                . HelperFramework::escape((string)$party['name'] . ' — ' . implode(', ', array_unique((array)$party['holdings'])))
+                . '</option>';
+        }
+
+        return $html;
+    }
+
+    private function dividendDirectorOptions(array $participants, string $date): string
+    {
+        $html = '';
+        foreach ((array)($participants['directors'] ?? []) as $director) {
+            if (!is_array($director) || !$this->dividendParticipantEffectiveOn($director, $date)) {
+                continue;
+            }
+            $directorId = (int)($director['id'] ?? 0);
+            $name = trim((string)($director['full_name'] ?? ''));
+            if ($directorId > 0 && $name !== '') {
+                $html .= '<option value="' . $directorId . '">' . HelperFramework::escape($name) . '</option>';
+            }
+        }
+
+        return $html;
+    }
+
+    private function dividendParticipantEffectiveOn(array $record, string $date): bool
+    {
+        $from = trim((string)($record['effective_from'] ?? $record['appointed_on'] ?? ''));
+        $to = trim((string)($record['effective_to'] ?? $record['resigned_on'] ?? ''));
+        return $date !== '' && ($from === '' || $from <= $date) && ($to === '' || $to >= $date);
     }
 
     private function dividendButtonDisabledReason(array $transaction, array $settings, bool $isPeriodLocked): string

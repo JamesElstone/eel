@@ -222,16 +222,56 @@ final class DividendService
         ];
     }
 
+    /**
+     * Returns the effective-dated ownership and director records needed by
+     * dividend declaration forms. Cards filter this data by their own
+     * transaction/declaration date; the command path repeats that validation.
+     */
+    public function fetchDeclarationParticipants(int $companyId): array
+    {
+        if ($companyId <= 0 || !$this->declarationParticipantSchemaAvailable()) {
+            return ['shareholdings' => [], 'directors' => []];
+        }
+
+        return [
+            'shareholdings' => \InterfaceDB::fetchAll(
+                'SELECT h.party_id,
+                        p.legal_name,
+                        p.party_type,
+                        h.share_class_id,
+                        sc.share_class,
+                        h.quantity,
+                        h.effective_from,
+                        h.effective_to
+                 FROM company_shareholdings h
+                 INNER JOIN company_parties p ON p.id = h.party_id AND p.company_id = h.company_id
+                 INNER JOIN company_incorporation_share_classes sc ON sc.id = h.share_class_id AND sc.company_id = h.company_id
+                 WHERE h.company_id = :company_id
+                 ORDER BY p.legal_name, h.effective_from, sc.share_class, h.id',
+                ['company_id' => $companyId]
+            ),
+            'directors' => \InterfaceDB::fetchAll(
+                'SELECT id, full_name, appointed_on, resigned_on, is_active
+                 FROM company_directors
+                 WHERE company_id = :company_id
+                   AND LOWER(COALESCE(officer_role, \'director\')) = \'director\'
+                 ORDER BY COALESCE(appointed_on, \'0000-00-00\'), full_name, id',
+                ['company_id' => $companyId]
+            ),
+        ];
+    }
+
     public function declareDividend(array $input): array
     {
         $companyId = (int)($input['company_id'] ?? 0);
         $accountingPeriodId = (int)($input['accounting_period_id'] ?? 0);
         $declarationDate = trim((string)($input['declaration_date'] ?? ''));
         $description = trim((string)($input['description'] ?? ''));
-        $settlementTarget = trim((string)($input['settlement_target'] ?? ''));
+        $settlementTarget = trim((string)($input['settlement_target'] ?? 'unpaid_dividend_liability'));
         $changedBy = $this->actorValue((string)($input['changed_by'] ?? 'web_app'));
         $amount = round((float)($input['amount'] ?? 0), 2);
-        $reconciliationTransactionId = (int)($input['reconciliation_transaction_id'] ?? 0);
+        $shareholderPartyId = (int)($input['shareholder_party_id'] ?? 0);
+        $directorId = (int)($input['director_id'] ?? 0);
 
         if ($description === '') {
             $description = 'Interim dividend';
@@ -244,11 +284,11 @@ final class DividendService
         if (!$this->isValidDate($declarationDate)) {
             $errors[] = 'Enter a valid declaration date.';
         }
-        if ($reconciliationTransactionId <= 0 && $amount <= 0) {
+        if ($amount <= 0) {
             $errors[] = 'Dividend amount must be greater than zero.';
         }
-        if (!in_array($settlementTarget, ['director_loan_liability', 'unpaid_dividend_liability'], true)) {
-            $errors[] = 'Choose a valid dividend settlement target.';
+        if ($settlementTarget !== 'unpaid_dividend_liability') {
+            $errors[] = 'Manual dividend declarations must be recorded to Dividends Payable.';
         }
 
         $accountingPeriod = $companyId > 0 && $accountingPeriodId > 0 ? $this->fetchAccountingPeriod($companyId, $accountingPeriodId) : null;
@@ -266,10 +306,6 @@ final class DividendService
             return ['success' => false, 'errors' => $errors];
         }
 
-        if ($reconciliationTransactionId > 0) {
-            return $this->declareDividendFromTransaction($reconciliationTransactionId, $companyId, $accountingPeriodId, $changedBy);
-        }
-
         $nominalResult = $this->ensureDividendNominals($companyId);
         if (empty($nominalResult['available'])) {
             return [
@@ -281,22 +317,13 @@ final class DividendService
         $nominals = (array)($nominalResult['accounts'] ?? []);
         $dividendsPaidNominalId = (int)($nominals['dividends_paid']['id'] ?? 0);
         $dividendsPayableNominalId = $this->configuredDividendsPayableNominalId($companyId);
-        $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
-        $directorLoanNominalId = (int)($settings['director_loan_liability_nominal_id'] ?? 0);
-        if ($directorLoanNominalId <= 0) {
-            $directorLoanNominalId = (int)($settings['director_loan_nominal_id'] ?? 0);
-        }
-        $creditNominalId = $settlementTarget === 'director_loan_liability'
-            ? $directorLoanNominalId
-            : $dividendsPayableNominalId;
+        $creditNominalId = $dividendsPayableNominalId;
 
         if ($dividendsPaidNominalId <= 0) {
             return ['success' => false, 'errors' => ['Dividends Paid nominal account is missing.']];
         }
         if ($creditNominalId <= 0) {
-            return ['success' => false, 'errors' => [$settlementTarget === 'director_loan_liability'
-                ? 'Set the director loan liability nominal before declaring a dividend to director loan.'
-                : 'Dividends Payable nominal account is missing.']];
+            return ['success' => false, 'errors' => ['Dividends Payable nominal account is missing.']];
         }
 
         $capacity = $this->getDividendCapacity($companyId, $accountingPeriodId, $declarationDate);
@@ -318,6 +345,11 @@ final class DividendService
             (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'declare dividends in this period');
         } catch (\Throwable $exception) {
             return ['success' => false, 'errors' => [$exception->getMessage()]];
+        }
+
+        $people = $this->resolveDeclarationPeople($companyId, $declarationDate, $shareholderPartyId, $directorId);
+        if (!empty($people['errors'])) {
+            return ['success' => false, 'errors' => (array)$people['errors']];
         }
 
         $sourceRef = $this->sourceRef($companyId, $accountingPeriodId, $declarationDate);
@@ -357,7 +389,13 @@ final class DividendService
 
             $this->insertJournalLine($journalId, $dividendsPaidNominalId, $amount, 0.0, 'Dividend declared');
             $this->insertJournalLine($journalId, $creditNominalId, 0.0, $amount, $this->settlementLabel($settlementTarget));
-            $voucher = $this->ensureVoucherForJournal($journalId, null, $changedBy);
+            $voucher = $this->ensureVoucherForJournal(
+                $journalId,
+                null,
+                (array)$people['shareholder'],
+                (array)$people['director'],
+                $changedBy
+            );
 
             if ($ownsTransaction) {
                 \InterfaceDB::commit();
@@ -379,7 +417,14 @@ final class DividendService
         }
     }
 
-    public function declareDividendFromTransaction(int $transactionId, int $companyId, int $accountingPeriodId, string $changedBy = 'web_app'): array
+    public function declareDividendFromTransaction(
+        int $transactionId,
+        int $companyId,
+        int $accountingPeriodId,
+        int $shareholderPartyId,
+        int $directorId,
+        string $changedBy = 'web_app'
+    ): array
     {
         $changedBy = $this->actorValue($changedBy);
         if ($transactionId <= 0 || $companyId <= 0 || $accountingPeriodId <= 0) {
@@ -421,10 +466,21 @@ final class DividendService
             return ['success' => false, 'errors' => ['The transaction date must fall inside the selected accounting period.']];
         }
 
+        $people = $this->resolveDeclarationPeople($companyId, $declarationDate, $shareholderPartyId, $directorId);
+        if (!empty($people['errors'])) {
+            return ['success' => false, 'errors' => (array)$people['errors']];
+        }
+
         $sourceRef = $this->transactionDividendSourceRef($transactionId);
         $existingJournalId = $this->findJournalId($companyId, $sourceRef);
         if ($existingJournalId > 0) {
-            $voucher = $this->ensureVoucherForJournal($existingJournalId, $transactionId, $changedBy);
+            $voucher = $this->ensureVoucherForJournal(
+                $existingJournalId,
+                $transactionId,
+                (array)$people['shareholder'],
+                (array)$people['director'],
+                $changedBy
+            );
             return [
                 'success' => true,
                 'posted' => true,
@@ -512,7 +568,13 @@ final class DividendService
 
             $this->insertJournalLine($journalId, $dividendsPaidNominalId, $amount, 0.0, 'Dividend declared from imported transaction');
             $this->insertJournalLine($journalId, $dividendsPayableNominalId, 0.0, $amount, 'Dividend payable created from imported transaction');
-            $voucher = $this->ensureVoucherForJournal($journalId, $transactionId, $changedBy);
+            $voucher = $this->ensureVoucherForJournal(
+                $journalId,
+                $transactionId,
+                (array)$people['shareholder'],
+                (array)$people['director'],
+                $changedBy
+            );
 
             if ($ownsTransaction) {
                 \InterfaceDB::commit();
@@ -533,47 +595,6 @@ final class DividendService
 
             return ['success' => false, 'errors' => [$exception->getMessage()]];
         }
-    }
-
-    public function listDividendReconciliationCandidates(int $companyId, int $accountingPeriodId): array
-    {
-        if ($companyId <= 0 || $accountingPeriodId <= 0) {
-            return [];
-        }
-
-        $dividendsPayable = $this->findNominalByCode(self::DIVIDENDS_PAYABLE_CODE);
-        $dividendsPayableId = (int)($dividendsPayable['id'] ?? 0);
-        if ($dividendsPayableId <= 0) {
-            return [];
-        }
-
-        $stmt = \InterfaceDB::prepare(
-            'SELECT t.id,
-                    t.txn_date,
-                    t.description,
-                    t.amount
-             FROM transactions t
-             WHERE t.company_id = ?
-               AND t.accounting_period_id = ?
-               AND COALESCE(t.is_internal_transfer, 0) = 0
-               AND t.nominal_account_id = ?
-               AND t.amount < 0
-               AND t.category_status IN (\'auto\', \'manual\')
-               AND NOT EXISTS (
-                    SELECT 1
-                    FROM journals dividend_j
-                    WHERE dividend_j.company_id = t.company_id
-                      AND dividend_j.source_type = \'manual\'
-                      AND dividend_j.source_ref = CONCAT(\'dividend:transaction:\', t.id)
-               )
-             ORDER BY t.txn_date DESC, t.id DESC'
-        );
-        if ($stmt === false) {
-            return [];
-        }
-
-        $stmt->execute([$companyId, $accountingPeriodId, $dividendsPayableId]);
-        return $stmt->fetchAll() ?: [];
     }
 
     public function listDividends(int $companyId, int $accountingPeriodId): array
@@ -647,16 +668,6 @@ final class DividendService
             if ($transactionId <= 0) {
                 $transactionId = $this->transactionIdFromDividendSourceRef((string)($row['source_ref'] ?? ''));
             }
-            if ((int)($row['voucher_id'] ?? 0) <= 0) {
-                $voucher = $this->ensureVoucherForJournal((int)($row['id'] ?? 0), $transactionId > 0 ? $transactionId : null);
-                $row['voucher_id'] = (int)($voucher['id'] ?? 0);
-                $row['voucher_transaction_id'] = (int)($voucher['transaction_id'] ?? 0);
-                $row['voided_at'] = (string)($voucher['voided_at'] ?? '');
-                $row['voided_by'] = (string)($voucher['voided_by'] ?? '');
-                $row['void_reason'] = (string)($voucher['void_reason'] ?? '');
-                $row['reversal_journal_id'] = (int)($voucher['reversal_journal_id'] ?? 0);
-            }
-
             $paymentLink = $this->paymentLinkState((string)($row['source_ref'] ?? ''), $transactionId);
             $row['amount'] = $this->dividendAmountForJournal((int)$row['id'], $dividendsPaidId);
             $row['settlement_account'] = $this->settlementAccountForJournal((int)$row['id'], $dividendsPaidId);
@@ -687,6 +698,10 @@ final class DividendService
             return [];
         }
 
+        $shareholderPartyIdSelect = \InterfaceDB::columnExists('dividend_vouchers', 'shareholder_party_id')
+            ? 'dv.shareholder_party_id'
+            : 'NULL AS shareholder_party_id';
+
         $rows = \InterfaceDB::fetchAll(
             'SELECT dv.id,
                     dv.company_id,
@@ -694,6 +709,8 @@ final class DividendService
                     dv.journal_id,
                     dv.transaction_id,
                     dv.reversal_journal_id,
+                    ' . $shareholderPartyIdSelect . ',
+                    dv.director_id,
                     dv.company_name,
                     dv.shareholder_name,
                     dv.director_name,
@@ -747,7 +764,10 @@ final class DividendService
             return ['success' => false, 'errors' => ['Only dividends created from imported transactions can be voided from this workflow.']];
         }
 
-        $voucher = $this->ensureVoucherForJournal($journalId, $transactionId, $changedBy);
+        $voucher = $this->fetchVoucherForJournal($journalId);
+        if ($voucher === null) {
+            return ['success' => false, 'errors' => ['This dividend has no saved voucher, so it cannot be voided from this workflow.']];
+        }
         if (trim((string)($voucher['voided_at'] ?? '')) !== '') {
             return ['success' => false, 'errors' => ['This dividend has already been voided.']];
         }
@@ -1232,10 +1252,16 @@ final class DividendService
         ];
     }
 
-    private function ensureVoucherForJournal(int $journalId, ?int $transactionId = null, string $changedBy = 'web_app'): ?array
+    private function ensureVoucherForJournal(
+        int $journalId,
+        ?int $transactionId,
+        array $shareholder,
+        array $director,
+        string $changedBy = 'web_app'
+    ): ?array
     {
-        if ($journalId <= 0 || !$this->tableExists('dividend_vouchers')) {
-            return null;
+        if ($journalId <= 0 || !$this->voucherLinkSchemaAvailable()) {
+            throw new \RuntimeException('Run the dividend voucher shareholder-links migration before creating dividend vouchers.');
         }
 
         $existing = \InterfaceDB::fetchOne(
@@ -1261,13 +1287,12 @@ final class DividendService
         $transaction = $transactionId > 0 ? $this->fetchDividendPaymentTransaction($transactionId) : null;
         $amount = abs($this->dividendAmountForJournal($journalId, (int)($this->findNominalByCode(self::DIVIDENDS_PAID_CODE)['id'] ?? 0)));
         $companyName = trim((string)($company['company_name'] ?? ''));
-        $directorName = $this->directorNameFromCompany($company);
-        $shareholderName = $directorName !== '' ? $directorName : $this->shareholderNameFromTransaction($transaction);
-        if ($shareholderName === '') {
-            $shareholderName = 'Shareholder';
-        }
-        if ($directorName === '') {
-            $directorName = $shareholderName;
+        $shareholderPartyId = (int)($shareholder['id'] ?? 0);
+        $shareholderName = trim((string)($shareholder['legal_name'] ?? ''));
+        $directorId = (int)($director['id'] ?? 0);
+        $directorName = trim((string)($director['full_name'] ?? ''));
+        if ($shareholderPartyId <= 0 || $shareholderName === '' || $directorId <= 0 || $directorName === '') {
+            throw new \RuntimeException('Select a shareholder and authorising director before creating a dividend voucher.');
         }
         $companyNameForRecords = $companyName !== '' ? $companyName : 'Company';
 
@@ -1277,7 +1302,7 @@ final class DividendService
             : $declarationDate;
         $description = trim((string)($journal['description'] ?? 'Dividend'));
         $voucherText = $this->voucherText($companyNameForRecords, $shareholderName, $declarationDate, $amount, $description);
-        $minutesText = $this->minutesText($companyNameForRecords, $directorName, $declarationDate, $amount, $description);
+        $minutesText = $this->minutesText($companyNameForRecords, $directorName, $shareholderName, $declarationDate, $amount, $description);
 
         \InterfaceDB::prepareExecute(
             'INSERT INTO dividend_vouchers (
@@ -1285,6 +1310,8 @@ final class DividendService
                 accounting_period_id,
                 journal_id,
                 transaction_id,
+                shareholder_party_id,
+                director_id,
                 company_name,
                 shareholder_name,
                 director_name,
@@ -1300,6 +1327,8 @@ final class DividendService
                 :accounting_period_id,
                 :journal_id,
                 :transaction_id,
+                :shareholder_party_id,
+                :director_id,
                 :company_name,
                 :shareholder_name,
                 :director_name,
@@ -1316,6 +1345,8 @@ final class DividendService
                 'accounting_period_id' => (int)$journal['accounting_period_id'],
                 'journal_id' => $journalId,
                 'transaction_id' => $transactionId > 0 ? $transactionId : null,
+                'shareholder_party_id' => $shareholderPartyId,
+                'director_id' => $directorId,
                 'company_name' => $companyNameForRecords,
                 'shareholder_name' => $shareholderName,
                 'director_name' => $directorName,
@@ -1550,36 +1581,100 @@ final class DividendService
         return is_array($row) ? $row : [];
     }
 
-    private function directorNameFromCompany(array $company): string
+    private function resolveDeclarationPeople(int $companyId, string $declarationDate, int $shareholderPartyId, int $directorId): array
     {
-        $payload = json_decode((string)($company['companies_house_officers_json'] ?? ''), true);
-        foreach ((array)($payload['items'] ?? []) as $item) {
-            if (!is_array($item)) {
-                continue;
-            }
-            if (strtolower(trim((string)($item['officer_role'] ?? ''))) !== 'director') {
-                continue;
-            }
-            if (trim((string)($item['resigned_on'] ?? '')) !== '') {
-                continue;
-            }
-            $name = trim((string)($item['name'] ?? ''));
-            if ($name !== '') {
-                return $name;
-            }
+        if (!$this->declarationParticipantSchemaAvailable()) {
+            return ['errors' => ['Run the ownership and director migrations before declaring dividends.']];
+        }
+        if ($shareholderPartyId <= 0) {
+            return ['errors' => ['Select the shareholder receiving this dividend.']];
+        }
+        if ($directorId <= 0) {
+            return ['errors' => ['Select the authorising director.']];
         }
 
-        return '';
+        $shareholder = \InterfaceDB::fetchOne(
+            'SELECT p.id, p.legal_name
+             FROM company_parties p
+             WHERE p.id = :party_id
+               AND p.company_id = :company_id
+               AND EXISTS (
+                   SELECT 1
+                   FROM company_shareholdings h
+                   WHERE h.company_id = p.company_id
+                     AND h.party_id = p.id
+                     AND h.effective_from <= :declaration_date
+                     AND (h.effective_to IS NULL OR h.effective_to >= :declaration_date)
+               )
+             LIMIT 1',
+            [
+                'party_id' => $shareholderPartyId,
+                'company_id' => $companyId,
+                'declaration_date' => $declarationDate,
+            ]
+        );
+        if (!is_array($shareholder)) {
+            return ['errors' => ['Select a shareholder with an effective holding on the declaration date.']];
+        }
+
+        $director = \InterfaceDB::fetchOne(
+            'SELECT id, full_name
+             FROM company_directors
+             WHERE id = :director_id
+               AND company_id = :company_id
+               AND LOWER(COALESCE(officer_role, \'director\')) = \'director\'
+               AND (appointed_on IS NULL OR appointed_on <= :declaration_date)
+               AND (resigned_on IS NULL OR resigned_on >= :declaration_date)
+             LIMIT 1',
+            [
+                'director_id' => $directorId,
+                'company_id' => $companyId,
+                'declaration_date' => $declarationDate,
+            ]
+        );
+        if (!is_array($director)) {
+            return ['errors' => ['Select a director eligible on the declaration date.']];
+        }
+
+        return [
+            'errors' => [],
+            'shareholder' => $shareholder,
+            'director' => $director,
+        ];
     }
 
-    private function shareholderNameFromTransaction(?array $transaction): string
+    private function declarationParticipantSchemaAvailable(): bool
     {
-        if (!is_array($transaction)) {
-            return '';
+        return $this->tableExists('company_parties')
+            && $this->tableExists('company_shareholdings')
+            && $this->tableExists('company_incorporation_share_classes')
+            && $this->tableExists('company_directors');
+    }
+
+    private function voucherLinkSchemaAvailable(): bool
+    {
+        try {
+            return $this->tableExists('dividend_vouchers')
+                && $this->declarationParticipantSchemaAvailable()
+                && \InterfaceDB::columnExists('dividend_vouchers', 'shareholder_party_id')
+                && \InterfaceDB::columnExists('dividend_vouchers', 'director_id');
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    private function fetchVoucherForJournal(int $journalId): ?array
+    {
+        if ($journalId <= 0 || !$this->tableExists('dividend_vouchers')) {
+            return null;
         }
 
-        $counterparty = trim((string)($transaction['counterparty_name'] ?? ''));
-        return $counterparty !== '' ? $counterparty : trim((string)($transaction['description'] ?? ''));
+        $row = \InterfaceDB::fetchOne(
+            'SELECT * FROM dividend_vouchers WHERE journal_id = :journal_id LIMIT 1',
+            ['journal_id' => $journalId]
+        );
+
+        return is_array($row) ? $row : null;
     }
 
     private function voucherText(string $companyName, string $shareholderName, string $date, float $amount, string $description): string
@@ -1592,13 +1687,15 @@ final class DividendService
             . 'Description: ' . $description);
     }
 
-    private function minutesText(string $companyName, string $directorName, string $date, float $amount, string $description): string
+    private function minutesText(string $companyName, string $directorName, string $shareholderName, string $date, float $amount, string $description): string
     {
-        return trim('Minutes of a meeting of the sole director of ' . $companyName . "\n"
+        return trim('Minutes of a dividend decision of ' . $companyName . "\n"
             . 'Date: ' . $date . "\n\n"
+            . 'Authorising director: ' . $directorName . "\n"
+            . 'Shareholder: ' . $shareholderName . "\n\n"
             . $directorName . ' considered the company records and available distributable reserves. '
             . 'It was resolved that an interim dividend of ' . number_format($amount, 2, '.', '')
-            . ' be declared and recorded as "' . $description . '". '
+            . ' be declared to ' . $shareholderName . ' and recorded as "' . $description . '". '
             . 'The director authorised the dividend voucher and company records to be kept.');
     }
 
@@ -2000,8 +2097,6 @@ final class DividendService
 
     private function settlementLabel(string $settlementTarget): string
     {
-        return $settlementTarget === 'director_loan_liability'
-            ? 'Settled to director loan liability'
-            : 'Unpaid dividend liability';
+        return 'Unpaid dividend liability';
     }
 }

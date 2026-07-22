@@ -39,6 +39,8 @@ final class DividendAction implements ActionInterfaceFramework
                     (int)$request->input('transaction_id', 0),
                     (int)$request->input('company_id', 0),
                     (int)$request->input('accounting_period_id', 0),
+                    (int)$request->input('shareholder_party_id', 0),
+                    (int)$request->input('director_id', 0),
                     $actor
                 ),
                 'void_dividend' => $service->voidDividend(
@@ -52,9 +54,10 @@ final class DividendAction implements ActionInterfaceFramework
                     'accounting_period_id' => (int)$request->input('accounting_period_id', 0),
                     'declaration_date' => (string)$request->input('declaration_date', ''),
                     'amount' => (string)$request->input('amount', ''),
-                    'reconciliation_transaction_id' => (int)$request->input('reconciliation_transaction_id', 0),
+                    'shareholder_party_id' => (int)$request->input('shareholder_party_id', 0),
+                    'director_id' => (int)$request->input('director_id', 0),
                     'description' => (string)$request->input('description', ''),
-                    'settlement_target' => (string)$request->input('settlement_target', ''),
+                    'settlement_target' => 'unpaid_dividend_liability',
                     'changed_by' => $actor,
                 ]),
             };
@@ -75,7 +78,7 @@ final class DividendAction implements ActionInterfaceFramework
                         ? 'Dividend declaration already exists for this transaction.'
                         : (!empty($result['posted'])
                             ? 'Dividend declaration posted.'
-                            : 'Dividend declaration saved as draft pending reconciliation.'))),
+                            : 'Dividend declaration saved as a draft to Dividends Payable.'))),
             ];
         } else {
             foreach ((array)($result['errors'] ?? ['Dividend declaration could not be posted.']) as $error) {

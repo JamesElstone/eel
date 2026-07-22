@@ -24,12 +24,11 @@ final class _dividend_declareCard extends CardBaseFramework
         return [
             $this->dividendContextService(),
             [
-                'key' => 'dividendReconciliationCandidates',
+                'key' => 'dividendDeclarationParticipants',
                 'service' => \eel_accounts\Service\DividendService::class,
-                'method' => 'listDividendReconciliationCandidates',
+                'method' => 'fetchDeclarationParticipants',
                 'params' => [
                     'companyId' => ':company.id',
-                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
         ];
@@ -52,7 +51,7 @@ final class _dividend_declareCard extends CardBaseFramework
         $dividends = $this->dividendsContext($context);
         $capacity = (array)($dividends['capacity'] ?? []);
         $accountingPeriod = (array)($capacity['accounting_period'] ?? []);
-        $candidates = (array)($dividends['reconciliation_candidates'] ?? []);
+        $participants = $this->declarationParticipants($context);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $periodStart = (string)($accountingPeriod['period_start'] ?? '');
@@ -79,6 +78,18 @@ final class _dividend_declareCard extends CardBaseFramework
             $disabledReason = 'The selected period has no positive available reserves.';
         }
 
+        $shareholderOptions = $this->shareholderOptions($participants, $defaultDate);
+        $directorOptions = $this->directorOptions($participants, $defaultDate);
+        if ($disabledReason === '' && $shareholderOptions === '') {
+            $disabledReason = 'Record an effective shareholder on Ownership & Parties before declaring a dividend.';
+        }
+        if ($disabledReason === '' && $directorOptions === '') {
+            $disabledReason = 'Record an authorising director before declaring a dividend.';
+        }
+
+        $shareholderOptions = '<option value="">Select shareholder</option>' . $shareholderOptions;
+        $directorOptions = '<option value="">Select authorising director</option>' . $directorOptions;
+
         $canDeclare = $disabledReason === '';
         $disabled = $canDeclare ? '' : ' disabled';
         $helper = $canDeclare
@@ -90,18 +101,6 @@ final class _dividend_declareCard extends CardBaseFramework
         $statusItems .= '<div class="helper">' . HelperFramework::escape($helper) . '</div>';
         $statusPanelClass = 'panel-soft dividend-declare-status ' . ($canDeclare ? 'success' : 'warn');
 
-        $candidateOptions = '<option value="0">Not reconciled yet - save as draft</option>';
-        foreach ($candidates as $candidate) {
-            $candidateId = (int)($candidate['id'] ?? 0);
-            if ($candidateId <= 0) {
-                continue;
-            }
-            $label = trim((string)($candidate['txn_date'] ?? '')
-                . ' - ' . $this->money($companySettings, abs((float)($candidate['amount'] ?? 0)))
-                . ' - ' . (string)($candidate['description'] ?? ''));
-            $candidateOptions .= '<option value="' . $candidateId . '">' . HelperFramework::escape($label) . '</option>';
-        }
-
         return '<div class="settings-stack">
             <div class="' . $statusPanelClass . '">' . $statusItems . '</div>
             <form method="post" action="?page=dividends" data-ajax="true" class="form-grid">
@@ -110,6 +109,7 @@ final class _dividend_declareCard extends CardBaseFramework
                 <input type="hidden" name="intent" value="declare_dividend">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <input type="hidden" name="settlement_target" value="unpaid_dividend_liability">
                 <div class="form-row">
                     <label for="dividend_declaration_date">Declaration date</label>
                     <input class="input" id="dividend_declaration_date" type="date" name="declaration_date" value="' . HelperFramework::escape($defaultDate) . '" min="' . HelperFramework::escape($periodStart) . '" max="' . HelperFramework::escape($defaultDate !== '' ? $defaultDate : $periodEnd) . '"' . $disabled . '>
@@ -119,21 +119,20 @@ final class _dividend_declareCard extends CardBaseFramework
                     <input class="input" id="dividend_amount" type="number" name="amount" step="0.01" min="0.01" max="' . HelperFramework::escape(number_format(max(0, $availableReserves), 2, '.', '')) . '"' . $disabled . '>
                 </div>
                 <div class="form-row">
-                    <label for="dividend_reconciliation_transaction_id">Reconcile with transaction</label>
-                    <select class="select" id="dividend_reconciliation_transaction_id" name="reconciliation_transaction_id"' . $disabled . '>
-                        ' . $candidateOptions . '
+                    <label for="dividend_shareholder_party_id">Shareholder</label>
+                    <select class="select" id="dividend_shareholder_party_id" name="shareholder_party_id" required' . $disabled . '>
+                        ' . $shareholderOptions . '
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label for="dividend_director_id">Authorising director</label>
+                    <select class="select" id="dividend_director_id" name="director_id" required' . $disabled . '>
+                        ' . $directorOptions . '
                     </select>
                 </div>
                 <div class="form-row">
                     <label for="dividend_description">Description</label>
                     <input class="input" id="dividend_description" name="description" value="Interim dividend"' . $disabled . '>
-                </div>
-                <div class="form-row">
-                    <label for="dividend_settlement_target">Settlement target</label>
-                    <select class="select" id="dividend_settlement_target" name="settlement_target"' . $disabled . '>
-                        <option value="unpaid_dividend_liability">Unpaid dividend liability</option>
-                        <option value="director_loan_liability">Director loan liability</option>
-                    </select>
                 </div>
                 <div class="actions-row">
                     <button class="button primary" type="submit"' . $disabled . '>Declare Dividend</button>
@@ -164,10 +163,70 @@ final class _dividend_declareCard extends CardBaseFramework
     {
         $serviceContext = $context['services']['dividendContext'] ?? null;
         if (is_array($serviceContext)) {
-            $serviceContext['reconciliation_candidates'] = (array)($context['services']['dividendReconciliationCandidates'] ?? []);
             return $serviceContext;
         }
 
         return (array)($context['dividends'] ?? []);
+    }
+
+    private function declarationParticipants(array $context): array
+    {
+        $serviceParticipants = $context['services']['dividendDeclarationParticipants'] ?? null;
+        if (is_array($serviceParticipants)) {
+            return $serviceParticipants;
+        }
+
+        return (array)(($context['dividends'] ?? [])['declaration_participants'] ?? []);
+    }
+
+    private function shareholderOptions(array $participants, string $date): string
+    {
+        $labels = [];
+        foreach ((array)($participants['shareholdings'] ?? []) as $holding) {
+            if (!is_array($holding) || !$this->effectiveOn($holding, $date)) {
+                continue;
+            }
+            $partyId = (int)($holding['party_id'] ?? 0);
+            $name = trim((string)($holding['legal_name'] ?? ''));
+            if ($partyId <= 0 || $name === '') {
+                continue;
+            }
+            $holdingLabel = trim((int)($holding['quantity'] ?? 0) . ' ' . (string)($holding['share_class'] ?? 'shares'));
+            $labels[$partyId]['name'] = $name;
+            $labels[$partyId]['holdings'][] = $holdingLabel;
+        }
+
+        $html = '';
+        foreach ($labels as $partyId => $party) {
+            $html .= '<option value="' . (int)$partyId . '">'
+                . HelperFramework::escape((string)$party['name'] . ' — ' . implode(', ', array_unique((array)$party['holdings'])))
+                . '</option>';
+        }
+
+        return $html;
+    }
+
+    private function directorOptions(array $participants, string $date): string
+    {
+        $html = '';
+        foreach ((array)($participants['directors'] ?? []) as $director) {
+            if (!is_array($director) || !$this->effectiveOn($director, $date)) {
+                continue;
+            }
+            $directorId = (int)($director['id'] ?? 0);
+            $name = trim((string)($director['full_name'] ?? ''));
+            if ($directorId > 0 && $name !== '') {
+                $html .= '<option value="' . $directorId . '">' . HelperFramework::escape($name) . '</option>';
+            }
+        }
+
+        return $html;
+    }
+
+    private function effectiveOn(array $record, string $date): bool
+    {
+        $from = trim((string)($record['effective_from'] ?? $record['appointed_on'] ?? ''));
+        $to = trim((string)($record['effective_to'] ?? $record['resigned_on'] ?? ''));
+        return ($from === '' || $from <= $date) && ($to === '' || $to >= $date);
     }
 }

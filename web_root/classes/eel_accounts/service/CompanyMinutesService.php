@@ -28,6 +28,7 @@ final class CompanyMinutesService
             "SELECT dv.id,
                     dv.company_name,
                     dv.director_name,
+                    dv.shareholder_name,
                     dv.declaration_date,
                     dv.amount,
                     dv.minutes_text,
@@ -135,6 +136,11 @@ final class CompanyMinutesService
             $directorName = 'The director';
         }
 
+        $shareholderName = trim((string)($voucher['shareholder_name'] ?? ''));
+        if ($shareholderName === '') {
+            $shareholderName = 'The shareholder';
+        }
+
         $voidedAt = trim((string)($voucher['voided_at'] ?? ''));
         $voidDate = $voidedAt !== '' ? substr($voidedAt, 0, 10) : '';
         $declarationDate = trim((string)($voucher['declaration_date'] ?? ''));
@@ -142,8 +148,10 @@ final class CompanyMinutesService
         $reason = trim((string)($voucher['void_reason'] ?? ''));
         $reversalJournalId = (int)($voucher['reversal_journal_id'] ?? 0);
 
-        return trim('Minutes of a meeting of the sole director of ' . $companyName . "\n"
-            . 'Date: ' . $voidDate . "\n\n"
+        return trim('Minutes of a dividend decision of ' . $companyName . "\n"
+            . 'Date: ' . $voidDate . "\n"
+            . 'Authorising director: ' . $directorName . "\n"
+            . 'Shareholder: ' . $shareholderName . "\n\n"
             . $directorName . ' reviewed the dividend declaration minutes dated ' . $declarationDate
             . ' and the related dividend voucher for ' . $amount . '. '
             . 'It was resolved that the dividend declaration and voucher recorded on ' . $declarationDate

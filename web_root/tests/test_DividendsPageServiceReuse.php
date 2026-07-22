@@ -20,10 +20,10 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
         $voucher = (array)((new _dividend_vouchersCard())->services()[0] ?? []);
         $history = (array)((new _dividend_historyCard())->services()[0] ?? []);
         $declareServices = (new _dividend_declareCard())->services();
-        $candidates = (array)($declareServices[1] ?? []);
+        $participants = (array)($declareServices[1] ?? []);
 
         $harness->assertSame('listDividendVouchers', $voucher['method'] ?? null);
         $harness->assertSame('listDividends', $history['method'] ?? null);
-        $harness->assertSame('listDividendReconciliationCandidates', $candidates['method'] ?? null);
+        $harness->assertSame('fetchDeclarationParticipants', $participants['method'] ?? null);
     });
 });

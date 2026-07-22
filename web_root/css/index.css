@@ -3629,10 +3629,11 @@ label {
     white-space: pre-wrap;
 }
 
+@page {
+  margin: 15mm 12mm;
+}
+
 @media print {
-  @page {
-    margin: 20mm 12mm;
-  }
 
   :root {
     --bg: #fff;
@@ -3979,36 +3980,75 @@ label {
 
   .summary-grid,
   .summary-grid.four {
-    display: block;
-    padding-bottom: 0;
+    display: block !important;
+    gap: 0 !important;
+    padding-bottom: 0 !important;
   }
 
   .summary-card {
-    display: block;
-    min-width: 0;
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    overflow-wrap: anywhere;
-    word-break: normal;
-    break-inside: auto;
+    display: block !important;
+    grid-column: auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+    margin: 0 0 1.5mm !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    overflow-wrap: anywhere !important;
+    word-break: normal !important;
+    break-inside: auto !important;
   }
 
-  .summary-card + .summary-card {
-    margin-top: 1.5mm;
+  .summary-card:last-child {
+    margin-bottom: 0 !important;
   }
 
   .summary-card .summary-label,
   .summary-card .summary-value {
-    display: inline;
-    margin: 0;
-    font-size: 10pt;
-    line-height: 1.35;
+    display: inline !important;
+    margin: 0 !important;
+    font-size: 10pt !important;
+    line-height: 1.35 !important;
   }
 
   .summary-card .summary-label {
-    margin-right: 1.5mm;
+    margin-right: 1.5mm !important;
+  }
+
+  .summary-card .select {
+    display: inline-block;
+    width: auto !important;
+    max-width: 100%;
+  }
+
+  .panel-soft {
+    width: auto !important;
+    max-width: none !important;
+    margin: 0 0 1.5mm !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    overflow-wrap: anywhere !important;
+    word-break: normal !important;
+    break-inside: auto !important;
+  }
+
+  .panel-soft:last-child {
+    margin-bottom: 0 !important;
+  }
+
+  .panel-soft > .eyebrow,
+  .panel-soft > .summary-value {
+    display: inline !important;
+    margin: 0 !important;
+    font-size: 10pt !important;
+    line-height: 1.35 !important;
+  }
+
+  .panel-soft > .eyebrow {
+    margin-right: 1.5mm !important;
   }
 
   .content-grid,
@@ -4023,7 +4063,6 @@ label {
   .stat-card,
   .status-panel,
   .warning-box,
-  .panel-soft,
   .chart-panel {
     border-color: #777;
     background: #fff;

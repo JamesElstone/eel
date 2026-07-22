@@ -86,6 +86,9 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
         $balanceOutstanding = 0.0;
 
         foreach ($this->filteredRows($context) as $row) {
+            if ((string)($row['effective_status'] ?? '') === 'cancelled') {
+                continue;
+            }
             $amountDue = max(0.0, (float)($row['amount_due'] ?? 0));
             $amountPaid = max(0.0, (float)($row['amount_paid'] ?? 0));
             if ((string)($row['obligation_type'] ?? '') === 'hmrc_penalty') {
@@ -182,21 +185,21 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
             ->column(
                 'effective_status',
                 'Status',
-                html: fn(array $row): string => '<span class="badge ' . HelperFramework::escape($this->badgeClass((string)($row['effective_status'] ?? ''))) . '">'
-                    . HelperFramework::escape(HelperFramework::labelFromKey((string)($row['effective_status'] ?? ''), '_')) . '</span>',
-                export: static fn(array $row): string => HelperFramework::labelFromKey((string)($row['effective_status'] ?? ''), '_')
+                html: fn(array $row): string => '<span class="badge ' . HelperFramework::escape($this->badgeClass($this->displayStatus($row))) . '">'
+                    . HelperFramework::escape(HelperFramework::labelFromKey($this->displayStatus($row), '_')) . '</span>',
+                export: fn(array $row): string => HelperFramework::labelFromKey($this->displayStatus($row), '_')
             )
             ->column(
                 'related_journal_id',
                 'Accrual',
-                html: static fn(array $row): string => HelperFramework::escape((int)($row['related_journal_id'] ?? 0) > 0 ? 'Accrued' : 'No accrual'),
-                export: static fn(array $row): string => (int)($row['related_journal_id'] ?? 0) > 0 ? 'Accrued' : 'No accrual'
+                html: static fn(array $row): string => HelperFramework::escape(self::accrualLifecycleLabel($row)),
+                export: static fn(array $row): string => self::accrualLifecycleLabel($row)
             )
             ->textColumn('source_reference', 'Reference')
             ->column(
                 'actions',
                 'Actions',
-                html: fn(array $row): string => $this->deleteActionHtml(
+                html: fn(array $row): string => $this->correctionActionHtml(
                     $row,
                     (int)($context['company']['id'] ?? 0),
                     $this->selectedPeriodScope($context)
@@ -206,24 +209,54 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
             );
     }
 
-    private function deleteActionHtml(array $row, int $companyId, string $periodScope): string
+    private function correctionActionHtml(array $row, int $companyId, string $periodScope): string
     {
         $obligationId = (int)($row['id'] ?? 0);
-        $accountingPeriodId = (int)($row['accounting_period_id'] ?? 0);
-        if ($obligationId <= 0 || !(new \eel_accounts\Service\AccountingPeriodAccessService())
-            ->isDataEntryPermitted($companyId, $accountingPeriodId)) {
+        if ($obligationId <= 0 || (string)($row['effective_status'] ?? '') === 'cancelled') {
             return '';
         }
 
-        return '<form method="post" action="?page=HMRC" data-ajax="true" class="actions-row">'
+        $today = (new DateTimeImmutable('today'))->format('Y-m-d');
+        return '<details class="table-row-details"><summary class="button danger">Cancel / reassess</summary>'
+            . '<form method="post" action="?page=HMRC" data-ajax="true" class="form-grid compact">'
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="HmrcObligation">
-            <input type="hidden" name="intent" value="delete_manual_obligation">
+            <input type="hidden" name="intent" value="correct_manual_obligation">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="obligation_id" value="' . $obligationId . '">
             <input type="hidden" name="hmrc_fines_period_scope" value="' . HelperFramework::escape($periodScope) . '">
-            <button class="button danger" type="submit" data-chicken-check="true" data-chicken-message="Delete this HMRC fine or interest record and its linked accrual journal?" data-chicken-confirm-text="Delete">Delete</button>
-        </form>';
+            <div class="form-row"><label>Correction</label><select class="select" name="correction_mode" data-no-submit-on-change="true"><option value="cancel">Cancelled by HMRC</option><option value="reassess">Reassessed by HMRC</option></select></div>
+            <div class="form-row"><label>Effective date *</label><input class="input" type="date" name="effective_date" value="' . $today . '" required></div>
+            <div class="form-row"><label>HMRC reason *</label><input class="input" name="correction_reason" required></div>
+            <div class="form-row"><label>Replacement due date</label><input class="input" type="date" name="replacement_due_date"></div>
+            <div class="form-row"><label>Reassessed amount</label><input class="input" type="number" step="0.01" min="0.01" name="replacement_amount_due"></div>
+            <div class="form-row"><label>Replacement HMRC reference</label><input class="input" name="replacement_source_reference"></div>
+            <div class="helper full">Replacement fields are required only for a reassessment. The original notice and journal remain in the audit trail.</div>
+            <div class="actions-row full"><button class="button danger" type="submit" data-chicken-check="true" data-chicken-message="Record this HMRC correction and post an auditable reversing journal?" data-chicken-confirm-text="Record correction">Record correction</button></div>
+        </form></details>';
+    }
+
+    private static function accrualLifecycleLabel(array $row): string
+    {
+        $sourceJournalId = (int)($row['related_journal_id'] ?? 0);
+        $reversalJournalId = (int)($row['reversal_journal_id'] ?? 0);
+        $replacementObligationId = (int)($row['superseded_by_obligation_id'] ?? 0);
+        $supersedesObligationId = (int)($row['supersedes_obligation_id'] ?? 0);
+        if ($reversalJournalId > 0) {
+            return 'Journal #' . $sourceJournalId . ' reversed by #' . $reversalJournalId
+                . ($replacementObligationId > 0 ? '; reassessed as notice #' . $replacementObligationId : '');
+        }
+        $label = $sourceJournalId > 0 ? 'Accrued in journal #' . $sourceJournalId : 'No accrual';
+        return $supersedesObligationId > 0
+            ? 'Replacement for notice #' . $supersedesObligationId . '; ' . lcfirst($label)
+            : $label;
+    }
+
+    private function displayStatus(array $row): string
+    {
+        return (int)($row['superseded_by_obligation_id'] ?? 0) > 0
+            ? 'superseded'
+            : (string)($row['effective_status'] ?? '');
     }
 
     private function filteredRows(array $context): array

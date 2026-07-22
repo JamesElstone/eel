@@ -199,6 +199,10 @@ final class HmrcObligationService
         $filter = $this->normaliseFilter((string)($filters['filter'] ?? 'all'));
         $rows = \InterfaceDB::fetchAll(
             'SELECT o.*,
+                    (SELECT prior.id
+                     FROM hmrc_obligations prior
+                     WHERE prior.superseded_by_obligation_id = o.id
+                     ORDER BY prior.id DESC LIMIT 1) AS supersedes_obligation_id,
                     ty.label AS accounting_period_label,
                     ty.period_start AS accounting_period_start,
                     ty.period_end AS accounting_period_end
@@ -437,6 +441,7 @@ final class HmrcObligationService
         $amountDue = trim((string)($input['amount_due'] ?? ''));
         $sourceReference = trim((string)($input['source_reference'] ?? ''));
         $notes = trim((string)($input['notes'] ?? ''));
+        $changedBy = trim((string)($input['changed_by'] ?? 'web_app')) ?: 'web_app';
         $accountingPeriod = (new \eel_accounts\Repository\AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
         $postsNoticeAccrual = $this->postsNoticeAccrual($type);
 
@@ -509,7 +514,7 @@ final class HmrcObligationService
                     throw new \RuntimeException('The HMRC obligation could not be found after insert.');
                 }
 
-                $journalResult = $this->postNoticeAccrualJournal($obligation);
+                $journalResult = $this->postNoticeAccrualJournal($obligation, $changedBy);
                 if (empty($journalResult['success'])) {
                     throw new \RuntimeException(implode(' ', (array)($journalResult['errors'] ?? ['The HMRC notice accrual journal could not be posted.'])));
                 }
@@ -540,60 +545,185 @@ final class HmrcObligationService
             return ['success' => false, 'errors' => [$exception->getMessage()]];
         }
 
-        return ['success' => true, 'errors' => [], 'warnings' => $warnings ?? []];
+        return [
+            'success' => true,
+            'errors' => [],
+            'warnings' => $warnings ?? [],
+            'obligation_id' => $obligationId,
+            'journal_id' => $journalId ?? null,
+        ];
     }
 
-    public function deleteManualObligation(int $companyId, int $obligationId): array
+    public function correctManualObligation(
+        int $companyId,
+        int $obligationId,
+        array $input,
+        string $changedBy = 'web_app'
+    ): array
     {
         $this->ensureSchema();
+        (new JournalCorrectionService())->ensureSchema();
         $obligation = $this->rawObligation($obligationId, $companyId);
         if ($obligation === null) {
             return ['success' => false, 'errors' => ['The HMRC fine or interest record could not be found.']];
         }
 
-        $accountingPeriodId = (int)($obligation['accounting_period_id'] ?? 0);
-        (new \eel_accounts\Service\AccountingPeriodAccessService())->assertDataEntryPermitted(
+        if (!in_array((string)($obligation['obligation_type'] ?? ''), ['hmrc_penalty', 'hmrc_interest'], true)) {
+            return ['success' => false, 'errors' => ['Only HMRC penalty and interest notices can use this correction workflow.']];
+        }
+        if ((string)($obligation['status'] ?? '') === 'cancelled') {
+            return [
+                'success' => true,
+                'errors' => [],
+                'already_corrected' => true,
+                'obligation_id' => $obligationId,
+                'reversal_journal_id' => (int)($obligation['reversal_journal_id'] ?? 0) ?: null,
+                'replacement_obligation_id' => (int)($obligation['superseded_by_obligation_id'] ?? 0) ?: null,
+            ];
+        }
+
+        $mode = trim((string)($input['correction_mode'] ?? 'cancel'));
+        $effectiveDate = trim((string)($input['effective_date'] ?? ''));
+        $reason = trim((string)($input['reason'] ?? ''));
+        $changedBy = trim($changedBy) !== '' ? trim($changedBy) : 'web_app';
+        $errors = [];
+        if (!in_array($mode, ['cancel', 'reassess'], true)) {
+            $errors[] = 'Select whether the notice is cancelled or reassessed.';
+        }
+        if (!$this->isDate($effectiveDate)) {
+            $errors[] = 'Enter the HMRC cancellation or reassessment date.';
+        }
+        if ($reason === '') {
+            $errors[] = 'Enter the reason supplied by HMRC.';
+        }
+        $correctionPeriod = $this->accountingPeriodForDate($companyId, $effectiveDate);
+        if ($this->isDate($effectiveDate) && $correctionPeriod === null) {
+            $errors[] = 'The correction date does not fall inside any accounting period for this company.';
+        }
+        if ($mode === 'reassess') {
+            if (!$this->isDate(trim((string)($input['replacement_due_date'] ?? '')))) {
+                $errors[] = 'Enter the replacement HMRC due date.';
+            }
+            if ((float)($input['replacement_amount_due'] ?? 0) <= 0) {
+                $errors[] = 'Enter the reassessed amount due.';
+            }
+            if (trim((string)($input['replacement_source_reference'] ?? '')) === '') {
+                $errors[] = 'Enter the replacement HMRC reference.';
+            }
+        }
+        if ($errors !== []) {
+            return ['success' => false, 'errors' => $errors];
+        }
+
+        (new AccountingPeriodAccessService())->assertDataEntryPermitted(
             $companyId,
-            $accountingPeriodId,
-            'delete this HMRC fine or interest record'
+            (int)$correctionPeriod['id'],
+            'correct this HMRC fine or interest record'
         );
 
-        $journalId = (int)($obligation['related_journal_id'] ?? 0);
         $ownsTransaction = !\InterfaceDB::inTransaction();
         if ($ownsTransaction) {
             \InterfaceDB::beginTransaction();
         }
 
         try {
-            \InterfaceDB::prepareExecute(
-                'DELETE FROM hmrc_obligations WHERE id = :id AND company_id = :company_id',
-                ['id' => $obligationId, 'company_id' => $companyId]
-            );
+            $obligation = $this->rawObligation($obligationId, $companyId, true);
+            if ($obligation === null) {
+                throw new \RuntimeException('The HMRC fine or interest record could not be reloaded.');
+            }
+            if ((string)($obligation['status'] ?? '') === 'cancelled') {
+                if ($ownsTransaction) {
+                    \InterfaceDB::commit();
+                }
+                return [
+                    'success' => true,
+                    'errors' => [],
+                    'already_corrected' => true,
+                    'obligation_id' => $obligationId,
+                    'reversal_journal_id' => (int)($obligation['reversal_journal_id'] ?? 0) ?: null,
+                    'replacement_obligation_id' => (int)($obligation['superseded_by_obligation_id'] ?? 0) ?: null,
+                ];
+            }
 
-            if ($journalId > 0) {
-                $journal = \InterfaceDB::fetchOne(
-                    'SELECT id
-                     FROM journals
-                     WHERE id = :id
-                       AND company_id = :company_id
-                       AND accounting_period_id = :accounting_period_id
-                     LIMIT 1',
-                    [
-                        'id' => $journalId,
-                        'company_id' => $companyId,
-                        'accounting_period_id' => $accountingPeriodId,
-                    ]
+            $reversalJournalId = 0;
+            $sourceJournalId = (int)($obligation['related_journal_id'] ?? 0);
+            if ($sourceJournalId > 0) {
+                $reversal = (new JournalCorrectionService())->reverseJournal(
+                    $companyId,
+                    $sourceJournalId,
+                    (int)$correctionPeriod['id'],
+                    $effectiveDate,
+                    $reason,
+                    $changedBy,
+                    'hmrc-obligation:' . $obligationId . ':cancellation'
                 );
-                if (is_array($journal)) {
-                    if (\InterfaceDB::tableExists('journal_entry_metadata')) {
-                        \InterfaceDB::prepareExecute(
-                            'DELETE FROM journal_entry_metadata WHERE journal_id = :journal_id',
-                            ['journal_id' => $journalId]
-                        );
-                    }
-                    \InterfaceDB::prepareExecute('DELETE FROM journals WHERE id = :id', ['id' => $journalId]);
+                if (empty($reversal['success'])) {
+                    throw new \RuntimeException((string)(($reversal['errors'] ?? [])[0] ?? 'The HMRC accrual could not be reversed.'));
+                }
+                $reversalJournalId = (int)($reversal['reversal_journal_id'] ?? 0);
+            }
+
+            $replacementObligationId = 0;
+            $creditCarriedForward = 0.0;
+            if ($mode === 'reassess') {
+                $replacement = $this->createManualObligation([
+                    'company_id' => $companyId,
+                    'accounting_period_id' => (int)$correctionPeriod['id'],
+                    'obligation_type' => (string)$obligation['obligation_type'],
+                    'notice_date' => $effectiveDate,
+                    'due_date' => trim((string)$input['replacement_due_date']),
+                    'amount_due' => trim((string)$input['replacement_amount_due']),
+                    'source_reference' => trim((string)$input['replacement_source_reference']),
+                    'notes' => 'Reassessment replacing HMRC obligation #' . $obligationId . '. ' . $reason,
+                    'changed_by' => $changedBy,
+                ]);
+                if (empty($replacement['success'])) {
+                    throw new \RuntimeException((string)(($replacement['errors'] ?? [])[0] ?? 'The reassessed HMRC notice could not be recorded.'));
+                }
+                $replacementObligationId = (int)($replacement['obligation_id'] ?? 0);
+                if ($replacementObligationId <= 0) {
+                    throw new \RuntimeException('The reassessed HMRC notice could not be linked.');
+                }
+
+                $creditCarriedForward = min(
+                    max(0.0, round((float)($obligation['amount_paid'] ?? 0), 2)),
+                    max(0.0, round((float)$input['replacement_amount_due'], 2))
+                );
+                if ($creditCarriedForward > 0) {
+                    $this->recordCreditTransfer(
+                        $companyId,
+                        $obligationId,
+                        $replacementObligationId,
+                        $creditCarriedForward,
+                        $reason,
+                        $changedBy
+                    );
+                    $this->recalculatePaymentState($replacementObligationId);
                 }
             }
+
+            \InterfaceDB::prepareExecute(
+                'UPDATE hmrc_obligations
+                 SET status = :status,
+                     reversal_journal_id = :reversal_journal_id,
+                     cancelled_on = :cancelled_on,
+                     cancelled_at = CURRENT_TIMESTAMP,
+                     cancelled_by = :cancelled_by,
+                     cancellation_reason = :cancellation_reason,
+                     superseded_by_obligation_id = :superseded_by_obligation_id,
+                     checked_at = CURRENT_TIMESTAMP
+                 WHERE id = :id AND company_id = :company_id',
+                [
+                    'status' => 'cancelled',
+                    'reversal_journal_id' => $reversalJournalId > 0 ? $reversalJournalId : null,
+                    'cancelled_on' => $effectiveDate,
+                    'cancelled_by' => $changedBy,
+                    'cancellation_reason' => $reason,
+                    'superseded_by_obligation_id' => $replacementObligationId > 0 ? $replacementObligationId : null,
+                    'id' => $obligationId,
+                    'company_id' => $companyId,
+                ]
+            );
 
             if ($ownsTransaction) {
                 \InterfaceDB::commit();
@@ -606,7 +736,23 @@ final class HmrcObligationService
             return ['success' => false, 'errors' => [$exception->getMessage()]];
         }
 
-        return ['success' => true, 'errors' => [], 'deleted' => true];
+        $expectedRefund = max(0.0, round((float)($obligation['amount_paid'] ?? 0) - $creditCarriedForward, 2));
+        $warnings = [];
+        if ($expectedRefund > 0) {
+            $warnings[] = 'HMRC now owes an expected refund or credit of ' . number_format($expectedRefund, 2, '.', '') . '. Categorise the eventual receipt against nominal 2210.';
+        }
+
+        return [
+            'success' => true,
+            'errors' => [],
+            'warnings' => $warnings,
+            'cancelled' => true,
+            'obligation_id' => $obligationId,
+            'reversal_journal_id' => $reversalJournalId ?: null,
+            'replacement_obligation_id' => $replacementObligationId ?: null,
+            'credit_carried_forward' => $creditCarriedForward,
+            'expected_refund_amount' => $expectedRefund,
+        ];
     }
 
     public function calculateDueDates(array $accountingPeriod): array
@@ -696,7 +842,9 @@ final class HmrcObligationService
 
         foreach ($obligations as $item) {
             $outstanding = (float)($item['outstanding_amount'] ?? 0);
-            $totalOwed += max(0, $outstanding);
+            if ((string)($item['effective_status'] ?? '') !== 'cancelled') {
+                $totalOwed += max(0, $outstanding);
+            }
             if ((string)$item['effective_status'] === 'overdue') {
                 $totalOverdue += max(0, $outstanding);
                 $overdueCount++;
@@ -789,7 +937,20 @@ final class HmrcObligationService
                 \InterfaceDB::prepareExecute('ALTER TABLE hmrc_obligations ADD COLUMN legacy_unlinked_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER amount_paid');
                 \InterfaceDB::prepareExecute('UPDATE hmrc_obligations SET legacy_unlinked_amount = amount_paid WHERE amount_paid > 0');
             }
+            foreach ([
+                'reversal_journal_id' => 'BIGINT NULL',
+                'cancelled_on' => 'DATE NULL',
+                'cancelled_at' => 'DATETIME NULL',
+                'cancelled_by' => 'VARCHAR(100) NULL',
+                'cancellation_reason' => 'TEXT NULL',
+                'superseded_by_obligation_id' => 'INT NULL',
+            ] as $column => $definition) {
+                if (!\InterfaceDB::columnExists('hmrc_obligations', $column)) {
+                    \InterfaceDB::prepareExecute('ALTER TABLE hmrc_obligations ADD COLUMN ' . $column . ' ' . $definition);
+                }
+            }
             $this->ensureEvidenceSchema();
+            $this->ensureCreditTransferSchema();
             return;
         }
 
@@ -810,8 +971,14 @@ final class HmrcObligationService
                 source ENUM('calculated','manual','hmrc_notice','journal','bank_match') NOT NULL DEFAULT 'calculated',
                 source_reference VARCHAR(255) NULL,
                 related_journal_id BIGINT NULL,
+                reversal_journal_id BIGINT NULL,
                 related_fine_id INT NULL,
                 checked_at DATETIME NULL,
+                cancelled_on DATE NULL,
+                cancelled_at DATETIME NULL,
+                cancelled_by VARCHAR(100) NULL,
+                cancellation_reason TEXT NULL,
+                superseded_by_obligation_id INT NULL,
                 notes TEXT NULL,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -848,18 +1015,20 @@ final class HmrcObligationService
              LIMIT 1',
             ['company_id' => $companyId, 'notice_date' => $date]
         );
+        $this->ensureCreditTransferSchema();
 
         return is_array($row) ? $row : null;
     }
 
-    private function rawObligation(int $id, int $companyId): ?array
+    private function rawObligation(int $id, int $companyId, bool $lock = false): ?array
     {
+        $suffix = $lock && \InterfaceDB::driverName() !== 'sqlite' ? ' FOR UPDATE' : '';
         $row = \InterfaceDB::fetchOne(
             'SELECT *
              FROM hmrc_obligations
              WHERE id = :id
                AND company_id = :company_id
-             LIMIT 1',
+             LIMIT 1' . $suffix,
             ['id' => $id, 'company_id' => $companyId]
         );
 
@@ -875,7 +1044,7 @@ final class HmrcObligationService
         return (int)(\InterfaceDB::fetchColumn($sql) ?: 0);
     }
 
-    private function postNoticeAccrualJournal(array $obligation): array
+    private function postNoticeAccrualJournal(array $obligation, string $changedBy = 'web_app'): array
     {
         $type = $this->normaliseType((string)($obligation['obligation_type'] ?? ''));
         if (!$this->postsNoticeAccrual($type)) {
@@ -922,9 +1091,76 @@ final class HmrcObligationService
             null,
             null,
             'Posted from HMRC obligation #' . (int)$obligation['id'] . '. Later bank payments should clear nominal 2210, not the expense nominal.',
-            'web_app'
+            $changedBy
         );
         $this->ensureEvidenceSchema();
+    }
+
+    private function ensureCreditTransferSchema(): void
+    {
+        if (\InterfaceDB::tableExists('hmrc_obligation_credit_transfers')) {
+            return;
+        }
+        if (\InterfaceDB::driverName() === 'sqlite') {
+            \InterfaceDB::prepareExecute(
+                'CREATE TABLE IF NOT EXISTS hmrc_obligation_credit_transfers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    company_id INTEGER NOT NULL,
+                    from_obligation_id INTEGER NOT NULL,
+                    to_obligation_id INTEGER NOT NULL,
+                    amount NUMERIC NOT NULL,
+                    reason TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (from_obligation_id, to_obligation_id)
+                 )'
+            );
+            return;
+        }
+        \InterfaceDB::prepareExecute(
+            'CREATE TABLE IF NOT EXISTS hmrc_obligation_credit_transfers (
+                id BIGINT NOT NULL AUTO_INCREMENT,
+                company_id INT NOT NULL,
+                from_obligation_id INT NOT NULL,
+                to_obligation_id INT NOT NULL,
+                amount DECIMAL(12,2) NOT NULL,
+                reason TEXT NOT NULL,
+                created_by VARCHAR(100) NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_hmrc_credit_transfer_pair (from_obligation_id, to_obligation_id),
+                KEY idx_hmrc_credit_transfer_company (company_id, created_at),
+                KEY idx_hmrc_credit_transfer_to (to_obligation_id),
+                CONSTRAINT fk_hmrc_credit_transfer_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+                CONSTRAINT fk_hmrc_credit_transfer_from FOREIGN KEY (from_obligation_id) REFERENCES hmrc_obligations(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+                CONSTRAINT fk_hmrc_credit_transfer_to FOREIGN KEY (to_obligation_id) REFERENCES hmrc_obligations(id) ON DELETE RESTRICT ON UPDATE CASCADE
+             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
+    }
+
+    private function recordCreditTransfer(
+        int $companyId,
+        int $fromObligationId,
+        int $toObligationId,
+        float $amount,
+        string $reason,
+        string $changedBy
+    ): void {
+        \InterfaceDB::prepareExecute(
+            'INSERT INTO hmrc_obligation_credit_transfers (
+                company_id, from_obligation_id, to_obligation_id, amount, reason, created_by
+             ) VALUES (
+                :company_id, :from_obligation_id, :to_obligation_id, :amount, :reason, :created_by
+             )',
+            [
+                'company_id' => $companyId,
+                'from_obligation_id' => $fromObligationId,
+                'to_obligation_id' => $toObligationId,
+                'amount' => number_format($amount, 2, '.', ''),
+                'reason' => $reason,
+                'created_by' => $changedBy,
+            ]
+        );
     }
 
     private function ensureEvidenceSchema(): void
@@ -985,8 +1221,10 @@ final class HmrcObligationService
     {
         $amountDue = $row['amount_due'] !== null ? round((float)$row['amount_due'], 2) : null;
         $amountPaid = round((float)($row['amount_paid'] ?? 0), 2);
-        $outstanding = $amountDue !== null ? round($amountDue - $amountPaid, 2) : null;
         $status = (string)($row['status'] ?? 'not_started');
+        $outstanding = $status === 'cancelled'
+            ? 0.0
+            : ($amountDue !== null ? round($amountDue - $amountPaid, 2) : null);
         $type = (string)($row['obligation_type'] ?? '');
         $effective = $status;
         if (!in_array($status, ['filed', 'paid', 'cancelled', 'not_applicable'], true)) {
@@ -1007,6 +1245,19 @@ final class HmrcObligationService
         $row['action_needed'] = $this->actionNeeded($row);
         $row['companies_house'] = $this->companiesHouseStatus((int)$row['company_id'], (string)$row['period_end']);
         $row['legacy_unlinked_amount'] = round((float)($row['legacy_unlinked_amount'] ?? 0), 2);
+        $creditCarriedForward = 0.0;
+        if (\InterfaceDB::tableExists('hmrc_obligation_credit_transfers')) {
+            $creditCarriedForward = round((float)\InterfaceDB::fetchColumn(
+                'SELECT COALESCE(SUM(amount), 0)
+                 FROM hmrc_obligation_credit_transfers
+                 WHERE from_obligation_id = :obligation_id',
+                ['obligation_id' => (int)$row['id']]
+            ), 2);
+        }
+        $row['credit_carried_forward'] = $creditCarriedForward;
+        $row['expected_refund_amount'] = $status === 'cancelled'
+            ? max(0.0, round($amountPaid - $creditCarriedForward, 2))
+            : 0.0;
         $row['evidence_links'] = $this->evidenceLinks((int)$row['id']);
         $row['evidence_candidates'] = $type === 'ct600_filing' ? [] : $this->evidenceCandidates((int)$row['company_id']);
 
@@ -1090,7 +1341,15 @@ final class HmrcObligationService
             'SELECT COALESCE(SUM(allocated_amount), 0) FROM hmrc_obligation_evidence_links WHERE hmrc_obligation_id = :id',
             ['id' => $obligationId]
         );
-        $paid = round((float)($row['legacy_unlinked_amount'] ?? 0) + $linked, 2);
+        $creditTransfers = \InterfaceDB::tableExists('hmrc_obligation_credit_transfers')
+            ? (float)\InterfaceDB::fetchColumn(
+                'SELECT COALESCE(SUM(amount), 0)
+                 FROM hmrc_obligation_credit_transfers
+                 WHERE to_obligation_id = :id',
+                ['id' => $obligationId]
+            )
+            : 0.0;
+        $paid = round((float)($row['legacy_unlinked_amount'] ?? 0) + $linked + $creditTransfers, 2);
         $due = $row['amount_due'] !== null ? (float)$row['amount_due'] : null;
         $status = $paid <= 0 ? 'not_started' : ($due !== null && $paid + 0.004 >= $due ? 'paid' : 'part_paid');
         \InterfaceDB::prepareExecute(

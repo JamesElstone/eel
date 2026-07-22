@@ -14,6 +14,7 @@ final class HmrcObligationAction implements ActionInterfaceFramework
         $intent = trim((string)$request->input('intent', $request->input('global_action', '')));
         $companyId = (int)$request->input('company_id', 0);
         $service = new \eel_accounts\Service\HmrcObligationService();
+        $actor = $this->actor();
 
         try {
             $result = match ($intent) {
@@ -32,10 +33,20 @@ final class HmrcObligationAction implements ActionInterfaceFramework
                     'amount_due' => (string)$request->input('amount_due', ''),
                     'source_reference' => (string)$request->input('source_reference', ''),
                     'notes' => (string)$request->input('notes', ''),
+                    'changed_by' => $actor,
                 ]),
-                'delete_manual_obligation' => $service->deleteManualObligation(
+                'correct_manual_obligation' => $service->correctManualObligation(
                     $companyId,
-                    (int)$request->input('obligation_id', 0)
+                    (int)$request->input('obligation_id', 0),
+                    [
+                        'correction_mode' => (string)$request->input('correction_mode', 'cancel'),
+                        'effective_date' => (string)$request->input('effective_date', ''),
+                        'reason' => (string)$request->input('correction_reason', ''),
+                        'replacement_due_date' => (string)$request->input('replacement_due_date', ''),
+                        'replacement_amount_due' => (string)$request->input('replacement_amount_due', ''),
+                        'replacement_source_reference' => (string)$request->input('replacement_source_reference', ''),
+                    ],
+                    $actor
                 ),
                 default => ['success' => false, 'errors' => ['Unknown HMRC obligation action.']],
             };
@@ -68,5 +79,20 @@ final class HmrcObligationAction implements ActionInterfaceFramework
         $amount = $amountInput === '' ? $service->defaultEvidenceAllocation($companyId, $sourceType, $sourceId) : (float)$amountInput;
 
         return $service->linkPaymentEvidence($companyId, (int)$request->input('obligation_id', 0), $sourceType, $sourceId, $amount);
+    }
+
+    private function actor(): string
+    {
+        try {
+            $session = new SessionAuthenticationService();
+            $session->startSession();
+            $deviceId = trim((string)AntiFraudService::instance()->requestValue('Client-Device-ID'));
+            $userId = $session->authenticatedUserId($deviceId !== '' ? $deviceId : null);
+            if ($userId > 0) {
+                return 'user:' . $userId;
+            }
+        } catch (Throwable) {
+        }
+        return 'web_app';
     }
 }

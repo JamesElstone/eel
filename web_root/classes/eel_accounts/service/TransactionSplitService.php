@@ -329,17 +329,11 @@ final class TransactionSplitService
 
         try {
             if ($hasJournal) {
-                \InterfaceDB::prepareExecute(
-                    'DELETE FROM journals
-                     WHERE company_id = :company_id
-                       AND source_type = :source_type
-                       AND source_ref = :source_ref',
-                    [
-                        'company_id' => $companyId,
-                        'source_type' => 'bank_csv',
-                        'source_ref' => 'transaction:' . $transactionId,
-                    ]
-                );
+                $journalRemoval = (new \eel_accounts\Service\TransactionJournalService())
+                    ->removeJournalForTransaction($transactionId);
+                if (empty($journalRemoval['success'])) {
+                    throw new \RuntimeException((string)(($journalRemoval['errors'] ?? [])[0] ?? 'The split transaction journal could not be reversed.'));
+                }
             }
 
             \InterfaceDB::prepareExecute(

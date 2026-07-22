@@ -79,20 +79,23 @@ final class OpeningBalanceService
         }
 
         try {
+            $correctionService = null;
             if ($existing !== null && $replaceExisting) {
-                \InterfaceDB::prepareExecute(
-                    'UPDATE journals
-                     SET is_posted = 0,
-                         updated_at = CURRENT_TIMESTAMP
-                     WHERE id = :journal_id
-                       AND company_id = :company_id
-                       AND accounting_period_id = :accounting_period_id',
-                    [
-                        'journal_id' => (int)$existing['id'],
-                        'company_id' => $companyId,
-                        'accounting_period_id' => $accountingPeriodId,
-                    ]
+                $correctionService = new JournalCorrectionService();
+                $reversal = $correctionService->reverseJournal(
+                    $companyId,
+                    (int)$existing['id'],
+                    $accountingPeriodId,
+                    (string)$context['accounting_period']['period_start'],
+                    trim((string)($payload['notes'] ?? '')) !== ''
+                        ? trim((string)$payload['notes'])
+                        : 'Opening balance journal replaced.',
+                    $changedBy,
+                    'opening-balance:' . $accountingPeriodId . ':replace:' . (int)$existing['id']
                 );
+                if (empty($reversal['success'])) {
+                    throw new \RuntimeException((string)(($reversal['errors'] ?? [])[0] ?? 'The previous opening balance journal could not be reversed.'));
+                }
             }
 
             $result = ($this->journalService ?? new \eel_accounts\Service\ManualJournalService())->saveTaggedJournal(
@@ -116,6 +119,14 @@ final class OpeningBalanceService
                 }
 
                 return $result;
+            }
+
+            if ($existing !== null && $replaceExisting && $correctionService instanceof JournalCorrectionService) {
+                $replacementJournalId = (int)(($result['journal'] ?? [])['id'] ?? 0);
+                $link = $correctionService->linkReplacementJournal($companyId, (int)$existing['id'], $replacementJournalId);
+                if (empty($link['success'])) {
+                    throw new \RuntimeException((string)(($link['errors'] ?? [])[0] ?? 'The replacement opening balance journal could not be linked.'));
+                }
             }
 
             if ($ownsTransaction) {

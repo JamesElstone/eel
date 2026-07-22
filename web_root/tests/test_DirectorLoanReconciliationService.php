@@ -180,10 +180,30 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
             $service->saveYearEndReview((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], true, 'test');
             $service->postOffset((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'test');
 
-            InterfaceDB::prepareExecute(
-                'UPDATE journal_lines SET debit = 100.00 WHERE id = :id',
+            $assetJournalId = (int)InterfaceDB::fetchColumn(
+                'SELECT journal_id FROM journal_lines WHERE id = :id',
                 ['id' => $assetLineId]
             );
+            $correction = (new \eel_accounts\Service\JournalCorrectionService())->reverseAndReplaceJournal(
+                (int)$fixture['company_id'],
+                $assetJournalId,
+                (int)$fixture['accounting_period_id'],
+                '2025-12-31',
+                'Correct the source balance used by the DLA reconciliation test.',
+                [
+                    'journal_tag' => 'dla_reconciliation_source_correction',
+                    'journal_key' => 'journal:' . $assetJournalId,
+                    'journal_date' => '2025-12-31',
+                    'description' => 'Corrected DLA source balance',
+                    'lines' => [
+                        ['nominal_account_id' => (int)$fixture['asset_nominal_id'], 'party_id' => (int)$fixture['primary_party_id'], 'debit' => 100.00, 'credit' => 0.00],
+                        ['nominal_account_id' => (int)$fixture['counter_nominal_id'], 'debit' => 0.00, 'credit' => 100.00],
+                    ],
+                ],
+                'test',
+                'dla-reconciliation-source:' . $assetJournalId
+            );
+            $harness->assertSame(true, (bool)($correction['success'] ?? false));
             $stale = $service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
             $harness->assertSame('153.00', directorLoanReclassificationMoney($stale['pending_adjustment_amount'] ?? 0));
             $harness->assertSame(false, (bool)($stale['can_post'] ?? true));
@@ -215,7 +235,8 @@ function directorLoanReclassificationWithFixture(GeneratedServiceClassTestHarnes
 
     InterfaceDB::beginTransaction();
     try {
-        StandardNominalTestFixture::ensureNominals(['1200', '2100']);
+        StandardNominalTestFixture::ensureNominals(['1000', '1200', '2100']);
+        $counterNominalId = StandardNominalTestFixture::id('1000');
         $assetNominalId = StandardNominalTestFixture::id('1200');
         $liabilityNominalId = StandardNominalTestFixture::id('2100');
         $marker = substr(hash('sha256', __FILE__ . microtime(true) . random_int(1, PHP_INT_MAX)), 0, 12);
@@ -269,6 +290,7 @@ function directorLoanReclassificationWithFixture(GeneratedServiceClassTestHarnes
             'accounting_period_id' => $periodId,
             'asset_nominal_id' => $assetNominalId,
             'liability_nominal_id' => $liabilityNominalId,
+            'counter_nominal_id' => $counterNominalId,
             'primary_party_id' => ParticipatorLoanTestFixture::createPartyForDirector($companyId, $primaryDirectorId, 'Primary Director'),
             'other_party_id' => ParticipatorLoanTestFixture::createPartyForDirector($companyId, $otherDirectorId, 'Other Director'),
         ]);
@@ -314,6 +336,17 @@ function directorLoanReclassificationInsertLine(
             'debit' => number_format($debit, 2, '.', ''),
             'credit' => number_format($credit, 2, '.', ''),
             'description' => 'DLA reclassification fixture',
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit, line_description)
+         VALUES (:journal_id, :nominal_id, :debit, :credit, :description)',
+        [
+            'journal_id' => $journalId,
+            'nominal_id' => (int)$fixture['counter_nominal_id'],
+            'debit' => number_format($credit, 2, '.', ''),
+            'credit' => number_format($debit, 2, '.', ''),
+            'description' => 'DLA reclassification fixture counter-entry',
         ]
     );
     return (int)InterfaceDB::fetchColumn(

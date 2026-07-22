@@ -72,7 +72,9 @@ final class DirectorLoanAttributionService
                     jl.credit,
                     COALESCE(jl.line_description, \'\') AS line_description,
                     j.company_id,
+                    j.accounting_period_id,
                     j.journal_date,
+                    j.description AS journal_description,
                     j.source_type,
                     COALESCE(j.source_ref, \'\') AS source_ref
              FROM journal_lines jl
@@ -103,10 +105,47 @@ final class DirectorLoanAttributionService
         }
 
         try {
-            \InterfaceDB::prepareExecute(
-                'UPDATE journal_lines SET party_id = :party_id WHERE id = :id',
-                ['party_id' => $partyId, 'id' => $journalLineId]
+            $replacementLines = \InterfaceDB::fetchAll(
+                'SELECT id, nominal_account_id, director_id, party_id, company_account_id,
+                        debit, credit, COALESCE(line_description, \'\') AS line_description
+                 FROM journal_lines
+                 WHERE journal_id = :journal_id
+                 ORDER BY id',
+                ['journal_id' => (int)$line['journal_id']]
             );
+            foreach ($replacementLines as &$replacementLine) {
+                if ((int)$replacementLine['id'] === $journalLineId) {
+                    $replacementLine['party_id'] = $partyId;
+                }
+                unset($replacementLine['id']);
+            }
+            unset($replacementLine);
+
+            $correction = (new JournalCorrectionService())->reverseAndReplaceJournal(
+                $companyId,
+                (int)$line['journal_id'],
+                (int)$line['accounting_period_id'],
+                (string)$line['journal_date'],
+                $reason,
+                [
+                    'journal_tag' => 'participator_loan_attribution',
+                    'journal_key' => 'journal:' . (int)$line['journal_id'] . ':line:' . $journalLineId . ':party:' . $partyId,
+                    'journal_date' => (string)$line['journal_date'],
+                    'description' => 'Replacement for journal #' . (int)$line['journal_id'] . ' - ' . (string)$line['journal_description'],
+                    'lines' => $replacementLines,
+                    'entry_mode' => 'system_generated',
+                    'notes' => $reason,
+                    'source_type' => (string)$line['source_type'],
+                    'source_ref' => trim((string)$line['source_ref']) !== ''
+                        ? (string)$line['source_ref'] . ':revision-of:' . (int)$line['journal_id']
+                        : null,
+                ],
+                $changedBy,
+                'participator-loan-attribution:' . (int)$line['journal_id'] . ':' . $journalLineId . ':' . $partyId
+            );
+            if (empty($correction['success'])) {
+                throw new \RuntimeException((string)(($correction['errors'] ?? [])[0] ?? 'The journal attribution could not be corrected.'));
+            }
             $this->recordChange(
                 $companyId,
                 'journal_line',
@@ -129,7 +168,14 @@ final class DirectorLoanAttributionService
             return ['success' => false, 'changed' => false, 'errors' => [$exception->getMessage()]];
         }
 
-        return ['success' => true, 'changed' => true, 'errors' => []];
+        return [
+            'success' => true,
+            'changed' => true,
+            'errors' => [],
+            'source_journal_id' => (int)$line['journal_id'],
+            'reversal_journal_id' => (int)($correction['reversal_journal_id'] ?? 0),
+            'replacement_journal_id' => (int)($correction['replacement_journal_id'] ?? 0),
+        ];
     }
 
     public function recordChange(
@@ -247,7 +293,7 @@ final class DirectorLoanAttributionService
         $amount = round((float)$line['debit'] + (float)$line['credit'], 2);
         $description = trim((string)($line['line_description'] ?? ''));
 
-        if ((string)$line['source_type'] === 'bank_csv' && preg_match('/^transaction:(\d+)$/', $sourceRef, $matches) === 1) {
+        if ((string)$line['source_type'] === 'bank_csv' && preg_match('/^transaction:(\d+)/', $sourceRef, $matches) === 1) {
             $transactionId = (int)$matches[1];
             $splitRows = \InterfaceDB::fetchAll(
                 'SELECT tsl.id

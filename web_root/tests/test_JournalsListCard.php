@@ -175,6 +175,42 @@ $harness->run(_journals_listCard::class, static function (GeneratedServiceClassT
         $harness->assertTrue(!str_contains($export, 'Review Transaction'));
     });
 
+    $harness->check(_journals_listCard::class, 'shows reversal and replacement lifecycle labels for preserved journals', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => ['id' => 12, 'accounting_period_id' => 34],
+            'page' => ['page_id' => 'journals', 'page_cards' => ['journals_list']],
+            'services' => [
+                'company_accounts' => [],
+                'nominal_accounts' => [],
+                'journal_entries' => [
+                    'items' => [[
+                        'id' => 100,
+                        'journal_date' => '2026-02-14',
+                        'description' => 'Preserved source journal',
+                        'source_type' => 'manual',
+                        'source_ref' => 'source:100',
+                        'is_posted' => 1,
+                        'reversed_by_journal_id' => 101,
+                        'replacement_journal_id' => 102,
+                        'total_debit' => 10.00,
+                        'lines' => [],
+                    ]],
+                    'page' => 1,
+                    'page_size' => 30,
+                    'page_count' => 1,
+                    'total' => 1,
+                    'offset' => 0,
+                    'has_previous_page' => false,
+                    'has_next_page' => false,
+                    'export_all' => false,
+                ],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'Reversed by #101; replaced by #102'));
+        $harness->assertTrue(str_contains($html, 'Preserved source journal'));
+    });
+
     $harness->check(_journals_listCard::class, 'handle normalises journal search filters', static function () use ($harness, $card): void {
         $request = new RequestFramework(
             ['page' => 'journals'],

@@ -47,11 +47,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         [
                             [$assetNominalId, 60.0, 0.0],
                             [$incomeNominalId, 0.0, 60.0],
-                        ]
-                    );
-                    InterfaceDB::prepareExecute(
-                        'UPDATE journals SET source_type = :source_type WHERE id = :id',
-                        ['source_type' => 'asset_disposal', 'id' => $disposalJournalId]
+                        ],
+                        'asset_disposal'
                     );
 
                     $scope = (new \eel_accounts\Service\PeriodLedgerReadService())->scope(

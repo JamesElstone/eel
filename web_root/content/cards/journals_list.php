@@ -535,13 +535,29 @@ final class _journals_listCard extends CardBaseFramework
             return '';
         }
 
-        return '<span class="badge ' . HelperFramework::escape((int)($row['is_posted'] ?? 0) === 1 ? 'success' : 'warning') . '">'
+        $lifecycle = (int)($row['reversal_of_journal_id'] ?? 0) > 0
+            || (int)($row['reversed_by_journal_id'] ?? 0) > 0
+            || (int)($row['replacement_of_journal_id'] ?? 0) > 0;
+        return '<span class="badge ' . HelperFramework::escape($lifecycle ? 'warning' : ((int)($row['is_posted'] ?? 0) === 1 ? 'success' : 'warning')) . '">'
             . HelperFramework::escape($this->statusLabel($row))
             . '</span>';
     }
 
     private function statusLabel(array $row): string
     {
+        if ((int)($row['reversal_of_journal_id'] ?? 0) > 0) {
+            return 'Reversal of #' . (int)$row['reversal_of_journal_id'];
+        }
+        if ((int)($row['reversed_by_journal_id'] ?? 0) > 0) {
+            $label = 'Reversed by #' . (int)$row['reversed_by_journal_id'];
+            if ((int)($row['replacement_journal_id'] ?? 0) > 0) {
+                $label .= '; replaced by #' . (int)$row['replacement_journal_id'];
+            }
+            return $label;
+        }
+        if ((int)($row['replacement_of_journal_id'] ?? 0) > 0) {
+            return 'Replacement for #' . (int)$row['replacement_of_journal_id'];
+        }
         return (int)($row['is_posted'] ?? 0) === 1 ? 'Posted' : 'Draft';
     }
 
@@ -586,6 +602,7 @@ final class _journals_listCard extends CardBaseFramework
 
         $sourceRef = trim((string)($journal['source_ref'] ?? ''));
         if ((string)($journal['source_type'] ?? '') === 'expense_register' && $sourceRef !== '') {
+            $claimReference = preg_replace('/:revision-of:\d+.*$/', '', $sourceRef) ?: $sourceRef;
             return \eel_accounts\Renderer\WorkflowHandoffRenderer::button(
                 'expense_claims',
                 'Review Claim',
@@ -593,7 +610,7 @@ final class _journals_listCard extends CardBaseFramework
                     'company_id' => $companyId,
                     'accounting_period_id' => $accountingPeriodId,
                     'show_card' => 'expense_claim_editor',
-                    'claim_reference_code' => $sourceRef,
+                    'claim_reference_code' => $claimReference,
                 ],
                 'button button-inline primary'
             );

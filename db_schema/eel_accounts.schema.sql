@@ -792,10 +792,40 @@ CREATE TABLE `journals` (
   KEY `idx_journals_accounting_period_date` (`accounting_period_id`,`journal_date`),
   KEY `idx_journals_company_period_posted_date` (`company_id`,`accounting_period_id`,`is_posted`,`journal_date`),
   KEY `idx_journals_source_type` (`source_type`),
-  CONSTRAINT `fk_journals_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_journals_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `fk_journals_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_journals_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `journal_reversals`
+--
+
+DROP TABLE IF EXISTS `journal_reversals`;
+CREATE TABLE `journal_reversals` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `source_journal_id` bigint(20) NOT NULL,
+  `reversal_journal_id` bigint(20) NOT NULL,
+  `replacement_journal_id` bigint(20) DEFAULT NULL,
+  `effective_date` date NOT NULL,
+  `idempotency_key` varchar(128) NOT NULL,
+  `reason` text NOT NULL,
+  `created_by` varchar(100) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_journal_reversals_source` (`source_journal_id`),
+  UNIQUE KEY `uq_journal_reversals_reversal` (`reversal_journal_id`),
+  UNIQUE KEY `uq_journal_reversals_company_key` (`company_id`,`idempotency_key`),
+  KEY `idx_journal_reversals_period` (`company_id`,`accounting_period_id`,`effective_date`),
+  KEY `idx_journal_reversals_replacement` (`replacement_journal_id`),
+  CONSTRAINT `fk_journal_reversals_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_journal_reversals_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_journal_reversals_source` FOREIGN KEY (`source_journal_id`) REFERENCES `journals` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_journal_reversals_reversal` FOREIGN KEY (`reversal_journal_id`) REFERENCES `journals` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_journal_reversals_replacement` FOREIGN KEY (`replacement_journal_id`) REFERENCES `journals` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Table structure for table `dividend_vouchers`
@@ -932,8 +962,14 @@ CREATE TABLE `hmrc_obligations` (
   `source` enum('calculated','manual','hmrc_notice','journal','bank_match') NOT NULL DEFAULT 'calculated',
   `source_reference` varchar(255) DEFAULT NULL,
   `related_journal_id` bigint(20) DEFAULT NULL,
+  `reversal_journal_id` bigint(20) DEFAULT NULL,
   `related_fine_id` int(11) DEFAULT NULL,
   `checked_at` datetime DEFAULT NULL,
+  `cancelled_on` date DEFAULT NULL,
+  `cancelled_at` datetime DEFAULT NULL,
+  `cancelled_by` varchar(100) DEFAULT NULL,
+  `cancellation_reason` text DEFAULT NULL,
+  `superseded_by_obligation_id` int(11) DEFAULT NULL,
   `notes` text DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
@@ -946,9 +982,37 @@ CREATE TABLE `hmrc_obligations` (
   KEY `idx_hmrc_obligations_company_due_status` (`company_id`,`due_date`,`status`),
   KEY `fk_hmrc_obligations_accounting_period` (`accounting_period_id`),
   KEY `fk_hmrc_obligations_journal` (`related_journal_id`),
+  KEY `idx_hmrc_obligations_reversal_journal` (`reversal_journal_id`),
+  KEY `idx_hmrc_obligations_superseded_by` (`superseded_by_obligation_id`),
   CONSTRAINT `fk_hmrc_obligations_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_hmrc_obligations_journal` FOREIGN KEY (`related_journal_id`) REFERENCES `journals` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_hmrc_obligations_reversal_journal` FOREIGN KEY (`reversal_journal_id`) REFERENCES `journals` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_hmrc_obligations_superseded_by` FOREIGN KEY (`superseded_by_obligation_id`) REFERENCES `hmrc_obligations` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_hmrc_obligations_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Table structure for table `hmrc_obligation_credit_transfers`
+--
+
+DROP TABLE IF EXISTS `hmrc_obligation_credit_transfers`;
+CREATE TABLE `hmrc_obligation_credit_transfers` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `from_obligation_id` int(11) NOT NULL,
+  `to_obligation_id` int(11) NOT NULL,
+  `amount` decimal(12,2) NOT NULL,
+  `reason` text NOT NULL,
+  `created_by` varchar(100) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_hmrc_credit_transfer_pair` (`from_obligation_id`,`to_obligation_id`),
+  KEY `idx_hmrc_credit_transfer_company` (`company_id`,`created_at`),
+  KEY `idx_hmrc_credit_transfer_to` (`to_obligation_id`),
+  CONSTRAINT `chk_hmrc_credit_transfer_positive` CHECK (`amount` > 0),
+  CONSTRAINT `fk_hmrc_credit_transfer_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_hmrc_credit_transfer_from` FOREIGN KEY (`from_obligation_id`) REFERENCES `hmrc_obligations` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_hmrc_credit_transfer_to` FOREIGN KEY (`to_obligation_id`) REFERENCES `hmrc_obligations` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -3651,7 +3715,11 @@ INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_21_001_companies_house_accounts_schemas.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_22_002_append_only_journal_corrections.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_22_003_dividend_voucher_shareholder_links.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_22_004_append_only_journal_guards.sql');
 INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
 SELECT DISTINCT `role_id`, 'tax_companies_house_accounts_schemas'
 FROM `role_card_permissions`
@@ -3798,6 +3866,37 @@ INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
 SELECT DISTINCT `role_id`, 'tax_frc_taxonomy'
 FROM `role_card_permissions`
 WHERE `card_key` = 'tax_rates_ct600_rim';
+
+DROP TRIGGER IF EXISTS `trg_journals_append_only_update`;
+CREATE TRIGGER `trg_journals_append_only_update`
+BEFORE UPDATE ON `journals`
+FOR EACH ROW
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Journals are append-only; post a reversal and replacement';
+DROP TRIGGER IF EXISTS `trg_journals_append_only_delete`;
+CREATE TRIGGER `trg_journals_append_only_delete`
+BEFORE DELETE ON `journals`
+FOR EACH ROW
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Journals are append-only; post a reversal instead of deleting';
+DROP TRIGGER IF EXISTS `trg_journal_lines_append_only_update`;
+CREATE TRIGGER `trg_journal_lines_append_only_update`
+BEFORE UPDATE ON `journal_lines`
+FOR EACH ROW
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Journal lines are append-only; post a reversal and replacement';
+DROP TRIGGER IF EXISTS `trg_journal_lines_append_only_delete`;
+CREATE TRIGGER `trg_journal_lines_append_only_delete`
+BEFORE DELETE ON `journal_lines`
+FOR EACH ROW
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Journal lines are append-only; post a reversal instead of deleting';
+DROP TRIGGER IF EXISTS `trg_journal_metadata_append_only_update`;
+CREATE TRIGGER `trg_journal_metadata_append_only_update`
+BEFORE UPDATE ON `journal_entry_metadata`
+FOR EACH ROW
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Posted journal metadata is append-only';
+DROP TRIGGER IF EXISTS `trg_journal_metadata_append_only_delete`;
+CREATE TRIGGER `trg_journal_metadata_append_only_delete`
+BEFORE DELETE ON `journal_entry_metadata`
+FOR EACH ROW
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Posted journal metadata is append-only';
 
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 

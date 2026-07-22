@@ -517,7 +517,8 @@ final class VehicleService
 
         $journalId = (int)($asset['linked_journal_id'] ?? 0);
         if ($journalId > 0) {
-            $this->updateLinkedJournalLineNominal($journalId, $targetNominalId, $oldNominalId, (float)($asset['cost'] ?? 0));
+            $replacementJournalId = $this->replaceLinkedJournalLineNominal($journalId, $targetNominalId, $oldNominalId, (float)($asset['cost'] ?? 0));
+            $this->persistAssetLinkedJournal((int)($asset['id'] ?? 0), $replacementJournalId);
         }
     }
 
@@ -557,7 +558,7 @@ final class VehicleService
         }
 
         if ($defaultBankNominalId <= 0) {
-            $this->updateLinkedJournalLineNominal($journalId, $targetNominalId, $oldNominalId, (float)($asset['cost'] ?? 0));
+            $journalId = $this->replaceLinkedJournalLineNominal($journalId, $targetNominalId, $oldNominalId, (float)($asset['cost'] ?? 0));
         }
 
         $this->persistAssetLinkedJournal((int)($asset['id'] ?? 0), $journalId);
@@ -582,19 +583,24 @@ final class VehicleService
             return 0;
         }
 
+        $reversalClause = \InterfaceDB::tableExists('journal_reversals')
+            ? ' AND NOT EXISTS (SELECT 1 FROM journal_reversals jr WHERE jr.source_journal_id = j.id)'
+            : '';
         return (int)\InterfaceDB::fetchColumn(
-            'SELECT id
-             FROM journals
-             WHERE company_id = :company_id
-               AND source_type = :source_type
-               AND source_ref = :source_ref
-               AND is_posted = 1
-             ORDER BY id DESC
+            'SELECT j.id
+             FROM journals j
+             WHERE j.company_id = :company_id
+               AND j.source_type = :source_type
+               AND (j.source_ref = :source_ref OR j.source_ref LIKE :revision_prefix)
+               AND j.is_posted = 1'
+            . $reversalClause . '
+             ORDER BY j.id DESC
              LIMIT 1',
             [
                 'company_id' => $companyId,
                 'source_type' => 'bank_csv',
                 'source_ref' => 'transaction:' . $transactionId,
+                'revision_prefix' => 'transaction:' . $transactionId . ':revision-of:%',
             ]
         );
     }
@@ -614,25 +620,72 @@ final class VehicleService
         );
     }
 
-    private function updateLinkedJournalLineNominal(int $journalId, int $targetNominalId, int $oldNominalId, float $cost): void
+    private function replaceLinkedJournalLineNominal(int $journalId, int $targetNominalId, int $oldNominalId, float $cost): int
     {
         if ($journalId <= 0 || $targetNominalId <= 0 || $oldNominalId <= 0) {
-            return;
+            return $journalId;
         }
 
-        \InterfaceDB::prepareExecute(
-            'UPDATE journal_lines
-             SET nominal_account_id = :new_nominal_id
-             WHERE journal_id = :journal_id
-               AND nominal_account_id = :old_nominal_id
-               AND ABS(debit - :cost) <= 0.01',
-            [
-                'new_nominal_id' => $targetNominalId,
-                'journal_id' => $journalId,
-                'old_nominal_id' => $oldNominalId,
-                'cost' => round($cost, 2),
-            ]
+        $journal = \InterfaceDB::fetchOne(
+            'SELECT id, company_id, accounting_period_id, source_type, source_ref, journal_date, description
+             FROM journals WHERE id = :journal_id LIMIT 1',
+            ['journal_id' => $journalId]
         );
+        if (!is_array($journal)) {
+            throw new \RuntimeException('The vehicle source journal could not be found.');
+        }
+        $changed = false;
+        $lines = array_map(static function (array $line) use ($targetNominalId, $oldNominalId, $cost, &$changed): array {
+            $nominalAccountId = (int)$line['nominal_account_id'];
+            if (!$changed && $nominalAccountId === $oldNominalId && abs((float)$line['debit'] - round($cost, 2)) <= 0.01) {
+                $nominalAccountId = $targetNominalId;
+                $changed = true;
+            }
+            return [
+                'nominal_account_id' => $nominalAccountId,
+                'director_id' => (int)($line['director_id'] ?? 0) ?: null,
+                'party_id' => (int)($line['party_id'] ?? 0) ?: null,
+                'company_account_id' => (int)($line['company_account_id'] ?? 0) ?: null,
+                'debit' => (float)$line['debit'],
+                'credit' => (float)$line['credit'],
+                'line_description' => (string)($line['line_description'] ?? ''),
+            ];
+        }, \InterfaceDB::fetchAll(
+            'SELECT nominal_account_id, director_id, party_id, company_account_id, debit, credit, line_description
+             FROM journal_lines WHERE journal_id = :journal_id ORDER BY id',
+            ['journal_id' => $journalId]
+        ));
+        if (!$changed) {
+            throw new \RuntimeException('The vehicle journal line to be reclassified could not be found.');
+        }
+
+        $correction = (new JournalCorrectionService())->reverseAndReplaceJournal(
+            (int)$journal['company_id'],
+            $journalId,
+            (int)$journal['accounting_period_id'],
+            (string)$journal['journal_date'],
+            'Vehicle classification changed.',
+            [
+                'accounting_period_id' => (int)$journal['accounting_period_id'],
+                'journal_tag' => 'vehicle_reclassification',
+                'journal_key' => 'source:' . $journalId,
+                'journal_date' => (string)$journal['journal_date'],
+                'description' => (string)$journal['description'],
+                'lines' => $lines,
+                'entry_mode' => 'system_generated',
+                'source_type' => (string)$journal['source_type'],
+                'source_ref' => trim((string)($journal['source_ref'] ?? '')) !== ''
+                    ? (string)$journal['source_ref'] . ':revision-of:' . $journalId
+                    : null,
+                'notes' => 'Append-only replacement after vehicle type reclassification.',
+            ],
+            'web_app',
+            'vehicle-reclassification:' . $journalId
+        );
+        if (empty($correction['success'])) {
+            throw new \RuntimeException((string)(($correction['errors'] ?? [])[0] ?? 'The vehicle journal could not be replaced.'));
+        }
+        return (int)($correction['replacement_journal_id'] ?? 0) ?: $journalId;
     }
 
     private function nominalIdForVehicleType(string $vehicleType): int

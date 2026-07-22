@@ -664,18 +664,23 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
                 'SELECT status FROM expense_claims WHERE id = :id',
                 ['id' => (int)$fixture['claim_id']]
             ));
-            $harness->assertSame($journalId, (int)\InterfaceDB::fetchColumn(
+            $replacementJournalId = (int)\InterfaceDB::fetchColumn(
                 'SELECT posted_journal_id FROM expense_claims WHERE id = :id',
                 ['id' => (int)$fixture['claim_id']]
-            ));
-            $harness->assertSame(0, (int)\InterfaceDB::fetchColumn(
+            );
+            $harness->assertTrue($replacementJournalId > 0 && $replacementJournalId !== $journalId);
+            $harness->assertSame(1, (int)\InterfaceDB::fetchColumn(
                 'SELECT COUNT(*) FROM journal_lines WHERE journal_id = :journal_id AND nominal_account_id = :nominal_account_id AND debit = 108.75',
                 ['journal_id' => $journalId, 'nominal_account_id' => (int)$fixture['line_nominal_id']]
             ));
             $harness->assertSame(1, (int)\InterfaceDB::fetchColumn(
                 'SELECT COUNT(*) FROM journal_lines WHERE journal_id = :journal_id AND nominal_account_id = :nominal_account_id AND debit = 108.75',
-                ['journal_id' => $journalId, 'nominal_account_id' => (int)$fixture['asset_cost_nominal_id']]
+                ['journal_id' => $replacementJournalId, 'nominal_account_id' => (int)$fixture['asset_cost_nominal_id']]
             ));
+            $harness->assertSame(1, \InterfaceDB::countWhere('journal_reversals', [
+                'source_journal_id' => $journalId,
+                'replacement_journal_id' => $replacementJournalId,
+            ]));
             $asset = \InterfaceDB::fetchOne(
                 'SELECT id, linked_journal_id, linked_expense_claim_line_id, category, cost
                  FROM asset_register
@@ -683,7 +688,7 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
                  LIMIT 1',
                 ['line_id' => $lineId]
             );
-            $harness->assertSame($journalId, (int)($asset['linked_journal_id'] ?? 0));
+            $harness->assertSame($replacementJournalId, (int)($asset['linked_journal_id'] ?? 0));
             $harness->assertSame($lineId, (int)($asset['linked_expense_claim_line_id'] ?? 0));
             $harness->assertSame('tools_equipment', (string)($asset['category'] ?? ''));
             $harness->assertSame(108.75, (float)($asset['cost'] ?? 0));

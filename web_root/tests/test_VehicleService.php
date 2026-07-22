@@ -43,17 +43,24 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame(true, (bool)($result['success'] ?? false));
                 $carNominalId = vehicleServiceNominalId('1321');
                 $rebuiltJournalId = (int)\InterfaceDB::fetchColumn(
-                    'SELECT id FROM journals WHERE company_id = :company_id AND source_type = :source_type AND source_ref = :source_ref ORDER BY id DESC LIMIT 1',
+                    'SELECT j.id FROM journals j
+                     WHERE j.company_id = :company_id
+                       AND j.source_type = :source_type
+                       AND (j.source_ref = :source_ref OR j.source_ref LIKE :revision_prefix)
+                       AND NOT EXISTS (SELECT 1 FROM journal_reversals jr WHERE jr.source_journal_id = j.id)
+                     ORDER BY j.id DESC LIMIT 1',
                     [
                         'company_id' => $fixture['company_id'],
                         'source_type' => 'bank_csv',
                         'source_ref' => 'transaction:' . $fixture['transaction_id'],
+                        'revision_prefix' => 'transaction:' . $fixture['transaction_id'] . ':revision-of:%',
                     ]
                 );
                 $harness->assertSame($carNominalId, (int)\InterfaceDB::fetchColumn('SELECT nominal_account_id FROM asset_register WHERE id = :id', ['id' => $fixture['transaction_asset_id']]));
                 $harness->assertSame($rebuiltJournalId, (int)\InterfaceDB::fetchColumn('SELECT linked_journal_id FROM asset_register WHERE id = :id', ['id' => $fixture['transaction_asset_id']]));
                 $harness->assertSame($carNominalId, (int)\InterfaceDB::fetchColumn('SELECT nominal_account_id FROM transactions WHERE id = :id', ['id' => $fixture['transaction_id']]));
                 $harness->assertSame($carNominalId, (int)\InterfaceDB::fetchColumn('SELECT nominal_account_id FROM journal_lines WHERE journal_id = :id AND debit = 20000.00 LIMIT 1', ['id' => $rebuiltJournalId]));
+                $harness->assertSame(1, \InterfaceDB::countWhere('journal_reversals', ['replacement_journal_id' => $rebuiltJournalId]));
                 $harness->assertSame('AB12 CDE', (string)\InterfaceDB::fetchColumn('SELECT registration_mark FROM asset_vehicle_details WHERE asset_id = :id', ['id' => $fixture['transaction_asset_id']]));
                 $harness->assertSame('Blue', (string)\InterfaceDB::fetchColumn('SELECT colour FROM asset_vehicle_details WHERE asset_id = :id', ['id' => $fixture['transaction_asset_id']]));
             });
@@ -83,9 +90,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame(true, (bool)($result['success'] ?? false));
                 $vanNominalId = vehicleServiceNominalId('1322');
                 $harness->assertSame($vanNominalId, (int)\InterfaceDB::fetchColumn('SELECT nominal_account_id FROM asset_register WHERE id = :id', ['id' => $fixture['expense_asset_id']]));
-                $harness->assertSame((int)$fixture['expense_journal_id'], (int)\InterfaceDB::fetchColumn('SELECT linked_journal_id FROM asset_register WHERE id = :id', ['id' => $fixture['expense_asset_id']]));
+                $replacementJournalId = (int)\InterfaceDB::fetchColumn('SELECT linked_journal_id FROM asset_register WHERE id = :id', ['id' => $fixture['expense_asset_id']]);
+                $harness->assertTrue($replacementJournalId > 0 && $replacementJournalId !== (int)$fixture['expense_journal_id']);
                 $harness->assertSame($vanNominalId, (int)\InterfaceDB::fetchColumn('SELECT nominal_account_id FROM expense_claim_lines WHERE id = :id', ['id' => $fixture['expense_line_id']]));
-                $harness->assertSame($vanNominalId, (int)\InterfaceDB::fetchColumn('SELECT nominal_account_id FROM journal_lines WHERE journal_id = :id AND debit = 18000.00 LIMIT 1', ['id' => $fixture['expense_journal_id']]));
+                $harness->assertSame(vehicleServiceNominalId('1320'), (int)\InterfaceDB::fetchColumn('SELECT nominal_account_id FROM journal_lines WHERE journal_id = :id AND debit = 18000.00 LIMIT 1', ['id' => $fixture['expense_journal_id']]));
+                $harness->assertSame($vanNominalId, (int)\InterfaceDB::fetchColumn('SELECT nominal_account_id FROM journal_lines WHERE journal_id = :id AND debit = 18000.00 LIMIT 1', ['id' => $replacementJournalId]));
+                $harness->assertSame(1, \InterfaceDB::countWhere('journal_reversals', [
+                    'source_journal_id' => (int)$fixture['expense_journal_id'],
+                    'replacement_journal_id' => $replacementJournalId,
+                ]));
                 $harness->assertSame('posted', (string)\InterfaceDB::fetchColumn('SELECT status FROM expense_claims WHERE id = :id', ['id' => $fixture['expense_claim_id']]));
             });
         });

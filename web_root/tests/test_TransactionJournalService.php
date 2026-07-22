@@ -135,6 +135,45 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame($fixture['account_id'], (int)$journalLines[2]['company_account_id']);
             $harness->assertSame('0.00', (string)$journalLines[2]['debit']);
             $harness->assertSame('146.36', (string)$journalLines[2]['credit']);
+
+            $created = $service->syncJournalForTransaction(
+                $fixture['transaction_id'],
+                $fixture['source_nominal_id'],
+                'test',
+                true
+            );
+            $harness->assertSame(true, (bool)($created['success'] ?? false));
+            $sourceJournalId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM journals WHERE company_id = :company_id AND source_ref = :source_ref',
+                ['company_id' => $fixture['company_id'], 'source_ref' => 'transaction:' . $fixture['transaction_id']]
+            );
+            $harness->assertTrue($sourceJournalId > 0);
+
+            $changedLine = $splitService->saveLine($fixture['company_id'], (int)$lines[0]['id'], [
+                'split_line_description' => 'AMZNMKTPLACE reclassified item',
+                'split_line_amount' => '89.99',
+                'nominal_account_id' => $fixture['materials_nominal_id'],
+            ]);
+            $harness->assertSame(true, (bool)($changedLine['success'] ?? false));
+            $rebuilt = $service->syncJournalForTransaction(
+                $fixture['transaction_id'],
+                $fixture['source_nominal_id'],
+                'test',
+                true
+            );
+            $harness->assertSame(true, (bool)($rebuilt['success'] ?? false));
+            $harness->assertSame(1, InterfaceDB::countWhere('journals', ['id' => $sourceJournalId]));
+            $lifecycle = InterfaceDB::fetchOne(
+                'SELECT reversal_journal_id, replacement_journal_id
+                 FROM journal_reversals WHERE source_journal_id = :source_journal_id',
+                ['source_journal_id' => $sourceJournalId]
+            );
+            $harness->assertTrue((int)($lifecycle['reversal_journal_id'] ?? 0) > 0);
+            $harness->assertTrue((int)($lifecycle['replacement_journal_id'] ?? 0) > 0);
+            $harness->assertSame(3, (int)InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM journals WHERE company_id = :company_id',
+                ['company_id' => $fixture['company_id']]
+            ));
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();

@@ -16,7 +16,7 @@ $harness->run(\eel_accounts\Service\DirectorLoanAttributionService::class, stati
     GeneratedServiceClassTestHarness $harness,
     \eel_accounts\Service\DirectorLoanAttributionService $service
 ): void {
-    $harness->check(\eel_accounts\Service\DirectorLoanAttributionService::class, 'assigns the journal source of truth and records an audit without changing accounting values', static function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\DirectorLoanAttributionService::class, 'reverses and replaces the journal while recording an attribution audit', static function () use ($harness, $service): void {
         foreach (['company_directors', 'company_parties', 'company_party_roles'] as $table) {
             if (!InterfaceDB::tableExists($table)) {
                 $harness->skip($table . ' schema is not available.');
@@ -26,7 +26,8 @@ $harness->run(\eel_accounts\Service\DirectorLoanAttributionService::class, stati
 
         InterfaceDB::beginTransaction();
         try {
-            StandardNominalTestFixture::ensureNominals(['1200', '2100']);
+            StandardNominalTestFixture::ensureNominals(['1000', '1200', '2100']);
+            $counterNominalId = StandardNominalTestFixture::id('1000');
             $assetNominalId = StandardNominalTestFixture::id('1200');
             $liabilityNominalId = StandardNominalTestFixture::id('2100');
             $marker = substr(hash('sha256', __FILE__ . microtime(true)), 0, 10);
@@ -94,15 +95,20 @@ $harness->run(\eel_accounts\Service\DirectorLoanAttributionService::class, stati
                  VALUES (:journal_id, :nominal_id, 253.00, 0.00, :description)',
                 ['journal_id' => $journalId, 'nominal_id' => $assetNominalId, 'description' => 'External counterparty advanced funds for primary director']
             );
+            InterfaceDB::prepareExecute(
+                'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit, line_description)
+                 VALUES (:journal_id, :nominal_id, 0.00, 253.00, :description)',
+                ['journal_id' => $journalId, 'nominal_id' => $counterNominalId, 'description' => 'DLA attribution fixture counter-entry']
+            );
             $lineId = (int)InterfaceDB::fetchColumn(
-                'SELECT id FROM journal_lines WHERE journal_id = :journal_id',
-                ['journal_id' => $journalId]
+                'SELECT id FROM journal_lines WHERE journal_id = :journal_id AND nominal_account_id = :nominal_account_id',
+                ['journal_id' => $journalId, 'nominal_account_id' => $assetNominalId]
             );
 
             $result = $service->assignJournalLine($companyId, $lineId, $partyId, 'test', 'Test attribution.');
 
             $harness->assertSame(true, (bool)($result['success'] ?? false));
-            $harness->assertSame($partyId, (int)InterfaceDB::fetchColumn(
+            $harness->assertSame(0, (int)InterfaceDB::fetchColumn(
                 'SELECT party_id FROM journal_lines WHERE id = :id',
                 ['id' => $lineId]
             ));
@@ -115,6 +121,17 @@ $harness->run(\eel_accounts\Service\DirectorLoanAttributionService::class, stati
                 'source_type' => 'journal_line',
                 'source_id' => $lineId,
                 'new_party_id' => $partyId,
+            ]));
+
+            $replacementJournalId = (int)($result['replacement_journal_id'] ?? 0);
+            $harness->assertTrue($replacementJournalId > 0);
+            $harness->assertSame($partyId, (int)InterfaceDB::fetchColumn(
+                'SELECT party_id FROM journal_lines WHERE journal_id = :journal_id AND nominal_account_id = :nominal_account_id',
+                ['journal_id' => $replacementJournalId, 'nominal_account_id' => $assetNominalId]
+            ));
+            $harness->assertSame(1, InterfaceDB::countWhere('journal_reversals', [
+                'source_journal_id' => $journalId,
+                'replacement_journal_id' => $replacementJournalId,
             ]));
 
             $missing = $service->assignJournalLine($companyId, $lineId, null, 'test');

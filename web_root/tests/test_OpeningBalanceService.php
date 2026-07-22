@@ -11,7 +11,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(\eel_accounts\Service\OpeningBalanceService::class, static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\OpeningBalanceService $service): void {
-    $harness->check(\eel_accounts\Service\OpeningBalanceService::class, 'replace de-posts existing opening balance before saving replacement', static function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\OpeningBalanceService::class, 'replace preserves and reverses the existing opening balance before saving replacement', static function () use ($harness, $service): void {
         openingBalanceServiceRequireTables($harness);
 
         \InterfaceDB::beginTransaction();
@@ -63,8 +63,16 @@ $harness->run(\eel_accounts\Service\OpeningBalanceService::class, static functio
             );
 
             $harness->assertSame(2, count($rows));
-            $harness->assertSame(1, count(array_filter($rows, static fn(array $row): bool => (int)($row['is_posted'] ?? 0) === 1)));
+            $harness->assertSame(2, count(array_filter($rows, static fn(array $row): bool => (int)($row['is_posted'] ?? 0) === 1)));
             $harness->assertSame('Opening balance replacement', (string)($rows[1]['description'] ?? ''));
+            $reversal = \InterfaceDB::fetchOne(
+                'SELECT source_journal_id, reversal_journal_id, replacement_journal_id
+                 FROM journal_reversals WHERE source_journal_id = :source_journal_id',
+                ['source_journal_id' => (int)$rows[0]['id']]
+            );
+            $harness->assertTrue(is_array($reversal));
+            $harness->assertTrue((int)($reversal['reversal_journal_id'] ?? 0) > 0);
+            $harness->assertSame((int)$rows[1]['id'], (int)($reversal['replacement_journal_id'] ?? 0));
         } finally {
             if (\InterfaceDB::inTransaction()) {
                 \InterfaceDB::rollBack();

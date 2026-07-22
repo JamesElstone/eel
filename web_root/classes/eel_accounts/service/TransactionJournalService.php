@@ -127,7 +127,21 @@ final class TransactionJournalService
                 ];
             }
 
-            $this->deleteJournal((int)$existingJournal['id']);
+            $reversal = (new JournalCorrectionService())->reverseJournal(
+                (int)$transaction['company_id'],
+                (int)$existingJournal['id'],
+                (int)$transaction['accounting_period_id'],
+                (string)$transaction['txn_date'],
+                'Transaction journal removed after the source transaction was reclassified.',
+                $changedBy,
+                'transaction:' . (int)$transaction['id'] . ':remove-journal:' . (int)$existingJournal['id']
+            );
+            if (empty($reversal['success'])) {
+                return [
+                    'success' => false,
+                    'errors' => (array)($reversal['errors'] ?? ['The derived journal could not be reversed.']),
+                ];
+            }
 
             return [
                 'success' => true,
@@ -164,13 +178,37 @@ final class TransactionJournalService
 
         try {
             if ($existingJournal !== null) {
-                $this->deleteJournal((int)$existingJournal['id']);
+                $correctionService = new JournalCorrectionService();
+                $reversal = $correctionService->reverseJournal(
+                    (int)$transaction['company_id'],
+                    (int)$existingJournal['id'],
+                    (int)$transaction['accounting_period_id'],
+                    (string)$transaction['txn_date'],
+                    'Transaction journal replaced after the source transaction classification changed.',
+                    $changedBy,
+                    'transaction:' . (int)$transaction['id'] . ':replace-journal:' . (int)$existingJournal['id']
+                );
+                if (empty($reversal['success'])) {
+                    throw new \RuntimeException((string)(($reversal['errors'] ?? [])[0] ?? 'The previous transaction journal could not be reversed.'));
+                }
+                $desiredJournal['source_ref'] = $sourceRef . ':revision-of:' . (int)$existingJournal['id'];
             }
 
             $journalId = $this->insertJournal($desiredJournal, $changedBy);
 
             foreach ($desiredJournal['lines'] as $line) {
                 $this->insertJournalLine($journalId, $line);
+            }
+
+            if ($existingJournal !== null) {
+                $link = $correctionService->linkReplacementJournal(
+                    (int)$transaction['company_id'],
+                    (int)$existingJournal['id'],
+                    $journalId
+                );
+                if (empty($link['success'])) {
+                    throw new \RuntimeException((string)(($link['errors'] ?? [])[0] ?? 'The replacement transaction journal could not be linked.'));
+                }
             }
 
             if ($ownsTransaction) {
@@ -205,10 +243,21 @@ final class TransactionJournalService
             return false;
         }
 
-        return \InterfaceDB::countWhere('journals', [
-            'source_type' => 'bank_csv',
-            'source_ref' => $this->sourceRefForTransaction($transactionId),
-        ]) > 0;
+        $sourceRef = $this->sourceRefForTransaction($transactionId);
+        $reversalClause = \InterfaceDB::tableExists('journal_reversals')
+            ? ' AND NOT EXISTS (SELECT 1 FROM journal_reversals jr WHERE jr.source_journal_id = j.id)'
+            : '';
+        return (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*) FROM journals j
+             WHERE j.source_type = :source_type
+               AND (j.source_ref = :source_ref OR j.source_ref LIKE :revision_prefix)'
+            . $reversalClause,
+            [
+                'source_type' => 'bank_csv',
+                'source_ref' => $sourceRef,
+                'revision_prefix' => $sourceRef . ':revision-of:%',
+            ]
+        ) > 0;
     }
 
     public function removeJournalForTransaction(int $transactionId): array
@@ -246,7 +295,22 @@ final class TransactionJournalService
             ];
         }
 
-        $this->deleteJournal((int)$existingJournal['id']);
+        $reversal = (new JournalCorrectionService())->reverseJournal(
+            (int)$transaction['company_id'],
+            (int)$existingJournal['id'],
+            (int)$transaction['accounting_period_id'],
+            (string)$transaction['txn_date'],
+            'Transaction-derived journal removed from the active ledger state.',
+            'web_app',
+            'transaction:' . (int)$transaction['id'] . ':remove-journal:' . (int)$existingJournal['id']
+        );
+        if (empty($reversal['success'])) {
+            return [
+                'success' => false,
+                'removed' => false,
+                'errors' => (array)($reversal['errors'] ?? ['The transaction journal could not be reversed.']),
+            ];
+        }
 
         return [
             'success' => true,
@@ -385,6 +449,21 @@ final class TransactionJournalService
         $limitSql = $limit === null
             ? ''
             : ' LIMIT ' . max(1, $limit) . ' OFFSET ' . max(0, $offset);
+        $hasReversals = \InterfaceDB::tableExists('journal_reversals');
+        $lifecycleSelect = $hasReversals
+            ? ', jr_source.reversal_journal_id AS reversed_by_journal_id,
+                 jr_source.replacement_journal_id,
+                 jr_reversal.source_journal_id AS reversal_of_journal_id,
+                 jr_replacement.source_journal_id AS replacement_of_journal_id'
+            : ', NULL AS reversed_by_journal_id,
+                 NULL AS replacement_journal_id,
+                 NULL AS reversal_of_journal_id,
+                 NULL AS replacement_of_journal_id';
+        $lifecycleJoins = $hasReversals
+            ? ' LEFT JOIN journal_reversals jr_source ON jr_source.source_journal_id = j.id
+                LEFT JOIN journal_reversals jr_reversal ON jr_reversal.reversal_journal_id = j.id
+                LEFT JOIN journal_reversals jr_replacement ON jr_replacement.replacement_journal_id = j.id'
+            : '';
         $stmt = \InterfaceDB::prepare(
             "SELECT j.id,
                     j.company_id,
@@ -394,7 +473,9 @@ final class TransactionJournalService
                     j.journal_date,
                     j.description,
                     j.is_posted
+                    {$lifecycleSelect}
              FROM journals j
+             {$lifecycleJoins}
              WHERE " . implode(' AND ', $where) . "
              ORDER BY j.journal_date DESC, j.id DESC
              {$limitSql}"
@@ -917,6 +998,9 @@ final class TransactionJournalService
     }
 
     private function fetchJournalBySourceRef(int $companyId, string $sourceRef): ?array {
+        $reversalClause = \InterfaceDB::tableExists('journal_reversals')
+            ? ' AND NOT EXISTS (SELECT 1 FROM journal_reversals jr WHERE jr.source_journal_id = j.id)'
+            : '';
         $stmt = \InterfaceDB::prepare(
             'SELECT id,
                     company_id,
@@ -926,16 +1010,19 @@ final class TransactionJournalService
                     journal_date,
                     description,
                     is_posted
-             FROM journals
-             WHERE company_id = :company_id
-               AND source_type = :source_type
-               AND source_ref = :source_ref
+             FROM journals j
+             WHERE j.company_id = :company_id
+               AND j.source_type = :source_type
+               AND (j.source_ref = :source_ref OR j.source_ref LIKE :revision_prefix)'
+             . $reversalClause . '
+             ORDER BY j.id DESC
              LIMIT 1'
         );
         $stmt->execute([
             'company_id' => $companyId,
             'source_type' => 'bank_csv',
             'source_ref' => $sourceRef,
+            'revision_prefix' => $sourceRef . ':revision-of:%',
         ]);
         $journal = $stmt->fetch();
 
@@ -1244,14 +1331,6 @@ final class TransactionJournalService
         $id = $stmt->fetchColumn();
 
         return $id !== false ? (int)$id : null;
-    }
-
-    private function deleteJournal(int $journalId): void {
-        $stmt = \InterfaceDB::prepare(
-            'DELETE FROM journals
-             WHERE id = :id'
-        );
-        $stmt->execute(['id' => $journalId]);
     }
 
     private function sourceRefForTransaction(int $transactionId): string {

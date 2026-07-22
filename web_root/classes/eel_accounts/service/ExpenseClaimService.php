@@ -1933,6 +1933,13 @@ final class ExpenseClaimService
             );
 
             $this->rebuildPostedClaimJournal($companyId, $claim, $journalId, $payableNominalId);
+            $replacementJournalId = (int)\InterfaceDB::fetchColumn(
+                'SELECT posted_journal_id FROM expense_claims WHERE id = :claim_id AND company_id = :company_id',
+                ['claim_id' => $claimId, 'company_id' => $companyId]
+            );
+            if ($replacementJournalId <= 0) {
+                throw new \RuntimeException('The replacement expense claim journal could not be reloaded.');
+            }
 
             if ($assetId <= 0) {
                 $assetId = (int)\InterfaceDB::fetchColumn(
@@ -1944,7 +1951,7 @@ final class ExpenseClaimService
                 );
             }
             if ($assetId > 0) {
-                $this->syncAssetRecordForPostedLine($companyId, $assetId, $lineId, $journalId, $targetNominalId, (string)$normalised['values']['category']);
+                $this->syncAssetRecordForPostedLine($companyId, $assetId, $lineId, $replacementJournalId, $targetNominalId, (string)$normalised['values']['category']);
                 $this->setGeneratedAssetForLine($lineId, $assetId);
             }
 
@@ -3453,8 +3460,8 @@ final class ExpenseClaimService
         }
 
         $assetService = new \eel_accounts\Service\AssetService();
-        \InterfaceDB::prepare('DELETE FROM journal_lines WHERE journal_id = :journal_id')
-            ->execute(['journal_id' => $journalId]);
+        $replacementLines = [];
+        $pendingAssets = [];
 
         foreach ($lines as $line) {
             if ((string)($line['line_type'] ?? 'expense') === 'asset') {
@@ -3464,32 +3471,15 @@ final class ExpenseClaimService
                 }
 
                 $values = (array)$normalisedAsset['values'];
-                $this->insertJournalLine(
-                    $journalId,
-                    (int)$values['nominal_account_id'],
-                    round((float)$line['amount'], 2),
-                    0.0,
-                    (string)$line['description']
-                );
+                $replacementLines[] = [
+                    'nominal_account_id' => (int)$values['nominal_account_id'],
+                    'debit' => round((float)$line['amount'], 2),
+                    'credit' => 0.0,
+                    'line_description' => (string)$line['description'],
+                ];
 
                 if ((int)($line['generated_asset_id'] ?? 0) <= 0) {
-                    $asset = $assetService->createAssetRecordFromValues($values, [
-                        'linked_journal_id' => $journalId,
-                        'linked_transaction_id' => null,
-                        'linked_expense_claim_line_id' => (int)$line['id'],
-                    ]);
-                    if ($asset === null) {
-                        throw new \RuntimeException('The asset could not be reloaded after save.');
-                    }
-                    \InterfaceDB::prepare(
-                        'UPDATE expense_claim_line_assets
-                         SET generated_asset_id = :generated_asset_id,
-                             updated_at = CURRENT_TIMESTAMP
-                         WHERE expense_claim_line_id = :expense_claim_line_id'
-                    )->execute([
-                        'generated_asset_id' => (int)$asset['id'],
-                        'expense_claim_line_id' => (int)$line['id'],
-                    ]);
+                    $pendingAssets[] = ['line' => $line, 'values' => $values];
                 }
                 continue;
             }
@@ -3499,22 +3489,91 @@ final class ExpenseClaimService
                 throw new \RuntimeException('Every expense line needs a Charge To value before rebuilding the posted journal.');
             }
 
-            $this->insertJournalLine(
-                $journalId,
-                $nominalAccountId,
-                round((float)$line['amount'], 2),
-                0.0,
-                (string)$line['description']
-            );
+            $replacementLines[] = [
+                'nominal_account_id' => $nominalAccountId,
+                'debit' => round((float)$line['amount'], 2),
+                'credit' => 0.0,
+                'line_description' => (string)$line['description'],
+            ];
         }
 
-        $this->insertJournalLine(
-            $journalId,
-            $payableNominalId,
-            0.0,
-            $this->sumClaimLines($claimId),
-            'Expense claim payable'
+        $replacementLines[] = [
+            'nominal_account_id' => $payableNominalId,
+            'debit' => 0.0,
+            'credit' => $this->sumClaimLines($claimId),
+            'line_description' => 'Expense claim payable',
+        ];
+
+        $journal = \InterfaceDB::fetchOne(
+            'SELECT journal_date, description, source_ref FROM journals
+             WHERE id = :journal_id AND company_id = :company_id LIMIT 1',
+            ['journal_id' => $journalId, 'company_id' => $companyId]
         );
+        if (!is_array($journal)) {
+            throw new \RuntimeException('The posted expense claim journal could not be found.');
+        }
+        $correction = (new JournalCorrectionService())->reverseAndReplaceJournal(
+            $companyId,
+            $journalId,
+            (int)$claim['accounting_period_id'],
+            (string)$journal['journal_date'],
+            'Posted expense claim details changed.',
+            [
+                'accounting_period_id' => (int)$claim['accounting_period_id'],
+                'journal_tag' => 'expense_claim_replacement',
+                'journal_key' => 'claim:' . $claimId . ':source:' . $journalId,
+                'journal_date' => (string)$journal['journal_date'],
+                'description' => (string)$journal['description'],
+                'lines' => $replacementLines,
+                'entry_mode' => 'system_generated',
+                'source_type' => 'expense_register',
+                'source_ref' => (string)$journal['source_ref'] . ':revision-of:' . $journalId,
+                'notes' => 'Append-only replacement for posted expense claim #' . $claimId . '.',
+            ],
+            'web_app',
+            'expense-claim:' . $claimId . ':replace:' . $journalId
+        );
+        if (empty($correction['success'])) {
+            throw new \RuntimeException((string)(($correction['errors'] ?? [])[0] ?? 'The posted expense claim journal could not be replaced.'));
+        }
+        $replacementJournalId = (int)($correction['replacement_journal_id'] ?? 0);
+        if ($replacementJournalId <= 0) {
+            throw new \RuntimeException('The replacement expense claim journal could not be linked.');
+        }
+
+        \InterfaceDB::prepareExecute(
+            'UPDATE expense_claims SET posted_journal_id = :replacement_journal_id WHERE id = :claim_id AND company_id = :company_id',
+            ['replacement_journal_id' => $replacementJournalId, 'claim_id' => $claimId, 'company_id' => $companyId]
+        );
+        \InterfaceDB::prepareExecute(
+            'UPDATE asset_register
+             SET linked_journal_id = :replacement_journal_id
+             WHERE company_id = :company_id AND linked_journal_id = :source_journal_id',
+            [
+                'replacement_journal_id' => $replacementJournalId,
+                'company_id' => $companyId,
+                'source_journal_id' => $journalId,
+            ]
+        );
+
+        foreach ($pendingAssets as $pendingAsset) {
+            $line = (array)$pendingAsset['line'];
+            $asset = $assetService->createAssetRecordFromValues((array)$pendingAsset['values'], [
+                'linked_journal_id' => $replacementJournalId,
+                'linked_transaction_id' => null,
+                'linked_expense_claim_line_id' => (int)$line['id'],
+            ]);
+            if ($asset === null) {
+                throw new \RuntimeException('The asset could not be reloaded after save.');
+            }
+            \InterfaceDB::prepareExecute(
+                'UPDATE expense_claim_line_assets
+                 SET generated_asset_id = :generated_asset_id,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE expense_claim_line_id = :expense_claim_line_id',
+                ['generated_asset_id' => (int)$asset['id'], 'expense_claim_line_id' => (int)$line['id']]
+            );
+        }
     }
 
     private function insertJournalLine(int $journalId, int $nominalAccountId, float $debit, float $credit, string $description, ?int $directorId = null): void {

@@ -99,9 +99,24 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame(2, count((array)($readyAgainSplit['lines'] ?? [])));
                 $harness->assertSame(1, (int)($readyAgainSplit['is_ready'] ?? 0));
 
+                $posted = (new \eel_accounts\Service\TransactionJournalService())->syncJournalForTransaction(
+                    $fixture['transaction_id'],
+                    $fixture['source_nominal_id'],
+                    'test',
+                    true
+                );
+                $harness->assertSame(true, (bool)($posted['success'] ?? false));
+                $sourceJournalId = (int)\InterfaceDB::fetchColumn(
+                    'SELECT id FROM journals WHERE company_id = :company_id AND source_ref = :source_ref',
+                    ['company_id' => $fixture['company_id'], 'source_ref' => 'transaction:' . $fixture['transaction_id']]
+                );
+                $harness->assertTrue($sourceJournalId > 0);
+
                 $merged = $service->mergeSplit($fixture['company_id'], $fixture['transaction_id'], true);
                 $harness->assertSame(true, (bool)($merged['success'] ?? false));
                 $harness->assertSame(null, $service->fetchSplitForTransaction($fixture['transaction_id']));
+                $harness->assertSame(1, \InterfaceDB::countWhere('journals', ['id' => $sourceJournalId]));
+                $harness->assertSame(1, \InterfaceDB::countWhere('journal_reversals', ['source_journal_id' => $sourceJournalId]));
             } finally {
                 if (\InterfaceDB::inTransaction()) {
                     \InterfaceDB::rollBack();

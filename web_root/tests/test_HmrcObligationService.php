@@ -12,13 +12,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->run(\eel_accounts\Service\HmrcObligationService::class, static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\HmrcObligationService $service): void {
-    $harness->check(\eel_accounts\Service\HmrcObligationService::class, 'posts a balanced accrual journal for HMRC penalty notices', static function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\HmrcObligationService::class, 'cancels a notice with an equal linked reversal and retains the source record', static function () use ($harness, $service): void {
         foreach (['companies', 'accounting_periods', 'nominal_accounts', 'journals', 'journal_lines', 'journal_entry_metadata', 'hmrc_obligations'] as $table) {
             if (!InterfaceDB::tableExists($table)) {
                 $harness->skip($table . ' table is not available.');
             }
         }
 
+        $service->ensureSchema();
+        (new \eel_accounts\Service\JournalCorrectionService())->ensureSchema();
         InterfaceDB::beginTransaction();
         try {
             hmrcObligationTestEnsureNominal('6230', 'HMRC Penalties', 'expense', 'disallowable');
@@ -92,7 +94,11 @@ $harness->run(\eel_accounts\Service\HmrcObligationService::class, static functio
                 );
                 $lockedError = '';
                 try {
-                    $service->deleteManualObligation($companyId, (int)$obligation['id']);
+                    $service->correctManualObligation($companyId, (int)$obligation['id'], [
+                        'correction_mode' => 'cancel',
+                        'effective_date' => '2025-03-01',
+                        'reason' => 'HMRC withdrew the notice.',
+                    ], 'test-suite');
                 } catch (RuntimeException $exception) {
                     $lockedError = $exception->getMessage();
                 }
@@ -104,10 +110,110 @@ $harness->run(\eel_accounts\Service\HmrcObligationService::class, static functio
                 );
             }
 
-            $deleteResult = $service->deleteManualObligation($companyId, (int)$obligation['id']);
-            $harness->assertSame(true, (bool)($deleteResult['success'] ?? false));
-            $harness->assertSame(0, InterfaceDB::countWhere('hmrc_obligations', ['id' => (int)$obligation['id']]));
-            $harness->assertSame(0, InterfaceDB::countWhere('journals', ['id' => $journalId]));
+            $correction = $service->correctManualObligation($companyId, (int)$obligation['id'], [
+                'correction_mode' => 'cancel',
+                'effective_date' => '2025-03-01',
+                'reason' => 'HMRC withdrew the notice.',
+            ], 'test-suite');
+            $harness->assertSame(true, (bool)($correction['success'] ?? false));
+            $harness->assertSame(1, InterfaceDB::countWhere('hmrc_obligations', ['id' => (int)$obligation['id']]));
+            $harness->assertSame(1, InterfaceDB::countWhere('journals', ['id' => $journalId]));
+            $harness->assertSame(2, InterfaceDB::countWhere('journal_lines', ['journal_id' => $journalId]));
+            $reversalJournalId = (int)($correction['reversal_journal_id'] ?? 0);
+            $harness->assertTrue($reversalJournalId > 0);
+            $cancelled = InterfaceDB::fetchOne(
+                'SELECT status, reversal_journal_id, cancelled_on, cancellation_reason
+                 FROM hmrc_obligations WHERE id = :id',
+                ['id' => (int)$obligation['id']]
+            );
+            $harness->assertSame('cancelled', (string)($cancelled['status'] ?? ''));
+            $harness->assertSame($reversalJournalId, (int)($cancelled['reversal_journal_id'] ?? 0));
+            $harness->assertSame('2025-03-01', (string)($cancelled['cancelled_on'] ?? ''));
+            $net = InterfaceDB::fetchAll(
+                'SELECT nominal_account_id, ROUND(SUM(debit - credit), 2) AS balance
+                 FROM journal_lines
+                 WHERE journal_id IN (:source_journal_id, :reversal_journal_id)
+                 GROUP BY nominal_account_id',
+                ['source_journal_id' => $journalId, 'reversal_journal_id' => $reversalJournalId]
+            );
+            $harness->assertSame(2, count($net));
+            $harness->assertSame(true, count(array_filter($net, static fn(array $row): bool => abs((float)$row['balance']) > 0.001)) === 0);
+            $summary = $service->getOutstandingSummary($companyId);
+            $harness->assertSame('0.00', number_format((float)$summary['total_owed'], 2, '.', ''));
+
+            $retry = $service->correctManualObligation($companyId, (int)$obligation['id'], [
+                'correction_mode' => 'cancel',
+                'effective_date' => '2025-03-01',
+                'reason' => 'HMRC withdrew the notice.',
+            ], 'test-suite');
+            $harness->assertSame(true, (bool)($retry['already_corrected'] ?? false));
+            $harness->assertSame(1, InterfaceDB::countWhere('journal_reversals', ['source_journal_id' => $journalId]));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
+    $harness->check(\eel_accounts\Service\HmrcObligationService::class, 'reassesses a paid notice with a replacement accrual and carried-forward credit', static function () use ($harness, $service): void {
+        $service->ensureSchema();
+        (new \eel_accounts\Service\JournalCorrectionService())->ensureSchema();
+        InterfaceDB::beginTransaction();
+        try {
+            hmrcObligationTestEnsureNominal('6230', 'HMRC Penalties', 'expense', 'disallowable');
+            hmrcObligationTestEnsureNominal('2210', 'HMRC Penalties & Interest Payable', 'liability', 'other');
+            $marker = substr(hash('sha256', __FILE__ . 'reassess' . microtime(true) . random_int(1, PHP_INT_MAX)), 0, 10);
+            InterfaceDB::prepareExecute(
+                'INSERT INTO companies (company_name, company_number, is_active) VALUES (:name, :number, 1)',
+                ['name' => 'HMRC Reassessment ' . $marker, 'number' => 'HRA' . $marker]
+            );
+            $companyId = (int)InterfaceDB::fetchColumn('SELECT id FROM companies WHERE company_number = :number', ['number' => 'HRA' . $marker]);
+            InterfaceDB::prepareExecute(
+                'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+                 VALUES (:company_id, :label, :period_start, :period_end)',
+                ['company_id' => $companyId, 'label' => 'Reassessment FY', 'period_start' => '2025-01-01', 'period_end' => '2025-12-31']
+            );
+            $periodId = (int)InterfaceDB::fetchColumn('SELECT id FROM accounting_periods WHERE company_id = :company_id', ['company_id' => $companyId]);
+            $created = $service->createManualObligation([
+                'company_id' => $companyId,
+                'accounting_period_id' => $periodId,
+                'obligation_type' => 'hmrc_penalty',
+                'notice_date' => '2025-02-01',
+                'due_date' => '2025-03-01',
+                'amount_due' => '100.00',
+                'source_reference' => 'OLD-' . $marker,
+            ]);
+            $oldObligationId = (int)($created['obligation_id'] ?? 0);
+            $oldJournalId = (int)($created['journal_id'] ?? 0);
+            $harness->assertTrue($oldObligationId > 0 && $oldJournalId > 0);
+            $paid = $service->markPaid($oldObligationId, 100.00, 'PAY-' . $marker);
+            $harness->assertSame(true, (bool)($paid['success'] ?? false));
+
+            $result = $service->correctManualObligation($companyId, $oldObligationId, [
+                'correction_mode' => 'reassess',
+                'effective_date' => '2025-04-01',
+                'reason' => 'HMRC reduced the assessment.',
+                'replacement_due_date' => '2025-05-01',
+                'replacement_amount_due' => '75.00',
+                'replacement_source_reference' => 'NEW-' . $marker,
+            ], 'test-suite');
+            $harness->assertSame(true, (bool)($result['success'] ?? false));
+            $harness->assertSame('75.00', number_format((float)($result['credit_carried_forward'] ?? 0), 2, '.', ''));
+            $harness->assertSame('25.00', number_format((float)($result['expected_refund_amount'] ?? 0), 2, '.', ''));
+
+            $replacementId = (int)($result['replacement_obligation_id'] ?? 0);
+            $replacement = InterfaceDB::fetchOne(
+                'SELECT status, amount_due, amount_paid, related_journal_id
+                 FROM hmrc_obligations WHERE id = :id',
+                ['id' => $replacementId]
+            );
+            $harness->assertSame('paid', (string)($replacement['status'] ?? ''));
+            $harness->assertSame('75.00', number_format((float)($replacement['amount_paid'] ?? 0), 2, '.', ''));
+            $harness->assertTrue((int)($replacement['related_journal_id'] ?? 0) > 0);
+            $harness->assertSame(1, InterfaceDB::countWhere('hmrc_obligation_credit_transfers', [
+                'from_obligation_id' => $oldObligationId,
+                'to_obligation_id' => $replacementId,
+            ]));
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();

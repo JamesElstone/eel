@@ -23,8 +23,10 @@ $harness->run(_hmrc_fines_tableCard::class, static function (GeneratedServiceCla
             'due_date' => '2024-10-31',
             'amount_due' => 10 + $index,
             'amount_paid' => 0,
-            'effective_status' => 'not_started',
+            'effective_status' => $index === 15 ? 'cancelled' : 'not_started',
             'related_journal_id' => $index,
+            'reversal_journal_id' => $index === 15 ? 1015 : null,
+            'superseded_by_obligation_id' => $index === 15 ? 17 : null,
             'source_reference' => 'HMRC-' . $index,
         ];
     }
@@ -72,8 +74,12 @@ $harness->run(_hmrc_fines_tableCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(strpos($html, '>HMRC-15</td>') < strpos($html, '>HMRC-14</td>'));
         $harness->assertFalse(str_contains($html, '>HMRC-1</td>'));
         $harness->assertTrue(str_contains($html, '15/09/2024'));
-        $harness->assertTrue(str_contains($html, 'name="intent" value="delete_manual_obligation"'));
-        $harness->assertTrue(str_contains($html, 'data-chicken-confirm-text="Delete"'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="correct_manual_obligation"'));
+        $harness->assertTrue(str_contains($html, 'Cancel / reassess'));
+        $harness->assertTrue(str_contains($html, 'data-chicken-confirm-text="Record correction"'));
+        $harness->assertTrue(str_contains($html, 'Journal #15 reversed by #1015; reassessed as notice #17'));
+        $harness->assertTrue(str_contains($html, '>Superseded</span>'));
+        $harness->assertFalse(str_contains($html, 'delete_manual_obligation'));
     });
 
     $harness->check(_hmrc_fines_tableCard::class, 'filters both the screen table and export to the current accounting period', static function () use ($harness, $card, $context): void {

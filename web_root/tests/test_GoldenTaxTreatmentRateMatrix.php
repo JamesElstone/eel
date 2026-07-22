@@ -189,11 +189,8 @@ $harness->check('GoldenTaxTreatmentRateMatrix', 'removes disposal gains from tax
             [
                 [(int)$fixture['asset_nominal_id'], 80.0, 0.0],
                 [(int)$fixture['income_nominal_id'], 0.0, 80.0],
-            ]
-        );
-        InterfaceDB::prepareExecute(
-            'UPDATE journals SET source_type = :source_type WHERE id = :id',
-            ['source_type' => 'asset_disposal', 'id' => $disposalJournalId]
+            ],
+            'asset_disposal'
         );
         periodLedgerTestInsertJournal(
             (int)$fixture['company_id'],

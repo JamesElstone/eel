@@ -186,12 +186,15 @@ final class ManualJournalService
         ?int $relatedJournalId = null,
         ?int $replacementOfJournalId = null,
         ?string $notes = null,
-        string $changedBy = 'web_app'
+        string $changedBy = 'web_app',
+        string $sourceType = 'manual',
+        ?string $sourceRefOverride = null
     ): array {
         $journalTag = trim($journalTag);
         $journalKey = trim($journalKey) !== '' ? trim($journalKey) : 'primary';
         $description = trim($description);
         $journalDate = trim($journalDate);
+        $sourceType = trim($sourceType) !== '' ? trim($sourceType) : 'manual';
 
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return ['success' => false, 'errors' => ['Select a valid company and accounting period first.']];
@@ -228,7 +231,9 @@ final class ManualJournalService
             if ($existing !== null) {
                 $storedJournalKey .= ':' . date('YmdHis') . ':' . bin2hex(random_bytes(3));
             }
-            $sourceRef = $this->sourceRef($journalTag, $accountingPeriodId . ':' . $storedJournalKey);
+            $sourceRef = trim((string)$sourceRefOverride) !== ''
+                ? trim((string)$sourceRefOverride)
+                : $this->sourceRef($journalTag, $accountingPeriodId . ':' . $storedJournalKey);
             $insert = \InterfaceDB::prepare(
                 'INSERT INTO journals (
                     company_id,
@@ -255,13 +260,13 @@ final class ManualJournalService
             $insert->execute([
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
-                'source_type' => 'manual',
+                'source_type' => $sourceType,
                 'source_ref' => $sourceRef,
                 'journal_date' => $journalDate,
                 'description' => $description,
             ]);
 
-            $journalId = $this->findJournalId($companyId, 'manual', $sourceRef);
+            $journalId = $this->findJournalId($companyId, $sourceType, $sourceRef);
             if ($journalId === null) {
                 throw new \RuntimeException('The journal could not be reloaded after insert.');
             }
@@ -462,15 +467,6 @@ final class ManualJournalService
             'credit' => number_format((float)$line['credit'], 2, '.', ''),
             'line_description' => trim((string)($line['line_description'] ?? '')) !== '' ? trim((string)$line['line_description']) : null,
         ]);
-    }
-
-    private function deleteJournal(int $journalId): void {
-        if ($this->hasMetadataTable()) {
-            \InterfaceDB::prepare('DELETE FROM journal_entry_metadata WHERE journal_id = :journal_id')
-                ->execute(['journal_id' => $journalId]);
-        }
-        \InterfaceDB::prepare('DELETE FROM journals WHERE id = :id')
-            ->execute(['id' => $journalId]);
     }
 
     private function findJournalId(int $companyId, string $sourceType, string $sourceRef): ?int {

@@ -109,7 +109,8 @@ function periodLedgerTestInsertJournal(
     int $accountingPeriodId,
     string $journalDate,
     string $sourceRef,
-    array $lines
+    array $lines,
+    string $sourceType = 'manual'
 ): int {
     InterfaceDB::prepareExecute(
         'INSERT INTO journals (
@@ -122,7 +123,7 @@ function periodLedgerTestInsertJournal(
         [
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
-            'source_type' => 'manual',
+            'source_type' => $sourceType,
             'source_ref' => $sourceRef,
             'journal_date' => $journalDate,
             'description' => 'Period ledger fixture journal',

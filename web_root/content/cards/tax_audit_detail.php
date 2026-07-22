@@ -43,6 +43,12 @@ final class _tax_audit_detailCard extends CardBaseFramework
     protected function additionalInvalidationFacts(): array { return ['tax.audit.selection']; }
     public function handleError(string $serviceKey, array $error, array $context): string { return ''; }
 
+    public function tables(array $context): array
+    {
+        $detail = (array)($context['services']['taxAuditAreaDetail'] ?? []);
+        return !empty($detail['available']) ? [$this->detailTable($context, $detail)] : [];
+    }
+
     public function render(array $context): string
     {
         $detail = (array)($context['services']['taxAuditAreaDetail'] ?? []);
@@ -56,30 +62,6 @@ final class _tax_audit_detailCard extends CardBaseFramework
 
         $mode = (string)($detail['mode'] ?? 'live');
         $status = (string)($detail['reconciliation_status'] ?? 'discrepancy');
-        $rows = '';
-        foreach ((array)($detail['rows'] ?? []) as $row) {
-            $rule = trim((string)($row['rule_code'] ?? ''));
-            if (($row['rule_version'] ?? '') !== '') {
-                $rule .= ($rule !== '' ? ' ' : '') . 'v' . (string)$row['rule_version'];
-            }
-            if ($rule === '') {
-                $rule = (string)($row['tax_treatment'] ?? 'Derived computation');
-            }
-            $rows .= '<tr>
-                <td>' . HelperFramework::escape((string)($row['source_date'] ?? '')) . '</td>
-                <td><strong>' . HelperFramework::escape((string)($row['label'] ?? '')) . '</strong><br><span class="helper">' . HelperFramework::escape((string)($row['source_label'] ?? $row['source_type'] ?? '')) . '</span></td>
-                <td>' . HelperFramework::escape(trim((string)($row['nominal_code'] ?? '') . ' ' . (string)($row['nominal_name'] ?? ''))) . '</td>
-                <td>' . HelperFramework::escape($this->money($context, $row['accounting_amount'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($context, $row['tax_adjustment_amount'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($rule) . '</td>
-                <td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($row['allocation_method'] ?? 'actual_date'))) . '</td>
-                <td class="cell-fit">' . $this->sourceLink($row, $context) . '</td>
-            </tr>';
-        }
-        if ($rows === '') {
-            $rows = '<tr><td colspan="8">No source rows are required for this area.</td></tr>';
-        }
-
         return '<div class="summary-grid">
                 <div class="summary-card"><div class="summary-label">Area total</div><div class="summary-value">' . HelperFramework::escape($this->money($context, $detail['amount'] ?? 0)) . '</div></div>
                 <div class="summary-card"><div class="summary-label">Computation total</div><div class="summary-value">' . HelperFramework::escape($this->money($context, $detail['expected_amount'] ?? 0)) . '</div></div>
@@ -87,9 +69,58 @@ final class _tax_audit_detailCard extends CardBaseFramework
             </div>
             <div class="helper"><span class="badge ' . ($mode === 'frozen' ? 'success' : ($mode === 'reconstructed' ? 'warning' : 'info')) . '">' . HelperFramework::escape((string)($detail['mode_label'] ?? 'Audit preview')) . '</span>
             <span class="badge ' . ($status === 'reconciled' ? 'success' : 'danger') . '">' . HelperFramework::escape(HelperFramework::labelFromKey($status)) . '</span></div>
-            <div class="table-scroll"><table><thead><tr><th>Date</th><th>Source</th><th>Nominal</th><th>Accounting amount</th><th>Tax amount</th><th>Treatment / rule</th><th>Allocation</th><th>Open</th></tr></thead><tbody>'
-            . $rows . '</tbody></table></div>'
+            <div class="panel-soft">' . $this->detailTable($context, $detail)->render($context, [
+                'cards[]' => (array)($context['page']['page_cards'] ?? []),
+            ]) . '</div>'
             . $this->pagination($detail, $context);
+    }
+
+    private function detailTable(array $context, array $detail): TableFramework
+    {
+        $rows = [];
+        foreach ((array)($detail['rows'] ?? []) as $row) {
+            $rule = trim((string)($row['rule_code'] ?? ''));
+            if (($row['rule_version'] ?? '') !== '') {
+                $rule .= ($rule !== '' ? ' ' : '') . 'v' . (string)$row['rule_version'];
+            }
+            $rows[] = [
+                'source_date' => (string)($row['source_date'] ?? ''),
+                'label' => (string)($row['label'] ?? ''),
+                'source_label' => (string)($row['source_label'] ?? $row['source_type'] ?? ''),
+                'nominal' => trim((string)($row['nominal_code'] ?? '') . ' ' . (string)($row['nominal_name'] ?? '')),
+                'accounting_amount' => $row['accounting_amount'] ?? 0,
+                'tax_adjustment_amount' => $row['tax_adjustment_amount'] ?? 0,
+                'rule' => $rule !== '' ? $rule : (string)($row['tax_treatment'] ?? 'Derived computation'),
+                'allocation' => HelperFramework::labelFromKey((string)($row['allocation_method'] ?? 'actual_date')),
+                'source_type' => (string)($row['source_type'] ?? ''),
+                'source_id' => (int)($row['source_id'] ?? 0),
+            ];
+        }
+
+        return TableFramework::make($this->key(), $rows)
+            ->filename('tax-audit-area-detail')
+            ->exports(true)
+            ->exportLimit(5000)
+            ->empty('No source rows are required for this area.')
+            ->classes(tableClass: 'table-condensed', wrapperClass: 'table-scroll tax-audit-detail-table')
+            ->textColumn('source_date', 'Date', exportType: 'date')
+            ->column(
+                'label',
+                'Source',
+                html: static fn(array $row): string => '<strong>' . HelperFramework::escape((string)$row['label']) . '</strong><br><span class="helper">' . HelperFramework::escape((string)$row['source_label']) . '</span>',
+                export: static fn(array $row): string => trim((string)$row['label'] . ' — ' . (string)$row['source_label'])
+            )
+            ->textColumn('nominal', 'Nominal')
+            ->column('accounting_amount', 'Accounting amount', html: fn(array $row): string => HelperFramework::escape($this->money($context, $row['accounting_amount'])), export: static fn(array $row): string => number_format((float)$row['accounting_amount'], 2, '.', ''), cellClass: 'numeric', exportType: 'number')
+            ->column('tax_adjustment_amount', 'Tax amount', html: fn(array $row): string => HelperFramework::escape($this->money($context, $row['tax_adjustment_amount'])), export: static fn(array $row): string => number_format((float)$row['tax_adjustment_amount'], 2, '.', ''), cellClass: 'numeric', exportType: 'number')
+            ->column(
+                'rule',
+                'Treatment / Rule',
+                html: static fn(array $row): string => '<span class="badge info">' . HelperFramework::escape((string)$row['rule']) . '</span>',
+                export: static fn(array $row): string => (string)$row['rule']
+            )
+            ->textColumn('allocation', 'Allocation')
+            ->column('source_id', 'Open', html: fn(array $row): string => '<span class="cell-fit">' . $this->sourceLink($row, $context) . '</span>', export: static fn(array $row): string => trim((string)$row['source_type'] . ' #' . (int)$row['source_id']), cellClass: 'cell-fit');
     }
 
     private function sourceLink(array $row, array $context): string

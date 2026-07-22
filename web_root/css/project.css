@@ -2264,6 +2264,14 @@
   margin-top: 0px;
 }
 
+.tax-audit-mode-pill {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 1;
+  margin: 0;
+}
+
 .month-card:hover,
 .month-card:focus-visible,
 .month-card:focus-within {

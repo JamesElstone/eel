@@ -68,6 +68,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         }
 
         $provision = (array)($taxReadiness['provision'] ?? []);
+        $taxBasisReady = (string)($taxReadiness['freeze_status'] ?? '') === 'ready_for_approval';
         $check = $this->check((array)($checklist['checks_flat'] ?? []), 'tax_readiness_acknowledgement');
         $acknowledgement = (array)($check['review_acknowledgement'] ?? $check['previous_acknowledgement'] ?? []);
         $acknowledged = !empty($check['acknowledgement_current']);
@@ -79,7 +80,8 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             (string)($acknowledgement['note'] ?? ''),
             $companyId,
             $accountingPeriodId,
-            $this->money($companySettings, $taxReadiness['estimated_corporation_tax'] ?? 0)
+            $this->money($companySettings, $taxReadiness['estimated_corporation_tax'] ?? 0),
+            $taxBasisReady
         );
 
         return '<section class="settings-stack" id="tax-readiness">
@@ -138,7 +140,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         return [];
     }
 
-    private function acknowledgementHtml(bool $acknowledged, string $state, string $acknowledgedAt, string $acknowledgedBy, string $note, int $companyId, int $accountingPeriodId, string $totalCorporationTaxDue): string
+    private function acknowledgementHtml(bool $acknowledged, string $state, string $acknowledgedAt, string $acknowledgedBy, string $note, int $companyId, int $accountingPeriodId, string $totalCorporationTaxDue, bool $taxBasisReady): string
     {
         return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
             'subject' => 'Total Corporation Tax Due to HMRC, including the CT600A position and associated-company count for every CT period',
@@ -155,6 +157,8 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             'checkboxName' => 'tax_readiness_acknowledgement',
             'approveFields' => ['tax_readiness_acknowledgement' => '1'],
             'revokeFields' => ['tax_readiness_acknowledgement' => '0'],
+            'disabled' => !$taxBasisReady,
+            'disabledReason' => $taxBasisReady ? '' : 'Year End Confirmation is disabled until all tax basis checks have passed.',
         ]);
     }
 
@@ -169,6 +173,9 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         $blockerCount = (int)($taxReadiness['blocking_diagnostic_count'] ?? count((array)($taxReadiness['blocking_diagnostics'] ?? [])));
         $provisionStatus = (string)($provision['status'] ?? 'not_posted');
         $freezeReady = (string)($taxReadiness['freeze_status'] ?? '') === 'ready_for_approval';
+        $hasUnsupportedFeatures = $blockerCount > 0;
+        $unsupportedFeaturesClass = $hasUnsupportedFeatures ? ' danger' : '';
+        $unsupportedFeaturesPill = $hasUnsupportedFeatures ? $this->badge('danger', 'Not supported') : '';
 
         return '<section class="panel-soft stack">
             <h3 class="card-title">Overall Tax Position</h3>
@@ -185,11 +192,13 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
                 ['Tax basis', $this->badge($freezeReady ? 'success' : 'danger', $freezeReady ? 'Ready to freeze' : 'Action required'), true],
             ]) . '
         </section>
-        <section class="panel-soft stack">'
+        <section class="panel-soft stack' . $unsupportedFeaturesClass . '">
+            <div class="summary-card-header"><h3 class="card-title">Features not supported by EEL Accounts</h3>' . $unsupportedFeaturesPill . '</div>'
             . $this->diagnosticsHtml(
                 (array)($taxReadiness['blocking_diagnostics'] ?? []),
                 'Features not supported by EEL Accounts',
-                $blockerCount === 0 ? 'No amount-affecting Corporation Tax issues remain.' : ''
+                $blockerCount === 0 ? 'No amount-affecting Corporation Tax issues remain.' : '',
+                false
             ) . '
         </section>';
     }
@@ -340,7 +349,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         );
     }
 
-    private function diagnosticsHtml(array $diagnostics, string $title, string $emptyMessage): string
+    private function diagnosticsHtml(array $diagnostics, string $title, string $emptyMessage, bool $includeTitle = true): string
     {
         $messages = array_values(array_filter(array_map(
             static fn(mixed $diagnostic): string => is_array($diagnostic)
@@ -353,7 +362,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             return '<div class="helper">' . $this->badge('success', 'Ready') . ' ' . HelperFramework::escape($emptyMessage) . '</div>';
         }
 
-        $html = '<section class="stack"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3>';
+        $html = '<section class="stack">' . ($includeTitle ? '<h3 class="card-title">' . HelperFramework::escape($title) . '</h3>' : '');
         foreach ($messages as $message) {
             $html .= '<div class="helper">' . HelperFramework::escape($message) . '</div>';
         }

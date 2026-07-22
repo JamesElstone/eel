@@ -545,6 +545,14 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
                 throw new RuntimeException('AP ' . $periodId . ' CT persistence failed: ' . implode(' ', (array)($taxPersistence['errors'] ?? [])));
             }
             $harness->assertTrue(!empty($taxPersistence['success']));
+            $approvedFreezeManifestHash = (new \eel_accounts\Service\YearEndAcknowledgementService())
+                ->hashBasis((array)($approvalBasis['freeze_manifest'] ?? []));
+            foreach ((array)($taxPersistence['summaries'] ?? []) as $persistedSummary) {
+                $harness->assertSame(
+                    $approvedFreezeManifestHash,
+                    (string)($persistedSummary['year_end_freeze_manifest_hash'] ?? '')
+                );
+            }
 
             $lock = (new \eel_accounts\Service\YearEndLockService())
                 ->lockPeriod($companyId, $periodId, 'golden_year_end_test');

@@ -75,7 +75,7 @@ $harness->check('GoldenCt600aLifecycle', 'reconciles transaction-backed CT600A e
         }
     }
 
-    goldenCt600aFreezeAndApprove($companyId, $accountingPeriodId);
+    goldenCt600aFreezeAndApprove($harness, $companyId, $accountingPeriodId);
     $periods = $periodService->fetchForAccountingPeriod($companyId, $accountingPeriodId);
     $harness->assertCount(2, $periods);
     $firstCtPeriodId = (int)$periods[0]['id'];
@@ -200,7 +200,7 @@ function goldenCt600aCompleteFilingInputs(int $companyId, int $accountingPeriodI
     ));
 }
 
-function goldenCt600aFreezeAndApprove(int $companyId, int $accountingPeriodId): void
+function goldenCt600aFreezeAndApprove(GeneratedServiceClassTestHarness $harness, int $companyId, int $accountingPeriodId): void
 {
     InterfaceDB::beginTransaction();
     try {
@@ -219,8 +219,17 @@ function goldenCt600aFreezeAndApprove(int $companyId, int $accountingPeriodId): 
             '',
             true
         ));
-        goldenCt600aRequireSuccess((new \eel_accounts\Service\CorporationTaxComputationService())
-            ->persistSummariesForYearEndLock($companyId, $accountingPeriodId));
+        $taxPersistence = (new \eel_accounts\Service\CorporationTaxComputationService())
+            ->persistSummariesForYearEndLock($companyId, $accountingPeriodId);
+        goldenCt600aRequireSuccess($taxPersistence);
+        $approvedFreezeManifestHash = (new \eel_accounts\Service\YearEndAcknowledgementService())
+            ->hashBasis((array)($basis['freeze_manifest'] ?? []));
+        foreach ((array)($taxPersistence['summaries'] ?? []) as $persistedSummary) {
+            $harness->assertSame(
+                $approvedFreezeManifestHash,
+                (string)($persistedSummary['year_end_freeze_manifest_hash'] ?? '')
+            );
+        }
         goldenCt600aRequireSuccess((new \eel_accounts\Service\YearEndLockService())
             ->lockPeriod($companyId, $accountingPeriodId, 'golden_ct600a'));
         goldenCt600aRequireSuccess((new \eel_accounts\Service\CorporationTaxComputationService())

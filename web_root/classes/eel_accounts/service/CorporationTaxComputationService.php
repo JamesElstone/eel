@@ -484,12 +484,14 @@ final class CorporationTaxComputationService
             $canonicalSummaries[] = array_merge($summary, $position);
         }
         $summaries = $canonicalSummaries;
+        $filingScope = (new CorporationTaxFilingScopeService())->fetch($companyId, $accountingPeriodId);
         $freeze = (new YearEndTaxFreezeService())->build(
             $companyId,
             $accountingPeriodId,
             $summaries,
             array_values(array_map('strval', $errors)),
-            count($periods)
+            count($periods),
+            $filingScope
         );
         foreach ($summaries as &$summary) {
             $summary['year_end_freeze_basis_version'] = YearEndTaxFreezeService::BASIS_VERSION;

@@ -46,29 +46,32 @@ final class _dividend_capacityCard extends CardBaseFramework
         $companySettings = (array)($company['settings'] ?? []);
 
         return '<div class="settings-stack">
-            <section class="panel-soft dividend-capacity-overview">
+            <div class="dividend-capacity-overview">
             <div>' . $this->summaryCard('Capacity date', (string)($capacity['as_at_date'] ?? ''), 'summary-card-fit') . '</div>
             <div>' . $this->reliabilityWarningPanels($reliabilityWarnings, (int)($company['id'] ?? 0), (int)($company['accounting_period_id'] ?? 0), true) . '</div>
-            <div class="dividend-reserve-overview">
+            <section class="panel-soft dividend-reserve-overview">
                 <div class="summary-label">Distributable reserves</div>
                 <div class="helper">' . HelperFramework::escape($this->reservesEquation($companySettings, $capacity)) . '</div>
                 <div class="helper">' . HelperFramework::escape((string)($capacity['reserve_basis_detail'] ?? $capacity['retained_earnings_detail'] ?? '')) . '</div>
                 <div class="pill-row"><span class="badge ' . HelperFramework::escape(!empty($capacity['reserves_reliable']) ? 'success' : 'danger') . '">' . HelperFramework::escape(!empty($capacity['reserves_reliable']) ? 'Reserve basis verified' : 'Reserve basis blocked') . '</span></div>
-            </div>
             </section>
-            <div class="summary-grid four">
-                ' . $this->summaryCard('Distributable reserves brought forward', $this->money($companySettings, $capacity['distributable_reserves_brought_forward'] ?? $capacity['retained_earnings_brought_forward'] ?? 0)) . '
-                ' . $this->summaryCard('Reviewed current profit after CT', $this->money($companySettings, $capacity['current_year_profit_loss_after_tax'] ?? $capacity['current_year_profit_loss'] ?? 0)) . '
-                ' . $this->summaryCard('Dividends already declared', $this->money($companySettings, $capacity['dividends_declared'] ?? 0)) . '
-                ' . $this->summaryCard('Available distributable reserves', $this->money($companySettings, $capacity['available_distributable_reserves'] ?? 0)) . '
             </div>
-            <div class="summary-grid four">
-                ' . $this->summaryCard('Ledger profit / loss', $this->money($companySettings, $capacity['ledger_current_year_profit_loss'] ?? 0)) . '
-                ' . $this->summaryCard('Classified realised profit', $this->money($companySettings, $capacity['classified_current_year_profit_loss'] ?? 0)) . '
-                ' . $this->summaryCard('Corporation Tax payable', $this->money($companySettings, $capacity['estimated_corporation_tax'] ?? 0), '', $this->estimatedCorporationTaxHelper($companySettings, $capacity)) . '
-                ' . $this->summaryCard('L2P relief receivable', $this->money($companySettings, $capacity['l2p_relief_receivable'] ?? 0)) . '
-                ' . $this->summaryCard('Net estimated tax charge', $this->money($companySettings, $capacity['estimated_tax_charge'] ?? $capacity['estimated_corporation_tax'] ?? 0)) . '
-                ' . $this->summaryCard('Unposted tax charge deducted', $this->money($companySettings, $capacity['unposted_corporation_tax_adjustment'] ?? 0), '', $this->unpostedCorporationTaxHelper($companySettings, $capacity)) . '
+            <div class="table-scroll">
+                <table class="table dividend-capacity-summary">
+                    <thead><tr><th>Title</th><th>Description</th><th class="numeric">Value</th></tr></thead>
+                    <tbody>
+                        ' . $this->summaryTableRow('Distributable reserves brought forward', '', $this->money($companySettings, $capacity['distributable_reserves_brought_forward'] ?? $capacity['retained_earnings_brought_forward'] ?? 0)) . '
+                        ' . $this->summaryTableRow('Reviewed current profit after CT', '', $this->money($companySettings, $capacity['current_year_profit_loss_after_tax'] ?? $capacity['current_year_profit_loss'] ?? 0)) . '
+                        ' . $this->summaryTableRow('Dividends already declared', '', $this->money($companySettings, $capacity['dividends_declared'] ?? 0)) . '
+                        ' . $this->summaryTableRow('Available distributable reserves', '', $this->money($companySettings, $capacity['available_distributable_reserves'] ?? 0)) . '
+                        ' . $this->summaryTableRow('Ledger profit / loss', '', $this->money($companySettings, $capacity['ledger_current_year_profit_loss'] ?? 0)) . '
+                        ' . $this->summaryTableRow('Classified realised profit', '', $this->money($companySettings, $capacity['classified_current_year_profit_loss'] ?? 0)) . '
+                        ' . $this->summaryTableRow('Corporation Tax payable', $this->estimatedCorporationTaxHelper($companySettings, $capacity), $this->money($companySettings, $capacity['estimated_corporation_tax'] ?? 0)) . '
+                        ' . $this->summaryTableRow('L2P relief receivable', '', $this->money($companySettings, $capacity['l2p_relief_receivable'] ?? 0)) . '
+                        ' . $this->summaryTableRow('Net estimated tax charge', '', $this->money($companySettings, $capacity['estimated_tax_charge'] ?? $capacity['estimated_corporation_tax'] ?? 0)) . '
+                        ' . $this->summaryTableRow('Unposted tax charge deducted', $this->unpostedCorporationTaxHelper($companySettings, $capacity), $this->money($companySettings, $capacity['unposted_corporation_tax_adjustment'] ?? 0)) . '
+                    </tbody>
+                </table>
             </div>
             <div class="summary-grid four">' . $this->warningCards($warnings) . '</div>
         </div>';
@@ -79,6 +82,13 @@ final class _dividend_capacityCard extends CardBaseFramework
         $class = trim('summary-card ' . $extraClass);
 
         return '<div class="' . HelperFramework::escape($class) . '"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value !== '' ? $value : '-') . '</div>' . ($helper !== '' ? '<div class="helper">' . HelperFramework::escape($helper) . '</div>' : '') . '</div>';
+    }
+
+    private function summaryTableRow(string $title, string $description, string $value): string
+    {
+        return '<tr><td>' . HelperFramework::escape($title) . '</td><td>'
+            . HelperFramework::escape($description !== '' ? $description : '—')
+            . '</td><td class="numeric">' . HelperFramework::escape($value !== '' ? $value : '-') . '</td></tr>';
     }
 
     private function warningCards(array $warnings): string

@@ -55,6 +55,9 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
         ]);
 
         $harness->assertTrue(str_contains($html, '<section class="panel-soft settings-stack dividend-capacity-warning">'));
+        $harness->assertTrue(str_contains($html, '<section class="panel-soft dividend-reserve-overview">'));
+        $harness->assertTrue(str_contains($html, '<table class="table dividend-capacity-summary">'));
+        $harness->assertTrue(str_contains($html, '<th>Title</th><th>Description</th><th class="numeric">Value</th>'));
         $harness->assertTrue(str_contains($html, '<span class="badge warning">Warning</span>'));
         $harness->assertTrue(str_contains($html, 'Bank CSV coverage may be incomplete'));
         $harness->assertTrue(str_contains($html, 'Open Related Workflow'));
@@ -99,6 +102,7 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
         ]);
 
         $harness->assertTrue(str_contains($html, 'Corporation Tax payable'));
+        $harness->assertTrue(str_contains($html, '<td>Corporation Tax payable</td><td>Ordinary CT £ 1,900.00 + CT600A A80 £ 575.00 = £ 2,475.00. CT periods: £ 1,900.00 + £ 575.00 = £ 2,475.00</td><td class="numeric">£ 2,475.00</td>'));
         $harness->assertTrue(str_contains($html, 'Ordinary CT £ 1,900.00 + CT600A A80 £ 575.00 = £ 2,475.00'));
         $harness->assertTrue(str_contains($html, 'Unposted tax charge deducted'));
         $harness->assertTrue(str_contains($html, 'Estimated total tax charge £ 2,475.00 - posted tax charge £ 475.00 = £ 2,000.00'));

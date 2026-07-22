@@ -3255,6 +3255,10 @@
   min-width: 0;
 }
 
+.dividend-capacity-overview > .dividend-reserve-overview {
+  margin-bottom: 0;
+}
+
 .dividend-reserve-overview {
   display: flex;
   flex-direction: column;

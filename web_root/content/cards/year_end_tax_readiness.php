@@ -184,7 +184,6 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
                 ['Close adjustment', $this->money($companySettings, $provision['unposted_tax_charge_adjustment'] ?? $provision['unposted_corporation_tax_adjustment'] ?? 0)],
                 ['Tax basis', $this->badge($freezeReady ? 'success' : 'danger', $freezeReady ? 'Ready to freeze' : 'Action required'), true],
             ]) . '
-            <div class="helper">This total is the Corporation Tax amount due to HMRC for the accounting period: CT600 profit-tax liability plus CT600A loan-tax liability.</div>
         </section>
         <section class="panel-soft stack">'
             . $this->diagnosticsHtml(

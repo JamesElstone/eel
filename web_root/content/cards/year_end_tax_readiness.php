@@ -113,7 +113,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
                 . '<input type="hidden" name="card_action" value="Ixbrl"><input type="hidden" name="intent" value="save_ct_filing_scope_answer">'
                 . '<input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
                 . '<input type="hidden" name="scope_field" value="' . HelperFramework::escape((string)$key) . '">'
-                . '<div class="actions-row year-end-tax-scope-answer">' . $this->scopeRadio((string)$key, 'no', 'No', $answer)
+                . '<div class="actions-row actions-row-nowrap year-end-tax-scope-answer">' . $this->scopeRadio((string)$key, 'no', 'No', $answer)
                 . $this->scopeRadio((string)$key, 'yes', 'Yes', $answer) . '</div></form></td></tr>';
         }
         return '<section class="panel-soft settings-stack"><h3 class="card-title">Corporation Tax Filling Scope Check</h3>'

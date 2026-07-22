@@ -24,7 +24,8 @@ final class YearEndTaxFreezeService
         int $accountingPeriodId,
         array $periods,
         array $errors = [],
-        ?int $expectedPeriodCount = null
+        ?int $expectedPeriodCount = null,
+        array $filingScope = []
     ): array {
         usort($periods, static fn(array $left, array $right): int => [
             (string)($left['period_start'] ?? ''),
@@ -55,6 +56,7 @@ final class YearEndTaxFreezeService
                 'corporation_tax_liability' => $this->money(array_sum(array_map(static fn(array $period): float => (float)($period['estimated_corporation_tax'] ?? 0), $periods))),
                 'tax_payable' => $this->money(array_sum(array_map(static fn(array $period): float => (float)($period['tax_payable'] ?? $period['estimated_corporation_tax'] ?? 0), $periods))),
             ],
+            'filing_scope' => $this->filingScopeBasis($filingScope),
             'blocking_diagnostic_codes' => array_values(array_map(
                 static fn(array $diagnostic): string => (string)($diagnostic['code'] ?? ''),
                 $blockingDiagnostics
@@ -87,6 +89,25 @@ final class YearEndTaxFreezeService
     }
 
     /** @return array<string, mixed> */
+    private function filingScopeBasis(array $filingScope): array
+    {
+        $basis = $filingScope['basis'] ?? null;
+        if (!is_array($basis)) {
+            return [
+                'available' => false,
+                'scope_version' => '',
+                'answers' => [],
+            ];
+        }
+
+        return [
+            'available' => !empty($filingScope['available']),
+            'scope_version' => (string)($basis['scope_version'] ?? ''),
+            'answers' => (array)($basis['answers'] ?? []),
+            'definitions' => (array)($filingScope['definitions'] ?? []),
+        ];
+    }
+
     private function periodBasis(array $period): array
     {
         $diagnosticCodes = [];

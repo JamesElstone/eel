@@ -133,12 +133,14 @@ final class YearEndTaxReadinessService
         $confidenceStatus = $warnings === [] ? 'ready_for_review' : 'review_required';
         $provision = ($this->provisionService ?? new \eel_accounts\Service\CorporationTaxProvisionService())
             ->fetchAccountingPeriodPosition($companyId, $accountingPeriodId, $periodSummaries);
+        $filingScope = (new CorporationTaxFilingScopeService())->fetch($companyId, $accountingPeriodId);
         $freeze = (new YearEndTaxFreezeService())->build(
             $companyId,
             $accountingPeriodId,
             $periodSummaries,
             array_values(array_map('strval', $errors)),
-            $expectedPeriodCount
+            $expectedPeriodCount,
+            $filingScope
         );
 
         return array_merge($totals, $freeze, [

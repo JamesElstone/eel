@@ -33,13 +33,13 @@ final class _tax_artifacts extends PageContextFramework
     {
         return [
             'tax_artifacts_refresh',
+            'tax_treatment_rules',
             'tax_rates_ct',
             'tax_rates_ct600_rim',
             'tax_frc_taxonomy',
             'tax_companies_house_accounts_schemas',
             'tax_rates_vat',
             'tax_thresholds_vat',
-            'tax_treatment_rules',
         ];
     }
 

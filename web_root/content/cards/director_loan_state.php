@@ -11,8 +11,6 @@ final class _director_loan_stateCard extends CardBaseFramework
 {
     private const POSITION_TABLE_KEY = 'director_loan_positions';
     private const POSITION_PAGE_SIZE = 5;
-    private const ATTRIBUTION_TABLE_KEY = 'director_loan_attribution';
-    private const ATTRIBUTION_PAGE_SIZE = 10;
 
     public function key(): string
     {
@@ -87,7 +85,6 @@ final class _director_loan_stateCard extends CardBaseFramework
     {
         return [
             $this->configuredPositionTable($context),
-            $this->configuredAttributionTable($context),
         ];
     }
 
@@ -138,14 +135,7 @@ final class _director_loan_stateCard extends CardBaseFramework
                     'accounting_period_id' => $accountingPeriodId,
                 ]) . '
             </section>
-            <section class="panel-soft settings-stack">
-                <div class="eyebrow">Participator Loan Party</div>
-                ' . $this->configuredAttributionTable($context)->render($context, [
-                    'cards[]' => (array)($context['page']['page_cards'] ?? [$this->key()]),
-                    'company_id' => $companyId,
-                    'accounting_period_id' => $accountingPeriodId,
-                ]) . '
-            </section>';
+            ';
     }
 
     private function reportingPresentation(
@@ -312,26 +302,6 @@ final class _director_loan_stateCard extends CardBaseFramework
             );
     }
 
-    private function configuredAttributionTable(array $context): TableFramework
-    {
-        $hiddenFields = $this->tableHiddenFields($context);
-        $table = $this->attributionTable($context);
-        $pagination = HelperFramework::paginateArray(
-            $table->sortedRows(),
-            $this->paginationPage($context),
-            self::ATTRIBUTION_PAGE_SIZE
-        );
-
-        return $table
-            ->visibleRows((array)$pagination['items'])
-            ->pagination(
-                $pagination,
-                'Director attribution',
-                $this->paginationPageField(),
-                $hiddenFields
-            );
-    }
-
     private function tableHiddenFields(array $context): array
     {
         return [
@@ -343,146 +313,6 @@ final class _director_loan_stateCard extends CardBaseFramework
             'company_id' => (int)($context['company']['id'] ?? 0),
             'accounting_period_id' => (int)($context['company']['accounting_period_id'] ?? 0),
         ];
-    }
-
-    private function attributionTable(array $context): TableFramework
-    {
-        $statement = (array)($context['services']['directorLoanStatement'] ?? []);
-        $entries = array_values(array_filter(
-            (array)($statement['attribution_entries'] ?? []),
-            static fn(mixed $entry): bool => is_array($entry)
-        ));
-        $directors = array_values(array_filter(
-            (array)($statement['directors'] ?? []),
-            static fn(mixed $director): bool => is_array($director)
-        ));
-        $settings = ['default_currency_symbol' => (string)($statement['default_currency_symbol'] ?? '&#163;')];
-        $companyId = (int)($context['company']['id'] ?? 0);
-        $accountingPeriodId = (int)($context['company']['accounting_period_id'] ?? 0);
-
-        return TableFramework::make(self::ATTRIBUTION_TABLE_KEY, $entries)
-            ->filename('director-loan-attribution')
-            ->exportLimit(5000)
-            ->empty('No Director Loan control-account entries were found.')
-            ->column(
-                'journal_date',
-                'Date',
-                html: static fn(array $row): string => HelperFramework::escape(
-                    HelperFramework::displayDate((string)($row['journal_date'] ?? ''))
-                ),
-                export: static fn(array $row): string => (string)($row['journal_date'] ?? ''),
-                exportType: 'date'
-            )
-            ->textColumn('description', 'Description')
-            ->column(
-                'counterparty_name',
-                'Actual counterparty',
-                html: static function (array $row): string {
-                    $counterparty = trim((string)($row['counterparty_name'] ?? ''));
-
-                    return $counterparty !== ''
-                        ? HelperFramework::escape($counterparty)
-                        : '<span class="helper">Not stated</span>';
-                },
-                export: static fn(array $row): string => trim((string)($row['counterparty_name'] ?? ''))
-            )
-            ->column(
-                'source_label',
-                'Source',
-                html: fn(array $row): string => $this->attributionSourceHtml($row),
-                export: static fn(array $row): string => trim(
-                    (string)($row['source_label'] ?? '')
-                    . (!empty($row['is_opening']) ? ' (Opening)' : '')
-                )
-            )
-            ->column(
-                'signed_amount',
-                'Movement',
-                html: fn(array $row): string => HelperFramework::escape(
-                    $this->money($settings, $this->attributionAmount($row))
-                ),
-                export: fn(array $row): string => number_format($this->attributionAmount($row), 2, '.', ''),
-                headerClass: 'numeric',
-                cellClass: 'numeric',
-                exportType: 'number'
-            )
-            ->column(
-                'director_id',
-                'Participator loan account',
-                html: fn(array $row): string => $this->attributionForm(
-                    $row,
-                    $directors,
-                    $companyId,
-                    $accountingPeriodId
-                ),
-                export: fn(array $row): string => $this->attributedDirectorLabel($row, $directors)
-            );
-    }
-
-    private function attributionSourceHtml(array $entry): string
-    {
-        $sourceLabel = trim((string)($entry['source_label'] ?? ''));
-        $sourceUrl = trim((string)($entry['source_url'] ?? ''));
-        $sourceHtml = $sourceUrl !== ''
-            ? '<a class="button" href="' . HelperFramework::escape($sourceUrl) . '">' . HelperFramework::escape($sourceLabel) . '</a>'
-            : HelperFramework::escape($sourceLabel);
-
-        return $sourceHtml . (!empty($entry['is_opening']) ? ' <span class="badge">Opening</span>' : '');
-    }
-
-    private function attributionAmount(array $entry): float
-    {
-        return round(
-            (float)($entry['signed_amount']
-                ?? ((float)($entry['credit'] ?? 0) - (float)($entry['debit'] ?? 0))),
-            2
-        );
-    }
-
-    private function attributionForm(
-        array $entry,
-        array $directors,
-        int $companyId,
-        int $accountingPeriodId
-    ): string {
-        $currentDirectorId = (int)($entry['director_id'] ?? 0);
-        $options = '<option value="" disabled' . ($currentDirectorId <= 0 ? ' selected' : '') . '>Choose party</option>';
-        foreach ((new \eel_accounts\Service\OwnershipPartyService())->effectiveParties($companyId, (string)($entry['journal_date'] ?? '')) as $director) {
-            $directorId = (int)($director['id'] ?? 0);
-            $options .= '<option value="' . $directorId . '"'
-                . ($directorId === $currentDirectorId ? ' selected' : '')
-                . '>' . HelperFramework::escape((string)$director['legal_name'] . ((int)($director['linked_director_id'] ?? 0) > 0 ? ' (Director)' : '')) . '</option>';
-        }
-
-        $isLocked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
-        return '<form method="post" data-ajax="true" class="actions-row">
-            ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-            <input type="hidden" name="card_action" value="YearEnd">
-            <input type="hidden" name="intent" value="set_participator_loan_attribution">
-            <input type="hidden" name="company_id" value="' . $companyId . '">
-            <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-            <input type="hidden" name="journal_line_id" value="' . (int)($entry['journal_line_id'] ?? 0) . '">
-            <select class="input' . ($isLocked ? ' control-disabled' : '') . '" name="party_id" required' . ($isLocked ? ' disabled aria-disabled="true"' : '') . '>' . $options . '</select>
-        </form>';
-    }
-
-    private function attributedDirectorLabel(array $entry, array $directors): string
-    {
-        $currentDirectorId = (int)($entry['director_id'] ?? 0);
-        foreach ($directors as $director) {
-            if ((int)($director['id'] ?? 0) === $currentDirectorId) {
-                return $this->directorLabel($director);
-            }
-        }
-
-        return 'Unattributed';
-    }
-
-    private function directorLabel(array $director): string
-    {
-        $label = trim((string)($director['full_name'] ?? ''));
-
-        return $label . (empty($director['is_active']) ? ' (former director)' : '');
     }
 
     private function tableInvalidationFact(): string

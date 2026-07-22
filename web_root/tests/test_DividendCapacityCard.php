@@ -56,6 +56,9 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
 
         $harness->assertTrue(str_contains($html, '<section class="panel-soft settings-stack dividend-capacity-warning">'));
         $harness->assertTrue(str_contains($html, '<section class="panel-soft dividend-reserve-overview">'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-value">Reserve basis verified</div>'));
+        $harness->assertTrue(!str_contains($html, '<div class="summary-label">Distributable reserves</div>'));
+        $harness->assertTrue(!str_contains($html, '<span class="badge success">Reserve basis verified</span>'));
         $harness->assertTrue(str_contains($html, '<table class="table dividend-capacity-summary">'));
         $harness->assertTrue(str_contains($html, '<th>Title</th><th>Description</th><th class="numeric">Value</th>'));
         $harness->assertTrue(str_contains($html, '<div class="summary-card"><div class="summary-label">Available distributable reserves</div><div class="summary-value">£ 140.00</div></div>'));

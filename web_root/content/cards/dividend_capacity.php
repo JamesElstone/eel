@@ -60,10 +60,9 @@ final class _dividend_capacityCard extends CardBaseFramework
             <div class="dividend-capacity-overview">
             ' . ($reliabilityWarningPanels !== '' ? '<div>' . $reliabilityWarningPanels . '</div>' : '') . '
             <section class="panel-soft dividend-reserve-overview">
-                <div class="summary-label">Distributable reserves</div>
+                <div class="summary-value">' . HelperFramework::escape(!empty($capacity['reserves_reliable']) ? 'Reserve basis verified' : 'Reserve basis blocked') . '</div>
                 <div class="helper">' . HelperFramework::escape($this->reservesEquation($companySettings, $capacity)) . '</div>
                 <div class="helper">' . HelperFramework::escape((string)($capacity['reserve_basis_detail'] ?? $capacity['retained_earnings_detail'] ?? '')) . '</div>
-                <div class="pill-row"><span class="badge ' . HelperFramework::escape(!empty($capacity['reserves_reliable']) ? 'success' : 'danger') . '">' . HelperFramework::escape(!empty($capacity['reserves_reliable']) ? 'Reserve basis verified' : 'Reserve basis blocked') . '</span></div>
             </section>
             </div>
             <div class="table-scroll">

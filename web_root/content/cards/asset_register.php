@@ -433,7 +433,8 @@ final class _asset_registerCard extends CardBaseFramework
                 <input type="hidden" name="asset_disposal_method" value="sell_asset">
                 <div class="asset-disposal-controls">
                     <div class="asset-disposal-row">
-                        <input class="input" type="date" name="disposal_search_date" value="' . HelperFramework::escape($searchDate) . '">
+                        <input type="hidden" name="disposal_search_date" value="' . HelperFramework::escape($searchDate) . '">
+                        <span class="helper">The disposal date will be taken from the selected incoming payment.</span>
                         <button class="button button-inline primary" type="submit" name="intent" value="search_asset_disposal_receipts">Search Incoming Payments</button>
                     </div>
                 </div>

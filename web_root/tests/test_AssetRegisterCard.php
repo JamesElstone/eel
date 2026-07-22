@@ -341,6 +341,9 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
         $harness->assertTrue(str_contains($html, 'Receipts from'));
         $harness->assertTrue(str_contains($html, 'Asset sale receipt'));
         $harness->assertTrue(str_contains($html, '$ 150.00'));
+        $harness->assertTrue(str_contains($html, 'The disposal date will be taken from the selected incoming payment.'));
+        $harness->assertTrue(str_contains($html, 'type="hidden" name="disposal_search_date"'));
+        $harness->assertSame(false, str_contains($html, 'type="date" name="disposal_search_date"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="dispose_asset_with_transaction"'));
         $harness->assertTrue(str_contains($html, 'Link &amp; Dispose'));
         $harness->assertSame(false, str_contains($html, 'Dispose of at Nil Value'));

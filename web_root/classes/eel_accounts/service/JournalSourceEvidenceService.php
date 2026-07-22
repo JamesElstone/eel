@@ -18,7 +18,7 @@ final class JournalSourceEvidenceService
     public function verify(array $journals, int $companyId, int $accountingPeriodId): array
     {
         $results = [];
-        $transactionIds = [];
+        $transactionReferences = [];
         $claimReferences = [];
         $depreciationJournals = [];
         $disposalAssets = [];
@@ -38,13 +38,19 @@ final class JournalSourceEvidenceService
             $sourceRef = trim((string)($journal['source_ref'] ?? ''));
             $results[$journalId] = ['verified' => false, 'reason' => 'Source evidence has not been verified.'];
 
-            if ($sourceType === 'bank_csv' && preg_match('/^transaction:(\d+)$/', $sourceRef, $matches) === 1) {
-                $transactionIds[$journalId] = (int)$matches[1];
+            if ($sourceType === 'bank_csv' && preg_match('/^transaction:(\d+)(?::revision-of:(\d+))?$/', $sourceRef, $matches) === 1) {
+                $transactionReferences[$journalId] = [
+                    'transaction_id' => (int)$matches[1],
+                    'revision_of_journal_id' => (int)($matches[2] ?? 0),
+                ];
                 continue;
             }
 
             if ($sourceType === 'expense_register' && $sourceRef !== '') {
-                $claimReferences[$journalId] = $sourceRef;
+                $claimReferences[$journalId] = [
+                    'claim_reference' => $this->sourceReferenceWithoutRevision($sourceRef),
+                    'revision_of_journal_id' => $this->revisionOfJournalId($sourceRef),
+                ];
                 continue;
             }
 
@@ -93,7 +99,7 @@ final class JournalSourceEvidenceService
             ];
         }
 
-        $this->verifyTransactions($results, $transactionIds, $journalsById, $companyId, $accountingPeriodId);
+        $this->verifyTransactions($results, $transactionReferences, $journalsById, $companyId, $accountingPeriodId);
         $this->verifyExpenseClaims($results, $claimReferences, $journalsById, $companyId, $accountingPeriodId);
         $this->verifyDepreciation($results, $depreciationJournals, $journalsById, $companyId);
         $this->verifyDisposals($results, $disposalAssets, $journalsById, $companyId);
@@ -412,6 +418,7 @@ final class JournalSourceEvidenceService
             'SELECT journal_id,
                     nominal_account_id,
                     COALESCE(director_id, 0) AS director_id,
+                    COALESCE(party_id, 0) AS party_id,
                     COALESCE(company_account_id, 0) AS company_account_id,
                     debit,
                     credit
@@ -424,6 +431,7 @@ final class JournalSourceEvidenceService
             $key = implode(':', [
                 (int)($row['nominal_account_id'] ?? 0),
                 (int)($row['director_id'] ?? 0),
+                (int)($row['party_id'] ?? 0),
                 (int)($row['company_account_id'] ?? 0),
             ]);
             $maps[$journalId][$key] = [
@@ -473,16 +481,19 @@ final class JournalSourceEvidenceService
     /** @param array<int, array{verified: bool, reason: string}> $results */
     private function verifyTransactions(
         array &$results,
-        array $journalTransactionIds,
+        array $journalTransactionReferences,
         array $journalsById,
         int $companyId,
         int $accountingPeriodId
     ): void {
-        if ($journalTransactionIds === []) {
+        if ($journalTransactionReferences === []) {
             return;
         }
 
-        $ids = array_values(array_unique(array_filter(array_map('intval', $journalTransactionIds))));
+        $ids = array_values(array_unique(array_filter(array_map(
+            static fn(array $reference): int => (int)($reference['transaction_id'] ?? 0),
+            $journalTransactionReferences
+        ))));
         $rows = \InterfaceDB::fetchAll(
             'SELECT id, txn_date, amount
              FROM transactions
@@ -495,10 +506,10 @@ final class JournalSourceEvidenceService
         foreach ($rows as $row) {
             $transactions[(int)($row['id'] ?? 0)] = $row;
         }
-        $sourceReferences = array_values(array_unique(array_map(
-            static fn(int $transactionId): string => 'transaction:' . $transactionId,
-            $ids
-        )));
+        $sourceReferences = array_values(array_unique(array_filter(array_map(
+            static fn(int $journalId): string => trim((string)(($journalsById[$journalId] ?? [])['source_ref'] ?? '')),
+            array_keys($journalTransactionReferences)
+        ))));
         $journalCounts = [];
         if ($sourceReferences !== []) {
             $countRows = \InterfaceDB::fetchAll(
@@ -517,26 +528,46 @@ final class JournalSourceEvidenceService
             }
         }
 
-        foreach ($journalTransactionIds as $journalId => $transactionId) {
+        $replacementEvidence = $this->replacementEvidence(
+            $companyId,
+            $accountingPeriodId,
+            array_values(array_filter(array_map(
+                static fn(array $reference): int => (int)($reference['revision_of_journal_id'] ?? 0),
+                $journalTransactionReferences
+            )))
+        );
+
+        foreach ($journalTransactionReferences as $journalId => $reference) {
+            $transactionId = (int)($reference['transaction_id'] ?? 0);
+            $revisionOfJournalId = (int)($reference['revision_of_journal_id'] ?? 0);
             $transaction = (array)($transactions[(int)$transactionId] ?? []);
             $journal = (array)($journalsById[(int)$journalId] ?? []);
             $expected = abs(round((float)($transaction['amount'] ?? 0), 2));
             $exists = $transaction !== [];
-            $sourceReference = 'transaction:' . (int)$transactionId;
+            $sourceReference = trim((string)($journal['source_ref'] ?? ''));
             $uniquePosting = (int)($journalCounts[$sourceReference] ?? 0) === 1;
+            $replacement = (array)($replacementEvidence[(int)$journalId] ?? []);
+            $revisionLinkMatches = $revisionOfJournalId <= 0 || (
+                (int)($replacement['source_journal_id'] ?? 0) === $revisionOfJournalId
+                && (int)($replacement['replacement_journal_id'] ?? 0) === (int)$journalId
+                && (int)($replacement['source_is_posted'] ?? 0) === 1
+            );
             $totalsMatch = $exists
                 && $this->sameMoney((float)($journal['debit_total'] ?? 0), $expected)
                 && $this->sameMoney((float)($journal['credit_total'] ?? 0), $expected);
             $dateMatch = $exists
                 && trim((string)($journal['journal_date'] ?? '')) !== ''
                 && (string)$journal['journal_date'] === (string)($transaction['txn_date'] ?? '');
-            $verified = $exists && $uniquePosting && $totalsMatch && $dateMatch;
+            $verified = $exists && $uniquePosting && $revisionLinkMatches && $totalsMatch && $dateMatch;
             $results[(int)$journalId] = [
                 'verified' => $verified,
                 'reason' => match (true) {
-                    $verified => 'Linked transaction date and amount reconcile to the journal.',
+                    $verified => $revisionOfJournalId > 0
+                        ? 'Linked transaction, replacement relationship, date and amount reconcile to the revised journal.'
+                        : 'Linked transaction date and amount reconcile to the journal.',
                     !$exists => 'Linked transaction ' . (int)$transactionId . ' does not exist in the selected company and period.',
                     !$uniquePosting => 'The linked transaction has more than one posted bank journal and cannot be independently reconciled.',
+                    !$revisionLinkMatches => 'The revised bank journal is not linked to the stated source journal correction.',
                     !$dateMatch => 'Linked transaction date does not match the journal date.',
                     default => 'Linked transaction amount does not reconcile to the journal totals.',
                 },
@@ -556,7 +587,10 @@ final class JournalSourceEvidenceService
             return;
         }
 
-        $references = array_values(array_unique(array_filter(array_map('strval', $journalClaimReferences))));
+        $references = array_values(array_unique(array_filter(array_map(
+            static fn(array $reference): string => trim((string)($reference['claim_reference'] ?? '')),
+            $journalClaimReferences
+        ))));
         $rows = \InterfaceDB::fetchAll(
             'SELECT claim_reference_code, posted_journal_id, period_end, claimed_amount
              FROM expense_claims
@@ -570,25 +604,45 @@ final class JournalSourceEvidenceService
             $claims[(string)($row['claim_reference_code'] ?? '')] = $row;
         }
 
+        $replacementEvidence = $this->replacementEvidence(
+            $companyId,
+            $accountingPeriodId,
+            array_values(array_filter(array_map(
+                static fn(array $reference): int => (int)($reference['revision_of_journal_id'] ?? 0),
+                $journalClaimReferences
+            )))
+        );
+
         foreach ($journalClaimReferences as $journalId => $reference) {
-            $claim = (array)($claims[(string)$reference] ?? []);
+            $claimReference = (string)($reference['claim_reference'] ?? '');
+            $revisionOfJournalId = (int)($reference['revision_of_journal_id'] ?? 0);
+            $claim = (array)($claims[$claimReference] ?? []);
             $journal = (array)($journalsById[(int)$journalId] ?? []);
             $expected = abs(round((float)($claim['claimed_amount'] ?? 0), 2));
             $exists = $claim !== [];
             $journalLinkMatches = $exists && (int)($claim['posted_journal_id'] ?? 0) === (int)$journalId;
+            $replacement = (array)($replacementEvidence[(int)$journalId] ?? []);
+            $revisionLinkMatches = $revisionOfJournalId <= 0 || (
+                (int)($replacement['source_journal_id'] ?? 0) === $revisionOfJournalId
+                && (int)($replacement['replacement_journal_id'] ?? 0) === (int)$journalId
+                && (int)($replacement['source_is_posted'] ?? 0) === 1
+            );
             $totalsMatch = $exists
                 && $this->sameMoney((float)($journal['debit_total'] ?? 0), $expected)
                 && $this->sameMoney((float)($journal['credit_total'] ?? 0), $expected);
             $dateMatch = $exists
                 && trim((string)($journal['journal_date'] ?? '')) !== ''
                 && (string)$journal['journal_date'] === (string)($claim['period_end'] ?? '');
-            $verified = $exists && $journalLinkMatches && $totalsMatch && $dateMatch;
+            $verified = $exists && $journalLinkMatches && $revisionLinkMatches && $totalsMatch && $dateMatch;
             $results[(int)$journalId] = [
                 'verified' => $verified,
                 'reason' => match (true) {
-                    $verified => 'Linked expense claim, posting date and claimed amount reconcile to the journal.',
-                    !$exists => 'Expense claim reference "' . (string)$reference . '" was not found in the selected company and period.',
-                    !$journalLinkMatches => 'Expense claim reference "' . (string)$reference . '" does not link to this posted journal.',
+                    $verified => $revisionOfJournalId > 0
+                        ? 'Linked expense claim, replacement relationship, posting date and claimed amount reconcile to the revised journal.'
+                        : 'Linked expense claim, posting date and claimed amount reconcile to the journal.',
+                    !$exists => 'Expense claim reference "' . $claimReference . '" was not found in the selected company and period.',
+                    !$journalLinkMatches => 'Expense claim reference "' . $claimReference . '" does not link to this posted journal.',
+                    !$revisionLinkMatches => 'The revised expense claim journal is not linked to the stated source journal correction.',
                     !$dateMatch => 'Expense claim period end does not match the journal date.',
                     default => 'Expense claim amount does not reconcile to the journal totals.',
                 },
@@ -677,6 +731,14 @@ final class JournalSourceEvidenceService
         int $companyId,
         int $accountingPeriodId
     ): ?array {
+        if ($tag === 'journal_reversal') {
+            return $this->verifyJournalReversal($journal, $companyId, $accountingPeriodId);
+        }
+
+        if ($tag === 'hmrc_obligation_accrual') {
+            return $this->verifyHmrcObligationAccrual($journal, $companyId, $accountingPeriodId);
+        }
+
         if ($tag === 'director_loan_offset') {
             $result = (new DirectorLoanReconciliationService())->verifyJournalEvidence(
                 $companyId,
@@ -706,6 +768,171 @@ final class JournalSourceEvidenceService
         }
 
         return null;
+    }
+
+    /** @return array{success: bool, reason?: string, errors?: list<string>} */
+    private function verifyJournalReversal(array $journal, int $companyId, int $accountingPeriodId): array
+    {
+        $journalId = (int)($journal['id'] ?? 0);
+        if ($journalId <= 0 || !\InterfaceDB::tableExists('journal_reversals')) {
+            return [
+                'success' => false,
+                'errors' => ['The journal reversal relationship is unavailable.'],
+            ];
+        }
+
+        $reversal = \InterfaceDB::fetchOne(
+            'SELECT source_journal_id, reversal_journal_id, company_id, accounting_period_id, effective_date
+             FROM journal_reversals
+             WHERE company_id = ? AND accounting_period_id = ? AND reversal_journal_id = ?',
+            [$companyId, $accountingPeriodId, $journalId]
+        );
+        if (!is_array($reversal)) {
+            return [
+                'success' => false,
+                'errors' => ['No journal reversal relationship exists for this tagged journal.'],
+            ];
+        }
+
+        $sourceJournalId = (int)($reversal['source_journal_id'] ?? 0);
+        $source = \InterfaceDB::fetchOne(
+            'SELECT id, company_id, is_posted
+             FROM journals
+             WHERE id = ? AND company_id = ?',
+            [$sourceJournalId, $companyId]
+        );
+        $journalLines = $this->journalLineMaps([$journalId]);
+        $sourceLines = $this->journalLineMaps([$sourceJournalId]);
+        $linesMatch = $this->lineMapsAreExactReversals(
+            (array)($sourceLines[$sourceJournalId] ?? []),
+            (array)($journalLines[$journalId] ?? [])
+        );
+        $valid = (int)($reversal['reversal_journal_id'] ?? 0) === $journalId
+            && (int)($reversal['company_id'] ?? 0) === $companyId
+            && (int)($reversal['accounting_period_id'] ?? 0) === $accountingPeriodId
+            && is_array($source)
+            && (int)($source['is_posted'] ?? 0) === 1
+            && (string)($reversal['effective_date'] ?? '') === (string)($journal['journal_date'] ?? '')
+            && $linesMatch;
+
+        return [
+            'success' => $valid,
+            'reason' => 'Journal reversal relationship, effective date and inverted journal lines reconcile to the source journal.',
+            'errors' => $valid ? [] : ['Journal reversal relationship, date or inverted journal lines do not reconcile to the source journal.'],
+        ];
+    }
+
+    /** @return array{success: bool, reason?: string, errors?: list<string>} */
+    private function verifyHmrcObligationAccrual(array $journal, int $companyId, int $accountingPeriodId): array
+    {
+        $journalId = (int)($journal['id'] ?? 0);
+        $sourceRef = trim((string)($journal['source_ref'] ?? ''));
+        if ($journalId <= 0 || !\InterfaceDB::tableExists('hmrc_obligations')) {
+            return [
+                'success' => false,
+                'errors' => ['The HMRC obligation record is unavailable.'],
+            ];
+        }
+
+        $obligations = \InterfaceDB::fetchAll(
+            'SELECT id, obligation_type, notice_date, amount_due, related_journal_id
+             FROM hmrc_obligations
+             WHERE company_id = ?
+               AND accounting_period_id = ?
+               AND related_journal_id = ?',
+            [$companyId, $accountingPeriodId, $journalId]
+        );
+        if (count($obligations) !== 1) {
+            return [
+                'success' => false,
+                'errors' => ['The HMRC accrual journal is not linked to exactly one HMRC obligation.'],
+            ];
+        }
+
+        $obligation = (array)$obligations[0];
+        $obligationId = (int)($obligation['id'] ?? 0);
+        $referenceMatches = preg_match(
+            '/^meta:hmrc_obligation_accrual:' . preg_quote((string)$accountingPeriodId, '/') . ':obligation_(\d+)$/',
+            $sourceRef,
+            $matches
+        ) === 1 && (int)$matches[1] === $obligationId;
+        $type = (string)($obligation['obligation_type'] ?? '');
+        $expenseCode = $type === 'hmrc_interest' ? '6231' : '6230';
+        $expected = abs(round((float)($obligation['amount_due'] ?? 0), 2));
+        $lineRows = \InterfaceDB::fetchAll(
+            'SELECT na.code, jl.debit, jl.credit
+             FROM journal_lines jl
+             INNER JOIN nominal_accounts na ON na.id = jl.nominal_account_id
+             WHERE jl.journal_id = ?',
+            [$journalId]
+        );
+        $expenseDebit = 0.0;
+        $payableCredit = 0.0;
+        foreach ($lineRows as $line) {
+            if ((string)($line['code'] ?? '') === $expenseCode) {
+                $expenseDebit += (float)($line['debit'] ?? 0);
+            }
+            if ((string)($line['code'] ?? '') === '2210') {
+                $payableCredit += (float)($line['credit'] ?? 0);
+            }
+        }
+        $valid = $referenceMatches
+            && in_array($type, ['hmrc_penalty', 'hmrc_interest'], true)
+            && $expected > 0
+            && (string)($journal['journal_date'] ?? '') === (string)($obligation['notice_date'] ?? '')
+            && $this->sameMoney((float)($journal['debit_total'] ?? 0), $expected)
+            && $this->sameMoney((float)($journal['credit_total'] ?? 0), $expected)
+            && $this->sameMoney($expenseDebit, $expected)
+            && $this->sameMoney($payableCredit, $expected);
+
+        return [
+            'success' => $valid,
+            'reason' => 'HMRC obligation, notice date, amount and payable accrual lines reconcile to the journal.',
+            'errors' => $valid ? [] : ['The HMRC obligation, notice date, amount or payable accrual lines do not reconcile to the journal.'],
+        ];
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function replacementEvidence(int $companyId, int $accountingPeriodId, array $sourceJournalIds): array
+    {
+        $sourceJournalIds = array_values(array_unique(array_filter(array_map('intval', $sourceJournalIds))));
+        if ($sourceJournalIds === [] || !\InterfaceDB::tableExists('journal_reversals')) {
+            return [];
+        }
+
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT jr.source_journal_id,
+                    jr.reversal_journal_id,
+                    jr.replacement_journal_id,
+                    source.is_posted AS source_is_posted
+             FROM journal_reversals jr
+             INNER JOIN journals source ON source.id = jr.source_journal_id
+             WHERE jr.company_id = ?
+               AND jr.accounting_period_id = ?
+               AND jr.source_journal_id IN (' . $this->placeholders($sourceJournalIds) . ')',
+            array_merge([$companyId, $accountingPeriodId], $sourceJournalIds)
+        );
+        $evidence = [];
+        foreach ($rows as $row) {
+            $replacementJournalId = (int)($row['replacement_journal_id'] ?? 0);
+            if ($replacementJournalId > 0) {
+                $evidence[$replacementJournalId] = $row;
+            }
+        }
+
+        return $evidence;
+    }
+
+    private function revisionOfJournalId(string $sourceReference): int
+    {
+        return preg_match('/:revision-of:(\d+)$/', trim($sourceReference), $matches) === 1
+            ? (int)$matches[1]
+            : 0;
+    }
+
+    private function sourceReferenceWithoutRevision(string $sourceReference): string
+    {
+        return preg_replace('/:revision-of:\d+$/', '', trim($sourceReference)) ?: trim($sourceReference);
     }
 
     /** @param array<int, array{verified: bool, reason: string}> $results */

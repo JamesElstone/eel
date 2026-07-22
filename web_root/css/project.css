@@ -99,6 +99,33 @@
   width: 100%;
 }
 
+.journal-cut-off-create-fields {
+  display: flex;
+  flex-flow: row wrap;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.journal-cut-off-create-fields > .form-row {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.journal-cut-off-create-fields .input,
+.journal-cut-off-create-fields .select {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.journal-cut-off-create-fields .input {
+  width: 100%;
+}
+
+.journal-cut-off-create-fields .select {
+  width: fit-content;
+}
+
 .backup-restore-form,
 .backup-download-form {
   margin: 0;

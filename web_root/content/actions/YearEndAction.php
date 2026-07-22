@@ -243,7 +243,7 @@ final class YearEndAction implements ActionInterfaceFramework
         }
 
         if (in_array($intent, ['acknowledge_review_check', 'reopen_review_check'], true)) {
-            return ['page.context', 'year.end.checklist', 'year.end.audit.log'];
+            return ['page.reload', 'page.context', 'year.end.checklist', 'year.end.audit.log'];
         }
 
         return ['page.context', 'year.end.state', 'year.end.checklist', 'year.end.director.loan.offset', 'year.end.tax.readiness', 'year.end.expenses.confirmation', 'year.end.retained.earnings', 'year.end.empty.month.confirmations', 'year.end.transaction.tail', 'year.end.notes', 'year.end.audit.log', 'trial.balance.state', 'nominal.opening.balances', 'nominal.closing.balances', 'cut.off.journals', 'prepayments.state'];
@@ -369,6 +369,7 @@ final class YearEndAction implements ActionInterfaceFramework
             'primary_nominal_id' => (int)$request->input('adjustment_primary_nominal_id', 0),
             'offset_nominal_id' => (int)$request->input('adjustment_offset_nominal_id', 0),
             'amount' => (string)$request->input('adjustment_amount', ''),
+            'journal_key' => (string)$request->input('adjustment_journal_key', ''),
             'auto_reverse' => $this->truthy($request->input('adjustment_auto_reverse', '0')),
             'lines' => $this->linePayloads($request, 'adjustment', 8),
         ];

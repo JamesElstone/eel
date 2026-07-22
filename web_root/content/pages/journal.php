@@ -33,7 +33,8 @@ final class _journal extends PageContextFramework
     {
         return [
             'journals_list',
-            'journal_cut_offs',
+            'journal_cut_off_create',
+            'journal_manual_entry',
             'journal_cut_off_confirmation',
         ];
     }
@@ -50,7 +51,8 @@ final class _journal extends PageContextFramework
             [
                 'tab' => 'Adjustments',
                 'cards' => [
-                    'journal_cut_offs',
+                    'journal_cut_off_create',
+                    'journal_manual_entry',
                 ],
             ],
             [

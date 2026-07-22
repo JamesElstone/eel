@@ -26,6 +26,18 @@ $harness->run(_journal_cut_offsCard::class, static function (GeneratedServiceCla
         $harness->assertSame(false, str_contains($html, 'Mark cut-off journals review complete'));
         $harness->assertSame(false, str_contains($html, 'Reopen review'));
     });
+
+    $harness->check(_journal_cut_offsCard::class, 'disables posting controls after current review acknowledgement', static function () use ($harness, $card): void {
+        $context = yearEndCutOffJournalsCardContext();
+        $context['services']['journalCutOffReview'] = ['acknowledgement' => ['current' => true]];
+
+        $html = $card->render($context);
+
+        $harness->assertSame(true, str_contains($html, 'Year End Confirmation entered'));
+        $harness->assertSame(true, str_contains($html, 'name="adjustment_template_type"'));
+        $harness->assertSame(true, str_contains($html, 'name="adjustment_template_type" form="cut-off-journal-form" disabled'));
+        $harness->assertSame(true, str_contains($html, 'type="submit" form="cut-off-journal-form" disabled'));
+    });
 });
 
 $harness->run(_journal_cut_off_confirmationCard::class, static function (GeneratedServiceClassTestHarness $harness, _journal_cut_off_confirmationCard $card): void {
@@ -88,6 +100,7 @@ $harness->run(_journal_cut_off_confirmationCard::class, static function (Generat
         $harness->assertSame(true, str_contains($html, 'This accounting period is locked, so this approval cannot be revoked.'));
         $harness->assertSame(false, str_contains($html, 'Revoke approval'));
     });
+
 });
 
 function yearEndCutOffJournalsCardContext(): array
@@ -122,6 +135,9 @@ function yearEndCutOffJournalsCardContext(): array
                         ],
                     ],
                 ],
+            ],
+            'journalCutOffReview' => [
+                'acknowledgement' => null,
             ],
         ],
     ];

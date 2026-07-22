@@ -45,7 +45,7 @@ final class _journal_cut_off_confirmationCard extends CardBaseFramework
 
     protected function additionalInvalidationFacts(): array
     {
-        return ['year.end.state', 'year.end.checklist'];
+        return ['page.context', 'year.end.state', 'year.end.checklist'];
     }
 
     public function handleError(string $serviceKey, array $error, array $context): string
@@ -69,6 +69,7 @@ final class _journal_cut_off_confirmationCard extends CardBaseFramework
 
         return '<section class="settings-stack" id="journal-cut-off">
             ' . $this->renderPostedAdjustments((array)($data['adjustments'] ?? [])) . '
+            ' . $this->renderManualEntries((array)($data['adjustments'] ?? [])) . '
             ' . $this->acknowledgementHtml($acknowledgement, $companyId, $accountingPeriodId, $access) . '
         </section>';
     }
@@ -90,6 +91,19 @@ final class _journal_cut_off_confirmationCard extends CardBaseFramework
         }
 
         return '<section class="panel-soft settings-stack"><h4 class="card-title">Posted cut-off journals</h4><div class="table-scroll"><table><thead><tr><th>Date</th><th>Description</th><th>Type</th><th>Lines</th></tr></thead><tbody>' . $rows . '</tbody></table></div></section>';
+    }
+
+    private function renderManualEntries(array $adjustments): string
+    {
+        $rows = '';
+        foreach ($adjustments as $journal) {
+            if (!str_starts_with((string)($journal['journal_key'] ?? ''), 'manual-cutoff-')) continue;
+            $rows .= '<tr><td>' . HelperFramework::escape(HelperFramework::displayDate((string)($journal['journal_date'] ?? ''))) . '</td><td>' . HelperFramework::escape((string)($journal['description'] ?? '')) . '</td><td>' . count((array)($journal['lines'] ?? [])) . '</td></tr>';
+        }
+
+        return '<section class="panel-soft settings-stack"><h4 class="card-title">Posted Manual Journal Entries</h4>' . ($rows !== ''
+            ? '<div class="table-scroll"><table><thead><tr><th>Date</th><th>Description</th><th>Lines</th></tr></thead><tbody>' . $rows . '</tbody></table></div>'
+            : '<div class="helper">No manual journal entries have been posted for this accounting period yet.</div>') . '</section>';
     }
 
     private function acknowledgementHtml(

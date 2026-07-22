@@ -36,6 +36,15 @@ final class _journal_cut_offsCard extends CardBaseFramework
                     'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
+            [
+                'key' => 'journalCutOffReview',
+                'service' => \eel_accounts\Service\JournalCutOffReviewService::class,
+                'method' => 'fetchContext',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                ],
+            ],
         ];
     }
 
@@ -62,6 +71,9 @@ final class _journal_cut_offsCard extends CardBaseFramework
         $accountingPeriodId = (int)($accountingPeriod['id'] ?? ($company['accounting_period_id'] ?? 0));
         $formId = 'cut-off-journal-form';
         $isLocked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
+        $review = (array)($context['services']['journalCutOffReview'] ?? []);
+        $acknowledgement = (array)($review['acknowledgement'] ?? []);
+        $isConfirmed = !empty($acknowledgement['current']);
 
         if ($isLocked) {
             return '<section class="settings-stack" id="cut-off-journals">
@@ -70,8 +82,15 @@ final class _journal_cut_offsCard extends CardBaseFramework
             </section>';
         }
 
+        $controlDisabled = $isConfirmed ? ' disabled' : '';
+        $confirmationMessage = $isConfirmed
+            ? '<div class="helper"><span class="badge warning">Year End Confirmation entered</span> Cut-off journal controls are disabled until the confirmation is revoked.</div>'
+            : '';
+
         return '<section class="settings-stack" id="cut-off-journals">
+            ' . $confirmationMessage . '
             <section class="panel-soft settings-stack">
+                <h4 class="card-title">Cut-off journal details</h4>
                 <form id="' . $formId . '" method="post" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="YearEnd">
@@ -81,37 +100,38 @@ final class _journal_cut_offsCard extends CardBaseFramework
                     <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 </form>
                 <div class="form-grid">
-                    <div class="form-row"><label for="cutoff-template-type">Template</label><select class="select" id="cutoff-template-type" name="adjustment_template_type" form="' . $formId . '">' . $this->options(['accrual' => 'Create accrual', 'prepayment' => 'Create prepayment', 'deferred_income' => 'Create deferred income', 'custom' => 'Custom journal'], 'accrual') . '</select></div>
-                    <div class="form-row"><label for="cutoff-date">Date</label><input class="input" id="cutoff-date" name="adjustment_date" form="' . $formId . '" type="date" value="' . HelperFramework::escape((string)($accountingPeriod['period_end'] ?? '')) . '"></div>
-                    <div class="form-row"><label for="cutoff-description">Description</label><input class="input" id="cutoff-description" name="adjustment_description" form="' . $formId . '" value=""></div>
-                    <div class="form-row"><label for="cutoff-notes">Notes</label><input class="input" id="cutoff-notes" name="adjustment_notes" form="' . $formId . '" value=""></div>
-                    <div class="form-row"><label for="cutoff-primary-nominal">Primary nominal</label><select class="select" id="cutoff-primary-nominal" name="adjustment_primary_nominal_id" form="' . $formId . '">' . $this->nominalOptions((array)($data['nominals'] ?? []), 0) . '</select></div>
-                    <div class="form-row"><label for="cutoff-offset-nominal">Offset nominal</label><select class="select" id="cutoff-offset-nominal" name="adjustment_offset_nominal_id" form="' . $formId . '">' . $this->nominalOptions((array)($data['nominals'] ?? []), 0) . '</select></div>
-                    <div class="form-row"><label for="cutoff-amount">Amount</label><input class="input" id="cutoff-amount" name="adjustment_amount" form="' . $formId . '" inputmode="decimal"></div>
-                    <div class="form-row"><label>&nbsp;</label><label class="checkbox-item"><input type="checkbox" id="cutoff-auto-reverse" name="adjustment_auto_reverse" form="' . $formId . '" value="1"><div class="checkbox-copy"><strong>Auto reverse into next period</strong><span>Create the reversing journal on the next period start date.</span></div></label></div>
+                    <div class="form-row"><label for="cutoff-template-type">Template</label><select class="select" id="cutoff-template-type" name="adjustment_template_type" form="' . $formId . '"' . $controlDisabled . '>' . $this->options(['accrual' => 'Create accrual', 'prepayment' => 'Create prepayment', 'deferred_income' => 'Create deferred income', 'custom' => 'Custom journal'], 'accrual') . '</select></div>
+                    <div class="form-row"><label for="cutoff-date">Date</label><input class="input" id="cutoff-date" name="adjustment_date" form="' . $formId . '" type="date" value="' . HelperFramework::escape((string)($accountingPeriod['period_end'] ?? '')) . '"' . $controlDisabled . '></div>
+                    <div class="form-row"><label for="cutoff-description">Description</label><input class="input" id="cutoff-description" name="adjustment_description" form="' . $formId . '" value=""' . $controlDisabled . '></div>
+                    <div class="form-row"><label for="cutoff-notes">Notes</label><input class="input" id="cutoff-notes" name="adjustment_notes" form="' . $formId . '" value=""' . $controlDisabled . '></div>
+                    <div class="form-row"><label for="cutoff-primary-nominal">Primary nominal</label><select class="select" id="cutoff-primary-nominal" name="adjustment_primary_nominal_id" form="' . $formId . '"' . $controlDisabled . '>' . $this->nominalOptions((array)($data['nominals'] ?? []), 0) . '</select></div>
+                    <div class="form-row"><label for="cutoff-offset-nominal">Offset nominal</label><select class="select" id="cutoff-offset-nominal" name="adjustment_offset_nominal_id" form="' . $formId . '"' . $controlDisabled . '>' . $this->nominalOptions((array)($data['nominals'] ?? []), 0) . '</select></div>
+                    <div class="form-row"><label for="cutoff-amount">Amount</label><input class="input" id="cutoff-amount" name="adjustment_amount" form="' . $formId . '" inputmode="decimal"' . $controlDisabled . '></div>
+                    <div class="form-row"><label>&nbsp;</label><label class="checkbox-item"><input type="checkbox" id="cutoff-auto-reverse" name="adjustment_auto_reverse" form="' . $formId . '" value="1"' . $controlDisabled . '><div class="checkbox-copy"><strong>Auto reverse into next period</strong><span>Create the reversing journal on the next period start date.</span></div></label></div>
                 </div>
             </section>
             <section class="panel-soft settings-stack">
                 <h4 class="card-title">Custom journal lines</h4>
-                ' . $this->lineEditorTable('adjustment', $formId, (array)($data['nominals'] ?? []), [], 8) . '
-                <div class="actions-row"><button class="button primary" type="submit" form="' . $formId . '">Post Cut-off Journal</button></div>
+                ' . $this->lineEditorTable('adjustment', $formId, (array)($data['nominals'] ?? []), [], 8, $isConfirmed) . '
+                <div class="actions-row"><button class="button primary" type="submit" form="' . $formId . '"' . $controlDisabled . '>Post Cut-off Journal</button></div>
             </section>
             ' . $this->renderPostedAdjustments((array)($data['adjustments'] ?? [])) . '
         </section>';
     }
 
-    private function lineEditorTable(string $prefix, string $formId, array $nominals, array $rows, int $rowCount): string
+    private function lineEditorTable(string $prefix, string $formId, array $nominals, array $rows, int $rowCount, bool $disabled = false): string
     {
         $html = '';
+        $controlDisabled = $disabled ? ' disabled' : '';
         for ($index = 0; $index < $rowCount; $index++) {
             $row = (array)($rows[$index] ?? []);
             $nominalId = (int)($row['nominal_account_id'] ?? 0);
             $description = (string)($row['line_description'] ?? '');
             $html .= '<tr>
-                <td><select class="select" name="' . $prefix . '_line_' . $index . '_nominal_id" form="' . $formId . '">' . $this->nominalOptions($nominals, $nominalId) . '</select></td>
-                <td><input class="input" name="' . $prefix . '_line_' . $index . '_debit" form="' . $formId . '" value="' . HelperFramework::escape($this->lineAmount($row, 'debit')) . '" inputmode="decimal"></td>
-                <td><input class="input" name="' . $prefix . '_line_' . $index . '_credit" form="' . $formId . '" value="' . HelperFramework::escape($this->lineAmount($row, 'credit')) . '" inputmode="decimal"></td>
-                <td><input class="input" name="' . $prefix . '_line_' . $index . '_description" form="' . $formId . '" value="' . HelperFramework::escape($description) . '"></td>
+                <td><select class="select" name="' . $prefix . '_line_' . $index . '_nominal_id" form="' . $formId . '"' . $controlDisabled . '>' . $this->nominalOptions($nominals, $nominalId) . '</select></td>
+                <td><input class="input" name="' . $prefix . '_line_' . $index . '_debit" form="' . $formId . '" value="' . HelperFramework::escape($this->lineAmount($row, 'debit')) . '" inputmode="decimal"' . $controlDisabled . '></td>
+                <td><input class="input" name="' . $prefix . '_line_' . $index . '_credit" form="' . $formId . '" value="' . HelperFramework::escape($this->lineAmount($row, 'credit')) . '" inputmode="decimal"' . $controlDisabled . '></td>
+                <td><input class="input" name="' . $prefix . '_line_' . $index . '_description" form="' . $formId . '" value="' . HelperFramework::escape($description) . '"' . $controlDisabled . '></td>
             </tr>';
         }
 

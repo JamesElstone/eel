@@ -1299,7 +1299,7 @@ function goldenAssertFirstPeriodLockBoundary(GeneratedServiceClassTestHarness $h
         'expense_claim_editor' => 'isLocked', 'expense_claim_create' => 'isLocked', 'year_end_expenses_confirmation' => 'YearEndApprovalRenderer',
         'year_end_loan_confirmation' => 'locked', 'dividend_declare' => 'locked', 'reserve_review' => 'locked',
         'asset_create' => 'isLocked', 'asset_reconcile_manual' => 'selected_period_locked', 'not_an_asset' => 'nonAssetReview',
-        'prepayments_review' => 'isLocked', 'year_end_prepayment_approvals' => 'locked', 'journal_cut_offs' => 'isLocked',
+        'prepayments_review' => 'isLocked', 'year_end_prepayment_approvals' => 'locked', 'journal_cut_off_create' => 'isLocked', 'journal_manual_entry' => 'isLocked',
         'journal_cut_off_confirmation' => 'YearEndApprovalRenderer', 'year_end_profit_loss_confirm' => 'locked',
         'year_end_companies_house_comparison' => 'YearEndApprovalRenderer', 'year_end_tax_readiness' => 'YearEndApprovalRenderer',
         'year_end_notes' => 'isLocked', 'year_end_state' => 'isLocked',

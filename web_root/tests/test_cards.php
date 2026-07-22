@@ -445,13 +445,15 @@ final class TestCardsHarness
     private function assertJournalPageIncludesCutOffJournalsAdjustments(): void
     {
         $journalPage = new _journal();
-        $this->assertTrue(in_array('journal_cut_offs', $journalPage->cards(), true));
+        $this->assertTrue(in_array('journal_cut_off_create', $journalPage->cards(), true));
+        $this->assertTrue(in_array('journal_manual_entry', $journalPage->cards(), true));
         $this->assertSame(false, in_array('nominal_closing_balances', $journalPage->cards(), true));
 
         $hasCutOffJournalsAdjustment = false;
         foreach ($journalPage->cardLayout() as $tab) {
-            if (($tab['tab'] ?? '') === 'Adjustments' && in_array('journal_cut_offs', (array)($tab['cards'] ?? []), true)) {
+            if (($tab['tab'] ?? '') === 'Adjustments' && in_array('journal_cut_off_create', (array)($tab['cards'] ?? []), true)) {
                 $hasCutOffJournalsAdjustment = true;
+                $this->assertTrue(in_array('journal_manual_entry', (array)($tab['cards'] ?? []), true));
                 $this->assertSame(false, in_array('nominal_closing_balances', (array)($tab['cards'] ?? []), true));
             }
         }
@@ -459,7 +461,7 @@ final class TestCardsHarness
         $this->assertSame(true, $hasCutOffJournalsAdjustment);
         $this->assertPageFinalTabContains($journalPage, 'Year End Confirmation', ['journal_cut_off_confirmation']);
 
-        test_output_line('Cards: journal page includes Cut-off Journals under Adjustments.');
+        test_output_line('Cards: journal page includes split cut-off journal cards under Adjustments.');
     }
 
     private function assertYearEndTransactionTailRendersBalanceColumn(): void

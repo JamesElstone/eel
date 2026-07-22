@@ -2375,6 +2375,13 @@
   min-height: 120px;
 }
 
+.year-end-tax-scope-table .year-end-tax-scope-guidance,
+.year-end-tax-scope-table .year-end-tax-scope-guidance .button,
+.year-end-tax-scope-table .year-end-tax-scope-answer,
+.year-end-tax-scope-table .year-end-tax-scope-answer label {
+  white-space: nowrap;
+}
+
 .year-end-check-panel {
   display: flex;
   flex-direction: column;

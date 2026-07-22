@@ -107,17 +107,17 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             $rows .= '<tr><td>' . HelperFramework::escape((string)$definition['page']) . '</td>'
                 . '<td>' . HelperFramework::escape((string)$definition['label']) . '</td>'
                 . '<td>' . HelperFramework::escape((string)$definition['question']) . '</td>'
-                . '<td><a class="button button-inline" target="_blank" rel="noopener noreferrer" href="' . HelperFramework::escape((string)$definition['url']) . '">HMRC guidance</a></td>'
+                . '<td class="year-end-tax-scope-guidance"><a class="button button-inline" target="_blank" rel="noopener noreferrer" href="' . HelperFramework::escape((string)$definition['url']) . '">HMRC guidance</a></td>'
                 . '<td><form method="post" action="?page=corporation_tax" data-ajax="true">'
                 . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
                 . '<input type="hidden" name="card_action" value="Ixbrl"><input type="hidden" name="intent" value="save_ct_filing_scope_answer">'
                 . '<input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
                 . '<input type="hidden" name="scope_field" value="' . HelperFramework::escape((string)$key) . '">'
-                . '<div class="actions-row">' . $this->scopeRadio((string)$key, 'no', 'No', $answer)
+                . '<div class="actions-row year-end-tax-scope-answer">' . $this->scopeRadio((string)$key, 'no', 'No', $answer)
                 . $this->scopeRadio((string)$key, 'yes', 'Yes', $answer) . '</div></form></td></tr>';
         }
         return '<section class="panel-soft settings-stack"><h3 class="card-title">Corporation Tax Filling Scope Check</h3>'
-            . '<div class="table-scroll"><table><thead><tr><th>Supplement ID</th><th>Supplement Name</th><th>Question</th><th>HMRC Guidance</th><th>Answer</th></tr></thead><tbody>'
+            . '<div class="table-scroll"><table class="year-end-tax-scope-table"><thead><tr><th>Supplement ID</th><th>Supplement Name</th><th>Question</th><th>HMRC Guidance</th><th>Answer</th></tr></thead><tbody>'
             . $rows . '</tbody></table></div></section>';
     }
 

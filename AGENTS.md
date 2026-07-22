@@ -70,6 +70,8 @@ Prefer eelKit's page -> card -> action pipeline for user-facing application beha
 
 Use page actions for page-scoped intents submitted with `action`. Use shared card actions for reusable card behavior submitted with `card_action`. Keep rendering and display decisions in cards, and keep mutation/command handling in actions unless a page-specific action is the clearer fit.
 
+HTML forms must be limited to and contained within a single card. Cross-card forms and page-level forms are not allowed.
+
 When adding a new feature, first consider whether it can be expressed as:
 
 - a page that selects and arranges cards,

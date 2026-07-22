@@ -1049,12 +1049,7 @@ final class YearEndChecklistService
             return $scopeError;
         }
 
-        $progress?->__invoke('Checking the locked accounting period…', 0);
-        $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId);
-        if (empty($checklistResult['success'])) {
-            return $checklistResult;
-        }
-
+        $progress?->__invoke('Preparing to reopen the accounting period…', 0);
         $transaction = $this->beginLockTransaction();
         try {
             $progress?->__invoke('Reopening the accounting period and filing evidence…', 30);
@@ -1072,13 +1067,11 @@ final class YearEndChecklistService
             }
 
             $this->commitLockTransaction($transaction);
-            $progress?->__invoke('Refreshing the reopened year-end checklist…', 85);
-            $checklist = $this->fetchChecklist($companyId, $accountingPeriodId);
+            $progress?->__invoke('Preparing the reopened year-end checklist…', 85);
             $progress?->__invoke('Finalising the reopened accounting period…', 99);
 
             return $result + [
                 'legacy_director_loan_repair' => $legacyRepair,
-                'checklist' => $checklist,
             ];
         } catch (\Throwable $exception) {
             return $this->rollbackUnlockTransaction($transaction, ['success' => false, 'errors' => [$exception->getMessage()]]);

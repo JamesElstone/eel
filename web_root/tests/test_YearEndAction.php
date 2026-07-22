@@ -31,8 +31,15 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
         $harness->assertSame(true, str_contains($action, "'unlock_period' => " . '$this->unlockPeriodWithProgress'));
         $harness->assertSame(true, str_contains($action, 'private function unlockPeriodWithProgress'));
         $harness->assertSame(true, str_contains($action, '$progress->report($message, $percent)'));
-        $harness->assertSame(true, str_contains($service, "'Checking the locked accounting period…', 0"));
+        $harness->assertSame(true, str_contains($service, "'Preparing to reopen the accounting period…', 0"));
         $harness->assertSame(true, str_contains($service, "'Finalising the reopened accounting period…', 99"));
+
+        $unlockStart = strpos($service, 'public function unlockPeriod(');
+        $unlockEnd = strpos($service, 'public function recalculateChecklist(', $unlockStart !== false ? $unlockStart : 0);
+        $harness->assertSame(true, $unlockStart !== false && $unlockEnd !== false);
+        $unlockMethod = substr($service, (int)$unlockStart, (int)$unlockEnd - (int)$unlockStart);
+        $harness->assertSame(false, str_contains($unlockMethod, '$this->fetchChecklist('));
+        $harness->assertSame(false, str_contains($unlockMethod, '$this->fetchChecklistResult('));
     });
 
     $harness->check('YearEndAction', 'posts confirmed director loan reclassification deltas and remains idempotent', static function () use ($harness, $instance): void {

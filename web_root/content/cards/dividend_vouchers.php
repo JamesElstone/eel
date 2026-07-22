@@ -92,7 +92,7 @@ final class _dividend_vouchersCard extends CardBaseFramework
 
         return '<details>
             <summary>' . HelperFramework::escape($label) . '</summary>
-            <pre class="helper">' . HelperFramework::escape($text) . '</pre>
+            <pre class="helper preformatted-panel">' . HelperFramework::escape($text) . '</pre>
         </details>';
     }
 

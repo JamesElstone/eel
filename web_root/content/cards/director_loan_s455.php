@@ -44,21 +44,18 @@ final class _director_loan_s455Card extends CardBaseFramework
         foreach ((array)$s455['periods'] as $period) {
             if (empty($period['available'])) { continue; }
             $html .= '<section class="panel-soft settings-stack">'
-                . '<div class="summary-grid">'
+                . '<div class="summary-grid four">'
                 . $this->stat('Tax Period ' . (int)$period['sequence_no'], (string)$period['period_start'] . ' to ' . (string)$period['period_end'])
                 . $this->stat('Close-Company Status', !empty($period['close_status_calculated']) ? 'Calculated' : 'Ownership data needed')
+                . $this->stat('Evidence cutoff', (string)$period['evidence_cutoff'])
                 . $this->stat(
                     's455 exposure',
                     (float)($period['gross_tax'] ?? 0) > 0 ? 'Exposure' : 'No exposure',
                     (float)($period['gross_tax'] ?? 0) > 0 ? 'warn' : 'success'
                 )
-                . $this->stat('Closing principal', $this->money($settings, $period['gross_principal']))
-                . $this->stat('Gross s455 tax', $this->money($settings, $period['gross_tax']))
-                . $this->stat('Cash repayments known', $this->money($settings, $period['qualifying_repayments']))
-                . $this->stat('Net s455 tax', $this->money($settings, $period['net_tax']))
                 . $this->stat('Repayment deadline', (string)$period['repayment_deadline'])
-                . $this->stat('Evidence cutoff', (string)$period['evidence_cutoff'])
                 . '</div>'
+                . $this->s455TaxTable($settings, $period)
                 . ($this->repaymentGuidance($period))
                 . '</section>';
         }
@@ -80,6 +77,25 @@ final class _director_loan_s455Card extends CardBaseFramework
     {
         return '<div class="summary-card ' . HelperFramework::escape($variant) . '"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
     }
+
+    private function s455TaxTable(array $settings, array $period): string
+    {
+        $rows = [
+            'Closing principal' => $period['gross_principal'] ?? 0,
+            'Gross s455 tax' => $period['gross_tax'] ?? 0,
+            'Cash repayments known' => $period['qualifying_repayments'] ?? 0,
+            'Net s455 tax' => $period['net_tax'] ?? 0,
+        ];
+
+        $html = '';
+        foreach ($rows as $label => $value) {
+            $html .= '<tr><th scope="row">' . HelperFramework::escape($label) . '</th><td>'
+                . HelperFramework::escape($this->money($settings, $value)) . '</td></tr>';
+        }
+
+        return '<div class="table-scroll"><table><tbody>' . $html . '</tbody></table></div>';
+    }
+
     private function money(array $settings, mixed $value): string
     {
         return (new \eel_accounts\Service\CompanySettingsService())->money($settings, $value);

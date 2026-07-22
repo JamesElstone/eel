@@ -40,6 +40,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 ],
             ]);
 
+            $harness->assertTrue(str_contains($html, 'class="summary-grid four"'));
+            $harness->assertTrue(
+                strpos($html, 'Tax Period 1') < strpos($html, 'Close-Company Status')
+                && strpos($html, 'Close-Company Status') < strpos($html, 'Evidence cutoff')
+                && strpos($html, 'Evidence cutoff') < strpos($html, 's455 exposure')
+            );
+            $harness->assertTrue(str_contains($html, '<table><tbody><tr><th scope="row">Closing principal</th>'));
+            $harness->assertTrue(str_contains($html, '<th scope="row">Gross s455 tax</th>'));
+            $harness->assertTrue(str_contains($html, '<th scope="row">Cash repayments known</th>'));
             $harness->assertTrue(str_contains($html, 'Net s455 tax'));
             $harness->assertTrue(str_contains($html, '25.31'));
             $harness->assertTrue(str_contains($html, 'Repayment opportunity'));

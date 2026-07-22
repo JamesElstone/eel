@@ -44,11 +44,21 @@ final class _dividend_capacityCard extends CardBaseFramework
         }
 
         $companySettings = (array)($company['settings'] ?? []);
+        $reliabilityWarningPanels = $this->reliabilityWarningPanels(
+            $reliabilityWarnings,
+            (int)($company['id'] ?? 0),
+            (int)($company['accounting_period_id'] ?? 0),
+            true
+        );
 
         return '<div class="settings-stack">
+            <div class="summary-grid four">
+                ' . $this->summaryCard('Available distributable reserves', $this->money($companySettings, $capacity['available_distributable_reserves'] ?? 0)) . '
+                ' . $this->summaryCard('Capacity date', (string)($capacity['as_at_date'] ?? ''), 'summary-card-fit') . '
+                ' . $this->warningCards($warnings) . '
+            </div>
             <div class="dividend-capacity-overview">
-            <div>' . $this->summaryCard('Capacity date', (string)($capacity['as_at_date'] ?? ''), 'summary-card-fit') . '</div>
-            <div>' . $this->reliabilityWarningPanels($reliabilityWarnings, (int)($company['id'] ?? 0), (int)($company['accounting_period_id'] ?? 0), true) . '</div>
+            ' . ($reliabilityWarningPanels !== '' ? '<div>' . $reliabilityWarningPanels . '</div>' : '') . '
             <section class="panel-soft dividend-reserve-overview">
                 <div class="summary-label">Distributable reserves</div>
                 <div class="helper">' . HelperFramework::escape($this->reservesEquation($companySettings, $capacity)) . '</div>
@@ -73,7 +83,6 @@ final class _dividend_capacityCard extends CardBaseFramework
                     </tbody>
                 </table>
             </div>
-            <div class="summary-grid four">' . $this->warningCards($warnings) . '</div>
         </div>';
     }
 

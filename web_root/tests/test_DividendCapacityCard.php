@@ -58,6 +58,7 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
         $harness->assertTrue(str_contains($html, '<section class="panel-soft dividend-reserve-overview">'));
         $harness->assertTrue(str_contains($html, '<table class="table dividend-capacity-summary">'));
         $harness->assertTrue(str_contains($html, '<th>Title</th><th>Description</th><th class="numeric">Value</th>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-card"><div class="summary-label">Available distributable reserves</div><div class="summary-value">£ 140.00</div></div>'));
         $harness->assertTrue(str_contains($html, '<td>Distributable Reserves B/F</td><td>Distributable Reserves from the previous accounting period</td><td class="numeric">£ 100.00</td>'));
         $harness->assertTrue(str_contains($html, '<td>Profit after Tax</td><td>The reviewed, distributable portion of current-period profit after deducting any unposted Corporation Tax charge.</td><td class="numeric">£ 50.00</td>'));
         $harness->assertTrue(str_contains($html, '<td>Classified Realised Profit</td><td>The current-period profit accepted by the reserve review as realised/distributable, before the remaining unposted CT adjustment.</td><td class="numeric">£ 50.00</td>'));
@@ -70,6 +71,9 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
         $harness->assertTrue(str_contains($html, '<input type="hidden" name="company_id" value="7">'));
         $harness->assertTrue(str_contains($html, '<input type="hidden" name="accounting_period_id" value="22">'));
         $harness->assertTrue(!str_contains($html, '?page=uploads&amp;company_id=7'));
+        $harness->assertTrue(
+            strpos($html, '<div class="summary-grid four">') < strpos($html, '<div class="dividend-capacity-overview">')
+        );
     });
 
     $harness->check(_dividend_capacityCard::class, 'renders corporation tax period arithmetic helpers', static function () use ($harness, $card): void {

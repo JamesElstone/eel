@@ -46,10 +46,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 && strpos($html, 'Close-Company Status') < strpos($html, 'Evidence cutoff')
                 && strpos($html, 'Evidence cutoff') < strpos($html, 's455 exposure')
             );
-            $harness->assertTrue(str_contains($html, '<table><tbody><tr><th scope="row">Closing principal</th>'));
-            $harness->assertTrue(str_contains($html, '<th scope="row">Gross s455 tax</th>'));
-            $harness->assertTrue(str_contains($html, '<th scope="row">Cash repayments known</th>'));
-            $harness->assertTrue(str_contains($html, 'Net s455 tax'));
+            $harness->assertTrue(str_contains($html, '<table><tbody><tr><th scope="row">Participator Loan values outstanding at Year End</th>'));
+            $harness->assertTrue(str_contains($html, '<th scope="row">Corporation Tax owing arising from Section 455 (Gross s455 Tax)</th>'));
+            $harness->assertTrue(str_contains($html, '<th scope="row">Payments made after this Accounting Period before the above cut off date</th>'));
+            $harness->assertTrue(str_contains($html, 'Corporation Tax owing arising from Section 455 taking into account future valid repayments (Net s455 Tax)'));
             $harness->assertTrue(str_contains($html, '25.31'));
             $harness->assertTrue(str_contains($html, 'Repayment opportunity'));
             $harness->assertTrue(str_contains($html, 'does not block Year End from closing'));

@@ -81,10 +81,10 @@ final class _director_loan_s455Card extends CardBaseFramework
     private function s455TaxTable(array $settings, array $period): string
     {
         $rows = [
-            'Closing principal' => $period['gross_principal'] ?? 0,
-            'Gross s455 tax' => $period['gross_tax'] ?? 0,
-            'Cash repayments known' => $period['qualifying_repayments'] ?? 0,
-            'Net s455 tax' => $period['net_tax'] ?? 0,
+            'Participator Loan values outstanding at Year End' => $period['gross_principal'] ?? 0,
+            'Corporation Tax owing arising from Section 455 (Gross s455 Tax)' => $period['gross_tax'] ?? 0,
+            'Payments made after this Accounting Period before the above cut off date' => $period['qualifying_repayments'] ?? 0,
+            'Corporation Tax owing arising from Section 455 taking into account future valid repayments (Net s455 Tax)' => $period['net_tax'] ?? 0,
         ];
 
         $html = '';

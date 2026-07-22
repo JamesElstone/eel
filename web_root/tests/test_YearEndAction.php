@@ -19,6 +19,22 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
         throw new RuntimeException('Unexpected YearEndAction instance.');
     }
 
+    $harness->check(YearEndAction::class, 'streams progress for both lock and unlock actions', static function () use ($harness): void {
+        $action = (string)file_get_contents(
+            dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content' . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'YearEndAction.php'
+        );
+        $service = (string)file_get_contents(
+            dirname(__DIR__) . DIRECTORY_SEPARATOR . 'classes' . DIRECTORY_SEPARATOR . 'eel_accounts' . DIRECTORY_SEPARATOR . 'service' . DIRECTORY_SEPARATOR . 'YearEndChecklistService.php'
+        );
+
+        $harness->assertSame(true, str_contains($action, "'lock_period' => " . '$this->lockPeriodWithProgress'));
+        $harness->assertSame(true, str_contains($action, "'unlock_period' => " . '$this->unlockPeriodWithProgress'));
+        $harness->assertSame(true, str_contains($action, 'private function unlockPeriodWithProgress'));
+        $harness->assertSame(true, str_contains($action, '$progress->report($message, $percent)'));
+        $harness->assertSame(true, str_contains($service, "'Checking the locked accounting period…', 0"));
+        $harness->assertSame(true, str_contains($service, "'Finalising the reopened accounting period…', 99"));
+    });
+
     $harness->check('YearEndAction', 'posts confirmed director loan reclassification deltas and remains idempotent', static function () use ($harness, $instance): void {
         yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness, $instance): void {
             $instance = yearEndActionTestInstanceWithDirectorCount(1);

@@ -119,7 +119,8 @@ final class _director_loan_stateCard extends CardBaseFramework
                 ' . $this->stat(
                     'Unattributed entries',
                     (string)($unattributedCount + $invalidCount),
-                    ($unattributedCount + $invalidCount) > 0 ? 'danger' : ''
+                    ($unattributedCount + $invalidCount) > 0 ? 'danger' : '',
+                    '<a class="button button-inline" href="?page=loans&amp;show_card=director_loan_attribution">Review entries</a>'
                 ) . '
             </div>
             ' . $this->reportingPresentation(
@@ -320,9 +321,9 @@ final class _director_loan_stateCard extends CardBaseFramework
         return (string)($this->invalidationFacts()[0] ?? 'director.loan.state');
     }
 
-    private function stat(string $label, string $value, string $class = ''): string
+    private function stat(string $label, string $value, string $class = '', string $actionHtml = ''): string
     {
-        return '<div class="summary-card' . ($class !== '' ? ' ' . HelperFramework::escape($class) : '') . '"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+        return '<div class="summary-card' . ($class !== '' ? ' ' . HelperFramework::escape($class) : '') . '"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div>' . ($actionHtml !== '' ? '<div class="actions-row">' . $actionHtml . '</div>' : '') . '</div>';
     }
 
     private function money(array $settings, mixed $value): string

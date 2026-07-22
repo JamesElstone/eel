@@ -11,6 +11,7 @@ final class _director_loan_attributionCard extends CardBaseFramework
 {
     private const TABLE_KEY = 'director_loan_attribution';
     private const PAGE_SIZE = 10;
+    private const FILTER_FIELD = 'director_loan_attribution_filter';
 
     public function key(): string
     {
@@ -65,7 +66,13 @@ final class _director_loan_attributionCard extends CardBaseFramework
         array $pageContext,
         ActionResultFramework $actionResult
     ): array {
-        return parent::handle($request, $services, $pageContext, $actionResult);
+        $pageContext = parent::handle($request, $services, $pageContext, $actionResult);
+        $pageContext[$this->key()][self::FILTER_FIELD] = $this->normaliseFilter((string)$request->input(
+            self::FILTER_FIELD,
+            (string)(($pageContext[$this->key()] ?? [])[self::FILTER_FIELD] ?? 'all')
+        ));
+
+        return $pageContext;
     }
 
     public function tables(array $context): array
@@ -99,24 +106,34 @@ final class _director_loan_attributionCard extends CardBaseFramework
 
     private function configuredTable(array $context): TableFramework
     {
-        $table = $this->table($context);
+        $filter = $this->selectedFilter($context);
+        $table = $this->table($context, $filter);
         $pagination = HelperFramework::paginateArray(
             $table->sortedRows(),
             $this->paginationPage($context),
             self::PAGE_SIZE
         );
 
-        return $table->visibleRows((array)$pagination['items'])->pagination(
-            $pagination,
-            'Director attribution',
-            $this->paginationPageField(),
-            $this->tableHiddenFields($context)
-        );
+        return $table
+            ->visibleRows((array)$pagination['items'])
+            ->pagination(
+                $pagination,
+                'Director attribution',
+                $this->paginationPageField(),
+                $this->tableHiddenFields($context)
+            )
+            ->filterSelect(
+                self::FILTER_FIELD,
+                'Show',
+                $this->filterOptions(),
+                $filter,
+                $this->tableHiddenFields($context, false)
+            );
     }
 
-    private function tableHiddenFields(array $context): array
+    private function tableHiddenFields(array $context, bool $includeFilter = true): array
     {
-        return [
+        $fields = [
             'page' => (string)($context['page']['page_id'] ?? 'loans'),
             '_pagination' => '1',
             '_invalidate_fact' => (string)($this->invalidationFacts()[0] ?? 'director.loan.state'),
@@ -125,12 +142,20 @@ final class _director_loan_attributionCard extends CardBaseFramework
             'company_id' => (int)($context['company']['id'] ?? 0),
             'accounting_period_id' => (int)($context['company']['accounting_period_id'] ?? 0),
         ];
+        if ($includeFilter) {
+            $fields[self::FILTER_FIELD] = $this->selectedFilter($context);
+        }
+
+        return $fields;
     }
 
-    private function table(array $context): TableFramework
+    private function table(array $context, string $filter): TableFramework
     {
         $statement = (array)($context['services']['directorLoanStatement'] ?? []);
-        $entries = array_values(array_filter((array)($statement['attribution_entries'] ?? []), static fn(mixed $entry): bool => is_array($entry)));
+        $entries = array_values(array_filter(
+            (array)($statement['attribution_entries'] ?? []),
+            fn(mixed $entry): bool => is_array($entry) && ($filter === 'all' || (int)($entry['director_id'] ?? 0) <= 0)
+        ));
         $directors = array_values(array_filter((array)($statement['directors'] ?? []), static fn(mixed $director): bool => is_array($director)));
         $settings = ['default_currency_symbol' => (string)($statement['default_currency_symbol'] ?? '&#163;')];
         $companyId = (int)($context['company']['id'] ?? 0);
@@ -139,16 +164,38 @@ final class _director_loan_attributionCard extends CardBaseFramework
         return TableFramework::make(self::TABLE_KEY, $entries)
             ->filename('director-loan-attribution')
             ->exportLimit(5000)
-            ->empty('No Director Loan control-account entries were found.')
+            ->empty($filter === 'requires_assignment'
+                ? 'No Director Loan entries currently require assignment.'
+                : 'No Director Loan control-account entries were found.')
             ->column('journal_date', 'Date', html: static fn(array $row): string => HelperFramework::escape(HelperFramework::displayDate((string)($row['journal_date'] ?? ''))), export: static fn(array $row): string => (string)($row['journal_date'] ?? ''), exportType: 'date')
             ->textColumn('description', 'Description')
             ->column('counterparty_name', 'Actual counterparty', html: static function (array $row): string {
                 $counterparty = trim((string)($row['counterparty_name'] ?? ''));
                 return $counterparty !== '' ? HelperFramework::escape($counterparty) : '<span class="helper">Not stated</span>';
             }, export: static fn(array $row): string => trim((string)($row['counterparty_name'] ?? '')))
-            ->column('source_label', 'Source', html: fn(array $row): string => $this->attributionSourceHtml($row), export: static fn(array $row): string => trim((string)($row['source_label'] ?? '') . (!empty($row['is_opening']) ? ' (Opening)' : '')))
+            ->column('source_label', 'Source', html: fn(array $row): string => $this->attributionSourceHtml($row), export: static fn(array $row): string => trim((string)($row['source_label'] ?? '')))
             ->column('signed_amount', 'Movement', html: fn(array $row): string => HelperFramework::escape($this->money($settings, $this->attributionAmount($row))), export: fn(array $row): string => number_format($this->attributionAmount($row), 2, '.', ''), headerClass: 'numeric', cellClass: 'numeric', exportType: 'number')
             ->column('director_id', 'Participator loan account', html: fn(array $row): string => $this->attributionForm($row, $directors, $companyId, $accountingPeriodId), export: fn(array $row): string => $this->attributedDirectorLabel($row, $directors));
+    }
+
+    private function selectedFilter(array $context): string
+    {
+        return $this->normaliseFilter((string)(($context[$this->key()] ?? [])[self::FILTER_FIELD] ?? 'all'));
+    }
+
+    private function normaliseFilter(string $filter): string
+    {
+        $filter = strtolower(trim($filter));
+
+        return array_key_exists($filter, $this->filterOptions()) ? $filter : 'all';
+    }
+
+    private function filterOptions(): array
+    {
+        return [
+            'all' => 'All',
+            'requires_assignment' => 'Requires Assignment',
+        ];
     }
 
     private function attributionSourceHtml(array $entry): string
@@ -156,7 +203,7 @@ final class _director_loan_attributionCard extends CardBaseFramework
         $sourceLabel = trim((string)($entry['source_label'] ?? ''));
         $sourceUrl = trim((string)($entry['source_url'] ?? ''));
         $sourceHtml = $sourceUrl !== '' ? '<a class="button" href="' . HelperFramework::escape($sourceUrl) . '">' . HelperFramework::escape($sourceLabel) . '</a>' : HelperFramework::escape($sourceLabel);
-        return $sourceHtml . (!empty($entry['is_opening']) ? ' <span class="badge">Opening</span>' : '');
+        return $sourceHtml;
     }
 
     private function attributionAmount(array $entry): float

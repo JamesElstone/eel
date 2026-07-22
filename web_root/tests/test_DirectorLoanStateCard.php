@@ -154,6 +154,8 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
         $harness->assertSame(false, str_contains($html, 'Every Director Loan entry must be attributed'));
         $harness->assertTrue(str_contains($html, 'Choose party'));
         $harness->assertTrue(str_contains($html, 'value="" disabled selected'));
+        $harness->assertTrue(str_contains($html, 'href="?page=loans&amp;show_card=director_loan_attribution"'));
+        $harness->assertTrue(str_contains($html, 'Review entries'));
         $harness->assertTrue(str_contains($html, 'name="classification" value="after_more_than_one_year" checked required'));
     });
 

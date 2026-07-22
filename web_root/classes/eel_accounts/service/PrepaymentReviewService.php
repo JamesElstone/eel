@@ -194,10 +194,6 @@ final class PrepaymentReviewService
         if ($status === 'prepaid' && $serviceStart < (string)$accountingPeriod['period_start']) {
             return ['success' => false, 'errors' => ['The service start cannot precede the source accounting period; treat that case as an accrual or prior-period issue.']];
         }
-        if ($status === 'prepaid' && $serviceEnd <= (string)$accountingPeriod['period_end']) {
-            return ['success' => false, 'errors' => ['A prepayment must extend beyond the source accounting period end.']];
-        }
-
         $existing = \InterfaceDB::fetchOne(
             'SELECT id, current_schedule_id FROM prepayment_reviews
              WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id

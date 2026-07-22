@@ -622,6 +622,35 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame(0, (int)$futureAllocations[0]['overlap_days']);
                 $harness->assertSame(73000, (int)$futureAllocations[0]['closing_deferred_pence']);
                 $harness->assertSame(73000, (int)$futureAllocations[1]['opening_deferred_pence']);
+
+                $samePeriod = $reviewService->saveReview($companyId, $ap79, [
+                    'source_type' => 'transaction',
+                    'source_id' => $transactionId,
+                    'status' => 'prepaid',
+                    'service_start_date' => '2022-12-30',
+                    'service_end_date' => '2023-09-30',
+                    'notes' => 'Synthetic prepaid service fully consumed in source period',
+                ], 'test');
+                $harness->assertTrue(!empty($samePeriod['success']));
+                $samePeriodSchedule = (array)($samePeriod['schedule'] ?? []);
+                $samePeriodAllocations = (array)($samePeriodSchedule['allocations'] ?? []);
+                $harness->assertCount(1, $samePeriodAllocations);
+                $harness->assertSame($ap79, (int)$samePeriodAllocations[0]['accounting_period_id']);
+                $harness->assertSame(275, (int)$samePeriodAllocations[0]['overlap_days']);
+                $harness->assertSame(73000, (int)$samePeriodAllocations[0]['expense_pence']);
+                $harness->assertSame(0, (int)$samePeriodAllocations[0]['closing_deferred_pence']);
+                $harness->assertSame(0, (int)($samePeriodSchedule['unallocated_pence'] ?? -1));
+
+                $samePeriodPreview = $scheduleService->fetchPreviewAdjustmentContext($companyId, $ap79);
+                $harness->assertTrue(!empty($samePeriodPreview['success']));
+                $harness->assertSame([], (array)($samePeriodPreview['adjustments'] ?? []));
+                $approve($ap79);
+                $journalCountBeforeSamePeriodPost = (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM journals');
+                $samePeriodPost = $posting->postForAccountingPeriod($companyId, $ap79, 'test');
+                $harness->assertTrue(!empty($samePeriodPost['success']));
+                $harness->assertSame(0, (int)($samePeriodPost['posted_count'] ?? -1));
+                $harness->assertTrue(!empty($samePeriodPost['no_op']));
+                $harness->assertSame($journalCountBeforeSamePeriodPost, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM journals'));
             } finally {
                 if (InterfaceDB::inTransaction()) {
                     InterfaceDB::rollBack();

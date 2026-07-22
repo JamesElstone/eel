@@ -1012,9 +1012,6 @@ final class PrepaymentScheduleService
         if ($serviceStart < (string)$sourcePeriod['period_start']) {
             return ['success' => false, 'errors' => ['The service start cannot precede the source accounting period; treat that case as an accrual or prior-period issue.']];
         }
-        if ($serviceEnd <= (string)$sourcePeriod['period_end']) {
-            return ['success' => false, 'errors' => ['A prepayment must extend beyond the source accounting period end.']];
-        }
         $assetNominal = $this->assetNominal($companyId);
         if (!is_array($assetNominal)) {
             return ['success' => false, 'errors' => ['Assign an active Prepayments current-asset nominal before calculating the schedule.']];

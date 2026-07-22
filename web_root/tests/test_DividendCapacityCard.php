@@ -58,6 +58,9 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
         $harness->assertTrue(str_contains($html, '<section class="panel-soft dividend-reserve-overview">'));
         $harness->assertTrue(str_contains($html, '<table class="table dividend-capacity-summary">'));
         $harness->assertTrue(str_contains($html, '<th>Title</th><th>Description</th><th class="numeric">Value</th>'));
+        $harness->assertTrue(str_contains($html, '<td>Distributable Reserves B/F</td><td>Distributable Reserves from the previous accounting period</td><td class="numeric">£ 100.00</td>'));
+        $harness->assertTrue(str_contains($html, '<td>Profit after Tax</td><td>The reviewed, distributable portion of current-period profit after deducting any unposted Corporation Tax charge.</td><td class="numeric">£ 50.00</td>'));
+        $harness->assertTrue(str_contains($html, '<td>Classified Realised Profit</td><td>The current-period profit accepted by the reserve review as realised/distributable, before the remaining unposted CT adjustment.</td><td class="numeric">£ 50.00</td>'));
         $harness->assertTrue(str_contains($html, '<span class="badge warning">Warning</span>'));
         $harness->assertTrue(str_contains($html, 'Bank CSV coverage may be incomplete'));
         $harness->assertTrue(str_contains($html, 'Open Related Workflow'));

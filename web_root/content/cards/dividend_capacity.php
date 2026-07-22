@@ -44,26 +44,27 @@ final class _dividend_capacityCard extends CardBaseFramework
         }
 
         $companySettings = (array)($company['settings'] ?? []);
-        $reliabilityWarningPanels = $this->reliabilityWarningPanels(
-            $reliabilityWarnings,
-            (int)($company['id'] ?? 0),
-            (int)($company['accounting_period_id'] ?? 0),
-            true
-        );
+        $companyId = (int)($company['id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
+        $reviewScopeWarnings = array_values(array_filter(
+            $warnings,
+            static fn(mixed $warning): bool => is_array($warning)
+                && (string)($warning['title'] ?? '') === 'Dividend review scope'
+        ));
+        $otherWarnings = array_values(array_filter(
+            $warnings,
+            static fn(mixed $warning): bool => !is_array($warning)
+                || (string)($warning['title'] ?? '') !== 'Dividend review scope'
+        ));
 
         return '<div class="settings-stack">
-            <div class="summary-grid four">
-                ' . $this->summaryCard('Available distributable reserves', $this->money($companySettings, $capacity['available_distributable_reserves'] ?? 0)) . '
+            <div class="summary-grid four dividend-capacity-summary-grid">
                 ' . $this->summaryCard('Capacity date', (string)($capacity['as_at_date'] ?? ''), 'summary-card-fit') . '
-                ' . $this->warningCards($warnings) . '
-            </div>
-            <div class="dividend-capacity-overview">
-            ' . ($reliabilityWarningPanels !== '' ? '<div>' . $reliabilityWarningPanels . '</div>' : '') . '
-            <section class="panel-soft dividend-reserve-overview">
-                <div class="summary-value">' . HelperFramework::escape(!empty($capacity['reserves_reliable']) ? 'Reserve basis verified' : 'Reserve basis blocked') . '</div>
-                <div class="helper">' . HelperFramework::escape($this->reservesEquation($companySettings, $capacity)) . '</div>
-                <div class="helper">' . HelperFramework::escape((string)($capacity['reserve_basis_detail'] ?? $capacity['retained_earnings_detail'] ?? '')) . '</div>
-            </section>
+                ' . $this->warningCards($reviewScopeWarnings, $companyId, $accountingPeriodId) . '
+                ' . $this->summaryCard('Available distributable reserves', $this->money($companySettings, $capacity['available_distributable_reserves'] ?? 0)) . '
+                ' . $this->reserveBasisCard($companySettings, $capacity) . '
+                ' . $this->warningCards($otherWarnings, $companyId, $accountingPeriodId) . '
+                ' . $this->warningCards($reliabilityWarnings, $companyId, $accountingPeriodId) . '
             </div>
             <div class="table-scroll">
                 <table class="table dividend-capacity-summary">
@@ -87,9 +88,24 @@ final class _dividend_capacityCard extends CardBaseFramework
 
     private function summaryCard(string $label, string $value, string $extraClass = '', string $helper = ''): string
     {
-        $class = trim('summary-card ' . $extraClass);
+        $class = trim('summary-card dividend-capacity-summary-card ' . $extraClass);
 
         return '<div class="' . HelperFramework::escape($class) . '"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value !== '' ? $value : '-') . '</div>' . ($helper !== '' ? '<div class="helper">' . HelperFramework::escape($helper) . '</div>' : '') . '</div>';
+    }
+
+    private function reserveBasisCard(array $companySettings, array $capacity): string
+    {
+        $detail = trim(implode(' ', array_filter([
+            $this->reservesEquation($companySettings, $capacity),
+            (string)($capacity['reserve_basis_detail'] ?? $capacity['retained_earnings_detail'] ?? ''),
+        ], static fn(string $value): bool => $value !== '')));
+
+        return $this->summaryCard(
+            'Reserve basis',
+            !empty($capacity['reserves_reliable']) ? 'Reserve basis verified' : 'Reserve basis blocked',
+            '',
+            $detail
+        );
     }
 
     private function summaryTableRow(string $title, string $description, string $value): string
@@ -99,23 +115,33 @@ final class _dividend_capacityCard extends CardBaseFramework
             . '</td><td class="numeric">' . HelperFramework::escape($value !== '' ? $value : '-') . '</td></tr>';
     }
 
-    private function warningCards(array $warnings): string
+    private function warningCards(array $warnings, int $companyId = 0, int $accountingPeriodId = 0): string
     {
         if ($warnings === []) {
-            return '<div class="summary-card"><div class="summary-label">Dividend warnings</div><div class="summary-value">-</div><div class="helper">No dividend warnings for the selected period.</div></div>';
+            return '';
         }
 
         $html = '';
         foreach ($warnings as $warning) {
+            if (!is_array($warning)) {
+                continue;
+            }
             $severity = (string)($warning['severity'] ?? 'info');
             $metricValue = trim((string)($warning['metric_value'] ?? ''));
-            $html .= '<div class="summary-card">
+            $actionLabel = trim((string)($warning['action_label'] ?? 'Open Related Workflow'));
+            $actionHtml = \eel_accounts\Renderer\WorkflowHandoffRenderer::fromWorkflow(
+                $warning,
+                $actionLabel,
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                ]
+            );
+            $html .= '<div class="summary-card dividend-capacity-summary-card">
                 <div class="summary-label">' . HelperFramework::escape((string)($warning['title'] ?? 'Warning')) . '</div>
-                <div class="summary-value">' . ($metricValue !== ''
-                    ? HelperFramework::escape($metricValue)
-                    : '<span class="badge ' . HelperFramework::escape($this->badgeClass($severity)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($severity, '_')) . '</span>') . '</div>
-                ' . ($metricValue !== '' ? '<div><span class="badge ' . HelperFramework::escape($this->badgeClass($severity)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($severity, '_')) . '</span></div>' : '') . '
+                <div class="summary-value">' . HelperFramework::escape($metricValue !== '' ? $metricValue : HelperFramework::labelFromKey($severity, '_')) . '</div>
                 <div class="helper">' . HelperFramework::escape((string)($warning['detail'] ?? '')) . '</div>
+                ' . ($actionHtml !== '' ? '<div class="actions-row">' . $actionHtml . '</div>' : '') . '
             </div>';
         }
 
@@ -170,50 +196,9 @@ final class _dividend_capacityCard extends CardBaseFramework
         return 'Estimated total tax charge ' . $estimate . ' - posted tax charge ' . $posted . ' = ' . $unposted;
     }
 
-    private function reliabilityWarningPanels(array $warnings, int $companyId, int $accountingPeriodId, bool $inline = false): string
-    {
-        if ($warnings === []) {
-            return '';
-        }
-
-        $html = $inline ? '' : '<div class="settings-stack">';
-        foreach ($warnings as $warning) {
-            if (!is_array($warning)) {
-                continue;
-            }
-            $actionLabel = trim((string)($warning['action_label'] ?? 'Open Related Workflow'));
-            $actionHtml = \eel_accounts\Renderer\WorkflowHandoffRenderer::fromWorkflow(
-                $warning,
-                $actionLabel,
-                [
-                    'company_id' => $companyId,
-                    'accounting_period_id' => $accountingPeriodId,
-                ]
-            );
-            $html .= '<section class="panel-soft settings-stack dividend-capacity-warning">
-                <div><span class="badge warning">Warning</span></div>
-                <div class="summary-label">' . HelperFramework::escape((string)($warning['title'] ?? 'Dividend reliability warning')) . '</div>
-                <div class="helper">' . HelperFramework::escape((string)($warning['detail'] ?? '')) . '</div>
-                ' . ($actionHtml !== '' ? '<div class="actions-row">' . $actionHtml . '</div>' : '') . '
-            </section>';
-        }
-
-        return $inline ? $html : $html . '</div>';
-    }
-
     private function money(array $companySettings, float|int|string|null $value): string
     {
         return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
-    }
-
-    private function badgeClass(string $severity): string
-    {
-        return match ($severity) {
-            'danger', 'fail', 'error' => 'danger',
-            'warning' => 'warning',
-            'success', 'pass' => 'success',
-            default => 'info',
-        };
     }
 
     private function renderErrors(array $errors): string

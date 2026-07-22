@@ -16,7 +16,7 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
         dividend_card_assert_context_service($harness, $card);
     });
 
-    $harness->check(_dividend_capacityCard::class, 'renders reliability warning panels with related workflow action', static function () use ($harness, $card): void {
+    $harness->check(_dividend_capacityCard::class, 'renders reliability warnings as summary cards with related workflow actions', static function () use ($harness, $card): void {
         $html = $card->render([
             'company' => [
                 'id' => 7,
@@ -50,24 +50,27 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
                         ],
                     ]],
                 ],
-                'warnings' => [],
+                'warnings' => [[
+                    'severity' => 'info',
+                    'title' => 'Dividend review scope',
+                    'detail' => 'Capacity is based on reviewed as-at distributable reserve snapshots.',
+                ]],
             ],
         ]);
 
-        $harness->assertTrue(str_contains($html, '<section class="panel-soft settings-stack dividend-capacity-warning">'));
-        $harness->assertTrue(str_contains($html, '<section class="panel-soft dividend-reserve-overview">'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-card dividend-capacity-summary-card">'));
         $harness->assertTrue(str_contains($html, '<div class="summary-value">Reserve basis verified</div>'));
         $harness->assertTrue(!str_contains($html, '<div class="summary-label">Distributable reserves</div>'));
-        $harness->assertTrue(!str_contains($html, '<span class="badge success">Reserve basis verified</span>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Dividend review scope</div>'));
         $harness->assertTrue(str_contains($html, '<table class="table dividend-capacity-summary">'));
         $harness->assertTrue(str_contains($html, '<th>Title</th><th>Description</th><th class="numeric">Value</th>'));
-        $harness->assertTrue(str_contains($html, '<div class="summary-card"><div class="summary-label">Available distributable reserves</div><div class="summary-value">£ 140.00</div></div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-card dividend-capacity-summary-card"><div class="summary-label">Available distributable reserves</div><div class="summary-value">£ 140.00</div></div>'));
         $harness->assertTrue(str_contains($html, '<td>Distributable Reserves B/F</td><td>Distributable Reserves from the previous accounting period</td><td class="numeric">£ 100.00</td>'));
         $harness->assertTrue(str_contains($html, '<td>Profit after Tax</td><td>The reviewed, distributable portion of current-period profit after deducting any unposted Corporation Tax charge.</td><td class="numeric">£ 50.00</td>'));
         $harness->assertTrue(str_contains($html, '<td>Classified Realised Profit</td><td>The current-period profit accepted by the reserve review as realised/distributable, before the remaining unposted CT adjustment.</td><td class="numeric">£ 50.00</td>'));
         $harness->assertTrue(str_contains($html, '<td>L2P relief receivable</td><td>Relief receivable for qualifying later repayments; it reduces the tax charge but does not rewrite the accepted CT600A A80 amount.</td><td class="numeric">£ 0.00</td>'));
         $harness->assertTrue(str_contains($html, '<td>Net estimated tax charge</td><td>Corporation Tax payable less any L2P relief receivable. This is the tax charge used in profit and reserves.</td><td class="numeric">£ 0.00</td>'));
-        $harness->assertTrue(str_contains($html, '<span class="badge warning">Warning</span>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-value">Warning</div>'));
         $harness->assertTrue(str_contains($html, 'Bank CSV coverage may be incomplete'));
         $harness->assertTrue(str_contains($html, 'Open Related Workflow'));
         $harness->assertTrue(str_contains($html, '<form method="post" action="?page=uploads" data-ajax="true"'));
@@ -75,8 +78,14 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
         $harness->assertTrue(str_contains($html, '<input type="hidden" name="accounting_period_id" value="22">'));
         $harness->assertTrue(!str_contains($html, '?page=uploads&amp;company_id=7'));
         $harness->assertTrue(
-            strpos($html, '<div class="summary-grid four">') < strpos($html, '<div class="dividend-capacity-overview">')
+            strpos($html, '<div class="summary-label">Capacity date</div>')
+            < strpos($html, '<div class="summary-label">Dividend review scope</div>')
         );
+        $harness->assertTrue(
+            strpos($html, '<div class="summary-label">Dividend review scope</div>')
+            < strpos($html, '<div class="summary-label">Available distributable reserves</div>')
+        );
+        $harness->assertTrue(!str_contains($html, 'dividend-capacity-overview'));
     });
 
     $harness->check(_dividend_capacityCard::class, 'renders corporation tax period arithmetic helpers', static function () use ($harness, $card): void {
@@ -120,7 +129,7 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
         $harness->assertTrue(str_contains($html, 'Estimated total tax charge £ 2,475.00 - posted tax charge £ 475.00 = £ 2,000.00'));
     });
 
-    $harness->check(_dividend_capacityCard::class, 'renders warning metric values separately from warning severity', static function () use ($harness, $card): void {
+    $harness->check(_dividend_capacityCard::class, 'renders warning metric values in the unified summary-card layout', static function () use ($harness, $card): void {
         $html = $card->render([
             'company' => [
                 'settings' => [],
@@ -150,8 +159,8 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
         ]);
 
         $harness->assertTrue(str_contains($html, 'Uncategorised transactions affect capacity'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Uncategorised transactions affect capacity</div>'));
         $harness->assertTrue(str_contains($html, '<div class="summary-value">12 transaction(s)</div>'));
-        $harness->assertTrue(str_contains($html, '<span class="badge warning">Warning</span>'));
         $harness->assertTrue(str_contains($html, 'Transactions dated on or before the capacity date are uncategorised or missing a nominal account.'));
         $harness->assertTrue(!str_contains($html, '12 transaction(s) dated on or before'));
     });

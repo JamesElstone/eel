@@ -3242,36 +3242,19 @@
     white-space: pre-wrap;
 }
 
-.dividend-capacity-overview {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-  align-items: stretch;
-}
-
-.dividend-capacity-overview > div,
-.dividend-reserve-overview,
-.dividend-capacity-warning {
-  min-width: 0;
-}
-
-.dividend-capacity-overview > .dividend-reserve-overview {
-  margin-bottom: 0;
-}
-
-.dividend-capacity-overview > .dividend-reserve-overview:only-child {
-  grid-column: 1 / -1;
-}
-
-.dividend-reserve-overview {
+.dividend-capacity-summary-card {
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
 }
 
-.dividend-reserve-overview .pill-row {
+.dividend-capacity-summary-card .summary-value,
+.dividend-capacity-summary-card .helper {
+  margin-top: 0;
+}
+
+.dividend-capacity-summary-card .actions-row {
   margin-top: auto;
-  justify-content: flex-end;
 }
 
 .control-disabled,
@@ -3281,12 +3264,6 @@
 
 .ct-filing-mapping-action-form {
   display: inline;
-}
-
-@media (max-width: 900px) {
-  .dividend-capacity-overview {
-    grid-template-columns: 1fr;
-  }
 }
 
 @-moz-document url-prefix() {

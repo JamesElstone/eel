@@ -95,10 +95,12 @@ final class _dividend_capacityCard extends CardBaseFramework
 
     private function reserveBasisCard(array $capacity): string
     {
-        return $this->summaryCard(
-            'Reserve basis',
-            !empty($capacity['reserves_reliable']) ? 'Reserve basis verified' : 'Reserve basis blocked'
-        );
+        $reliable = !empty($capacity['reserves_reliable']);
+
+        return '<div class="summary-card dividend-capacity-summary-card">
+            <div class="summary-label">Reserve basis</div>
+            <div class="summary-value"><span class="badge ' . HelperFramework::escape($reliable ? 'success' : 'danger') . '">' . HelperFramework::escape($reliable ? 'Reserve basis verified' : 'Reserve basis blocked') . '</span></div>
+        </div>';
     }
 
     private function summaryTableRow(string $title, string $description, string $value): string
@@ -132,7 +134,10 @@ final class _dividend_capacityCard extends CardBaseFramework
             );
             $html .= '<div class="summary-card dividend-capacity-summary-card">
                 <div class="summary-label">' . HelperFramework::escape((string)($warning['title'] ?? 'Warning')) . '</div>
-                <div class="summary-value">' . HelperFramework::escape($metricValue !== '' ? $metricValue : HelperFramework::labelFromKey($severity, '_')) . '</div>
+                <div class="summary-value">' . ($metricValue !== ''
+                    ? HelperFramework::escape($metricValue)
+                    : '<span class="badge ' . HelperFramework::escape($this->badgeClass($severity)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($severity, '_')) . '</span>') . '</div>
+                ' . ($metricValue !== '' ? '<div><span class="badge ' . HelperFramework::escape($this->badgeClass($severity)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($severity, '_')) . '</span></div>' : '') . '
                 <div class="helper">' . HelperFramework::escape((string)($warning['detail'] ?? '')) . '</div>
                 ' . ($actionHtml !== '' ? '<div class="actions-row">' . $actionHtml . '</div>' : '') . '
             </div>';
@@ -192,6 +197,16 @@ final class _dividend_capacityCard extends CardBaseFramework
     private function money(array $companySettings, float|int|string|null $value): string
     {
         return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
+    }
+
+    private function badgeClass(string $severity): string
+    {
+        return match ($severity) {
+            'danger', 'fail', 'error' => 'danger',
+            'warning' => 'warning',
+            'success', 'pass' => 'success',
+            default => 'info',
+        };
     }
 
     private function renderErrors(array $errors): string

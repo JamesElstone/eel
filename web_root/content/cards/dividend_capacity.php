@@ -46,6 +46,15 @@ final class _dividend_capacityCard extends CardBaseFramework
         $companySettings = (array)($company['settings'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
+        $reserveReviewCurrent = (string)($capacity['reserve_review_status'] ?? '') === 'current'
+            && !empty($capacity['reserve_review_profit_reconciles']);
+        $pendingReviewValue = 'Pending reserve review';
+        $availableReservesValue = $reserveReviewCurrent
+            ? $this->money($companySettings, $capacity['available_distributable_reserves'] ?? 0)
+            : $pendingReviewValue;
+        $profitAfterTaxValue = $reserveReviewCurrent
+            ? $this->money($companySettings, $capacity['current_year_profit_loss_after_tax'] ?? $capacity['current_year_profit_loss'] ?? 0)
+            : $pendingReviewValue;
         $reviewScopeWarnings = array_values(array_filter(
             $warnings,
             static fn(mixed $warning): bool => is_array($warning)
@@ -61,7 +70,7 @@ final class _dividend_capacityCard extends CardBaseFramework
             <div class="summary-grid four dividend-capacity-summary-grid">
                 ' . $this->summaryCard('Capacity date', (string)($capacity['as_at_date'] ?? '')) . '
                 ' . $this->warningCards($reviewScopeWarnings, $companyId, $accountingPeriodId) . '
-                ' . $this->summaryCard('Available distributable reserves', $this->money($companySettings, $capacity['available_distributable_reserves'] ?? 0)) . '
+                ' . $this->summaryCard('Available distributable reserves', $availableReservesValue) . '
                 ' . $this->reserveBasisCard($capacity) . '
                 ' . $this->warningCards($otherWarnings, $companyId, $accountingPeriodId) . '
                 ' . $this->warningCards($reliabilityWarnings, $companyId, $accountingPeriodId) . '
@@ -72,14 +81,16 @@ final class _dividend_capacityCard extends CardBaseFramework
                     <tbody>
                         ' . $this->summaryTableRow('Distributable Reserves B/F', 'Distributable Reserves from the previous accounting period', $this->money($companySettings, $capacity['distributable_reserves_brought_forward'] ?? $capacity['retained_earnings_brought_forward'] ?? 0)) . '
                         ' . $this->summaryTableRow('Ledger profit / loss', 'Profit before Tax', $this->money($companySettings, $capacity['ledger_current_year_profit_loss'] ?? 0)) . '
-                        ' . $this->summaryTableRow('Classified Realised Profit', 'The current-period profit accepted by the reserve review as realised/distributable, before the remaining unposted CT adjustment.', $this->money($companySettings, $capacity['classified_current_year_profit_loss'] ?? 0)) . '
+                        ' . ($reserveReviewCurrent
+                            ? $this->summaryTableRow('Classified Realised Profit', 'The current-period profit accepted by the reserve review as realised/distributable, before the remaining unposted CT adjustment.', $this->money($companySettings, $capacity['classified_current_year_profit_loss'] ?? 0))
+                            : $this->summaryTableActionRow('Classified Realised Profit', 'Complete the reserve review before relying on a classified realised profit or loss.', '<a class="button warn" href="?page=profit_loss&amp;show_card=reserve_review">Complete Reserve Review</a>')) . '
                         ' . $this->summaryTableRow('Corporation Tax payable', $this->estimatedCorporationTaxHelper($companySettings, $capacity), $this->money($companySettings, $capacity['estimated_corporation_tax'] ?? 0)) . '
                         ' . $this->summaryTableRow('L2P relief receivable', 'Relief receivable for qualifying later repayments; it reduces the tax charge but does not rewrite the accepted CT600A A80 amount.', $this->money($companySettings, $capacity['l2p_relief_receivable'] ?? 0)) . '
                         ' . $this->summaryTableRow('Net estimated tax charge', 'Corporation Tax payable less any L2P relief receivable. This is the tax charge used in profit and reserves.', $this->money($companySettings, $capacity['estimated_tax_charge'] ?? $capacity['estimated_corporation_tax'] ?? 0)) . '
                         ' . $this->summaryTableRow('Unposted tax charge deducted', $this->unpostedCorporationTaxHelper($companySettings, $capacity), $this->money($companySettings, $capacity['unposted_corporation_tax_adjustment'] ?? 0)) . '
-                        ' . $this->summaryTableRow('Profit after Tax', 'The reviewed, distributable portion of current-period profit after deducting any unposted Corporation Tax charge.', $this->money($companySettings, $capacity['current_year_profit_loss_after_tax'] ?? $capacity['current_year_profit_loss'] ?? 0)) . '
+                        ' . $this->summaryTableRow('Profit after Tax', 'The reviewed, distributable portion of current-period profit after deducting any unposted Corporation Tax charge.', $profitAfterTaxValue) . '
                         ' . $this->summaryTableRow('Declared Dividends', 'Declared in this Accounting Period', $this->money($companySettings, $capacity['dividends_declared'] ?? 0)) . '
-                        ' . $this->summaryTableRow('Available distributable reserves', 'Distributable Reserves B/F + Profit after Tax - Declared Dividends', $this->money($companySettings, $capacity['available_distributable_reserves'] ?? 0)) . '
+                        ' . $this->summaryTableRow('Available distributable reserves', 'Distributable Reserves B/F + Profit after Tax - Declared Dividends', $availableReservesValue) . '
                     </tbody>
                 </table>
             </div>
@@ -108,6 +119,13 @@ final class _dividend_capacityCard extends CardBaseFramework
         return '<tr><td>' . HelperFramework::escape($title) . '</td><td>'
             . HelperFramework::escape($description !== '' ? $description : '—')
             . '</td><td class="numeric">' . HelperFramework::escape($value !== '' ? $value : '-') . '</td></tr>';
+    }
+
+    private function summaryTableActionRow(string $title, string $description, string $actionHtml): string
+    {
+        return '<tr><td>' . HelperFramework::escape($title) . '</td><td>'
+            . HelperFramework::escape($description !== '' ? $description : '—')
+            . '</td><td class="numeric">' . $actionHtml . '</td></tr>';
     }
 
     private function warningCards(array $warnings, int $companyId = 0, int $accountingPeriodId = 0): string

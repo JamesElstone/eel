@@ -344,21 +344,23 @@ final class DividendReserveClassificationService
     private function classifiedRows(int $companyId, int $accountingPeriodId, array $accountingPeriod, string $asAtDate): array
     {
         $rules = $this->rulesByNominal($companyId);
+        $periodStart = (string)($accountingPeriod['period_start'] ?? '');
         $rows = $this->ledgerRows(
             $companyId,
             $accountingPeriodId,
-            (string)($accountingPeriod['period_start'] ?? ''),
+            $periodStart,
             $asAtDate
         );
 
-        $depreciation = (new YearEndClosePreviewService())->depreciationExpenseForPeriod(
+        $closePreview = new YearEndClosePreviewService();
+        $depreciation = $closePreview->depreciationExpenseForPeriod(
             $companyId,
             $accountingPeriodId,
-            (string)($accountingPeriod['period_start'] ?? ''),
+            $periodStart,
             $asAtDate
         );
         if ($depreciation > 0.0) {
-            $nominal = (array)((new YearEndClosePreviewService())->depreciationExpenseNominal() ?? []);
+            $nominal = (array)($closePreview->depreciationExpenseNominal() ?? []);
             $rows[] = [
                 'nominal_account_id' => (int)($nominal['id'] ?? 0),
                 'nominal_code' => (string)($nominal['code'] ?? '6200'),
@@ -372,6 +374,16 @@ final class DividendReserveClassificationService
             ];
         }
 
+        $rows = $this->includePendingPrepaymentRows(
+            $rows,
+            $closePreview->prepaymentExpenseRowsForPeriod(
+                $companyId,
+                $accountingPeriodId,
+                $periodStart,
+                $asAtDate
+            )
+        );
+
         foreach ($rows as &$row) {
             $nominalAccountId = (int)($row['nominal_account_id'] ?? 0);
             $defaultTreatment = $this->defaultTreatment($row);
@@ -379,6 +391,62 @@ final class DividendReserveClassificationService
             $row['treatment'] = (string)($rules[$nominalAccountId] ?? $defaultTreatment);
         }
         unset($row);
+
+        return $rows;
+    }
+
+    private function includePendingPrepaymentRows(array $rows, array $pendingRows): array
+    {
+        $rowIndexesByNominal = [];
+        foreach ($rows as $index => $row) {
+            $nominalId = (int)($row['nominal_account_id'] ?? 0);
+            if ($nominalId > 0) {
+                $rowIndexesByNominal[$nominalId] = $index;
+            }
+        }
+
+        foreach ($pendingRows as $pendingRow) {
+            if (!is_array($pendingRow)) {
+                continue;
+            }
+
+            $nominalId = (int)($pendingRow['nominal_account_id'] ?? 0);
+            $amount = round((float)($pendingRow['amount'] ?? 0), 2);
+            if ($nominalId <= 0 || abs($amount) < 0.005) {
+                continue;
+            }
+
+            if (!array_key_exists($nominalId, $rowIndexesByNominal)) {
+                $rows[] = [
+                    'nominal_account_id' => $nominalId,
+                    'nominal_code' => (string)($pendingRow['code'] ?? ''),
+                    'nominal_name' => (string)($pendingRow['name'] ?? ''),
+                    'account_type' => (string)($pendingRow['account_type'] ?? 'expense'),
+                    'subtype_code' => (string)($pendingRow['subtype_code'] ?? $pendingRow['account_subtype_code'] ?? ''),
+                    'total_debit' => 0.0,
+                    'total_credit' => 0.0,
+                    'profit_effect' => 0.0,
+                    'is_close_preview' => true,
+                    'pending_prepayment_adjustment' => 0.0,
+                ];
+                $rowIndexesByNominal[$nominalId] = array_key_last($rows);
+            }
+
+            $index = $rowIndexesByNominal[$nominalId];
+            if ($amount > 0.0) {
+                $rows[$index]['total_debit'] = round((float)($rows[$index]['total_debit'] ?? 0) + $amount, 2);
+            } else {
+                $rows[$index]['total_credit'] = round((float)($rows[$index]['total_credit'] ?? 0) + abs($amount), 2);
+            }
+            $rows[$index]['pending_prepayment_adjustment'] = round(
+                (float)($rows[$index]['pending_prepayment_adjustment'] ?? 0) + $amount,
+                2
+            );
+            $rows[$index]['profit_effect'] = round(
+                (float)($rows[$index]['total_credit'] ?? 0) - (float)($rows[$index]['total_debit'] ?? 0),
+                2
+            );
+        }
 
         return $rows;
     }

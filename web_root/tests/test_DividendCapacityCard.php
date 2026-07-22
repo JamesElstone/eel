@@ -28,6 +28,8 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
                     'available' => true,
                     'as_at_date' => '2026-07-04',
                     'reserves_reliable' => true,
+                    'reserve_review_status' => 'current',
+                    'reserve_review_profit_reconciles' => true,
                     'reserve_basis_detail' => 'Reserve basis is based on reviewed as-at distributable reserves.',
                     'distributable_reserves_brought_forward' => 100.00,
                     'current_year_profit_loss_after_tax' => 50.00,
@@ -103,6 +105,8 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
                     'available' => true,
                     'as_at_date' => '2026-07-04',
                     'reserves_reliable' => true,
+                    'reserve_review_status' => 'current',
+                    'reserve_review_profit_reconciles' => true,
                     'reserve_basis_detail' => 'Reserve basis is based on reviewed as-at distributable reserves.',
                     'distributable_reserves_brought_forward' => 5000.00,
                     'current_year_profit_loss_after_tax' => 2025.00,
@@ -159,6 +163,8 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
                     'available' => true,
                     'as_at_date' => '2026-07-04',
                     'reserves_reliable' => false,
+                    'reserve_review_status' => 'current',
+                    'reserve_review_profit_reconciles' => true,
                     'reserve_basis_detail' => 'Reserve basis is blocked.',
                     'distributable_reserves_brought_forward' => 100.00,
                     'current_year_profit_loss_after_tax' => 50.00,
@@ -184,6 +190,69 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
         $harness->assertTrue(str_contains($html, '<span class="badge warning">Warning</span>'));
         $harness->assertTrue(str_contains($html, 'Transactions dated on or before the capacity date are uncategorised or missing a nominal account.'));
         $harness->assertTrue(!str_contains($html, '12 transaction(s) dated on or before'));
+    });
+
+    $harness->check(_dividend_capacityCard::class, 'renders a reserve review action and pending dependent values until classification is current', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => [
+                'settings' => [],
+            ],
+            'dividends' => [
+                'capacity' => [
+                    'available' => true,
+                    'as_at_date' => '2024-09-30',
+                    'reserves_reliable' => false,
+                    'reserve_review_status' => 'missing',
+                    'reserve_review_profit_reconciles' => false,
+                    'distributable_reserves_brought_forward' => -127.11,
+                    'ledger_current_year_profit_loss' => -5013.60,
+                    'classified_current_year_profit_loss' => 0.00,
+                    'estimated_corporation_tax' => 0.00,
+                    'estimated_tax_charge' => 0.00,
+                    'unposted_corporation_tax_adjustment' => 0.00,
+                    'current_year_profit_loss_after_tax' => 0.00,
+                    'dividends_declared' => 0.00,
+                    'available_distributable_reserves' => -127.11,
+                ],
+                'warnings' => [],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, '<td>Ledger profit / loss</td><td>Profit before Tax</td><td class="numeric">-£ 5,013.60</td>'));
+        $harness->assertTrue(str_contains($html, '<a class="button warn" href="?page=profit_loss&amp;show_card=reserve_review">Complete Reserve Review</a>'));
+        $harness->assertSame(3, substr_count($html, 'Pending reserve review'));
+        $harness->assertTrue(!str_contains($html, '<td>Classified Realised Profit</td><td>The current-period profit accepted by the reserve review as realised/distributable, before the remaining unposted CT adjustment.</td><td class="numeric">£ 0.00</td>'));
+    });
+
+    $harness->check(_dividend_capacityCard::class, 'renders a legitimate zero once the reserve review is current and reconciled', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => [
+                'settings' => [],
+            ],
+            'dividends' => [
+                'capacity' => [
+                    'available' => true,
+                    'as_at_date' => '2024-09-30',
+                    'reserves_reliable' => true,
+                    'reserve_review_status' => 'current',
+                    'reserve_review_profit_reconciles' => true,
+                    'distributable_reserves_brought_forward' => 100.00,
+                    'ledger_current_year_profit_loss' => 0.00,
+                    'classified_current_year_profit_loss' => 0.00,
+                    'estimated_corporation_tax' => 0.00,
+                    'estimated_tax_charge' => 0.00,
+                    'unposted_corporation_tax_adjustment' => 0.00,
+                    'current_year_profit_loss_after_tax' => 0.00,
+                    'dividends_declared' => 0.00,
+                    'available_distributable_reserves' => 100.00,
+                ],
+                'warnings' => [],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, '<td>Classified Realised Profit</td><td>The current-period profit accepted by the reserve review as realised/distributable, before the remaining unposted CT adjustment.</td><td class="numeric">£ 0.00</td>'));
+        $harness->assertTrue(!str_contains($html, 'Complete Reserve Review'));
+        $harness->assertTrue(!str_contains($html, 'Pending reserve review'));
     });
 });
 

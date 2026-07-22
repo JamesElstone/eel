@@ -70,8 +70,8 @@ $harness->run(_year_end_loan_confirmationCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, 'Primary Director'));
         $harness->assertTrue(str_contains($html, 'Total Participator Loan Asset (Gross)'));
         $harness->assertTrue(str_contains($html, 'Total Participator Loan Liability (Gross)'));
-        $harness->assertTrue(str_contains($html, 'Calculated total loan Balancing Adjustment at Year End'));
-        $harness->assertTrue(str_contains($html, 'Journal entries that already exist for year end balance'));
+        $harness->assertTrue(str_contains($html, 'Loan Balancing Adjustment at Year End'));
+        $harness->assertTrue(str_contains($html, 'Existing Journal entries for year end balancing'));
         $harness->assertTrue(str_contains($html, 'Journal entries to be made at Year End closure'));
         $harness->assertTrue(str_contains($html, 'Loan Assets Outstanding subject to be taxed'));
         $harness->assertTrue(str_contains($html, 'Balance after Year End has closed'));

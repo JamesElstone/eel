@@ -219,6 +219,41 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
         });
     });
 
+    $harness->check('YearEndAction', 'locks CT600A declarations after the director loan year-end confirmation', static function () use ($harness): void {
+        yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness): void {
+            if (!InterfaceDB::tableExists('year_end_review_acknowledgements')
+                || !InterfaceDB::columnExists('year_end_review_acknowledgements', 'basis_hash')) {
+                $harness->skip('Director loan year-end acknowledgement schema is not available on the default InterfaceDB connection.');
+            }
+
+            yearEndActionDirectorLoanTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 1000.00, 0.00, 'asset');
+            yearEndActionDirectorLoanTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 1500.00, 'liability');
+            $confirmation = yearEndActionTestInstanceWithDirectorCount(1)->handle(
+                yearEndActionDirectorLoanTestRequest(
+                    (int)$fixture['company_id'],
+                    (int)$fixture['accounting_period_id'],
+                    'save_director_loan_year_end_review',
+                    ['director_loan_year_end_review' => '1']
+                ),
+                createTestPageServiceFramework()
+            );
+
+            $ct600a = new \eel_accounts\Service\Ct600aService();
+            $update = $ct600a->saveReview(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                array_fill_keys(array_keys($ct600a->reviewQuestions()), 'no'),
+                'director',
+                'Primary Director',
+                ''
+            );
+
+            $harness->assertSame(true, $confirmation->isSuccess());
+            $harness->assertSame(false, !empty($update['success']));
+            $harness->assertTrue(str_contains((string)($update['errors'][0] ?? ''), 'locked'));
+        });
+    });
+
     $harness->check('YearEndAction', 'saves the current tax readiness acknowledgement', static function () use ($harness): void {
         yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness): void {
             $instance = yearEndActionTestInstanceWithDirectorCount(1);

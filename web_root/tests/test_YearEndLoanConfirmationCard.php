@@ -135,6 +135,27 @@ $harness->run(_year_end_loan_confirmationCard::class, static function (Generated
         $harness->assertSame(true, strpos($html, 'Are any participators missing?') < strpos($html, 'Year End Confirmation'));
     });
 
+    $harness->check(_year_end_loan_confirmationCard::class, 'locks CT600A declarations after the Year End Confirmation is recorded', static function () use ($harness, $card): void {
+        $context = yearEndDirectorLoanReviewCardContext([
+            'available' => true, 'has_activity' => true, 'can_confirm' => true,
+            'asset_receivable' => 0, 'liability_payable' => 0, 'desired_reclassification_amount' => 0,
+            'posted_reclassification_amount' => 0, 'pending_adjustment_amount' => 0, 'potential_s455_exposure' => 0,
+            'warnings' => [], 'per_director' => [], 'tax_review' => ['director_flags' => []], 'proposed_lines' => [],
+            'acknowledgement' => ['acknowledged_at' => '2026-07-22 10:00:00'],
+            'acknowledgement_current' => true,
+        ]);
+        $context['services']['ct600a'] = [
+            'available' => true,
+            'questions' => ['missing_parties' => 'Are any participators missing?'],
+            'review' => ['answers' => ['missing_parties' => 'no']],
+        ];
+
+        $html = $card->render($context);
+
+        $harness->assertTrue(str_contains($html, 'data-submit-on-change="true" disabled'));
+        $harness->assertTrue(str_contains($html, 'Selections are locked because the Year End Confirmation has been recorded. No further changes can be made.'));
+    });
+
     $harness->check(_year_end_loan_confirmationCard::class, 'blocks confirmation and offers repair for an unresolved legacy offset', static function () use ($harness, $card): void {
         $html = $card->render(yearEndDirectorLoanReviewCardContext([
             'available' => true,

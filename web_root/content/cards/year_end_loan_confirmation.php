@@ -147,12 +147,12 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
                     [(array)($review['asset_nominal'] ?? []), (array)($review['liability_nominal'] ?? [])]
                 ) . '
             </section>
-            ' . $this->ct600aDeclarations($context, $companyId, $accountingPeriodId) . '
+            ' . $this->ct600aDeclarations($context, $companyId, $accountingPeriodId, $acknowledgement !== []) . '
             ' . $confirmation . '
         </section>';
     }
 
-    private function ct600aDeclarations(array $context, int $companyId, int $accountingPeriodId): string
+    private function ct600aDeclarations(array $context, int $companyId, int $accountingPeriodId, bool $locked): string
     {
         $ct600a = (array)($context['services']['ct600a'] ?? []);
         if (empty($ct600a['available'])) {
@@ -167,8 +167,8 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
                 $value = 'yes';
             }
             $fields .= '<fieldset class="panel-soft"><legend>' . HelperFramework::escape((string)$question) . '</legend><div class="actions-row">'
-                . $this->ct600aRadio((string)$key, 'no', 'No', $value)
-                . $this->ct600aRadio((string)$key, 'yes', 'Yes', $value) . '</div></fieldset>';
+                . $this->ct600aRadio((string)$key, 'no', 'No', $value, $locked)
+                . $this->ct600aRadio((string)$key, 'yes', 'Yes', $value, $locked) . '</div></fieldset>';
         }
 
         return '<section class="settings-stack"><form class="settings-stack" method="post" action="?page=loans" data-ajax="true">'
@@ -176,14 +176,19 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
             . '<input type="hidden" name="card_action" value="Ct600a"><input type="hidden" name="intent" value="save_ct600a_review">'
             . '<input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
             . $fields
-            . '<div class="helper">Selections save automatically. The Year End Confirmation below is the single acknowledgement for this loan and CT600A position.</div></form></section>';
+            . '<div class="helper">'
+            . ($locked
+                ? 'Selections are locked because the Year End Confirmation has been recorded. No further changes can be made.'
+                : 'Selections save automatically. The Year End Confirmation below is the single acknowledgement for this loan and CT600A position.')
+            . '</div></form></section>';
     }
 
-    private function ct600aRadio(string $name, string $value, string $label, string $selected): string
+    private function ct600aRadio(string $name, string $value, string $label, string $selected, bool $locked): string
     {
         $id = 'ct600a_' . $name . '_' . $value;
         return '<label for="' . $id . '"><input id="' . $id . '" type="radio" name="' . HelperFramework::escape($name)
-            . '" value="' . $value . '" data-submit-on-change="true"' . ($selected === $value ? ' checked' : '') . ' required> ' . $label . '</label>';
+            . '" value="' . $value . '" data-submit-on-change="true"' . ($locked ? ' disabled' : '')
+            . ($selected === $value ? ' checked' : '') . ' required> ' . $label . '</label>';
     }
 
     private function positionsTable(array $positions, array $taxReview, array $settings): string

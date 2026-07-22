@@ -96,13 +96,13 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
     private function corporationTaxScope(array $scope, int $companyId, int $accountingPeriodId): string
     {
         if (empty($scope['available'])) {
-            return '<section class="panel-soft"><h3 class="card-title">Corporation Tax Filling Scope Check</h3><div class="standout helper">'
+            return '<section class="panel-soft"><h3 class="card-title">Corporation Tax Filing Scope Check</h3><div class="standout helper">'
                 . HelperFramework::escape((string)(($scope['errors'] ?? [])[0] ?? 'The Corporation Tax scope review is unavailable.')) . '</div></section>';
         }
         $answers = (array)($scope['answers'] ?? []);
         $rows = '';
         foreach ((array)($scope['definitions'] ?? []) as $key => $definition) {
-            $answer = (string)($answers[$key] ?? 'yes');
+            $answer = (string)($answers[$key] ?? 'no');
             if (!in_array($answer, ['yes', 'no'], true)) {
                 $answer = 'yes';
             }
@@ -118,7 +118,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
                 . '<div class="actions-row actions-row-nowrap year-end-tax-scope-answer">' . $this->scopeRadio((string)$key, 'no', 'No', $answer)
                 . $this->scopeRadio((string)$key, 'yes', 'Yes', $answer) . '</div></form></td></tr>';
         }
-        return '<section class="panel-soft settings-stack"><h3 class="card-title">Corporation Tax Filling Scope Check</h3>'
+        return '<section class="panel-soft settings-stack"><h3 class="card-title">Corporation Tax Filing Scope Check</h3>'
             . '<div class="table-scroll"><table class="year-end-tax-scope-table"><thead><tr><th>Supplement ID</th><th>Supplement Name</th><th>Question</th><th>HMRC Guidance</th><th>Answer</th></tr></thead><tbody>'
             . $rows . '</tbody></table></div></section>';
     }

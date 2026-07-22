@@ -47,7 +47,7 @@ final class CorporationTaxFilingScopeService
         $answers = is_array($answers) ? $answers : [];
         $errors = [];
         foreach ($this->definitions() as $key => $definition) {
-            $answer = (string)($answers[$key] ?? 'yes');
+            $answer = (string)($answers[$key] ?? 'no');
             if (!in_array($answer, ['no', 'yes'], true)) {
                 $errors[] = $definition['page'] . ' scope must be answered Yes or No.';
             } elseif ($answer !== 'no') {
@@ -58,7 +58,7 @@ final class CorporationTaxFilingScopeService
             'scope_version' => self::SCOPE_VERSION,
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
-            'answers' => array_replace(array_fill_keys(array_keys($this->definitions()), 'yes'), $answers),
+            'answers' => array_replace(array_fill_keys(array_keys($this->definitions()), 'no'), $answers),
             'revision' => (int)($row['revision'] ?? 0),
         ];
         $basisJson = $this->canonicalJson($basis);
@@ -84,7 +84,8 @@ final class CorporationTaxFilingScopeService
     /** @return array<string,mixed> */
     public function saveAnswer(int $companyId, int $accountingPeriodId, string $field, string $answer, string $actor): array
     {
-        if (!isset($this->definitions()[$field])) {
+        $definitions = $this->definitions();
+        if (!isset($definitions[$field])) {
             return ['success' => false, 'errors' => ['Select a recognised CT600 supplementary-page scope question.']];
         }
         if (!in_array($answer, ['no', 'yes'], true)) {
@@ -128,7 +129,7 @@ final class CorporationTaxFilingScopeService
                 'revision' => $revision, 'confirmed_by' => $actor, 'basis_hash' => hash('sha256', $json),
             ]
         );
-        return ['success' => true, 'errors' => [], 'status' => $this->fetch($companyId, $accountingPeriodId)];
+        return ['success' => true, 'errors' => []];
     }
 
     private function canonicalJson(array $value): string

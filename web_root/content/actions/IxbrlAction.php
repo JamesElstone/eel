@@ -88,7 +88,7 @@ final class IxbrlAction implements ActionInterfaceFramework
                 return $this->result(
                     !empty($result['success']),
                     (array)($result['errors'] ?? []),
-                    $changedFacts,
+                    [],
                     !empty($result['success']) ? ['Corporation Tax filing scope updated. Approve the revised filing basis before generating or filing.'] : [],
                     []
                 );

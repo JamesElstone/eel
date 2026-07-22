@@ -59,6 +59,7 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
         ]);
 
         $harness->assertTrue(str_contains($html, '<div class="summary-card dividend-capacity-summary-card">'));
+        $harness->assertTrue(!str_contains($html, 'summary-card-fit'));
         $harness->assertTrue(str_contains($html, '<div class="summary-card-pill"><span class="badge success">Reserve basis verified</span></div>'));
         $harness->assertTrue(!str_contains($html, '<div class="summary-label">Distributable reserves</div>'));
         $harness->assertTrue(!str_contains($html, 'Reserve basis is based on reviewed as-at distributable reserves.'));

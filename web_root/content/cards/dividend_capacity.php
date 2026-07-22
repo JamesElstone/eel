@@ -59,7 +59,7 @@ final class _dividend_capacityCard extends CardBaseFramework
 
         return '<div class="settings-stack">
             <div class="summary-grid four dividend-capacity-summary-grid">
-                ' . $this->summaryCard('Capacity date', (string)($capacity['as_at_date'] ?? ''), 'summary-card-fit') . '
+                ' . $this->summaryCard('Capacity date', (string)($capacity['as_at_date'] ?? '')) . '
                 ' . $this->warningCards($reviewScopeWarnings, $companyId, $accountingPeriodId) . '
                 ' . $this->summaryCard('Available distributable reserves', $this->money($companySettings, $capacity['available_distributable_reserves'] ?? 0)) . '
                 ' . $this->reserveBasisCard($capacity) . '

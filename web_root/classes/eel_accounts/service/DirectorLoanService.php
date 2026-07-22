@@ -423,6 +423,16 @@ final class DirectorLoanService
         $transactionIdExpression = \InterfaceDB::driverName() === 'sqlite'
             ? 'CAST(SUBSTR(j.source_ref, 13) AS INTEGER)'
             : 'CAST(SUBSTRING(j.source_ref, 13) AS UNSIGNED)';
+        $correctionJoins = '';
+        $correctionWhere = '';
+        if (\InterfaceDB::tableExists('journal_reversals')) {
+            $correctionJoins = '
+             LEFT JOIN journal_reversals jr_source ON jr_source.source_journal_id = j.id
+             LEFT JOIN journal_reversals jr_reversal ON jr_reversal.reversal_journal_id = j.id';
+            $correctionWhere = '
+               AND jr_source.source_journal_id IS NULL
+               AND jr_reversal.reversal_journal_id IS NULL';
+        }
 
         return \InterfaceDB::fetchAll(
             'SELECT jl.id AS journal_line_id,
@@ -457,11 +467,13 @@ final class DirectorLoanService
               AND j.source_ref LIKE \'transaction:%\'
               AND t.id = ' . $transactionIdExpression . '
              LEFT JOIN expense_claims ec ON ec.posted_journal_id = j.id
+             ' . $correctionJoins . '
              WHERE j.company_id = :company_id
                AND j.is_posted = 1
                AND jl.nominal_account_id IN (:asset_nominal_id, :liability_nominal_id)
                AND j.journal_date <= :period_end
-               AND COALESCE(jem.journal_tag, \'\') <> :reclassification_tag
+               AND COALESCE(jem.journal_tag, \'\') <> :reclassification_tag'
+             . $correctionWhere . '
              ORDER BY j.journal_date ASC, j.id ASC, jl.id ASC',
             [
                 'period_start_before' => $periodStart,

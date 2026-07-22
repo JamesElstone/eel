@@ -51,5 +51,6 @@ $harness->run(_director_loan_attributionCard::class, static function (GeneratedS
         $harness->assertSame(false, str_contains($html, 'Assigned entry'));
         $harness->assertTrue(str_contains($html, 'Unassigned entry'));
         $harness->assertTrue(str_contains($html, '<option value="requires_assignment" selected>Requires Assignment</option>'));
+        $harness->assertTrue(str_contains($html, 'name="director_loan_attribution_filter" value="requires_assignment"'));
     });
 });

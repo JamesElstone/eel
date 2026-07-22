@@ -134,6 +134,14 @@ $harness->run(\eel_accounts\Service\DirectorLoanAttributionService::class, stati
                 'replacement_journal_id' => $replacementJournalId,
             ]));
 
+            $statement = (new \eel_accounts\Service\DirectorLoanService())->fetchStatement($companyId, $periodId);
+            $attributionEntries = array_values(array_filter(
+                (array)($statement['attribution_entries'] ?? []),
+                static fn(array $entry): bool => (int)($entry['nominal_account_id'] ?? 0) === $assetNominalId
+            ));
+            $harness->assertCount(1, $attributionEntries);
+            $harness->assertSame($partyId, (int)($attributionEntries[0]['director_id'] ?? 0));
+
             $missing = $service->assignJournalLine($companyId, $lineId, null, 'test');
             $harness->assertSame(false, (bool)($missing['success'] ?? true));
         } finally {

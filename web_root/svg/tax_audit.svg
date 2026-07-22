@@ -1,8 +1,10 @@
-<svg fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" aria-hidden="true" version="1.1" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-	<g transform="translate(-7.7742 -7.4503)" fill="none" stroke="#f00" stroke-width="1.2086">
+<svg fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" version="1.1" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+	<g transform="matrix(1.7085 0 0 1.7085 -22.399 -15.443)" fill="none" stroke="#fff" stroke-width="1.2086">
 		<path d="m20.106 14.775a1.7723 1.8089 0 10-3.5446 0v4.5223a1.7723 1.8089 0 01-1.7723 1.8089h5.3169"/>
 		<path d="m14.789 17.488h3.5446"/>
 	</g>
-	<path d="m3 10a7 7 0 1014 0 7 7 0 10-14 0" stroke="#fff"/>
-	<path d="m21 21-6-6" stroke="#fff"/>
+	<g transform="translate(.48977)" stroke="#4a0" stroke-width="1.8">
+		<path d="m3 10a7 7 0 1014 0 7 7 0 10-14 0"/>
+		<path d="m21 21-6-6"/>
+	</g>
 </svg>

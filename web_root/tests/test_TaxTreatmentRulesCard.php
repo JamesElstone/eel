@@ -75,6 +75,16 @@ $harness->run(_tax_treatment_rulesCard::class, static function (GeneratedService
         $harness->assertTrue(str_contains($html, 'Enable'));
     });
 
+    $harness->check(_tax_treatment_rulesCard::class, 'defaults to all rules when none need review', static function () use ($harness, $card, $context): void {
+        $noReviewContext = $context;
+        $noReviewContext['tax_treatment_rules']['rules'][1]['review_status'] = 'reviewed';
+        $html = $card->render($noReviewContext);
+
+        $harness->assertTrue(str_contains($html, 'client_entertainment_disallowable'));
+        $harness->assertTrue(str_contains($html, '<option value="all" selected>All</option>'));
+        $harness->assertSame(false, str_contains($html, '<option value="needs_review" selected>Needs Review</option>'));
+    });
+
     $harness->check(_tax_treatment_rulesCard::class, 'handle stores normalised filter input', static function () use ($harness, $card, $context): void {
         $request = new RequestFramework(
             ['page' => 'tax_artifacts'],

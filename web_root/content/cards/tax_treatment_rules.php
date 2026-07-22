@@ -34,9 +34,12 @@ final class _tax_treatment_rulesCard extends CardBaseFramework
         ActionResultFramework $actionResult
     ): array {
         $pageContext = parent::handle($request, $services, $pageContext, $actionResult);
+        $requestedFilter = trim((string)$request->input(self::FILTER_FIELD, ''));
         $pageContext[$this->key()]['status_filter'] = $this->normaliseStatusFilter((string)$request->input(
             self::FILTER_FIELD,
-            (string)(($pageContext[$this->key()] ?? [])['status_filter'] ?? 'needs_review')
+            $requestedFilter !== ''
+                ? $requestedFilter
+                : $this->defaultStatusFilter($pageContext)
         ));
 
         return $pageContext;
@@ -281,7 +284,9 @@ final class _tax_treatment_rulesCard extends CardBaseFramework
 
     private function selectedStatusFilter(array $context): string
     {
-        return $this->normaliseStatusFilter((string)(($context[$this->key()] ?? [])['status_filter'] ?? 'needs_review'));
+        $selected = trim((string)(($context[$this->key()] ?? [])['status_filter'] ?? ''));
+
+        return $this->normaliseStatusFilter($selected !== '' ? $selected : $this->defaultStatusFilter($context));
     }
 
     private function normaliseStatusFilter(string $status): string
@@ -298,6 +303,17 @@ final class _tax_treatment_rulesCard extends CardBaseFramework
             'needs_review' => 'Needs Review',
             'all' => 'All',
         ];
+    }
+
+    private function defaultStatusFilter(array $context): string
+    {
+        foreach ((array)($context['tax_treatment_rules']['rules'] ?? []) as $rule) {
+            if (is_array($rule) && (string)($rule['review_status'] ?? 'seeded') === 'needs_review') {
+                return 'needs_review';
+            }
+        }
+
+        return 'all';
     }
 
     private function normaliseReviewStatus(string $status): string

@@ -75,6 +75,32 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame([], (array)($result['unattributed_movements'] ?? []));
                 $harness->assertSame([], (array)($result['unsupported_movements'] ?? []));
 
+                s455CorrectionAwareFutureUnattributedMovement($fixture);
+                $withFutureOpportunity = $service->calculate(
+                    $fixture['company_id'],
+                    $fixture['accounting_period_id'],
+                    $fixture['ct_period_id'],
+                    '2099-12-31 23:59:59'
+                );
+                $harness->assertSame([], (array)($withFutureOpportunity['errors'] ?? []));
+                $harness->assertSame([], (array)($withFutureOpportunity['unattributed_movements'] ?? []));
+                $harness->assertCount(1, (array)($withFutureOpportunity['future_unattributed_movements'] ?? []));
+                $harness->assertSame((string)$result['basis_hash'], (string)$withFutureOpportunity['basis_hash']);
+                $harness->assertSame('100.00', number_format((float)$withFutureOpportunity['gross_principal'], 2, '.', ''));
+                $harness->assertSame('0.00', number_format((float)$withFutureOpportunity['qualifying_repayments'], 2, '.', ''));
+                $loanReviewService = new \eel_accounts\Service\LoanReviewService();
+                $loanReviewBefore = $loanReviewService->fetch($fixture['company_id'], $fixture['accounting_period_id']);
+                $harness->assertSame(1, (int)($loanReviewBefore['future_attribution_warning']['count'] ?? 0));
+                $harness->assertSame(false, (bool)($loanReviewBefore['future_attribution_warning']['acknowledged'] ?? false));
+                $acknowledged = $loanReviewService->acknowledgeFutureAttributionWarning(
+                    $fixture['company_id'],
+                    $fixture['accounting_period_id'],
+                    'test-suite'
+                );
+                $harness->assertSame(true, (bool)($acknowledged['success'] ?? false));
+                $loanReviewAfter = $loanReviewService->fetch($fixture['company_id'], $fixture['accounting_period_id']);
+                $harness->assertSame(true, (bool)($loanReviewAfter['future_attribution_warning']['acknowledged'] ?? false));
+
                 s455CorrectionAwareManualMovement($fixture);
                 $withManualMovement = $service->calculate(
                     $fixture['company_id'],
@@ -332,6 +358,89 @@ function s455CorrectionAwareManualMovement(array $fixture): void
                 'debit' => $debit,
                 'credit' => $credit,
                 'description' => 'Unsupported manual loan movement fixture',
+            ]
+        );
+    }
+}
+
+/** @param array<string,int> $fixture */
+function s455CorrectionAwareFutureUnattributedMovement(array $fixture): void
+{
+    InterfaceDB::prepareExecute(
+        'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+         VALUES (:company_id, :label, :start, :end)',
+        ['company_id' => $fixture['company_id'], 'label' => '2025', 'start' => '2025-01-01', 'end' => '2025-12-31']
+    );
+    $nextPeriodId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM accounting_periods WHERE company_id = :company_id AND period_start = :start',
+        ['company_id' => $fixture['company_id'], 'start' => '2025-01-01']
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO statement_uploads (
+            company_id, accounting_period_id, statement_month, original_filename,
+            stored_filename, file_sha256, workflow_status
+         ) VALUES (
+            :company_id, :accounting_period_id, :month, :original,
+            :stored, :sha, :status
+         )',
+        [
+            'company_id' => $fixture['company_id'], 'accounting_period_id' => $nextPeriodId,
+            'month' => '2025-02-01', 'original' => 'future-s455.csv', 'stored' => 'future-s455.csv',
+            'sha' => hash('sha256', 'future-s455-' . $fixture['transaction_id']), 'status' => 'committed',
+        ]
+    );
+    $uploadId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM statement_uploads WHERE company_id = :company_id AND accounting_period_id = :period_id',
+        ['company_id' => $fixture['company_id'], 'period_id' => $nextPeriodId]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO transactions (
+            company_id, accounting_period_id, statement_upload_id, txn_date,
+            description, amount, dedupe_hash, category_status
+         ) VALUES (
+            :company_id, :accounting_period_id, :upload_id, :txn_date,
+            :description, :amount, :dedupe_hash, :category_status
+         )',
+        [
+            'company_id' => $fixture['company_id'], 'accounting_period_id' => $nextPeriodId,
+            'upload_id' => $uploadId, 'txn_date' => '2025-02-01',
+            'description' => 'Optional future repayment', 'amount' => '25.00',
+            'dedupe_hash' => hash('sha256', 'future-repayment-' . $fixture['transaction_id']),
+            'category_status' => 'manual',
+        ]
+    );
+    $transactionId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM transactions WHERE company_id = :company_id AND accounting_period_id = :period_id',
+        ['company_id' => $fixture['company_id'], 'period_id' => $nextPeriodId]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO journals (
+            company_id, accounting_period_id, source_type, source_ref,
+            journal_date, description, is_posted
+         ) VALUES (
+            :company_id, :accounting_period_id, :source_type, :source_ref,
+            :journal_date, :description, 1
+         )',
+        [
+            'company_id' => $fixture['company_id'], 'accounting_period_id' => $nextPeriodId,
+            'source_type' => 'bank_csv', 'source_ref' => 'transaction:' . $transactionId,
+            'journal_date' => '2025-02-01', 'description' => 'Optional future repayment',
+        ]
+    );
+    $journalId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM journals WHERE company_id = :company_id AND source_ref = :source_ref',
+        ['company_id' => $fixture['company_id'], 'source_ref' => 'transaction:' . $transactionId]
+    );
+    foreach ([
+        [$fixture['bank_nominal_id'], '25.00', '0.00'],
+        [$fixture['asset_nominal_id'], '0.00', '25.00'],
+    ] as [$nominalId, $debit, $credit]) {
+        InterfaceDB::prepareExecute(
+            'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit, line_description)
+             VALUES (:journal_id, :nominal_id, :debit, :credit, :description)',
+            [
+                'journal_id' => $journalId, 'nominal_id' => $nominalId,
+                'debit' => $debit, 'credit' => $credit, 'description' => 'Optional future repayment',
             ]
         );
     }

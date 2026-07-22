@@ -5,12 +5,15 @@ namespace eel_accounts\Service;
 
 final class LoanReviewService
 {
+    public const FUTURE_ATTRIBUTION_WARNING_CODE = 'loan_future_repayment_attribution_warning';
+
     public function fetch(int $companyId, int $accountingPeriodId): array
     {
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return ['available' => false, 'errors' => ['Select a company and accounting period first.'], 'items' => []];
         }
         $items = [];
+        $futureMovementsByTransaction = [];
         $statement = (new DirectorLoanService())->fetchStatement($companyId, $accountingPeriodId);
         foreach ((array)($statement['attribution_entries'] ?? []) as $entry) {
             if (!is_array($entry) || (int)($entry['director_id'] ?? 0) > 0) {
@@ -44,6 +47,11 @@ final class LoanReviewService
                     'action_label' => 'Assign participant',
                     'action_url' => (string)($movement['action_url'] ?? $movement['source_url'] ?? ''),
                 ];
+            }
+            foreach ((array)($period['future_unattributed_movements'] ?? []) as $movement) {
+                if (is_array($movement) && (int)($movement['transaction_id'] ?? 0) > 0) {
+                    $futureMovementsByTransaction[(int)$movement['transaction_id']] = $movement;
+                }
             }
             foreach ((array)($period['unsupported_movements'] ?? []) as $movement) {
                 if (!is_array($movement)) {
@@ -88,17 +96,82 @@ final class LoanReviewService
             $items[] = [
                 'kind' => 'section_464a_review',
                 'state' => !empty($review['stored']) ? 'stale' : 'requires_action',
-                'title' => !empty($review['stored']) ? 'Section 464A review is stale' : 'Section 464A review is required',
+                'title' => !empty($review['stored'])
+                    ? 'Section 464A and 464C declaration needs reviewing again'
+                    : 'Section 464A and 464C declaration is required',
                 'detail' => !empty($review['stored'])
-                    ? 'The loan evidence changed after the declaration was saved. Review and approve it again.'
-                    : 'Complete the Section 464A and 464C declaration before confirming the year-end loan position.',
+                    ? 'The six-question declaration on Loans → Year End Confirmation was saved previously, but relied-on loan evidence has since changed. Check its answers and approve the refreshed declaration.'
+                    : 'Complete the six-question declaration on Loans → Year End Confirmation before confirming the year-end loan position.',
                 'source_label' => 'HMRC Section 464A review',
                 'source_url' => 'https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm61570',
-                'action_label' => 'Open Year End Confirmation',
+                'action_label' => 'Review the declaration',
                 'action_url' => '?page=loans&show_card=year_end_loan_confirmation',
             ];
         }
 
-        return ['available' => true, 'errors' => [], 'items' => $items, 'unresolved_count' => count($items)];
+        $futureMovements = array_values($futureMovementsByTransaction);
+        usort($futureMovements, static fn(array $left, array $right): int => [
+            (string)($left['txn_date'] ?? ''), (int)($left['transaction_id'] ?? 0),
+        ] <=> [
+            (string)($right['txn_date'] ?? ''), (int)($right['transaction_id'] ?? 0),
+        ]);
+        $futureBasis = $this->futureAttributionBasis($futureMovements);
+        $acknowledgements = new YearEndAcknowledgementService();
+        $warningStatus = $futureMovements === []
+            ? ['state' => 'not_applicable', 'current' => false, 'acknowledgement' => null]
+            : $acknowledgements->evaluate(
+                $acknowledgements->fetch($companyId, $accountingPeriodId, self::FUTURE_ATTRIBUTION_WARNING_CODE),
+                $futureBasis
+            );
+
+        return [
+            'available' => true,
+            'errors' => [],
+            'items' => $items,
+            'unresolved_count' => count($items),
+            'future_attribution_warning' => [
+                'movements' => $futureMovements,
+                'count' => count($futureMovements),
+                'basis' => $futureBasis,
+                'acknowledgement_state' => (string)($warningStatus['state'] ?? 'absent'),
+                'acknowledged' => !empty($warningStatus['current']),
+            ],
+        ];
+    }
+
+    public function acknowledgeFutureAttributionWarning(
+        int $companyId,
+        int $accountingPeriodId,
+        string $actor
+    ): array {
+        $review = $this->fetch($companyId, $accountingPeriodId);
+        $warning = (array)($review['future_attribution_warning'] ?? []);
+        if ((int)($warning['count'] ?? 0) <= 0) {
+            return ['success' => false, 'errors' => ['There are no future repayment-attribution warnings to acknowledge.']];
+        }
+
+        return (new YearEndAcknowledgementService())->save(
+            $companyId,
+            $accountingPeriodId,
+            self::FUTURE_ATTRIBUTION_WARNING_CODE,
+            (array)($warning['basis'] ?? []),
+            $actor,
+            'Future repayment transactions are not being relied on to reduce the current s455 position.'
+        );
+    }
+
+    /** @param list<array<string,mixed>> $movements */
+    private function futureAttributionBasis(array $movements): array
+    {
+        return [
+            'version' => 'loan-future-repayment-attribution-v1',
+            'movements' => array_map(static fn(array $movement): array => [
+                'transaction_id' => (int)($movement['transaction_id'] ?? 0),
+                'accounting_period_id' => (int)($movement['accounting_period_id'] ?? 0),
+                'txn_date' => (string)($movement['txn_date'] ?? ''),
+                'amount' => round((float)($movement['amount'] ?? 0), 2),
+                'cash_direction' => (string)($movement['cash_direction'] ?? ''),
+            ], $movements),
+        ];
     }
 }

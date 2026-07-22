@@ -99,8 +99,11 @@ final class DirectorLoanReconciliationService
 
         $taxReview = ($this->directorLoanService ?? new DirectorLoanService())
             ->fetchTaxReviewSummary($companyId, $accountingPeriodId);
+        $ct600a = (new Ct600aService())->fetchForAccountingPeriod($companyId, $accountingPeriodId);
+        $ct600aReview = (array)($ct600a['review'] ?? []);
+        $ct600aReviewCurrent = !empty($ct600aReview['current']) && !empty($ct600aReview['complete']);
         $ackService = $this->acknowledgementService ?? new YearEndAcknowledgementService();
-        $basis = $this->confirmationBasis($ackService, $statement, $taxReview);
+        $basis = $this->confirmationBasis($ackService, $statement, $taxReview, $ct600aReview);
         $acknowledgement = $ackService->fetch(
             $companyId,
             $accountingPeriodId,
@@ -168,6 +171,8 @@ final class DirectorLoanReconciliationService
             'warnings' => $warnings,
             'statement' => $statement,
             'tax_review' => $taxReview,
+            'ct600a_review' => $ct600aReview,
+            'ct600a_review_current' => $ct600aReviewCurrent,
             'accounting_period' => (array)$statement['accounting_period'],
             'asset_nominal' => (array)$statement['asset_nominal'],
             'liability_nominal' => (array)$statement['liability_nominal'],
@@ -197,7 +202,8 @@ final class DirectorLoanReconciliationService
             'acknowledged_by' => (string)($acknowledgement['acknowledged_by'] ?? ''),
             'can_confirm' => !empty($statement['has_activity'])
                 && $unattributedCount === 0
-                && $unresolvedPosted < 0.005,
+                && $unresolvedPosted < 0.005
+                && $ct600aReviewCurrent,
             'can_post' => $canPost,
             'post_blocked_reason' => $this->postBlockedReason(
                 $statement,
@@ -242,9 +248,13 @@ final class DirectorLoanReconciliationService
             return ['success' => false, 'errors' => ['There is no Director Loan activity or balance requiring confirmation.']];
         }
         if (empty($context['can_confirm'])) {
-            $errors = abs((float)($context['legacy_unresolved_reclassification_amount'] ?? 0)) >= 0.005
-                ? ['Repair the legacy Director Loan offset journal before confirming the facts.']
-                : ['Attribute every Director Loan entry to a valid same-company director before confirming the facts.'];
+            if (empty($context['ct600a_review_current'])) {
+                $errors = ['Review the Section 464A and 464C declaration again before re-approving the Director Loan Year End Confirmation.'];
+            } else {
+                $errors = abs((float)($context['legacy_unresolved_reclassification_amount'] ?? 0)) >= 0.005
+                    ? ['Repair the legacy Director Loan offset journal before confirming the facts.']
+                    : ['Attribute every Director Loan entry to a valid same-company director before confirming the facts.'];
+            }
             return ['success' => false, 'errors' => $errors];
         }
 
@@ -494,7 +504,8 @@ final class DirectorLoanReconciliationService
     private function confirmationBasis(
         YearEndAcknowledgementService $service,
         array $statement,
-        array $taxReview
+        array $taxReview,
+        array $ct600aReview
     ): array {
         $entryFacts = [];
         foreach ((array)$statement['attribution_entries'] as $entry) {
@@ -546,6 +557,8 @@ final class DirectorLoanReconciliationService
             'invalid_director_count' => (int)$statement['invalid_director_count'],
             'legacy_unresolved_reclassification_net_amount' => number_format($legacyUnresolvedNetAmount, 2, '.', ''),
             'potential_s455_exposure_amount' => number_format((float)($taxReview['exposure_amount'] ?? 0), 2, '.', ''),
+            'ct600a_review_current' => !empty($ct600aReview['current']) && !empty($ct600aReview['complete']),
+            'ct600a_review_basis_hash' => (string)($ct600aReview['basis_hash'] ?? ''),
             'desired_reclassification_amount' => number_format((float)$statement['desired_reclassification'], 2, '.', ''),
         ]);
     }

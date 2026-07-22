@@ -530,16 +530,11 @@ final class Ct600aService
     /** @return array<string,mixed> */
     public function saveReview(int $companyId, int $accountingPeriodId, array $answers, string $role, string $approver, string $note): array
     {
-        if ((new YearEndAcknowledgementService())->fetch(
+        (new YearEndLockService())->assertUnlocked(
             $companyId,
             $accountingPeriodId,
-            DirectorLoanReconciliationService::YEAR_END_ACKNOWLEDGEMENT_CODE
-        ) !== null) {
-            return [
-                'success' => false,
-                'errors' => ['The Director Loan Year End Confirmation has been recorded. CT600A declarations for this period are locked and cannot be changed.'],
-            ];
-        }
+            'change the Section 464A and 464C declaration'
+        );
 
         $role = trim($role); $approver = trim($approver);
         if (!in_array($role, ['director', 'adviser'], true) || $approver === '') {

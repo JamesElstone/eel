@@ -143,6 +143,7 @@ $harness->run(_year_end_loan_confirmationCard::class, static function (Generated
             'warnings' => [], 'per_director' => [], 'tax_review' => ['director_flags' => []], 'proposed_lines' => [],
             'acknowledgement' => ['acknowledged_at' => '2026-07-22 10:00:00'],
             'acknowledgement_current' => true,
+            'ct600a_review_current' => true,
         ]);
         $context['services']['ct600a'] = [
             'available' => true,
@@ -154,6 +155,30 @@ $harness->run(_year_end_loan_confirmationCard::class, static function (Generated
 
         $harness->assertTrue(str_contains($html, 'data-submit-on-change="true" disabled'));
         $harness->assertTrue(str_contains($html, 'Selections are locked because the Year End Confirmation has been recorded. No further changes can be made.'));
+    });
+
+    $harness->check(_year_end_loan_confirmationCard::class, 'shows underlying data changed and re-approval when the CT600A declaration is stale', static function () use ($harness, $card): void {
+        $context = yearEndDirectorLoanReviewCardContext([
+            'available' => true, 'has_activity' => true, 'can_confirm' => false,
+            'asset_receivable' => 100, 'liability_payable' => 0, 'desired_reclassification_amount' => 0,
+            'posted_reclassification_amount' => 0, 'pending_adjustment_amount' => 0, 'potential_s455_exposure' => 100,
+            'warnings' => [], 'per_director' => [], 'tax_review' => ['director_flags' => []], 'proposed_lines' => [],
+            'acknowledgement' => ['acknowledged_at' => '2026-07-22 10:00:00'],
+            'acknowledgement_current' => false,
+            'acknowledgement_state' => 'stale',
+            'ct600a_review_current' => false,
+        ]);
+        $context['services']['ct600a'] = [
+            'available' => true,
+            'questions' => ['missing_parties' => 'Are any participators missing?'],
+            'review' => ['answers' => ['missing_parties' => 'no'], 'current' => false, 'complete' => false],
+        ];
+
+        $html = $card->render($context);
+        $harness->assertTrue(str_contains($html, 'Underlying data changed — re-approve required.'));
+        $harness->assertTrue(str_contains($html, 'Review the refreshed Section 464A and 464C declaration'));
+        $harness->assertSame(false, str_contains($html, 'Revoke approval'));
+        $harness->assertSame(false, str_contains($html, 'data-submit-on-change="true" disabled'));
     });
 
     $harness->check(_year_end_loan_confirmationCard::class, 'blocks confirmation and offers repair for an unresolved legacy offset', static function () use ($harness, $card): void {

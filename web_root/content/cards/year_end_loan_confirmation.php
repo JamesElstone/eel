@@ -68,6 +68,7 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
         $hasActivity = !empty($review['has_activity']);
         $acknowledgement = (array)($review['acknowledgement'] ?? []);
         $acknowledgementCurrent = !empty($review['acknowledgement_current']);
+        $ct600aReviewCurrent = !empty($review['ct600a_review_current']);
         $legacyRepairRequired = abs((float)($review['legacy_unresolved_reclassification_amount'] ?? 0)) >= 0.005;
 
         $warnings = '';
@@ -121,7 +122,9 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
                 'noteMode' => \eel_accounts\Renderer\YearEndApprovalRenderer::NOTE_HIDDEN,
             ]);
         } else {
-            $confirmation = '<div class="panel-soft warn helper">Attribute every Director Loan entry on the Summary tab before confirming these facts.</div>';
+            $confirmation = empty($review['ct600a_review_current'])
+                ? '<div class="panel-soft warn helper"><strong>Underlying data changed — re-approve required.</strong> Review the refreshed Section 464A and 464C declaration above. The Director Loan Year End Confirmation can then be approved again.</div>'
+                : '<div class="panel-soft warn helper">Attribute every Director Loan entry on the Summary tab before confirming these facts.</div>';
         }
 
         return '<section class="settings-stack">
@@ -147,7 +150,12 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
                     [(array)($review['asset_nominal'] ?? []), (array)($review['liability_nominal'] ?? [])]
                 ) . '
             </section>
-            ' . $this->ct600aDeclarations($context, $companyId, $accountingPeriodId, $acknowledgement !== []) . '
+            ' . $this->ct600aDeclarations(
+                $context,
+                $companyId,
+                $accountingPeriodId,
+                $locked || ($acknowledgementCurrent && $ct600aReviewCurrent)
+            ) . '
             ' . $confirmation . '
         </section>';
     }

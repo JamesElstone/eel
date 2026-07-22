@@ -71,6 +71,7 @@ final class S455ReviewService
         $liabilitiesByParty = [];
         $movements = [];
         $unattributedMovements = [];
+        $futureUnattributedMovements = [];
         $repaymentAllocations = [];
         $errors = (array)$evidence['errors'];
         $ownership = new OwnershipPartyService();
@@ -79,7 +80,7 @@ final class S455ReviewService
             $partyId = (int)($row['party_id'] ?? 0);
             $date = (string)$row['txn_date'];
             if ($partyId <= 0) {
-                if ($date >= (string)$period['period_start']) {
+                if ($date >= (string)$period['period_start'] && $date <= (string)$period['period_end']) {
                     $errors[] = 'Loan transaction #' . (int)($row['transaction_id'] ?? 0) . ' is not linked to a confirmed ownership party.';
                     $unattributedMovements[] = [
                         'transaction_id' => (int)($row['transaction_id'] ?? 0),
@@ -90,6 +91,16 @@ final class S455ReviewService
                         'source_url' => '?page=transactions&show_card=transactions_imported&transaction_id=' . (int)($row['transaction_id'] ?? 0),
                         'action_url' => '?page=loans&accounting_period_id=' . (int)($row['accounting_period_id'] ?? 0)
                             . '&show_card=director_loan_attribution&director_loan_attribution_filter=requires_assignment',
+                    ];
+                } elseif ($date > (string)$period['period_end']) {
+                    $futureUnattributedMovements[] = [
+                        'transaction_id' => (int)($row['transaction_id'] ?? 0),
+                        'accounting_period_id' => (int)($row['accounting_period_id'] ?? 0),
+                        'txn_date' => $date,
+                        'amount' => round((float)($row['amount'] ?? 0), 2),
+                        'cash_direction' => (string)($row['cash_direction'] ?? ''),
+                        'source_label' => 'Transaction #' . (int)($row['transaction_id'] ?? 0),
+                        'source_url' => '?page=transactions&show_card=transactions_imported&transaction_id=' . (int)($row['transaction_id'] ?? 0),
                     ];
                 }
                 continue;
@@ -229,6 +240,7 @@ final class S455ReviewService
                 'cash_direction' => (string)($row['cash_direction'] ?? ''),
             ], $movements),
             'unattributed_movements' => $unattributedMovements,
+            'future_unattributed_movements' => $futureUnattributedMovements,
             'unsupported_movements' => (array)($evidence['unsupported_movements'] ?? []),
             'repayment_allocations' => $repaymentAllocations,
             'all_repayment_allocations' => $repaymentAllocations,
@@ -241,6 +253,10 @@ final class S455ReviewService
         ];
         $hashBasis = $basis;
         unset($hashBasis['evidence_cutoff']);
+        // Unattributed post-period transactions are optional repayment
+        // opportunities. Until attributed, they are not relied-on evidence and
+        // must not stale or block the filed-period Section 464A conclusion.
+        unset($hashBasis['future_unattributed_movements']);
         $basisHash = hash('sha256', json_encode($hashBasis, JSON_UNESCAPED_SLASHES));
         return $basis + [
             'available' => true,

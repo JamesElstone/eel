@@ -942,7 +942,7 @@ final class DividendService
                 'title' => 'Bank CSV coverage may be incomplete',
                 'detail' => $latestBankDate === ''
                     ? 'No uploaded or committed bank transaction source data was found up to the capacity date. Upload the latest bank CSV before relying on the dividend figure.'
-                    : 'The latest uploaded or committed bank transaction source date is ' . $latestBankDate . ', before the capacity date ' . $asAtDate . '. Upload the latest bank CSV before relying on the dividend figure.',
+                    : 'The last recorded transaction date is ' . $latestBankDate . ' which is older than this capacity date of ' . $asAtDate . '. Make sure that all transactions and expense claims have been entered up to this capacity date as it may impact the available dividends.',
                 'action_label' => 'Open Related Workflow',
                 'action_url' => '?page=uploads',
                 'workflow_page' => 'uploads',

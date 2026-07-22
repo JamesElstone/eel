@@ -280,16 +280,19 @@ final class TaxWorkingsService
         $scope = $ledger->scope($companyId, $accountingPeriodId, $periodEnd, $periodStart);
         $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
         $ctExpenseNominalId = (int)($settings['corporation_tax_expense_nominal_id'] ?? 0);
+        $lineTreatments = new CorporationTaxLineTreatmentService();
         $rules = new CorporationTaxTreatmentRuleService();
         $result = ['disallowable' => [], 'capital' => []];
 
-        foreach ((new DatedTaxTreatmentLedgerService())->fetch($scope) as $row) {
+        $taxRows = (new DatedTaxTreatmentLedgerService())->fetch($scope);
+        $lineTreatments->primeDecisions($taxRows);
+        foreach ($taxRows as $row) {
             if ($ctExpenseNominalId > 0
                 && (int)($row['nominal_account_id'] ?? 0) === $ctExpenseNominalId) {
                 continue;
             }
             $journalDate = (string)($row['journal_date'] ?? '');
-            $treatment = (string)($rules->resolveTaxTreatment(
+            $treatment = (string)($lineTreatments->resolve(
                 $row,
                 $journalDate,
                 $journalDate

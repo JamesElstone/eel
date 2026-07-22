@@ -442,6 +442,16 @@ final class TaxAuditBasisService
         $expenseClaimSelect = \InterfaceDB::tableExists('expense_claims')
             ? ', COALESCE(ec.id, 0) AS expense_claim_id'
             : ', 0 AS expense_claim_id';
+        $correctionJoins = '';
+        $correctionWhere = '';
+        if (\InterfaceDB::tableExists('journal_reversals')) {
+            $correctionJoins = '
+             LEFT JOIN journal_reversals jr_source ON jr_source.source_journal_id = j.id
+             LEFT JOIN journal_reversals jr_reversal ON jr_reversal.reversal_journal_id = j.id';
+            $correctionWhere = '
+               AND jr_source.source_journal_id IS NULL
+               AND jr_reversal.reversal_journal_id IS NULL';
+        }
         $rowsFromDb = \InterfaceDB::fetchAll(
             'SELECT j.id AS journal_id, j.source_type AS journal_source_type,
                     COALESCE(j.source_ref, \'\') AS source_ref, j.journal_date,
@@ -460,11 +470,13 @@ final class TaxAuditBasisService
                ON jem_close.journal_id = j.id
               AND jem_close.journal_tag = :close_tag'
              . $expenseClaimJoin . '
+             ' . $correctionJoins . '
              WHERE j.company_id = :company_id AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1 AND j.journal_date BETWEEN :period_start AND :period_end
                AND COALESCE(j.source_type, \'\') <> :depreciation_source
                AND jem_close.id IS NULL
                AND na.account_type IN (\'income\',\'cost_of_sales\',\'expense\')'
+             . $correctionWhere
              . $expenseFilter . '
              ORDER BY j.journal_date ASC, j.id ASC, jl.id ASC',
             [
@@ -478,16 +490,24 @@ final class TaxAuditBasisService
         ) ?: [];
         $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
         $ctExpenseNominalId = (int)($settings['corporation_tax_expense_nominal_id'] ?? 0);
-        $rules = new CorporationTaxTreatmentRuleService();
+        $lineTreatments = new CorporationTaxLineTreatmentService();
         $ratio = $timeApportioned
             ? ((int)($allocation['ct_period_days'] ?? 0) / max(1, (int)($allocation['accounting_period_days'] ?? 0)))
             : 1.0;
+        $lineTreatments->primeDecisions($rowsFromDb);
         $rows = [];
         foreach ($rowsFromDb as $row) {
             if ($ctExpenseNominalId > 0 && (int)($row['nominal_account_id'] ?? 0) === $ctExpenseNominalId) {
                 continue;
             }
-            $resolved = $rules->resolveTaxTreatment([
+            $resolved = $lineTreatments->resolve([
+                'journal_id' => (int)($row['journal_id'] ?? 0),
+                'journal_line_id' => (int)($row['journal_line_id'] ?? 0),
+                'source_type' => (string)($row['journal_source_type'] ?? ''),
+                'source_ref' => (string)($row['source_ref'] ?? ''),
+                'journal_date' => (string)($row['journal_date'] ?? ''),
+                'debit' => (float)($row['debit'] ?? 0),
+                'credit' => (float)($row['credit'] ?? 0),
                 'id' => (int)($row['nominal_account_id'] ?? 0),
                 'code' => (string)($row['nominal_code'] ?? ''),
                 'name' => (string)($row['nominal_name'] ?? ''),

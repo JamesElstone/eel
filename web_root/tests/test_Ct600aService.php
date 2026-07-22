@@ -72,7 +72,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $h->assertSame(0.0, (float)$model['part2']['relief_due']);
         });
 
-        $h->check($service::class, 'keeps unattributed loan movements out of the section 464A message list while retaining the filing block', static function () use ($h, $service, $period, $review, $base): void {
+        $h->check($service::class, 'surfaces unattributed loan movements as one aggregated filing blocker', static function () use ($h, $service, $period, $review, $base): void {
             $s455 = $base;
             $s455['errors'] = [
                 'Loan transaction #5465 is not linked to a confirmed ownership party.',
@@ -81,11 +81,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $model = $service->buildFromEvidence($period, $s455, [], $review, '2025-12-31');
 
             $h->assertSame(2, (int)$model['unattributed_loan_movement_count']);
-            $h->assertSame([], (array)$model['blocking_errors']);
+            $h->assertTrue(str_contains(implode(' ', (array)$model['blocking_errors']), '2 participator-loan transaction(s) require party attribution'));
             $h->assertSame(false, (bool)$model['complete']);
         });
 
-        $h->check($service::class, 'keeps an incomplete section 464A review out of the error list while retaining the filing block', static function () use ($h, $service, $period, $base): void {
+        $h->check($service::class, 'surfaces an incomplete section 464A review as a filing blocker', static function () use ($h, $service, $period, $base): void {
             $incompleteReview = [
                 'current' => false,
                 'complete' => false,
@@ -93,7 +93,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             ];
             $model = $service->buildFromEvidence($period, $base, [], $incompleteReview, '2025-12-31');
 
-            $h->assertSame([], (array)$model['blocking_errors']);
+            $h->assertTrue(in_array('Complete and approve the section 464A review.', (array)$model['blocking_errors'], true));
             $h->assertSame(false, (bool)$model['review_complete']);
             $h->assertSame(false, (bool)$model['complete']);
         });

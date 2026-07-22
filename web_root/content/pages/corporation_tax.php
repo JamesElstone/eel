@@ -21,7 +21,7 @@ final class _corporation_tax extends PageContextFramework
 
     public function subtitle(): string
     {
-        return 'Inspect read-only Corporation Tax workings, capital allowance pools, losses, and tax data warnings.';
+        return 'Inspect Corporation Tax workings, resolve required tax-treatment reviews, and confirm the year-end tax position.';
     }
 
     public function ajaxPendingBlurScope(): string
@@ -49,6 +49,7 @@ final class _corporation_tax extends PageContextFramework
             'tax_rate_bands',
             'tax_warnings',
             'tax_ct_period_facts',
+            'corporation_tax_review',
             'year_end_tax_readiness',
         ];
     }
@@ -85,7 +86,14 @@ final class _corporation_tax extends PageContextFramework
                 ],
             ],
             [
-                'tab' => 'Year End Review',
+                'tab' => 'Review',
+                'on_demand' => true,
+                'cards' => [
+                    'corporation_tax_review',
+                ],
+            ],
+            [
+                'tab' => 'Year End Confirmation',
                 'on_demand' => true,
                 'cards' => [
                     'year_end_tax_readiness',

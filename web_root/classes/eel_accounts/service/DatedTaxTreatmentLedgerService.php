@@ -44,8 +44,25 @@ final class DatedTaxTreatmentLedgerService
             ELSE ''
         END";
 
+        $correctionJoins = '';
+        $correctionWhere = '';
+        if (\InterfaceDB::tableExists('journal_reversals')) {
+            $correctionJoins = '
+             LEFT JOIN journal_reversals jr_source ON jr_source.source_journal_id = j.id
+             LEFT JOIN journal_reversals jr_reversal ON jr_reversal.reversal_journal_id = j.id';
+            $correctionWhere = '
+               AND jr_source.source_journal_id IS NULL
+               AND jr_reversal.reversal_journal_id IS NULL';
+        }
+
         return \InterfaceDB::fetchAll(
-            'SELECT na.id AS nominal_account_id,
+            'SELECT j.id AS journal_id,
+                    jl.id AS journal_line_id,
+                    COALESCE(j.source_type, \'\') AS source_type,
+                    COALESCE(j.source_ref, \'\') AS source_ref,
+                    COALESCE(j.description, \'\') AS journal_description,
+                    COALESCE(jl.line_description, \'\') AS line_description,
+                    na.id AS nominal_account_id,
                     COALESCE(na.code, \'\') AS code,
                     COALESCE(na.name, \'\') AS name,
                     na.account_type,
@@ -62,8 +79,9 @@ final class DatedTaxTreatmentLedgerService
              INNER JOIN nominal_accounts na ON na.id = jl.nominal_account_id
              LEFT JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
              LEFT JOIN journal_entry_metadata jem_close
-               ON jem_close.journal_id = j.id
+              ON jem_close.journal_id = j.id
               AND jem_close.journal_tag = :close_journal_tag
+             ' . $correctionJoins . '
              WHERE j.company_id = :company_id
                AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
@@ -71,7 +89,14 @@ final class DatedTaxTreatmentLedgerService
                AND COALESCE(j.source_type, \'\') <> :asset_depreciation_source_type
                AND jem_close.id IS NULL
                AND na.account_type IN (:income_type, :cost_type, :expense_type)
-             GROUP BY na.id,
+             ' . $correctionWhere . '
+             GROUP BY j.id,
+                      jl.id,
+                      j.source_type,
+                      j.source_ref,
+                      j.description,
+                      jl.line_description,
+                      na.id,
                       na.code,
                       na.name,
                       na.account_type,
@@ -81,7 +106,7 @@ final class DatedTaxTreatmentLedgerService
                       ' . $assetDisposalSourceExpression . ',
                       j.journal_date,
                       ' . $monthExpression . '
-             ORDER BY j.journal_date ASC, na.code ASC, na.id ASC, journal_source_type ASC',
+             ORDER BY j.journal_date ASC, j.id ASC, jl.id ASC',
             [
                 'close_journal_tag' => RetainedEarningsCloseService::JOURNAL_TAG,
                 'asset_depreciation_source_type' => YearEndClosePreviewService::ASSET_DEPRECIATION_SOURCE_TYPE,

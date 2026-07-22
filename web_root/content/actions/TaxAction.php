@@ -32,20 +32,29 @@ final class TaxAction implements ActionInterfaceFramework
                     $ctPeriodId,
                     (int)$request->input('associated_company_count', 0)
                 ),
+                'save_line_tax_treatment' => (new \eel_accounts\Service\CorporationTaxLineTreatmentService())->save(
+                    $companyId,
+                    $accountingPeriodId,
+                    (int)$request->input('journal_line_id', 0),
+                    (string)$request->input('tax_treatment', ''),
+                    $this->actor($request)
+                ),
                 default => ['success' => false, 'errors' => ['Unknown tax action.']],
             };
         } catch (Throwable $exception) {
             $result = ['success' => false, 'errors' => [$exception->getMessage()]];
         }
 
-        return $this->result(!empty($result['success']), (array)($result['errors'] ?? []), $ctPeriodId);
+        return $this->result(!empty($result['success']), (array)($result['errors'] ?? []), $ctPeriodId, $intent);
     }
 
-    private function result(bool $success, array $errors, int $ctPeriodId): ActionResultFramework
+    private function result(bool $success, array $errors, int $ctPeriodId, string $intent = ''): ActionResultFramework
     {
         $messages = [];
         if ($success) {
-            $messages[] = ['type' => 'success', 'message' => 'CT-period facts saved.'];
+            $messages[] = ['type' => 'success', 'message' => $intent === 'save_line_tax_treatment'
+                ? 'Corporation Tax treatment saved.'
+                : 'CT-period facts saved.'];
         } else {
             foreach ($errors !== [] ? $errors : ['The tax action could not be completed.'] as $error) {
                 $messages[] = ['type' => 'error', 'message' => (string)$error];
@@ -54,10 +63,23 @@ final class TaxAction implements ActionInterfaceFramework
 
         return new ActionResultFramework(
             $success,
-            ['page.context', 'tax.period.facts', 'tax.s455', 'tax.workings', 'trial.balance.state', 'profit.loss', 'year.end.retained.earnings', 'dividend.reserve', 'year.end.checklist'],
+            ['page.context', 'tax.period.facts', 'tax.s455', 'tax.workings', 'tax.review', 'trial.balance.state', 'profit.loss', 'year.end.retained.earnings', 'dividend.reserve', 'year.end.checklist', 'ixbrl.readiness', 'ixbrl.facts.preview', 'ixbrl.generation'],
             $messages,
             $ctPeriodId !== 0 ? ['ct_period_id' => (string)$ctPeriodId] : []
         );
+    }
+
+    private function actor(RequestFramework $request): string
+    {
+        try {
+            $session = new SessionAuthenticationService();
+            $session->startSession();
+            $deviceId = trim((string)AntiFraudService::instance($request)->requestValue('Client-Device-ID'));
+            $userId = $session->authenticatedUserId($deviceId !== '' ? $deviceId : null);
+            return $userId > 0 ? 'user:' . $userId : 'web_app';
+        } catch (Throwable) {
+            return 'web_app';
+        }
     }
 
 }

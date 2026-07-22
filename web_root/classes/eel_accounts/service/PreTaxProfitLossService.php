@@ -35,6 +35,7 @@ final class PreTaxProfitLossService
         $dataset = $ledgerService->fetch($scope);
         $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
         $ctExpenseNominalId = (int)($settings['corporation_tax_expense_nominal_id'] ?? 0);
+        $lineTreatments = new CorporationTaxLineTreatmentService();
         $rules = new CorporationTaxTreatmentRuleService();
         $income = 0.0;
         $costOfSales = 0.0;
@@ -66,14 +67,16 @@ final class PreTaxProfitLossService
                 $operatingExpenses += $amount;
             }
         }
-        foreach ((new DatedTaxTreatmentLedgerService())->fetch($scope) as $row) {
+        $taxRows = (new DatedTaxTreatmentLedgerService())->fetch($scope);
+        $lineTreatments->primeDecisions($taxRows);
+        foreach ($taxRows as $row) {
             if ($ctExpenseNominalId > 0
                 && (int)($row['nominal_account_id'] ?? 0) === $ctExpenseNominalId) {
                 continue;
             }
             $amount = (float)($row['total_debit'] ?? 0) - (float)($row['total_credit'] ?? 0);
             $journalDate = (string)($row['journal_date'] ?? '');
-            $taxTreatment = (string)($rules->resolveTaxTreatment(
+            $taxTreatment = (string)($lineTreatments->resolve(
                 $row,
                 $journalDate,
                 $journalDate

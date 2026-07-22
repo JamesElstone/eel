@@ -487,6 +487,14 @@ final class Ct600aService
             $blocking[] = 'The nine-month CT600A evidence window remains open until ' . $deadline . '.';
         }
         $reviewComplete = !empty($review['current']) && !empty($review['complete']);
+        if ($unattributedLoanMovementCount > 0) {
+            $blocking[] = $unattributedLoanMovementCount . ' participator-loan transaction(s) require party attribution.';
+        }
+        if (!$reviewComplete) {
+            $blocking[] = !empty($review['stored']) && empty($review['current'])
+                ? 'The section 464A review is stale because its underlying evidence changed.'
+                : 'Complete and approve the section 464A review.';
+        }
         $model = [
             'model_version' => self::MODEL_VERSION,
             'required' => $required,

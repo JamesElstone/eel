@@ -420,11 +420,12 @@ final class TestCardsHarness
 
         $directorLoansPage = new _loans();
         $this->assertSame(
-            ['director_loan_state', 'director_loan_s455', 'director_loan_ct600a', 'year_end_loan_confirmation'],
+            ['director_loan_state', 'director_loan_attribution', 'director_loan_s455', 'director_loan_ct600a', 'loan_review', 'year_end_loan_confirmation'],
             $directorLoansPage->cards()
         );
         $this->assertPageTabContains($directorLoansPage, 'Statement', ['director_loan_state']);
         $this->assertPageTabContains($directorLoansPage, 'Loans Tax Position', ['director_loan_s455', 'director_loan_ct600a']);
+        $this->assertPageTabContains($directorLoansPage, 'Review', ['loan_review']);
         $this->assertPageFinalTabContains($directorLoansPage, 'Year End Confirmation', ['year_end_loan_confirmation']);
 
         $incorporationPage = new _incorporation();
@@ -437,7 +438,8 @@ final class TestCardsHarness
         $this->assertPageFinalTabContains(new _journal(), 'Year End Confirmation', ['journal_cut_off_confirmation']);
         $this->assertPageTabContains(new _profit_loss(), 'Reserve Review', ['reserve_review']);
         $this->assertPageFinalTabContains(new _profit_loss(), 'Profit & Loss Confirmation', ['year_end_profit_loss_confirm']);
-        $this->assertPageFinalTabContains(new _corporation_tax(), 'Year End Review', ['year_end_tax_readiness']);
+        $this->assertPageTabContains(new _corporation_tax(), 'Review', ['corporation_tax_review']);
+        $this->assertPageFinalTabContains(new _corporation_tax(), 'Year End Confirmation', ['year_end_tax_readiness']);
 
         test_output_line('Cards: year-end confirmation cards live on their related workflow pages.');
     }

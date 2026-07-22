@@ -70,6 +70,7 @@ final class S455ReviewService
         $lotsByParty = [];
         $liabilitiesByParty = [];
         $movements = [];
+        $unattributedMovements = [];
         $repaymentAllocations = [];
         $errors = (array)$evidence['errors'];
         $ownership = new OwnershipPartyService();
@@ -80,6 +81,16 @@ final class S455ReviewService
             if ($partyId <= 0) {
                 if ($date >= (string)$period['period_start']) {
                     $errors[] = 'Loan transaction #' . (int)($row['transaction_id'] ?? 0) . ' is not linked to a confirmed ownership party.';
+                    $unattributedMovements[] = [
+                        'transaction_id' => (int)($row['transaction_id'] ?? 0),
+                        'txn_date' => $date,
+                        'amount' => round((float)($row['amount'] ?? 0), 2),
+                        'cash_direction' => (string)($row['cash_direction'] ?? ''),
+                        'source_label' => 'Transaction #' . (int)($row['transaction_id'] ?? 0),
+                        'source_url' => '?page=transactions&show_card=transactions_imported&transaction_id=' . (int)($row['transaction_id'] ?? 0),
+                        'action_url' => '?page=loans&accounting_period_id=' . (int)($row['accounting_period_id'] ?? 0)
+                            . '&show_card=director_loan_attribution&director_loan_attribution_filter=requires_assignment',
+                    ];
                 }
                 continue;
             }
@@ -217,6 +228,8 @@ final class S455ReviewService
                 'amount' => round((float)($row['amount'] ?? 0), 2),
                 'cash_direction' => (string)($row['cash_direction'] ?? ''),
             ], $movements),
+            'unattributed_movements' => $unattributedMovements,
+            'unsupported_movements' => (array)($evidence['unsupported_movements'] ?? []),
             'repayment_allocations' => $repaymentAllocations,
             'all_repayment_allocations' => $repaymentAllocations,
             'errors' => array_values(array_unique($errors)),
@@ -330,32 +343,65 @@ final class S455ReviewService
             return ['rows' => [], 'errors' => ['Configure the Participator Loan control nominals.']];
         }
         $placeholders = implode(',', array_fill(0, count($allIds), '?'));
-        $transactionSource = \InterfaceDB::driverName() === 'sqlite'
+        $sqlite = \InterfaceDB::driverName() === 'sqlite';
+        $transactionSource = $sqlite
             ? "'transaction:' || t.id"
             : "CONCAT('transaction:', t.id)";
+        $supportedTransactionSource = $sqlite
+            ? "'transaction:' || supported_t.id"
+            : "CONCAT('transaction:', supported_t.id)";
+        $correctionJoins = '';
+        $correctionWhere = '';
+        $transactionReferenceCondition = 'j.source_ref = ' . $transactionSource;
+        $supportedTransactionReferenceCondition = 'j.source_ref = ' . $supportedTransactionSource;
+        if (\InterfaceDB::tableExists('journal_reversals')) {
+            $correctionJoins = '
+             LEFT JOIN journal_reversals jr_source ON jr_source.source_journal_id = j.id
+             LEFT JOIN journal_reversals jr_reversal ON jr_reversal.reversal_journal_id = j.id
+             LEFT JOIN journal_reversals jr_replacement ON jr_replacement.replacement_journal_id = j.id';
+            $correctionWhere = '
+               AND jr_source.source_journal_id IS NULL
+               AND jr_reversal.reversal_journal_id IS NULL';
+            $replacementSource = $sqlite
+                ? "'transaction:' || t.id || ':revision-of:' || jr_replacement.source_journal_id"
+                : "CONCAT('transaction:', t.id, ':revision-of:', jr_replacement.source_journal_id)";
+            $supportedReplacementSource = $sqlite
+                ? "'transaction:' || supported_t.id || ':revision-of:' || jr_replacement.source_journal_id"
+                : "CONCAT('transaction:', supported_t.id, ':revision-of:', jr_replacement.source_journal_id)";
+            $transactionReferenceCondition = '(j.source_ref = ' . $transactionSource . '
+                  OR (jr_replacement.replacement_journal_id IS NOT NULL
+                      AND j.source_ref = ' . $replacementSource . '))';
+            $supportedTransactionReferenceCondition = '(j.source_ref = ' . $supportedTransactionSource . '
+                      OR (jr_replacement.replacement_journal_id IS NOT NULL
+                          AND j.source_ref = ' . $supportedReplacementSource . '))';
+        }
         $rows = \InterfaceDB::fetchAll(
             'SELECT t.id AS transaction_id, t.txn_date, ABS(t.amount) AS amount,
+                    j.accounting_period_id,
                     jl.nominal_account_id, jl.debit, jl.credit,
-                    COALESCE(t.party_id, cp_director.id) AS party_id,
-                    COALESCE(cp.legal_name, cp_director.legal_name, \'Unattributed\') AS party_name,
+                    COALESCE(jl.party_id, t.party_id, cp_director.id) AS party_id,
+                    COALESCE(cp_line.legal_name, cp.legal_name, cp_director.legal_name, \'Unattributed\') AS party_name,
                     CASE WHEN t.amount < 0 THEN \'payment\' ELSE \'receipt\' END AS cash_direction,
                     t.director_id
-             FROM transactions t
-             INNER JOIN journals j
-               ON j.company_id = t.company_id
-              AND j.source_type = \'bank_csv\'
-              AND j.source_ref = ' . $transactionSource . '
-              AND j.is_posted = 1
+             FROM journals j
+             ' . $correctionJoins . '
+             INNER JOIN transactions t
+               ON t.company_id = j.company_id
+              AND ' . $transactionReferenceCondition . '
              INNER JOIN journal_lines jl ON jl.journal_id = j.id AND jl.nominal_account_id IN (' . $placeholders . ')
+             LEFT JOIN company_parties cp_line ON cp_line.id = jl.party_id AND cp_line.company_id = t.company_id
              LEFT JOIN company_parties cp ON cp.id = t.party_id AND cp.company_id = t.company_id
              LEFT JOIN company_parties cp_director
                ON cp_director.linked_director_id = t.director_id AND cp_director.company_id = t.company_id
              WHERE t.company_id = ?
+               AND j.source_type = \'bank_csv\'
+               AND j.is_posted = 1
                AND t.txn_date <= ?
                AND t.created_at <= ?
                AND t.updated_at <= ?
                AND j.created_at <= ?
-               AND j.updated_at <= ?
+               AND j.updated_at <= ?'
+             . $correctionWhere . '
              ORDER BY t.txn_date, t.id, jl.id',
             array_merge($allIds, [
                 $companyId,
@@ -367,21 +413,31 @@ final class S455ReviewService
             ])
         );
         $errors = [];
-        $unsupportedCount = (int)\InterfaceDB::fetchColumn(
-            'SELECT COUNT(*)
+        $unsupportedMovements = \InterfaceDB::fetchAll(
+            'SELECT j.id AS journal_id, jl.id AS journal_line_id, j.journal_date,
+                    COALESCE(j.description, \'\') AS description,
+                    COALESCE(j.source_type, \'\') AS source_type,
+                    COALESCE(j.source_ref, \'\') AS source_ref,
+                    jl.debit, jl.credit
              FROM journals j
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
+             ' . $correctionJoins . '
              WHERE j.company_id = ? AND j.is_posted = 1
                AND j.journal_date >= ?
                AND j.journal_date <= ?
                AND j.created_at <= ?
                AND j.updated_at <= ?
                AND jl.nominal_account_id IN (' . $placeholders . ')
-               AND NOT (j.source_type = \'bank_csv\' AND j.source_ref LIKE \'transaction:%\')
+               AND NOT (j.source_type = \'bank_csv\' AND EXISTS (
+                   SELECT 1 FROM transactions supported_t
+                   WHERE supported_t.company_id = j.company_id
+                     AND ' . $supportedTransactionReferenceCondition . '
+               ))
                AND NOT EXISTS (
                    SELECT 1 FROM journal_entry_metadata jem
                    WHERE jem.journal_id = j.id AND jem.journal_tag = \'director_loan_offset\'
-               )',
+               )'
+             . $correctionWhere,
             array_merge([
                 $companyId,
                 $periodStart,
@@ -390,10 +446,16 @@ final class S455ReviewService
                 $cutoff,
             ], $allIds)
         );
+        $unsupportedCount = count($unsupportedMovements);
         if ($unsupportedCount > 0) {
             $errors[] = $unsupportedCount . ' non-cash or unsupported loan movement(s) cannot be used in the v1 s455 calculation.';
         }
-        return ['rows' => $rows, 'errors' => $errors];
+        foreach ($unsupportedMovements as &$movement) {
+            $movement['source_label'] = 'Journal #' . (int)($movement['journal_id'] ?? 0);
+            $movement['source_url'] = '?page=journal&show_card=journals_list&journal_id=' . (int)($movement['journal_id'] ?? 0);
+        }
+        unset($movement);
+        return ['rows' => $rows, 'errors' => $errors, 'unsupported_movements' => $unsupportedMovements];
     }
 
     private function ledgerStartDate(int $companyId, string $fallback): string

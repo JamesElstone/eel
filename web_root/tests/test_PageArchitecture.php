@@ -158,6 +158,7 @@ final class TestPageArchitectureHarness
                 'tax_rate_bands',
                 'tax_warnings',
                 'tax_ct_period_facts',
+                'corporation_tax_review',
                 'year_end_tax_readiness',
             ],
             $page->cards()
@@ -193,7 +194,14 @@ final class TestPageArchitectureHarness
                     ],
                 ],
                 [
-                    'tab' => 'Year End Review',
+                    'tab' => 'Review',
+                    'on_demand' => true,
+                    'cards' => [
+                        'corporation_tax_review',
+                    ],
+                ],
+                [
+                    'tab' => 'Year End Confirmation',
                     'on_demand' => true,
                     'cards' => [
                         'year_end_tax_readiness',
@@ -211,13 +219,13 @@ final class TestPageArchitectureHarness
         $this->assertSame(_tax_artifacts::class, $page::class);
         $this->assertSame([
             'tax_artifacts_refresh',
+            'tax_treatment_rules',
             'tax_rates_ct',
             'tax_rates_ct600_rim',
             'tax_frc_taxonomy',
             'tax_companies_house_accounts_schemas',
             'tax_rates_vat',
             'tax_thresholds_vat',
-            'tax_treatment_rules',
         ], $page->cards());
     }
 

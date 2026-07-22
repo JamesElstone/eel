@@ -175,7 +175,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         $freezeReady = (string)($taxReadiness['freeze_status'] ?? '') === 'ready_for_approval';
         $hasUnsupportedFeatures = $blockerCount > 0;
         $unsupportedFeaturesClass = $hasUnsupportedFeatures ? ' danger' : '';
-        $unsupportedFeaturesPill = $hasUnsupportedFeatures ? $this->badge('danger', 'Not supported') : '';
+        $unsupportedFeaturesPill = $hasUnsupportedFeatures ? $this->badge('danger', 'Review required') : '';
 
         return '<section class="panel-soft stack">
             <h3 class="card-title">Overall Tax Position</h3>
@@ -193,10 +193,10 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             ]) . '
         </section>
         <section class="panel-soft stack' . $unsupportedFeaturesClass . '">
-            <div class="summary-card-header"><h3 class="card-title">Features not supported by EEL Accounts</h3>' . $unsupportedFeaturesPill . '</div>'
+            <div class="summary-card-header"><h3 class="card-title">Corporation Tax Items Requiring Review</h3>' . $unsupportedFeaturesPill . '</div>'
             . $this->diagnosticsHtml(
                 (array)($taxReadiness['blocking_diagnostics'] ?? []),
-                'Features not supported by EEL Accounts',
+                'Corporation Tax Items Requiring Review',
                 $blockerCount === 0 ? 'No amount-affecting Corporation Tax issues remain.' : '',
                 false
             ) . '

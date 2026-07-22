@@ -158,6 +158,8 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(true, str_contains($html, 'save_tax_readiness_acknowledgement'));
         $harness->assertSame(false, str_contains($html, 'Open Tax Workflow'));
         $harness->assertSame(true, str_contains($html, 'Overall Tax Position'));
+        $harness->assertSame(true, str_contains($html, 'Corporation Tax Items Requiring Review'));
+        $harness->assertSame(false, str_contains($html, 'Features not supported by EEL Accounts'));
         $harness->assertSame(true, str_contains($html, 'CT Periods In This Accounting Period'));
         $harness->assertSame(true, str_contains($html, 'CT Period 1: 05/09/2022 to 04/09/2023'));
         $harness->assertSame(true, str_contains($html, 'CT Period 2: 05/09/2023 to 30/09/2023'));

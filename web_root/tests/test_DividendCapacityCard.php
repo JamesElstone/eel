@@ -130,6 +130,23 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
         $harness->assertTrue(str_contains($html, 'Ordinary CT £ 1,900.00 + CT600A A80 £ 575.00 = £ 2,475.00'));
         $harness->assertTrue(str_contains($html, 'Unposted tax charge deducted'));
         $harness->assertTrue(str_contains($html, 'Estimated total tax charge £ 2,475.00 - posted tax charge £ 475.00 = £ 2,000.00'));
+        $previousPosition = -1;
+        foreach ([
+            'Distributable Reserves B/F',
+            'Ledger profit / loss',
+            'Classified Realised Profit',
+            'Corporation Tax payable',
+            'L2P relief receivable',
+            'Net estimated tax charge',
+            'Unposted tax charge deducted',
+            'Profit after Tax',
+            'Declared Dividends',
+            'Available distributable reserves',
+        ] as $title) {
+            $position = strpos($html, '<td>' . $title . '</td>');
+            $harness->assertTrue($position !== false && $position > $previousPosition);
+            $previousPosition = $position;
+        }
     });
 
     $harness->check(_dividend_capacityCard::class, 'renders warning metric values in the unified summary-card layout', static function () use ($harness, $card): void {

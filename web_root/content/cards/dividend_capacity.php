@@ -71,15 +71,15 @@ final class _dividend_capacityCard extends CardBaseFramework
                     <thead><tr><th>Title</th><th>Description</th><th class="numeric">Value</th></tr></thead>
                     <tbody>
                         ' . $this->summaryTableRow('Distributable Reserves B/F', 'Distributable Reserves from the previous accounting period', $this->money($companySettings, $capacity['distributable_reserves_brought_forward'] ?? $capacity['retained_earnings_brought_forward'] ?? 0)) . '
-                        ' . $this->summaryTableRow('Profit after Tax', 'The reviewed, distributable portion of current-period profit after deducting any unposted Corporation Tax charge.', $this->money($companySettings, $capacity['current_year_profit_loss_after_tax'] ?? $capacity['current_year_profit_loss'] ?? 0)) . '
-                        ' . $this->summaryTableRow('Declared Dividends', 'Declared in this Accounting Period', $this->money($companySettings, $capacity['dividends_declared'] ?? 0)) . '
-                        ' . $this->summaryTableRow('Available distributable reserves', 'Distributable Reserves B/F + Profit after Tax - Declared Dividends', $this->money($companySettings, $capacity['available_distributable_reserves'] ?? 0)) . '
                         ' . $this->summaryTableRow('Ledger profit / loss', 'Profit before Tax', $this->money($companySettings, $capacity['ledger_current_year_profit_loss'] ?? 0)) . '
                         ' . $this->summaryTableRow('Classified Realised Profit', 'The current-period profit accepted by the reserve review as realised/distributable, before the remaining unposted CT adjustment.', $this->money($companySettings, $capacity['classified_current_year_profit_loss'] ?? 0)) . '
                         ' . $this->summaryTableRow('Corporation Tax payable', $this->estimatedCorporationTaxHelper($companySettings, $capacity), $this->money($companySettings, $capacity['estimated_corporation_tax'] ?? 0)) . '
                         ' . $this->summaryTableRow('L2P relief receivable', 'Relief receivable for qualifying later repayments; it reduces the tax charge but does not rewrite the accepted CT600A A80 amount.', $this->money($companySettings, $capacity['l2p_relief_receivable'] ?? 0)) . '
                         ' . $this->summaryTableRow('Net estimated tax charge', 'Corporation Tax payable less any L2P relief receivable. This is the tax charge used in profit and reserves.', $this->money($companySettings, $capacity['estimated_tax_charge'] ?? $capacity['estimated_corporation_tax'] ?? 0)) . '
                         ' . $this->summaryTableRow('Unposted tax charge deducted', $this->unpostedCorporationTaxHelper($companySettings, $capacity), $this->money($companySettings, $capacity['unposted_corporation_tax_adjustment'] ?? 0)) . '
+                        ' . $this->summaryTableRow('Profit after Tax', 'The reviewed, distributable portion of current-period profit after deducting any unposted Corporation Tax charge.', $this->money($companySettings, $capacity['current_year_profit_loss_after_tax'] ?? $capacity['current_year_profit_loss'] ?? 0)) . '
+                        ' . $this->summaryTableRow('Declared Dividends', 'Declared in this Accounting Period', $this->money($companySettings, $capacity['dividends_declared'] ?? 0)) . '
+                        ' . $this->summaryTableRow('Available distributable reserves', 'Distributable Reserves B/F + Profit after Tax - Declared Dividends', $this->money($companySettings, $capacity['available_distributable_reserves'] ?? 0)) . '
                     </tbody>
                 </table>
             </div>

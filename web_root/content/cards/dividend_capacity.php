@@ -62,7 +62,7 @@ final class _dividend_capacityCard extends CardBaseFramework
                 ' . $this->summaryCard('Capacity date', (string)($capacity['as_at_date'] ?? ''), 'summary-card-fit') . '
                 ' . $this->warningCards($reviewScopeWarnings, $companyId, $accountingPeriodId) . '
                 ' . $this->summaryCard('Available distributable reserves', $this->money($companySettings, $capacity['available_distributable_reserves'] ?? 0)) . '
-                ' . $this->reserveBasisCard($companySettings, $capacity) . '
+                ' . $this->reserveBasisCard($capacity) . '
                 ' . $this->warningCards($otherWarnings, $companyId, $accountingPeriodId) . '
                 ' . $this->warningCards($reliabilityWarnings, $companyId, $accountingPeriodId) . '
             </div>
@@ -93,18 +93,11 @@ final class _dividend_capacityCard extends CardBaseFramework
         return '<div class="' . HelperFramework::escape($class) . '"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value !== '' ? $value : '-') . '</div>' . ($helper !== '' ? '<div class="helper">' . HelperFramework::escape($helper) . '</div>' : '') . '</div>';
     }
 
-    private function reserveBasisCard(array $companySettings, array $capacity): string
+    private function reserveBasisCard(array $capacity): string
     {
-        $detail = trim(implode(' ', array_filter([
-            $this->reservesEquation($companySettings, $capacity),
-            (string)($capacity['reserve_basis_detail'] ?? $capacity['retained_earnings_detail'] ?? ''),
-        ], static fn(string $value): bool => $value !== '')));
-
         return $this->summaryCard(
             'Reserve basis',
-            !empty($capacity['reserves_reliable']) ? 'Reserve basis verified' : 'Reserve basis blocked',
-            '',
-            $detail
+            !empty($capacity['reserves_reliable']) ? 'Reserve basis verified' : 'Reserve basis blocked'
         );
     }
 

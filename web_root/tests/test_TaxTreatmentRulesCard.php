@@ -49,21 +49,18 @@ $harness->run(_tax_treatment_rulesCard::class, static function (GeneratedService
         ],
     ];
 
-    $harness->check(_tax_treatment_rulesCard::class, 'renders active treatment rules with toggle controls', static function () use ($harness, $card, $context): void {
+    $harness->check(_tax_treatment_rulesCard::class, 'renders rules needing review by default', static function () use ($harness, $card, $context): void {
         $html = $card->render($context);
 
-        $harness->assertTrue(str_contains($html, 'client_entertainment_disallowable'));
-        $harness->assertTrue(str_contains($html, 'Nominal 6130'));
-        $harness->assertTrue(str_contains($html, 'Disallowable'));
-        $harness->assertTrue(str_contains($html, 'bim45000'));
+        $harness->assertTrue(str_contains($html, 'old_rule'));
+        $harness->assertTrue(str_contains($html, '<option value="needs_review" selected>Needs Review</option>'));
+        $harness->assertSame(false, str_contains($html, 'client_entertainment_disallowable'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="toggle_tax_treatment_rule"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="update_tax_treatment_rule_review_status"'));
-        $harness->assertTrue(str_contains($html, '<option value="seeded" selected>Seeded</option>'));
         $harness->assertTrue(str_contains($html, '<option value="needs_review">Needs Review</option>'));
         $harness->assertTrue(str_contains($html, '<option value="reviewed">Reviewed</option>'));
-        $harness->assertTrue(str_contains($html, 'name="target_is_active" value="0"'));
-        $harness->assertTrue(str_contains($html, 'Disable'));
-        $harness->assertSame(false, str_contains($html, 'old_rule'));
+        $harness->assertTrue(str_contains($html, 'name="target_is_active" value="1"'));
+        $harness->assertTrue(str_contains($html, 'Enable'));
     });
 
     $harness->check(_tax_treatment_rulesCard::class, 'all filter includes disabled treatment rules', static function () use ($harness, $card, $context): void {
@@ -73,7 +70,7 @@ $harness->run(_tax_treatment_rulesCard::class, static function (GeneratedService
 
         $harness->assertTrue(str_contains($html, 'old_rule'));
         $harness->assertTrue(str_contains($html, 'Disabled'));
-        $harness->assertTrue(str_contains($html, '<option value="needs_review" selected>Needs Review</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="all" selected>All</option>'));
         $harness->assertTrue(str_contains($html, 'name="target_is_active" value="1"'));
         $harness->assertTrue(str_contains($html, 'Enable'));
     });

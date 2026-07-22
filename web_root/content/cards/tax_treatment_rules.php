@@ -36,7 +36,7 @@ final class _tax_treatment_rulesCard extends CardBaseFramework
         $pageContext = parent::handle($request, $services, $pageContext, $actionResult);
         $pageContext[$this->key()]['status_filter'] = $this->normaliseStatusFilter((string)$request->input(
             self::FILTER_FIELD,
-            (string)(($pageContext[$this->key()] ?? [])['status_filter'] ?? 'active')
+            (string)(($pageContext[$this->key()] ?? [])['status_filter'] ?? 'needs_review')
         ));
 
         return $pageContext;
@@ -91,9 +91,11 @@ final class _tax_treatment_rulesCard extends CardBaseFramework
     {
         return TableFramework::make($this->key(), $rules)
             ->filename('corporation-tax-treatment-rules')
-            ->empty($statusFilter === 'active'
-                ? 'No active Corporation Tax treatment rules are stored yet.'
-                : 'No Corporation Tax treatment rules are stored yet.')
+            ->empty(match ($statusFilter) {
+                'active' => 'No active Corporation Tax treatment rules are stored yet.',
+                'needs_review' => 'No Corporation Tax treatment rules currently need review.',
+                default => 'No Corporation Tax treatment rules are stored yet.',
+            })
             ->column('priority', 'Priority', exportType: 'number')
             ->column('rule_code', 'Rule')
             ->column(
@@ -148,8 +150,16 @@ final class _tax_treatment_rulesCard extends CardBaseFramework
             static fn(mixed $rule): bool => is_array($rule)
         ));
 
-        if ($this->normaliseStatusFilter($statusFilter) === 'all') {
+        $statusFilter = $this->normaliseStatusFilter($statusFilter);
+        if ($statusFilter === 'all') {
             return $rules;
+        }
+
+        if ($statusFilter === 'needs_review') {
+            return array_values(array_filter(
+                $rules,
+                static fn(array $rule): bool => (string)($rule['review_status'] ?? 'seeded') === 'needs_review'
+            ));
         }
 
         return array_values(array_filter(
@@ -271,20 +281,21 @@ final class _tax_treatment_rulesCard extends CardBaseFramework
 
     private function selectedStatusFilter(array $context): string
     {
-        return $this->normaliseStatusFilter((string)(($context[$this->key()] ?? [])['status_filter'] ?? 'active'));
+        return $this->normaliseStatusFilter((string)(($context[$this->key()] ?? [])['status_filter'] ?? 'needs_review'));
     }
 
     private function normaliseStatusFilter(string $status): string
     {
         $status = strtolower(trim($status));
 
-        return array_key_exists($status, $this->statusFilterOptions()) ? $status : 'active';
+        return array_key_exists($status, $this->statusFilterOptions()) ? $status : 'needs_review';
     }
 
     private function statusFilterOptions(): array
     {
         return [
             'active' => 'Active',
+            'needs_review' => 'Needs Review',
             'all' => 'All',
         ];
     }

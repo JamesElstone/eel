@@ -30,6 +30,7 @@ $harness->run(_year_end_loan_confirmationCard::class, static function (Generated
             'can_confirm' => true,
             'asset_receivable' => 253.00,
             'liability_payable' => 1288.63,
+            'net_position' => 1035.63,
             'desired_reclassification_amount' => 253.00,
             'posted_reclassification_amount' => 0.00,
             'pending_adjustment_amount' => 253.00,
@@ -67,7 +68,13 @@ $harness->run(_year_end_loan_confirmationCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_director_loan_year_end_review"'));
         $harness->assertTrue(str_contains($html, 'name="director_loan_year_end_review" value="1"'));
         $harness->assertTrue(str_contains($html, 'Primary Director'));
-        $harness->assertTrue(str_contains($html, 'Calculated reclassification'));
+        $harness->assertTrue(str_contains($html, 'Total Participator Loan Asset (Gross)'));
+        $harness->assertTrue(str_contains($html, 'Total Participator Loan Liability (Gross)'));
+        $harness->assertTrue(str_contains($html, 'Calculated total loan Balancing Adjustment at Year End'));
+        $harness->assertTrue(str_contains($html, 'Journal entries that already exist for year end balance'));
+        $harness->assertTrue(str_contains($html, 'Journal entries to be made at Year End closure'));
+        $harness->assertTrue(str_contains($html, 'Balance after Year End has closed'));
+        $harness->assertTrue(str_contains($html, '1,035.63'));
         $harness->assertTrue(str_contains($html, '<div class="panel-soft table-scroll"><table>'));
         $harness->assertSame(2, substr_count($html, '<div class="panel-soft table-scroll"><table>'));
         $harness->assertSame(false, str_contains($html, '118 Director Loan entries are not attributed'));

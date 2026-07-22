@@ -126,12 +126,13 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
 
         return '<section class="settings-stack">
             <div class="month-grid">
-                ' . $this->stat('Gross Participator Loan Asset', $this->money($settings, $review['asset_receivable'] ?? 0)) . '
-                ' . $this->stat('Gross Participator Loan Liability', $this->money($settings, $review['liability_payable'] ?? 0)) . '
-                ' . $this->stat('Calculated reclassification', $this->money($settings, $review['desired_reclassification_amount'] ?? 0)) . '
-                ' . $this->stat('Already posted', $this->money($settings, $review['posted_reclassification_amount'] ?? 0)) . '
-                ' . $this->stat('Pending at lock', $this->money($settings, $review['pending_adjustment_amount'] ?? 0)) . '
+                ' . $this->stat('Total Participator Loan Asset (Gross)', $this->money($settings, $review['asset_receivable'] ?? 0)) . '
+                ' . $this->stat('Total Participator Loan Liability (Gross)', $this->money($settings, $review['liability_payable'] ?? 0)) . '
+                ' . $this->stat('Calculated total loan Balancing Adjustment at Year End', $this->money($settings, $review['desired_reclassification_amount'] ?? 0)) . '
+                ' . $this->stat('Journal entries that already exist for year end balance', $this->money($settings, $review['posted_reclassification_amount'] ?? 0)) . '
+                ' . $this->stat('Journal entries to be made at Year End closure', $this->money($settings, $review['pending_adjustment_amount'] ?? 0)) . '
                 ' . $this->stat('Gross loan asset (not s455)', $this->money($settings, $review['potential_s455_exposure'] ?? 0)) . '
+                ' . $this->stat('Balance after Year End has closed', $this->money($settings, $review['net_position'] ?? 0)) . '
             </div>
             ' . $warnings . '
             <section class="settings-stack">

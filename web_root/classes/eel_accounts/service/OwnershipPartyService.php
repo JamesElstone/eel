@@ -14,6 +14,9 @@ final class OwnershipPartyService
     private const PARTY_TYPES = ['individual', 'company', 'trust', 'partnership', 'other'];
     private const ROLE_TYPES = ['participator', 'associate'];
 
+    /** @var array<int,array{parties:array,roles:array,holdings:array}> */
+    private array $timelineCache = [];
+
     public function fetchSummary(int $companyId, ?string $asOf = null): array
     {
         if ($companyId <= 0) {
@@ -24,31 +27,14 @@ final class OwnershipPartyService
         }
 
         $asOf = $this->normaliseDate($asOf) ?? (new \DateTimeImmutable('today'))->format('Y-m-d');
-        $parties = \InterfaceDB::fetchAll(
-            'SELECT p.id, p.company_id, p.party_type, p.legal_name, p.linked_director_id,
-                    p.source_note, d.full_name AS linked_director_name
-             FROM company_parties p
-             LEFT JOIN company_directors d ON d.id = p.linked_director_id
-             WHERE p.company_id = :company_id
-             ORDER BY p.legal_name, p.id',
-            ['company_id' => $companyId]
-        );
-        $roles = \InterfaceDB::fetchAll(
-            'SELECT id, party_id, role_type, effective_from, effective_to, source_note
-             FROM company_party_roles
-             WHERE company_id = :company_id
-             ORDER BY effective_from, id',
-            ['company_id' => $companyId]
-        );
-        $holdings = \InterfaceDB::fetchAll(
-            'SELECT h.id, h.party_id, h.share_class_id, h.quantity, h.effective_from, h.effective_to,
-                    h.source_note, sc.share_class, sc.currency
-             FROM company_shareholdings h
-             INNER JOIN company_incorporation_share_classes sc ON sc.id = h.share_class_id
-             WHERE h.company_id = :company_id
-             ORDER BY h.effective_from, h.id',
-            ['company_id' => $companyId]
-        );
+        $summaryKey = \eel_accounts\Support\RequestCache::key($companyId, $asOf);
+        if (\eel_accounts\Support\RequestCache::has('ownership.summary', $summaryKey)) {
+            return (array)\eel_accounts\Support\RequestCache::get('ownership.summary', $summaryKey);
+        }
+        $timeline = $this->ownershipTimeline($companyId);
+        $parties = $timeline['parties'];
+        $roles = $timeline['roles'];
+        $holdings = $timeline['holdings'];
         $rolesByParty = [];
         foreach ($roles as $role) {
             $rolesByParty[(int)$role['party_id']][] = $role;
@@ -71,7 +57,7 @@ final class OwnershipPartyService
         }
         unset($party);
 
-        return [
+        return (array)\eel_accounts\Support\RequestCache::put('ownership.summary', $summaryKey, [
             'available' => true,
             'errors' => [],
             'as_of' => $asOf,
@@ -79,7 +65,7 @@ final class OwnershipPartyService
             'share_classes' => $this->shareClasses($companyId),
             'directors' => (new CompanyDirectorService())->fetchForCompany($companyId),
             'reconciliation' => $this->reconciliation($companyId, $asOf),
-        ];
+        ]);
     }
 
     public function effectiveParties(int $companyId, string $date): array
@@ -89,27 +75,36 @@ final class OwnershipPartyService
             return [];
         }
 
-        return \InterfaceDB::fetchAll(
-            "SELECT p.id, p.legal_name, p.party_type, p.linked_director_id
-             FROM company_parties p
-             WHERE p.company_id = :company_id
-               AND (
-                   EXISTS (
-                       SELECT 1 FROM company_shareholdings h
-                       WHERE h.company_id = p.company_id AND h.party_id = p.id
-                         AND h.effective_from <= :as_of
-                         AND (h.effective_to IS NULL OR h.effective_to >= :as_of)
-                   ) OR EXISTS (
-                       SELECT 1 FROM company_party_roles r
-                       WHERE r.company_id = p.company_id AND r.party_id = p.id
-                         AND r.role_type IN ('participator','associate')
-                         AND r.effective_from <= :as_of
-                         AND (r.effective_to IS NULL OR r.effective_to >= :as_of)
-                   )
-               )
-             ORDER BY p.legal_name, p.id",
-            ['company_id' => $companyId, 'as_of' => $date]
-        );
+        $timeline = $this->ownershipTimeline($companyId);
+        $effectiveRolePartyIds = [];
+        foreach ($timeline['roles'] as $role) {
+            if (in_array((string)($role['role_type'] ?? ''), self::ROLE_TYPES, true)
+                && $this->effectiveOn($role, $date)) {
+                $effectiveRolePartyIds[(int)$role['party_id']] = true;
+            }
+        }
+        $effectiveHoldingPartyIds = [];
+        foreach ($timeline['holdings'] as $holding) {
+            if ($this->effectiveOn($holding, $date)) {
+                $effectiveHoldingPartyIds[(int)$holding['party_id']] = true;
+            }
+        }
+
+        return array_values(array_map(
+            static fn(array $party): array => [
+                'id' => (int)$party['id'],
+                'legal_name' => (string)$party['legal_name'],
+                'party_type' => (string)$party['party_type'],
+                'linked_director_id' => $party['linked_director_id'] !== null
+                    ? (int)$party['linked_director_id']
+                    : null,
+            ],
+            array_filter(
+                $timeline['parties'],
+                static fn(array $party): bool => isset($effectiveRolePartyIds[(int)$party['id']])
+                    || isset($effectiveHoldingPartyIds[(int)$party['id']])
+            )
+        ));
     }
 
     public function isEffectiveParty(int $companyId, int $partyId, string $date): bool
@@ -145,14 +140,13 @@ final class OwnershipPartyService
 
         $parties = $this->effectiveParties($companyId, $date);
         $effectivePartyCount = count($parties);
-        $shareholderPartyCount = (int)\InterfaceDB::fetchColumn(
-            'SELECT COUNT(DISTINCT h.party_id)
-             FROM company_shareholdings h
-             WHERE h.company_id = :company_id
-               AND h.effective_from <= :as_of
-               AND (h.effective_to IS NULL OR h.effective_to >= :as_of)',
-            ['company_id' => $companyId, 'as_of' => $date]
-        );
+        $shareholderPartyIds = [];
+        foreach ($this->ownershipTimeline($companyId)['holdings'] as $holding) {
+            if ($this->effectiveOn($holding, $date)) {
+                $shareholderPartyIds[(int)$holding['party_id']] = true;
+            }
+        }
+        $shareholderPartyCount = count($shareholderPartyIds);
         $directorPartyCount = count(array_filter(
             $parties,
             static fn(array $party): bool => (int)($party['linked_director_id'] ?? 0) > 0
@@ -274,6 +268,7 @@ final class OwnershipPartyService
             $partyId = (int)\InterfaceDB::lastInsertId();
         }
 
+        $this->invalidateOwnershipCache($companyId);
         return ['success' => true, 'errors' => [], 'party_id' => $partyId];
     }
 
@@ -301,6 +296,7 @@ final class OwnershipPartyService
                 'source_note' => $this->nullableText($input['source_note'] ?? null),
             ]
         );
+        $this->invalidateOwnershipCache($companyId);
         return ['success' => true, 'errors' => []];
     }
 
@@ -346,6 +342,7 @@ final class OwnershipPartyService
                 'source_note' => $this->nullableText($input['source_note'] ?? null),
             ]
         );
+        $this->invalidateOwnershipCache($companyId);
         return ['success' => true, 'errors' => []];
     }
 
@@ -369,6 +366,7 @@ final class OwnershipPartyService
             'UPDATE company_party_roles SET effective_to = :effective_to WHERE id = :id AND company_id = :company_id',
             ['effective_to' => $effectiveTo, 'id' => $roleId, 'company_id' => $companyId]
         );
+        $this->invalidateOwnershipCache($companyId);
         return ['success' => true, 'errors' => []];
     }
 
@@ -392,6 +390,7 @@ final class OwnershipPartyService
             'UPDATE company_shareholdings SET effective_to = :effective_to WHERE id = :id AND company_id = :company_id',
             ['effective_to' => $effectiveTo, 'id' => $holdingId, 'company_id' => $companyId]
         );
+        $this->invalidateOwnershipCache($companyId);
         return ['success' => true, 'errors' => []];
     }
 
@@ -454,6 +453,58 @@ final class OwnershipPartyService
             throw new \RuntimeException('Select an ownership party belonging to this company.');
         }
         return $party;
+    }
+
+    /** @return array{parties:array,roles:array,holdings:array} */
+    private function ownershipTimeline(int $companyId): array
+    {
+        if (isset($this->timelineCache[$companyId])) {
+            return $this->timelineCache[$companyId];
+        }
+        $key = (string)$companyId;
+        $timeline = (array)\eel_accounts\Support\RequestCache::remember(
+            'ownership.timeline',
+            $key,
+            static function () use ($companyId): array {
+                return [
+                    'parties' => \InterfaceDB::fetchAll(
+                        'SELECT p.id, p.company_id, p.party_type, p.legal_name, p.linked_director_id,
+                                p.source_note, d.full_name AS linked_director_name
+                         FROM company_parties p
+                         LEFT JOIN company_directors d ON d.id = p.linked_director_id
+                         WHERE p.company_id = :company_id
+                         ORDER BY p.legal_name, p.id',
+                        ['company_id' => $companyId]
+                    ),
+                    'roles' => \InterfaceDB::fetchAll(
+                        'SELECT id, party_id, role_type, effective_from, effective_to, source_note
+                         FROM company_party_roles
+                         WHERE company_id = :company_id
+                         ORDER BY effective_from, id',
+                        ['company_id' => $companyId]
+                    ),
+                    'holdings' => \InterfaceDB::fetchAll(
+                        'SELECT h.id, h.party_id, h.share_class_id, h.quantity, h.effective_from, h.effective_to,
+                                h.source_note, sc.share_class, sc.currency
+                         FROM company_shareholdings h
+                         INNER JOIN company_incorporation_share_classes sc ON sc.id = h.share_class_id
+                         WHERE h.company_id = :company_id
+                         ORDER BY h.effective_from, h.id',
+                        ['company_id' => $companyId]
+                    ),
+                ];
+            }
+        );
+        return $this->timelineCache[$companyId] = $timeline;
+    }
+
+    private function invalidateOwnershipCache(int $companyId): void
+    {
+        unset($this->timelineCache[$companyId]);
+        \eel_accounts\Support\RequestCache::forget('ownership.timeline', (string)$companyId);
+        \eel_accounts\Support\RequestCache::forgetNamespace('ownership.summary');
+        \eel_accounts\Support\RequestCache::forgetNamespace('tax.s455');
+        \eel_accounts\Support\RequestCache::forgetNamespace('tax.ct600a');
     }
 
     private function assertRangeUnlocked(int $companyId, string $from, ?string $to): void

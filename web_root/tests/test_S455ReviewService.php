@@ -124,6 +124,80 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 }
             }
         });
+
+        $harness->check(get_class($service), 'memoizes only within a request and refreshes after invalidation', static function () use ($harness, $service): void {
+            InterfaceDB::beginTransaction();
+            $scope = null;
+            try {
+                $fixture = s455CorrectionAwareFixture();
+                $request = new stdClass();
+                $scope = \eel_accounts\Support\RequestCache::beginFor($request);
+                $beforeAttribution = $service->calculate(
+                    $fixture['company_id'], $fixture['accounting_period_id'], $fixture['ct_period_id'], '2099-12-31 23:59:59'
+                );
+                $harness->assertCount(1, (array)($beforeAttribution['unattributed_movements'] ?? []));
+                $attribution = (new \eel_accounts\Service\DirectorLoanAttributionService())->assignJournalLine(
+                    $fixture['company_id'],
+                    $fixture['loan_line_id'],
+                    $fixture['party_id'],
+                    'test-suite',
+                    'Request cache fixture.'
+                );
+                $harness->assertSame(true, (bool)($attribution['success'] ?? false));
+                $afterAttribution = $service->calculate(
+                    $fixture['company_id'], $fixture['accounting_period_id'], $fixture['ct_period_id'], '2099-12-31 23:59:59'
+                );
+                $harness->assertCount(1, (array)($afterAttribution['movements'] ?? []));
+                $harness->assertSame($fixture['party_id'], (int)($afterAttribution['movements'][0]['party_id'] ?? 0));
+                unset($scope, $request);
+                \eel_accounts\Support\RequestCache::reset();
+                InterfaceDB::prepareExecute(
+                    'UPDATE transactions SET party_id = NULL, director_id = NULL WHERE id = :id',
+                    ['id' => $fixture['transaction_id']]
+                );
+
+                $direct = $service->calculate(
+                    $fixture['company_id'], $fixture['accounting_period_id'], $fixture['ct_period_id'], '2099-12-31 23:59:59'
+                );
+                $harness->assertSame('100.00', number_format((float)$direct['gross_principal'], 2, '.', ''));
+                InterfaceDB::prepareExecute(
+                    'UPDATE transactions SET amount = -125.00 WHERE id = :id',
+                    ['id' => $fixture['transaction_id']]
+                );
+                $directAgain = $service->calculate(
+                    $fixture['company_id'], $fixture['accounting_period_id'], $fixture['ct_period_id'], '2099-12-31 23:59:59'
+                );
+                $harness->assertSame('125.00', number_format((float)$directAgain['gross_principal'], 2, '.', ''));
+
+                $request = new stdClass();
+                $scope = \eel_accounts\Support\RequestCache::beginFor($request);
+                $cached = $service->calculate(
+                    $fixture['company_id'], $fixture['accounting_period_id'], $fixture['ct_period_id'], '2099-12-31 23:59:59'
+                );
+                InterfaceDB::prepareExecute(
+                    'UPDATE transactions SET amount = -150.00 WHERE id = :id',
+                    ['id' => $fixture['transaction_id']]
+                );
+                $cachedAgain = $service->calculate(
+                    $fixture['company_id'], $fixture['accounting_period_id'], $fixture['ct_period_id'], '2099-12-31 23:59:59'
+                );
+                $harness->assertSame((string)$cached['basis_hash'], (string)$cachedAgain['basis_hash']);
+                $harness->assertSame('125.00', number_format((float)$cachedAgain['gross_principal'], 2, '.', ''));
+
+                \eel_accounts\Support\RequestCache::clear();
+                $refreshed = $service->calculate(
+                    $fixture['company_id'], $fixture['accounting_period_id'], $fixture['ct_period_id'], '2099-12-31 23:59:59'
+                );
+                $harness->assertSame('150.00', number_format((float)$refreshed['gross_principal'], 2, '.', ''));
+                $harness->assertSame(false, (string)$cached['basis_hash'] === (string)$refreshed['basis_hash']);
+            } finally {
+                unset($scope);
+                \eel_accounts\Support\RequestCache::reset();
+                if (InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
+                }
+            }
+        });
     }
 );
 

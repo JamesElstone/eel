@@ -35,12 +35,6 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
                 'method' => 'fetchYearEndConfirmationContext',
                 'params' => ['companyId' => ':company.id', 'accountingPeriodId' => ':company.accounting_period_id'],
             ],
-            [
-                'key' => 'ct600a',
-                'service' => \eel_accounts\Service\Ct600aService::class,
-                'method' => 'fetchForAccountingPeriod',
-                'params' => ['companyId' => ':company.id', 'accountingPeriodId' => ':company.accounting_period_id'],
-            ],
         ];
     }
 
@@ -162,7 +156,8 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
 
     private function ct600aDeclarations(array $context, int $companyId, int $accountingPeriodId, bool $locked): string
     {
-        $ct600a = (array)($context['services']['ct600a'] ?? []);
+        $directorLoanReview = (array)($context['services']['directorLoanReview'] ?? []);
+        $ct600a = (array)($directorLoanReview['ct600a'] ?? []);
         if (empty($ct600a['available'])) {
             return '';
         }

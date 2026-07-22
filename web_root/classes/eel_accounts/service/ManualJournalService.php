@@ -340,6 +340,10 @@ final class ManualJournalService
             return ['success' => false, 'errors' => [$exception->getMessage()]];
         }
 
+        \eel_accounts\Support\RequestCache::forgetNamespace('director-loan.statement');
+        \eel_accounts\Support\RequestCache::forgetNamespace('tax.s455');
+        \eel_accounts\Support\RequestCache::forgetNamespace('tax.ct600a');
+
         return [
             'success' => true,
             'journal' => $this->fetchJournalByTag($companyId, $accountingPeriodId, $journalTag, $journalKey),

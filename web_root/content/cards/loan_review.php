@@ -50,7 +50,7 @@ final class _loan_reviewCard extends CardBaseFramework
                 . HelperFramework::escape((string)$item['action_url']) . '">' . HelperFramework::escape((string)$item['action_label']) . '</a></td></tr>';
         }
         $blockingHtml = $rows !== ''
-            ? '<section class="settings-stack"><h3 class="card-title">Items required for this accounting period</h3><div class="table-scroll"><table><thead><tr><th>State</th><th>Issue</th><th>Evidence</th><th>Resolve</th></tr></thead><tbody>' . $rows . '</tbody></table></div></section>'
+            ? '<section class="panel-soft settings-stack"><h3 class="card-title">Items required for this accounting period</h3><div class="table-scroll"><table><thead><tr><th>State</th><th>Issue</th><th>Evidence</th><th>Resolve</th></tr></thead><tbody>' . $rows . '</tbody></table></div></section>'
             : '';
         return '<section class="settings-stack">' . $futureWarningHtml . $blockingHtml . '</section>';
     }

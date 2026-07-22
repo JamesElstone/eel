@@ -52,12 +52,14 @@ final class _loans extends PageContextFramework
             ],
             [
                 'tab' => 'Participant Loan Assignment',
+                'on_demand' => true,
                 'cards' => [
                     'director_loan_attribution',
                 ],
             ],
             [
                 'tab' => 'Loans Tax Position',
+                'on_demand' => true,
                 'cards' => [
                     'director_loan_s455',
                     'director_loan_ct600a',
@@ -72,6 +74,7 @@ final class _loans extends PageContextFramework
             ],
             [
                 'tab' => 'Year End Confirmation',
+                'on_demand' => true,
                 'cards' => [
                     'year_end_loan_confirmation',
                 ],

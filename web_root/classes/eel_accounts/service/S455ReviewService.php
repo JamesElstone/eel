@@ -13,6 +13,16 @@ final class S455ReviewService
 {
     public function fetchForAccountingPeriod(int $companyId, int $accountingPeriodId): array
     {
+        $key = \eel_accounts\Support\RequestCache::key('fetch', $companyId, $accountingPeriodId);
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'tax.s455',
+            $key,
+            fn(): array => $this->fetchForAccountingPeriodUncached($companyId, $accountingPeriodId)
+        );
+    }
+
+    private function fetchForAccountingPeriodUncached(int $companyId, int $accountingPeriodId): array
+    {
         if ($companyId <= 0 || $accountingPeriodId <= 0 || !\InterfaceDB::tableExists('corporation_tax_s455_reviews')) {
             return ['available' => false, 'errors' => ['Run the ownership and CT-period controls migration.'], 'periods' => []];
         }
@@ -37,6 +47,37 @@ final class S455ReviewService
     }
 
     public function calculate(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        ?string $evidenceCutoff = null,
+        ?string $transactionThroughDate = null
+    ): array
+    {
+        $cutoffKey = trim((string)$evidenceCutoff);
+        $throughKey = trim((string)$transactionThroughDate);
+        $key = \eel_accounts\Support\RequestCache::key(
+            'calculate',
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId,
+            $cutoffKey === '' ? '@request-now' : $cutoffKey,
+            $throughKey === '' ? '@statutory-window' : $throughKey
+        );
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'tax.s455',
+            $key,
+            fn(): array => $this->calculateUncached(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId,
+                $evidenceCutoff,
+                $transactionThroughDate
+            )
+        );
+    }
+
+    private function calculateUncached(
         int $companyId,
         int $accountingPeriodId,
         int $ctPeriodId,
@@ -75,6 +116,7 @@ final class S455ReviewService
         $repaymentAllocations = [];
         $errors = (array)$evidence['errors'];
         $ownership = new OwnershipPartyService();
+        $rateRules = $this->rateRules();
         $eligibility = [];
         foreach ((array)$evidence['rows'] as $row) {
             $partyId = (int)($row['party_id'] ?? 0);
@@ -123,7 +165,7 @@ final class S455ReviewService
                 $liabilitiesByParty[$partyId] = round($liability - $settled, 2);
                 $advance = round($amount - $settled, 2);
                 if ($advance >= 0.005) {
-                    $rate = $this->rateForDate($date);
+                    $rate = $this->rateForDate($date, $rateRules);
                     if ($rate === null) {
                         $errors[] = 'No local s455 rate rule covers loan transaction #' . (int)$row['transaction_id'] . ' dated ' . $date . '.';
                         $rate = 0.0;
@@ -287,22 +329,36 @@ final class S455ReviewService
         string $throughDate,
         ?string $evidenceCutoff = null
     ): array {
-        $calculation = $this->calculate(
+        $key = \eel_accounts\Support\RequestCache::key(
+            'ledger',
             $companyId,
             $accountingPeriodId,
             $ctPeriodId,
-            $evidenceCutoff,
-            $throughDate
+            trim((string)$evidenceCutoff) === '' ? '@request-now' : trim((string)$evidenceCutoff),
+            trim($throughDate)
         );
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'tax.s455',
+            $key,
+            function () use ($companyId, $accountingPeriodId, $ctPeriodId, $throughDate, $evidenceCutoff): array {
+                $calculation = $this->calculate(
+                    $companyId,
+                    $accountingPeriodId,
+                    $ctPeriodId,
+                    $evidenceCutoff,
+                    $throughDate
+                );
 
-        return [
-            'available' => !empty($calculation['available']),
-            'errors' => (array)($calculation['errors'] ?? []),
-            'all_lots' => (array)($calculation['all_lots'] ?? ($calculation['basis']['all_lots'] ?? [])),
-            'repayment_allocations' => (array)($calculation['all_repayment_allocations']
-                ?? ($calculation['basis']['all_repayment_allocations'] ?? [])),
-            'basis_hash' => (string)($calculation['basis_hash'] ?? ''),
-        ];
+                return [
+                    'available' => !empty($calculation['available']),
+                    'errors' => (array)($calculation['errors'] ?? []),
+                    'all_lots' => (array)($calculation['all_lots'] ?? ($calculation['basis']['all_lots'] ?? [])),
+                    'repayment_allocations' => (array)($calculation['all_repayment_allocations']
+                        ?? ($calculation['basis']['all_repayment_allocations'] ?? [])),
+                    'basis_hash' => (string)($calculation['basis_hash'] ?? ''),
+                ];
+            }
+        );
     }
 
     public function currentNetTax(int $companyId, int $accountingPeriodId, int $ctPeriodId): float
@@ -487,16 +543,31 @@ final class S455ReviewService
         return $valid && $start < $fallback ? $start : $fallback;
     }
 
-    private function rateForDate(string $date): ?float
+    /** @param list<array<string,mixed>> $rateRules */
+    private function rateForDate(string $date, array $rateRules): ?float
     {
-        $rate = \InterfaceDB::fetchColumn(
-            'SELECT rate FROM s455_rate_rules
-             WHERE is_active = 1 AND effective_from <= :loan_date
-               AND (effective_to IS NULL OR effective_to >= :loan_date)
-             ORDER BY effective_from DESC, id DESC LIMIT 1',
-            ['loan_date' => $date]
+        foreach ($rateRules as $rule) {
+            if ((string)$rule['effective_from'] <= $date
+                && (trim((string)($rule['effective_to'] ?? '')) === '' || (string)$rule['effective_to'] >= $date)) {
+                return (float)$rule['rate'];
+            }
+        }
+        return null;
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function rateRules(): array
+    {
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'tax.s455',
+            \eel_accounts\Support\RequestCache::key('rate-rules', 'active'),
+            static fn(): array => \InterfaceDB::fetchAll(
+                'SELECT id, effective_from, effective_to, rate
+                 FROM s455_rate_rules
+                 WHERE is_active = 1
+                 ORDER BY effective_from DESC, id DESC'
+            )
         );
-        return $rate !== false && $rate !== null ? (float)$rate : null;
     }
 
     private function persistCalculation(array $calculation, string $status): void
@@ -557,6 +628,8 @@ final class S455ReviewService
                 confirmation_note=VALUES(confirmation_note), updated_at=CURRENT_TIMESTAMP';
         }
         \InterfaceDB::prepareExecute($sql, $params);
+        \eel_accounts\Support\RequestCache::forgetNamespace('tax.s455');
+        \eel_accounts\Support\RequestCache::forgetNamespace('tax.ct600a');
     }
 
     private function ctPeriod(int $companyId, int $accountingPeriodId, int $ctPeriodId): ?array

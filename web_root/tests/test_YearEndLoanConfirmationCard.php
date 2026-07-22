@@ -13,13 +13,10 @@ $harness = new GeneratedServiceClassTestHarness();
 $harness->run(_year_end_loan_confirmationCard::class, static function (GeneratedServiceClassTestHarness $harness, _year_end_loan_confirmationCard $card): void {
     $harness->check(_year_end_loan_confirmationCard::class, 'uses the factual year-end review and CT600A declaration services', static function () use ($harness, $card): void {
         $services = $card->services();
-        $harness->assertCount(2, $services);
+        $harness->assertCount(1, $services);
         $harness->assertSame('directorLoanReview', (string)($services[0]['key'] ?? ''));
         $harness->assertSame(\eel_accounts\Service\DirectorLoanReconciliationService::class, (string)($services[0]['service'] ?? ''));
         $harness->assertSame('fetchYearEndConfirmationContext', (string)($services[0]['method'] ?? ''));
-        $harness->assertSame('ct600a', (string)($services[1]['key'] ?? ''));
-        $harness->assertSame(\eel_accounts\Service\Ct600aService::class, (string)($services[1]['service'] ?? ''));
-        $harness->assertSame('fetchForAccountingPeriod', (string)($services[1]['method'] ?? ''));
         $harness->assertSame('Director Loan Year End Review', $card->title());
     });
 
@@ -115,7 +112,7 @@ $harness->run(_year_end_loan_confirmationCard::class, static function (Generated
             'posted_reclassification_amount' => 0, 'pending_adjustment_amount' => 0, 'potential_s455_exposure' => 0,
             'warnings' => [], 'per_director' => [], 'tax_review' => ['director_flags' => []], 'proposed_lines' => [],
         ]);
-        $context['services']['ct600a'] = [
+        $context['services']['directorLoanReview']['ct600a'] = [
             'available' => true,
             'questions' => ['missing_parties' => 'Are any participators missing?'],
             'review' => ['answers' => [], 'approver_role' => 'director'],
@@ -145,7 +142,7 @@ $harness->run(_year_end_loan_confirmationCard::class, static function (Generated
             'acknowledgement_current' => true,
             'ct600a_review_current' => true,
         ]);
-        $context['services']['ct600a'] = [
+        $context['services']['directorLoanReview']['ct600a'] = [
             'available' => true,
             'questions' => ['missing_parties' => 'Are any participators missing?'],
             'review' => ['answers' => ['missing_parties' => 'no']],
@@ -168,7 +165,7 @@ $harness->run(_year_end_loan_confirmationCard::class, static function (Generated
             'acknowledgement_state' => 'stale',
             'ct600a_review_current' => false,
         ]);
-        $context['services']['ct600a'] = [
+        $context['services']['directorLoanReview']['ct600a'] = [
             'available' => true,
             'questions' => ['missing_parties' => 'Are any participators missing?'],
             'review' => ['answers' => ['missing_parties' => 'no'], 'current' => false, 'complete' => false],

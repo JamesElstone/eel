@@ -99,7 +99,7 @@ final class DirectorLoanReconciliationService
 
         $taxReview = ($this->directorLoanService ?? new DirectorLoanService())
             ->fetchTaxReviewSummary($companyId, $accountingPeriodId);
-        $ct600a = (new Ct600aService())->fetchForAccountingPeriod($companyId, $accountingPeriodId);
+        $ct600a = (new Ct600aService())->fetchReviewForAccountingPeriod($companyId, $accountingPeriodId);
         $ct600aReview = (array)($ct600a['review'] ?? []);
         $ct600aReviewCurrent = !empty($ct600aReview['current']) && !empty($ct600aReview['complete']);
         $ackService = $this->acknowledgementService ?? new YearEndAcknowledgementService();
@@ -171,6 +171,7 @@ final class DirectorLoanReconciliationService
             'warnings' => $warnings,
             'statement' => $statement,
             'tax_review' => $taxReview,
+            'ct600a' => $ct600a,
             'ct600a_review' => $ct600aReview,
             'ct600a_review_current' => $ct600aReviewCurrent,
             'accounting_period' => (array)$statement['accounting_period'],

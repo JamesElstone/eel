@@ -427,6 +427,11 @@ final class TestCardsHarness
         $this->assertPageTabContains($directorLoansPage, 'Loans Tax Position', ['director_loan_s455', 'director_loan_ct600a']);
         $this->assertPageTabContains($directorLoansPage, 'Review', ['loan_review']);
         $this->assertPageFinalTabContains($directorLoansPage, 'Year End Confirmation', ['year_end_loan_confirmation']);
+        $loanLayout = $directorLoansPage->cardLayout();
+        $this->assertSame(false, !empty($loanLayout[0]['on_demand']));
+        foreach ([1, 2, 3, 4] as $tabIndex) {
+            $this->assertSame(true, !empty($loanLayout[$tabIndex]['on_demand']));
+        }
 
         $incorporationPage = new _incorporation();
         $this->assertSame('Directors', (string)($incorporationPage->cardLayout()[2]['tab'] ?? ''));

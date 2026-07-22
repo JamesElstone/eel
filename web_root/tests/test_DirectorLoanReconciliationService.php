@@ -22,6 +22,10 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
             directorLoanReclassificationInsertLine($fixture, (int)$fixture['liability_nominal_id'], 0.00, 1288.63, (int)$fixture['primary_party_id'], 'liability');
 
             $before = $service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $harness->assertSame(true, (bool)(($before['ct600a'] ?? [])['available'] ?? false));
+            $harness->assertTrue(isset(($before['ct600a'] ?? [])['questions']));
+            $harness->assertTrue(isset(($before['ct600a'] ?? [])['review']));
+            $harness->assertSame(false, array_key_exists('periods', (array)($before['ct600a'] ?? [])));
             $harness->assertSame('253.00', directorLoanReclassificationMoney($before['desired_reclassification_amount'] ?? 0));
             $harness->assertSame('253.00', directorLoanReclassificationMoney($before['pending_adjustment_amount'] ?? 0));
             $harness->assertSame('0.00', directorLoanReclassificationMoney($before['potential_s455_exposure'] ?? 0));
@@ -226,6 +230,15 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
             $harness->assertSame('153.00', directorLoanReclassificationMoney($stale['pending_adjustment_amount'] ?? 0));
             $harness->assertSame(false, (bool)($stale['can_post'] ?? true));
 
+            $ct600a = new \eel_accounts\Service\Ct600aService();
+            $ct600a->saveReview(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                array_fill_keys(array_keys($ct600a->reviewQuestions()), 'no'),
+                'director',
+                'Test Director',
+                'Re-approved after the corrected loan evidence.'
+            );
             $service->saveYearEndReview((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], true, 'test');
             $reversed = $service->postOffset((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'test');
             $harness->assertSame(true, (bool)($reversed['success'] ?? false));
@@ -275,6 +288,20 @@ function directorLoanReclassificationWithFixture(GeneratedServiceClassTestHarnes
         $periodId = (int)InterfaceDB::fetchColumn(
             'SELECT id FROM accounting_periods WHERE company_id = :company_id',
             ['company_id' => $companyId]
+        );
+        InterfaceDB::prepareExecute(
+            'INSERT INTO corporation_tax_periods (
+                company_id, accounting_period_id, sequence_no, period_start, period_end, status
+             ) VALUES (
+                :company_id, :accounting_period_id, 1, :period_start, :period_end, :status
+             )',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $periodId,
+                'period_start' => '2025-01-01',
+                'period_end' => '2025-12-31',
+                'status' => 'open',
+            ]
         );
         foreach (['Primary Director', 'Other Director'] as $index => $name) {
             InterfaceDB::prepareExecute(
@@ -366,6 +393,15 @@ function directorLoanReclassificationInsertLine(
             'credit' => number_format($debit, 2, '.', ''),
             'description' => 'DLA reclassification fixture counter-entry',
         ]
+    );
+    $ct600a = new \eel_accounts\Service\Ct600aService();
+    $ct600a->saveReview(
+        (int)$fixture['company_id'],
+        (int)$fixture['accounting_period_id'],
+        array_fill_keys(array_keys($ct600a->reviewQuestions()), 'no'),
+        'director',
+        'Test Director',
+        'Director Loan reconciliation fixture.'
     );
     return (int)InterfaceDB::fetchColumn(
         'SELECT id FROM journal_lines WHERE journal_id = :journal_id',

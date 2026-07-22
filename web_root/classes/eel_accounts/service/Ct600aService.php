@@ -38,6 +38,17 @@ final class Ct600aService
     /** @return array<string,mixed> */
     public function fetchForAccountingPeriod(int $companyId, int $accountingPeriodId): array
     {
+        $key = \eel_accounts\Support\RequestCache::key('fetch', $companyId, $accountingPeriodId);
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'tax.ct600a',
+            $key,
+            fn(): array => $this->fetchForAccountingPeriodUncached($companyId, $accountingPeriodId)
+        );
+    }
+
+    /** @return array<string,mixed> */
+    private function fetchForAccountingPeriodUncached(int $companyId, int $accountingPeriodId): array
+    {
         if (!$this->schemaReady()) {
             return ['available' => false, 'errors' => ['Apply database migration 2026_07_21_005_ct600a_accounting_period_review.sql.'], 'periods' => []];
         }
@@ -47,18 +58,51 @@ final class Ct600aService
              ORDER BY sequence_no, id',
             ['company_id' => $companyId, 'period_id' => $accountingPeriodId, 'superseded' => 'superseded']
         );
+        $review = $this->reviewStatus($companyId, $accountingPeriodId);
         return [
             'available' => true,
             'errors' => [],
             'questions' => $this->reviewQuestions(),
-            'review' => $this->reviewStatus($companyId, $accountingPeriodId),
+            'review' => $review,
             'parties' => (new OwnershipPartyService())->fetchSummary($companyId)['parties'] ?? [],
             'periods' => array_map(fn(array $period): array => $this->displayModelForPeriod(
                 $companyId,
                 $accountingPeriodId,
-                $period
+                $period,
+                $review
             ), $periods),
         ];
+    }
+
+    /**
+     * Lightweight accounting-period declaration state for cards that do not
+     * need the complete CT600A period models.
+     *
+     * @return array<string,mixed>
+     */
+    public function fetchReviewForAccountingPeriod(int $companyId, int $accountingPeriodId): array
+    {
+        $key = \eel_accounts\Support\RequestCache::key('review-fetch', $companyId, $accountingPeriodId);
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'tax.ct600a',
+            $key,
+            function () use ($companyId, $accountingPeriodId): array {
+                if (!$this->schemaReady()) {
+                    return [
+                        'available' => false,
+                        'errors' => ['Apply database migration 2026_07_21_005_ct600a_accounting_period_review.sql.'],
+                        'questions' => $this->reviewQuestions(),
+                        'review' => [],
+                    ];
+                }
+                return [
+                    'available' => true,
+                    'errors' => [],
+                    'questions' => $this->reviewQuestions(),
+                    'review' => $this->reviewStatus($companyId, $accountingPeriodId),
+                ];
+            }
+        );
     }
 
     /**
@@ -68,6 +112,26 @@ final class Ct600aService
      * @return array<string,mixed>
      */
     public function fetchL2pReliefForAccountingPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        ?string $asOf = null
+    ): array {
+        $asOfKey = trim((string)$asOf);
+        $key = \eel_accounts\Support\RequestCache::key(
+            'l2p-relief',
+            $companyId,
+            $accountingPeriodId,
+            $asOfKey === '' ? '@today' : $asOfKey
+        );
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'tax.ct600a',
+            $key,
+            fn(): array => $this->fetchL2pReliefForAccountingPeriodUncached($companyId, $accountingPeriodId, $asOf)
+        );
+    }
+
+    /** @return array<string,mixed> */
+    private function fetchL2pReliefForAccountingPeriodUncached(
         int $companyId,
         int $accountingPeriodId,
         ?string $asOf = null
@@ -149,14 +213,43 @@ final class Ct600aService
     }
 
     /** @return array<string,mixed> */
-    private function displayModelForPeriod(int $companyId, int $accountingPeriodId, array $period): array
+    private function displayModelForPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        array $period,
+        array $review
+    ): array
     {
         $ctPeriodId = (int)($period['id'] ?? 0);
-        return $this->build($companyId, $accountingPeriodId, $ctPeriodId);
+        return $this->buildUncached($companyId, $accountingPeriodId, $ctPeriodId, null, $review);
     }
 
     /** @return array<string,mixed> */
     public function build(int $companyId, int $accountingPeriodId, int $ctPeriodId, ?string $asOf = null): array
+    {
+        $asOfKey = trim((string)$asOf);
+        $key = \eel_accounts\Support\RequestCache::key(
+            'build',
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId,
+            $asOfKey === '' ? '@today' : $asOfKey
+        );
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'tax.ct600a',
+            $key,
+            fn(): array => $this->buildUncached($companyId, $accountingPeriodId, $ctPeriodId, $asOf)
+        );
+    }
+
+    /** @return array<string,mixed> */
+    private function buildUncached(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        ?string $asOf = null,
+        ?array $resolvedReview = null
+    ): array
     {
         if (!$this->schemaReady()) {
             return ['available' => false, 'errors' => ['Apply database migration 2026_07_21_005_ct600a_accounting_period_review.sql.']];
@@ -193,7 +286,7 @@ final class Ct600aService
         }
         $events = $this->events($companyId, $accountingPeriodId, $ctPeriodId);
         $events = $this->withReliefDueDates($companyId, $events, 'event_date');
-        $review = $this->reviewStatus($companyId, $accountingPeriodId);
+        $review = $resolvedReview ?? $this->reviewStatus($companyId, $accountingPeriodId);
         $model = $this->buildFromEvidence($period, $s455, $events, $review, $asOfDate);
         $result = $model + [
             'available' => true,
@@ -571,6 +664,7 @@ final class Ct600aService
              'approved_by'=>$approver,'note'=>trim($note) !== '' ? trim($note) : null,
              'manifest'=>$this->canonicalJson($manifest),'basis_hash'=>$basisHash]
         );
+        $this->invalidateReadCache();
         $status = $this->reviewStatus($companyId, $accountingPeriodId);
         return ['success' => true, 'errors' => [], 'review' => $status];
     }
@@ -612,6 +706,7 @@ final class Ct600aService
              'event_date'=>$date,'origin_date'=>$originDate,'amount'=>$amount,'source_type'=>$sourceType,'source_id'=>$sourceId?:null,
              'reference'=>$reference,'explanation'=>$explanation,'matching'=>$matching,'role'=>$role,'approved_by'=>$approver]
         );
+        $this->invalidateReadCache();
         return ['success'=>true,'errors'=>[]];
     }
 
@@ -622,10 +717,26 @@ final class Ct600aService
             ['id'=>$eventId,'company_id'=>$companyId,'period_id'=>$accountingPeriodId]);
         if (!is_array($row)) { return ['success'=>false,'errors'=>['The CT600A event could not be found.']]; }
         \InterfaceDB::prepareExecute('DELETE FROM corporation_tax_ct600a_events WHERE id=:id',['id'=>$eventId]);
+        $this->invalidateReadCache();
         return ['success'=>true,'errors'=>[]];
     }
 
+    private function invalidateReadCache(): void
+    {
+        \eel_accounts\Support\RequestCache::forgetNamespace('tax.ct600a');
+    }
+
     private function reviewStatus(int $companyId, int $accountingPeriodId): array
+    {
+        $key = \eel_accounts\Support\RequestCache::key('review-status', $companyId, $accountingPeriodId);
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'tax.ct600a',
+            $key,
+            fn(): array => $this->reviewStatusUncached($companyId, $accountingPeriodId)
+        );
+    }
+
+    private function reviewStatusUncached(int $companyId, int $accountingPeriodId): array
     {
         $row=\InterfaceDB::fetchOne(
             'SELECT * FROM corporation_tax_ct600a_accounting_reviews
@@ -675,6 +786,16 @@ final class Ct600aService
     }
 
     private function accountingPeriodEvidenceManifest(int $companyId, int $accountingPeriodId): array
+    {
+        $key = \eel_accounts\Support\RequestCache::key('evidence-manifest', $companyId, $accountingPeriodId);
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'tax.ct600a',
+            $key,
+            fn(): array => $this->accountingPeriodEvidenceManifestUncached($companyId, $accountingPeriodId)
+        );
+    }
+
+    private function accountingPeriodEvidenceManifestUncached(int $companyId, int $accountingPeriodId): array
     {
         $periods = \InterfaceDB::fetchAll(
             'SELECT id FROM corporation_tax_periods

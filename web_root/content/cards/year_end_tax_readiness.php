@@ -185,7 +185,9 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
                 ['Tax basis', $this->badge($freezeReady ? 'success' : 'danger', $freezeReady ? 'Ready to freeze' : 'Action required'), true],
             ]) . '
             <div class="helper">This total is the Corporation Tax amount due to HMRC for the accounting period: CT600 profit-tax liability plus CT600A loan-tax liability.</div>
-            ' . $this->diagnosticsHtml(
+        </section>
+        <section class="panel-soft stack">'
+            . $this->diagnosticsHtml(
                 (array)($taxReadiness['blocking_diagnostics'] ?? []),
                 'Features not supported by EEL Accounts',
                 $blockerCount === 0 ? 'No amount-affecting Corporation Tax issues remain.' : ''

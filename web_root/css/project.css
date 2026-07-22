@@ -3248,6 +3248,20 @@
   gap: 0.45rem;
 }
 
+.dividend-capacity-summary-card.has-summary-card-pill {
+  position: relative;
+}
+
+.dividend-capacity-summary-card.has-summary-card-pill .summary-label {
+  padding-right: 7rem;
+}
+
+.summary-card-pill {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+}
+
 .dividend-capacity-summary-card .summary-value,
 .dividend-capacity-summary-card .helper {
   margin-top: 0;

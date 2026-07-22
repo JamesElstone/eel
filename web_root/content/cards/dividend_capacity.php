@@ -97,9 +97,9 @@ final class _dividend_capacityCard extends CardBaseFramework
     {
         $reliable = !empty($capacity['reserves_reliable']);
 
-        return '<div class="summary-card dividend-capacity-summary-card">
+        return '<div class="summary-card dividend-capacity-summary-card has-summary-card-pill">
             <div class="summary-label">Reserve basis</div>
-            <div class="summary-value"><span class="badge ' . HelperFramework::escape($reliable ? 'success' : 'danger') . '">' . HelperFramework::escape($reliable ? 'Reserve basis verified' : 'Reserve basis blocked') . '</span></div>
+            <div class="summary-card-pill"><span class="badge ' . HelperFramework::escape($reliable ? 'success' : 'danger') . '">' . HelperFramework::escape($reliable ? 'Reserve basis verified' : 'Reserve basis blocked') . '</span></div>
         </div>';
     }
 
@@ -132,12 +132,11 @@ final class _dividend_capacityCard extends CardBaseFramework
                     'accounting_period_id' => $accountingPeriodId,
                 ]
             );
-            $html .= '<div class="summary-card dividend-capacity-summary-card">
+            $badgeHtml = '<span class="badge ' . HelperFramework::escape($this->badgeClass($severity)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($severity, '_')) . '</span>';
+            $html .= '<div class="summary-card dividend-capacity-summary-card has-summary-card-pill">
                 <div class="summary-label">' . HelperFramework::escape((string)($warning['title'] ?? 'Warning')) . '</div>
-                <div class="summary-value">' . ($metricValue !== ''
-                    ? HelperFramework::escape($metricValue)
-                    : '<span class="badge ' . HelperFramework::escape($this->badgeClass($severity)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($severity, '_')) . '</span>') . '</div>
-                ' . ($metricValue !== '' ? '<div><span class="badge ' . HelperFramework::escape($this->badgeClass($severity)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($severity, '_')) . '</span></div>' : '') . '
+                <div class="summary-card-pill">' . $badgeHtml . '</div>
+                ' . ($metricValue !== '' ? '<div class="summary-value">' . HelperFramework::escape($metricValue) . '</div>' : '') . '
                 <div class="helper">' . HelperFramework::escape((string)($warning['detail'] ?? '')) . '</div>
                 ' . ($actionHtml !== '' ? '<div class="actions-row">' . $actionHtml . '</div>' : '') . '
             </div>';

@@ -3259,6 +3259,26 @@
   flex: 0 0 auto;
 }
 
+.dividend-capacity-summary-card.is-success {
+  background: var(--success-soft);
+  border-color: var(--success);
+}
+
+.dividend-capacity-summary-card.is-warning {
+  background: var(--warning-soft);
+  border-color: var(--warning);
+}
+
+.dividend-capacity-summary-card.is-danger {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
+.dividend-capacity-summary-card.is-info {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+}
+
 .dividend-capacity-summary-card .summary-value,
 .dividend-capacity-summary-card .helper {
   margin-top: 0;

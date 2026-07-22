@@ -58,7 +58,7 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
             ],
         ]);
 
-        $harness->assertTrue(str_contains($html, '<div class="summary-card dividend-capacity-summary-card">'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-card dividend-capacity-summary-card has-summary-card-pill is-success">'));
         $harness->assertTrue(!str_contains($html, 'summary-card-fit'));
         $harness->assertTrue(str_contains($html, '<div class="summary-card-header"><div class="summary-label">Reserve basis</div><div class="summary-card-pill"><span class="badge success">Reserve basis verified</span></div></div>'));
         $harness->assertTrue(!str_contains($html, '<div class="summary-label">Distributable reserves</div>'));
@@ -72,6 +72,7 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
         $harness->assertTrue(str_contains($html, '<td>Classified Realised Profit</td><td>The current-period profit accepted by the reserve review as realised/distributable, before the remaining unposted CT adjustment.</td><td class="numeric">£ 50.00</td>'));
         $harness->assertTrue(str_contains($html, '<td>L2P relief receivable</td><td>Relief receivable for qualifying later repayments; it reduces the tax charge but does not rewrite the accepted CT600A A80 amount.</td><td class="numeric">£ 0.00</td>'));
         $harness->assertTrue(str_contains($html, '<td>Net estimated tax charge</td><td>Corporation Tax payable less any L2P relief receivable. This is the tax charge used in profit and reserves.</td><td class="numeric">£ 0.00</td>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-card dividend-capacity-summary-card has-summary-card-pill is-warning">'));
         $harness->assertTrue(str_contains($html, '<div class="summary-card-header"><div class="summary-label">Bank CSV coverage may be incomplete</div><div class="summary-card-pill"><span class="badge warning">Warning</span></div></div>'));
         $harness->assertTrue(str_contains($html, 'Bank CSV coverage may be incomplete'));
         $harness->assertTrue(str_contains($html, 'Open Related Workflow'));

@@ -96,8 +96,9 @@ final class _dividend_capacityCard extends CardBaseFramework
     private function reserveBasisCard(array $capacity): string
     {
         $reliable = !empty($capacity['reserves_reliable']);
+        $statusClass = $reliable ? 'is-success' : 'is-danger';
 
-        return '<div class="summary-card dividend-capacity-summary-card has-summary-card-pill">
+        return '<div class="summary-card dividend-capacity-summary-card has-summary-card-pill ' . $statusClass . '">
             <div class="summary-card-header"><div class="summary-label">Reserve basis</div><div class="summary-card-pill"><span class="badge ' . HelperFramework::escape($reliable ? 'success' : 'danger') . '">' . HelperFramework::escape($reliable ? 'Reserve basis verified' : 'Reserve basis blocked') . '</span></div></div>
         </div>';
     }
@@ -131,8 +132,9 @@ final class _dividend_capacityCard extends CardBaseFramework
                     'accounting_period_id' => $accountingPeriodId,
                 ]
             );
-            $badgeHtml = '<span class="badge ' . HelperFramework::escape($this->badgeClass($severity)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($severity, '_')) . '</span>';
-            $html .= '<div class="summary-card dividend-capacity-summary-card has-summary-card-pill">
+            $badgeClass = $this->badgeClass($severity);
+            $badgeHtml = '<span class="badge ' . HelperFramework::escape($badgeClass) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($severity, '_')) . '</span>';
+            $html .= '<div class="summary-card dividend-capacity-summary-card has-summary-card-pill is-' . HelperFramework::escape($badgeClass) . '">
                 <div class="summary-card-header"><div class="summary-label">' . HelperFramework::escape((string)($warning['title'] ?? 'Warning')) . '</div><div class="summary-card-pill">' . $badgeHtml . '</div></div>
                 ' . ($metricValue !== '' ? '<div class="summary-value">' . HelperFramework::escape($metricValue) . '</div>' : '') . '
                 <div class="helper">' . HelperFramework::escape((string)($warning['detail'] ?? '')) . '</div>

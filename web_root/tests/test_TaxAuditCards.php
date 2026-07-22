@@ -67,12 +67,14 @@ $harness->run(_tax_audit_detailCard::class, static function (GeneratedServiceCla
                 'allocation_method' => 'actual_date',
                 'rule_code' => 'staff_welfare_review',
                 'rule_version' => '1',
+                'rule_source_url' => 'https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim35500',
             ]],
             'pagination' => ['page' => 1, 'page_count' => 1, 'total_rows' => 1],
         ];
         $html = $card->render($context);
         $harness->assertTrue(str_contains($html, 'Open transaction'));
         $harness->assertTrue(str_contains($html, 'name="transaction_id" value="42"'));
+        $harness->assertTrue(str_contains($html, 'href="https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim35500"'));
         $harness->assertTrue(str_contains($html, 'Reconciled'));
         $harness->assertSame(false, str_contains($html, '<input class="input"'));
         $harness->assertSame(false, str_contains($html, 'card_action'));

@@ -91,6 +91,7 @@ final class _tax_audit_detailCard extends CardBaseFramework
                 'accounting_amount' => $row['accounting_amount'] ?? 0,
                 'tax_adjustment_amount' => $row['tax_adjustment_amount'] ?? 0,
                 'rule' => $rule !== '' ? $rule : (string)($row['tax_treatment'] ?? 'Derived computation'),
+                'source_url' => (string)($row['source_url'] ?? $row['rule_source_url'] ?? ($row['metadata']['source_url'] ?? '')),
                 'allocation' => HelperFramework::labelFromKey((string)($row['allocation_method'] ?? 'actual_date')),
                 'source_type' => (string)($row['source_type'] ?? ''),
                 'source_id' => (int)($row['source_id'] ?? 0),
@@ -116,7 +117,15 @@ final class _tax_audit_detailCard extends CardBaseFramework
             ->column(
                 'rule',
                 'Treatment / Rule',
-                html: static fn(array $row): string => '<span class="badge info">' . HelperFramework::escape((string)$row['rule']) . '</span>',
+                html: static function (array $row): string {
+                    $rule = HelperFramework::escape((string)$row['rule']);
+                    $sourceUrl = trim((string)($row['source_url'] ?? ''));
+                    if ($sourceUrl === '') {
+                        return $rule;
+                    }
+
+                    return '<a href="' . HelperFramework::escape($sourceUrl) . '" target="_blank" rel="noopener noreferrer">' . $rule . '</a>';
+                },
                 export: static fn(array $row): string => (string)$row['rule']
             )
             ->textColumn('allocation', 'Allocation')

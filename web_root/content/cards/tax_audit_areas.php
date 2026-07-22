@@ -102,7 +102,7 @@ final class _tax_audit_areasCard extends CardBaseFramework
         }
         $mode = (string)($index['mode'] ?? 'live');
         $modeClass = $mode === 'frozen' ? 'success' : ($mode === 'reconstructed' ? 'warning' : 'info');
-        return '<div class="helper tax-audit-mode-pill"><span class="badge ' . $modeClass . '">' . HelperFramework::escape((string)($index['mode_label'] ?? 'Audit preview')) . '</span></div>'
+        return '<div class="helper tax-audit-mode-pill"><span class="badge ' . $modeClass . '">' . HelperFramework::escape((string)($index['mode_label'] ?? 'Audit preview')) . '</span><a class="button button-inline" href="https://www.gov.uk/guidance/company-expenses-you-can-deduct-before-paying-corporation-tax" target="_blank" rel="noopener noreferrer">HMRC expense guidance</a></div>'
             . $selector
             . '<div class="table-scroll"><table><thead><tr><th>Tax area</th><th>Amount</th><th>Reconciliation</th><th>Sources</th><th>Action</th></tr></thead><tbody>'
             . $rows . '</tbody></table></div>';

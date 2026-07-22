@@ -201,11 +201,20 @@ $harness->run(\eel_accounts\Service\AccountingContextService::class, function (G
         $context = $result->context();
         $selectors = $result->selectors();
         $expectedAccountingPeriods = (new \eel_accounts\Repository\AccountingPeriodRepository())->fetchAccountingPeriods($requestedCompanyId);
+        $companyOption = [];
+        foreach (($selectors[0]['options'] ?? []) as $option) {
+            if ((int)($option['value'] ?? 0) === $requestedCompanyId) {
+                $companyOption = $option;
+                break;
+            }
+        }
 
         $harness->assertSame($requestedCompanyId, (int)($context['site_context']['company_id'] ?? 0));
         $harness->assertSame($requestedCompanyId, (int)($context['company']['id'] ?? 0));
         $harness->assertSame('company_id', $selectors[0]['input_name'] ?? null);
         $harness->assertSame('sidebar', $selectors[0]['slot'] ?? null);
+        $harness->assertSame('Test Context Company LTD (TESTCTX001)', $companyOption['label'] ?? null);
+        $harness->assertSame('Test Context Company LTD', $companyOption['short_label'] ?? null);
         $harness->assertSame('accounting_period_id', $selectors[1]['input_name'] ?? null);
         $harness->assertSame('topbar', $selectors[1]['slot'] ?? null);
 

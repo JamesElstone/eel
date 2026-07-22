@@ -337,7 +337,8 @@ final class AccountingContextService implements \SiteContextProviderInterface
 
             $name = trim((string)($company['company_name'] ?? ''));
             $number = trim((string)($company['company_number'] ?? ''));
-            $label = $name !== '' ? $name : 'Company #' . $id;
+            $displayName = $name !== '' ? $this->companySelectorDisplayName($name) : 'Company #' . $id;
+            $label = $displayName;
             if ($number !== '') {
                 $label .= ' (' . $number . ')';
             }
@@ -345,11 +346,16 @@ final class AccountingContextService implements \SiteContextProviderInterface
             $options[] = [
                 'value' => (string)$id,
                 'label' => $label,
-                'short_label' => $name !== '' ? $name : 'Company #' . $id,
+                'short_label' => $displayName,
             ];
         }
 
         return $options !== [] ? $options : [['value' => '', 'label' => 'No companies']];
+    }
+
+    private function companySelectorDisplayName(string $name): string
+    {
+        return preg_replace('/\\bLIMITED\\b/i', 'LTD', $name) ?? $name;
     }
 
     private function accountingPeriodOptions(array $accountingPeriods): array

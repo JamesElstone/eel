@@ -134,6 +134,13 @@ final class _journals_listCard extends CardBaseFramework
                 exportType: 'date'
             )
             ->column(
+                'id',
+                'Journal ID',
+                html: fn(array $row): string => $this->journalCell($row, (string)($row['id'] ?? '')),
+                export: fn(array $row): string => $this->journalExportValue($row, (string)($row['id'] ?? '')),
+                exportType: 'number'
+            )
+            ->column(
                 'description',
                 'Description',
                 html: fn(array $row): string => $this->journalCell($row, (string)($row['description'] ?? '')),

@@ -168,7 +168,7 @@ $harness->run(_journals_listCard::class, static function (GeneratedServiceClassT
         ]);
         $harness->assertTrue(count($tables) === 1);
         $export = $tables[0]->exportCsv();
-        $harness->assertTrue(str_contains($export, 'Date,Description,Source,Status,Total,Code,Label,CR,DR'));
+        $harness->assertTrue(str_contains($export, 'Date,"Journal ID",Description,Source,Status,Total,Code,Label,CR,DR'));
         $harness->assertTrue(str_contains($export, '5000,Purchases,,123.45'));
         $harness->assertTrue(str_contains($export, '1200,Bank,123.45,'));
         $harness->assertTrue(str_contains($export, 'Posted'));
@@ -241,6 +241,24 @@ $harness->run(_journals_listCard::class, static function (GeneratedServiceClassT
         $harness->assertSame(1, (int)$handled['journals_list']['page']);
         $harness->assertSame(30, (int)$handled['journals_list']['page_size']);
         $harness->assertSame(false, (bool)$handled['journals_list']['export_all']);
+
+        $journalLookupRequest = new RequestFramework(
+            [
+                'page' => 'journal',
+                'journals_list_keyword' => ' 2118 ',
+            ],
+            [],
+            ['REQUEST_METHOD' => 'GET'],
+            [],
+            []
+        );
+        $journalLookupContext = $card->handle($journalLookupRequest, $services, [
+            'page' => [
+                'page_id' => 'journal',
+                'page_cards' => ['journals_list'],
+            ],
+        ], ActionResultFramework::none());
+        $harness->assertSame('2118', (string)$journalLookupContext['journals_list']['keyword']);
 
         $exportRequest = new RequestFramework(
             ['page' => 'journals'],

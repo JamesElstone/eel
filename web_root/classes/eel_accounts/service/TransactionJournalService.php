@@ -372,7 +372,11 @@ final class TransactionJournalService
         ];
 
         if ($filters['keyword'] !== '') {
-            $where[] = "(j.description LIKE :keyword ESCAPE '!'
+            if ((int)$filters['journal_id'] > 0) {
+                $where[] = 'j.id = :keyword_journal_id';
+                $params['keyword_journal_id'] = (int)$filters['journal_id'];
+            } else {
+                $where[] = "(j.description LIKE :keyword ESCAPE '!'
                 OR COALESCE(j.source_ref, '') LIKE :keyword ESCAPE '!'
                 OR EXISTS (
                     SELECT 1
@@ -387,7 +391,8 @@ final class TransactionJournalService
                           OR COALESCE(keyword_ca.account_name, '') LIKE :keyword ESCAPE '!'
                       )
                 ))";
-            $params['keyword'] = '%' . $this->escapeLike((string)$filters['keyword']) . '%';
+                $params['keyword'] = '%' . $this->escapeLike((string)$filters['keyword']) . '%';
+            }
         }
 
         if ((int)$filters['source_account_id'] > 0) {
@@ -566,6 +571,7 @@ final class TransactionJournalService
 
         return [
             'keyword' => trim((string)($filters['keyword'] ?? '')),
+            'journal_id' => $this->normaliseJournalIdFromKeyword((string)($filters['keyword'] ?? '')),
             'amount' => $this->normaliseJournalAmount((string)($filters['amount'] ?? '')),
             'side' => $side,
             'source_account_id' => max(0, (int)($filters['source_account_id'] ?? 0)),
@@ -595,6 +601,21 @@ final class TransactionJournalService
         }
 
         return number_format($amount, 2, '.', '');
+    }
+
+    private function normaliseJournalIdFromKeyword(string $keyword): int
+    {
+        $keyword = trim($keyword);
+        if (preg_match('/^\d+$/', $keyword) !== 1) {
+            return 0;
+        }
+
+        $journalId = ltrim($keyword, '0');
+        if ($journalId === '' || strlen($journalId) > 10 || (strlen($journalId) === 10 && strcmp($journalId, '2147483647') > 0)) {
+            return 0;
+        }
+
+        return (int)$journalId;
     }
 
     private function normaliseJournalSide(string $value): string

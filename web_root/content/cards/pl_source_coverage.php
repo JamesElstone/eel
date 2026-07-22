@@ -106,12 +106,40 @@ final class _pl_source_coverageCard extends CardBaseFramework
             ->column(
                 'journal_id',
                 'Journal',
-                html: static fn(array $row): string => HelperFramework::escape('#' . (int)($row['journal_id'] ?? 0)),
+                html: static fn(array $row): string => self::journalLink((int)($row['journal_id'] ?? 0)),
                 export: static fn(array $row): string => (string)(int)($row['journal_id'] ?? 0),
                 exportType: 'number'
             )
-            ->textColumn('source_type', 'Source')
+            ->column(
+                'source_type',
+                'Source',
+                html: static fn(array $row): string => self::evidenceSourceLabel((string)($row['source_type'] ?? '')),
+                export: static fn(array $row): string => self::evidenceSourceLabel((string)($row['source_type'] ?? ''))
+            )
             ->textColumn('source_ref', 'Reference')
             ->textColumn('reason', 'Reason');
+    }
+
+    private static function journalLink(int $journalId): string
+    {
+        if ($journalId <= 0) {
+            return '';
+        }
+
+        $url = '?page=journal&show_card=journals_list&journals_list_keyword=' . rawurlencode((string)$journalId);
+
+        return '<a class="button button-inline" href="' . HelperFramework::escape($url) . '">'
+            . HelperFramework::escape('#' . $journalId)
+            . '</a>';
+    }
+
+    private static function evidenceSourceLabel(string $sourceType): string
+    {
+        return match (trim($sourceType)) {
+            'director_loan_offset' => 'System-generated Director Loan journal',
+            'dividend' => 'Dividend declaration / void',
+            '' => 'Unknown journal source',
+            default => ucwords(str_replace('_', ' ', trim($sourceType))),
+        };
     }
 }

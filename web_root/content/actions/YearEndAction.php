@@ -48,6 +48,13 @@ final class YearEndAction implements ActionInterfaceFramework
                 return $this->result(false, ['You do not have permission to create the automatic pre-close database backup.']);
             }
 
+            if ($this->requiresResolvedSourceCoverage($intent, $request)) {
+                $sourceCoverageBlock = $this->sourceCoverageBlockMessage($companyId, $accountingPeriodId);
+                if ($sourceCoverageBlock !== null) {
+                    return $this->result(false, [$sourceCoverageBlock]);
+                }
+            }
+
             $result = match ($intent) {
                 'recalculate' => (new \eel_accounts\Service\YearEndChecklistService())->recalculateChecklist($companyId, $accountingPeriodId, $actor),
                 'lock_period' => $this->lockPeriodWithProgress($companyId, $accountingPeriodId, $actor, $services->actionProgress()),
@@ -277,6 +284,29 @@ final class YearEndAction implements ActionInterfaceFramework
     private function requiresSingleDirectorCheck(string $intent): bool
     {
         return false;
+    }
+
+    private function requiresResolvedSourceCoverage(string $intent, RequestFramework $request): bool
+    {
+        return $intent === 'lock_period'
+            || ($intent === 'save_retained_earnings_close_acknowledgement'
+                && $this->truthy($request->input('retained_earnings_close_acknowledgement', '0')));
+    }
+
+    private function sourceCoverageBlockMessage(int $companyId, int $accountingPeriodId): ?string
+    {
+        $coverage = (new \eel_accounts\Service\ProfitLossService())
+            ->getSourceCoverage($companyId, $accountingPeriodId);
+        $summary = (array)($coverage['coverage_summary'] ?? []);
+        if ($summary === [] || !empty($summary['reconciled'])) {
+            return null;
+        }
+
+        $uncovered = max(0, (int)($summary['uncovered_journal_count'] ?? 0));
+        $posted = max(0, (int)($summary['posted_journal_count'] ?? 0));
+
+        return 'Source Coverage is under review: ' . $uncovered . ' of ' . $posted
+            . ' posted journals remain unverified. Resolve the Data Quality review before approving or locking the Profit & Loss close.';
     }
 
     private function requiresActionVatSupportScopeCheck(string $intent): bool

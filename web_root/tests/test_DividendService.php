@@ -147,7 +147,7 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
                    AND source_ref = :source_ref',
                 [
                     'company_id' => $fixture['company_id'],
-                    'source_type' => 'manual',
+                    'source_type' => 'dividend',
                     'source_ref' => 'dividend:transaction:' . $fixture['transaction_id'],
                 ]
             ));
@@ -243,6 +243,30 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
             $harness->assertSame(true, trim((string)($voucher['voided_at'] ?? '')) !== '');
             $harness->assertSame(false, str_contains((string)($voucher['voucher_text'] ?? ''), 'Status: VOIDED'));
             $harness->assertSame(false, str_contains((string)($voucher['minutes_text'] ?? ''), 'Subsequent record: This dividend voucher was voided'));
+
+            $evidenceRows = InterfaceDB::fetchAll(
+                'SELECT j.id,
+                        j.source_type,
+                        j.source_ref,
+                        j.journal_date,
+                        COALESCE(SUM(jl.debit), 0) AS debit_total,
+                        COALESCE(SUM(jl.credit), 0) AS credit_total
+                 FROM journals j
+                 INNER JOIN journal_lines jl ON jl.journal_id = j.id
+                 WHERE j.id IN (:journal_id, :reversal_journal_id)
+                 GROUP BY j.id, j.source_type, j.source_ref, j.journal_date',
+                [
+                    'journal_id' => $journalId,
+                    'reversal_journal_id' => $reversalJournalId,
+                ]
+            );
+            $evidence = (new \eel_accounts\Service\JournalSourceEvidenceService())->verify(
+                $evidenceRows,
+                $fixture['company_id'],
+                $fixture['accounting_period_id']
+            );
+            $harness->assertSame(true, (bool)($evidence[$journalId]['verified'] ?? false));
+            $harness->assertSame(true, (bool)($evidence[$reversalJournalId]['verified'] ?? false));
 
             $netDividendPaid = (float)InterfaceDB::fetchColumn(
                 'SELECT COALESCE(SUM(jl.debit - jl.credit), 0)

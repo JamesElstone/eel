@@ -779,7 +779,7 @@ CREATE TABLE `journals` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
   `accounting_period_id` int(11) NOT NULL,
-  `source_type` enum('bank_csv','director_loan_register','expense_register','manual','asset_register','asset_depreciation','asset_disposal') NOT NULL,
+  `source_type` enum('bank_csv','director_loan_register','director_loan_offset','expense_register','manual','dividend','asset_register','asset_depreciation','asset_disposal') NOT NULL,
   `source_ref` varchar(255) DEFAULT NULL,
   `journal_date` date NOT NULL,
   `description` varchar(255) NOT NULL,
@@ -3720,6 +3720,8 @@ INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_22_003_dividend_voucher_shareholder_links.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_22_004_append_only_journal_guards.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_22_005_dividend_journal_source_evidence.sql');
 INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
 SELECT DISTINCT `role_id`, 'tax_companies_house_accounts_schemas'
 FROM `role_card_permissions`

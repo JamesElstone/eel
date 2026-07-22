@@ -40,7 +40,7 @@ final class _year_end_profit_loss_confirmCard extends CardBaseFramework
 
     protected function additionalInvalidationFacts(): array
     {
-        return ['year.end.state', 'year.end.checklist', 'year.end.retained.earnings'];
+        return ['page.context', 'year.end.state', 'year.end.checklist', 'year.end.retained.earnings'];
     }
 
     public function handleError(string $serviceKey, array $error, array $context): string
@@ -85,15 +85,22 @@ final class _year_end_profit_loss_confirmCard extends CardBaseFramework
         $acknowledgement = (array)($close['acknowledgement'] ?? []);
         $reserveReview = (array)($close['reserve_review'] ?? []);
         $reserveReviewCurrent = !empty($reserveReview['snapshot_current']);
-        $canAcknowledge = !empty($close['can_acknowledge']);
+        $sourceCoverageGate = $this->sourceCoverageGate($context);
+        $canAcknowledge = !empty($close['can_acknowledge']) && !$sourceCoverageGate['blocked'];
         $blockedReason = (string)(($close['prior_period_dependency'] ?? [])['detail'] ?? '');
+        if ($sourceCoverageGate['blocked']) {
+            $blockedReason = (string)$sourceCoverageGate['reason'];
+        }
         $dependencyHtml = '';
         foreach ((array)($close['warnings'] ?? []) as $warning) {
             $dependencyHtml .= '<div class="helper"><span class="badge warning">Prior period</span> ' . HelperFramework::escape((string)$warning) . '</div>';
         }
+        $sourceCoverageHtml = $sourceCoverageGate['blocked']
+            ? '<div class="helper"><span class="badge warning">Source Coverage review required</span> ' . HelperFramework::escape((string)$sourceCoverageGate['reason']) . '</div>'
+            : '';
         $acknowledgementForm = $this->acknowledgementHtml(
-            $acknowledged && !$stale,
-            (string)($close['acknowledgement_state'] ?? 'absent'),
+            $acknowledged && !$stale && !$sourceCoverageGate['blocked'],
+            $sourceCoverageGate['blocked'] ? 'stale' : (string)($close['acknowledgement_state'] ?? 'absent'),
             (string)($acknowledgement['acknowledged_at'] ?? ''),
             (string)($acknowledgement['acknowledged_by'] ?? ''),
             (string)($acknowledgement['note'] ?? ''),
@@ -118,7 +125,7 @@ final class _year_end_profit_loss_confirmCard extends CardBaseFramework
                 ' . $this->summaryCard('Retained earnings movement', $this->money($companySettings, $summary['retained_earnings_movement'] ?? 0)) . '
             </div>
             <div class="helper">' . HelperFramework::escape($this->balanceEquation($companySettings, $summary)) . '</div>
-            ' . $dependencyHtml . $reserveReviewHtml . $pendingDepreciationHtml . $pendingPrepaymentHtml . $staleHtml . $existingHtml . '
+            ' . $dependencyHtml . $sourceCoverageHtml . $reserveReviewHtml . $pendingDepreciationHtml . $pendingPrepaymentHtml . $staleHtml . $existingHtml . '
             <div class="table-scroll panel-soft">
                 <table>
                     <thead><tr><th>Nominal</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead>
@@ -127,6 +134,25 @@ final class _year_end_profit_loss_confirmCard extends CardBaseFramework
             </div>
             ' . $acknowledgementForm . '
         </section>';
+    }
+
+    /** @return array{blocked: bool, reason: string} */
+    private function sourceCoverageGate(array $context): array
+    {
+        $coverageSummary = (array)($context['profit_loss']['source_coverage']['coverage_summary'] ?? []);
+        if ($coverageSummary === [] || !empty($coverageSummary['reconciled'])) {
+            return ['blocked' => false, 'reason' => ''];
+        }
+
+        $uncovered = max(0, (int)($coverageSummary['uncovered_journal_count'] ?? 0));
+        $posted = max(0, (int)($coverageSummary['posted_journal_count'] ?? 0));
+        $journalLabel = $uncovered === 1 ? 'journal remains' : 'journals remain';
+
+        return [
+            'blocked' => true,
+            'reason' => 'Source Coverage is under review: ' . $uncovered . ' of ' . $posted
+                . ' posted ' . $journalLabel . ' unverified. Resolve the Data Quality review before approving the Profit & Loss close.',
+        ];
     }
 
     private function acknowledgementHtml(bool $acknowledged, string $state, string $acknowledgedAt, string $acknowledgedBy, string $note, int $companyId, int $accountingPeriodId, bool $canAcknowledge, string $blockedReason): string

@@ -538,6 +538,7 @@ final class ProfitLossService
         $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
         $sources = [
             'bank_csv' => ['label' => 'Bank CSV journals'],
+            'dividend' => ['label' => 'Dividend declarations and voids'],
             'director_loan_offset' => ['label' => 'Director loan control reclassification journals'],
             'expense_register' => ['label' => 'Expense register journals'],
             'asset_depreciation' => ['label' => 'Asset depreciation journals'],
@@ -581,9 +582,18 @@ final class ProfitLossService
                AND j.is_posted = 1
                AND j.journal_date BETWEEN :period_start AND :period_end
                AND jem_close.id IS NULL
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM journal_entry_metadata jem_director_loan
+                   WHERE jem_director_loan.journal_id = j.id
+                     AND jem_director_loan.journal_tag = :director_loan_offset_tag
+                     AND jem_director_loan.entry_mode = :system_generated_entry_mode
+               )
              GROUP BY j.id, j.source_type, j.source_ref, j.journal_date, j.description',
             [
                 'close_journal_tag' => \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_TAG,
+                'director_loan_offset_tag' => \eel_accounts\Service\DirectorLoanReconciliationService::OFFSET_JOURNAL_TAG,
+                'system_generated_entry_mode' => 'system_generated',
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
                 'period_start' => $periodStart,
@@ -598,9 +608,11 @@ final class ProfitLossService
             $evidence = (array)($evidenceByJournal[$journalId] ?? []);
             $sourceRef = (string)($row['source_ref'] ?? '');
             $description = strtolower((string)($row['description'] ?? ''));
-            $sourceType = str_starts_with($sourceRef, 'meta:director_loan') || str_contains($description, 'director loan')
-                ? 'director_loan_offset'
-                : (string)($row['source_type'] ?? '');
+            $sourceType = str_starts_with($sourceRef, 'dividend:')
+                ? 'dividend'
+                : (str_starts_with($sourceRef, 'meta:director_loan') || str_contains($description, 'director loan')
+                    ? 'director_loan_offset'
+                    : (string)($row['source_type'] ?? ''));
             if (!isset($sources[$sourceType])) {
                 $sourceType = 'other';
             }
@@ -646,7 +658,9 @@ final class ProfitLossService
             }
             $evidenceFailures[] = [
                 'journal_id' => $journalId,
-                'source_type' => (string)($row['source_type'] ?? ''),
+                'source_type' => str_starts_with((string)($row['source_ref'] ?? ''), 'dividend:')
+                    ? 'dividend'
+                    : (string)($row['source_type'] ?? ''),
                 'source_ref' => (string)($row['source_ref'] ?? ''),
                 'reason' => (string)($evidence['reason'] ?? 'Source evidence could not be verified.'),
             ];

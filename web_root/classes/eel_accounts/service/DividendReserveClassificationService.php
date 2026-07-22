@@ -654,7 +654,7 @@ final class DividendReserveClassificationService
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              WHERE j.company_id = :company_id
                AND j.accounting_period_id = :accounting_period_id
-               AND (j.is_posted = 1 OR (j.source_type = :draft_source_type AND j.source_ref LIKE :draft_source_ref))
+               AND (j.is_posted = 1 OR (j.source_type IN (:dividend_draft_source_type, :legacy_draft_source_type) AND j.source_ref LIKE :draft_source_ref))
                AND j.journal_date BETWEEN :period_start AND :as_at_date
                AND jl.nominal_account_id = :nominal_account_id',
             [
@@ -663,7 +663,8 @@ final class DividendReserveClassificationService
                 'period_start' => $periodStart,
                 'as_at_date' => $asAtDate,
                 'nominal_account_id' => $nominalId,
-                'draft_source_type' => 'manual',
+                'dividend_draft_source_type' => 'dividend',
+                'legacy_draft_source_type' => 'manual',
                 'draft_source_ref' => 'dividend:%',
             ]
         ), 2);

@@ -13,6 +13,7 @@ final class DirectorLoanReconciliationService
 {
     public const OFFSET_JOURNAL_TAG = 'director_loan_offset';
     public const OFFSET_JOURNAL_KEY = 'primary';
+    public const OFFSET_JOURNAL_SOURCE_TYPE = 'director_loan_offset';
     public const OFFSET_JOURNAL_DESCRIPTION = 'Director loan control reclassification';
     public const LEGACY_REPAIR_JOURNAL_KEY_PREFIX = 'legacy-unattributed-reversal:';
     public const LEGACY_REPAIR_JOURNAL_DESCRIPTION = 'Legacy Director Loan offset reversal';
@@ -296,7 +297,8 @@ final class DirectorLoanReconciliationService
             null,
             null,
             'Applies the calculated same-director control-account reclassification. No balances belonging to different directors are offset.',
-            $changedBy
+            $changedBy,
+            self::OFFSET_JOURNAL_SOURCE_TYPE
         );
         if (!empty($result['success'])) {
             $result['context'] = $this->fetchContext($companyId, $accountingPeriodId);
@@ -360,7 +362,8 @@ final class DirectorLoanReconciliationService
             count($sourceJournalIds) === 1 ? $sourceJournalIds[0] : null,
             null,
             $notes,
-            $changedBy
+            $changedBy,
+            self::OFFSET_JOURNAL_SOURCE_TYPE
         );
         if (empty($result['success'])) {
             return $result;

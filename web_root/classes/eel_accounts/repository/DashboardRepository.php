@@ -787,7 +787,7 @@ final class DashboardRepository
                            SELECT 1
                            FROM journals dividend_j
                            WHERE dividend_j.company_id = t.company_id
-                             AND dividend_j.source_type = 'manual'
+                             AND dividend_j.source_type IN ('dividend', 'manual')
                              AND dividend_j.source_ref = CONCAT('dividend:transaction:', t.id)
                        ) AS has_dividend_declaration
                        {$interAccountSelect}
@@ -958,7 +958,7 @@ final class DashboardRepository
                            SELECT 1
                            FROM journals dividend_j
                            WHERE dividend_j.company_id = t.company_id
-                             AND dividend_j.source_type = 'manual'
+                             AND dividend_j.source_type IN ('dividend', 'manual')
                              AND dividend_j.source_ref = CONCAT('dividend:transaction:', t.id)
                        ) AS has_dividend_declaration
                 FROM transactions t

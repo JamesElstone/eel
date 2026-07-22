@@ -22,6 +22,7 @@ $harness->run(
             \eel_accounts\Service\JournalSourceEvidenceService::class,
             'does not treat an arbitrary balanced manual reference as verified evidence',
             static function () use ($harness, $service): void {
+                $unlinkedDividendJournalId = random_int(1000000000, 2000000000);
                 $results = $service->verify([
                     [
                         'id' => 1,
@@ -44,6 +45,13 @@ $harness->run(
                         'debit_total' => 50.00,
                         'credit_total' => 50.00,
                     ],
+                    [
+                        'id' => $unlinkedDividendJournalId,
+                        'source_type' => 'manual',
+                        'source_ref' => 'dividend:unlinked:manual-reference',
+                        'debit_total' => 100.00,
+                        'credit_total' => 100.00,
+                    ],
                 ], 1, 1);
 
                 $harness->assertSame(false, (bool)($results[1]['verified'] ?? true));
@@ -53,6 +61,7 @@ $harness->run(
                     true,
                     str_contains((string)($results[3]['reason'] ?? ''), 'no supported evidence check')
                 );
+                $harness->assertSame(false, (bool)($results[$unlinkedDividendJournalId]['verified'] ?? true));
             }
         );
 
@@ -62,8 +71,10 @@ $harness->run(
             static function () use ($harness, $service): void {
                 InterfaceDB::beginTransaction();
                 try {
-                    StandardNominalTestFixture::ensureNominals(['1000']);
+                    StandardNominalTestFixture::ensureNominals(['1000', '2000', '3000']);
                     $nominalId = StandardNominalTestFixture::id('1000');
+                    $secondNominalId = StandardNominalTestFixture::id('2000');
+                    $thirdNominalId = StandardNominalTestFixture::id('3000');
                     $marker = substr(hash('sha256', __FILE__ . microtime(true)), 0, 10);
                     InterfaceDB::prepareExecute(
                         'INSERT INTO companies (company_name, company_number, is_active)
@@ -264,6 +275,85 @@ $harness->run(
                         (string)($results[$claimJournalId]['reason'] ?? ''),
                         'amount does not reconcile'
                     ));
+
+                    if (InterfaceDB::tableExists('dividend_vouchers')) {
+                        $declarationJournalId = journalSourceEvidenceTestJournalWithLines(
+                            $companyId,
+                            $periodId,
+                            'dividend',
+                            'dividend:transaction:' . $transactionId,
+                            '2025-03-15',
+                            [
+                                [$nominalId, 100.00, 0.00],
+                                [$secondNominalId, 0.00, 100.00],
+                            ]
+                        );
+                        $reversalJournalId = journalSourceEvidenceTestJournalWithLines(
+                            $companyId,
+                            $periodId,
+                            'dividend',
+                            'dividend:void:' . $declarationJournalId,
+                            '2025-03-15',
+                            [
+                                [$secondNominalId, 100.00, 0.00],
+                                [$thirdNominalId, 0.00, 100.00],
+                            ]
+                        );
+                        InterfaceDB::prepareExecute(
+                            'INSERT INTO dividend_vouchers (
+                                company_id, accounting_period_id, journal_id, transaction_id, reversal_journal_id,
+                                company_name, shareholder_name, director_name, declaration_date, payment_date,
+                                amount, description, voucher_text, minutes_text, voided_at, voided_by, void_reason
+                             ) VALUES (
+                                :company_id, :accounting_period_id, :journal_id, :transaction_id, :reversal_journal_id,
+                                :company_name, :shareholder_name, :director_name, :declaration_date, :payment_date,
+                                :amount, :description, :voucher_text, :minutes_text, :voided_at, :voided_by, :void_reason
+                             )',
+                            [
+                                'company_id' => $companyId,
+                                'accounting_period_id' => $periodId,
+                                'journal_id' => $declarationJournalId,
+                                'transaction_id' => $transactionId,
+                                'reversal_journal_id' => $reversalJournalId,
+                                'company_name' => 'Journal evidence fixture ' . $marker,
+                                'shareholder_name' => 'Journal Evidence Shareholder',
+                                'director_name' => 'Journal Evidence Director',
+                                'declaration_date' => '2025-03-15',
+                                'payment_date' => '2025-03-15',
+                                'amount' => '100.00',
+                                'description' => 'Journal evidence void fixture',
+                                'voucher_text' => 'Voucher',
+                                'minutes_text' => 'Minutes',
+                                'voided_at' => '2025-03-16 10:00:00',
+                                'voided_by' => 'test',
+                                'void_reason' => 'Correction fixture',
+                            ]
+                        );
+                        $brokenReversalEvidence = $service->verify([
+                            [
+                                'id' => $declarationJournalId,
+                                'source_type' => 'dividend',
+                                'source_ref' => 'dividend:transaction:' . $transactionId,
+                                'journal_date' => '2025-03-15',
+                                'debit_total' => 100.00,
+                                'credit_total' => 100.00,
+                            ],
+                            [
+                                'id' => $reversalJournalId,
+                                'source_type' => 'dividend',
+                                'source_ref' => 'dividend:void:' . $declarationJournalId,
+                                'journal_date' => '2025-03-15',
+                                'debit_total' => 100.00,
+                                'credit_total' => 100.00,
+                            ],
+                        ], $companyId, $periodId);
+                        $harness->assertSame(false, (bool)($brokenReversalEvidence[$declarationJournalId]['verified'] ?? true));
+                        $harness->assertSame(false, (bool)($brokenReversalEvidence[$reversalJournalId]['verified'] ?? true));
+                        $harness->assertTrue(str_contains(
+                            (string)($brokenReversalEvidence[$reversalJournalId]['reason'] ?? ''),
+                            'exact debit and credit inversion'
+                        ));
+                    }
 
                 } finally {
                     if (InterfaceDB::inTransaction()) {
@@ -506,6 +596,57 @@ function journalSourceEvidenceTestJournal(
                 'nominal_account_id' => $nominalId,
                 'debit' => $debit,
                 'credit' => $credit,
+            ]
+        );
+    }
+
+    return $journalId;
+}
+
+/** @param list<array{0: int, 1: float, 2: float}> $lines */
+function journalSourceEvidenceTestJournalWithLines(
+    int $companyId,
+    int $periodId,
+    string $sourceType,
+    string $sourceRef,
+    string $journalDate,
+    array $lines
+): int {
+    InterfaceDB::prepareExecute(
+        'INSERT INTO journals (
+            company_id, accounting_period_id, source_type, source_ref,
+            journal_date, description, is_posted
+         ) VALUES (
+            :company_id, :accounting_period_id, :source_type, :source_ref,
+            :journal_date, :description, 1
+         )',
+        [
+            'company_id' => $companyId,
+            'accounting_period_id' => $periodId,
+            'source_type' => $sourceType,
+            'source_ref' => $sourceRef,
+            'journal_date' => $journalDate,
+            'description' => 'Dividend source evidence fixture',
+        ]
+    );
+    $journalId = (int)InterfaceDB::fetchColumn(
+        'SELECT id
+         FROM journals
+         WHERE company_id = :company_id
+           AND source_ref = :source_ref
+         ORDER BY id DESC
+         LIMIT 1',
+        ['company_id' => $companyId, 'source_ref' => $sourceRef]
+    );
+    foreach ($lines as [$nominalId, $debit, $credit]) {
+        InterfaceDB::prepareExecute(
+            'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit)
+             VALUES (:journal_id, :nominal_account_id, :debit, :credit)',
+            [
+                'journal_id' => $journalId,
+                'nominal_account_id' => $nominalId,
+                'debit' => number_format($debit, 2, '.', ''),
+                'credit' => number_format($credit, 2, '.', ''),
             ]
         );
     }

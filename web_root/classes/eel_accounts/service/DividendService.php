@@ -15,6 +15,7 @@ final class DividendService
     private const RETAINED_EARNINGS_CODE = '3000';
     private const DIVIDENDS_PAID_CODE = '3100';
     private const DIVIDENDS_PAYABLE_CODE = '2150';
+    private const JOURNAL_SOURCE_TYPE = 'dividend';
 
     private function configuredDividendsPayableNominalId(int $companyId): int
     {
@@ -375,7 +376,7 @@ final class DividendService
                 [
                     $companyId,
                     $accountingPeriodId,
-                    'manual',
+                    self::JOURNAL_SOURCE_TYPE,
                     $sourceRef,
                     $declarationDate,
                     $description,
@@ -554,7 +555,7 @@ final class DividendService
                 [
                     $companyId,
                     $accountingPeriodId,
-                    'manual',
+                    self::JOURNAL_SOURCE_TYPE,
                     $sourceRef,
                     $declarationDate,
                     $journalDescription,
@@ -605,7 +606,7 @@ final class DividendService
 
         $dividendsPaid = $this->findNominalByCode(self::DIVIDENDS_PAID_CODE);
         $dividendsPaidId = (int)($dividendsPaid['id'] ?? 0);
-        $params = [$companyId, $accountingPeriodId, 'manual', 'dividend:%'];
+        $params = [$companyId, $accountingPeriodId, self::JOURNAL_SOURCE_TYPE, 'manual', 'dividend:%'];
         $nominalCondition = '';
         if ($dividendsPaidId > 0) {
             $nominalCondition = ' OR EXISTS (
@@ -650,7 +651,7 @@ final class DividendService
                AND j.accounting_period_id = ?
                AND COALESCE(j.source_ref, \'\') NOT LIKE \'dividend:void:%\'
                AND (
-                    (j.source_type = ? AND j.source_ref LIKE ?)' . $nominalCondition . '
+                    (j.source_type IN (?, ?) AND j.source_ref LIKE ?)' . $nominalCondition . '
                )
              GROUP BY j.id, j.journal_date, j.description, j.source_ref, j.is_posted,
                       voucher_id, voucher_transaction_id, reversal_journal_id, voided_at, voided_by, void_reason
@@ -1395,12 +1396,13 @@ final class DividendService
                     j.is_posted
              FROM journals j
              WHERE ' . implode(' AND ', $where) . '
-               AND j.source_type = :source_type
+               AND j.source_type IN (:dividend_source_type, :legacy_source_type)
                AND COALESCE(j.source_ref, \'\') LIKE :source_ref
                AND COALESCE(j.source_ref, \'\') NOT LIKE :void_source_ref
              LIMIT 1',
             $params + [
-                'source_type' => 'manual',
+                'dividend_source_type' => self::JOURNAL_SOURCE_TYPE,
+                'legacy_source_type' => 'manual',
                 'source_ref' => 'dividend:%',
                 'void_source_ref' => 'dividend:void:%',
             ]
@@ -1443,7 +1445,7 @@ final class DividendService
             [
                 'company_id' => (int)$journal['company_id'],
                 'accounting_period_id' => (int)$journal['accounting_period_id'],
-                'source_type' => 'manual',
+                'source_type' => self::JOURNAL_SOURCE_TYPE,
                 'source_ref' => $sourceRef,
                 'journal_date' => (string)$journal['journal_date'],
                 'description' => substr('Void dividend declaration ' . $journalId . ': ' . $reason, 0, 255),
@@ -1937,7 +1939,7 @@ final class DividendService
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              WHERE j.company_id = :company_id
                AND j.accounting_period_id = :accounting_period_id
-               AND (j.is_posted = 1 OR (j.source_type = :draft_source_type AND j.source_ref LIKE :draft_source_ref))
+               AND (j.is_posted = 1 OR (j.source_type IN (:dividend_draft_source_type, :legacy_draft_source_type) AND j.source_ref LIKE :draft_source_ref))
                AND j.journal_date BETWEEN :period_start AND :as_at_date
                AND jl.nominal_account_id = :nominal_account_id',
             [
@@ -1946,7 +1948,8 @@ final class DividendService
                 'period_start' => $periodStart,
                 'as_at_date' => $asAtDate,
                 'nominal_account_id' => $nominalId,
-                'draft_source_type' => 'manual',
+                'dividend_draft_source_type' => self::JOURNAL_SOURCE_TYPE,
+                'legacy_draft_source_type' => 'manual',
                 'draft_source_ref' => 'dividend:%',
             ]
         ), 2);
@@ -1958,13 +1961,14 @@ final class DividendService
             'SELECT id
              FROM journals
              WHERE company_id = :company_id
-               AND source_type = :source_type
+               AND source_type IN (:dividend_source_type, :legacy_source_type)
                AND source_ref = :source_ref
              ORDER BY id DESC
              LIMIT 1',
             [
                 'company_id' => $companyId,
-                'source_type' => 'manual',
+                'dividend_source_type' => self::JOURNAL_SOURCE_TYPE,
+                'legacy_source_type' => 'manual',
                 'source_ref' => $sourceRef,
             ]
         ) ?: 0);

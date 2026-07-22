@@ -67,6 +67,34 @@ $harness->run(_year_end_profit_loss_confirmCard::class, static function (Generat
         $harness->assertSame(true, str_contains($html, 'type="submit" disabled title="Complete and lock the prior accounting period before closing retained earnings."'));
     });
 
+    $harness->check(_year_end_profit_loss_confirmCard::class, 'blocks Year End approval while Source Coverage is under review', static function () use ($harness, $card): void {
+        $context = yearEndProfitLossConfirmCardContext(false, false, [
+            'can_acknowledge' => true,
+            'prior_period_dependency' => [
+                'status' => 'first_period',
+                'satisfied' => true,
+                'detail' => 'This is the first recorded accounting period, so no prior-period lock is required.',
+            ],
+            'warnings' => [],
+        ]);
+        $context['profit_loss'] = [
+            'source_coverage' => [
+                'coverage_summary' => [
+                    'reconciled' => false,
+                    'posted_journal_count' => 290,
+                    'uncovered_journal_count' => 6,
+                ],
+            ],
+        ];
+
+        $html = $card->render($context);
+
+        $harness->assertSame(true, str_contains($html, 'Source Coverage review required'));
+        $harness->assertSame(true, str_contains($html, '6 of 290 posted journals remain unverified'));
+        $harness->assertSame(true, str_contains($html, 'type="submit" disabled title="Source Coverage is under review: 6 of 290 posted journals remain unverified. Resolve the Data Quality review before approving the Profit &amp; Loss close."'));
+        $harness->assertSame(false, str_contains($html, 'data-year-end-ack-submit'));
+    });
+
     $harness->check(_year_end_profit_loss_confirmCard::class, 'does not present an unbalanced balance sheet as an equality', static function () use ($harness, $card): void {
         $html = $card->render(yearEndProfitLossConfirmCardContext(false, false, [
             'summary' => [

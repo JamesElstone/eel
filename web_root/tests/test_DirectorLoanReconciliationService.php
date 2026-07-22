@@ -49,6 +49,24 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
                 'test'
             );
             $harness->assertSame(true, (bool)($posted['success'] ?? false));
+            $harness->assertSame(
+                \eel_accounts\Service\DirectorLoanReconciliationService::OFFSET_JOURNAL_SOURCE_TYPE,
+                (string)InterfaceDB::fetchColumn(
+                    'SELECT j.source_type
+                     FROM journals j
+                     INNER JOIN journal_entry_metadata jem ON jem.journal_id = j.id
+                     WHERE jem.company_id = :company_id
+                       AND jem.accounting_period_id = :period_id
+                       AND jem.journal_tag = :journal_tag
+                     ORDER BY j.id DESC
+                     LIMIT 1',
+                    [
+                        'company_id' => (int)$fixture['company_id'],
+                        'period_id' => (int)$fixture['accounting_period_id'],
+                        'journal_tag' => \eel_accounts\Service\DirectorLoanReconciliationService::OFFSET_JOURNAL_TAG,
+                    ]
+                )
+            );
             $after = $service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
             $harness->assertSame('253.00', directorLoanReclassificationMoney($after['posted_reclassification_amount'] ?? 0));
             $harness->assertSame('0.00', directorLoanReclassificationMoney($after['pending_adjustment_amount'] ?? 0));

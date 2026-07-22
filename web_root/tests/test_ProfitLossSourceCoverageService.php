@@ -62,15 +62,46 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ]
                 );
                 profitLossSourceCoverageJournal($companyId, $periodId, $nominalId, 'future_source', 'future-source-' . $marker, 25.00);
+                $directorLoanJournalId = profitLossSourceCoverageJournal(
+                    $companyId,
+                    $periodId,
+                    $nominalId,
+                    'director_loan_offset',
+                    'meta:director_loan_offset:' . $periodId . ':primary',
+                    253.00
+                );
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO journal_entry_metadata (
+                        journal_id, company_id, accounting_period_id,
+                        journal_tag, journal_key, entry_mode
+                     ) VALUES (
+                        :journal_id, :company_id, :accounting_period_id,
+                        :journal_tag, :journal_key, :entry_mode
+                     )',
+                    [
+                        'journal_id' => $directorLoanJournalId,
+                        'company_id' => $companyId,
+                        'accounting_period_id' => $periodId,
+                        'journal_tag' => \eel_accounts\Service\DirectorLoanReconciliationService::OFFSET_JOURNAL_TAG,
+                        'journal_key' => 'primary',
+                        'entry_mode' => 'system_generated',
+                    ]
+                );
 
                 $coverage = $service->getSourceCoverage($companyId, $periodId);
                 $harness->assertSame(1, (int)($coverage['manual']['journal_count'] ?? 0));
                 $harness->assertSame(1, (int)($coverage['other']['journal_count'] ?? 0));
+                $harness->assertSame(0, (int)($coverage['director_loan_offset']['journal_count'] ?? -1));
                 $harness->assertSame(2, (int)($coverage['coverage_summary']['posted_journal_count'] ?? 0));
                 $harness->assertSame(0, (int)($coverage['coverage_summary']['covered_journal_count'] ?? -1));
                 $harness->assertSame(2, (int)($coverage['coverage_summary']['uncovered_journal_count'] ?? -1));
                 $harness->assertSame(false, (bool)($coverage['coverage_summary']['reconciled'] ?? true));
                 $harness->assertCount(2, (array)($coverage['coverage_summary']['evidence_failures'] ?? []));
+                $harness->assertSame(false, in_array(
+                    $directorLoanJournalId,
+                    array_map(static fn(array $failure): int => (int)($failure['journal_id'] ?? 0), (array)($coverage['coverage_summary']['evidence_failures'] ?? [])),
+                    true
+                ));
             } finally {
                 if (InterfaceDB::inTransaction()) {
                     InterfaceDB::rollBack();

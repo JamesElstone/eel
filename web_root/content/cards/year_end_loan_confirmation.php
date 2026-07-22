@@ -131,7 +131,7 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
                 ' . $this->stat('Calculated total loan Balancing Adjustment at Year End', $this->money($settings, $review['desired_reclassification_amount'] ?? 0)) . '
                 ' . $this->stat('Journal entries that already exist for year end balance', $this->money($settings, $review['posted_reclassification_amount'] ?? 0)) . '
                 ' . $this->stat('Journal entries to be made at Year End closure', $this->money($settings, $review['pending_adjustment_amount'] ?? 0)) . '
-                ' . $this->stat('Gross loan asset (not s455)', $this->money($settings, $review['potential_s455_exposure'] ?? 0)) . '
+                ' . $this->stat('Loan Assets Outstanding subject to be taxed', $this->money($settings, $review['potential_s455_exposure'] ?? 0)) . '
                 ' . $this->stat('Balance after Year End has closed', $this->money($settings, $review['net_position'] ?? 0)) . '
             </div>
             ' . $warnings . '

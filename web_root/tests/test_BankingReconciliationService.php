@@ -46,6 +46,18 @@ $harness->run(\eel_accounts\Service\BankingReconciliationService::class, static 
         ));
     });
 
+    $harness->check(\eel_accounts\Service\BankingReconciliationService::class, 'accepts a zero-opening first statement without a previous statement', static function () use ($harness, $service): void {
+        $applyContinuity = banking_reconciliation_private_method($service, 'applyContinuityChecks');
+
+        $analysed = $applyContinuity->invoke($service, [
+            banking_reconciliation_upload_check(313, 81, '2025-09-20', '2025-09-25', 0.0, 681.44),
+        ]);
+
+        $harness->assertSame('pass', (string)($analysed[0]['continuity_status'] ?? ''));
+        $harness->assertSame(true, (bool)($analysed[0]['initial_opening_statement'] ?? false));
+        $harness->assertSame('First statement opens at zero; no previous statement is required.', (string)($analysed[0]['continuity_note'] ?? ''));
+    });
+
     $harness->check(\eel_accounts\Service\BankingReconciliationService::class, 'ledger summary uses latest selected-period statement after adjacent filtering', static function () use ($harness, $service): void {
         $applyContinuity = banking_reconciliation_private_method($service, 'applyContinuityChecks');
         $filterAccountingPeriod = banking_reconciliation_private_method($service, 'filterUploadAnalysesForAccountingPeriod');

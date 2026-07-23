@@ -8,15 +8,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
     static function (GeneratedServiceClassTestHarness $h): void {
         $h->check(
             \eel_accounts\Service\CompaniesHouseAccountsCredentialService::class,
-            'loads the three accounts-filing values from api.keys without using security facts',
+            'loads shared XML presenter credentials and the accounts-filing package reference',
             static function () use ($h): void {
                 $path = test_tmp_directory() . DIRECTORY_SEPARATOR . 'ch-accounts-keys-' . bin2hex(random_bytes(4)) . '.csv';
                 file_put_contents(
                     $path,
-                    "PROVIDER,TAG,ENVIRONMENT,SCHEMA,URL,API_KEY\n"
-                    . "COMPANIESHOUSE,ACCOUNTS_FILING_PRESENTER_ID,TEST,XML,https://example.invalid,12345678901\n"
-                    . "COMPANIESHOUSE,ACCOUNTS_FILING_AUTHENTICATION,TEST,XML,https://example.invalid,test-secret\n"
-                    . "COMPANIESHOUSE,ACCOUNTS_FILING_PACKAGE_REFERENCE,TEST,XML,https://example.invalid,0012\n"
+                    "PROVIDER,GATEWAY,TAG,ENVIRONMENT,SCHEMA,URL,API_IDENTITY,API_KEY\n"
+                    . "COMPANIESHOUSE,XML,XML_PRESENTER_CREDENTIALS,TEST,HTTPS,example.invalid,12345678901,test-secret\n"
+                    . "COMPANIESHOUSE,XML,ACCOUNTS_FILING_PACKAGE_REFERENCE,TEST,HTTPS,example.invalid,,0012\n"
                 );
                 try {
                     $service = new \eel_accounts\Service\CompaniesHouseAccountsCredentialService($path);
@@ -28,6 +27,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         hash('sha256', '12345678901'),
                         $service->presenterFingerprint('TEST')
                     );
+
+                    $companyData = (new \eel_accounts\Service\CompaniesHouseCompanyDataCredentialService($path))->load('TEST');
+                    $h->assertSame($credentials['presenter_id'], $companyData['presenter_id']);
+                    $h->assertSame($credentials['presenter_code'], $companyData['presenter_code']);
+                    $h->assertSame('', $companyData['package_reference']);
                 } finally {
                     @unlink($path);
                 }

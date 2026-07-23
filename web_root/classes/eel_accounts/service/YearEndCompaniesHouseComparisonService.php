@@ -55,7 +55,19 @@ final class YearEndCompaniesHouseComparisonService
             ];
         }
 
-        $facts = $this->fetchMetricFacts((int)$nearest['id']);
+        $exact = $this->findExactSummary($summaries, (string)$accountingPeriod['period_end']);
+        if ($exact === null) {
+            return [
+                'available' => false,
+                'comparison_scope' => 'no_exact_match',
+                'comparison_note' => 'No Companies House accounts filing matches the selected accounting period. No variances have been calculated.',
+                'errors' => ['No Companies House accounts filing matches the selected accounting period.'],
+                'filing' => $nearest,
+                'can_acknowledge' => false,
+            ];
+        }
+
+        $facts = $this->fetchMetricFacts((int)$exact['id']);
         $appMetrics ??= $metrics->fetchBalanceSheetMetricValues(
             $companyId,
             $accountingPeriodId,
@@ -98,7 +110,7 @@ final class YearEndCompaniesHouseComparisonService
             ];
         }
 
-        $hasExactMatch = (string)($nearest['period_end'] ?? '') === (string)$accountingPeriod['period_end'];
+        $hasExactMatch = true;
         $comparableCount = count(array_filter($rows, static fn(array $row): bool => $row['variance'] !== null));
         $matchedCount = count(array_filter($rows, static fn(array $row): bool => (string)$row['status'] === 'pass'));
         $mismatchCount = count(array_filter($rows, static fn(array $row): bool => in_array((string)$row['status'], ['warning', 'fail'], true)));
@@ -127,12 +139,12 @@ final class YearEndCompaniesHouseComparisonService
             'prior_period_dependency' => $priorPeriodDependency,
             'warnings' => $warnings,
             'filing' => [
-                'document_row_id' => (int)($nearest['id'] ?? 0),
-                'filing_date' => (string)($nearest['filing_date'] ?? ''),
-                'filing_type' => (string)($nearest['filing_type'] ?? ''),
-                'period_start' => (string)($nearest['period_start'] ?? ''),
-                'period_end' => (string)($nearest['period_end'] ?? ''),
-                'parse_status' => (string)($nearest['parse_status'] ?? ''),
+                'document_row_id' => (int)($exact['id'] ?? 0),
+                'filing_date' => (string)($exact['filing_date'] ?? ''),
+                'filing_type' => (string)($exact['filing_type'] ?? ''),
+                'period_start' => (string)($exact['period_start'] ?? ''),
+                'period_end' => (string)($exact['period_end'] ?? ''),
+                'parse_status' => (string)($exact['parse_status'] ?? ''),
             ],
             'rows' => $rows,
         ];
@@ -164,6 +176,26 @@ final class YearEndCompaniesHouseComparisonService
         }
 
         return $best;
+    }
+
+    private function findExactSummary(array $summaries, string $periodEnd): ?array {
+        foreach ($summaries as $summary) {
+            $candidateEnd = (string)($summary['latest_year_period_end'] ?? $summary['balance_sheet_date'] ?? '');
+            if ($candidateEnd !== $periodEnd) {
+                continue;
+            }
+
+            return [
+                'id' => (int)($summary['id'] ?? 0),
+                'filing_date' => (string)($summary['filing_date'] ?? ''),
+                'filing_type' => (string)($summary['filing_type'] ?? ''),
+                'period_start' => (string)($summary['latest_year_period_start'] ?? ''),
+                'period_end' => $candidateEnd,
+                'parse_status' => (string)($summary['parse_status'] ?? ''),
+            ];
+        }
+
+        return null;
     }
 
     private function fetchMetricFacts(int $documentRowId): array {

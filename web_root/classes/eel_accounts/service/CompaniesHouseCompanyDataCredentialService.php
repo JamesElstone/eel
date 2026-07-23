@@ -12,8 +12,7 @@ namespace eel_accounts\Service;
 final class CompaniesHouseCompanyDataCredentialService
 {
     private const PROVIDER = 'COMPANIESHOUSE';
-    private const PRESENTER_TAG = 'COMPANY_DATA_PRESENTER_ID';
-    private const AUTHENTICATION_TAG = 'COMPANY_DATA_AUTHENTICATION';
+    private const PRESENTER_TAG = 'XML_PRESENTER_CREDENTIALS';
 
     public function __construct(private readonly ?string $keysPath = null)
     {
@@ -23,9 +22,10 @@ final class CompaniesHouseCompanyDataCredentialService
     public function load(string $environment): array
     {
         $environment = $this->environment($environment);
+        $presenter = $this->presenterCredential($environment);
         $credentials = [
-            'presenter_id' => $this->value(self::PRESENTER_TAG, $environment),
-            'presenter_code' => $this->value(self::AUTHENTICATION_TAG, $environment),
+            'presenter_id' => trim((string)($presenter['api_identity'] ?? '')),
+            'presenter_code' => trim((string)($presenter['api_key'] ?? '')),
             'package_reference' => '',
         ];
         if ($credentials['presenter_id'] === '' || $credentials['presenter_code'] === '') {
@@ -53,17 +53,15 @@ final class CompaniesHouseCompanyDataCredentialService
         return hash('sha256', strtoupper($this->load($environment)['presenter_id']));
     }
 
-    private function value(string $tag, string $environment): string
+    private function presenterCredential(string $environment): array
     {
-        $credential = \SecurityStore::loadCredential(
+        return \SecurityStore::loadCredential(
             self::PROVIDER,
             'XML',
-            $tag,
+            self::PRESENTER_TAG,
             $environment,
             $this->keysPath
         );
-
-        return trim((string)($credential['api_key'] ?? ''));
     }
 
     private function environment(string $environment): string

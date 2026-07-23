@@ -22,7 +22,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $harness->assertSame(true, in_array([
             'provider' => 'COMPANIESHOUSE',
             'gateway' => 'XML',
-            'tag' => 'ACCOUNTS_FILING_PRESENTER_ID',
+            'tag' => 'XML_PRESENTER_CREDENTIALS',
+            'environment' => 'TEST',
+        ], $entries, true));
+        $harness->assertSame(false, in_array([
+            'provider' => 'COMPANIESHOUSE',
+            'gateway' => 'XML',
+            'tag' => 'PREFLIGHT_BINDING_HMAC_KEY',
             'environment' => 'TEST',
         ], $entries, true));
         $harness->assertSame(true, in_array([
@@ -44,8 +50,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $harness->assertSame([
             'provider' => 'COMPANIESHOUSE',
             'gateway' => 'XML',
-            'tag' => 'ACCOUNTS_FILING_PRESENTER_ID',
+            'tag' => 'XML_PRESENTER_CREDENTIALS',
             'environment' => 'TEST',
-        ], $catalog->requireAllowed('companieshouse', 'xml', 'accounts_filing_presenter_id', 'test'));
+        ], $catalog->requireAllowed('companieshouse', 'xml', 'xml_presenter_credentials', 'test'));
+
+        $rejected = false;
+        try {
+            $catalog->requireAllowed('companieshouse', 'xml', 'preflight_binding_hmac_key', 'test');
+        } catch (\InvalidArgumentException) {
+            $rejected = true;
+        }
+        $harness->assertSame(true, $rejected);
     });
 });

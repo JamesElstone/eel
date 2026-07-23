@@ -12,8 +12,7 @@ namespace eel_accounts\Service;
 final class CompaniesHouseAccountsCredentialService
 {
     private const PROVIDER = 'COMPANIESHOUSE';
-    private const PRESENTER_TAG = 'ACCOUNTS_FILING_PRESENTER_ID';
-    private const AUTHENTICATION_TAG = 'ACCOUNTS_FILING_AUTHENTICATION';
+    private const PRESENTER_TAG = 'XML_PRESENTER_CREDENTIALS';
     private const PACKAGE_TAG = 'ACCOUNTS_FILING_PACKAGE_REFERENCE';
 
     public function __construct(private readonly ?string $keysPath = null)
@@ -24,9 +23,10 @@ final class CompaniesHouseAccountsCredentialService
     public function load(string $environment): array
     {
         $environment = $this->environment($environment);
+        $presenter = $this->presenterCredential($environment);
         $credentials = [
-            'presenter_id' => $this->value(self::PRESENTER_TAG, $environment),
-            'presenter_code' => $this->value(self::AUTHENTICATION_TAG, $environment),
+            'presenter_id' => trim((string)($presenter['api_identity'] ?? '')),
+            'presenter_code' => trim((string)($presenter['api_key'] ?? '')),
             'package_reference' => $this->value(self::PACKAGE_TAG, $environment),
         ];
 
@@ -72,6 +72,17 @@ final class CompaniesHouseAccountsCredentialService
         );
 
         return trim((string)($credential['api_key'] ?? ''));
+    }
+
+    private function presenterCredential(string $environment): array
+    {
+        return \SecurityStore::loadCredential(
+            self::PROVIDER,
+            'XML',
+            self::PRESENTER_TAG,
+            $environment,
+            $this->keysPath
+        );
     }
 
     private function environment(string $environment): string

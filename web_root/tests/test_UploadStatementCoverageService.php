@@ -238,6 +238,25 @@ $harness->run(\eel_accounts\Service\UploadStatementCoverageService::class, stati
         $harness->assertTrue(str_contains((string)($months['2025-01-01']['tooltip'] ?? ''), '31/12/2024 at GBP 20.00; this statement opens on 02/01/2025 at GBP 30.00'));
     });
 
+    $harness->check(\eel_accounts\Service\UploadStatementCoverageService::class, 'labels a zero-opening first statement as covered', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\UploadStatementCoverageService::class, 'balanceContinuitySignalsByMonth');
+        $method->setAccessible(true);
+
+        $signals = $method->invoke($service, [[
+            'account' => ['account_name' => 'Saving Pot'],
+            'uploads' => [[
+                'upload' => ['statement_month' => '2025-09-01', 'date_range_start' => '2025-09-20'],
+                'opening_balance' => 0.0,
+                'closing_balance' => 681.44,
+                'closing_date' => '2025-09-25',
+                'initial_opening_statement' => true,
+            ]],
+        ]], '2025-09-01', '2025-09-30');
+
+        $harness->assertSame('pass', (string)($signals['2025-09-01'][0]['status'] ?? ''));
+        $harness->assertTrue(str_contains((string)($signals['2025-09-01'][0]['message'] ?? ''), 'First statement opens at zero'));
+    });
+
     $harness->check(\eel_accounts\Service\UploadStatementCoverageService::class, 'ignores overlapping duplicate statements when checking accounting period boundaries', static function () use ($harness, $service): void {
         $method = new ReflectionMethod(\eel_accounts\Service\UploadStatementCoverageService::class, 'buildOptionsFromInputs');
         $method->setAccessible(true);

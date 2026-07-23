@@ -8,7 +8,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
     static function (GeneratedServiceClassTestHarness $harness): void {
         $harness->check(
             \eel_accounts\Service\CompaniesHouseCompanyDataCredentialService::class,
-            'loads separate XML Output credentials without a filing package reference',
+            'loads shared XML presenter credentials without a filing package reference',
             static function () use ($harness): void {
                 $path = tempnam(sys_get_temp_dir(), 'eel-ch-company-data-');
                 if (!is_string($path)) {
@@ -16,9 +16,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 }
                 file_put_contents(
                     $path,
-                    "provider,tag,environment,protocol,endpoint,api_key\n"
-                    . "COMPANIESHOUSE,COMPANY_DATA_PRESENTER_ID,TEST,XML,https://example.invalid,output-presenter\n"
-                    . "COMPANIESHOUSE,COMPANY_DATA_AUTHENTICATION,TEST,XML,https://example.invalid,output-secret\n"
+                    "PROVIDER,GATEWAY,TAG,ENVIRONMENT,SCHEMA,URL,API_IDENTITY,API_KEY\n"
+                    . "COMPANIESHOUSE,XML,XML_PRESENTER_CREDENTIALS,TEST,HTTPS,example.invalid,output-presenter,output-secret\n"
                 );
                 try {
                     $service = new \eel_accounts\Service\CompaniesHouseCompanyDataCredentialService($path);

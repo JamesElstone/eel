@@ -17,12 +17,8 @@ final class ApiCredentialCatalogProvider implements \ApiCredentialCatalogProvide
         foreach (['TEST', 'LIVE'] as $environment) {
             $entries[] = $this->entry('COMPANIESHOUSE', 'REST', 'COMPANY_LOOKUP', $environment);
             foreach ([
-                'ACCOUNTS_FILING_PRESENTER_ID',
-                'ACCOUNTS_FILING_AUTHENTICATION',
+                'XML_PRESENTER_CREDENTIALS',
                 'ACCOUNTS_FILING_PACKAGE_REFERENCE',
-                'COMPANY_DATA_PRESENTER_ID',
-                'COMPANY_DATA_AUTHENTICATION',
-                'PREFLIGHT_BINDING_HMAC_KEY',
             ] as $tag) {
                 $entries[] = $this->entry('COMPANIESHOUSE', 'XML', $tag, $environment);
             }

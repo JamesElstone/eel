@@ -483,8 +483,12 @@ final class BankingReconciliationService
             }
 
             if (!$hasPreviousStatement) {
-                $uploads[$index]['continuity_status'] = 'warning';
-                $uploads[$index]['continuity_note'] = 'No previous statement exists to compare against.';
+                $isInitialZeroOpening = $this->moneyMatches(0.0, (float)$upload['opening_balance']);
+                $uploads[$index]['continuity_status'] = $isInitialZeroOpening ? 'pass' : 'warning';
+                $uploads[$index]['continuity_note'] = $isInitialZeroOpening
+                    ? 'First statement opens at zero; no previous statement is required.'
+                    : 'No previous statement exists to compare against.';
+                $uploads[$index]['initial_opening_statement'] = $isInitialZeroOpening;
                 $hasPreviousStatement = true;
                 $previousClosingBalance = $upload['closing_balance'];
                 continue;

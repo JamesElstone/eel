@@ -254,9 +254,8 @@ final class _companies_house_transmissionCard extends CardBaseFramework
         $html = '<section class="panel-soft"><h4 class="card-title">Developer step controls</h4>'
             . '<div class="helper">Each button performs one XML send/receive pair and then pauses.</div>';
         if (!$bindingConfigured) {
-            return $html . '<div class="notice warning">Configure COMPANIESHOUSE / '
-                . 'PREFLIGHT_BINDING_HMAC_KEY for ' . HelperFramework::escape($mode)
-                . ' before using step-by-step preflight.</div></section>';
+            return $html . '<div class="notice warning">The preflight binding key could not be prepared for '
+                . HelperFramework::escape($mode) . '.</div></section>';
         }
         $verified = is_array($preflight)
             && (string)($preflight['outcome'] ?? '') === 'verified'

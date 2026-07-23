@@ -15,7 +15,7 @@ final class CompaniesHouseProtocolConversationService
     private const EXCHANGES = 'companies_house_protocol_exchanges';
     private const STATUS_CYCLES = 'companies_house_accounts_status_cycles';
     private const SUBMISSIONS = 'companies_house_accounts_submissions';
-    private const BINDING_TAG = 'PREFLIGHT_BINDING_HMAC_KEY';
+    private const BINDING_FACT_PREFIX = 'companies_house_preflight_binding_hmac_';
     private const BINDING_SECONDS = 1800;
 
     public function __construct(
@@ -35,11 +35,8 @@ final class CompaniesHouseProtocolConversationService
 
     public function bindingConfigured(string $environment): bool
     {
-        try {
-            return $this->hmacKey($environment) !== '';
-        } catch (\Throwable) {
-            return false;
-        }
+        return ($this->bindingKey !== null && strlen($this->bindingKey) >= 32)
+            || in_array(strtoupper(trim($environment)), ['TEST', 'LIVE'], true);
     }
 
     public function beginPreflight(
@@ -573,13 +570,11 @@ final class CompaniesHouseProtocolConversationService
         if ($this->bindingKey !== null && strlen($this->bindingKey) >= 32) {
             return $this->bindingKey;
         }
-        $credential = \SecurityStore::loadCredential(
-            'COMPANIESHOUSE',
-            'XML',
-            self::BINDING_TAG,
-            strtoupper($environment)
-        );
-        $key = trim((string)($credential['api_key'] ?? ''));
+        $environment = strtoupper(trim($environment));
+        if (!in_array($environment, ['TEST', 'LIVE'], true)) {
+            throw new \InvalidArgumentException('Companies House preflight environment must be TEST or LIVE.');
+        }
+        $key = \SecurityStore::ensureFact(self::BINDING_FACT_PREFIX . strtolower($environment));
         if (strlen($key) < 32) {
             throw new \RuntimeException(
                 'Configure a random Companies House preflight binding key of at least 32 characters.'

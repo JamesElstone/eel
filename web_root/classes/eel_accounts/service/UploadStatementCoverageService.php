@@ -625,6 +625,16 @@ final class UploadStatementCoverageService
                     continue;
                 }
 
+                if ($previous === null && !empty($uploadCheck['initial_opening_statement'])) {
+                    $monthKey = $this->monthKeyForUploadCheck($uploadCheck);
+                    if ($monthKey !== '') {
+                        $signals[$monthKey][] = [
+                            'status' => 'pass',
+                            'message' => trim($accountName . ': First statement opens at zero; no previous statement is required.'),
+                        ];
+                    }
+                }
+
                 if ($previous !== null && $this->uploadCheckHasStatementBalances($uploadCheck)) {
                     $startDate = $this->startDateForUploadCheck($uploadCheck);
                     $previousClosingDate = trim((string)($previous['closing_date'] ?? ''));

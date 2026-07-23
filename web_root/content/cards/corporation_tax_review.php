@@ -61,7 +61,7 @@ final class _corporation_tax_reviewCard extends CardBaseFramework
                 . '<input type="hidden" name="card_action" value="Tax"><input type="hidden" name="intent" value="save_line_tax_treatment">'
                 . '<input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
                 . '<input type="hidden" name="ct_period_id" value="' . $ctPeriodId . '"><input type="hidden" name="journal_line_id" value="' . (int)$item['journal_line_id'] . '">'
-                . '<select class="select" name="tax_treatment" required>' . $options . '</select><button class="button primary" type="submit">Save treatment</button></form>';
+                . '<select class="select" name="tax_treatment" required data-submit-on-change="true">' . $options . '</select></form>';
             $state = (string)($item['state'] ?? '') === 'resolved'
                 ? '<span class="badge success">' . HelperFramework::escape(ucfirst($treatment)) . '</span>'
                 : '<span class="badge danger">Review required</span>';

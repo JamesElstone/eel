@@ -57,10 +57,15 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             ? $review['acknowledgement']
             : null;
         $mismatchCount = (int)($review['mismatch_count'] ?? 0);
+        $lockNotice = !empty($access['is_locked'])
+            ? '<div class="helper">The Accounting Period has been locked. No changes can be made until the period is unlocked.</div>'
+            : '';
 
         return '<section class="settings-stack" id="year-end-companies-house-comparison">
+            ' . $lockNotice . '
             ' . $this->renderComparisonPanel($comparison, $companySettings) . '
             ' . $this->renderEligibilityQuestion($company, $companyId, $accountingPeriodId, (array)($review['eligibility'] ?? []), $access) . '
+            ' . $this->renderVarianceExplanationQuestion($companyId, $accountingPeriodId, (array)($review['eligibility'] ?? []), $comparison, $access, $mismatchCount) . '
             ' . $this->renderAcknowledgementPanel($companyId, $accountingPeriodId, $comparison, $acknowledgement, $access, $mismatchCount, $review) . '
         </section>';
     }
@@ -77,7 +82,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         $helper = $unavailable
             ? 'A matching Companies House filing is required before eligibility can be recorded.'
             : (!empty($access['is_locked'])
-            ? 'This legacy accounting period is locked, so its existing Year End position is not changed.'
+            ? ''
             : ($decision === 'pending'
                 ? 'Record a Yes or No decision before completing the Companies House Year End Confirmation. Add supporting notes or evidence to the Approval below.'
                 : 'Change this decision if needed before completing the Companies House Year End Confirmation. Add supporting notes or evidence to the Approval below.'));
@@ -90,7 +95,46 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
                     <label class="checkbox-row"><input type="radio" name="eligibility_decision" value="eligible" required data-submit-on-change="true"' . $yesChecked . '><span>Yes</span></label>
                     <label class="checkbox-row"><input type="radio" name="eligibility_decision" value="ineligible" required data-submit-on-change="true"' . $noChecked . '><span>No</span></label>
                 </fieldset>
-                <div class="helper">' . HelperFramework::escape($helper) . '</div>
+                ' . ($helper !== '' ? '<div class="helper">' . HelperFramework::escape($helper) . '</div>' : '') . '
+            </form>';
+    }
+
+    private function renderVarianceExplanationQuestion(
+        int $companyId,
+        int $accountingPeriodId,
+        array $eligibility,
+        array $comparison,
+        array $access,
+        int $mismatchCount
+    ): string {
+        if (empty($comparison['has_exact_filing']) || $mismatchCount <= 0) {
+            return '';
+        }
+
+        $originalDocumentId = (int)($eligibility['original_document_id'] ?? 0);
+        if ($originalDocumentId <= 0) {
+            return '';
+        }
+        $locked = !empty($access['is_locked']);
+        $disabled = $locked ? ' disabled aria-disabled="true"' : '';
+        $value = (string)($eligibility['variance_explanation'] ?? '');
+        $helper = $locked
+            ? ''
+            : 'Use one explanation covering all Companies House variances. This wording will be used when preparing the revised accounts disclosure.';
+
+        return '<form method="post" action="?page=companies_house" data-ajax="true" class="settings-stack" id="companies-house-variance-explanation">'
+            . $this->actionHiddenFields($companyId, $accountingPeriodId, 'save_variance_explanation')
+            . '<input type="hidden" name="original_document_id" value="' . $originalDocumentId . '">
+                <fieldset class="panel-soft"' . $disabled . '>
+                    <legend>Why do the Companies House figures need revising?</legend>
+                    ' . ($helper !== '' ? '<div class="helper">' . HelperFramework::escape($helper) . '</div>' : '') . '
+                    <label class="form-row full" for="companies_house_variance_explanation">
+                        <textarea class="input" id="companies_house_variance_explanation" name="variance_explanation" rows="4" required' . $disabled . '>'
+                            . HelperFramework::escape($value)
+                        . '</textarea>
+                    </label>
+                    <div class="actions-row companies-house-variance-actions"><button class="button primary" type="submit"' . $disabled . '>Save Variance Explanation</button></div>
+                </fieldset>
             </form>';
     }
 

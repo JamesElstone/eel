@@ -23,13 +23,7 @@ final class SecurityStore
 
     public static function credentialCatalog(?string $keysPath = null): array
     {
-        static $catalogByPath = [];
-
         $path = self::apiKeysPath($keysPath);
-
-        if (isset($catalogByPath[$path])) {
-            return $catalogByPath[$path];
-        }
 
         if (!is_file($path) || !is_readable($path)) {
             throw new RuntimeException('API key file was not found or is not readable: ' . $path);
@@ -42,88 +36,91 @@ final class SecurityStore
         }
 
         $catalog = [];
+        $catalogService = new ApiCredentialCatalogService();
+        $headerRead = false;
+        $rowNumber = 0;
 
         try {
             while (($row = fgetcsv($handle, 0, ',', '"', '')) !== false) {
+                $rowNumber++;
                 $firstField = trim((string)($row[0] ?? ''));
 
-                if ($firstField !== '' && str_starts_with($firstField, '#')) {
+                if ($firstField === '' || str_starts_with($firstField, '#')) {
                     continue;
                 }
 
-                if (strtoupper($firstField) === 'PROVIDER') {
+                if (!$headerRead) {
+                    if ($row !== ['PROVIDER', 'GATEWAY', 'TAG', 'ENVIRONMENT', 'SCHEMA', 'URL', 'API_IDENTITY', 'API_KEY']) {
+                        throw new RuntimeException('API key file header must be PROVIDER,GATEWAY,TAG,ENVIRONMENT,SCHEMA,URL,API_IDENTITY,API_KEY.');
+                    }
+                    $headerRead = true;
                     continue;
                 }
 
-                if (count($row) < 5) {
-                    continue;
+                if (count($row) !== 8) {
+                    throw new RuntimeException('API credential row ' . $rowNumber . ' must contain exactly eight columns.');
                 }
 
-                $provider = strtoupper(trim((string)$row[0]));
-                $tag = strtoupper(trim((string)$row[1]));
-
-                if ($provider === '' || $tag === '') {
-                    continue;
+                $selection = $catalogService->requireAllowed(
+                    (string)$row[0],
+                    (string)$row[1],
+                    (string)$row[2],
+                    (string)$row[3]
+                );
+                $schema = strtoupper(trim((string)$row[4]));
+                $url = trim((string)$row[5]);
+                $apiIdentity = (string)$row[6];
+                $apiKey = (string)$row[7];
+                if ($schema === '' || $url === '' || $apiKey === '') {
+                    throw new RuntimeException('API credential row ' . $rowNumber . ' has a blank schema, URL, or API key.');
                 }
-
-                if (count($row) >= 6) {
-                    $environment = HelperFramework::normaliseEnvironmentMode((string)$row[2]);
-                    $credential = [
-                        'provider' => $provider,
-                        'tag' => $tag,
-                        'environment' => $environment,
-                        'schema' => strtoupper(trim((string)$row[3])),
-                        'url' => trim((string)$row[4]),
-                        'api_key' => trim((string)$row[5]),
-                    ];
-                    $catalog[$provider][$tag][$environment] = $credential;
-                    continue;
+                if (!self::isValidSecretValue($apiIdentity) || !self::isValidSecretValue($apiKey)) {
+                    throw new RuntimeException('API credential row ' . $rowNumber . ' has an invalid API identity or API key.');
                 }
-
                 $credential = [
-                    'provider' => $provider,
-                    'tag' => $tag,
-                    'environment' => 'TEST',
-                    'schema' => strtoupper(trim((string)$row[2])),
-                    'url' => trim((string)$row[3]),
-                    'api_key' => trim((string)$row[4]),
+                    ...$selection,
+                    'schema' => $schema,
+                    'url' => $url,
+                    'api_identity' => $apiIdentity,
+                    'api_key' => $apiKey,
                 ];
-                $catalog[$provider][$tag]['DEFAULT'] = $credential;
+                if (isset($catalog[$selection['provider']][$selection['gateway']][$selection['tag']][$selection['environment']])) {
+                    throw new RuntimeException('Duplicate API credential row for ' . implode(' / ', $selection) . '.');
+                }
+                $catalog[$selection['provider']][$selection['gateway']][$selection['tag']][$selection['environment']] = $credential;
             }
         } finally {
             fclose($handle);
         }
 
-        $catalogByPath[$path] = $catalog;
+        if (!$headerRead) {
+            throw new RuntimeException('API key file is missing the required credential header.');
+        }
 
-        return $catalogByPath[$path];
+        return $catalog;
     }
 
     public static function loadCredential(
         string $provider,
+        string $gateway,
         string $tag,
-        ?string $environment = null,
+        string $environment,
         ?string $keysPath = null
     ): array {
-        $provider = strtoupper(trim($provider));
-        $tag = strtoupper(trim($tag));
-        $environment = HelperFramework::normaliseEnvironmentMode($environment);
+        $selection = (new ApiCredentialCatalogService())->requireAllowed(
+            $provider,
+            $gateway,
+            $tag,
+            $environment
+        );
         $catalog = self::credentialCatalog($keysPath);
-        $providerCatalog = $catalog[$provider] ?? [];
-        $tagCatalog = is_array($providerCatalog[$tag] ?? null) ? $providerCatalog[$tag] : [];
+        $credential = $catalog[$selection['provider']][$selection['gateway']][$selection['tag']][$selection['environment']] ?? null;
 
-        if (is_array($tagCatalog[$environment] ?? null)) {
-            return $tagCatalog[$environment];
+        if (is_array($credential)) {
+            return $credential;
         }
 
-        if (is_array($tagCatalog['DEFAULT'] ?? null)) {
-            $fallbackCredential = $tagCatalog['DEFAULT'];
-            $fallbackCredential['environment'] = $environment;
-
-            return $fallbackCredential;
-        }
-
-        throw new RuntimeException('API credential not found for ' . $provider . ' / ' . $tag . ' / ' . $environment . '.');
+        throw new RuntimeException('API credential not found for ' . implode(' / ', $selection) . '.');
     }
 
     public static function loadFact(string $key, ?string $keysPath = null): ?string
@@ -369,6 +366,11 @@ final class SecurityStore
     private static function normaliseFactKey(string $key): string
     {
         return strtolower(trim($key));
+    }
+
+    private static function isValidSecretValue(string $value): bool
+    {
+        return !str_contains($value, "\0") && preg_match('//u', $value) === 1;
     }
 
     private static function generateFact(): string

@@ -17,6 +17,7 @@ final class CompaniesHouseOutbound
     {
         return \ApiHelperOutbound::loadCredential(
             'COMPANIESHOUSE',
+            'REST',
             'COMPANY_LOOKUP',
             \HelperFramework::normaliseEnvironmentMode($environment),
             $keysPath
@@ -31,6 +32,7 @@ final class CompaniesHouseOutbound
         return \ApiHelperOutbound::request(array_replace([
             'transport' => 'http',
             'provider' => 'COMPANIESHOUSE',
+            'gateway' => 'REST',
             'tag' => 'COMPANY_LOOKUP',
             'environment' => \HelperFramework::normaliseEnvironmentMode($environment),
             'method' => 'GET',

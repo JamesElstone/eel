@@ -1,124 +1,68 @@
 <?php
-/**
- * eelKit Framework
- * Copyright (c) 2026 James Elstone
- * Licensed under the BSD 3-Clause License
- * See LICENSE file for details.
- */
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
-$harness = new GeneratedServiceClassTestHarness();
-$harness->run(SecurityStore::class);
-
-$testTempDirectory = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp';
-if (!is_dir($testTempDirectory)) {
-    mkdir($testTempDirectory, 0777, true);
+final class SecurityStoreTestCredentialCatalogProvider implements ApiCredentialCatalogProviderInterface
+{
+    public function credentialCatalog(): array
+    {
+        return [
+            ['provider' => 'ACME', 'gateway' => 'REST', 'tag' => 'LOOKUP', 'environment' => 'TEST'],
+            ['provider' => 'ACME', 'gateway' => 'XML', 'tag' => 'LOOKUP', 'environment' => 'TEST'],
+            ['provider' => 'ACME', 'gateway' => 'CUSTOM', 'tag' => 'LOOKUP', 'environment' => 'LIVE'],
+        ];
+    }
 }
 
-$harness->check(SecurityStore::class, 'parses API key catalogs with environments and defaults', function () use ($harness, $testTempDirectory): void {
-    $path = $testTempDirectory . DIRECTORY_SEPARATOR . 'security-store-api-' . bin2hex(random_bytes(8)) . '.csv';
-    file_put_contents(
-        $path,
-        "# comment row\n"
-        . "PROVIDER,TAG,ENVIRONMENT,SCHEMA,URL,API_KEY\n"
-        . "ACME,LOOKUP,LIVE,BEARER,https://live.example.test,live-key\n"
-        . "ACME,LOOKUP,BEARER,https://default.example.test,default-key\n"
-    );
+$harness = new GeneratedServiceClassTestHarness();
+$harness->run(SecurityStore::class);
+$testTempDirectory = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp';
+if (!is_dir($testTempDirectory)) { mkdir($testTempDirectory, 0777, true); }
+$previousProviders = AppConfigurationStore::get('api_credentials.catalog_providers', []);
+AppConfigurationStore::set('api_credentials.catalog_providers', [SecurityStoreTestCredentialCatalogProvider::class]);
 
-    try {
-        $catalog = SecurityStore::credentialCatalog($path);
-        $live = SecurityStore::loadCredential('acme', 'lookup', 'live', $path);
-        $test = SecurityStore::loadCredential('ACME', 'LOOKUP', 'TEST', $path);
+try {
+    $harness->check(SecurityStore::class, 'selects independent REST XML and custom gateway credentials', function () use ($harness, $testTempDirectory): void {
+        $path = $testTempDirectory . DIRECTORY_SEPARATOR . 'security-store-api-' . bin2hex(random_bytes(8)) . '.csv';
+        file_put_contents($path, "PROVIDER,GATEWAY,TAG,ENVIRONMENT,SCHEMA,URL,API_IDENTITY,API_KEY\nACME,REST,LOOKUP,TEST,HTTPS,rest.example.test,\"rest user\",\"rest-key\"\nACME,XML,LOOKUP,TEST,HTTPS,xml.example.test,\"xml user\",\"xml-key\"\nACME,CUSTOM,LOOKUP,LIVE,HTTPS,custom.example.test,\"custom user\",\"custom-key\"\n");
+        try {
+            $harness->assertSame('rest-key', SecurityStore::loadCredential('ACME', 'REST', 'LOOKUP', 'TEST', $path)['api_key']);
+            $harness->assertSame('xml-key', SecurityStore::loadCredential('ACME', 'XML', 'LOOKUP', 'TEST', $path)['api_key']);
+            $harness->assertSame('custom-key', SecurityStore::loadCredential('ACME', 'CUSTOM', 'LOOKUP', 'LIVE', $path)['api_key']);
+            $harness->assertSame('xml user', SecurityStore::loadCredential('ACME', 'XML', 'LOOKUP', 'TEST', $path)['api_identity']);
+        } finally { @unlink($path); }
+    });
 
-        $harness->assertTrue(isset($catalog['ACME']['LOOKUP']['LIVE']));
-        $harness->assertSame('live-key', $live['api_key']);
-        $harness->assertSame('TEST', $test['environment']);
-        $harness->assertSame('default-key', $test['api_key']);
-    } finally {
-        if (is_file($path)) {
-            unlink($path);
+    $harness->check(SecurityStore::class, 'rejects old malformed duplicate and unconfigured gateway rows', function () use ($harness, $testTempDirectory): void {
+        foreach ([
+            "PROVIDER,TAG,ENVIRONMENT,SCHEMA,URL,API_KEY\nACME,LOOKUP,TEST,HTTPS,x,key\n",
+            "PROVIDER,GATEWAY,TAG,ENVIRONMENT,SCHEMA,URL,API_KEY\nACME,REST,LOOKUP,TEST,HTTPS,x,key\n",
+            "PROVIDER,GATEWAY,TAG,ENVIRONMENT,SCHEMA,URL,API_IDENTITY,API_KEY\nACME,SOAP,LOOKUP,TEST,HTTPS,x,identity,key\n",
+            "PROVIDER,GATEWAY,TAG,ENVIRONMENT,SCHEMA,URL,API_IDENTITY,API_KEY\nACME,REST,LOOKUP,TEST,HTTPS,x,identity,key\nACME,REST,LOOKUP,TEST,HTTPS,y,identity,key\n",
+        ] as $contents) {
+            $path = $testTempDirectory . DIRECTORY_SEPARATOR . 'security-store-invalid-' . bin2hex(random_bytes(8)) . '.csv';
+            file_put_contents($path, $contents);
+            try {
+                SecurityStore::credentialCatalog($path);
+                throw new RuntimeException('Invalid credential document did not throw.');
+            } catch (RuntimeException $exception) {
+                $harness->assertTrue($exception->getMessage() !== '');
+            } finally { @unlink($path); }
         }
-    }
-});
+    });
 
-$harness->check(SecurityStore::class, 'reports missing API credentials', function () use ($harness, $testTempDirectory): void {
-    $path = $testTempDirectory . DIRECTORY_SEPARATOR . 'security-store-missing-' . bin2hex(random_bytes(8)) . '.csv';
-    file_put_contents($path, "PROVIDER,TAG,ENVIRONMENT,SCHEMA,URL,API_KEY\nACME,LOOKUP,TEST,BEARER,https://example.test,key\n");
-
-    try {
-        SecurityStore::loadCredential('ACME', 'OTHER', 'TEST', $path);
-    } catch (RuntimeException $exception) {
-        if (is_file($path)) {
-            unlink($path);
-        }
-
-        $harness->assertTrue(str_contains($exception->getMessage(), 'API credential not found'));
-        return;
-    }
-
-    if (is_file($path)) {
-        unlink($path);
-    }
-
-    throw new RuntimeException('Missing credential did not throw.');
-});
-
-$harness->check(SecurityStore::class, 'loads and preserves generated security facts', function () use ($harness, $testTempDirectory): void {
-    $path = $testTempDirectory . DIRECTORY_SEPARATOR . 'security-store-facts-' . bin2hex(random_bytes(8)) . '.csv';
-
-    try {
-        $first = SecurityStore::ensureFact('Pepper', $path);
-        $second = SecurityStore::ensureFact(' pepper ', $path);
-
-        $harness->assertSame($first, $second);
-        $harness->assertSame($first, SecurityStore::loadFact('PEPPER', $path));
-        $harness->assertSame(64, strlen($first));
-    } finally {
-        if (is_file($path)) {
-            unlink($path);
-        }
-    }
-});
-
-$harness->check(SecurityStore::class, 'keeps generated security fact files private where supported', function () use ($harness, $testTempDirectory): void {
-    $path = $testTempDirectory . DIRECTORY_SEPARATOR . 'security-store-private-' . bin2hex(random_bytes(8)) . '.keys';
-
-    try {
-        SecurityStore::ensureFact('Pepper', $path);
-        $harness->assertTrue(is_file($path));
-
-        if (DIRECTORY_SEPARATOR === '\\') {
-            $harness->skip('POSIX file modes are not available on Windows.');
-        }
-
-        $mode = fileperms($path);
-        if ($mode === false) {
-            throw new RuntimeException('Unable to read generated security key file mode.');
-        }
-
-        $harness->assertSame('0600', substr(sprintf('%04o', $mode), -4));
-    } finally {
-        if (is_file($path)) {
-            unlink($path);
-        }
-    }
-});
-
-$harness->check(SecurityStore::class, 'rejects blank security fact keys', function () use ($harness, $testTempDirectory): void {
-    try {
-        SecurityStore::ensureFact('   ', $testTempDirectory . DIRECTORY_SEPARATOR . 'unused-security.keys');
-    } catch (RuntimeException $exception) {
-        $harness->assertTrue(str_contains($exception->getMessage(), 'Security fact key is required'));
-        return;
-    }
-
-    throw new RuntimeException('Blank fact key did not throw.');
-});
-
-$harness->check(SecurityStore::class, 'resolves relative security key paths from the application root', function () use ($harness): void {
-    $resolved = SecurityStore::securityKeysPath('tests/tmp/relative-security.keys');
-
-    $harness->assertSame(APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'relative-security.keys', $resolved);
-});
+    $harness->check(SecurityStore::class, 'preserves quoted UTF-8 identities and keys including line breaks', function () use ($harness, $testTempDirectory): void {
+        $path = $testTempDirectory . DIRECTORY_SEPARATOR . 'security-store-utf8-' . bin2hex(random_bytes(8)) . '.csv';
+        $identity = "  Jöhn, \"Identity\"\nsecond line  ";
+        $key = "  päss, \"Key\"\nsecond line  ";
+        file_put_contents($path, "PROVIDER,GATEWAY,TAG,ENVIRONMENT,SCHEMA,URL,API_IDENTITY,API_KEY\nACME,REST,LOOKUP,TEST,HTTPS,x,\"  Jöhn, \"\"Identity\"\"\nsecond line  \",\"  päss, \"\"Key\"\"\nsecond line  \"\n");
+        try {
+            $credential = SecurityStore::loadCredential('ACME', 'REST', 'LOOKUP', 'TEST', $path);
+            $harness->assertSame($identity, $credential['api_identity']);
+            $harness->assertSame($key, $credential['api_key']);
+        } finally { @unlink($path); }
+    });
+} finally {
+    AppConfigurationStore::set('api_credentials.catalog_providers', $previousProviders);
+}

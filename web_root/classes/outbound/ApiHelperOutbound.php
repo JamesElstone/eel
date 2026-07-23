@@ -20,9 +20,9 @@ final class ApiHelperOutbound
         return SecurityStore::credentialCatalog($keysPath);
     }
 
-    public static function loadCredential(string $provider, string $tag, ?string $environment = null, ?string $keysPath = null): array
+    public static function loadCredential(string $provider, string $gateway, string $tag, string $environment, ?string $keysPath = null): array
     {
-        return SecurityStore::loadCredential($provider, $tag, $environment, $keysPath);
+        return SecurityStore::loadCredential($provider, $gateway, $tag, $environment, $keysPath);
     }
 
     public static function request(array $request): array
@@ -30,15 +30,19 @@ final class ApiHelperOutbound
         $transport = strtolower(trim((string)($request['transport'] ?? 'http')));
         $credential = is_array($request['credential'] ?? null) ? $request['credential'] : null;
 
-        if (
-            $credential === null
-            && trim((string)($request['provider'] ?? '')) !== ''
-            && trim((string)($request['tag'] ?? '')) !== ''
-        ) {
+        $provider = trim((string)($request['provider'] ?? ''));
+        $gateway = trim((string)($request['gateway'] ?? ''));
+        $tag = trim((string)($request['tag'] ?? ''));
+        $environment = trim((string)($request['environment'] ?? ''));
+        if ($credential === null && ($provider !== '' || $gateway !== '' || $tag !== '' || $environment !== '')) {
+            if ($provider === '' || $gateway === '' || $tag === '' || $environment === '') {
+                throw new RuntimeException('Outbound credential selection requires provider, gateway, tag, and environment.');
+            }
             $credential = self::loadCredential(
-                (string)$request['provider'],
-                (string)$request['tag'],
-                (string)($request['environment'] ?? 'TEST'),
+                $provider,
+                $gateway,
+                $tag,
+                $environment,
                 (string)($request['keys_path'] ?? '')
             );
         }
@@ -109,14 +113,10 @@ final class ApiHelperOutbound
         ];
 
         if ($authMode === 'basic_api_key') {
-            $apiKey = trim((string)($request['api_key'] ?? ($credential['api_key'] ?? '')));
-
-            if ($apiKey === '') {
-                throw new RuntimeException('Outbound request is missing the API key for basic authentication.');
-            }
+            [$apiIdentity, $apiKey] = self::resolveBasicCredentials($request, $credential);
 
             $curlOptions[CURLOPT_HTTPAUTH] = CURLAUTH_BASIC;
-            $curlOptions[CURLOPT_USERPWD] = $apiKey . ':';
+            $curlOptions[CURLOPT_USERPWD] = $apiIdentity . ':' . $apiKey;
         } elseif ($authMode === 'bearer') {
             $bearerToken = trim((string)($request['bearer_token'] ?? ''));
 
@@ -301,28 +301,34 @@ final class ApiHelperOutbound
 
     public static function resolveClientCredentials(array $request, ?array $credential = null): array
     {
-        $clientId = trim((string)($request['client_id'] ?? ''));
-        $clientSecret = trim((string)($request['client_secret'] ?? ''));
-
-        if ($clientId !== '' && $clientSecret !== '') {
-            return [$clientId, $clientSecret];
-        }
-
-        $apiKey = trim((string)($credential['api_key'] ?? ''));
-        $separator = strpos($apiKey, ':');
-
-        if ($separator === false) {
-            throw new RuntimeException('OAuth client credentials in api.keys must be stored as clientId:clientSecret.');
-        }
-
-        $clientId = trim(substr($apiKey, 0, $separator));
-        $clientSecret = trim(substr($apiKey, $separator + 1));
+        $clientId = array_key_exists('client_id', $request)
+            ? (string)$request['client_id']
+            : (string)($credential['api_identity'] ?? '');
+        $clientSecret = array_key_exists('client_secret', $request)
+            ? (string)$request['client_secret']
+            : (string)($credential['api_key'] ?? '');
 
         if ($clientId === '' || $clientSecret === '') {
-            throw new RuntimeException('OAuth client credentials in api.keys are incomplete.');
+            throw new RuntimeException('OAuth client credentials require API_IDENTITY and API_KEY.');
         }
 
         return [$clientId, $clientSecret];
+    }
+
+    public static function resolveBasicCredentials(array $request, ?array $credential = null): array
+    {
+        $apiIdentity = array_key_exists('api_identity', $request)
+            ? (string)$request['api_identity']
+            : (string)($credential['api_identity'] ?? '');
+        $apiKey = array_key_exists('api_key', $request)
+            ? (string)$request['api_key']
+            : (string)($credential['api_key'] ?? '');
+
+        if ($apiKey === '') {
+            throw new RuntimeException('Outbound request is missing the API key for basic authentication.');
+        }
+
+        return [$apiIdentity, $apiKey];
     }
 }
 

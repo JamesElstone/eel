@@ -246,18 +246,14 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
             $keysPath = trim((string)($this->config['keys_path'] ?? ''));
             $stored = \SecurityStore::loadCredential(
                 $provider,
+                'XML',
                 $tag,
                 (string)$profile['credential_environment'],
                 $keysPath === '' ? \SecurityStore::apiKeysPath() : $keysPath
             );
-            [$senderId, $password] = array_pad(
-                explode(':', (string)($stored['api_key'] ?? ''), 2),
-                2,
-                ''
-            );
             $credentials = [
-                'sender_id' => $senderId,
-                'password' => $password,
+                'sender_id' => (string)($stored['api_identity'] ?? ''),
+                'password' => (string)($stored['api_key'] ?? ''),
                 'vendor_id' => $this->config['vendor_id'] ?? '',
                 'product' => $this->config['product'] ?? 'EEL Accounts',
                 'version' => $this->config['version'] ?? '1.0',

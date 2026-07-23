@@ -108,7 +108,8 @@ final class HmrcApiClient
                 (string)($config['credential_tag'] ?? 'CT600'),
                 $mode,
                 \SecurityStore::apiKeysPath(),
-                (string)($config['credential_provider'] ?? 'HMRC')
+                (string)($config['credential_provider'] ?? 'HMRC'),
+                (string)($config['credential_gateway'] ?? 'XML')
             );
 
             return ['ok' => true, 'errors' => []];
@@ -125,14 +126,19 @@ final class HmrcApiClient
         return array_replace([
             'accept_header' => 'application/xml',
             'credential_provider' => 'HMRC',
-            'credential_tag' => 'CT600',
+            'credential_gateway' => 'XML',
+            'credential_tag' => 'CT600_XML',
             'keys_path' => \SecurityStore::apiKeysPath(),
             'mode' => $mode,
             'oauth_path' => '/oauth/token',
             'submit_path' => '',
             'timeout_seconds' => 30,
             'token_scope' => '',
-        ], $config, ['mode' => $mode]);
+        ], $config, [
+            'credential_gateway' => 'XML',
+            'credential_tag' => 'CT600_XML',
+            'mode' => $mode,
+        ]);
     }
 
     private function baseUrlForMode(string $mode): string

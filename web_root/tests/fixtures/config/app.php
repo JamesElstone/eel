@@ -44,6 +44,11 @@ return array (
   array (
     'service' => 'eel_accounts\\Service\\AccountingContextService',
   ),
+  'api_credentials' => [
+    'catalog_providers' => [
+      0 => 'eel_accounts\\Service\\ApiCredentialCatalogProvider',
+    ],
+  ],
   'reverse_proxy' => 
   array (
     'trusted_proxy_ips' => 

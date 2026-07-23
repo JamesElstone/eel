@@ -65,6 +65,7 @@ final class CompaniesHouseAccountsCredentialService
     {
         $credential = \SecurityStore::loadCredential(
             self::PROVIDER,
+            'XML',
             $tag,
             $environment,
             $this->keysPath

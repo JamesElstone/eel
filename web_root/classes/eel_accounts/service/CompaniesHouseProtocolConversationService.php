@@ -575,6 +575,7 @@ final class CompaniesHouseProtocolConversationService
         }
         $credential = \SecurityStore::loadCredential(
             'COMPANIESHOUSE',
+            'XML',
             self::BINDING_TAG,
             strtoupper($environment)
         );

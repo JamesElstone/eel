@@ -26,6 +26,7 @@ final class CompaniesHouseService
     public function request(string $path, array $query = []): array {
         $response = ($this->outboundRequest)([
             'provider' => 'COMPANIESHOUSE',
+            'gateway' => 'REST',
             'tag' => 'COMPANY_LOOKUP',
             'environment' => \HelperFramework::normaliseEnvironmentMode($this->environment),
             'method' => 'GET',

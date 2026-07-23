@@ -26,13 +26,14 @@ Its goal is simple:
 
 HMRC and Companies House transmission credentials are read from the private
 `secure/api.keys` CSV through the credential store. Companies House TEST
-accounts filing requires these three environment-specific rows (replace the
-placeholder authentication value locally and do not commit the file):
+accounts filing requires gateway-specific rows. The required header is shown
+below; replace placeholder values locally and do not commit the file:
 
 ```csv
-COMPANIESHOUSE,ACCOUNTS_FILING_PRESENTER_ID,TEST,XML,https://xmlgw.companieshouse.gov.uk/v1-0/xmlgw/Gateway,{presenter-id}
-COMPANIESHOUSE,ACCOUNTS_FILING_AUTHENTICATION,TEST,XML,https://xmlgw.companieshouse.gov.uk/v1-0/xmlgw/Gateway,{authentication-value}
-COMPANIESHOUSE,ACCOUNTS_FILING_PACKAGE_REFERENCE,TEST,XML,https://xmlgw.companieshouse.gov.uk/v1-0/xmlgw/Gateway,0012
+PROVIDER,GATEWAY,TAG,ENVIRONMENT,SCHEMA,URL,API_IDENTITY,API_KEY
+COMPANIESHOUSE,XML,ACCOUNTS_FILING_PRESENTER_ID,TEST,HTTPS,xmlgw.companieshouse.gov.uk/v1-0/xmlgw/Gateway,,{presenter-id}
+COMPANIESHOUSE,XML,ACCOUNTS_FILING_AUTHENTICATION,TEST,HTTPS,xmlgw.companieshouse.gov.uk/v1-0/xmlgw/Gateway,,{authentication-value}
+COMPANIESHOUSE,XML,ACCOUNTS_FILING_PACKAGE_REFERENCE,TEST,HTTPS,xmlgw.companieshouse.gov.uk/v1-0/xmlgw/Gateway,,0012
 ```
 
 The Transmit page reports only whether the credentials are configured; it does

@@ -147,6 +147,7 @@ final class CompaniesHouseDocumentService
     private function requestRaw(string $url, array $headers, bool $useAuth = true): array {
         $response = ($this->outboundRequest)([
             'provider' => 'COMPANIESHOUSE',
+            'gateway' => 'REST',
             'tag' => 'COMPANY_LOOKUP',
             'environment' => \HelperFramework::normaliseEnvironmentMode($this->environment),
             'method' => 'GET',

@@ -2692,6 +2692,7 @@
                     initialiseUploadDropzones(replacement);
                     initialisePasswordRequirementPanels(replacement);
                     initialiseTableCondensedControls(replacement);
+                    initialiseApiCredentialEditors(replacement);
                     initialiseCardAutoRefresh(replacement);
                     updateCardMaximizedBodyState();
                     return;
@@ -2713,6 +2714,7 @@
                     initialiseUploadDropzones(replacement);
                     initialisePasswordRequirementPanels(replacement);
                     initialiseTableCondensedControls(replacement);
+                    initialiseApiCredentialEditors(replacement);
                     initialiseCardAutoRefresh(replacement);
                 }
             } catch (error) {
@@ -2721,6 +2723,75 @@
         });
 
         initialiseVisibleWhenControls(document);
+    }
+
+    function initialiseApiCredentialEditors(root = document) {
+        const editors = root.querySelectorAll ? root.querySelectorAll('[data-api-credential-editor="true"]') : [];
+
+        editors.forEach((editor) => {
+            if (!(editor instanceof HTMLFormElement) || editor.dataset.apiCredentialEditorBound === '1') {
+                return;
+            }
+            let catalog;
+            try {
+                catalog = JSON.parse(editor.dataset.apiCredentialCatalog || '[]');
+            } catch (error) {
+                console.error('Unable to read API credential editor catalog.', error);
+                return;
+            }
+            if (!Array.isArray(catalog)) {
+                return;
+            }
+            const fields = ['provider', 'gateway', 'tag', 'environment'];
+            const selects = Object.fromEntries(fields.map((field) => [field, editor.querySelector(`[data-api-credential-field="${field}"]`)]));
+            if (fields.some((field) => !(selects[field] instanceof HTMLSelectElement))) {
+                return;
+            }
+            const sync = () => {
+                fields.forEach((field) => {
+                    const select = selects[field];
+                    const previous = select.value;
+                    const allowed = new Map();
+                    catalog.forEach((entry) => {
+                        if (!entry || typeof entry !== 'object' || fields.some((other) => other !== field && selects[other].value && entry[other] !== selects[other].value)) {
+                            return;
+                        }
+                        if (typeof entry[field] === 'string') {
+                            allowed.set(entry[field], typeof entry[`${field}_label`] === 'string' ? entry[`${field}_label`] : entry[field]);
+                        }
+                    });
+                    select.replaceChildren(new Option(`Select ${field.charAt(0).toUpperCase()}${field.slice(1)}`, ''));
+                    allowed.forEach((label, value) => select.add(new Option(label, value)));
+                    select.value = allowed.has(previous) ? previous : '';
+                });
+            };
+            fields.forEach((field) => selects[field].addEventListener('change', sync));
+            editor.querySelectorAll('[data-api-credential-edit="true"]').forEach((button) => {
+                if (!(button instanceof HTMLButtonElement)) {
+                    return;
+                }
+                button.addEventListener('click', () => {
+                    fields.forEach((field) => { selects[field].value = String(button.dataset[`credential${field.charAt(0).toUpperCase()}${field.slice(1)}`] || ''); });
+                    sync();
+                    fields.forEach((field) => { selects[field].value = String(button.dataset[`credential${field.charAt(0).toUpperCase()}${field.slice(1)}`] || ''); });
+                    const id = editor.querySelector('[data-api-credential-id]');
+                    const schema = editor.querySelector('[name="credential[schema]"]');
+                    const url = editor.querySelector('[name="credential[url]"]');
+                    const apiIdentity = editor.querySelector('[name="credential[api_identity]"]');
+                    const apiKey = editor.querySelector('[name="credential[api_key]"]');
+                    const title = editor.querySelector('[data-api-credential-editor-title]');
+                    if (id instanceof HTMLInputElement) id.value = String(button.dataset.credentialId || '');
+                    if (schema instanceof HTMLInputElement) schema.value = String(button.dataset.credentialSchema || '');
+                    if (url instanceof HTMLInputElement) url.value = String(button.dataset.credentialUrl || '');
+                    if (apiIdentity instanceof HTMLTextAreaElement) { apiIdentity.value = ''; apiIdentity.placeholder = 'Leave blank to preserve the current API identity'; }
+                    if (apiKey instanceof HTMLTextAreaElement) { apiKey.value = ''; apiKey.placeholder = 'Leave blank to preserve the current API key'; }
+                    if (title instanceof HTMLElement) title.textContent = 'Edit Credential';
+                    editor.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                });
+            });
+            editor.dataset.apiCredentialEditorBound = '1';
+            sync();
+        });
     }
 
     function cardAutoRefreshNodes(root) {
@@ -3956,6 +4027,7 @@
     initialiseUploadDropzones(document);
     initialisePasswordRequirementPanels(document);
     initialiseTableCondensedControls(document);
+    initialiseApiCredentialEditors(document);
     initialiseCardAutoRefresh(document);
     initialiseButtonTitleVisibility();
     logFlashMessages(document.getElementById('flash-messages'));

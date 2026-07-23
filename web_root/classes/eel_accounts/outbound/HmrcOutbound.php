@@ -26,10 +26,12 @@ final class HmrcOutbound implements \eel_accounts\Service\VatValidationInterface
         string $tag = 'VAT_CHECK',
         string $environment = 'TEST',
         ?string $keysPath = null,
-        string $provider = 'HMRC'
+        string $provider = 'HMRC',
+        string $gateway = 'REST'
     ): array {
         return \ApiHelperOutbound::loadCredential(
             $provider,
+            $gateway,
             $tag,
             \HelperFramework::normaliseEnvironmentMode($environment),
             $keysPath
@@ -47,6 +49,7 @@ final class HmrcOutbound implements \eel_accounts\Service\VatValidationInterface
             'headers' => array_replace($defaultHeaders, $requestHeaders),
             'auth' => 'oauth_client_credentials',
             'provider' => 'HMRC',
+            'gateway' => 'REST',
             'tag' => 'VAT_CHECK',
             'environment' => 'TEST',
             'timeout_seconds' => 10,
@@ -93,6 +96,7 @@ final class HmrcOutbound implements \eel_accounts\Service\VatValidationInterface
         $config = array_replace([
             'accept_header' => 'application/vnd.hmrc.1.0+json',
             'credential_provider' => 'HMRC',
+            'credential_gateway' => 'REST',
             'credential_tag' => 'FPH_VALIDATOR',
             'keys_path' => \SecurityStore::apiKeysPath(),
             'mode' => 'TEST',
@@ -205,6 +209,7 @@ final class HmrcOutbound implements \eel_accounts\Service\VatValidationInterface
             ],
             'auth' => 'oauth_client_credentials',
             'provider' => (string)($this->config['credential_provider'] ?? 'HMRC'),
+            'gateway' => (string)($this->config['credential_gateway'] ?? 'REST'),
             'tag' => (string)($this->config['credential_tag'] ?? 'VAT_CHECK'),
             'environment' => $this->credentialEnvironment(),
             'keys_path' => (string)($this->config['keys_path'] ?? ''),
@@ -350,12 +355,13 @@ final class HmrcOutbound implements \eel_accounts\Service\VatValidationInterface
         }
 
         $provider = (string)($this->config['credential_provider'] ?? 'HMRC');
+        $gateway = (string)($this->config['credential_gateway'] ?? 'REST');
         $tag = (string)($this->config['credential_tag'] ?? 'VAT_CHECK');
         $environment = $this->credentialEnvironment();
         $keysPath = (string)($this->config['keys_path'] ?? '');
 
         try {
-            $credential = self::loadCredential($tag, $environment, $keysPath, $provider);
+            $credential = self::loadCredential($tag, $environment, $keysPath, $provider, $gateway);
         } catch (\Throwable $exception) {
             throw new \RuntimeException($this->missingCredentialMessage($provider, $tag, $environment, $exception), 0, $exception);
         }

@@ -287,6 +287,9 @@ final class AppConfigurationStore
             'api_keys' => [
                 'path' => '../secure/api.keys',
             ],
+            'api_credentials' => [
+                'catalog_providers' => [],
+            ],
             'security_keys' => [
                 'path' => '../secure/security.keys',
             ],

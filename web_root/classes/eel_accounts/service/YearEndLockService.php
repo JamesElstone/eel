@@ -77,6 +77,50 @@ final class YearEndLockService
         }
     }
 
+    /**
+     * Returns the lock-order constraints for an accounting period. Periods are
+     * closed oldest-first and reopened newest-first, preserving a continuous
+     * locked history.
+     */
+    public function fetchPeriodLockState(int $companyId, int $accountingPeriodId): array
+    {
+        $previousPeriod = $this->fetchAdjacentAccountingPeriod($companyId, $accountingPeriodId, false);
+        $followingPeriod = $this->fetchAdjacentAccountingPeriod($companyId, $accountingPeriodId, true);
+        $previousLocked = $previousPeriod !== null && $this->isLocked($companyId, (int)$previousPeriod['id']);
+        $followingLocked = $followingPeriod !== null && $this->isLocked($companyId, (int)$followingPeriod['id']);
+
+        return [
+            'can_lock' => $previousPeriod === null || $previousLocked,
+            'can_unlock' => $followingPeriod === null || !$followingLocked,
+            'previous_accounting_period' => $previousPeriod,
+            'following_accounting_period' => $followingPeriod,
+            'previous_period_locked' => $previousLocked,
+            'following_period_locked' => $followingLocked,
+            'lock_block_reason' => $previousPeriod !== null && !$previousLocked
+                ? 'Lock the previous accounting period before locking this one.'
+                : '',
+            'unlock_block_reason' => $followingPeriod !== null && $followingLocked
+                ? 'Unlock the following accounting period before unlocking this one.'
+                : '',
+        ];
+    }
+
+    public function assertCanLock(int $companyId, int $accountingPeriodId): void
+    {
+        $state = $this->fetchPeriodLockState($companyId, $accountingPeriodId);
+        if (empty($state['can_lock'])) {
+            throw new \RuntimeException((string)$state['lock_block_reason']);
+        }
+    }
+
+    public function assertCanUnlock(int $companyId, int $accountingPeriodId): void
+    {
+        $state = $this->fetchPeriodLockState($companyId, $accountingPeriodId);
+        if (empty($state['can_unlock'])) {
+            throw new \RuntimeException((string)$state['unlock_block_reason']);
+        }
+    }
+
     public function assertUnlockedForUpdate(int $companyId, int $accountingPeriodId, string $actionLabel = 'change this period'): void
     {
         if (!\InterfaceDB::inTransaction()) {
@@ -157,6 +201,7 @@ final class YearEndLockService
                 }
                 return ['success' => true, 'review' => $existing, 'no_op' => true];
             }
+            $this->assertCanLock($companyId, $accountingPeriodId);
             $this->assertUnlockedForUpdate($companyId, $accountingPeriodId, 'lock this accounting period');
 
             $prepayments = (new PrepaymentPostingService())->validateForFinalLock($companyId, $accountingPeriodId);
@@ -205,6 +250,7 @@ final class YearEndLockService
         if (!$this->hasReviewTable()) {
             return ['success' => false, 'errors' => ['Run the Year End review migration before unlocking periods.']];
         }
+        $this->assertCanUnlock($companyId, $accountingPeriodId);
 
         $this->ensureReviewRow($companyId, $accountingPeriodId);
         $existing = $this->fetchReview($companyId, $accountingPeriodId);
@@ -317,6 +363,30 @@ final class YearEndLockService
                 'updated_at' => $now,
             ]
         );
+    }
+
+    private function fetchAdjacentAccountingPeriod(int $companyId, int $accountingPeriodId, bool $following): ?array
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return null;
+        }
+
+        $operator = $following ? '>' : '<';
+        $order = $following ? 'ASC' : 'DESC';
+        $row = \InterfaceDB::fetchOne(
+            'SELECT adjacent.id, adjacent.label, adjacent.period_start, adjacent.period_end
+             FROM accounting_periods AS selected
+             INNER JOIN accounting_periods AS adjacent
+               ON adjacent.company_id = selected.company_id
+              AND adjacent.period_start ' . $operator . ' selected.period_start
+             WHERE selected.company_id = :company_id
+               AND selected.id = :accounting_period_id
+             ORDER BY adjacent.period_start ' . $order . ', adjacent.id ' . $order . '
+             LIMIT 1',
+            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+        );
+
+        return is_array($row) ? $row : null;
     }
 
     private function actorValue(string $value): string

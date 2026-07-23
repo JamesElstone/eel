@@ -32,6 +32,15 @@ final class _year_end_stateCard extends CardBaseFramework
                 'service' => \eel_accounts\Service\DatabaseBackupService::class,
                 'method' => 'fetchBackupStatus',
             ],
+            [
+                'key' => 'period_lock_state',
+                'service' => \eel_accounts\Service\YearEndLockService::class,
+                'method' => 'fetchPeriodLockState',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                ],
+            ],
         ];
     }
 
@@ -65,8 +74,16 @@ final class _year_end_stateCard extends CardBaseFramework
             : 'Runs the live preflight, creates a fresh database backup, completes the final close tasks, and locks this accounting period against further changes.';
         $latestBackupAt = $this->latestBackupCreatedAt($context);
         $hasChecklistBlockers = !empty((($context['year_end'] ?? [])['checklist_has_blockers'] ?? false));
-        $lockDisabled = !$isLocked && $hasChecklistBlockers;
-        $lockDisabledTitle = 'Resolve year-end checklist warnings and blockers before running the year-end close and locking this accounting period.';
+        $periodLockState = (array)($context['services']['period_lock_state'] ?? []);
+        $lockDisabled = !$isLocked && (
+            $hasChecklistBlockers
+            || ($periodLockState !== [] && empty($periodLockState['can_lock']))
+        );
+        $unlockDisabled = $isLocked && !empty($periodLockState) && empty($periodLockState['can_unlock']);
+        $lockDisabledTitle = $hasChecklistBlockers
+            ? 'Resolve year-end checklist warnings and blockers before running the year-end close and locking this accounting period.'
+            : (string)($periodLockState['lock_block_reason'] ?? '');
+        $unlockDisabledTitle = (string)($periodLockState['unlock_block_reason'] ?? '');
         $status = (string)($checklist['overall_status'] ?? '');
 
         return '
@@ -95,8 +112,8 @@ final class _year_end_stateCard extends CardBaseFramework
                         $accountingPeriodId,
                         $lockIntent,
                         $lockLabel,
-                        $lockDisabled,
-                        $lockDisabled ? $lockDisabledTitle : $lockTitle
+                        $isLocked ? $unlockDisabled : $lockDisabled,
+                        $isLocked && $unlockDisabled ? $unlockDisabledTitle : ($lockDisabled ? $lockDisabledTitle : $lockTitle)
                     ) . '
                     <button class="button" type="button" disabled>Export checklist</button>
                 </div>

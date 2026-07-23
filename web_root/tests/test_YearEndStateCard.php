@@ -16,6 +16,8 @@ $harness->run(_year_end_stateCard::class, static function (GeneratedServiceClass
         $services = $card->services();
         $harness->assertSame('backup_status', (string)($services[0]['key'] ?? ''));
         $harness->assertSame(\eel_accounts\Service\DatabaseBackupService::class, (string)($services[0]['service'] ?? ''));
+        $harness->assertSame('period_lock_state', (string)($services[1]['key'] ?? ''));
+        $harness->assertSame(\eel_accounts\Service\YearEndLockService::class, (string)($services[1]['service'] ?? ''));
 
         $html = $card->render(yearEndStateCardContext(false));
 
@@ -106,6 +108,31 @@ $harness->run(_year_end_stateCard::class, static function (GeneratedServiceClass
         $harness->assertSame(true, str_contains($html, 'data-year-end-state-running-label="Refreshing..." disabled title="This accounting period is locked."'));
         $harness->assertSame(false, str_contains($html, 'Run Year-End Close and Lock'));
     });
+
+    $harness->check(_year_end_stateCard::class, 'blocks locking until the previous accounting period is locked', static function () use ($harness, $card): void {
+        $context = yearEndStateCardContext(false);
+        $context['services']['period_lock_state'] = [
+            'can_lock' => false,
+            'lock_block_reason' => 'Lock the previous accounting period before locking this one.',
+        ];
+
+        $html = $card->render($context);
+
+        $harness->assertSame(true, str_contains($html, 'disabled title="Lock the previous accounting period before locking this one."'));
+    });
+
+    $harness->check(_year_end_stateCard::class, 'blocks unlocking while the following accounting period remains locked', static function () use ($harness, $card): void {
+        $context = yearEndStateCardContext(false);
+        $context['year_end']['checklist']['review']['is_locked'] = true;
+        $context['services']['period_lock_state'] = [
+            'can_unlock' => false,
+            'unlock_block_reason' => 'Unlock the following accounting period before unlocking this one.',
+        ];
+
+        $html = $card->render($context);
+
+        $harness->assertSame(true, str_contains($html, 'disabled title="Unlock the following accounting period before unlocking this one."'));
+    });
 });
 
 function yearEndStateCardContext(bool $hasBlockers): array
@@ -145,6 +172,10 @@ function yearEndStateCardContext(bool $hasBlockers): array
                         'size_bytes' => 1024,
                     ],
                 ],
+            ],
+            'period_lock_state' => [
+                'can_lock' => true,
+                'can_unlock' => true,
             ],
         ],
     ];

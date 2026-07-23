@@ -42,7 +42,7 @@ final class _api_modeCard extends CardBaseFramework
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="ApiMode">
                 <input type="hidden" name="intent" value="set">
-                <div class="form-grid">
+                <div class="form-flex-flow">
                     <div class="form-row">
                         <label for="companies_house_api_mode">Companies House REST Environment</label>
                         <select class="select" id="companies_house_api_mode" name="companies_house_api_mode" data-state-default="' . HelperFramework::escape($companiesHouseApiMode) . '">

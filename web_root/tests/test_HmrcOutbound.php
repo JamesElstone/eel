@@ -83,6 +83,7 @@ $harness->run(\eel_accounts\Outbound\HmrcOutbound::class, function (GeneratedSer
 
     $harness->check(\eel_accounts\Outbound\HmrcOutbound::class, 'sends translated Gov headers through anti-fraud validation requests', function () use ($harness): void {
         $captured = null;
+        $tokenRequest = null;
         $outbound = new \eel_accounts\Outbound\HmrcOutbound(
             [
                 'mode' => 'TEST',
@@ -91,8 +92,9 @@ $harness->run(\eel_accounts\Outbound\HmrcOutbound::class, function (GeneratedSer
                 'validate_method' => 'GET',
                 'accept_header' => 'application/vnd.hmrc.1.0+json',
             ],
-            static function (array $request) use (&$captured): array {
+            static function (array $request) use (&$captured, &$tokenRequest): array {
                 if (($request['path'] ?? '') === '/oauth/token') {
+                    $tokenRequest = $request;
                     return [
                         'status_code' => 200,
                         'headers' => [],
@@ -116,6 +118,8 @@ $harness->run(\eel_accounts\Outbound\HmrcOutbound::class, function (GeneratedSer
         $harness->assertSame('GET', $captured['validate_method'] ?? null);
         $harness->assertSame('device-123', $captured['headers']['Gov-Client-Device-ID'] ?? null);
         $harness->assertSame('application/vnd.hmrc.1.0+json', $captured['headers']['Accept'] ?? null);
+        $harness->assertTrue(!array_key_exists('client_id', (array)$tokenRequest));
+        $harness->assertTrue(!array_key_exists('client_secret', (array)$tokenRequest));
     });
 
     $harness->check(\eel_accounts\Outbound\HmrcOutbound::class, 'reports anti-fraud base URL configuration errors with anti-fraud wording', function () use ($harness): void {

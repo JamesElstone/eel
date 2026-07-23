@@ -213,14 +213,20 @@ final class HmrcOutbound implements \eel_accounts\Service\VatValidationInterface
             'tag' => (string)($this->config['credential_tag'] ?? 'VAT_CHECK'),
             'environment' => $this->credentialEnvironment(),
             'keys_path' => (string)($this->config['keys_path'] ?? ''),
-            'client_id' => (string)($this->config['client_id'] ?? ''),
-            'client_secret' => (string)($this->config['client_secret'] ?? ''),
             'form_params' => [
                 'grant_type' => 'client_credentials',
                 'scope' => (string)($this->config['token_scope'] ?? 'read:vat'),
             ],
             'timeout_seconds' => max(1, (int)($this->config['timeout_seconds'] ?? 10)),
         ];
+
+        foreach (['client_id', 'client_secret'] as $field) {
+            $value = trim((string)($this->config[$field] ?? ''));
+            if ($value !== '') {
+                $request[$field] = $value;
+            }
+        }
+
         $response = is_callable($this->outboundRequest)
             ? ($this->outboundRequest)($request)
             : self::tokenRequest($request);

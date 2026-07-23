@@ -168,12 +168,13 @@ $harness->run(_year_end_loan_confirmationCard::class, static function (Generated
         $context['services']['directorLoanReview']['ct600a'] = [
             'available' => true,
             'questions' => ['missing_parties' => 'Are any participators missing?'],
-            'review' => ['answers' => ['missing_parties' => 'no'], 'current' => false, 'complete' => false],
+            'review' => ['stored' => true, 'answers' => ['missing_parties' => 'no'], 'current' => false, 'complete' => false],
         ];
 
         $html = $card->render($context);
         $harness->assertTrue(str_contains($html, 'Underlying data changed — re-approve required.'));
         $harness->assertTrue(str_contains($html, 'Review the refreshed Section 464A and 464C declaration'));
+        $harness->assertTrue(str_contains($html, 'Re-approve declaration using these answers'));
         $harness->assertSame(false, str_contains($html, 'Revoke approval'));
         $harness->assertSame(false, str_contains($html, 'data-submit-on-change="true" disabled'));
     });

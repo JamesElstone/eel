@@ -92,6 +92,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $loanReviewBefore = $loanReviewService->fetch($fixture['company_id'], $fixture['accounting_period_id']);
                 $harness->assertSame(1, (int)($loanReviewBefore['future_attribution_warning']['count'] ?? 0));
                 $harness->assertSame(false, (bool)($loanReviewBefore['future_attribution_warning']['acknowledged'] ?? false));
+                $harness->assertSame(false, in_array(
+                    'section_464a_review',
+                    array_column((array)($loanReviewBefore['items'] ?? []), 'kind'),
+                    true
+                ));
                 $acknowledged = $loanReviewService->acknowledgeFutureAttributionWarning(
                     $fixture['company_id'],
                     $fixture['accounting_period_id'],

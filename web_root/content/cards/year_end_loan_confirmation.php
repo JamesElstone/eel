@@ -173,12 +173,16 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
                 . $this->ct600aRadio((string)$key, 'no', 'No', $value, $locked)
                 . $this->ct600aRadio((string)$key, 'yes', 'Yes', $value, $locked) . '</div></fieldset>';
         }
+        $reapproveAction = !$locked && !empty($review['stored']) && empty($review['current'])
+            ? '<div class="actions-row"><button class="button primary" type="submit">Re-approve declaration using these answers</button></div>'
+            : '';
 
         return '<section class="settings-stack"><form class="settings-stack" method="post" action="?page=loans" data-ajax="true">'
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="Ct600a"><input type="hidden" name="intent" value="save_ct600a_review">'
             . '<input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
             . $fields
+            . $reapproveAction
             . '<div class="helper">'
             . ($locked
                 ? 'Selections are locked because the Year End Confirmation has been recorded. No further changes can be made.'

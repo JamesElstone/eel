@@ -90,25 +90,6 @@ final class LoanReviewService
             }
         }
 
-        $ct600a = (new Ct600aService())->fetchForAccountingPeriod($companyId, $accountingPeriodId);
-        $review = (array)($ct600a['review'] ?? []);
-        if (empty($review['current']) || empty($review['complete'])) {
-            $items[] = [
-                'kind' => 'section_464a_review',
-                'state' => !empty($review['stored']) ? 'stale' : 'requires_action',
-                'title' => !empty($review['stored'])
-                    ? 'Section 464A and 464C declaration needs reviewing again'
-                    : 'Section 464A and 464C declaration is required',
-                'detail' => !empty($review['stored'])
-                    ? 'The six-question declaration on Loans → Year End Confirmation was saved previously, but relied-on loan evidence has since changed. Check its answers and approve the refreshed declaration.'
-                    : 'Complete the six-question declaration on Loans → Year End Confirmation before confirming the year-end loan position.',
-                'source_label' => 'HMRC Section 464A review',
-                'source_url' => 'https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm61570',
-                'action_label' => 'Review the declaration',
-                'action_url' => '?page=loans&show_card=year_end_loan_confirmation',
-            ];
-        }
-
         $futureMovements = array_values($futureMovementsByTransaction);
         usort($futureMovements, static fn(array $left, array $right): int => [
             (string)($left['txn_date'] ?? ''), (int)($left['transaction_id'] ?? 0),

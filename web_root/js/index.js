@@ -1188,6 +1188,31 @@
         return String(contentType || '').toLowerCase().includes('application/x-ndjson');
     }
 
+    function createActionProgressResponseDiagnostic(error, responseText) {
+        const diagnostic = new Error(
+            'The action progress response could not be processed. The raw response has been logged for diagnostics.'
+        );
+        diagnostic.cause = error;
+        diagnostic.originalError = error;
+        diagnostic.responseText = String(responseText || '');
+
+        console.error(
+            'ActionProgress: unable to process the response. Raw response follows:',
+            diagnostic.responseText,
+            error
+        );
+
+        return diagnostic;
+    }
+
+    function throwActionProgressResponseDiagnostic(error, responseText) {
+        if (error && error.payload && typeof error.payload === 'object') {
+            throw error;
+        }
+
+        throw createActionProgressResponseDiagnostic(error, responseText);
+    }
+
     function createAjaxNdjsonParser(progressController = null) {
         let buffer = '';
         let completePayload = null;
@@ -1275,6 +1300,8 @@
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         const parser = createAjaxNdjsonParser(progressController);
+        let responseText = '';
+        let streamError = null;
 
         while (true) {
             const { value, done } = await reader.read();
@@ -1282,10 +1309,32 @@
                 break;
             }
 
-            parser.push(decoder.decode(value, { stream: true }));
+            const chunk = decoder.decode(value, { stream: true });
+            responseText += chunk;
+
+            if (streamError !== null) {
+                continue;
+            }
+
+            try {
+                parser.push(chunk);
+            } catch (error) {
+                streamError = error;
+            }
         }
 
-        return parser.finish(decoder.decode());
+        const finalChunk = decoder.decode();
+        responseText += finalChunk;
+
+        if (streamError !== null) {
+            throwActionProgressResponseDiagnostic(streamError, responseText);
+        }
+
+        try {
+            return parser.finish(finalChunk);
+        } catch (error) {
+            throwActionProgressResponseDiagnostic(error, responseText);
+        }
     }
 
     async function sendXhr(url, options = {}) {
@@ -1330,14 +1379,22 @@
 
                 if (isNdjsonResponse(xhr.getResponseHeader('Content-Type'))) {
                     if (streamError !== null) {
-                        reject(streamError);
+                        try {
+                            throwActionProgressResponseDiagnostic(streamError, xhr.responseText);
+                        } catch (error) {
+                            reject(error);
+                        }
                         return;
                     }
 
                     try {
                         resolve((streamParser || createAjaxNdjsonParser(options.progress)).finish());
                     } catch (error) {
-                        reject(error);
+                        try {
+                            throwActionProgressResponseDiagnostic(error, xhr.responseText);
+                        } catch (diagnostic) {
+                            reject(diagnostic);
+                        }
                     }
                     return;
                 }
@@ -1347,6 +1404,15 @@
                 try {
                     payload = xhr.responseText !== '' ? JSON.parse(xhr.responseText) : null;
                 } catch (error) {
+                    if (options.progress !== null && options.progress !== undefined) {
+                        try {
+                            throwActionProgressResponseDiagnostic(error, xhr.responseText);
+                        } catch (diagnostic) {
+                            reject(diagnostic);
+                        }
+                        return;
+                    }
+
                     if (xhr.status < 200 || xhr.status >= 300) {
                         reject(createAjaxError(xhr.status));
                         return;
@@ -1393,7 +1459,18 @@
             return readAjaxNdjsonResponse(response, progress);
         }
 
-        const payload = await response.json();
+        const responseText = await response.text();
+        let payload = null;
+
+        try {
+            payload = responseText !== '' ? JSON.parse(responseText) : null;
+        } catch (error) {
+            if (progress !== null) {
+                throwActionProgressResponseDiagnostic(error, responseText);
+            }
+
+            throw error;
+        }
 
         if (!response.ok) {
             throw createAjaxError(response.status, payload);

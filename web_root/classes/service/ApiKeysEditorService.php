@@ -120,7 +120,7 @@ final class ApiKeysEditorService
             $url = trim((string)$fields[5]);
             $apiIdentity = (string)$fields[6];
             $apiKey = (string)$fields[7];
-            if ($schema === '' || $url === '' || $apiKey === '') { throw new RuntimeException('API credential record ' . ($recordIndex + 1) . ' has a blank schema, URL, or API key.'); }
+            if ($schema === '' || $apiKey === '') { throw new RuntimeException('API credential record ' . ($recordIndex + 1) . ' has a blank schema or API key.'); }
             $this->assertSecretValue($apiIdentity, 'API identity');
             $this->assertSecretValue($apiKey, 'API key');
             $document[] = ['kind' => 'credential', 'id' => 'record-' . $recordIndex, 'api_identity' => $apiIdentity, 'api_key' => $apiKey, 'schema' => $schema, 'url' => $url] + $selection;
@@ -175,7 +175,7 @@ final class ApiKeysEditorService
         $selection = $this->catalog()->requireAllowed((string)($values['provider'] ?? ''), (string)($values['gateway'] ?? ''), (string)($values['tag'] ?? ''), (string)($values['environment'] ?? ''));
         $schema = strtoupper(trim((string)($values['schema'] ?? '')));
         $url = trim((string)($values['url'] ?? ''));
-        if (preg_match('/^[A-Z][A-Z0-9+_.-]{0,31}$/D', $schema) !== 1 || $url === '' || strlen($url) > 1000 || str_contains($url, "\n") || str_contains($url, "\r")) { throw new RuntimeException('Credential schema or URL is invalid.'); }
+        if (preg_match('/^[A-Z][A-Z0-9+_.-]{0,31}$/D', $schema) !== 1 || strlen($url) > 1000 || str_contains($url, "\n") || str_contains($url, "\r")) { throw new RuntimeException('Credential schema or URL is invalid.'); }
         return $selection + ['schema' => $schema, 'url' => $url];
     }
 

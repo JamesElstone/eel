@@ -26,10 +26,11 @@ $harness->check(ApiKeysEditorService::class, 'lists only metadata and writes dis
         $listing = $service->listing();
         $harness->assertSame(false, str_contains(json_encode($listing), 'secret-never-rendered'));
         $harness->assertSame(false, str_contains(json_encode($listing), 'identity-never-rendered'));
-        $result = $service->save('', ['provider' => 'ACME', 'gateway' => 'XML', 'tag' => 'LOOKUP', 'environment' => 'TEST', 'schema' => 'HTTPS', 'url' => 'xml.example', 'api_identity' => "  Jöhn, \"identity\"\nnext  ", 'api_key' => "  sécret, \"key\"\nnext  "]);
+        $result = $service->save('', ['provider' => 'ACME', 'gateway' => 'XML', 'tag' => 'LOOKUP', 'environment' => 'TEST', 'schema' => 'HTTPS', 'url' => '', 'api_identity' => "  Jöhn, \"identity\"\nnext  ", 'api_key' => "  sécret, \"key\"\nnext  "]);
         $harness->assertSame(true, $result['changed']);
         $contents = (string)file_get_contents($path);
         $harness->assertTrue(str_contains($contents, 'ACME,XML,LOOKUP,TEST'));
+        $harness->assertTrue(str_contains($contents, 'ACME,XML,LOOKUP,TEST,HTTPS,,"  Jöhn'));
         $harness->assertTrue(str_contains($contents, '"  Jöhn, ""identity""' . "\n" . 'next  "'));
         $harness->assertTrue(str_contains($contents, '"  sécret, ""key""' . "\n" . 'next  "'));
         $harness->assertTrue(str_contains($contents, 'secret-never-rendered'));

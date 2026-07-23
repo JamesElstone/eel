@@ -166,6 +166,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         int $accountingPeriodId,
         ActionProgressFramework $progress
     ): array {
+        @set_time_limit(0);
         $submissionId = (int)$request->input('submission_id', 0);
         $companyAuthCode = trim((string)$request->input('company_auth_code', ''));
         if ($submissionId <= 0) {

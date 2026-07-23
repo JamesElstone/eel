@@ -95,6 +95,7 @@ final class IxbrlAction implements ActionInterfaceFramework
             }
             if ($intent === 'approve_ixbrl_accounts_filing_basis') {
                 $progress = $services->actionProgress();
+                @set_time_limit(0);
                 $progress->report('Validating the approved accounts filing basis…', 0);
                 $approved = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())->approveAndBuildFacts(
                     $companyId,
@@ -125,6 +126,7 @@ final class IxbrlAction implements ActionInterfaceFramework
             } elseif (in_array($intent, ['generate_computation_ixbrl', 'validate_computation_ixbrl'], true)) {
                 if ($intent === 'generate_computation_ixbrl') {
                     $progress = $services->actionProgress();
+                    @set_time_limit(0);
                     $progress->report('Generating the Corporation Tax period iXBRL…', 0);
                     $result = $this->generateComputation(
                         $companyId,
@@ -213,6 +215,9 @@ final class IxbrlAction implements ActionInterfaceFramework
         ?int $validationPercent = null
     ): array
     {
+        if ($progress !== null) {
+            @set_time_limit(0);
+        }
         if ($generationPercent !== null) {
             $progress?->report('Generating the accounts iXBRL…', $generationPercent);
         }
@@ -307,6 +312,7 @@ final class IxbrlAction implements ActionInterfaceFramework
         ActionProgressFramework $progress
     ): array
     {
+        @set_time_limit(0);
         $progress->report('Checking accounts iXBRL filing readiness…', 0);
         $readiness = (new \eel_accounts\Service\IxbrlReadinessService())
             ->getReadiness($companyId, $accountingPeriodId);

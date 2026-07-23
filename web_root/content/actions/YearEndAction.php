@@ -200,6 +200,7 @@ final class YearEndAction implements ActionInterfaceFramework
         string $actor,
         ActionProgressFramework $progress
     ): array {
+        @set_time_limit(0);
         return (new \eel_accounts\Service\YearEndChecklistService())->lockPeriod(
             $companyId,
             $accountingPeriodId,
@@ -217,6 +218,7 @@ final class YearEndAction implements ActionInterfaceFramework
         string $actor,
         ActionProgressFramework $progress
     ): array {
+        @set_time_limit(0);
         return (new \eel_accounts\Service\YearEndChecklistService())->unlockPeriod(
             $companyId,
             $accountingPeriodId,

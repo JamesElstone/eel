@@ -96,6 +96,14 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
         $service->context['feature'] = ['mode' => 'TEST', 'enabled' => true, 'live_approved' => false];
         $service->context['submission'] = ['id' => 77];
         $action = companiesHouseAccountsTestAction($service);
+        $invalidCode = $action->handle(companiesHouseAccountsActionRequest([
+            'intent' => 'submit_revised_accounts',
+            'submission_id' => '77',
+            'company_auth_code' => 'ABC12345',
+        ]), createTestPageServiceFramework());
+        $harness->assertSame(false, $invalidCode->isSuccess());
+        $harness->assertSame(true, str_contains(companiesHouseAccountsActionFlash($invalidCode), 'exactly 6'));
+
         $forged = $action->handle(companiesHouseAccountsActionRequest([
             'intent' => 'submit_revised_accounts',
             'submission_id' => '999',
@@ -162,6 +170,42 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
         $harness->assertSame(91, (int)($service->calls[1]['submission_id'] ?? 0));
         $harness->assertSame(true, in_array('companies.house.accounts.submission', $result->changedFacts(), true));
     });
+
+    $harness->check(
+        CompaniesHouseAccountsAction::class,
+        'gates granular CompanyData exchange controls behind developer options',
+        static function () use ($harness): void {
+            $service = new CompaniesHouseAccountsActionFakeService();
+            $service->context['submission'] = ['id' => 77];
+            $action = companiesHouseAccountsTestAction($service);
+            $previous = AppConfigurationStore::get('developer_options', false);
+            try {
+                AppConfigurationStore::set('developer_options', false);
+                $blocked = $action->handle(companiesHouseAccountsActionRequest([
+                    'intent' => 'preflight_revised_accounts',
+                    'submission_id' => '77',
+                    'company_auth_code' => 'ABC123',
+                ]), createTestPageServiceFramework());
+                $harness->assertSame(false, $blocked->isSuccess());
+                $harness->assertSame(true, str_contains(companiesHouseAccountsActionFlash($blocked), 'Developer options'));
+
+                AppConfigurationStore::set('developer_options', true);
+                $allowed = $action->handle(companiesHouseAccountsActionRequest([
+                    'intent' => 'preflight_revised_accounts',
+                    'submission_id' => '77',
+                    'company_auth_code' => 'ABC123',
+                ]), createTestPageServiceFramework());
+                $harness->assertSame(true, $allowed->isSuccess());
+                $calls = array_values(array_filter(
+                    $service->calls,
+                    static fn(array $call): bool => ($call['method'] ?? '') === 'preflightRevision'
+                ));
+                $harness->assertCount(1, $calls);
+            } finally {
+                AppConfigurationStore::set('developer_options', (bool)$previous);
+            }
+        }
+    );
 });
 
 final class CompaniesHouseAccountsActionFakeService
@@ -203,9 +247,15 @@ final class CompaniesHouseAccountsActionFakeService
         return $this->context;
     }
 
-    public function submitRevision(int $submissionId, string $companyAuthCode, string $actor, mixed $progress = null): array
+    public function submitRevision(
+        int $submissionId,
+        string $companyAuthCode,
+        string $actor,
+        mixed $progress = null,
+        ?int $verifiedPreflightId = null
+    ): array
     {
-        $this->calls[] = compact('submissionId', 'companyAuthCode', 'actor') + [
+        $this->calls[] = compact('submissionId', 'companyAuthCode', 'actor', 'verifiedPreflightId') + [
             'method' => 'submitRevision',
             'submission_id' => $submissionId,
             'company_auth_code' => $companyAuthCode,
@@ -222,6 +272,18 @@ final class CompaniesHouseAccountsActionFakeService
         ];
 
         return ['success' => true, 'messages' => ['Submission refreshed.']];
+    }
+
+    public function preflightRevision(
+        int $submissionId,
+        string $companyAuthCode,
+        string $actor,
+        mixed $progress = null
+    ): array {
+        $this->calls[] = compact('submissionId', 'companyAuthCode', 'actor') + [
+            'method' => 'preflightRevision',
+        ];
+        return ['success' => true, 'messages' => ['Preflight verified.']];
     }
 }
 

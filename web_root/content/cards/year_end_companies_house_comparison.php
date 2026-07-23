@@ -157,7 +157,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
                 in_array($status, ['submitting', 'pending'], true) ? 'info' : 'warning',
                 $summary . $this->submissionSummary($submission)
                     . '<div class="helper">' . HelperFramework::escape($detail) . '</div>'
-                    . $this->refreshForm($companyId, $accountingPeriodId, (int)($submission['id'] ?? 0))
+                    . $this->transmitLink()
             );
         }
 
@@ -190,7 +190,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
                     . $this->artifactSummary($preparedArtifact)
                     . $this->messageList($this->blockers($filing), 'Submission blockers')
                     . (!empty($filing['can_submit'])
-                        ? $this->submitForm($companyId, $accountingPeriodId, (int)($submission['id'] ?? 0), $mode)
+                        ? $this->transmitLink()
                         : '')
             );
         }
@@ -399,6 +399,12 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             . '<input type="hidden" name="intent" value="' . HelperFramework::escape($intent) . '">'
             . '<input type="hidden" name="company_id" value="' . $companyId . '">'
             . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">';
+    }
+
+    private function transmitLink(): string
+    {
+        return '<div class="actions-row"><a class="button" href="?page=transmit">'
+            . 'Open Transmit page</a></div>';
     }
 
     private function filingPanel(string $status, string $badgeClass, string $body): string

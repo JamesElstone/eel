@@ -11,6 +11,15 @@ namespace eel_accounts\Client;
 
 interface CompaniesHouseAccountsGatewayTransportInterface
 {
+    public function checkCompanyAuthentication(
+        string $companyNumber,
+        string $companyAuthenticationCode,
+        string $environment,
+        string $schemaManifestSha256,
+        ?callable $beforeSend = null,
+        ?callable $afterReceive = null
+    ): array;
+
     public function prepareAccounts(
         array $payload,
         string $environment,
@@ -25,6 +34,22 @@ interface CompaniesHouseAccountsGatewayTransportInterface
     public function getSubmissionStatus(
         string $submissionNumber,
         string $environment,
+        ?callable $beforeSend = null,
+        ?callable $afterReceive = null,
+        string $schemaManifestSha256 = ''
+    ): array;
+
+    public function acknowledgeSubmissionStatus(
+        string $environment,
+        string $schemaManifestSha256,
+        ?callable $beforeSend = null,
+        ?callable $afterReceive = null
+    ): array;
+
+    public function getDocument(
+        string $documentRequestKey,
+        string $environment,
+        string $schemaManifestSha256,
         ?callable $beforeSend = null,
         ?callable $afterReceive = null
     ): array;

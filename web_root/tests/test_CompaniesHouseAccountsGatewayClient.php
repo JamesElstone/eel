@@ -71,6 +71,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
             return $node instanceof DOMNode ? trim($node->textContent) : '';
         };
+        $validator = static fn(string $xml, string $manifest): array => [
+            'success' => true,
+            'snapshot_id' => 7,
+            'manifest_sha256' => $manifest,
+        ];
 
         $harness->check(
             \eel_accounts\Client\CompaniesHouseAccountsGatewayClient::class,
@@ -136,7 +141,6 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame('application/xml', $xmlText($requestXml, 'ContentType'));
                 $harness->assertSame('ACCOUNTS', $xmlText($requestXml, 'Category'));
                 $harness->assertSame(base64_encode($payload['accounts_xml']), $xmlText($requestXml, 'Data'));
-                $harness->assertSame((string)$captured['body'], (string)($capturedResponse['request_xml'] ?? ''));
                 $harness->assertSame(
                     $acknowledgement('md5#' . md5('TEST-PRESENTER'), 'md5#' . md5('TEST-CODE')),
                     (string)($capturedResponse['response_xml'] ?? '')
@@ -155,6 +159,115 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $harness->assertFalse(str_contains((string)$result['request_xml'], $secret));
                     $harness->assertFalse(str_contains((string)$result['response_xml'], $secret));
                 }
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Client\CompaniesHouseAccountsGatewayClient::class,
+            'performs CompanyData before allocation using separate Output credentials',
+            static function () use (
+                $harness,
+                $credentials,
+                $transactionId,
+                $config,
+                $xmlText,
+                $validator
+            ): void {
+                $captured = [];
+                $response = '<?xml version="1.0"?><GovTalkMessage xmlns="http://www.govtalk.gov.uk/CM/envelope">'
+                    . '<EnvelopeVersion>1.0</EnvelopeVersion><Header><MessageDetails>'
+                    . '<Class>CompanyDataRequest</Class><Qualifier>response</Qualifier>'
+                    . '<TransactionID>ABCDEF123456</TransactionID></MessageDetails></Header>'
+                    . '<GovTalkDetails><Keys/></GovTalkDetails><Body><CompanyData>'
+                    . '<CompanyNumber>14337285</CompanyNumber>'
+                    . '<CompanyName>ELSTONE ELECTRICALS LIMITED</CompanyName>'
+                    . '</CompanyData></Body></GovTalkMessage>';
+                $client = new \eel_accounts\Client\CompaniesHouseAccountsGatewayClient(
+                    static function (array $request) use (&$captured, $response): array {
+                        $captured = $request;
+                        return ['status_code' => 200, 'headers' => [], 'body' => $response];
+                    },
+                    $credentials,
+                    $transactionId,
+                    $config,
+                    $validator,
+                    static fn(string $environment): array => [
+                        'presenter_id' => 'OUTPUT-PRESENTER',
+                        'presenter_code' => 'OUTPUT-CODE',
+                    ]
+                );
+                $result = $client->checkCompanyAuthentication(
+                    '14337285',
+                    'ABC123',
+                    'TEST',
+                    str_repeat('a', 64)
+                );
+                $requestXml = (string)$captured['body'];
+
+                $harness->assertSame(true, $result['success']);
+                $harness->assertSame(true, $result['authenticated']);
+                $harness->assertSame('CompanyDataRequest', $xmlText($requestXml, 'Class'));
+                $harness->assertSame('14337285', $xmlText($requestXml, 'CompanyNumber'));
+                $harness->assertSame('ABC123', $xmlText($requestXml, 'CompanyAuthenticationCode'));
+                $harness->assertSame('md5#' . md5('OUTPUT-PRESENTER'), $xmlText($requestXml, 'SenderID'));
+                $harness->assertTrue(str_contains($requestXml, '/schema/CompanyData-v3-6.xsd'));
+                $harness->assertFalse(str_contains((string)$result['request_xml'], 'ABC123'));
+                $harness->assertFalse(str_contains((string)$result['request_xml'], 'OUTPUT-CODE'));
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Client\CompaniesHouseAccountsGatewayClient::class,
+            'builds the empty StatusAck and decodes GetDocument PDF evidence',
+            static function () use (
+                $harness,
+                $credentials,
+                $transactionId,
+                $config,
+                $xmlText,
+                $validator
+            ): void {
+                $requests = [];
+                $pdf = "%PDF-1.4\nmock filing\n%%EOF";
+                $transport = static function (array $request) use (&$requests, $pdf): array {
+                    $requests[] = (string)$request['body'];
+                    $document = new DOMDocument();
+                    $document->loadXML((string)$request['body'], LIBXML_NONET);
+                    $xpath = new DOMXPath($document);
+                    $class = trim((string)$xpath->evaluate('string(//*[local-name()="Class"][1])'));
+                    $body = $class === 'GetDocument'
+                        ? '<Document><CompanyNumber>14337285</CompanyNumber><DocumentDate>2026-07-23</DocumentDate>'
+                            . '<DocumentType>ACCOUNTS</DocumentType><DocumentID>DOC-1</DocumentID>'
+                            . '<DocumentData>' . base64_encode($pdf) . '</DocumentData></Document>'
+                        : '';
+                    return [
+                        'status_code' => 200,
+                        'headers' => [],
+                        'body' => '<?xml version="1.0"?><GovTalkMessage xmlns="http://www.govtalk.gov.uk/CM/envelope">'
+                            . '<EnvelopeVersion>1.0</EnvelopeVersion><Header><MessageDetails><Class>'
+                            . $class . '</Class><Qualifier>acknowledgement</Qualifier>'
+                            . '<TransactionID>ABCDEF123456</TransactionID></MessageDetails></Header>'
+                            . '<GovTalkDetails><Keys/></GovTalkDetails><Body>' . $body
+                            . '</Body></GovTalkMessage>',
+                    ];
+                };
+                $client = new \eel_accounts\Client\CompaniesHouseAccountsGatewayClient(
+                    $transport,
+                    $credentials,
+                    $transactionId,
+                    $config,
+                    $validator
+                );
+                $ack = $client->acknowledgeSubmissionStatus('TEST', str_repeat('a', 64));
+                $document = $client->getDocument('DOC-KEY-1', 'TEST', str_repeat('a', 64));
+
+                $harness->assertSame(true, $ack['success']);
+                $harness->assertSame('StatusAck', $xmlText($requests[0], 'Class'));
+                $harness->assertSame('', $xmlText($requests[0], 'StatusAck'));
+                $harness->assertSame(true, $document['success']);
+                $harness->assertSame($pdf, $document['document_data']);
+                $harness->assertSame(hash('sha256', $pdf), $document['document_sha256']);
+                $harness->assertSame('DOC-KEY-1', $xmlText($requests[1], 'DocRequestKey'));
             }
         );
 
@@ -185,11 +298,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $transactionId,
                     $config
                 );
+                $capturedRequest = [];
                 $capturedExchange = [];
                 $result = $client->getSubmissionStatus(
                     '000001',
                     'LIVE',
-                    null,
+                    static function (array $exchange) use (&$capturedRequest): void {
+                        $capturedRequest = $exchange;
+                    },
                     static function (array $exchange) use (&$capturedExchange): void {
                         $capturedExchange = $exchange;
                     }
@@ -204,7 +320,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame('000001', $xmlText($requestXml, 'SubmissionNumber'));
                 $harness->assertSame('LIVE-PRESENTER', $xmlText($requestXml, 'PresenterID'));
                 $harness->assertTrue(str_contains($requestXml, 'GetSubmissionStatus-v2-9.xsd'));
-                $harness->assertSame($requestXml, (string)($capturedExchange['request_xml'] ?? ''));
+                $harness->assertSame($requestXml, (string)($capturedRequest['request_xml'] ?? ''));
                 $harness->assertSame(
                     $statusResponse('000001', 'PENDING'),
                     (string)($capturedExchange['response_xml'] ?? '')

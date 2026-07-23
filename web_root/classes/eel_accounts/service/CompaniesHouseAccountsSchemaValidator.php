@@ -7,6 +7,22 @@ final class CompaniesHouseAccountsSchemaValidator
 {
     public function validateAccountsRequest(string $xml, string $manifestSha256): array
     {
+        return $this->validateOperationRequest(
+            $xml,
+            $manifestSha256,
+            'FormSubmission-v2-11.xsd',
+            'FormSubmission',
+            'http://xmlgw.companieshouse.gov.uk/Header'
+        );
+    }
+
+    public function validateOperationRequest(
+        string $xml,
+        string $manifestSha256,
+        string $schemaName,
+        string $elementName,
+        string $namespace
+    ): array {
         if (!preg_match('/^[a-f0-9]{64}$/', strtolower($manifestSha256))) {
             throw new \InvalidArgumentException('A verified Companies House schema manifest is required.');
         }
@@ -23,31 +39,81 @@ final class CompaniesHouseAccountsSchemaValidator
         }
         $root = rtrim((string)$snapshot['local_path'], '/\\');
         $envelope = null;
-        $form = null;
+        $operationSchema = null;
         foreach ($files as $file) {
             $path = $root . '/' . ltrim(str_replace('\\', '/', (string)$file['relative_path']), '/');
             if (!is_file($path) || !hash_equals(strtolower((string)$file['sha256']), strtolower((string)hash_file('sha256', $path)))) {
                 throw new \RuntimeException('A verified Companies House schema file is missing or has changed.');
             }
             if ((string)$file['file_role'] === 'envelope') { $envelope = $path; }
-            if ((string)$file['schema_name'] === 'FormSubmission-v2-11.xsd') { $form = $path; }
+            if ((string)$file['schema_name'] === $schemaName) { $operationSchema = $path; }
         }
-        if ($envelope === null || $form === null) {
-            throw new \RuntimeException('The Companies House accounts schema profile is incomplete.');
+        if ($envelope === null || $operationSchema === null) {
+            throw new \RuntimeException('The Companies House protocol schema profile is incomplete.');
         }
         $document = $this->loadXml($xml);
         $this->schemaValidate($document, $envelope, 'GovTalk envelope');
 
         $xpath = new \DOMXPath($document);
-        $xpath->registerNamespace('f', 'http://xmlgw.companieshouse.gov.uk/Header');
-        $element = $xpath->query('//f:FormSubmission')?->item(0);
+        $xpath->registerNamespace('operation', $namespace);
+        $element = $xpath->query('//operation:' . $elementName)?->item(0);
         if (!$element instanceof \DOMElement) {
-            throw new \RuntimeException('The prepared request does not contain a Companies House FormSubmission.');
+            throw new \RuntimeException(
+                'The prepared request does not contain Companies House ' . $elementName . '.'
+            );
         }
         $subtree = new \DOMDocument('1.0', 'UTF-8');
         $subtree->appendChild($subtree->importNode($element, true));
-        $this->schemaValidate($subtree, $form, 'FormSubmission');
+        $this->schemaValidate($subtree, $operationSchema, $elementName);
         return ['success'=>true,'snapshot_id'=>(int)$snapshot['id'],'manifest_sha256'=>(string)$snapshot['manifest_sha256']];
+    }
+
+    public function validateEnvelopeResponse(string $xml, string $manifestSha256): array
+    {
+        if (!preg_match('/^[a-f0-9]{64}$/', strtolower($manifestSha256))) {
+            throw new \InvalidArgumentException('A verified Companies House schema manifest is required.');
+        }
+        $snapshot = \InterfaceDB::fetchOne(
+            'SELECT * FROM companies_house_schema_snapshots
+             WHERE manifest_sha256 = :manifest AND profile_name = :profile AND is_active = 1 LIMIT 1',
+            [
+                'manifest' => strtolower($manifestSha256),
+                'profile' => CompaniesHouseAccountsSchemaService::PROFILE_NAME,
+            ]
+        );
+        if (!is_array($snapshot)) {
+            throw new \RuntimeException('The selected Companies House schema snapshot is not active.');
+        }
+        $root = rtrim((string)$snapshot['local_path'], '/\\');
+        $files = \InterfaceDB::fetchAll(
+            'SELECT * FROM companies_house_schema_files WHERE snapshot_id = :id',
+            ['id' => (int)$snapshot['id']]
+        );
+        $envelope = null;
+        foreach ($files as $file) {
+            $path = $root . '/' . ltrim(str_replace('\\', '/', (string)$file['relative_path']), '/');
+            if (!is_file($path)
+                || !hash_equals(
+                    strtolower((string)$file['sha256']),
+                    strtolower((string)hash_file('sha256', $path))
+                )) {
+                throw new \RuntimeException(
+                    'A verified Companies House schema file is missing or has changed.'
+                );
+            }
+            if ((string)$file['file_role'] === 'envelope') {
+                $envelope = $path;
+            }
+        }
+        if ($envelope === null) {
+            throw new \RuntimeException('The Companies House envelope schema is unavailable.');
+        }
+        $this->schemaValidate($this->loadXml($xml), $envelope, 'GovTalk response envelope');
+        return [
+            'success' => true,
+            'snapshot_id' => (int)$snapshot['id'],
+            'manifest_sha256' => (string)$snapshot['manifest_sha256'],
+        ];
     }
 
     private function loadXml(string $xml): \DOMDocument

@@ -16,6 +16,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     "$host/v1-0/schema/forms/FormSubmission-v2-11.xsd",
                     "$host/v1-0/schema/forms/GetSubmissionStatus-v2-9.xsd",
                     "$host/v1-0/schema/forms/GetStatusAck-v1-1.xsd",
+                    "$host/v1-0/schema/CompanyData-v3-6.xsd",
+                    "$host/v1-0/schema/forms/GetDocument-v1-1.xsd",
                 ];
                 $rows = '';
                 foreach (array_slice($urls, 1) as $url) {
@@ -25,7 +27,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $urls[0] => '<?xml version="1.0"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="http://www.govtalk.gov.uk/CM/envelope" elementFormDefault="qualified"><xs:element name="GovTalkMessage"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="skip"/></xs:sequence></xs:complexType></xs:element></xs:schema>',
                     $urls[1] => '<?xml version="1.0"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="http://xmlgw.companieshouse.gov.uk/Header" elementFormDefault="qualified"><xs:include schemaLocation="FormCommon-v1-0.xsd"/><xs:element name="FormSubmission"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="skip"/></xs:sequence></xs:complexType></xs:element></xs:schema>',
                     $urls[2] => '<?xml version="1.0"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="http://xmlgw.companieshouse.gov.uk"><xs:element name="GetSubmissionStatus" type="xs:string"/></xs:schema>',
-                    $urls[3] => '<?xml version="1.0"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="http://xmlgw.companieshouse.gov.uk"><xs:element name="GetStatusAck" type="xs:string"/></xs:schema>',
+                    $urls[3] => '<?xml version="1.0"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="http://xmlgw.companieshouse.gov.uk"><xs:element name="StatusAck" type="xs:string"/></xs:schema>',
+                    $urls[4] => '<?xml version="1.0"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="http://xmlgw.companieshouse.gov.uk"><xs:element name="CompanyDataRequest" type="xs:string"/></xs:schema>',
+                    $urls[5] => '<?xml version="1.0"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="http://xmlgw.companieshouse.gov.uk"><xs:element name="GetDocument" type="xs:string"/></xs:schema>',
                     "$host/v1-0/schema/forms/FormCommon-v1-0.xsd" => '<?xml version="1.0"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:simpleType name="Unused"><xs:restriction base="xs:string"/></xs:simpleType></xs:schema>',
                 ];
                 $calls = [];
@@ -45,7 +49,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame(true, $first['changed']);
                 $harness->assertSame(false, $second['changed']);
                 $harness->assertTrue(in_array("$host/v1-0/schema/forms/FormCommon-v1-0.xsd", $calls, true));
-                $harness->assertSame(5, (int)\InterfaceDB::fetchColumn('SELECT COUNT(*) FROM companies_house_schema_files WHERE snapshot_id = :id', ['id'=>$first['snapshot_id']]));
+                $harness->assertSame(7, (int)\InterfaceDB::fetchColumn('SELECT COUNT(*) FROM companies_house_schema_files WHERE snapshot_id = :id', ['id'=>$first['snapshot_id']]));
 
                 $xml = '<?xml version="1.0"?><GovTalkMessage xmlns="http://www.govtalk.gov.uk/CM/envelope"><Body><FormSubmission xmlns="http://xmlgw.companieshouse.gov.uk/Header"/></Body></GovTalkMessage>';
                 $validated = (new \eel_accounts\Service\CompaniesHouseAccountsSchemaValidator())->validateAccountsRequest($xml, $first['manifest_sha256']);

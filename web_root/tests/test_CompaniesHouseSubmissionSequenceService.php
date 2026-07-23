@@ -62,7 +62,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                                 'decided_at' => $now,
                             ]
                         );
-                        $eligibilityId = (int)InterfaceDB::fetchColumn('SELECT LAST_INSERT_ID()');
+                        $eligibilityId = (int)InterfaceDB::fetchColumn(
+                            InterfaceDB::driverName() === 'sqlite'
+                                ? 'SELECT last_insert_rowid()'
+                                : 'SELECT LAST_INSERT_ID()'
+                        );
                         InterfaceDB::prepareExecute(
                             'INSERT INTO companies_house_accounts_submissions (
                                 eligibility_id, company_id, accounting_period_id,
@@ -92,7 +96,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                                 'prepared_by' => 'test',
                             ]
                         );
-                        $submissionIds[] = (int)InterfaceDB::fetchColumn('SELECT LAST_INSERT_ID()');
+                        $submissionIds[] = (int)InterfaceDB::fetchColumn(
+                            InterfaceDB::driverName() === 'sqlite'
+                                ? 'SELECT last_insert_rowid()'
+                                : 'SELECT LAST_INSERT_ID()'
+                        );
                     }
 
                     $service = new \eel_accounts\Service\CompaniesHouseSubmissionSequenceService();
@@ -104,7 +112,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     } catch (RuntimeException $exception) {
                         $blocked = str_contains($exception->getMessage(), 'unresolved transport state');
                     }
-                    $h->assertTrue($blocked);
+                    $h->assertSame(true, $blocked);
 
                     $service->releaseResolved($submissionIds[0], 'TEST', $fingerprint);
                     $second = $service->allocate($submissionIds[1], 'TEST', $presenter);
@@ -113,6 +121,98 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $h->assertSame('000001', $live['submission_number']);
                     $h->assertSame('000003', $service->status('TEST', $presenter)['next_number']);
                     $h->assertSame('000002', $service->status('TEST', $presenter)['last_issued_number']);
+
+                    $conversation = new \eel_accounts\Service\CompaniesHouseProtocolConversationService(
+                        null,
+                        str_repeat('k', 32)
+                    );
+                    $cycle = $conversation->createStatusCycle($submissionIds[1]);
+                    $service->acquireStatusLock($submissionIds[1], $cycle, 'TEST', $fingerprint);
+                    $status = $service->status('TEST', $presenter);
+                    $h->assertSame($submissionIds[1], $status['status_in_flight_submission_id']);
+                    $h->assertSame($cycle, $status['status_in_flight_cycle_id']);
+
+                    $otherCycle = $conversation->createStatusCycle($submissionIds[0]);
+                    $statusBlocked = false;
+                    try {
+                        $service->acquireStatusLock(
+                            $submissionIds[0],
+                            $otherCycle,
+                            'TEST',
+                            $fingerprint
+                        );
+                    } catch (RuntimeException $exception) {
+                        $statusBlocked = str_contains($exception->getMessage(), 'status/acknowledgement');
+                    }
+                    $h->assertSame(true, $statusBlocked);
+                    $service->releaseStatusLock(
+                        $submissionIds[1],
+                        $cycle,
+                        'TEST',
+                        $fingerprint
+                    );
+                    $h->assertSame(
+                        null,
+                        $service->status('TEST', $presenter)['status_in_flight_submission_id']
+                    );
+
+                    $snapshot = InterfaceDB::fetchOne(
+                        'SELECT id, manifest_sha256 FROM companies_house_schema_snapshots
+                         WHERE is_active = 1 ORDER BY id DESC LIMIT 1'
+                    );
+                    if (is_array($snapshot)) {
+                        $submission = [
+                            'id' => $submissionIds[1],
+                            'company_id' => $companyIds[1],
+                            'accounting_period_id' => $periodIds[1],
+                            'company_number' => (string)$companyIds[1],
+                            'environment' => 'TEST',
+                        ];
+                        $preflight = $conversation->beginPreflight(
+                            $submission,
+                            'TEST',
+                            (int)$snapshot['id'],
+                            (string)$snapshot['manifest_sha256'],
+                            hash('sha256', 'OUTPUT-PRESENTER'),
+                            'ABC123',
+                            'user:test',
+                            true
+                        );
+                        $conversation->finishPreflight((int)$preflight['id'], [
+                            'success' => true,
+                            'authenticated' => true,
+                            'environment' => 'TEST',
+                            'company_number' => (string)$companyIds[1],
+                            'company_name' => 'Sequence Test ' . $companyIds[1],
+                        ]);
+                        $wrongBindingBlocked = false;
+                        try {
+                            $conversation->consumePreflight(
+                                (int)$preflight['id'],
+                                $submission,
+                                'WRONG1',
+                                'user:test',
+                                true
+                            );
+                        } catch (RuntimeException $exception) {
+                            $wrongBindingBlocked = true;
+                        }
+                        $h->assertSame(true, $wrongBindingBlocked);
+                        $conversation->consumePreflight(
+                            (int)$preflight['id'],
+                            $submission,
+                            'ABC123',
+                            'user:test',
+                            true
+                        );
+                        $stored = InterfaceDB::fetchOne(
+                            'SELECT binding_hmac, consumed_at
+                             FROM companies_house_company_auth_preflights WHERE id = :id',
+                            ['id' => (int)$preflight['id']]
+                        );
+                        $h->assertSame(null, $stored['binding_hmac'] ?? null);
+                        $h->assertSame(true, trim((string)($stored['consumed_at'] ?? '')) !== '');
+                    }
                 } finally {
                     InterfaceDB::prepareExecute(
                         'DELETE FROM companies_house_submission_sequences WHERE presenter_fingerprint = :fingerprint',

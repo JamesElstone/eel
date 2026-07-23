@@ -46,6 +46,13 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             'prepare_revised_accounts',
             'submit_revised_accounts',
             'refresh_revised_accounts_status',
+            'preflight_revised_accounts',
+            'submit_preflighted_revised_accounts',
+            'poll_revised_accounts_status',
+            'ack_revised_accounts_status',
+            'retrieve_revised_accounts_document',
+            'download_protocol_evidence',
+            'reconcile_revised_accounts_status',
         ];
         if (!in_array($intent, $allowedIntents, true)) {
             return $this->error('Unknown Companies House revised-accounts action.');
@@ -66,6 +73,21 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         if (!$this->isLocked($companyId, $accountingPeriodId)) {
             return $this->error('Complete and lock Year End before using Companies House revised-accounts filing.');
         }
+        $developerIntent = in_array($intent, [
+            'preflight_revised_accounts',
+            'submit_preflighted_revised_accounts',
+            'poll_revised_accounts_status',
+            'ack_revised_accounts_status',
+            'retrieve_revised_accounts_document',
+            'download_protocol_evidence',
+            'reconcile_revised_accounts_status',
+        ], true);
+        if ($developerIntent && !(bool)AppConfigurationStore::get('developer_options', false)) {
+            return $this->error('Developer options must be enabled for step-by-step Companies House exchanges.');
+        }
+        if ($intent === 'download_protocol_evidence') {
+            $this->downloadProtocolEvidence($request, $companyId, $accountingPeriodId);
+        }
 
         try {
             $result = match ($intent) {
@@ -73,6 +95,42 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
                 'prepare_revised_accounts' => $this->prepareRevision($request, $companyId, $accountingPeriodId),
                 'submit_revised_accounts' => $this->submitRevision($request, $companyId, $accountingPeriodId, $services->actionProgress()),
                 'refresh_revised_accounts_status' => $this->refreshStatus($request, $companyId, $accountingPeriodId),
+                'preflight_revised_accounts' => $this->preflightRevision(
+                    $request,
+                    $companyId,
+                    $accountingPeriodId,
+                    $services->actionProgress()
+                ),
+                'submit_preflighted_revised_accounts' => $this->submitRevision(
+                    $request,
+                    $companyId,
+                    $accountingPeriodId,
+                    $services->actionProgress(),
+                    true
+                ),
+                'poll_revised_accounts_status' => $this->protocolStatusAction(
+                    $request,
+                    $companyId,
+                    $accountingPeriodId,
+                    'pollStatus'
+                ),
+                'ack_revised_accounts_status' => $this->protocolStatusAction(
+                    $request,
+                    $companyId,
+                    $accountingPeriodId,
+                    'acknowledgeStatus'
+                ),
+                'retrieve_revised_accounts_document' => $this->protocolStatusAction(
+                    $request,
+                    $companyId,
+                    $accountingPeriodId,
+                    'retrieveDocument'
+                ),
+                'reconcile_revised_accounts_status' => $this->reconcileStatus(
+                    $request,
+                    $companyId,
+                    $accountingPeriodId
+                ),
             };
         } catch (Throwable $exception) {
             $result = ['success' => false, 'errors' => [$exception->getMessage()]];
@@ -164,7 +222,8 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         RequestFramework $request,
         int $companyId,
         int $accountingPeriodId,
-        ActionProgressFramework $progress
+        ActionProgressFramework $progress,
+        bool $developerStep = false
     ): array {
         @set_time_limit(0);
         $submissionId = (int)$request->input('submission_id', 0);
@@ -172,8 +231,8 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         if ($submissionId <= 0) {
             return ['success' => false, 'errors' => ['The prepared revised-accounts submission could not be identified.']];
         }
-        if (preg_match('/^[A-Za-z0-9]{6,8}$/', $companyAuthCode) !== 1) {
-            return ['success' => false, 'errors' => ['The company authentication code must contain 6 to 8 letters or numbers.']];
+        if (preg_match('/^[A-Za-z0-9]{6}$/D', $companyAuthCode) !== 1) {
+            return ['success' => false, 'errors' => ['The company authentication code must contain exactly 6 letters or numbers.']];
         }
 
         $context = (array)$this->service()->fetchContext($companyId, $accountingPeriodId);
@@ -197,7 +256,114 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             }
         }
 
-        return $this->service()->submitRevision($submissionId, $companyAuthCode, $this->actor($request), $progress);
+        $preflightId = $developerStep ? (int)$request->input('preflight_id', 0) : null;
+        if ($developerStep && $preflightId <= 0) {
+            return ['success' => false, 'errors' => ['A successful developer CompanyData preflight is required.']];
+        }
+
+        return $this->service()->submitRevision(
+            $submissionId,
+            $companyAuthCode,
+            $this->actor($request),
+            $progress,
+            $preflightId
+        );
+    }
+
+    private function preflightRevision(
+        RequestFramework $request,
+        int $companyId,
+        int $accountingPeriodId,
+        ActionProgressFramework $progress
+    ): array {
+        $submissionId = (int)$request->input('submission_id', 0);
+        $companyAuthCode = trim((string)$request->input('company_auth_code', ''));
+        if (preg_match('/^[A-Za-z0-9]{6}$/D', $companyAuthCode) !== 1) {
+            return ['success' => false, 'errors' => ['The company authentication code must contain exactly 6 letters or numbers.']];
+        }
+        $context = (array)$this->service()->fetchContext($companyId, $accountingPeriodId);
+        if ((int)(($context['submission'] ?? [])['id'] ?? 0) !== $submissionId) {
+            return ['success' => false, 'errors' => ['The prepared submission does not belong to this period.']];
+        }
+        return $this->service()->preflightRevision(
+            $submissionId,
+            $companyAuthCode,
+            $this->actor($request),
+            $progress
+        );
+    }
+
+    private function protocolStatusAction(
+        RequestFramework $request,
+        int $companyId,
+        int $accountingPeriodId,
+        string $method
+    ): array {
+        $submissionId = (int)$request->input('submission_id', 0);
+        $context = (array)$this->service()->fetchContext($companyId, $accountingPeriodId);
+        if ($submissionId <= 0
+            || (int)(($context['submission'] ?? [])['id'] ?? 0) !== $submissionId) {
+            return ['success' => false, 'errors' => ['The Companies House submission could not be identified.']];
+        }
+        return $this->service()->{$method}($submissionId, $this->actor($request));
+    }
+
+    private function reconcileStatus(
+        RequestFramework $request,
+        int $companyId,
+        int $accountingPeriodId
+    ): array {
+        if (trim((string)$request->input('reconciliation_phrase', ''))
+            !== 'RECONCILE COMPANIES HOUSE') {
+            return ['success' => false, 'errors' => [
+                'Type the exact reconciliation phrase before changing an uncertain protocol state.',
+            ]];
+        }
+        $submissionId = (int)$request->input('submission_id', 0);
+        $context = (array)$this->service()->fetchContext($companyId, $accountingPeriodId);
+        if ($submissionId <= 0
+            || (int)(($context['submission'] ?? [])['id'] ?? 0) !== $submissionId) {
+            return ['success' => false, 'errors' => ['The Companies House submission could not be identified.']];
+        }
+        return $this->service()->reconcileStatusExchange(
+            $submissionId,
+            (string)$request->input('resolution', ''),
+            $this->actor($request)
+        );
+    }
+
+    private function downloadProtocolEvidence(
+        RequestFramework $request,
+        int $companyId,
+        int $accountingPeriodId
+    ): never {
+        $submissionId = (int)$request->input('submission_id', 0);
+        $exchangeId = (int)$request->input('exchange_id', 0);
+        $direction = (string)$request->input('direction', '');
+        $context = (array)$this->service()->fetchContext($companyId, $accountingPeriodId);
+        if ($submissionId <= 0
+            || (int)(($context['submission'] ?? [])['id'] ?? 0) !== $submissionId) {
+            header('Content-Type: text/plain; charset=utf-8', true, 403);
+            echo 'The Companies House evidence is not available in this accounting context.';
+            exit;
+        }
+        try {
+            $file = $this->service()->protocolEvidenceFile($submissionId, $exchangeId, $direction);
+        } catch (Throwable $exception) {
+            header('Content-Type: text/plain; charset=utf-8', true, 404);
+            echo $exception->getMessage();
+            exit;
+        }
+        header('Content-Type: application/xml; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . str_replace('"', '', (string)$file['filename']) . '"');
+        header('Cache-Control: no-store, private');
+        header('Pragma: no-cache');
+        $size = filesize((string)$file['path']);
+        if (is_int($size)) {
+            header('Content-Length: ' . $size);
+        }
+        readfile((string)$file['path']);
+        exit;
     }
 
     private function refreshStatus(RequestFramework $request, int $companyId, int $accountingPeriodId): array

@@ -28,6 +28,8 @@ final class CompaniesHouseAccountsSubmissionService
         private readonly ?CompaniesHouseAccountsCredentialService $credentialService = null,
         private readonly ?CompaniesHouseSubmissionSequenceService $sequenceService = null,
         private readonly ?TransmissionArchiveService $archiveService = null,
+        private readonly ?CompaniesHouseCompanyDataCredentialService $companyDataCredentialService = null,
+        private readonly ?CompaniesHouseProtocolConversationService $conversationService = null,
     ) {
     }
 
@@ -47,11 +49,16 @@ final class CompaniesHouseAccountsSubmissionService
         $mode = AccountingConfigurationStore::companiesHouseAccountsFilingMode();
         $featureEnabled = in_array($mode, ['TEST', 'LIVE'], true);
         $credentialsConfigured = $featureEnabled && $this->credentialsConfigured($mode);
+        $companyDataCredentialsConfigured = $featureEnabled
+            && $this->companyDataCredentials()->configured($mode);
+        $protocolReady = $this->conversation()->schemaReady();
         $sequence = [
             'configured' => false,
             'next_number' => '',
             'last_issued_number' => null,
             'in_flight_submission_id' => null,
+            'status_in_flight_submission_id' => null,
+            'status_in_flight_cycle_id' => null,
             'presenter_fingerprint' => '',
         ];
         if ($credentialsConfigured) {
@@ -102,6 +109,12 @@ final class CompaniesHouseAccountsSubmissionService
         } elseif (!$credentialsConfigured) {
             $submissionBlockers[] = 'Companies House accounts filing credentials are not configured for ' . $mode . '.';
         }
+        if ($featureEnabled && !$companyDataCredentialsConfigured) {
+            $submissionBlockers[] = 'Companies House CompanyData XML Output credentials are not configured for ' . $mode . '.';
+        }
+        if (!$protocolReady) {
+            $submissionBlockers[] = 'Run the Companies House protocol-conversation migration before filing.';
+        }
         if ($mode === 'LIVE' && !$liveApproved) {
             $submissionBlockers[] = 'LIVE revised-accounts filing has not been explicitly approved in server configuration.';
         }
@@ -140,12 +153,25 @@ final class CompaniesHouseAccountsSubmissionService
                 'mode' => $mode,
                 'enabled' => $featureEnabled,
                 'credentials_configured' => $credentialsConfigured,
+                'company_data_credentials_configured' => $companyDataCredentialsConfigured,
+                'protocol_ready' => $protocolReady,
+                'developer_binding_configured' => $featureEnabled
+                    && $this->conversation()->bindingConfigured($mode),
                 'live_approved' => $liveApproved,
                 'test_accepted' => $testAccepted,
             ],
             'eligibility' => $eligibility,
             'readiness' => $readiness,
             'submission' => $submission,
+            'preflight' => $submission === null
+                ? null
+                : $this->conversation()->latestPreflight((int)$submission['id']),
+            'status_cycle' => $submission === null
+                ? null
+                : $this->conversation()->latestStatusCycle((int)$submission['id']),
+            'exchanges' => $submission === null
+                ? []
+                : $this->conversation()->exchanges((int)$submission['id']),
             'prepared_artifact' => $preparedArtifact,
             'sequence' => $sequence,
             'can_prepare' => $preparationBlockers === [],
@@ -271,6 +297,66 @@ final class CompaniesHouseAccountsSubmissionService
                     ? 'Companies House electronic revised-accounts eligibility recorded.'
                     : 'Companies House marked this filing as ineligible for software amendment.',
             ],
+            'changed' => true,
+        ];
+    }
+
+    public function preflightRevision(
+        int $submissionId,
+        string $companyAuthCode,
+        string $actor,
+        mixed $progress = null
+    ): array {
+        $submission = $this->submission($submissionId);
+        if ($submission === null || (string)$submission['lifecycle'] !== 'prepared') {
+            return $this->failure('Only a prepared revised-accounts artifact can be preflighted.');
+        }
+        if (preg_match('/^[A-Za-z0-9]{6}$/D', $companyAuthCode) !== 1) {
+            return $this->failure(
+                'The company authentication code must contain exactly 6 letters or numbers.'
+            );
+        }
+        $mode = AccountingConfigurationStore::companiesHouseAccountsFilingMode();
+        if (!in_array($mode, ['TEST', 'LIVE'], true)
+            || $mode !== (string)$submission['environment']) {
+            return $this->failure('The Companies House filing environment is unavailable or mismatched.');
+        }
+        $actor = $this->actor($actor);
+        try {
+            $schema = ($this->schemaService ?? new CompaniesHouseAccountsSchemaService())
+                ->ensureCurrent($progress);
+            $manifest = strtolower(trim((string)($schema['manifest_sha256'] ?? '')));
+            $snapshotId = (int)($schema['snapshot_id'] ?? 0);
+            if ($snapshotId <= 0 || !preg_match('/^[a-f0-9]{64}$/', $manifest)) {
+                throw new \RuntimeException('Companies House did not produce a verified schema snapshot.');
+            }
+            $result = $this->performCompanyDataPreflight(
+                $submission,
+                $companyAuthCode,
+                $actor,
+                $mode,
+                $snapshotId,
+                $manifest,
+                true
+            );
+        } catch (\Throwable $exception) {
+            return $this->failure(
+                'Companies House CompanyData preflight failed; no submission number was consumed. '
+                . $exception->getMessage()
+            );
+        }
+
+        $success = !empty($result['success']);
+        return [
+            'success' => $success,
+            'errors' => $success ? [] : [(string)$result['error']],
+            'warnings' => !empty($result['transport_unknown'])
+                ? ['The preflight transport outcome is uncertain. Accounts submission remains blocked.']
+                : [],
+            'messages' => $success
+                ? ['CompanyData verified the company authentication code. The preflight is valid for 30 minutes.']
+                : [],
+            'preflight_id' => (int)($result['preflight_id'] ?? 0),
             'changed' => true,
         ];
     }
@@ -458,7 +544,13 @@ final class CompaniesHouseAccountsSubmissionService
         ];
     }
 
-    public function submitRevision(int $submissionId, string $companyAuthCode, string $actor, mixed $progress = null): array
+    public function submitRevision(
+        int $submissionId,
+        string $companyAuthCode,
+        string $actor,
+        mixed $progress = null,
+        ?int $verifiedPreflightId = null
+    ): array
     {
         $submission = $this->submission($submissionId);
         if ($submission === null) {
@@ -466,6 +558,11 @@ final class CompaniesHouseAccountsSubmissionService
         }
         if ((string)$submission['lifecycle'] !== 'prepared') {
             return $this->failure('Only a prepared revised-accounts artifact can be submitted.');
+        }
+        if (preg_match('/^[A-Za-z0-9]{6}$/D', $companyAuthCode) !== 1) {
+            return $this->failure(
+                'The company authentication code must contain exactly 6 letters or numbers.'
+            );
         }
         $mode = AccountingConfigurationStore::companiesHouseAccountsFilingMode();
         if (!in_array($mode, ['TEST', 'LIVE'], true)) {
@@ -518,6 +615,47 @@ final class CompaniesHouseAccountsSubmissionService
             $snapshotId = (int)($schema['snapshot_id'] ?? 0);
             if ($snapshotId <= 0 || !preg_match('/^[a-f0-9]{64}$/', $manifest)) {
                 throw new \RuntimeException('Companies House did not produce a verified accounts schema snapshot.');
+            }
+            if (!$this->conversation()->schemaReady()) {
+                throw new \RuntimeException(
+                    'Run the Companies House protocol-conversation migration before filing.'
+                );
+            }
+            if ($verifiedPreflightId !== null && $verifiedPreflightId > 0) {
+                $this->conversation()->consumePreflight(
+                    $verifiedPreflightId,
+                    $submission,
+                    $companyAuthCode,
+                    $actor,
+                    true
+                );
+            } else {
+                $this->reportProgress(
+                    $progress,
+                    'Checking the company authentication code with Companies House CompanyData.',
+                    45
+                );
+                $preflight = $this->performCompanyDataPreflight(
+                    $submission,
+                    $companyAuthCode,
+                    $actor,
+                    $mode,
+                    $snapshotId,
+                    $manifest,
+                    false
+                );
+                if (empty($preflight['success'])) {
+                    throw new \RuntimeException(
+                        trim((string)($preflight['error'] ?? 'Companies House CompanyData preflight failed.'))
+                    );
+                }
+                $this->conversation()->consumePreflight(
+                    (int)$preflight['preflight_id'],
+                    $submission,
+                    $companyAuthCode,
+                    $actor,
+                    false
+                );
             }
             $allocation = $this->sequences()->allocate(
                 $submissionId,
@@ -587,6 +725,16 @@ final class CompaniesHouseAccountsSubmissionService
                 'prepared',
                 'submission-request.xml',
                 $preparedRequest->requestXml()
+            );
+            $this->conversation()->captureRequest(
+                $submission,
+                $mode,
+                (string)$submission['submission_number'],
+                'accounts',
+                [
+                    'transaction_id' => $preparedRequest->transactionId(),
+                    'request_xml' => $preparedRequest->requestXml(),
+                ]
             );
             $evidenceService = new FilingEvidenceService();
             $requestEvidence = $evidenceService->reserveArtifact(
@@ -672,6 +820,13 @@ final class CompaniesHouseAccountsSubmissionService
                     'submission-response.xml',
                     (string)$response['response_xml']
                 );
+                $this->conversation()->captureResponse(
+                    $submission,
+                    $mode,
+                    (string)$submission['submission_number'],
+                    'accounts',
+                    $response
+                );
             }
         );
 
@@ -683,6 +838,12 @@ final class CompaniesHouseAccountsSubmissionService
         $summary = $success
             ? 'Companies House acknowledged the revised-accounts submission.'
             : trim((string)($result['error'] ?? 'Companies House did not acknowledge the submission.'));
+        $this->conversation()->completeExchange(
+            $mode,
+            (string)($result['transaction_id'] ?? ''),
+            $success ? 'succeeded' : ($transportUnknown ? 'transport_unknown' : 'rejected'),
+            $success ? '' : $summary
+        );
         $now = gmdate('Y-m-d H:i:s');
         \InterfaceDB::prepareExecute(
             'UPDATE ' . self::SUBMISSIONS_TABLE . '
@@ -755,6 +916,43 @@ final class CompaniesHouseAccountsSubmissionService
 
     public function refreshStatus(int $submissionId, string $actor): array
     {
+        $current = $this->submission($submissionId);
+        if (is_array($current)
+            && (string)$current['lifecycle'] === 'accepted'
+            && trim((string)($current['document_request_key'] ?? '')) !== ''
+            && trim((string)($current['returned_document_sha256'] ?? '')) === '') {
+            return $this->retrieveDocument($submissionId, $actor);
+        }
+        $cycle = $this->conversation()->latestStatusCycle($submissionId);
+        if (is_array($cycle)
+            && ((string)$cycle['acknowledgement_state'] === 'required'
+                || ((string)$cycle['acknowledgement_state'] === 'failed'
+                    && trim((string)($cycle['result_json'] ?? '')) !== ''))) {
+            $acknowledgement = $this->acknowledgeStatus($submissionId, $actor);
+            if (empty($acknowledgement['success'])) {
+                return $acknowledgement;
+            }
+            return $this->retrieveAcceptedDocumentIfAvailable($submissionId, $actor, $acknowledgement);
+        }
+        if (is_array($cycle) && (string)$cycle['acknowledgement_state'] === 'transport_unknown') {
+            return $this->failure(
+                'The previous status or StatusAck transport outcome is uncertain. Reconcile it before polling again.'
+            );
+        }
+
+        $poll = $this->pollStatus($submissionId, $actor);
+        if (empty($poll['success'])) {
+            return $poll;
+        }
+        $acknowledgement = $this->acknowledgeStatus($submissionId, $actor);
+        if (empty($acknowledgement['success'])) {
+            return $acknowledgement;
+        }
+        return $this->retrieveAcceptedDocumentIfAvailable($submissionId, $actor, $acknowledgement);
+    }
+
+    public function pollStatus(int $submissionId, string $actor): array
+    {
         $submission = $this->submission($submissionId);
         if ($submission === null) {
             return $this->failure('The revised-accounts submission was not found.');
@@ -766,47 +964,111 @@ final class CompaniesHouseAccountsSubmissionService
         if ($mode !== (string)$submission['environment']) {
             return $this->failure('The server filing mode does not match this submission environment.');
         }
+        if (!$this->conversation()->schemaReady()) {
+            return $this->failure(
+                'Run the Companies House protocol-conversation migration before requesting status.'
+            );
+        }
+        $existingCycle = $this->conversation()->latestStatusCycle($submissionId);
+        if (is_array($existingCycle)
+            && (in_array(
+                (string)$existingCycle['acknowledgement_state'],
+                ['required', 'sending', 'transport_unknown'],
+                true
+            ) || ((string)$existingCycle['acknowledgement_state'] === 'failed'
+                && trim((string)($existingCycle['result_json'] ?? '')) !== ''))) {
+            return $this->failure(
+                'The previous Companies House status response must be acknowledged or reconciled first.'
+            );
+        }
         $actor = $this->actor($actor);
+        $cycleId = $this->conversation()->createStatusCycle($submissionId);
+        try {
+            $this->sequences()->acquireStatusLock(
+                $submissionId,
+                $cycleId,
+                $mode,
+                (string)$submission['presenter_fingerprint']
+            );
+            \InterfaceDB::prepareExecute(
+                'UPDATE ' . self::SUBMISSIONS_TABLE . '
+                 SET pending_status_cycle_id = :cycle_id, updated_at = :updated_at WHERE id = :id',
+                [
+                    'cycle_id' => $cycleId,
+                    'updated_at' => gmdate('Y-m-d H:i:s'),
+                    'id' => $submissionId,
+                ]
+            );
+        } catch (\Throwable $exception) {
+            $this->conversation()->updateStatusCycle(
+                $cycleId,
+                ['acknowledgement_state' => 'failed']
+            );
+            return $this->failure($exception->getMessage());
+        }
+
         $gateway = $this->gatewayClient ?? new CompaniesHouseAccountsGatewayClient();
         $result = $gateway->getSubmissionStatus(
             (string)$submission['submission_number'],
             $mode,
-            function (array $request) use ($submission, $mode): void {
-                $transactionId = strtolower((string)$request['transaction_id']);
-                $this->archives()->store(
-                    (int)$submission['company_id'],
-                    (int)$submission['accounting_period_id'],
-                    'companies_house',
+            function (array $request) use ($submission, $mode, $cycleId): void {
+                $this->conversation()->captureRequest(
+                    $submission,
                     $mode,
                     (string)$submission['submission_number'],
-                    (string)$submission['lifecycle'],
-                    'status-' . $transactionId . '-request.xml',
-                    (string)$request['request_xml']
+                    'submission_status',
+                    $request,
+                    null,
+                    $cycleId
                 );
             },
-            function (array $response) use ($submission, $mode): void {
-                $transactionId = strtolower((string)$response['transaction_id']);
-                $this->archives()->store(
-                    (int)$submission['company_id'],
-                    (int)$submission['accounting_period_id'],
-                    'companies_house',
+            function (array $response) use ($submission, $mode, $cycleId): void {
+                $this->conversation()->captureResponse(
+                    $submission,
                     $mode,
                     (string)$submission['submission_number'],
-                    (string)$submission['lifecycle'],
-                    'status-' . $transactionId . '-response.xml',
-                    (string)$response['response_xml']
+                    'submission_status',
+                    $response,
+                    null,
+                    $cycleId
                 );
-            }
+            },
+            (string)$submission['schema_manifest_sha256']
         );
         $now = gmdate('Y-m-d H:i:s');
         if (empty($result['success'])) {
             $summary = trim((string)($result['error'] ?? 'Companies House status could not be refreshed.'));
+            $uncertain = !empty($result['transport_unknown']);
+            $this->conversation()->updateStatusCycle($cycleId, [
+                'poll_transaction_id' => trim((string)($result['transaction_id'] ?? '')) ?: null,
+                'acknowledgement_state' => $uncertain ? 'transport_unknown' : 'failed',
+                'polled_at' => $now,
+            ]);
+            $this->conversation()->completeExchange(
+                $mode,
+                (string)($result['transaction_id'] ?? ''),
+                $uncertain ? 'transport_unknown' : 'failed',
+                $summary
+            );
             \InterfaceDB::prepareExecute(
                 'UPDATE ' . self::SUBMISSIONS_TABLE . '
                  SET last_polled_at = :polled_at, gateway_status_summary = :summary,
                      updated_at = :updated_at WHERE id = :id',
                 ['polled_at' => $now, 'summary' => $summary, 'updated_at' => $now, 'id' => $submissionId]
             );
+            if (!$uncertain) {
+                $this->sequences()->releaseStatusLock(
+                    $submissionId,
+                    $cycleId,
+                    $mode,
+                    (string)$submission['presenter_fingerprint']
+                );
+                \InterfaceDB::prepareExecute(
+                    'UPDATE ' . self::SUBMISSIONS_TABLE . '
+                     SET pending_status_cycle_id = NULL, updated_at = :updated_at WHERE id = :id',
+                    ['updated_at' => $now, 'id' => $submissionId]
+                );
+            }
             $this->recordEvent($submissionId, 'status_refresh_failed', 'warning', (string)$submission['lifecycle'], null, $summary, $actor, $this->safeGatewayContext($result));
             return [
                 'success' => false,
@@ -823,9 +1085,409 @@ final class CompaniesHouseAccountsSubmissionService
             $lifecycle = 'internal_failure';
         }
         $rawStatus = strtoupper(trim((string)($result['submission_status'] ?? '')));
-        $rejections = (array)($result['rejections'] ?? []);
+        $cycleResult = [
+            'normalized_status' => $lifecycle,
+            'submission_status' => $rawStatus,
+            'company_number' => (string)($result['company_number'] ?? ''),
+            'customer_reference' => (string)($result['customer_reference'] ?? ''),
+            'document_request_key' => (string)($result['document_request_key'] ?? ''),
+            'rejections' => (array)($result['rejections'] ?? []),
+            'examiner' => (array)($result['examiner'] ?? []),
+        ];
+        $this->conversation()->updateStatusCycle($cycleId, [
+            'poll_transaction_id' => trim((string)($result['transaction_id'] ?? '')) ?: null,
+            'raw_status' => $rawStatus !== '' ? $rawStatus : null,
+            'normalized_status' => $lifecycle,
+            'result_json' => json_encode($cycleResult, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            'acknowledgement_state' => 'required',
+            'polled_at' => $now,
+        ]);
+        $this->conversation()->completeExchange(
+            $mode,
+            (string)($result['transaction_id'] ?? ''),
+            'succeeded'
+        );
+        \InterfaceDB::prepareExecute(
+            'UPDATE ' . self::SUBMISSIONS_TABLE . '
+             SET last_polled_at = :polled_at,
+                 gateway_status_summary = :summary,
+                 updated_at = :updated_at
+             WHERE id = :id',
+            [
+                'polled_at' => $now,
+                'summary' => 'Companies House status received; StatusAck is required.',
+                'updated_at' => $now,
+                'id' => $submissionId,
+            ]
+        );
+        $this->recordEvent(
+            $submissionId,
+            'status_ack_required',
+            'info',
+            (string)$submission['lifecycle'],
+            $rawStatus,
+            'Companies House status was received and must be acknowledged before it is committed.',
+            $actor,
+            $this->safeGatewayContext($result)
+        );
+
+        return [
+            'success' => true,
+            'errors' => [],
+            'warnings' => array_values(array_filter([(string)($result['evidence_error'] ?? '')])),
+            'messages' => ['Companies House status received. StatusAck is now required.'],
+            'submission' => $this->normaliseSubmission((array)$this->submission($submissionId)),
+            'status_cycle_id' => $cycleId,
+            'changed' => true,
+        ];
+    }
+
+    public function acknowledgeStatus(int $submissionId, string $actor): array
+    {
+        $submission = $this->submission($submissionId);
+        $cycle = $this->conversation()->latestStatusCycle($submissionId);
+        if ($submission === null || !is_array($cycle)) {
+            return $this->failure('No Companies House status response is awaiting acknowledgement.');
+        }
+        if (!in_array((string)$cycle['acknowledgement_state'], ['required', 'failed'], true)) {
+            return $this->failure('This Companies House status response cannot be acknowledged.');
+        }
+        $mode = (string)$submission['environment'];
+        $cycleId = (int)$cycle['id'];
+        $actor = $this->actor($actor);
+        $this->conversation()->updateStatusCycle(
+            $cycleId,
+            ['acknowledgement_state' => 'sending']
+        );
+        $gateway = $this->gatewayClient ?? new CompaniesHouseAccountsGatewayClient();
+        $result = $gateway->acknowledgeSubmissionStatus(
+            $mode,
+            (string)$submission['schema_manifest_sha256'],
+            function (array $request) use ($submission, $mode, $cycleId): void {
+                $this->conversation()->captureRequest(
+                    $submission,
+                    $mode,
+                    (string)$submission['submission_number'],
+                    'status_ack',
+                    $request,
+                    null,
+                    $cycleId
+                );
+            },
+            function (array $response) use ($submission, $mode, $cycleId): void {
+                $this->conversation()->captureResponse(
+                    $submission,
+                    $mode,
+                    (string)$submission['submission_number'],
+                    'status_ack',
+                    $response,
+                    null,
+                    $cycleId
+                );
+            }
+        );
+        if (empty($result['success'])) {
+            $uncertain = !empty($result['transport_unknown']);
+            $this->conversation()->updateStatusCycle($cycleId, [
+                'acknowledgement_state' => $uncertain ? 'transport_unknown' : 'failed',
+                'acknowledgement_transaction_id' => trim((string)($result['transaction_id'] ?? '')) ?: null,
+            ]);
+            $this->conversation()->completeExchange(
+                $mode,
+                (string)($result['transaction_id'] ?? ''),
+                $uncertain ? 'transport_unknown' : 'failed',
+                (string)($result['error'] ?? '')
+            );
+            return [
+                'success' => false,
+                'errors' => [trim((string)($result['error'] ?? 'Companies House StatusAck failed.'))],
+                'warnings' => $uncertain
+                    ? ['Do not poll or resend automatically; the StatusAck outcome requires reconciliation.']
+                    : ['Retry the unsent or definitively failed StatusAck before polling again.'],
+                'messages' => [],
+                'changed' => true,
+            ];
+        }
+
+        $now = gmdate('Y-m-d H:i:s');
+        $this->conversation()->updateStatusCycle($cycleId, [
+            'acknowledgement_state' => 'acknowledged',
+            'acknowledgement_transaction_id' => trim((string)($result['transaction_id'] ?? '')) ?: null,
+            'acknowledged_at' => $now,
+        ]);
+        $this->conversation()->completeExchange(
+            $mode,
+            (string)($result['transaction_id'] ?? ''),
+            'succeeded'
+        );
+        $cycle = (array)$this->conversation()->statusCycle($cycleId);
+        $status = json_decode((string)($cycle['result_json'] ?? ''), true);
+        if (!is_array($status)) {
+            return $this->failure(
+                'StatusAck succeeded, but the stored Companies House status could not be committed.'
+            );
+        }
+        $this->commitAcknowledgedStatus($submission, $status, $now, $actor);
+        $this->sequences()->releaseResolved(
+            $submissionId,
+            $mode,
+            (string)$submission['presenter_fingerprint']
+        );
+        $this->sequences()->releaseStatusLock(
+            $submissionId,
+            $cycleId,
+            $mode,
+            (string)$submission['presenter_fingerprint']
+        );
+        \InterfaceDB::prepareExecute(
+            'UPDATE ' . self::SUBMISSIONS_TABLE . '
+             SET pending_status_cycle_id = NULL, updated_at = :updated_at WHERE id = :id',
+            ['updated_at' => $now, 'id' => $submissionId]
+        );
+
+        return [
+            'success' => true,
+            'errors' => [],
+            'warnings' => [],
+            'messages' => [
+                'StatusAck accepted. Companies House status: '
+                . strtoupper((string)$status['normalized_status']) . '.',
+            ],
+            'submission' => $this->normaliseSubmission((array)$this->submission($submissionId)),
+            'changed' => true,
+        ];
+    }
+
+    public function retrieveDocument(int $submissionId, string $actor): array
+    {
+        $submission = $this->submission($submissionId);
+        if ($submission === null || (string)$submission['lifecycle'] !== 'accepted') {
+            return $this->failure('Only an accepted Companies House submission can retrieve its document.');
+        }
+        $requestKey = trim((string)($submission['document_request_key'] ?? ''));
+        if ($requestKey === '') {
+            return $this->failure('Companies House did not provide a document request key.');
+        }
+        if (trim((string)($submission['returned_document_sha256'] ?? '')) !== '') {
+            return [
+                'success' => true,
+                'errors' => [],
+                'warnings' => [],
+                'messages' => ['The accepted Companies House document is already archived.'],
+                'changed' => false,
+            ];
+        }
+        $mode = (string)$submission['environment'];
+        $gateway = $this->gatewayClient ?? new CompaniesHouseAccountsGatewayClient();
+        $result = $gateway->getDocument(
+            $requestKey,
+            $mode,
+            (string)$submission['schema_manifest_sha256'],
+            function (array $request) use ($submission, $mode): void {
+                $this->conversation()->captureRequest(
+                    $submission,
+                    $mode,
+                    (string)$submission['submission_number'],
+                    'get_document',
+                    $request
+                );
+            },
+            function (array $response) use ($submission, $mode): void {
+                $this->conversation()->captureResponse(
+                    $submission,
+                    $mode,
+                    (string)$submission['submission_number'],
+                    'get_document',
+                    $response
+                );
+            }
+        );
+        if (empty($result['success'])) {
+            $this->conversation()->completeExchange(
+                $mode,
+                (string)($result['transaction_id'] ?? ''),
+                !empty($result['transport_unknown']) ? 'transport_unknown' : 'failed',
+                (string)($result['error'] ?? '')
+            );
+            return $this->failure(
+                trim((string)($result['error'] ?? 'Companies House document retrieval failed.'))
+            );
+        }
+        if (!$this->sameCompanyNumber(
+            (string)$submission['company_number'],
+            (string)($result['company_number'] ?? '')
+        )) {
+            return $this->failure(
+                'Companies House returned a document for a different company; the PDF was not archived.'
+            );
+        }
+        $documentId = trim((string)($result['document_id'] ?? ''));
+        $safeId = preg_replace('/[^A-Za-z0-9._-]+/', '-', $documentId) ?: 'accepted-accounts';
+        $stored = $this->archives()->store(
+            (int)$submission['company_id'],
+            (int)$submission['accounting_period_id'],
+            'companies_house',
+            $mode,
+            (string)$submission['submission_number'],
+            'accepted',
+            'companies-house-document-' . substr($safeId, 0, 80) . '.pdf',
+            (string)$result['document_data']
+        );
+        $now = gmdate('Y-m-d H:i:s');
+        \InterfaceDB::prepareExecute(
+            'UPDATE ' . self::SUBMISSIONS_TABLE . '
+             SET returned_document_id = :document_id,
+                 returned_document_path = :document_path,
+                 returned_document_sha256 = :document_sha256,
+                 document_retrieved_at = :retrieved_at,
+                 updated_at = :updated_at
+             WHERE id = :id',
+            [
+                'document_id' => $documentId !== '' ? $documentId : null,
+                'document_path' => $stored['path'],
+                'document_sha256' => $stored['sha256'],
+                'retrieved_at' => $now,
+                'updated_at' => $now,
+                'id' => $submissionId,
+            ]
+        );
+        $this->conversation()->completeExchange(
+            $mode,
+            (string)($result['transaction_id'] ?? ''),
+            'succeeded'
+        );
+
+        return [
+            'success' => true,
+            'errors' => [],
+            'warnings' => [],
+            'messages' => ['The accepted Companies House document was retrieved and archived.'],
+            'submission' => $this->normaliseSubmission((array)$this->submission($submissionId)),
+            'changed' => true,
+        ];
+    }
+
+    public function reconcileStatusExchange(
+        int $submissionId,
+        string $resolution,
+        string $actor
+    ): array {
+        $submission = $this->submission($submissionId);
+        $cycle = $this->conversation()->latestStatusCycle($submissionId);
+        if ($submission === null
+            || !is_array($cycle)
+            || (string)$cycle['acknowledgement_state'] !== 'transport_unknown') {
+            return $this->failure('No uncertain Companies House status exchange requires reconciliation.');
+        }
+        $resolution = strtolower(trim($resolution));
+        $hasStatus = trim((string)($cycle['result_json'] ?? '')) !== '';
+        if (($resolution === 'ack_confirmed' && !$hasStatus)
+            || ($resolution === 'poll_not_received' && $hasStatus)
+            || !in_array($resolution, ['ack_confirmed', 'poll_not_received'], true)) {
+            return $this->failure('The reconciliation resolution does not match the uncertain exchange.');
+        }
+        $actor = $this->actor($actor);
+        $now = gmdate('Y-m-d H:i:s');
+        if ($resolution === 'ack_confirmed') {
+            $status = json_decode((string)$cycle['result_json'], true);
+            if (!is_array($status)) {
+                return $this->failure('The stored Companies House status cannot be reconciled.');
+            }
+            $this->conversation()->updateStatusCycle((int)$cycle['id'], [
+                'acknowledgement_state' => 'acknowledged',
+                'acknowledged_at' => $now,
+            ]);
+            $this->commitAcknowledgedStatus($submission, $status, $now, $actor);
+            $this->sequences()->releaseResolved(
+                $submissionId,
+                (string)$submission['environment'],
+                (string)$submission['presenter_fingerprint']
+            );
+            $message = 'The StatusAck was manually reconciled as received by Companies House.';
+        } else {
+            $this->conversation()->updateStatusCycle((int)$cycle['id'], [
+                'acknowledgement_state' => 'failed',
+            ]);
+            $message = 'The uncertain status request was manually reconciled as not received.';
+        }
+        $this->sequences()->releaseStatusLock(
+            $submissionId,
+            (int)$cycle['id'],
+            (string)$submission['environment'],
+            (string)$submission['presenter_fingerprint']
+        );
+        \InterfaceDB::prepareExecute(
+            'UPDATE ' . self::SUBMISSIONS_TABLE . '
+             SET pending_status_cycle_id = NULL,
+                 gateway_status_summary = :summary,
+                 updated_at = :updated_at
+             WHERE id = :id',
+            [
+                'summary' => $message,
+                'updated_at' => $now,
+                'id' => $submissionId,
+            ]
+        );
+        $this->recordEvent(
+            $submissionId,
+            'status_exchange_reconciled',
+            'warning',
+            (string)$submission['lifecycle'],
+            null,
+            $message,
+            $actor,
+            ['resolution' => $resolution]
+        );
+
+        return [
+            'success' => true,
+            'errors' => [],
+            'warnings' => [],
+            'messages' => [$message],
+            'changed' => true,
+        ];
+    }
+
+    private function retrieveAcceptedDocumentIfAvailable(
+        int $submissionId,
+        string $actor,
+        array $acknowledgement
+    ): array {
+        $submission = $this->submission($submissionId);
+        if ($submission === null
+            || (string)$submission['lifecycle'] !== 'accepted'
+            || trim((string)($submission['document_request_key'] ?? '')) === '') {
+            return $acknowledgement;
+        }
+        $document = $this->retrieveDocument($submissionId, $actor);
+        if (!empty($document['success'])) {
+            $acknowledgement['messages'] = array_values(array_merge(
+                (array)($acknowledgement['messages'] ?? []),
+                (array)($document['messages'] ?? [])
+            ));
+        } else {
+            $acknowledgement['warnings'] = array_values(array_merge(
+                (array)($acknowledgement['warnings'] ?? []),
+                (array)($document['errors'] ?? [])
+            ));
+        }
+        return $acknowledgement;
+    }
+
+    private function commitAcknowledgedStatus(
+        array $submission,
+        array $status,
+        string $now,
+        string $actor
+    ): void {
+        $lifecycle = (string)($status['normalized_status'] ?? 'internal_failure');
+        if (!in_array($lifecycle, ['pending', 'parked', 'accepted', 'rejected', 'internal_failure'], true)) {
+            $lifecycle = 'internal_failure';
+        }
+        $rawStatus = strtoupper(trim((string)($status['submission_status'] ?? '')));
+        $rejections = (array)($status['rejections'] ?? []);
         $firstRejection = is_array($rejections[0] ?? null) ? $rejections[0] : [];
-        $examiner = (array)($result['examiner'] ?? []);
+        $examiner = (array)($status['examiner'] ?? []);
         $summary = 'Companies House status: ' . ($rawStatus !== '' ? $rawStatus : strtoupper($lifecycle)) . '.';
         \InterfaceDB::prepareExecute(
             'UPDATE ' . self::SUBMISSIONS_TABLE . '
@@ -833,48 +1495,47 @@ final class CompaniesHouseAccountsSubmissionService
                  gateway_submission_reference = :gateway_reference,
                  gateway_status_summary = :summary, rejection_code = :rejection_code,
                  rejection_description = :rejection_description,
-                 examiner_comments = :examiner_comments, last_polled_at = :polled_at,
+                 examiner_comments = :examiner_comments,
+                 document_request_key = :document_request_key,
                  status_updated_at = :status_updated_at, accepted_at = :accepted_at,
                  rejected_at = :rejected_at, updated_at = :updated_at
              WHERE id = :id',
             [
                 'lifecycle' => $lifecycle,
                 'raw_status' => $rawStatus !== '' ? $rawStatus : null,
-                'gateway_reference' => trim((string)($result['customer_reference'] ?? '')) ?: ($submission['gateway_submission_reference'] ?? null),
+                'gateway_reference' => trim((string)($status['customer_reference'] ?? ''))
+                    ?: ($submission['gateway_submission_reference'] ?? null),
                 'summary' => $summary,
                 'rejection_code' => trim((string)($firstRejection['code'] ?? '')) ?: null,
                 'rejection_description' => trim((string)($firstRejection['description'] ?? '')) ?: null,
                 'examiner_comments' => trim((string)($examiner['comment'] ?? '')) ?: null,
-                'polled_at' => $now,
+                'document_request_key' => trim((string)($status['document_request_key'] ?? '')) ?: null,
                 'status_updated_at' => $now,
                 'accepted_at' => $lifecycle === 'accepted' ? $now : ($submission['accepted_at'] ?? null),
                 'rejected_at' => $lifecycle === 'rejected' ? $now : ($submission['rejected_at'] ?? null),
                 'updated_at' => $now,
-                'id' => $submissionId,
+                'id' => (int)$submission['id'],
             ]
-        );
-        $this->sequences()->releaseResolved(
-            $submissionId,
-            $mode,
-            (string)($submission['presenter_fingerprint'] ?? '')
         );
         $this->archives()->updateLifecycle(
             (int)$submission['company_id'],
             (int)$submission['accounting_period_id'],
             'companies_house',
-            $mode,
+            (string)$submission['environment'],
             (string)$submission['submission_number'],
             $lifecycle
         );
         $this->recordEvent(
-            $submissionId,
-            'status_updated',
-            in_array($lifecycle, ['rejected', 'internal_failure'], true) ? 'error' : ($lifecycle === 'accepted' ? 'success' : 'info'),
+            (int)$submission['id'],
+            'status_acknowledged',
+            in_array($lifecycle, ['rejected', 'internal_failure'], true)
+                ? 'error'
+                : ($lifecycle === 'accepted' ? 'success' : 'info'),
             $lifecycle,
             $rawStatus,
             $summary,
             $actor,
-            $this->safeGatewayContext($result),
+            ['document_request_key_returned' => trim((string)($status['document_request_key'] ?? '')) !== ''],
             (string)($firstRejection['code'] ?? ''),
             (string)($firstRejection['description'] ?? ''),
             (string)($examiner['comment'] ?? '')
@@ -882,20 +1543,20 @@ final class CompaniesHouseAccountsSubmissionService
         $this->recordFilingEvidenceEvent(
             $submission,
             'companies_house_' . $lifecycle,
-            in_array($lifecycle, ['rejected', 'internal_failure'], true) ? 'error' : ($lifecycle === 'accepted' ? 'success' : 'info'),
+            in_array($lifecycle, ['rejected', 'internal_failure'], true)
+                ? 'error'
+                : ($lifecycle === 'accepted' ? 'success' : 'info'),
             $summary,
             $actor,
-            ['raw_status' => $rawStatus]
+            ['raw_status' => $rawStatus, 'status_acknowledged' => true]
         );
+    }
 
-        return [
-            'success' => true,
-            'errors' => [],
-            'warnings' => array_values(array_filter([(string)($result['evidence_error'] ?? '')])),
-            'messages' => [$summary],
-            'submission' => $this->normaliseSubmission((array)$this->submission($submissionId)),
-            'changed' => true,
-        ];
+    private function sameCompanyNumber(string $expected, string $actual): bool
+    {
+        $expected = strtoupper(ltrim(trim($expected), '0'));
+        $actual = strtoupper(ltrim(trim($actual), '0'));
+        return $expected !== '' && hash_equals($expected, $actual);
     }
 
     private function selection(int $companyId, int $accountingPeriodId): ?array
@@ -1136,6 +1797,18 @@ final class CompaniesHouseAccountsSubmissionService
         return array_map(fn(array $row): array => $this->normaliseSubmission($row), $rows);
     }
 
+    public function protocolEvidenceFile(
+        int $submissionId,
+        int $exchangeId,
+        string $direction
+    ): array {
+        $submission = $this->submission($submissionId);
+        if ($submission === null) {
+            throw new \RuntimeException('The Companies House submission was not found.');
+        }
+        return $this->conversation()->evidenceFile($submissionId, $exchangeId, $direction);
+    }
+
     private function failConsumedSubmission(
         int $submissionId,
         string $environment,
@@ -1187,6 +1860,74 @@ final class CompaniesHouseAccountsSubmissionService
     private function credentials(): CompaniesHouseAccountsCredentialService
     {
         return $this->credentialService ?? new CompaniesHouseAccountsCredentialService();
+    }
+
+    private function companyDataCredentials(): CompaniesHouseCompanyDataCredentialService
+    {
+        return $this->companyDataCredentialService ?? new CompaniesHouseCompanyDataCredentialService();
+    }
+
+    private function conversation(): CompaniesHouseProtocolConversationService
+    {
+        return $this->conversationService ?? new CompaniesHouseProtocolConversationService($this->archiveService);
+    }
+
+    private function performCompanyDataPreflight(
+        array $submission,
+        string $companyAuthCode,
+        string $actor,
+        string $environment,
+        int $schemaSnapshotId,
+        string $schemaManifestSha256,
+        bool $developerStep
+    ): array {
+        $outputCredentials = $this->companyDataCredentials()->load($environment);
+        $preflight = $this->conversation()->beginPreflight(
+            $submission,
+            $environment,
+            $schemaSnapshotId,
+            $schemaManifestSha256,
+            hash('sha256', strtoupper((string)$outputCredentials['presenter_id'])),
+            $companyAuthCode,
+            $actor,
+            $developerStep
+        );
+        $preflightId = (int)$preflight['id'];
+        $gateway = $this->gatewayClient ?? new CompaniesHouseAccountsGatewayClient();
+        $result = $gateway->checkCompanyAuthentication(
+            (string)$submission['company_number'],
+            $companyAuthCode,
+            $environment,
+            $schemaManifestSha256,
+            function (array $request) use ($submission, $environment, $preflight, $preflightId): void {
+                $this->conversation()->captureRequest(
+                    $submission,
+                    $environment,
+                    (string)$preflight['archive_reference'],
+                    'company_data',
+                    $request,
+                    $preflightId
+                );
+            },
+            function (array $response) use ($submission, $environment, $preflight, $preflightId): void {
+                $this->conversation()->captureResponse(
+                    $submission,
+                    $environment,
+                    (string)$preflight['archive_reference'],
+                    'company_data',
+                    $response,
+                    $preflightId
+                );
+            }
+        );
+        $this->conversation()->finishPreflight($preflightId, $result);
+        $result['preflight_id'] = $preflightId;
+        if (empty($result['success'])) {
+            $result['error'] = trim((string)($result['error'] ?? ''))
+                ?: 'Companies House CompanyData rejected the authentication preflight.';
+        }
+
+        return $result;
     }
 
     private function sequences(): CompaniesHouseSubmissionSequenceService
@@ -1306,16 +2047,30 @@ final class CompaniesHouseAccountsSubmissionService
             'company' => [],
             'accounting_period' => [],
             'locked' => false,
-            'feature' => ['mode' => 'DISABLED', 'enabled' => false, 'credentials_configured' => false, 'live_approved' => false, 'test_accepted' => false],
+            'feature' => [
+                'mode' => 'DISABLED',
+                'enabled' => false,
+                'credentials_configured' => false,
+                'company_data_credentials_configured' => false,
+                'protocol_ready' => false,
+                'developer_binding_configured' => false,
+                'live_approved' => false,
+                'test_accepted' => false,
+            ],
             'eligibility' => ['decision' => 'pending', 'detected_channel' => 'unknown', 'original_document_id' => 0, 'evidence' => []],
             'readiness' => ['ready_for_filing' => false, 'filing_errors' => [$message]],
             'submission' => null,
+            'preflight' => null,
+            'status_cycle' => null,
+            'exchanges' => [],
             'prepared_artifact' => null,
             'sequence' => [
                 'configured' => false,
                 'next_number' => '',
                 'last_issued_number' => null,
                 'in_flight_submission_id' => null,
+                'status_in_flight_submission_id' => null,
+                'status_in_flight_cycle_id' => null,
                 'presenter_fingerprint' => '',
             ],
             'can_prepare' => false,

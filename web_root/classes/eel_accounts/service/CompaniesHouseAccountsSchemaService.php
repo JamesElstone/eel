@@ -13,6 +13,8 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
         'form_submission' => 'https://xmlgw.companieshouse.gov.uk/v1-0/schema/forms/FormSubmission-v2-11.xsd',
         'submission_status' => 'https://xmlgw.companieshouse.gov.uk/v1-0/schema/forms/GetSubmissionStatus-v2-9.xsd',
         'status_ack' => 'https://xmlgw.companieshouse.gov.uk/v1-0/schema/forms/GetStatusAck-v1-1.xsd',
+        'company_data' => 'https://xmlgw.companieshouse.gov.uk/v1-0/schema/CompanyData-v3-6.xsd',
+        'get_document' => 'https://xmlgw.companieshouse.gov.uk/v1-0/schema/forms/GetDocument-v1-1.xsd',
     ];
     private const MAX_FILES = 500;
     private const MAX_FILE_BYTES = 5242880;

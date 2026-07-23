@@ -165,9 +165,9 @@ $harness->run(_year_end_companies_house_comparisonCard::class, static function (
         $html = $card->render($context);
 
         $harness->assertSame(true, str_contains($html, 'Prepared for submission'));
-        $harness->assertSame(true, str_contains($html, 'name="intent" value="submit_revised_accounts"'));
-        $harness->assertSame(true, str_contains($html, 'name="company_auth_code"'));
-        $harness->assertSame(true, str_contains($html, 'SUBMIT LIVE REVISED ACCOUNTS'));
+        $harness->assertSame(true, str_contains($html, 'Open Transmit page'));
+        $harness->assertSame(false, str_contains($html, 'name="company_auth_code"'));
+        $harness->assertSame(false, str_contains($html, 'SUBMIT LIVE REVISED ACCOUNTS'));
         $harness->assertSame(false, str_contains($html, 'value="secret-code"'));
         $harness->assertSame(false, str_contains($html, 'name="company_auth_code" minlength="6" maxlength="8" pattern="[A-Za-z0-9]{6,8}" required autocomplete="off" disabled'));
     });
@@ -180,7 +180,7 @@ $harness->run(_year_end_companies_house_comparisonCard::class, static function (
                 'submission' => ['id' => 88, 'status' => $status, 'submission_number' => '000088'],
             ]);
             $html = $card->render($context);
-            $harness->assertSame(true, str_contains($html, 'name="intent" value="refresh_revised_accounts_status"'));
+            $harness->assertSame(true, str_contains($html, 'Open Transmit page'));
             $harness->assertSame(false, str_contains($html, 'name="intent" value="submit_revised_accounts"'));
         }
 

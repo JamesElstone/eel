@@ -36,6 +36,10 @@ $archiveMetadataMigration = (string)file_get_contents(
     $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
     . DIRECTORY_SEPARATOR . '2026_07_23_003_transmission_archive_artifact_metadata.sql'
 );
+$protocolMigration = (string)file_get_contents(
+    $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
+    . DIRECTORY_SEPARATOR . '2026_07_23_004_companies_house_protocol_conversation.sql'
+);
 
 $harness->check(
     'Companies House accounts filing schema',
@@ -51,6 +55,9 @@ $harness->check(
             'companies_house_schema_dependencies',
             'companies_house_submission_sequences',
             'transmission_archives',
+            'companies_house_company_auth_preflights',
+            'companies_house_protocol_exchanges',
+            'companies_house_accounts_status_cycles',
         ] as $table) {
             $harness->assertTrue(InterfaceDB::tableExists($table));
         }
@@ -70,6 +77,10 @@ $harness->check(
             'schema_snapshot_id',
             'schema_manifest_sha256',
             'schema_validated_at',
+            'preflight_id',
+            'pending_status_cycle_id',
+            'document_request_key',
+            'returned_document_sha256',
         ] as $column) {
             $harness->assertTrue(InterfaceDB::columnExists('companies_house_accounts_submissions', $column));
         }
@@ -83,6 +94,30 @@ $harness->check(
         ] as $column) {
             $harness->assertTrue(InterfaceDB::columnExists('transmission_archives', $column));
         }
+    }
+);
+
+$harness->check(
+    'Companies House accounts filing schema',
+    'protocol migration persists preflight, exchange and mandatory acknowledgement state',
+    static function () use ($harness, $protocolMigration, $masterSchema): void {
+        foreach ([$protocolMigration, $masterSchema] as $schema) {
+            foreach ([
+                'companies_house_company_auth_preflights',
+                'companies_house_protocol_exchanges',
+                'companies_house_accounts_status_cycles',
+                'binding_hmac',
+                'status_in_flight_submission_id',
+                'status_in_flight_cycle_id',
+                'acknowledgement_state',
+                'document_request_key',
+            ] as $token) {
+                $harness->assertTrue(str_contains($schema, $token));
+            }
+        }
+        $normalized = strtolower($protocolMigration);
+        $harness->assertFalse(str_contains($normalized, 'company_authentication_code'));
+        $harness->assertFalse(str_contains($normalized, 'company_auth_code'));
     }
 );
 

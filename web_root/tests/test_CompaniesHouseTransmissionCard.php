@@ -77,4 +77,62 @@ $harness->run(_companies_house_transmissionCard::class, static function (
             $harness->assertFalse(str_contains($html, $secret));
         }
     );
+
+    $harness->check(
+        _companies_house_transmissionCard::class,
+        'adds one-exchange controls and exact XML evidence only in developer mode',
+        static function () use ($harness, $card): void {
+            $previous = AppConfigurationStore::get('developer_options', false);
+            AppConfigurationStore::set('developer_options', true);
+            try {
+                $html = $card->render([
+                    'company' => ['id' => 49, 'accounting_period_id' => 80],
+                    'services' => [
+                        'companies_house_transmission_context' => [
+                            'feature' => [
+                                'mode' => 'TEST',
+                                'credentials_configured' => true,
+                                'company_data_credentials_configured' => true,
+                                'protocol_ready' => true,
+                                'developer_binding_configured' => true,
+                            ],
+                            'sequence' => ['next_number' => '000001'],
+                            'submission' => [
+                                'id' => 712,
+                                'lifecycle' => 'prepared',
+                                'submission_number' => null,
+                                'revised_artifact_path' => 'private/revised-accounts.xhtml',
+                                'revised_artifact_sha256' => str_repeat('a', 64),
+                            ],
+                            'prepared_artifact' => [
+                                'filename' => 'revised-accounts.xhtml',
+                                'sha256' => str_repeat('a', 64),
+                            ],
+                            'preflight' => null,
+                            'status_cycle' => null,
+                            'exchanges' => [[
+                                'id' => 8,
+                                'operation' => 'company_data',
+                                'transaction_id' => 'ABC123',
+                                'exchange_state' => 'succeeded',
+                                'request_path' => 'private/request.xml',
+                                'response_path' => 'private/response.xml',
+                            ]],
+                            'can_submit' => true,
+                            'submission_blockers' => [],
+                        ],
+                        'companies_house_transmission_history' => [],
+                    ],
+                ]);
+                $harness->assertTrue(str_contains($html, 'Send / continue TEST filing'));
+                $harness->assertTrue(str_contains($html, 'Send CompanyData preflight'));
+                $harness->assertTrue(str_contains($html, 'Developer XML exchange timeline'));
+                $harness->assertTrue(str_contains($html, 'value="download_protocol_evidence"'));
+                $harness->assertTrue(str_contains($html, 'maxlength="6"'));
+                $harness->assertFalse(str_contains($html, 'maxlength="8"'));
+            } finally {
+                AppConfigurationStore::set('developer_options', (bool)$previous);
+            }
+        }
+    );
 });

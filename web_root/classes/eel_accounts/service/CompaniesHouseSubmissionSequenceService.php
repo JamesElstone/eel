@@ -15,7 +15,7 @@ final class CompaniesHouseSubmissionSequenceService
     private const SUBMISSIONS = 'companies_house_accounts_submissions';
     private const MAX_VALUE = 999999;
 
-    /** @return array{configured:bool,next_number:string,last_issued_number:?string,in_flight_submission_id:?int,presenter_fingerprint:string} */
+    /** @return array{configured:bool,next_number:string,last_issued_number:?string,in_flight_submission_id:?int,status_in_flight_submission_id:?int,status_in_flight_cycle_id:?int,presenter_fingerprint:string} */
     public function status(string $environment, string $presenterId): array
     {
         $environment = $this->environment($environment);
@@ -31,6 +31,12 @@ final class CompaniesHouseSubmissionSequenceService
                 : null,
             'in_flight_submission_id' => isset($row['in_flight_submission_id'])
                 ? (int)$row['in_flight_submission_id']
+                : null,
+            'status_in_flight_submission_id' => isset($row['status_in_flight_submission_id'])
+                ? (int)$row['status_in_flight_submission_id']
+                : null,
+            'status_in_flight_cycle_id' => isset($row['status_in_flight_cycle_id'])
+                ? (int)$row['status_in_flight_cycle_id']
                 : null,
             'presenter_fingerprint' => $fingerprint,
         ];
@@ -149,6 +155,86 @@ final class CompaniesHouseSubmissionSequenceService
         );
     }
 
+    public function acquireStatusLock(
+        int $submissionId,
+        int $statusCycleId,
+        string $environment,
+        string $presenterFingerprint
+    ): void {
+        if ($submissionId <= 0 || $statusCycleId <= 0 || !$this->statusLockSchemaReady()) {
+            throw new \RuntimeException(
+                'Run the Companies House protocol-conversation migration before requesting submission status.'
+            );
+        }
+        $environment = $this->environment($environment);
+        $presenterFingerprint = strtolower(trim($presenterFingerprint));
+        \InterfaceDB::transaction(function () use (
+            $submissionId,
+            $statusCycleId,
+            $environment,
+            $presenterFingerprint
+        ): void {
+            $lock = \InterfaceDB::driverName() === 'sqlite' ? '' : ' FOR UPDATE';
+            $row = \InterfaceDB::fetchOne(
+                'SELECT * FROM ' . self::TABLE . '
+                 WHERE environment = :environment AND presenter_fingerprint = :fingerprint' . $lock,
+                ['environment' => $environment, 'fingerprint' => $presenterFingerprint]
+            );
+            if (!is_array($row)) {
+                throw new \RuntimeException('The Companies House presenter sequence is not initialised.');
+            }
+            $currentSubmission = (int)($row['status_in_flight_submission_id'] ?? 0);
+            $currentCycle = (int)($row['status_in_flight_cycle_id'] ?? 0);
+            if (($currentSubmission > 0 && $currentSubmission !== $submissionId)
+                || ($currentCycle > 0 && $currentCycle !== $statusCycleId)) {
+                throw new \RuntimeException(
+                    'Another Companies House status/acknowledgement exchange is in progress for this presenter.'
+                );
+            }
+            \InterfaceDB::prepareExecute(
+                'UPDATE ' . self::TABLE . '
+                 SET status_in_flight_submission_id = :submission_id,
+                     status_in_flight_cycle_id = :cycle_id,
+                     updated_at = :updated_at
+                 WHERE id = :id',
+                [
+                    'submission_id' => $submissionId,
+                    'cycle_id' => $statusCycleId,
+                    'updated_at' => gmdate('Y-m-d H:i:s'),
+                    'id' => (int)$row['id'],
+                ]
+            );
+        });
+    }
+
+    public function releaseStatusLock(
+        int $submissionId,
+        int $statusCycleId,
+        string $environment,
+        string $presenterFingerprint
+    ): void {
+        if (!$this->statusLockSchemaReady()) {
+            return;
+        }
+        \InterfaceDB::prepareExecute(
+            'UPDATE ' . self::TABLE . '
+             SET status_in_flight_submission_id = NULL,
+                 status_in_flight_cycle_id = NULL,
+                 updated_at = :updated_at
+             WHERE environment = :environment
+               AND presenter_fingerprint = :fingerprint
+               AND status_in_flight_submission_id = :submission_id
+               AND status_in_flight_cycle_id = :cycle_id',
+            [
+                'updated_at' => gmdate('Y-m-d H:i:s'),
+                'environment' => $this->environment($environment),
+                'fingerprint' => strtolower(trim($presenterFingerprint)),
+                'submission_id' => $submissionId,
+                'cycle_id' => $statusCycleId,
+            ]
+        );
+    }
+
     private function ensureRow(string $environment, string $fingerprint): void
     {
         if (is_array($this->row($environment, $fingerprint))) {
@@ -195,6 +281,14 @@ final class CompaniesHouseSubmissionSequenceService
     {
         return \InterfaceDB::tableExists(self::TABLE)
             && \InterfaceDB::columnExists(self::SUBMISSIONS, 'presenter_fingerprint');
+    }
+
+    private function statusLockSchemaReady(): bool
+    {
+        return $this->schemaReady()
+            && \InterfaceDB::columnExists(self::TABLE, 'status_in_flight_submission_id')
+            && \InterfaceDB::columnExists(self::TABLE, 'status_in_flight_cycle_id')
+            && \InterfaceDB::tableExists('companies_house_accounts_status_cycles');
     }
 
     private function fingerprint(string $presenterId): string

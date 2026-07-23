@@ -18,6 +18,9 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
     private const FORM_SCHEMA = 'http://xmlgw.companieshouse.gov.uk/v1-0/schema/forms/FormSubmission-v2-11.xsd';
     private const STATUS_NAMESPACE = 'http://xmlgw.companieshouse.gov.uk';
     private const STATUS_SCHEMA = 'http://xmlgw.companieshouse.gov.uk/v1-0/schema/forms/GetSubmissionStatus-v2-9.xsd';
+    private const COMPANY_DATA_SCHEMA = 'http://xmlgw.companieshouse.gov.uk/v1-0/schema/CompanyData-v3-6.xsd';
+    private const STATUS_ACK_SCHEMA = 'http://xmlgw.companieshouse.gov.uk/v1-0/schema/forms/GetStatusAck-v1-1.xsd';
+    private const GET_DOCUMENT_SCHEMA = 'http://xmlgw.companieshouse.gov.uk/v1-0/schema/forms/GetDocument-v1-1.xsd';
     private const XSI_NAMESPACE = 'http://www.w3.org/2001/XMLSchema-instance';
     private const MAX_DOCUMENT_BYTES = 30000000;
 
@@ -36,6 +39,9 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
     /** @var null|\Closure(string): array */
     private ?\Closure $credentialLoader;
 
+    /** @var null|\Closure(string): array */
+    private ?\Closure $outputCredentialLoader;
+
     /** @var null|\Closure(): string */
     private ?\Closure $transactionIdFactory;
 
@@ -53,7 +59,8 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         ?callable $credentialLoader = null,
         ?callable $transactionIdFactory = null,
         array $config = [],
-        ?callable $requestValidator = null
+        ?callable $requestValidator = null,
+        ?callable $outputCredentialLoader = null
     ) {
         $this->httpTransport = $httpTransport === null ? null : \Closure::fromCallable($httpTransport);
         $this->credentialLoader = $credentialLoader === null ? null : \Closure::fromCallable($credentialLoader);
@@ -61,11 +68,66 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             ? null
             : \Closure::fromCallable($transactionIdFactory);
         $this->requestValidator = $requestValidator === null ? null : \Closure::fromCallable($requestValidator);
+        $this->outputCredentialLoader = $outputCredentialLoader === null
+            ? null
+            : \Closure::fromCallable($outputCredentialLoader);
         $this->timeoutSeconds = max(1, (int)($config['timeout_seconds'] ?? 30));
-        $this->maxResponseBytes = max(1, (int)($config['max_response_bytes'] ?? 2097152));
+        $this->maxResponseBytes = max(1, (int)($config['max_response_bytes'] ?? 42000000));
         $this->minimumIntervalMicroseconds = max(
             0,
             (int)($config['minimum_interval_microseconds'] ?? 500000)
+        );
+    }
+
+    public function checkCompanyAuthentication(
+        string $companyNumber,
+        string $companyAuthenticationCode,
+        string $environment,
+        string $schemaManifestSha256,
+        ?callable $beforeSend = null,
+        ?callable $afterReceive = null
+    ): array {
+        try {
+            $environment = $this->normaliseEnvironment($environment);
+            $companyNumber = $this->companyNumber($companyNumber);
+            $companyAuthenticationCode = $this->companyAuthenticationCode($companyAuthenticationCode);
+            $credentials = $this->outputCredentials($environment);
+            $transactionId = $this->transactionId();
+            $requestXml = $this->buildCompanyDataRequest(
+                $companyNumber,
+                $companyAuthenticationCode,
+                $credentials,
+                $environment,
+                $transactionId
+            );
+            $this->validateOperationRequest(
+                $requestXml,
+                $schemaManifestSha256,
+                'CompanyData-v3-6.xsd',
+                'CompanyDataRequest'
+            );
+        } catch (\Throwable $exception) {
+            return $this->failureResult($environment, $exception->getMessage(), false, '');
+        }
+
+        return $this->sendProtocolRequest(
+            'company-data',
+            $environment,
+            $transactionId,
+            $requestXml,
+            $this->secretValues($credentials, $companyAuthenticationCode),
+            $beforeSend,
+            $afterReceive,
+            $schemaManifestSha256,
+            fn(array $response, string $redactedRequest, array $secrets): array =>
+                $this->parseCompanyDataResponse(
+                    $response,
+                    $environment,
+                    $companyNumber,
+                    $transactionId,
+                    $redactedRequest,
+                    $secrets
+                )
         );
     }
 
@@ -143,6 +205,15 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             $request->redactedRequestXml(),
             $request->secrets()
         );
+        $responseValidationError = $this->responseValidationError(
+            (string)($response['body'] ?? ''),
+            $request->schemaManifestSha256()
+        );
+        if ($responseValidationError !== '') {
+            $result['success'] = false;
+            $result['transport_unknown'] = true;
+            $result['error'] = $responseValidationError;
+        }
         if ($captureError !== '') {
             $result['evidence_error'] = $captureError;
         }
@@ -154,7 +225,8 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         string $submissionNumber,
         string $environment,
         ?callable $beforeSend = null,
-        ?callable $afterReceive = null
+        ?callable $afterReceive = null,
+        string $schemaManifestSha256 = ''
     ): array
     {
         try {
@@ -168,6 +240,14 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
                 $environment,
                 $transactionId
             );
+            if ($schemaManifestSha256 !== '') {
+                $this->validateOperationRequest(
+                    $requestXml,
+                    $schemaManifestSha256,
+                    'GetSubmissionStatus-v2-9.xsd',
+                    'GetSubmissionStatus'
+                );
+            }
         } catch (\Throwable $exception) {
             return $this->failureResult($environment, $exception->getMessage(), false, $submissionNumber);
         }
@@ -234,11 +314,115 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             $redactedRequest,
             $secrets
         );
+        if ($schemaManifestSha256 !== '') {
+            $responseValidationError = $this->responseValidationError(
+                (string)($response['body'] ?? ''),
+                $schemaManifestSha256
+            );
+            if ($responseValidationError !== '') {
+                $result['success'] = false;
+                $result['transport_unknown'] = true;
+                $result['error'] = $responseValidationError;
+            }
+        }
         if ($captureError !== '') {
             $result['evidence_error'] = $captureError;
         }
 
         return $result;
+    }
+
+    public function acknowledgeSubmissionStatus(
+        string $environment,
+        string $schemaManifestSha256,
+        ?callable $beforeSend = null,
+        ?callable $afterReceive = null
+    ): array {
+        try {
+            $environment = $this->normaliseEnvironment($environment);
+            $credentials = $this->credentials($environment, false);
+            $transactionId = $this->transactionId();
+            $requestXml = $this->buildStatusAckRequest($credentials, $environment, $transactionId);
+            $this->validateOperationRequest(
+                $requestXml,
+                $schemaManifestSha256,
+                'GetStatusAck-v1-1.xsd',
+                'StatusAck'
+            );
+        } catch (\Throwable $exception) {
+            return $this->failureResult($environment, $exception->getMessage(), false, '');
+        }
+
+        return $this->sendProtocolRequest(
+            'status-ack',
+            $environment,
+            $transactionId,
+            $requestXml,
+            $this->secretValues($credentials),
+            $beforeSend,
+            $afterReceive,
+            $schemaManifestSha256,
+            fn(array $response, string $redactedRequest, array $secrets): array =>
+                $this->parseAcknowledgementResponse(
+                    $response,
+                    $environment,
+                    $transactionId,
+                    $redactedRequest,
+                    $secrets
+                )
+        );
+    }
+
+    public function getDocument(
+        string $documentRequestKey,
+        string $environment,
+        string $schemaManifestSha256,
+        ?callable $beforeSend = null,
+        ?callable $afterReceive = null
+    ): array {
+        try {
+            $environment = $this->normaliseEnvironment($environment);
+            $documentRequestKey = trim($documentRequestKey);
+            if (!preg_match('/^[A-Za-z0-9._:-]{1,255}$/D', $documentRequestKey)) {
+                throw new \InvalidArgumentException('The Companies House document request key is invalid.');
+            }
+            $credentials = $this->credentials($environment, false);
+            $transactionId = $this->transactionId();
+            $requestXml = $this->buildGetDocumentRequest(
+                $documentRequestKey,
+                $credentials,
+                $environment,
+                $transactionId
+            );
+            $this->validateOperationRequest(
+                $requestXml,
+                $schemaManifestSha256,
+                'GetDocument-v1-1.xsd',
+                'GetDocument'
+            );
+        } catch (\Throwable $exception) {
+            return $this->failureResult($environment, $exception->getMessage(), false, '');
+        }
+
+        return $this->sendProtocolRequest(
+            'get-document',
+            $environment,
+            $transactionId,
+            $requestXml,
+            $this->secretValues($credentials),
+            $beforeSend,
+            $afterReceive,
+            $schemaManifestSha256,
+            fn(array $response, string $redactedRequest, array $secrets): array =>
+                $this->parseDocumentResponse(
+                    $response,
+                    $environment,
+                    $documentRequestKey,
+                    $transactionId,
+                    $redactedRequest,
+                    $secrets
+                )
+        );
     }
 
     private function normaliseEnvironment(string $environment): string
@@ -286,6 +470,50 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         return $credentials;
     }
 
+    private function outputCredentials(string $environment): array
+    {
+        $credentials = $this->outputCredentialLoader instanceof \Closure
+            ? ($this->outputCredentialLoader)($environment)
+            : (new \eel_accounts\Service\CompaniesHouseCompanyDataCredentialService())->load($environment);
+        if (!is_array($credentials)) {
+            throw new \RuntimeException('Companies House CompanyData XML Output credentials could not be loaded.');
+        }
+        $credentials = [
+            'presenter_id' => trim((string)($credentials['presenter_id'] ?? '')),
+            'presenter_code' => trim((string)($credentials['presenter_code'] ?? '')),
+            'package_reference' => '',
+        ];
+        if ($credentials['presenter_id'] === '' || $credentials['presenter_code'] === '') {
+            throw new \RuntimeException(
+                'Companies House CompanyData XML Output credentials are not configured for ' . $environment . '.'
+            );
+        }
+
+        return $credentials;
+    }
+
+    private function companyNumber(string $companyNumber): string
+    {
+        $companyNumber = strtoupper(trim($companyNumber));
+        if (!preg_match('/^(?:[0-9]{1,8}|[A-Z]{2}[0-9]{6})$/D', $companyNumber)) {
+            throw new \InvalidArgumentException('The Companies House company number is invalid.');
+        }
+
+        return $companyNumber;
+    }
+
+    private function companyAuthenticationCode(string $code): string
+    {
+        $code = trim($code);
+        if (!preg_match('/^[A-Za-z0-9]{6}$/D', $code)) {
+            throw new \InvalidArgumentException(
+                'The Companies House company authentication code must contain exactly 6 letters or numbers.'
+            );
+        }
+
+        return $code;
+    }
+
     private function normaliseSubmissionPayload(array $payload): array
     {
         $companyNumber = trim((string)($payload['company_number'] ?? ''));
@@ -298,16 +526,9 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             throw new \InvalidArgumentException('Companies House company_name must contain 3 to 160 bytes.');
         }
 
-        $companyAuthenticationCode = (string)($payload['company_authentication_code'] ?? '');
-        if (
-            strlen($companyAuthenticationCode) < 6
-            || strlen($companyAuthenticationCode) > 8
-            || preg_match('/[\x00-\x1F\x7F]/', $companyAuthenticationCode)
-        ) {
-            throw new \InvalidArgumentException(
-                'Companies House company_authentication_code must contain 6 to 8 printable characters.'
-            );
-        }
+        $companyAuthenticationCode = $this->companyAuthenticationCode(
+            (string)($payload['company_authentication_code'] ?? '')
+        );
 
         $submissionNumber = $this->submissionNumber((string)($payload['submission_number'] ?? ''));
         $dateSigned = trim((string)($payload['date_signed'] ?? ''));
@@ -521,6 +742,84 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         return $this->saveXml($document);
     }
 
+    private function buildCompanyDataRequest(
+        string $companyNumber,
+        string $companyAuthenticationCode,
+        array $credentials,
+        string $environment,
+        string $transactionId
+    ): string {
+        $document = $this->envelopeDocument(
+            'CompanyDataRequest',
+            $environment,
+            $transactionId,
+            $credentials
+        );
+        $body = $this->firstElement($document, 'Body');
+        $request = $document->createElementNS(self::STATUS_NAMESPACE, 'CompanyDataRequest');
+        $request->setAttributeNS(
+            self::XSI_NAMESPACE,
+            'xsi:schemaLocation',
+            self::STATUS_NAMESPACE . ' ' . self::COMPANY_DATA_SCHEMA
+        );
+        $body->appendChild($request);
+        $this->appendText($document, $request, self::STATUS_NAMESPACE, 'CompanyNumber', $companyNumber);
+        $this->appendText(
+            $document,
+            $request,
+            self::STATUS_NAMESPACE,
+            'CompanyAuthenticationCode',
+            $companyAuthenticationCode
+        );
+        $this->appendText($document, $request, self::STATUS_NAMESPACE, 'MadeUpDate', gmdate('Y-m-d'));
+
+        return $this->saveXml($document);
+    }
+
+    private function buildStatusAckRequest(
+        array $credentials,
+        string $environment,
+        string $transactionId
+    ): string {
+        $document = $this->envelopeDocument('StatusAck', $environment, $transactionId, $credentials);
+        $body = $this->firstElement($document, 'Body');
+        $request = $document->createElementNS(self::STATUS_NAMESPACE, 'StatusAck');
+        $request->setAttributeNS(
+            self::XSI_NAMESPACE,
+            'xsi:schemaLocation',
+            self::STATUS_NAMESPACE . ' ' . self::STATUS_ACK_SCHEMA
+        );
+        $body->appendChild($request);
+
+        return $this->saveXml($document);
+    }
+
+    private function buildGetDocumentRequest(
+        string $documentRequestKey,
+        array $credentials,
+        string $environment,
+        string $transactionId
+    ): string {
+        $document = $this->envelopeDocument('GetDocument', $environment, $transactionId, $credentials);
+        $body = $this->firstElement($document, 'Body');
+        $request = $document->createElementNS(self::STATUS_NAMESPACE, 'GetDocument');
+        $request->setAttributeNS(
+            self::XSI_NAMESPACE,
+            'xsi:schemaLocation',
+            self::STATUS_NAMESPACE . ' ' . self::GET_DOCUMENT_SCHEMA
+        );
+        $body->appendChild($request);
+        $this->appendText(
+            $document,
+            $request,
+            self::STATUS_NAMESPACE,
+            'DocRequestKey',
+            $documentRequestKey
+        );
+
+        return $this->saveXml($document);
+    }
+
     private function envelopeDocument(
         string $class,
         string $environment,
@@ -676,6 +975,134 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         }
 
         return $response;
+    }
+
+    private function validateOperationRequest(
+        string $requestXml,
+        string $schemaManifestSha256,
+        string $schemaName,
+        string $elementName
+    ): void {
+        $validation = $this->requestValidator instanceof \Closure
+            ? ($this->requestValidator)($requestXml, $schemaManifestSha256)
+            : (new \eel_accounts\Service\CompaniesHouseAccountsSchemaValidator())->validateOperationRequest(
+                $requestXml,
+                $schemaManifestSha256,
+                $schemaName,
+                $elementName,
+                self::STATUS_NAMESPACE
+            );
+        if (empty($validation['success'])
+            || (int)($validation['snapshot_id'] ?? 0) <= 0
+            || !hash_equals(
+                strtolower($schemaManifestSha256),
+                strtolower((string)($validation['manifest_sha256'] ?? ''))
+            )) {
+            throw new \RuntimeException(
+                'The Companies House ' . $elementName . ' request was not validated against the selected schema snapshot.'
+            );
+        }
+    }
+
+    private function sendProtocolRequest(
+        string $operation,
+        string $environment,
+        string $transactionId,
+        string $requestXml,
+        array $secrets,
+        ?callable $beforeSend,
+        ?callable $afterReceive,
+        string $schemaManifestSha256,
+        callable $parser
+    ): array {
+        $redactedRequest = $this->redactXml($requestXml, $secrets);
+        try {
+            if ($beforeSend !== null) {
+                $beforeSend([
+                    'operation' => $operation,
+                    'environment' => $environment,
+                    'transaction_id' => $transactionId,
+                    'request_xml' => $requestXml,
+                    'request_sha256' => hash('sha256', $requestXml),
+                    'request_bytes' => strlen($requestXml),
+                ]);
+            }
+        } catch (\Throwable) {
+            return array_replace(
+                $this->failureResult(
+                    $environment,
+                    'The Companies House ' . $operation . ' request evidence could not be persisted; nothing was sent.',
+                    false,
+                    null
+                ),
+                [
+                    'pre_send_failure' => true,
+                    'transaction_id' => $transactionId,
+                    'request_xml' => $redactedRequest,
+                ]
+            );
+        }
+
+        try {
+            $response = $this->send($requestXml);
+        } catch (\Throwable $exception) {
+            return array_replace(
+                $this->failureResult(
+                    $environment,
+                    $this->redactText($exception->getMessage(), $secrets),
+                    true,
+                    null
+                ),
+                ['transaction_id' => $transactionId, 'request_xml' => $redactedRequest]
+            );
+        }
+
+        $captureError = $this->captureResponse(
+            $afterReceive,
+            $operation,
+            $environment,
+            $transactionId,
+            (string)($response['body'] ?? ''),
+            (int)($response['status_code'] ?? 0)
+        );
+        $result = $parser($response, $redactedRequest, $secrets);
+        $responseValidationError = $this->responseValidationError(
+            (string)($response['body'] ?? ''),
+            $schemaManifestSha256
+        );
+        if ($responseValidationError !== '') {
+            $result['success'] = false;
+            $result['transport_unknown'] = true;
+            $result['error'] = $responseValidationError;
+        }
+        if ($captureError !== '') {
+            $result['evidence_error'] = $captureError;
+        }
+
+        return $result;
+    }
+
+    private function responseValidationError(string $responseXml, string $schemaManifestSha256): string
+    {
+        try {
+            $validation = $this->requestValidator instanceof \Closure
+                ? ($this->requestValidator)($responseXml, $schemaManifestSha256)
+                : (new \eel_accounts\Service\CompaniesHouseAccountsSchemaValidator())
+                    ->validateEnvelopeResponse($responseXml, $schemaManifestSha256);
+            if (empty($validation['success'])
+                || !hash_equals(
+                    strtolower($schemaManifestSha256),
+                    strtolower((string)($validation['manifest_sha256'] ?? ''))
+                )) {
+                throw new \RuntimeException(
+                    'Companies House response validation did not use the selected schema snapshot.'
+                );
+            }
+            return '';
+        } catch (\Throwable $exception) {
+            return 'The Companies House response could not be validated against the pinned schema snapshot: '
+                . $exception->getMessage();
+        }
     }
 
     private function captureResponse(
@@ -855,6 +1282,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
                 'accepted' => $rawStatus === 'ACCEPT',
                 'company_number' => (string)$latest['company_number'],
                 'customer_reference' => (string)$latest['customer_reference'],
+                'document_request_key' => (string)$latest['document_request_key'],
                 'rejections' => (array)$latest['rejections'],
                 'examiner' => (array)$latest['examiner'],
                 'statuses' => $statuses,
@@ -870,6 +1298,171 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
                     $this->redactText($exception->getMessage(), $secrets),
                     false,
                     $submissionNumber
+                ),
+                [
+                    'status_code' => $statusCode,
+                    'headers' => is_array($response['headers'] ?? null) ? $response['headers'] : [],
+                    'transaction_id' => $transactionId,
+                    'request_xml' => $redactedRequest,
+                    'response_xml' => $redactedResponse,
+                ]
+            );
+        }
+    }
+
+    private function parseCompanyDataResponse(
+        array $response,
+        string $environment,
+        string $companyNumber,
+        string $transactionId,
+        string $redactedRequest,
+        array $secrets
+    ): array {
+        $parsed = $this->parseProtocolResponse(
+            $response,
+            $environment,
+            $transactionId,
+            $redactedRequest,
+            $secrets
+        );
+        if (empty($parsed['success'])) {
+            return $parsed;
+        }
+        try {
+            $document = $this->parseXml((string)($response['body'] ?? ''));
+            $returnedCompanyNumber = strtoupper($this->firstText($document, 'CompanyNumber'));
+            if ($returnedCompanyNumber === '' || $returnedCompanyNumber !== strtoupper($companyNumber)) {
+                throw new \RuntimeException(
+                    'Companies House CompanyData did not return the requested company identity.'
+                );
+            }
+            $companyName = $this->firstText($document, 'CompanyName');
+            if ($companyName === '') {
+                throw new \RuntimeException(
+                    'Companies House CompanyData returned no authenticated company data.'
+                );
+            }
+            $parsed['company_number'] = $returnedCompanyNumber;
+            $parsed['company_name'] = $companyName;
+            $parsed['authenticated'] = true;
+
+            return $parsed;
+        } catch (\Throwable $exception) {
+            $parsed['success'] = false;
+            $parsed['authenticated'] = false;
+            $parsed['error'] = $this->redactText($exception->getMessage(), $secrets);
+            return $parsed;
+        }
+    }
+
+    private function parseAcknowledgementResponse(
+        array $response,
+        string $environment,
+        string $transactionId,
+        string $redactedRequest,
+        array $secrets
+    ): array {
+        return $this->parseProtocolResponse(
+            $response,
+            $environment,
+            $transactionId,
+            $redactedRequest,
+            $secrets
+        );
+    }
+
+    private function parseDocumentResponse(
+        array $response,
+        string $environment,
+        string $documentRequestKey,
+        string $transactionId,
+        string $redactedRequest,
+        array $secrets
+    ): array {
+        $parsed = $this->parseProtocolResponse(
+            $response,
+            $environment,
+            $transactionId,
+            $redactedRequest,
+            $secrets
+        );
+        if (empty($parsed['success'])) {
+            return $parsed;
+        }
+        try {
+            $document = $this->parseXml((string)($response['body'] ?? ''));
+            $encoded = preg_replace('/\s+/', '', $this->firstText($document, 'DocumentData')) ?? '';
+            $decoded = base64_decode($encoded, true);
+            if (!is_string($decoded) || $decoded === '' || strlen($decoded) > self::MAX_DOCUMENT_BYTES) {
+                throw new \RuntimeException('Companies House returned invalid document data.');
+            }
+            if (!str_starts_with($decoded, '%PDF-')) {
+                throw new \RuntimeException('Companies House returned document data that is not a PDF.');
+            }
+            $parsed += [
+                'document_request_key' => $documentRequestKey,
+                'company_number' => strtoupper($this->firstText($document, 'CompanyNumber')),
+                'document_date' => $this->firstText($document, 'DocumentDate'),
+                'document_type' => $this->firstText($document, 'DocumentType'),
+                'document_id' => $this->firstText($document, 'DocumentID'),
+                'document_data' => $decoded,
+                'document_sha256' => hash('sha256', $decoded),
+                'document_bytes' => strlen($decoded),
+            ];
+            return $parsed;
+        } catch (\Throwable $exception) {
+            $parsed['success'] = false;
+            $parsed['error'] = $this->redactText($exception->getMessage(), $secrets);
+            return $parsed;
+        }
+    }
+
+    private function parseProtocolResponse(
+        array $response,
+        string $environment,
+        string $transactionId,
+        string $redactedRequest,
+        array $secrets
+    ): array {
+        $statusCode = (int)($response['status_code'] ?? 0);
+        $body = (string)($response['body'] ?? '');
+        $redactedResponse = $this->redactXml($body, $secrets);
+        try {
+            $document = $this->parseXml($body);
+            $gatewayErrors = $this->gatewayErrors($document);
+            $fatalErrors = array_values(array_filter(
+                $gatewayErrors,
+                static fn(array $error): bool => strtolower((string)$error['type']) !== 'warning'
+            ));
+            $qualifier = strtolower($this->firstText($document, 'Qualifier'));
+            $success = $statusCode >= 200
+                && $statusCode < 300
+                && $fatalErrors === []
+                && $qualifier !== 'error';
+
+            return [
+                'success' => $success,
+                'transport_unknown' => !$success && $gatewayErrors === [] && $qualifier === '',
+                'status_code' => $statusCode,
+                'headers' => is_array($response['headers'] ?? null) ? $response['headers'] : [],
+                'endpoint' => self::ENDPOINT,
+                'environment' => $environment,
+                'transaction_id' => $transactionId,
+                'response_transaction_id' => $this->firstText($document, 'TransactionID'),
+                'qualifier' => $qualifier,
+                'gateway_timestamp' => $this->firstText($document, 'GatewayTimestamp'),
+                'gateway_errors' => $gatewayErrors,
+                'request_xml' => $redactedRequest,
+                'response_xml' => $redactedResponse,
+                'error' => $success ? '' : $this->responseError($statusCode, $gatewayErrors),
+            ];
+        } catch (\Throwable $exception) {
+            return array_replace(
+                $this->failureResult(
+                    $environment,
+                    $this->redactText($exception->getMessage(), $secrets),
+                    true,
+                    null
                 ),
                 [
                     'status_code' => $statusCode,
@@ -992,6 +1585,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
                 'status_code' => strtoupper($this->relativeText($xpath, $node, 'StatusCode')),
                 'company_number' => $this->relativeText($xpath, $node, 'CompanyNumber'),
                 'customer_reference' => $this->relativeText($xpath, $node, 'CustomerReference'),
+                'document_request_key' => $this->relativeText($xpath, $node, 'DocRequestKey'),
                 'rejections' => $rejections,
                 'examiner' => $examiner,
             ];

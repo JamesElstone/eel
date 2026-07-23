@@ -76,7 +76,7 @@ final class _api_keys_editorCard extends CardBaseFramework
             $value = (string)($entry[$field] ?? '');
             if ($value !== '') { $options[$value] = (string)($entry[$field . '_label'] ?? $value); }
         }
-        $html = '<label>' . HelperFramework::escape($label) . '<select class="select" name="' . HelperFramework::escape($name) . '" data-api-credential-field="' . HelperFramework::escape($field) . '" data-no-submit-on-change="true"><option value="">Select ' . HelperFramework::escape($label) . '</option>';
+        $html = '<label>' . HelperFramework::escape($label) . '<select class="select" name="' . HelperFramework::escape($name) . '" data-api-credential-field="' . HelperFramework::escape($field) . '"><option value="">Select ' . HelperFramework::escape($label) . '</option>';
         foreach ($options as $value => $optionLabel) { $html .= '<option value="' . HelperFramework::escape($value) . '">' . HelperFramework::escape($optionLabel) . '</option>'; }
         return $html . '</select></label>';
     }

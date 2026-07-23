@@ -1909,6 +1909,82 @@
         }
     }
 
+    const unsafeFormDataPathKeys = new Set(['__proto__', 'prototype', 'constructor']);
+
+    function formDataPathParts(key) {
+        const match = /^([^\[\]]+)((?:\[[^\]]*\])*)$/.exec(String(key));
+
+        if (!match) {
+            return null;
+        }
+
+        const parts = [match[1]];
+        const brackets = match[2];
+        const bracketPattern = /\[([^\]]*)\]/g;
+        let bracket;
+
+        while ((bracket = bracketPattern.exec(brackets)) !== null) {
+            parts.push(bracket[1]);
+        }
+
+        return parts;
+    }
+
+    function safeFormDataPathPart(part) {
+        return part === '' || !unsafeFormDataPathKeys.has(part);
+    }
+
+    function appendFormDataValue(container, key, value) {
+        if (!Object.prototype.hasOwnProperty.call(container, key)) {
+            container[key] = value;
+            return;
+        }
+
+        if (Array.isArray(container[key])) {
+            container[key].push(value);
+            return;
+        }
+
+        container[key] = [container[key], value];
+    }
+
+    function assignFormDataPath(container, parts, value) {
+        const part = parts[0];
+        const remaining = parts.slice(1);
+
+        if (part === '') {
+            if (!Array.isArray(container)) {
+                return;
+            }
+            if (remaining.length === 0) {
+                container.push(value);
+                return;
+            }
+
+            const child = remaining[0] === '' ? [] : {};
+            container.push(child);
+            assignFormDataPath(child, remaining, value);
+            return;
+        }
+
+        if (!safeFormDataPathPart(part)) {
+            return;
+        }
+        if (remaining.length === 0) {
+            appendFormDataValue(container, part, value);
+            return;
+        }
+
+        const nextIsArray = remaining[0] === '';
+        if (!Object.prototype.hasOwnProperty.call(container, part)) {
+            container[part] = nextIsArray ? [] : {};
+        } else if ((nextIsArray && !Array.isArray(container[part])) || (!nextIsArray && (typeof container[part] !== 'object' || container[part] === null || Array.isArray(container[part])))) {
+            return;
+        }
+
+        assignFormDataPath(container[part], remaining, value);
+    }
+
     function formDataToJsonPayload(formData) {
         const payload = {};
 
@@ -1917,19 +1993,11 @@
         }
 
         formData.forEach((value, key) => {
-            const normalisedKey = key.endsWith('[]') ? key.slice(0, -2) : key;
-
-            if (Object.prototype.hasOwnProperty.call(payload, normalisedKey)) {
-                if (Array.isArray(payload[normalisedKey])) {
-                    payload[normalisedKey].push(value);
-                    return;
-                }
-
-                payload[normalisedKey] = [payload[normalisedKey], value];
+            const parts = formDataPathParts(key);
+            if (parts === null || parts.some((part) => !safeFormDataPathPart(part))) {
                 return;
             }
-
-            payload[normalisedKey] = key.endsWith('[]') ? [value] : value;
+            assignFormDataPath(payload, parts, value);
         });
 
         return payload;

@@ -635,6 +635,25 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
         $harness->assertTrue($appendPosition < $payloadPosition);
     });
 
+    $harness->check(PageRendererFramework::class, 'frontend encodes bracketed form names as safe nested JSON', function () use ($harness): void {
+        $script = file_get_contents(APP_JS . 'index.js');
+
+        if (!is_string($script)) {
+            throw new RuntimeException('Unable to read frontend script.');
+        }
+
+        foreach ([
+            'function formDataPathParts(key)',
+            'function assignFormDataPath(container, parts, value)',
+            "const unsafeFormDataPathKeys = new Set(['__proto__', 'prototype', 'constructor']);",
+            "parts.some((part) => !safeFormDataPathPart(part))",
+            'container.push(value);',
+            'appendFormDataValue(container, part, value);',
+        ] as $expected) {
+            $harness->assertTrue(str_contains($script, $expected));
+        }
+    });
+
     $harness->check(PageRendererFramework::class, 'frontend reveal helper activates tabs scrolls and focuses requested cards', function () use ($harness): void {
         $script = file_get_contents(APP_JS . 'index.js');
 

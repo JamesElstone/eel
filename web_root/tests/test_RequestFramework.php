@@ -31,6 +31,27 @@ $harness->run(RequestFramework::class, function (GeneratedServiceClassTestHarnes
         $harness->assertSame(['api_mode', 'check_file_paths'], $request->cardKeys());
     });
 
+    $harness->check(RequestFramework::class, 'reads nested bracketed JSON values and repeated arrays', function () use ($harness): void {
+        $request = new RequestFramework(
+            [],
+            [],
+            [
+                'REQUEST_METHOD' => 'POST',
+                'CONTENT_TYPE' => 'application/json',
+            ],
+            [],
+            [],
+            '{"credential":{"provider":"COMPANIESHOUSE","api_key":"secret"},"cards":["settings","api_keys_editor"],"duplicate":["first","second"]}'
+        );
+
+        $credential = $request->input('credential');
+        $harness->assertTrue(is_array($credential));
+        $harness->assertSame('COMPANIESHOUSE', $credential['provider'] ?? null);
+        $harness->assertSame('secret', $credential['api_key'] ?? null);
+        $harness->assertSame(['settings', 'api_keys_editor'], $request->input('cards'));
+        $harness->assertSame(['first', 'second'], $request->input('duplicate'));
+    });
+
     $harness->check(RequestFramework::class, 'keeps post values ahead of JSON values when post values are merged', function () use ($harness): void {
         $request = new RequestFramework(
             ['shared' => 'query-value'],

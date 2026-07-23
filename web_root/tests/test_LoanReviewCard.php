@@ -13,6 +13,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             'future_attribution_warning' => [
                 'count' => 1,
                 'acknowledged' => false,
+                'tax_relevant' => true,
                 'movements' => [[
                     'transaction_id' => 4961,
                     'accounting_period_id' => 81,
@@ -27,8 +28,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
     $html = $card->render($context);
     $h->assertTrue(str_contains($html, 'Optional future repayment attribution'));
     $h->assertTrue(str_contains($html, 'Not a blocker'));
-    $h->assertTrue(str_contains($html, 'No accounting period will be changed from this card.'));
-    $h->assertTrue(str_contains($html, 'OK — do not use these transactions for s455 relief'));
+    $h->assertTrue(str_contains($html, "Ignore - I don't want to claim S464 Tax Relief"));
     $h->assertSame(false, str_contains($html, 'Assign Participant'));
     $h->assertSame(false, str_contains($html, 'accounting_period_id=81'));
+
+    $context['services']['loanReview']['future_attribution_warning']['tax_relevant'] = false;
+    $hiddenHtml = $card->render($context);
+    $h->assertSame(false, str_contains($hiddenHtml, 'Optional future repayment attribution'));
 });

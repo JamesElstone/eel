@@ -97,6 +97,15 @@ final class LoanReviewService
             (string)($right['txn_date'] ?? ''), (int)($right['transaction_id'] ?? 0),
         ]);
         $futureBasis = $this->futureAttributionBasis($futureMovements);
+        $ct600a = (new Ct600aService())->fetchForAccountingPeriod($companyId, $accountingPeriodId);
+        $ct600aTaxRelevant = false;
+        foreach ((array)($ct600a['periods'] ?? []) as $ctPeriod) {
+            if ((float)($ctPeriod['part1']['total_loans'] ?? 0) > 0
+                || (float)($ctPeriod['tax_payable'] ?? 0) > 0) {
+                $ct600aTaxRelevant = true;
+                break;
+            }
+        }
         $acknowledgements = new YearEndAcknowledgementService();
         $warningStatus = $futureMovements === []
             ? ['state' => 'not_applicable', 'current' => false, 'acknowledgement' => null]
@@ -116,6 +125,7 @@ final class LoanReviewService
                 'basis' => $futureBasis,
                 'acknowledgement_state' => (string)($warningStatus['state'] ?? 'absent'),
                 'acknowledged' => !empty($warningStatus['current']),
+                'tax_relevant' => $ct600aTaxRelevant,
             ],
         ];
     }

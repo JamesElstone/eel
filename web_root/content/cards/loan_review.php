@@ -29,7 +29,9 @@ final class _loan_reviewCard extends CardBaseFramework
         }
         $items = (array)($review['items'] ?? []);
         $futureWarning = (array)($review['future_attribution_warning'] ?? []);
-        $showFutureWarning = (int)($futureWarning['count'] ?? 0) > 0 && empty($futureWarning['acknowledged']);
+        $showFutureWarning = (int)($futureWarning['count'] ?? 0) > 0
+            && !empty($futureWarning['tax_relevant'])
+            && empty($futureWarning['acknowledged']);
         if ($items === [] && !$showFutureWarning) {
             return '<div class="panel-soft"><span class="badge success">No review items</span> <span class="helper">No unresolved participator-loan tax items remain.</span></div>';
         }
@@ -70,13 +72,12 @@ final class _loan_reviewCard extends CardBaseFramework
         return '<section class="panel-soft warn settings-stack">
             <div class="summary-card-header"><h3 class="card-title">Optional future repayment attribution</h3><span class="badge warning">Not a blocker</span></div>
             <div class="helper">These transactions occurred after this accounting period. They only need a participant if the company intends to rely on them to reduce the s455 charge. They do not prevent the current year-end or Corporation Tax position from being completed.</div>
-            <div class="helper"><strong>No accounting period will be changed from this card.</strong> Open a source transaction for evidence only. To claim repayment relief later, deliberately select that transaction’s accounting period on Loans and assign its participant there.</div>
             <div class="table-scroll"><table><thead><tr><th>Date</th><th>Source transaction</th><th>Direction</th></tr></thead><tbody>' . $rows . '</tbody></table></div>
             <form method="post" action="?page=loans" data-ajax="true">'
                 . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="LoanReview"><input type="hidden" name="intent" value="acknowledge_future_loan_attribution_warning">
                 <input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <button class="button" type="submit">OK — do not use these transactions for s455 relief</button>
+                <button class="button" type="submit">Ignore - I don\'t want to claim S464 Tax Relief</button>
             </form>
         </section>';
     }

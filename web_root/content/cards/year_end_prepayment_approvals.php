@@ -60,6 +60,7 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
             ' . $this->configuredTable($context)->render($context, [
                 'cards[]' => (array)($context['page']['page_cards'] ?? []),
             ]) . '
+            ' . $this->carriedSchedulesHtml($context) . '
             ' . $this->acknowledgementHtml(
                 is_array($acknowledgement) ? $acknowledgement : null,
                 $companyId,
@@ -72,7 +73,10 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
 
     public function tables(array $context): array
     {
-        return [$this->table($context)];
+        return [
+            $this->table($context),
+            $this->carriedSchedulesTable($context),
+        ];
     }
 
     private function configuredTable(array $context): TableFramework
@@ -125,6 +129,60 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
             ->textColumn('reviewed_at', 'Reviewed At');
     }
 
+    private function carriedSchedulesHtml(array $context): string
+    {
+        if ($this->carriedScheduleRows($context) === []) {
+            return '';
+        }
+
+        return '<div class="panel-soft settings-stack">
+            <h4 class="card-title">Carried-forward prepayments affecting this period</h4>
+            <p class="helper">These schedules originated in an earlier accounting period and form part of the position being approved.</p>
+            ' . $this->carriedSchedulesTable($context)->render($context, [
+                'cards[]' => (array)($context['page']['page_cards'] ?? []),
+            ]) . '
+        </div>';
+    }
+
+    private function carriedSchedulesTable(array $context): TableFramework
+    {
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
+
+        return TableFramework::make($this->key() . '_carried', $this->carriedScheduleRows($context))
+            ->filename('year-end-carried-prepayment-approvals')
+            ->exportLimit(5000)
+            ->classes(wrapperClass: 'table-scroll')
+            ->empty('No carried-forward prepayment schedule affects this accounting period.')
+            ->textColumn('source_description', 'Source')
+            ->textColumn('service_period_label', 'Service Dates')
+            ->textColumn('nominal_label', 'Original Nominal')
+            ->column(
+                'opening_asset',
+                'Opening Asset',
+                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['opening_asset'] ?? 0)),
+                export: static fn(array $row): string => number_format((float)($row['opening_asset'] ?? 0), 2, '.', ''),
+                cellClass: 'numeric',
+                exportType: 'number'
+            )
+            ->column(
+                'period_release',
+                'AP Release',
+                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['period_release'] ?? 0)),
+                export: static fn(array $row): string => number_format((float)($row['period_release'] ?? 0), 2, '.', ''),
+                cellClass: 'numeric',
+                exportType: 'number'
+            )
+            ->column(
+                'closing_asset',
+                'Closing Asset',
+                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['closing_asset'] ?? 0)),
+                export: static fn(array $row): string => number_format((float)($row['closing_asset'] ?? 0), 2, '.', ''),
+                cellClass: 'numeric',
+                exportType: 'number'
+            )
+            ->textColumn('journal_state_label', 'Journal');
+    }
+
     private function prepaidRows(array $context): array
     {
         $rows = [];
@@ -155,6 +213,31 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
         return $rows;
     }
 
+    private function carriedScheduleRows(array $context): array
+    {
+        $rows = [];
+        $approvalContext = (array)($context['services']['prepaymentWorkflowContext'] ?? []);
+        foreach ((array)(($approvalContext['review'] ?? [])['carried_schedules'] ?? []) as $schedule) {
+            if (!is_array($schedule)) {
+                continue;
+            }
+
+            $allocation = (array)($schedule['selected_allocation'] ?? []);
+            $rows[] = [
+                'source_description' => (string)($schedule['source_description'] ?? 'Prepayment source'),
+                'service_period_label' => $this->displayDate((string)($schedule['service_start_date'] ?? ''))
+                    . '–' . $this->displayDate((string)($schedule['service_end_date'] ?? '')),
+                'nominal_label' => trim((string)($schedule['expense_nominal_code'] ?? '') . ' ' . (string)($schedule['expense_nominal_name'] ?? '')),
+                'opening_asset' => ((int)($allocation['opening_deferred_pence'] ?? 0)) / 100,
+                'period_release' => ((int)($allocation['expense_pence'] ?? 0)) / 100,
+                'closing_asset' => ((int)($allocation['closing_deferred_pence'] ?? 0)) / 100,
+                'journal_state_label' => HelperFramework::labelFromKey((string)($allocation['journal_state'] ?? 'not_posted'), '_'),
+            ];
+        }
+
+        return $rows;
+    }
+
     private function summaryHtml(array $review): string
     {
         if (empty($review['available'])) {
@@ -165,6 +248,7 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
             ' . $this->summaryCard('Pre-paid items', (string)(int)($review['prepaid_count'] ?? 0)) . '
             ' . $this->summaryCard('Reviewed decisions', (string)(int)($review['reviewed_count'] ?? 0)) . '
             ' . $this->summaryCard('Awaiting decision', (string)(int)($review['pending_count'] ?? 0)) . '
+            ' . $this->summaryCard('Carried schedules', (string)(int)($review['carried_schedule_count'] ?? 0)) . '
         </div>';
     }
 

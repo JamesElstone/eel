@@ -565,13 +565,101 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertTrue(!empty($retry79['success']));
                 $harness->assertSame(0, (int)$retry79['posted_count']);
 
+                // AP80 has both a carried release and a new source-period
+                // deferral so the cache-active close path must refresh more
+                // than one pending posting target before final validation.
+                InterfaceDB::execute(
+                    'INSERT INTO statement_uploads (
+                        company_id, accounting_period_id, statement_month, original_filename,
+                        stored_filename, file_sha256, workflow_status
+                     ) VALUES (
+                        :company_id, :accounting_period_id, :statement_month, :original_filename,
+                        :stored_filename, :file_sha256, :workflow_status
+                     )',
+                    [
+                        'company_id' => $companyId, 'accounting_period_id' => $ap80,
+                        'statement_month' => '2024-01-01', 'original_filename' => 'synthetic-ap80-prepayment.csv',
+                        'stored_filename' => 'synthetic-ap80-prepayment.csv', 'file_sha256' => hash('sha256', 'synthetic-ap80-prepayment.csv'),
+                        'workflow_status' => 'committed',
+                    ]
+                );
+                $ap80UploadId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM statement_uploads WHERE company_id = :company_id AND statement_month = :statement_month',
+                    ['company_id' => $companyId, 'statement_month' => '2024-01-01']
+                );
+                InterfaceDB::execute(
+                    'INSERT INTO transactions (
+                        company_id, accounting_period_id, statement_upload_id, txn_date,
+                        description, amount, dedupe_hash, nominal_account_id, category_status
+                     ) VALUES (
+                        :company_id, :accounting_period_id, :statement_upload_id, :txn_date,
+                        :description, :amount, :dedupe_hash, :nominal_account_id, :category_status
+                     )',
+                    [
+                        'company_id' => $companyId, 'accounting_period_id' => $ap80,
+                        'statement_upload_id' => $ap80UploadId, 'txn_date' => '2024-01-01',
+                        'description' => 'Synthetic AP80 annual service', 'amount' => -366.00,
+                        'dedupe_hash' => hash('sha256', 'synthetic-ap80-annual-service'),
+                        'nominal_account_id' => $expenseNominal, 'category_status' => 'manual',
+                    ]
+                );
+                $ap80TransactionId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM transactions WHERE dedupe_hash = :hash',
+                    ['hash' => hash('sha256', 'synthetic-ap80-annual-service')]
+                );
+                InterfaceDB::execute(
+                    'INSERT INTO journals (company_id, accounting_period_id, source_type, source_ref, journal_date, description, is_posted)
+                     VALUES (:company_id, :accounting_period_id, :source_type, :source_ref, :journal_date, :description, 1)',
+                    [
+                        'company_id' => $companyId, 'accounting_period_id' => $ap80, 'source_type' => 'bank_csv',
+                        'source_ref' => 'transaction:' . $ap80TransactionId, 'journal_date' => '2024-01-01',
+                        'description' => 'Synthetic AP80 annual service purchase',
+                    ]
+                );
+                $ap80SourceJournalId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM journals WHERE company_id = :company_id AND source_ref = :source_ref',
+                    ['company_id' => $companyId, 'source_ref' => 'transaction:' . $ap80TransactionId]
+                );
+                InterfaceDB::execute(
+                    'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit, line_description)
+                     VALUES (:journal_id, :nominal, 366.00, 0.00, :description)',
+                    ['journal_id' => $ap80SourceJournalId, 'nominal' => $expenseNominal, 'description' => 'Synthetic AP80 annual service']
+                );
+                InterfaceDB::execute(
+                    'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit, line_description)
+                     VALUES (:journal_id, :nominal, 0.00, 366.00, :description)',
+                    ['journal_id' => $ap80SourceJournalId, 'nominal' => $bankNominal, 'description' => 'Synthetic AP80 bank payment']
+                );
+                $ap80Deferral = $reviewService->saveReview($companyId, $ap80, [
+                    'source_type' => 'transaction',
+                    'source_id' => $ap80TransactionId,
+                    'status' => 'prepaid',
+                    'service_start_date' => '2024-01-01',
+                    'service_end_date' => '2024-12-31',
+                    'notes' => 'Synthetic AP80 cache-active deferral fixture',
+                ], 'test');
+                $harness->assertTrue(!empty($ap80Deferral['success']));
+                $ap80DeferralReviewId = (int)$ap80Deferral['review_id'];
+
                 $approve($ap80);
-                $harness->assertSame(180.00, $closePreview->prepaymentExpenseAdjustmentForPeriod($companyId, $ap80, '2023-10-01', '2024-09-30'));
+                $harness->assertSame(88.00, $closePreview->prepaymentExpenseAdjustmentForPeriod($companyId, $ap80, '2023-10-01', '2024-09-30'));
                 $previewProfit80 = (new \eel_accounts\Service\PreTaxProfitLossService())->calculate($companyId, $ap80, '2024-09-30', '2023-10-01');
+                $cacheOwner = new stdClass();
+                $cacheScope = \eel_accounts\Support\RequestCache::beginFor($cacheOwner);
+                $primedAp80Preview = $scheduleService->fetchPreviewAdjustmentContext($companyId, $ap80);
+                $harness->assertCount(2, (array)($primedAp80Preview['adjustments'] ?? []));
                 $post80 = $posting->postForAccountingPeriod($companyId, $ap80, 'test');
                 $harness->assertTrue(!empty($post80['success']));
-                $harness->assertSame(1, (int)$post80['posted_count']);
+                $harness->assertSame(2, (int)$post80['posted_count']);
                 $harness->assertSame(18000, (new \eel_accounts\Service\PrepaymentScheduleService())->netPostedForReviewPeriod((int)$save['review_id'], $ap80, 'release'));
+                $harness->assertSame(9200, (new \eel_accounts\Service\PrepaymentScheduleService())->netPostedForReviewPeriod($ap80DeferralReviewId, $ap80, 'deferral'));
+                $harness->assertSame([], $scheduleService->fetchPreviewAdjustments($companyId, $ap80));
+                $retry80 = $posting->postForAccountingPeriod($companyId, $ap80, 'test');
+                $harness->assertTrue(!empty($retry80['success']));
+                $harness->assertSame(0, (int)$retry80['posted_count']);
+                $harness->assertTrue(!empty($retry80['no_op']));
+                \eel_accounts\Support\RequestCache::endFor($cacheScope);
+                unset($cacheScope, $cacheOwner);
                 $postedProfit80 = (new \eel_accounts\Service\PreTaxProfitLossService())->calculate($companyId, $ap80, '2024-09-30', '2023-10-01');
                 $harness->assertSame((float)$previewProfit80['profit_before_tax'], (float)$postedProfit80['profit_before_tax']);
 

@@ -27,6 +27,9 @@ $harness->run(_year_end_prepayment_approvalsCard::class, static function (Genera
         $harness->assertSame(true, str_contains($uncheckedHtml, 'Prepayments 1-10 of 11'));
         $harness->assertSame(true, str_contains($uncheckedHtml, 'Prepayment fixture 10'));
         $harness->assertSame(false, str_contains($uncheckedHtml, 'Prepayment fixture 11'));
+        $harness->assertSame(true, str_contains($uncheckedHtml, 'Carried-forward prepayments affecting this period'));
+        $harness->assertSame(true, str_contains($uncheckedHtml, 'Carried annual service fixture'));
+        $harness->assertSame(true, str_contains($uncheckedHtml, 'Carried schedules</div><div class="summary-value">1'));
         $harness->assertSame(true, str_contains($uncheckedHtml, 'name="intent" value="acknowledge_review_check"'));
         $harness->assertSame(true, str_contains($uncheckedHtml, 'name="check_code" value="prepayment_approvals"'));
         $harness->assertSame(true, str_contains($uncheckedHtml, 'I confirm that I have reviewed the prepayment position shown above'));
@@ -34,11 +37,16 @@ $harness->run(_year_end_prepayment_approvalsCard::class, static function (Genera
         $harness->assertSame(false, str_contains($uncheckedHtml, 'checked required'));
 
         $tables = $card->tables(yearEndPrepaymentApprovalsCardContext(null));
-        $harness->assertCount(1, $tables);
+        $harness->assertCount(2, $tables);
         $harness->assertTrue($tables[0] instanceof TableFramework);
-        $csv = $tables[0]->exportCsv();
-        $harness->assertSame(true, str_contains($csv, 'Prepayment fixture 11'));
-        $harness->assertSame(false, str_contains($csv, 'Not prepaid fixture'));
+        $harness->assertTrue($tables[1] instanceof TableFramework);
+        $currentCsv = $tables[0]->exportCsv();
+        $harness->assertSame(true, str_contains($currentCsv, 'Prepayment fixture 11'));
+        $harness->assertSame(false, str_contains($currentCsv, 'Not prepaid fixture'));
+        $carriedCsv = $tables[1]->exportCsv();
+        $harness->assertSame(true, str_contains($carriedCsv, 'Carried annual service fixture'));
+        $harness->assertSame(true, str_contains($carriedCsv, '140.55'));
+        $harness->assertSame(true, str_contains($carriedCsv, 'Posted'));
 
         $acknowledgedHtml = $card->render(yearEndPrepaymentApprovalsCardContext([
             'acknowledged_at' => '2026-07-06 10:00:00',
@@ -112,6 +120,20 @@ function yearEndPrepaymentApprovalsCardContext(?array $acknowledgement, int $pen
                     'items' => $items,
                     'prepaid_count' => 11,
                     'pending_count' => $pendingCount,
+                    'carried_schedule_count' => 1,
+                    'carried_schedules' => [[
+                        'source_description' => 'Carried annual service fixture',
+                        'service_start_date' => '2025-12-30',
+                        'service_end_date' => '2026-12-29',
+                        'expense_nominal_code' => '6061',
+                        'expense_nominal_name' => 'Use of Home as Office and Storage',
+                        'selected_allocation' => [
+                            'opening_deferred_pence' => 14055,
+                            'expense_pence' => 14055,
+                            'closing_deferred_pence' => 0,
+                            'journal_state' => 'posted',
+                        ],
+                    ]],
                 ],
                 'approval' => $acknowledgement,
             ],

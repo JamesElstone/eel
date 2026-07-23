@@ -222,6 +222,12 @@ final class PrepaymentPostingService
                     $changedBy
                 );
                 $journalIds[] = (int)$result['journal_id'];
+                // The final target check must rebuild every ledger-derived read
+                // model after this journal and its schedule evidence are saved.
+                // In the atomic Year End close the request cache is active, so
+                // leaving the pre-posting preview cached makes a successful post
+                // appear to have the same outstanding delta and rolls it back.
+                \eel_accounts\Support\RequestCache::clear();
             }
 
             $finalValidation = $this->validateState($companyId, $accountingPeriodId, false, true, true);

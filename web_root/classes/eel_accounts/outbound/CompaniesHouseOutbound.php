@@ -28,6 +28,19 @@ final class CompaniesHouseOutbound
     {
         $defaultHeaders = ['Accept' => 'application/json'];
         $requestHeaders = is_array($request['headers'] ?? null) ? $request['headers'] : [];
+        $credential = self::credential($environment, (string)($request['keys_path'] ?? ''));
+        $apiKey = (string)($credential['api_key'] ?? '');
+
+        if ($apiKey === '') {
+            throw new \RuntimeException('Companies House API key is not configured.');
+        }
+
+        // Companies House REST uses the API key as the Basic-auth username and
+        // an empty password. eelKit's generic basic_api_key mode maps the new
+        // API_IDENTITY/API_KEY fields as username/password, so construct the
+        // provider-specific header here instead.
+        $requestHeaders['Authorization'] = 'Basic ' . base64_encode($apiKey . ':');
+        $request['headers'] = array_replace($defaultHeaders, $requestHeaders);
 
         return \ApiHelperOutbound::request(array_replace([
             'transport' => 'http',
@@ -36,8 +49,9 @@ final class CompaniesHouseOutbound
             'tag' => 'COMPANY_LOOKUP',
             'environment' => \HelperFramework::normaliseEnvironmentMode($environment),
             'method' => 'GET',
-            'headers' => array_replace($defaultHeaders, $requestHeaders),
-            'auth' => 'basic_api_key',
+            'headers' => $request['headers'],
+            'auth' => 'none',
+            'credential' => $credential,
             'timeout_seconds' => 20,
         ], $request));
     }

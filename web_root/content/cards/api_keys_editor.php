@@ -47,7 +47,7 @@ final class _api_keys_editorCard extends CardBaseFramework
             . $this->select('Tag', 'credential[tag]', 'tag', $catalog)
             . $this->select('Environment', 'credential[environment]', 'environment', $catalog)
             . $this->schemaSelect()
-            . $this->input('URL', 'credential[url]', 'url')
+            . $this->input('URL', 'credential[url]')
             . $this->secretInput('API identity', 'credential[api_identity]', 'Set/replace API identity (optional for new credentials)')
             . $this->secretInput('API key', 'credential[api_key]', 'Set/replace API key')
             . '</div><div class="api-credential-actions"><button class="button primary" type="submit">Save API Credential</button><button class="button" type="button" data-api-credential-clear="true">Clear</button></div></section></form>';

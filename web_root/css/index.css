@@ -2442,10 +2442,8 @@ table.table-condensed .select {
 
 .api-credential-fields > label {
   display: flex;
-  flex: 1 1 240px;
   flex-direction: column;
   gap: 5px;
-  min-width: 180px;
 }
 
 .api-credential-actions {

@@ -135,7 +135,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             $artifact = $fileable
                 ? '<form method="post" action="?page=disclosures">' . $hidden
                     . '<input type="hidden" name="intent" value="download_computation_ixbrl">'
-                    . '<button class="button compact" type="submit">Download iXBRL File</button></form>'
+                    . '<button class="button compact primary" type="submit">Download iXBRL File</button></form>'
                 : (trim((string)($run['generated_filename'] ?? '')) !== '' ? 'Generated, not filing-ready' : 'Not generated');
             $html .= '<section class="panel-soft"><div class="status-head"><h4>Corporation Tax iXBRL</h4><span class="badge '
                 . ($fileable ? 'success' : ($fresh ? 'warning' : 'muted')) . '">'

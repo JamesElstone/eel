@@ -568,6 +568,7 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
             "event.type === 'error'",
             'textarea.readOnly = true;',
             'textarea.scrollTop = textarea.scrollHeight;',
+            'console.log(`ActionProgress: ${line}`);',
             'progress: actionProgress,',
             'actionProgress.close();',
             'function acquireLongActionPageLock()',

@@ -1163,6 +1163,7 @@
 
                 textarea.value += `${textarea.value === '' ? '' : '\n'}${line}`;
                 textarea.scrollTop = textarea.scrollHeight;
+                console.log(`ActionProgress: ${line}`);
             },
             close() {
                 const region = panel instanceof HTMLElement ? panel.parentElement : null;

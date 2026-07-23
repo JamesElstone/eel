@@ -41,12 +41,12 @@ final class _api_keys_editorCard extends CardBaseFramework
             . '<input type="hidden" name="card_action" value="ApiKeysEditor"><input type="hidden" name="edit_credential_id" value="" data-api-credential-id>'
             . '<section class="panel-soft"><h3 class="card-title">Existing API Keys</h3><div class="table-scroll"><table><thead><tr><th>Provider</th><th>Gateway</th><th>Tag</th><th>Environment</th><th>Schema</th><th>URL</th><th>Action</th></tr></thead><tbody>'
             . $this->rows($rows) . '</tbody></table></div></section>'
-            . '<section class="panel-soft"><h3 class="card-title" data-api-credential-editor-title>Add Credential</h3><div class="api-credential-metadata">'
+            . '<section class="panel-soft"><h3 class="card-title" data-api-credential-editor-title>Add Credential</h3><div class="api-credential-fields">'
             . $this->select('Provider', 'credential[provider]', 'provider', $catalog)
             . $this->select('Gateway', 'credential[gateway]', 'gateway', $catalog)
             . $this->select('Tag', 'credential[tag]', 'tag', $catalog)
             . $this->select('Environment', 'credential[environment]', 'environment', $catalog)
-            . $this->schemaSelect() . '</div><div class="form-grid">'
+            . $this->schemaSelect()
             . $this->input('URL', 'credential[url]', 'url')
             . $this->secretInput('API identity', 'credential[api_identity]', 'Set/replace API identity (optional for new credentials)')
             . $this->secretInput('API key', 'credential[api_key]', 'Set/replace API key')

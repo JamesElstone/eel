@@ -2432,7 +2432,7 @@ table.table-condensed .select {
   align-items: flex-start;
 }
 
-.api-credential-metadata {
+.api-credential-fields {
   display: flex;
   flex-flow: row wrap;
   gap: 14px;
@@ -2440,12 +2440,12 @@ table.table-condensed .select {
   align-items: flex-start;
 }
 
-.api-credential-metadata > label {
+.api-credential-fields > label {
   display: flex;
-  flex: 1 1 160px;
+  flex: 1 1 240px;
   flex-direction: column;
   gap: 5px;
-  min-width: 140px;
+  min-width: 180px;
 }
 
 .api-credential-actions {

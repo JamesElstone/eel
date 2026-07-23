@@ -10,7 +10,7 @@ $harness->check(_api_keys_editorCard::class, 'renders gateway metadata and never
     $identity = 'API-IDENTITY-MUST-NOT-APPEAR';
     $html = (new _api_keys_editorCard())->render(['page' => ['csrf_token' => 'token'], 'services' => ['api_keys_editor' => ['rows' => [['id' => 'row-1', 'provider' => 'ACME', 'gateway' => 'REST', 'tag' => 'LOOKUP', 'environment' => 'TEST', 'schema' => 'HTTPS', 'url' => 'https://example.test']], 'catalog' => [['provider' => 'ACME', 'gateway' => 'REST', 'tag' => 'LOOKUP', 'environment' => 'TEST']]]]]);
     $harness->assertTrue(str_contains($html, '<th>Gateway</th>'));
-    $harness->assertTrue(str_contains($html, '<div class="api-credential-metadata">'));
+    $harness->assertTrue(str_contains($html, '<div class="api-credential-fields">'));
     $harness->assertTrue(str_contains($html, 'name="credential[gateway]"'));
     $harness->assertTrue(str_contains($html, '<select class="select" name="credential[schema]">'));
     $harness->assertTrue(str_contains($html, '<option value="HTTPS" selected>HTTPS</option><option value="HTTP">HTTP</option>'));

@@ -84,6 +84,9 @@ final class _year_end_stateCard extends CardBaseFramework
             ? 'Resolve year-end checklist warnings and blockers before running the year-end close and locking this accounting period.'
             : (string)($periodLockState['lock_block_reason'] ?? '');
         $unlockDisabledTitle = (string)($periodLockState['unlock_block_reason'] ?? '');
+        $unlockLockOrderHelp = $unlockDisabled
+            ? 'This period cannot be reopened because a later accounting period is still locked. Unlock later periods first, working backwards from the most recent.'
+            : '';
         $status = (string)($checklist['overall_status'] ?? '');
 
         return '
@@ -104,6 +107,7 @@ final class _year_end_stateCard extends CardBaseFramework
                 </div>
                 <div class="helper">A fresh database backup is created automatically after the live preflight passes and before any closing entries are posted.</div>
                 <div class="helper">' . HelperFramework::escape($this->statusHelp($status, $isLocked)) . '</div>
+                ' . ($unlockLockOrderHelp !== '' ? '<div class="helper">' . HelperFramework::escape($unlockLockOrderHelp) . '</div>' : '') . '
                 <div class="actions-row">
                     ' . $this->actionForm($companyId, $accountingPeriodId, 'recalculate', 'Refresh Year-End Checklist', $isLocked, $isLocked ? 'This accounting period is locked.' : 'Re-checks the year-end readiness checklist using the latest ledger, review, tax, and confirmation data.') . '
                     ' . $this->backupForm($context) . '

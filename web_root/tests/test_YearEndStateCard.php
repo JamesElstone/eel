@@ -132,6 +132,7 @@ $harness->run(_year_end_stateCard::class, static function (GeneratedServiceClass
         $html = $card->render($context);
 
         $harness->assertSame(true, str_contains($html, 'disabled title="Unlock the following accounting period before unlocking this one."'));
+        $harness->assertSame(true, str_contains($html, 'This period cannot be reopened because a later accounting period is still locked. Unlock later periods first, working backwards from the most recent.'));
     });
 });
 

@@ -25,7 +25,8 @@ interface HmrcCtTransactionEngineTransportInterface
         string $utr,
         string $environment,
         ?string $transactionId = null,
-        ?callable $beforeSend = null
+        ?callable $beforeSend = null,
+        ?callable $afterReceive = null
     ): array;
 
     public function poll(
@@ -33,7 +34,8 @@ interface HmrcCtTransactionEngineTransportInterface
         string $responseEndpoint,
         string $environment,
         ?string $transactionId = null,
-        ?callable $beforeSend = null
+        ?callable $beforeSend = null,
+        ?callable $afterReceive = null
     ): array;
 
     public function delete(
@@ -41,6 +43,7 @@ interface HmrcCtTransactionEngineTransportInterface
         string $responseEndpoint,
         string $environment,
         ?string $transactionId = null,
-        ?callable $beforeSend = null
+        ?callable $beforeSend = null,
+        ?callable $afterReceive = null
     ): array;
 }

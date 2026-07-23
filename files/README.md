@@ -42,6 +42,16 @@ files/
     expense_receipts/
     transaction_receipts/
     manual_asset_evidence/
+    companies_house/
+      test/
+        {six-digit-submission-number}/
+      live/
+        {six-digit-submission-number}/
+    hmrc/
+      til/
+        {local-submission-reference}/
+      live/
+        {local-submission-reference}/
 ```
 
 ## Safety Rules
@@ -53,6 +63,9 @@ files/
 - Back up this directory with the database, because the two are linked.
 - Keep filesystem permissions restricted to the application/runtime user and
   trusted administrators.
+- Treat authority transmission folders as immutable filing evidence. Each
+  transmission directory contains the exact sent and received XML plus a
+  SHA-256 manifest; do not serve these files directly or edit them by hand.
 
 Use the application screens and services for cleanup where possible so database
 references and files stay in sync.

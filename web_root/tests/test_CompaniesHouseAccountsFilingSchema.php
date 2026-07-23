@@ -24,6 +24,18 @@ $schemaMigration = (string)file_get_contents(
     $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
     . DIRECTORY_SEPARATOR . '2026_07_21_001_companies_house_accounts_schemas.sql'
 );
+$transmissionMigration = (string)file_get_contents(
+    $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
+    . DIRECTORY_SEPARATOR . '2026_07_23_001_safe_transmission_archives.sql'
+);
+$numericSubmissionMigration = (string)file_get_contents(
+    $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
+    . DIRECTORY_SEPARATOR . '2026_07_23_002_numeric_ch_submission_numbers.sql'
+);
+$archiveMetadataMigration = (string)file_get_contents(
+    $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
+    . DIRECTORY_SEPARATOR . '2026_07_23_003_transmission_archive_artifact_metadata.sql'
+);
 
 $harness->check(
     'Companies House accounts filing schema',
@@ -37,6 +49,8 @@ $harness->check(
             'companies_house_schema_snapshots',
             'companies_house_schema_files',
             'companies_house_schema_dependencies',
+            'companies_house_submission_sequences',
+            'transmission_archives',
         ] as $table) {
             $harness->assertTrue(InterfaceDB::tableExists($table));
         }
@@ -46,6 +60,7 @@ $harness->check(
             'lifecycle',
             'raw_gateway_status',
             'submission_number',
+            'presenter_fingerprint',
             'revised_artifact_path',
             'revised_artifact_sha256',
             'basis_hash',
@@ -57,6 +72,60 @@ $harness->check(
             'schema_validated_at',
         ] as $column) {
             $harness->assertTrue(InterfaceDB::columnExists('companies_house_accounts_submissions', $column));
+        }
+        foreach ([
+            'request_path',
+            'request_sha256',
+            'response_path',
+            'response_sha256',
+            'manifest_path',
+            'manifest_sha256',
+        ] as $column) {
+            $harness->assertTrue(InterfaceDB::columnExists('transmission_archives', $column));
+        }
+    }
+);
+
+$harness->check(
+    'Companies House accounts filing schema',
+    'archive metadata addresses exact request and response evidence',
+    static function () use ($harness, $archiveMetadataMigration, $masterSchema): void {
+        foreach ([$archiveMetadataMigration, $masterSchema] as $schema) {
+            foreach (['request_path', 'request_sha256', 'response_path', 'response_sha256'] as $token) {
+                $harness->assertTrue(str_contains($schema, $token));
+            }
+        }
+    }
+);
+
+$harness->check(
+    'Companies House accounts filing schema',
+    'numeric submission migration and baseline enforce an ordered six-digit series',
+    static function () use ($harness, $numericSubmissionMigration, $masterSchema): void {
+        foreach ([$numericSubmissionMigration, $masterSchema] as $schema) {
+            $harness->assertTrue(str_contains($schema, "REGEXP '^[0-9]{6}$'")
+                || str_contains($schema, "regexp '^[0-9]{6}$'"));
+        }
+    }
+);
+
+$harness->check(
+    'Companies House accounts filing schema',
+    'safe transmission migration defines presenter sequences and private archive metadata',
+    static function () use ($harness, $transmissionMigration, $masterSchema): void {
+        foreach ([$transmissionMigration, $masterSchema] as $schema) {
+            foreach ([
+                'companies_house_submission_sequences',
+                'transmission_archives',
+                'presenter_fingerprint',
+                'next_value',
+                'last_issued_value',
+                'in_flight_submission_id',
+                'manifest_sha256',
+                'uq_ch_accounts_presenter_submission',
+            ] as $token) {
+                $harness->assertTrue(str_contains($schema, $token));
+            }
         }
     }
 );

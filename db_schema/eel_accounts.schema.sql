@@ -405,6 +405,7 @@ CREATE TABLE `companies_house_accounts_submissions` (
   `lifecycle` enum('prepared','submitting','transport_unknown','pending','parked','accepted','rejected','internal_failure','failed') NOT NULL DEFAULT 'prepared',
   `raw_gateway_status` varchar(64) DEFAULT NULL,
   `submission_number` varchar(6) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `presenter_fingerprint` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
   `gateway_submission_reference` varchar(255) DEFAULT NULL,
   `revised_artifact_path` varchar(1000) NOT NULL,
   `revised_artifact_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -430,14 +431,14 @@ CREATE TABLE `companies_house_accounts_submissions` (
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_ch_accounts_submission_idempotency` (`environment`,`idempotency_key`),
-  UNIQUE KEY `uq_ch_accounts_submission_number` (`environment`,`submission_number`),
+  UNIQUE KEY `uq_ch_accounts_presenter_submission` (`environment`,`presenter_fingerprint`,`submission_number`),
   KEY `idx_ch_accounts_submission_period` (`company_id`,`accounting_period_id`,`environment`,`lifecycle`),
   KEY `idx_ch_accounts_submission_eligibility` (`eligibility_id`),
   KEY `idx_ch_accounts_submission_document` (`original_document_id`),
   KEY `idx_ch_accounts_submission_ixbrl_run` (`ixbrl_generation_run_id`),
   KEY `idx_ch_accounts_submission_gateway_status` (`environment`,`lifecycle`,`raw_gateway_status`),
   KEY `idx_ch_accounts_submission_schema_snapshot` (`schema_snapshot_id`),
-  CONSTRAINT `chk_ch_accounts_submission_number` CHECK (`submission_number` is null or char_length(`submission_number`) = 6),
+  CONSTRAINT `chk_ch_accounts_submission_number` CHECK (`submission_number` is null or `submission_number` regexp '^[0-9]{6}$'),
   CONSTRAINT `fk_ch_accounts_submission_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_ch_accounts_submission_document` FOREIGN KEY (`original_document_id`) REFERENCES `companies_house_documents` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_ch_accounts_submission_eligibility` FOREIGN KEY (`eligibility_id`) REFERENCES `companies_house_accounts_eligibility` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
@@ -446,6 +447,49 @@ CREATE TABLE `companies_house_accounts_submissions` (
   ,CONSTRAINT `fk_ch_accounts_submission_schema_snapshot` FOREIGN KEY (`schema_snapshot_id`) REFERENCES `companies_house_schema_snapshots` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+DROP TABLE IF EXISTS `companies_house_submission_sequences`;
+CREATE TABLE `companies_house_submission_sequences` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `environment` enum('TEST','LIVE') NOT NULL,
+  `presenter_fingerprint` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `next_value` int(11) NOT NULL DEFAULT 1,
+  `last_issued_value` int(11) DEFAULT NULL,
+  `in_flight_submission_id` bigint(20) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ch_submission_sequence_presenter` (`environment`,`presenter_fingerprint`),
+  KEY `idx_ch_submission_sequence_in_flight` (`in_flight_submission_id`),
+  CONSTRAINT `chk_ch_submission_sequence_next` CHECK (`next_value` between 1 and 1000000),
+  CONSTRAINT `chk_ch_submission_sequence_last` CHECK (`last_issued_value` is null or `last_issued_value` between 1 and 999999),
+  CONSTRAINT `fk_ch_submission_sequence_in_flight` FOREIGN KEY (`in_flight_submission_id`) REFERENCES `companies_house_accounts_submissions` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `transmission_archives`;
+CREATE TABLE `transmission_archives` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `authority` enum('companies_house','hmrc') NOT NULL,
+  `environment` varchar(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) DEFAULT NULL,
+  `submission_reference` varchar(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `lifecycle` varchar(64) NOT NULL,
+  `archive_path` varchar(1000) NOT NULL,
+  `request_path` varchar(1000) DEFAULT NULL,
+  `request_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `response_path` varchar(1000) DEFAULT NULL,
+  `response_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `manifest_path` varchar(1000) DEFAULT NULL,
+  `manifest_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_transmission_archive_reference` (`authority`,`environment`,`company_id`,`submission_reference`),
+  KEY `idx_transmission_archive_period` (`company_id`,`accounting_period_id`,`authority`,`environment`),
+  CONSTRAINT `fk_transmission_archive_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_transmission_archive_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Table structure for table `companies_house_accounts_submission_events`
@@ -3752,6 +3796,16 @@ INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_22_005_dividend_journal_source_evidence.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_22_007_corporation_tax_line_treatment_decisions.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_23_001_safe_transmission_archives.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_23_002_numeric_ch_submission_numbers.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_23_003_transmission_archive_artifact_metadata.sql');
+INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
+SELECT DISTINCT `role_id`, 'companies_house_transmission'
+FROM `role_card_permissions`
+WHERE `card_key` = 'year_end_companies_house_comparison';
 INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
 SELECT DISTINCT `role_id`, 'corporation_tax_review'
 FROM `role_card_permissions`

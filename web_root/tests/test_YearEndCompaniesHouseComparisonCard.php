@@ -152,7 +152,7 @@ $harness->run(_year_end_companies_house_comparisonCard::class, static function (
         $context['services']['companiesHouseAccountsFiling'] = companiesHouseAccountsFilingContext([
             'feature' => ['mode' => 'LIVE', 'enabled' => true, 'live_approved' => true],
             'eligibility' => ['decision' => 'eligible'],
-            'submission' => ['id' => 77, 'status' => 'prepared', 'submission_number' => 'ABC123'],
+            'submission' => ['id' => 77, 'status' => 'prepared', 'submission_number' => '000077'],
             'prepared_artifact' => [
                 'filename' => 'revised-accounts.xhtml',
                 'sha256' => str_repeat('a', 64),
@@ -177,7 +177,7 @@ $harness->run(_year_end_companies_house_comparisonCard::class, static function (
             $context = companiesHouseComparisonCardContext(null, true);
             $context['services']['companiesHouseAccountsFiling'] = companiesHouseAccountsFilingContext([
                 'eligibility' => ['decision' => 'eligible'],
-                'submission' => ['id' => 88, 'status' => $status, 'submission_number' => 'REF888'],
+                'submission' => ['id' => 88, 'status' => $status, 'submission_number' => '000088'],
             ]);
             $html = $card->render($context);
             $harness->assertSame(true, str_contains($html, 'name="intent" value="refresh_revised_accounts_status"'));

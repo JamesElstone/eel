@@ -11,7 +11,7 @@ final class _hmrc_submission_unavailableCard extends CardBaseFramework
 {
     public function key(): string { return 'hmrc_submission_unavailable'; }
 
-    public function title(): string { return 'Corporation Tax submission'; }
+    public function title(): string { return 'HMRC Corporation Tax transmission'; }
 
     public function helper(array $context): string
     {
@@ -128,6 +128,8 @@ final class _hmrc_submission_unavailableCard extends CardBaseFramework
             ?? $latestTest['correlation_id']
             ?? ''));
         $irmark = trim((string)($latestLive['irmark'] ?? $latestTest['irmark'] ?? ''));
+        $archiveSubmission = $pending !== [] ? $pending : ($latestLive !== [] ? $latestLive : $latestTest);
+        $archive = (array)($archiveSubmission['transmission_archive'] ?? []);
         $html = '<section class="panel-soft"><div class="status-head"><h3 class="card-title">CT period '
             . HelperFramework::escape($start) . ' to ' . HelperFramework::escape($end)
             . '</h3><span class="badge ' . $badgeClass . '">' . HelperFramework::escape($badgeLabel) . '</span></div>'
@@ -136,6 +138,7 @@ final class _hmrc_submission_unavailableCard extends CardBaseFramework
             . $this->metric('LIVE result', $this->submissionLabel($latestLive))
             . $this->metric('IRmark', $irmark !== '' ? $irmark : 'Not generated')
             . $this->metric('HMRC reference', $reference !== '' ? $reference : 'Not issued')
+            . $this->metric('Private archive', $archive !== [] ? 'Captured and hashed' : 'Created on send')
             . '</div>';
 
         $blockers = array_values(array_unique(array_merge(
@@ -178,7 +181,7 @@ final class _hmrc_submission_unavailableCard extends CardBaseFramework
             ? 'Complete HMRC cleanup'
             : ($pollAfter > 0 ? 'Check HMRC status (after ' . $pollAfter . 's)' : 'Check HMRC status');
 
-        return '<form method="post" action="?page=HMRC" data-ajax="true">'
+        return '<form method="post" action="?page=transmit" data-ajax="true">'
             . $this->hiddenFields($companyId, $accountingPeriodId, $ctPeriodId)
             . '<input type="hidden" name="intent" value="hmrc_poll">'
             . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
@@ -202,7 +205,7 @@ final class _hmrc_submission_unavailableCard extends CardBaseFramework
         $declarationName = trim((string)($declaration['declaration_name'] ?? $period['declaration_name'] ?? ''));
         $declarationStatus = trim((string)($declaration['declaration_status'] ?? $period['declaration_status'] ?? ''));
 
-        return '<form method="post" action="?page=HMRC" data-ajax="true" class="settings-stack">'
+        return '<form method="post" action="?page=transmit" data-ajax="true" class="settings-stack">'
             . $this->hiddenFields($companyId, $accountingPeriodId, $ctPeriodId)
             . '<h4>Return declaration</h4>'
             . '<div class="helper">These details form part of the tested filing body. Leave them unchanged between a successful TIL test and LIVE submission.</div>'

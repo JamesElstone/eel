@@ -38,7 +38,8 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
         string $utr,
         string $environment,
         ?string $transactionId = null,
-        ?callable $beforeSend = null
+        ?callable $beforeSend = null,
+        ?callable $afterReceive = null
     ): array {
         $this->submitCalls++;
         $request = $this->request('submit', $environment, '', $transactionId);
@@ -48,7 +49,11 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
         if ($filingBodyXml === '' || $utr !== '0123456789') {
             throw new RuntimeException('The service did not pass the prepared package to the transport.');
         }
-        return array_shift($this->submitResponses) ?? $this->failure('Missing fake submit response.');
+        $response = array_shift($this->submitResponses) ?? $this->failure('Missing fake submit response.');
+        if ($afterReceive !== null && trim((string)($response['response_xml'] ?? '')) !== '') {
+            $afterReceive($this->response($request, $response));
+        }
+        return $response;
     }
 
     public function poll(
@@ -56,7 +61,8 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
         string $responseEndpoint,
         string $environment,
         ?string $transactionId = null,
-        ?callable $beforeSend = null
+        ?callable $beforeSend = null,
+        ?callable $afterReceive = null
     ): array {
         $this->pollCalls++;
         $request = $this->request('poll', $environment, $correlationId, $transactionId);
@@ -66,7 +72,11 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
         if ($responseEndpoint === '') {
             throw new RuntimeException('The service omitted the response endpoint.');
         }
-        return array_shift($this->pollResponses) ?? $this->failure('Missing fake poll response.');
+        $response = array_shift($this->pollResponses) ?? $this->failure('Missing fake poll response.');
+        if ($afterReceive !== null && trim((string)($response['response_xml'] ?? '')) !== '') {
+            $afterReceive($this->response($request, $response));
+        }
+        return $response;
     }
 
     public function delete(
@@ -74,14 +84,19 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
         string $responseEndpoint,
         string $environment,
         ?string $transactionId = null,
-        ?callable $beforeSend = null
+        ?callable $beforeSend = null,
+        ?callable $afterReceive = null
     ): array {
         $this->deleteCalls++;
         $request = $this->request('delete', $environment, $correlationId, $transactionId);
         if ($beforeSend !== null) {
             $beforeSend($request);
         }
-        return array_shift($this->deleteResponses) ?? $this->failure('Missing fake delete response.');
+        $response = array_shift($this->deleteResponses) ?? $this->failure('Missing fake delete response.');
+        if ($afterReceive !== null && trim((string)($response['response_xml'] ?? '')) !== '') {
+            $afterReceive($this->response($request, $response));
+        }
+        return $response;
     }
 
     /** @return array<string,mixed> */
@@ -102,6 +117,7 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
             'transaction_id' => $transactionId,
             'correlation_id' => $correlationId,
             'request_xml' => $xml,
+            'raw_request_xml' => $xml,
             'request_sha256' => hash('sha256', $xml),
             'request_bytes' => strlen($xml),
         ];
@@ -121,6 +137,23 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
             'response_xml' => '',
             'error' => $message,
             'errors' => [],
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    private function response(array $request, array $response): array
+    {
+        $xml = (string)($response['response_xml'] ?? '');
+        return [
+            'operation' => (string)$request['operation'],
+            'environment' => (string)$request['environment'],
+            'endpoint' => (string)$request['endpoint'],
+            'transaction_id' => (string)$request['transaction_id'],
+            'correlation_id' => (string)$request['correlation_id'],
+            'status_code' => (int)($response['status_code'] ?? 0),
+            'response_xml' => $xml,
+            'response_sha256' => hash('sha256', $xml),
+            'response_bytes' => strlen($xml),
         ];
     }
 }
@@ -384,14 +417,20 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         ['id' => $submissionId]
                     );
                     $h->assertSame(2, (int)($cleanedRow['cleanup_attempts'] ?? 0));
+                    $archiveDirectory = $artifactRoot
+                        . DIRECTORY_SEPARATOR . '09860100'
+                        . DIRECTORY_SEPARATOR . 'hmrc'
+                        . DIRECTORY_SEPARATOR . 'til'
+                        . DIRECTORY_SEPARATOR . 'submission-' . sprintf('%06d', $submissionId);
                     $h->assertTrue(is_file(
-                        $artifactRoot . DIRECTORY_SEPARATOR . 'submissions' . DIRECTORY_SEPARATOR . $submissionId
-                        . DIRECTORY_SEPARATOR . 'delete-0001-request-redacted.xml'
+                        $archiveDirectory . DIRECTORY_SEPARATOR . 'delete-0001-request.xml'
                     ));
                     $h->assertTrue(is_file(
-                        $artifactRoot . DIRECTORY_SEPARATOR . 'submissions' . DIRECTORY_SEPARATOR . $submissionId
-                        . DIRECTORY_SEPARATOR . 'delete-0002-request-redacted.xml'
+                        $archiveDirectory . DIRECTORY_SEPARATOR . 'delete-0002-request.xml'
                     ));
+                    $h->assertTrue(is_file($archiveDirectory . DIRECTORY_SEPARATOR . 'submission-request.xml'));
+                    $h->assertTrue(is_file($archiveDirectory . DIRECTORY_SEPARATOR . 'submission-response.xml'));
+                    $h->assertTrue(is_file($archiveDirectory . DIRECTORY_SEPARATOR . 'manifest.json'));
 
                     $status = $service->status($companyId, $accountingPeriodId);
                     $h->assertTrue((bool)$status['success']);

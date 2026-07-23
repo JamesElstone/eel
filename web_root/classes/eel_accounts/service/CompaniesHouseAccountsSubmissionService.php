@@ -25,6 +25,9 @@ final class CompaniesHouseAccountsSubmissionService
         private readonly ?CompaniesHouseAccountsGatewayTransportInterface $gatewayClient = null,
         private readonly ?YearEndLockService $lockService = null,
         private readonly ?CompaniesHouseSchemaCurrentnessInterface $schemaService = null,
+        private readonly ?CompaniesHouseAccountsCredentialService $credentialService = null,
+        private readonly ?CompaniesHouseSubmissionSequenceService $sequenceService = null,
+        private readonly ?TransmissionArchiveService $archiveService = null,
     ) {
     }
 
@@ -44,6 +47,21 @@ final class CompaniesHouseAccountsSubmissionService
         $mode = AccountingConfigurationStore::companiesHouseAccountsFilingMode();
         $featureEnabled = in_array($mode, ['TEST', 'LIVE'], true);
         $credentialsConfigured = $featureEnabled && $this->credentialsConfigured($mode);
+        $sequence = [
+            'configured' => false,
+            'next_number' => '',
+            'last_issued_number' => null,
+            'in_flight_submission_id' => null,
+            'presenter_fingerprint' => '',
+        ];
+        if ($credentialsConfigured) {
+            try {
+                $credentials = $this->credentials()->load($mode);
+                $sequence = $this->sequences()->status($mode, $credentials['presenter_id']);
+            } catch (\Throwable) {
+                $sequence['configured'] = false;
+            }
+        }
         $liveApproved = AccountingConfigurationStore::companiesHouseAccountsLiveApproved();
         $testAccepted = $this->testAccepted((int)($eligibility['id'] ?? 0));
 
@@ -90,6 +108,13 @@ final class CompaniesHouseAccountsSubmissionService
         if ($mode === 'LIVE' && !$testAccepted) {
             $submissionBlockers[] = 'A Companies House TEST revised-accounts submission must be accepted before LIVE filing.';
         }
+        $inFlightSubmissionId = (int)($sequence['in_flight_submission_id'] ?? 0);
+        if ($inFlightSubmissionId > 0 && $inFlightSubmissionId !== (int)($submission['id'] ?? 0)) {
+            $submissionBlockers[] = 'Another request for this Companies House presenter has an unresolved transport state.';
+        }
+        if ($featureEnabled && $credentialsConfigured && empty($sequence['configured'])) {
+            $submissionBlockers[] = 'Run the Companies House submission-sequence migration before filing.';
+        }
         if ($submission !== null
             && $featureEnabled
             && (string)($submission['environment'] ?? '') !== $mode) {
@@ -122,6 +147,7 @@ final class CompaniesHouseAccountsSubmissionService
             'readiness' => $readiness,
             'submission' => $submission,
             'prepared_artifact' => $preparedArtifact,
+            'sequence' => $sequence,
             'can_prepare' => $preparationBlockers === [],
             'can_submit' => $submissionBlockers === [],
             'preparation_blockers' => array_values(array_unique($preparationBlockers)),
@@ -335,14 +361,12 @@ final class CompaniesHouseAccountsSubmissionService
             ];
         }
 
-        $submissionNumber = $this->newSubmissionNumber($environment);
         $now = gmdate('Y-m-d H:i:s');
         \InterfaceDB::transaction(function () use (
             $eligibility,
             $context,
             $artifact,
             $idempotencyKey,
-            $submissionNumber,
             $environment,
             $actor,
             $now,
@@ -377,7 +401,7 @@ final class CompaniesHouseAccountsSubmissionService
                     'environment' => $environment,
                     'filing_type' => 'revised',
                     'lifecycle' => 'prepared',
-                    'submission_number' => $submissionNumber,
+                    'submission_number' => null,
                     'artifact_path' => (string)$artifact['path'],
                     'artifact_sha256' => (string)$artifact['sha256'],
                     'basis_hash' => (string)$artifact['basis_hash'],
@@ -482,6 +506,43 @@ final class CompaniesHouseAccountsSubmissionService
         }
 
         $actor = $this->actor($actor);
+        $allocated = false;
+        $credentials = [];
+        $manifest = '';
+        $snapshotId = 0;
+        try {
+            $credentials = $this->credentials()->load($mode);
+            $this->reportProgress($progress, 'Refreshing Companies House filing schemas before submission.', 5);
+            $schema = ($this->schemaService ?? new CompaniesHouseAccountsSchemaService())->ensureCurrent($progress);
+            $manifest = strtolower(trim((string)($schema['manifest_sha256'] ?? '')));
+            $snapshotId = (int)($schema['snapshot_id'] ?? 0);
+            if ($snapshotId <= 0 || !preg_match('/^[a-f0-9]{64}$/', $manifest)) {
+                throw new \RuntimeException('Companies House did not produce a verified accounts schema snapshot.');
+            }
+            $allocation = $this->sequences()->allocate(
+                $submissionId,
+                $mode,
+                (string)$credentials['presenter_id']
+            );
+            $allocated = true;
+            $submission = $this->submission($submissionId);
+            if ($submission === null
+                || !hash_equals(
+                    (string)$allocation['presenter_fingerprint'],
+                    (string)($submission['presenter_fingerprint'] ?? '')
+                )) {
+                throw new \RuntimeException('The allocated Companies House submission could not be reloaded.');
+            }
+        } catch (\Throwable $exception) {
+            $message = 'Companies House pre-submission preparation failed; nothing was sent. ' . $exception->getMessage();
+            if ($allocated) {
+                $this->failConsumedSubmission($submissionId, $mode, (string)($allocation['presenter_fingerprint'] ?? ''), $message, $actor);
+            } else {
+                $this->recordEvent($submissionId, 'preparation_failed', 'error', 'prepared', null, $message, $actor);
+            }
+            return $this->failure($message);
+        }
+
         $declarations = json_decode((string)$submission['revision_declarations_json'], true);
         $dateSigned = is_array($declarations)
             ? trim((string)($declarations['revision_approval_date'] ?? ''))
@@ -499,13 +560,6 @@ final class CompaniesHouseAccountsSubmissionService
             'company_type' => 'EW',
         ];
         try {
-            $this->reportProgress($progress, 'Refreshing Companies House filing schemas before submission.', 5);
-            $schema = ($this->schemaService ?? new CompaniesHouseAccountsSchemaService())->ensureCurrent($progress);
-            $manifest = strtolower(trim((string)($schema['manifest_sha256'] ?? '')));
-            $snapshotId = (int)($schema['snapshot_id'] ?? 0);
-            if ($snapshotId <= 0 || !preg_match('/^[a-f0-9]{64}$/', $manifest)) {
-                throw new \RuntimeException('Companies House did not produce a verified accounts schema snapshot.');
-            }
             $this->reportProgress($progress, 'Building and validating the exact Companies House request.', 75);
             $gateway = $this->gatewayClient ?? new CompaniesHouseAccountsGatewayClient();
             $preparedRequest = $gateway->prepareAccounts($payload, $mode, $manifest);
@@ -513,6 +567,27 @@ final class CompaniesHouseAccountsSubmissionService
                 || !hash_equals($manifest, $preparedRequest->schemaManifestSha256())) {
                 throw new \RuntimeException('The prepared request was validated against a different Companies House schema snapshot.');
             }
+            $archive = $this->archives();
+            $accountsArchive = $archive->store(
+                (int)$submission['company_id'],
+                (int)$submission['accounting_period_id'],
+                'companies_house',
+                $mode,
+                (string)$submission['submission_number'],
+                'prepared',
+                'accounts.xhtml',
+                $accountsXml
+            );
+            $requestArchive = $archive->store(
+                (int)$submission['company_id'],
+                (int)$submission['accounting_period_id'],
+                'companies_house',
+                $mode,
+                (string)$submission['submission_number'],
+                'prepared',
+                'submission-request.xml',
+                $preparedRequest->requestXml()
+            );
             $evidenceService = new FilingEvidenceService();
             $requestEvidence = $evidenceService->reserveArtifact(
                 (int)$submission['company_id'],
@@ -524,7 +599,8 @@ final class CompaniesHouseAccountsSubmissionService
             );
             $evidenceService->completeArtifact((int)$requestEvidence['id'], [
                 'status' => 'validated',
-                'filename' => 'companies-house-submission-request-redacted.xml',
+                'filename' => 'submission-request.xml',
+                'path' => $requestArchive['path'],
                 'sha256' => hash('sha256', $preparedRequest->requestXml()),
                 'schema_identity' => 'Companies House GovTalk accounts filing',
                 'schema_manifest_sha256' => $manifest,
@@ -532,12 +608,20 @@ final class CompaniesHouseAccountsSubmissionService
                 'identifier_embedded' => true,
                 'metadata' => [
                     'submission_id' => $submissionId,
+                    'accounts_path' => $accountsArchive['path'],
+                    'archive_manifest_path' => $requestArchive['manifest_path'],
                     'redacted_sha256' => hash('sha256', $preparedRequest->redactedRequestXml()),
                 ],
             ]);
         } catch (\Throwable $exception) {
             $message = 'Companies House pre-submission validation failed; nothing was sent. ' . $exception->getMessage();
-            $this->recordEvent($submissionId, 'schema_validation_failed', 'error', 'prepared', null, $message, $actor);
+            $this->failConsumedSubmission(
+                $submissionId,
+                $mode,
+                (string)$submission['presenter_fingerprint'],
+                $message,
+                $actor
+            );
             return $this->failure($message);
         }
 
@@ -564,11 +648,32 @@ final class CompaniesHouseAccountsSubmissionService
         );
         $current = $this->submission($submissionId);
         if ($current === null || (string)$current['lifecycle'] !== 'submitting') {
+            $this->failConsumedSubmission(
+                $submissionId,
+                $mode,
+                (string)$submission['presenter_fingerprint'],
+                'The submission state changed before it could be sent.',
+                $actor
+            );
             return $this->failure('The submission state changed before it could be sent.');
         }
 
         $this->reportProgress($progress, 'Sending the already validated Companies House request.', 90);
-        $result = $gateway->sendPreparedAccounts($preparedRequest);
+        $result = $gateway->sendPreparedAccounts(
+            $preparedRequest,
+            function (array $response) use ($submission, $mode): void {
+                $this->archives()->store(
+                    (int)$submission['company_id'],
+                    (int)$submission['accounting_period_id'],
+                    'companies_house',
+                    $mode,
+                    (string)$submission['submission_number'],
+                    'submitting',
+                    'submission-response.xml',
+                    (string)$response['response_xml']
+                );
+            }
+        );
 
         $success = !empty($result['success']);
         $transportUnknown = !empty($result['transport_unknown']);
@@ -599,6 +704,21 @@ final class CompaniesHouseAccountsSubmissionService
                 'id' => $submissionId,
             ]
         );
+        if (!$transportUnknown) {
+            $this->sequences()->releaseResolved(
+                $submissionId,
+                $mode,
+                (string)$submission['presenter_fingerprint']
+            );
+        }
+        $this->archives()->updateLifecycle(
+            (int)$submission['company_id'],
+            (int)$submission['accounting_period_id'],
+            'companies_house',
+            $mode,
+            (string)$submission['submission_number'],
+            $lifecycle
+        );
         $this->recordEvent(
             $submissionId,
             $success ? 'gateway_acknowledgement' : ($transportUnknown ? 'transport_unknown' : 'gateway_error'),
@@ -623,7 +743,10 @@ final class CompaniesHouseAccountsSubmissionService
         return [
             'success' => $success,
             'errors' => $success ? [] : [$summary],
-            'warnings' => $transportUnknown ? ['Do not resubmit; refresh the same submission number first.'] : [],
+            'warnings' => array_values(array_filter([
+                $transportUnknown ? 'Do not resubmit; refresh the same submission number first.' : '',
+                (string)($result['evidence_error'] ?? ''),
+            ])),
             'messages' => $success ? [$summary] : [],
             'submission' => $this->normaliseSubmission((array)$this->submission($submissionId)),
             'changed' => true,
@@ -644,8 +767,37 @@ final class CompaniesHouseAccountsSubmissionService
             return $this->failure('The server filing mode does not match this submission environment.');
         }
         $actor = $this->actor($actor);
-        $result = ($this->gatewayClient ?? new CompaniesHouseAccountsGatewayClient())
-            ->getSubmissionStatus((string)$submission['submission_number'], $mode);
+        $gateway = $this->gatewayClient ?? new CompaniesHouseAccountsGatewayClient();
+        $result = $gateway->getSubmissionStatus(
+            (string)$submission['submission_number'],
+            $mode,
+            function (array $request) use ($submission, $mode): void {
+                $transactionId = strtolower((string)$request['transaction_id']);
+                $this->archives()->store(
+                    (int)$submission['company_id'],
+                    (int)$submission['accounting_period_id'],
+                    'companies_house',
+                    $mode,
+                    (string)$submission['submission_number'],
+                    (string)$submission['lifecycle'],
+                    'status-' . $transactionId . '-request.xml',
+                    (string)$request['request_xml']
+                );
+            },
+            function (array $response) use ($submission, $mode): void {
+                $transactionId = strtolower((string)$response['transaction_id']);
+                $this->archives()->store(
+                    (int)$submission['company_id'],
+                    (int)$submission['accounting_period_id'],
+                    'companies_house',
+                    $mode,
+                    (string)$submission['submission_number'],
+                    (string)$submission['lifecycle'],
+                    'status-' . $transactionId . '-response.xml',
+                    (string)$response['response_xml']
+                );
+            }
+        );
         $now = gmdate('Y-m-d H:i:s');
         if (empty($result['success'])) {
             $summary = trim((string)($result['error'] ?? 'Companies House status could not be refreshed.'));
@@ -659,7 +811,7 @@ final class CompaniesHouseAccountsSubmissionService
             return [
                 'success' => false,
                 'errors' => [$summary],
-                'warnings' => [],
+                'warnings' => array_values(array_filter([(string)($result['evidence_error'] ?? '')])),
                 'messages' => [],
                 'submission' => $this->normaliseSubmission((array)$this->submission($submissionId)),
                 'changed' => true,
@@ -701,6 +853,19 @@ final class CompaniesHouseAccountsSubmissionService
                 'id' => $submissionId,
             ]
         );
+        $this->sequences()->releaseResolved(
+            $submissionId,
+            $mode,
+            (string)($submission['presenter_fingerprint'] ?? '')
+        );
+        $this->archives()->updateLifecycle(
+            (int)$submission['company_id'],
+            (int)$submission['accounting_period_id'],
+            'companies_house',
+            $mode,
+            (string)$submission['submission_number'],
+            $lifecycle
+        );
         $this->recordEvent(
             $submissionId,
             'status_updated',
@@ -726,7 +891,7 @@ final class CompaniesHouseAccountsSubmissionService
         return [
             'success' => true,
             'errors' => [],
-            'warnings' => [],
+            'warnings' => array_values(array_filter([(string)($result['evidence_error'] ?? '')])),
             'messages' => [$summary],
             'submission' => $this->normaliseSubmission((array)$this->submission($submissionId)),
             'changed' => true,
@@ -918,6 +1083,21 @@ final class CompaniesHouseAccountsSubmissionService
         $declarations = json_decode((string)($row['revision_declarations_json'] ?? ''), true);
         $row['revision_declarations'] = is_array($declarations) ? $declarations : [];
         unset($row['revision_declarations_json']);
+        $number = trim((string)($row['submission_number'] ?? ''));
+        if ($number !== '' && isset($row['company_id'], $row['environment'])) {
+            try {
+                $row['transmission_archive'] = $this->archives()->find(
+                    (int)$row['company_id'],
+                    'companies_house',
+                    (string)$row['environment'],
+                    $number
+                );
+            } catch (\Throwable) {
+                $row['transmission_archive'] = null;
+            }
+        } else {
+            $row['transmission_archive'] = null;
+        }
 
         return $row;
     }
@@ -937,34 +1117,86 @@ final class CompaniesHouseAccountsSubmissionService
 
     private function credentialsConfigured(string $environment): bool
     {
-        try {
-            $prefix = 'companieshouse.accounts_filing.' . strtolower($environment) . '.';
-            return trim((string)\SecurityStore::loadFact($prefix . 'presenter_id')) !== ''
-                && trim((string)\SecurityStore::loadFact($prefix . 'presenter_code')) !== ''
-                && trim((string)\SecurityStore::loadFact($prefix . 'package_reference')) !== '';
-        } catch (\Throwable) {
-            return false;
-        }
+        return $this->credentials()->configured($environment);
     }
 
-    private function newSubmissionNumber(string $environment): string
+    /** @return list<array<string,mixed>> */
+    public function submissionHistory(int $companyId, int $accountingPeriodId): array
     {
-        $characters = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-        for ($attempt = 0; $attempt < 100; $attempt++) {
-            $number = '';
-            for ($i = 0; $i < 6; $i++) {
-                $number .= $characters[random_int(0, strlen($characters) - 1)];
-            }
-            $exists = (int)\InterfaceDB::fetchColumn(
-                'SELECT COUNT(*) FROM ' . self::SUBMISSIONS_TABLE . '
-                 WHERE environment = :environment AND submission_number = :submission_number',
-                ['environment' => $environment, 'submission_number' => $number]
-            );
-            if ($exists === 0) {
-                return $number;
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || !\InterfaceDB::tableExists(self::SUBMISSIONS_TABLE)) {
+            return [];
+        }
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT * FROM ' . self::SUBMISSIONS_TABLE . '
+             WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id
+             ORDER BY id DESC LIMIT 100',
+            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+        );
+
+        return array_map(fn(array $row): array => $this->normaliseSubmission($row), $rows);
+    }
+
+    private function failConsumedSubmission(
+        int $submissionId,
+        string $environment,
+        string $presenterFingerprint,
+        string $message,
+        string $actor
+    ): void {
+        $submission = $this->submission($submissionId);
+        $now = gmdate('Y-m-d H:i:s');
+        \InterfaceDB::prepareExecute(
+            'UPDATE ' . self::SUBMISSIONS_TABLE . '
+             SET lifecycle = :lifecycle,
+                 gateway_status_summary = :summary,
+                 status_updated_at = :updated_at,
+                 updated_at = :updated_at
+             WHERE id = :id',
+            [
+                'lifecycle' => 'failed',
+                'summary' => $message,
+                'updated_at' => $now,
+                'id' => $submissionId,
+            ]
+        );
+        $this->sequences()->releaseResolved($submissionId, $environment, $presenterFingerprint);
+        if (is_array($submission) && trim((string)($submission['submission_number'] ?? '')) !== '') {
+            try {
+                $this->archives()->updateLifecycle(
+                    (int)$submission['company_id'],
+                    (int)$submission['accounting_period_id'],
+                    'companies_house',
+                    $environment,
+                    (string)$submission['submission_number'],
+                    'failed'
+                );
+            } catch (\Throwable) {
             }
         }
-        throw new \RuntimeException('Could not allocate a unique Companies House submission number.');
+        $this->recordEvent(
+            $submissionId,
+            'pre_send_failure',
+            'error',
+            'failed',
+            null,
+            $message,
+            $actor
+        );
+    }
+
+    private function credentials(): CompaniesHouseAccountsCredentialService
+    {
+        return $this->credentialService ?? new CompaniesHouseAccountsCredentialService();
+    }
+
+    private function sequences(): CompaniesHouseSubmissionSequenceService
+    {
+        return $this->sequenceService ?? new CompaniesHouseSubmissionSequenceService();
+    }
+
+    private function archives(): TransmissionArchiveService
+    {
+        return $this->archiveService ?? new TransmissionArchiveService();
     }
 
     private function recordEvent(
@@ -1079,6 +1311,13 @@ final class CompaniesHouseAccountsSubmissionService
             'readiness' => ['ready_for_filing' => false, 'filing_errors' => [$message]],
             'submission' => null,
             'prepared_artifact' => null,
+            'sequence' => [
+                'configured' => false,
+                'next_number' => '',
+                'last_issued_number' => null,
+                'in_flight_submission_id' => null,
+                'presenter_fingerprint' => '',
+            ],
             'can_prepare' => false,
             'can_submit' => false,
             'preparation_blockers' => [$message],

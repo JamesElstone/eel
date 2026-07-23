@@ -21,7 +21,7 @@ final class _hmrc extends PageContextFramework
     {
         return [
             'hmrc_obligations_summary', 'hmrc_obligations_timeline', 'hmrc_obligations_period_checklist',
-            'hmrc_obligations_action_panel', 'hmrc_fines_table', 'hmrc_submission_unavailable',
+            'hmrc_obligations_action_panel', 'hmrc_fines_table',
         ];
     }
 
@@ -32,7 +32,6 @@ final class _hmrc extends PageContextFramework
             ['tab' => 'Timeline', 'cards' => ['hmrc_obligations_timeline']],
             ['tab' => 'Selected Period', 'cards' => ['hmrc_obligations_period_checklist']],
             ['tab' => 'Fines & Interest', 'cards' => ['hmrc_fines_table']],
-            ['tab' => 'Submit', 'cards' => ['hmrc_submission_unavailable']],
         ];
     }
 

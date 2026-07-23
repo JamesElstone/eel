@@ -13,16 +13,27 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->run(_hmrc::class, static function (GeneratedServiceClassTestHarness $harness, _hmrc $page): void {
-    $harness->check(_hmrc::class, 'keeps CT600 filing in the existing HMRC Submit card', static function () use ($harness, $page): void {
-        $harness->assertTrue(in_array('hmrc_submission_unavailable', $page->cards(), true));
-        $cards = [];
-        foreach ($page->cardLayout() as $tab) {
-            $cards = array_merge($cards, (array)($tab['cards'] ?? []));
-        }
-        foreach (['hmrc_submission_overview', 'hmrc_submission_controls', 'hmrc_submission_log',
-                  'hmrc_submission_history', 'hmrc_submission_supplementary'] as $removedCard) {
-            $harness->assertFalse(in_array($removedCard, $cards, true));
-        }
+    $harness->check(_hmrc::class, 'keeps HMRC filing controls off the obligations page', static function () use ($harness, $page): void {
+        $harness->assertFalse(in_array('hmrc_submission_unavailable', $page->cards(), true));
+    });
+});
+
+$harness->run(_transmit::class, static function (GeneratedServiceClassTestHarness $harness, _transmit $page): void {
+    $harness->check(_transmit::class, 'separates HMRC and Companies House transmission cards', static function () use ($harness, $page): void {
+        $harness->assertSame(
+            ['hmrc_submission_unavailable', 'companies_house_transmission'],
+            $page->cards()
+        );
+        $harness->assertSame('HMRC', (string)($page->cardLayout()[0]['tab'] ?? ''));
+        $harness->assertSame(
+            ['hmrc_submission_unavailable'],
+            (array)($page->cardLayout()[0]['cards'] ?? [])
+        );
+        $harness->assertSame('Companies House', (string)($page->cardLayout()[1]['tab'] ?? ''));
+        $harness->assertSame(
+            ['companies_house_transmission'],
+            (array)($page->cardLayout()[1]['cards'] ?? [])
+        );
     });
 });
 

@@ -15,7 +15,25 @@ final class _ixbrl_generationCard extends CardBaseFramework
 
     public function helper(array $context): string
     {
-        return 'Generates the iXBRL export from the approved facts, checks it internally and with Arelle, and enables the download when the export is filing-ready.';
+        return 'Generates the HMRC accounts and computation iXBRLs. A separate Companies House revised artifact is shown when it has been prepared from the locked Year End workflow.';
+    }
+
+    public function services(): array
+    {
+        return [[
+            'key' => 'companies_house_ixbrl',
+            'service' => \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
+            'method' => 'fetchContext',
+            'params' => [
+                'companyId' => ':company.id',
+                'accountingPeriodId' => ':company.accounting_period_id',
+            ],
+        ]];
+    }
+
+    public function handleError(string $serviceKey, array $error, array $context): string
+    {
+        return '';
     }
 
     protected function additionalInvalidationFacts(): array { return ['ixbrl.generation', 'page.context']; }
@@ -71,7 +89,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             </section>
             <section class="panel-soft">
                 <div class="status-head">
-                    <h3 class="card-title">Accounting iXBRL</h3>
+                    <h3 class="card-title">HMRC Accounting iXBRL</h3>
                     <span class="badge ' . HelperFramework::escape($this->statusClass($displayStatus)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($displayStatus, '_')) . '</span>
                 </div>
                 <div class="summary-grid">
@@ -106,8 +124,41 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     </form>
                 </div>
             </section>
+            ' . $this->companiesHouseArtifact($context) . '
             ' . $this->computationPeriods($context, $companyId, $accountingPeriodId) . '
         </div>';
+    }
+
+    private function companiesHouseArtifact(array $context): string
+    {
+        $filing = (array)(($context['services'] ?? [])['companies_house_ixbrl'] ?? []);
+        $submission = is_array($filing['submission'] ?? null) ? $filing['submission'] : null;
+        $artifact = (array)($filing['prepared_artifact'] ?? []);
+        if ($submission === null || $artifact === []) {
+            return '<section class="panel-soft"><div class="status-head">'
+                . '<h3 class="card-title">Companies House Revised Accounting iXBRL</h3>'
+                . '<span class="badge muted">Not prepared</span></div>'
+                . '<div class="helper">Prepare revised accounts from the locked Year End Companies House comparison workflow. '
+                . 'That process creates the Companies House-specific artifact and does not transmit it.</div></section>';
+        }
+
+        $lifecycle = strtolower(trim((string)($submission['lifecycle'] ?? 'prepared')));
+        $badge = match ($lifecycle) {
+            'accepted' => 'success',
+            'rejected', 'failed', 'internal_failure' => 'danger',
+            'transport_unknown', 'parked' => 'warning',
+            default => 'info',
+        };
+        return '<section class="panel-soft"><div class="status-head">'
+            . '<h3 class="card-title">Companies House Revised Accounting iXBRL</h3>'
+            . '<span class="badge ' . $badge . '">'
+            . HelperFramework::escape(HelperFramework::labelFromKey($lifecycle, '_')) . '</span></div>'
+            . '<div class="summary-grid">'
+            . $this->metric('Artifact', (string)($artifact['filename'] ?? ''))
+            . $this->metric('SHA-256', (string)($artifact['sha256'] ?? ''))
+            . $this->metric('Submission number', (string)($submission['submission_number'] ?? 'Allocated on send'))
+            . $this->metric('Environment', (string)($submission['environment'] ?? ''))
+            . '</div><div class="helper">This revised artifact is distinct from the HMRC accounts iXBRL and uses the Companies House document policy.</div></section>';
     }
 
     private function computationPeriods(array $context, int $companyId, int $accountingPeriodId): string

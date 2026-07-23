@@ -98,7 +98,8 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         string $utr,
         string $environment,
         ?string $transactionId = null,
-        ?callable $beforeSend = null
+        ?callable $beforeSend = null,
+        ?callable $afterReceive = null
     ): array {
         $profile = null;
         $credentials = [];
@@ -134,7 +135,8 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
             $transactionId,
             '',
             $this->secretValues($credentials),
-            $beforeSend
+            $beforeSend,
+            $afterReceive
         );
     }
 
@@ -143,7 +145,8 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         string $responseEndpoint,
         string $environment,
         ?string $transactionId = null,
-        ?callable $beforeSend = null
+        ?callable $beforeSend = null,
+        ?callable $afterReceive = null
     ): array {
         $profile = null;
         try {
@@ -180,7 +183,8 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
             $transactionId,
             $correlationId,
             [],
-            $beforeSend
+            $beforeSend,
+            $afterReceive
         );
     }
 
@@ -189,7 +193,8 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         string $responseEndpoint,
         string $environment,
         ?string $transactionId = null,
-        ?callable $beforeSend = null
+        ?callable $beforeSend = null,
+        ?callable $afterReceive = null
     ): array {
         $profile = null;
         try {
@@ -226,7 +231,8 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
             $transactionId,
             $correlationId,
             [],
-            $beforeSend
+            $beforeSend,
+            $afterReceive
         );
     }
 
@@ -519,7 +525,8 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         string $transactionId,
         string $correlationId,
         array $secrets,
-        ?callable $beforeSend
+        ?callable $beforeSend,
+        ?callable $afterReceive
     ): array {
         $safeRequest = $this->redactXml($requestXml, $secrets);
         $requestMeta = [
@@ -529,6 +536,7 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
             'transaction_id' => $transactionId,
             'correlation_id' => $correlationId,
             'request_xml' => $safeRequest,
+            'raw_request_xml' => $requestXml,
             'request_sha256' => hash('sha256', $requestXml),
             'request_bytes' => strlen($requestXml),
         ];
@@ -586,6 +594,24 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
 
         $statusCode = (int)($response['status_code'] ?? 0);
         $responseXml = (string)($response['body'] ?? '');
+        $evidenceError = '';
+        if ($afterReceive !== null && $responseXml !== '') {
+            try {
+                $afterReceive([
+                    'operation' => $operation,
+                    'environment' => (string)$profile['environment'],
+                    'endpoint' => $endpoint,
+                    'transaction_id' => $transactionId,
+                    'correlation_id' => $correlationId,
+                    'status_code' => $statusCode,
+                    'response_xml' => $responseXml,
+                    'response_sha256' => hash('sha256', $responseXml),
+                    'response_bytes' => strlen($responseXml),
+                ]);
+            } catch (\Throwable) {
+                $evidenceError = 'The exact HMRC response could not be added to the private transmission archive.';
+            }
+        }
         try {
             $parsed = $this->parseResponse(
                 $responseXml,
@@ -604,6 +630,9 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
             $result['request_bytes'] = $requestMeta['request_bytes'];
             $result['response_xml'] = $this->redactText($responseXml, $secrets);
             $result['error'] = $this->redactText($exception->getMessage(), $secrets);
+            if ($evidenceError !== '') {
+                $result['evidence_error'] = $evidenceError;
+            }
 
             return $result;
         }
@@ -618,6 +647,9 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         $result['request_sha256'] = $requestMeta['request_sha256'];
         $result['request_bytes'] = $requestMeta['request_bytes'];
         $result['response_xml'] = $this->redactText($responseXml, $secrets);
+        if ($evidenceError !== '') {
+            $result['evidence_error'] = $evidenceError;
+        }
         if (
             $operation === 'submit'
             && empty($result['success'])

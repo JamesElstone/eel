@@ -25,7 +25,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             'company_number' => '14337285',
             'company_name' => 'ELSTONE ELECTRICALS LIMITED',
             'company_authentication_code' => 'ABC123',
-            'submission_number' => 'AP7901',
+            'submission_number' => '000001',
             'date_signed' => '2026-07-17',
             'accounts_xml' => '<?xml version="1.0"?>' . "\n<html>revised accounts</html>",
             'filename' => 'AP79-revised.xml',
@@ -106,7 +106,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 );
                 $payload = $submissionPayload();
                 $prepared = $client->prepareAccounts($payload, 'TEST', str_repeat('a', 64));
-                $result = $client->sendPreparedAccounts($prepared);
+                $capturedResponse = [];
+                $result = $client->sendPreparedAccounts(
+                    $prepared,
+                    static function (array $exchange) use (&$capturedResponse): void {
+                        $capturedResponse = $exchange;
+                    }
+                );
                 $requestXml = (string)$captured['body'];
 
                 $harness->assertSame(true, $result['success']);
@@ -124,12 +130,17 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame('md5#' . md5('TEST-PRESENTER'), $xmlText($requestXml, 'SenderID'));
                 $harness->assertSame('md5#' . md5('TEST-CODE'), $xmlText($requestXml, 'Value'));
                 $harness->assertSame('Accounts', $xmlText($requestXml, 'FormIdentifier'));
-                $harness->assertSame('AP7901', $xmlText($requestXml, 'SubmissionNumber'));
+                $harness->assertSame('000001', $xmlText($requestXml, 'SubmissionNumber'));
                 $harness->assertSame('0012', $xmlText($requestXml, 'PackageReference'));
                 $harness->assertSame('ABC123', $xmlText($requestXml, 'CompanyAuthenticationCode'));
                 $harness->assertSame('application/xml', $xmlText($requestXml, 'ContentType'));
                 $harness->assertSame('ACCOUNTS', $xmlText($requestXml, 'Category'));
                 $harness->assertSame(base64_encode($payload['accounts_xml']), $xmlText($requestXml, 'Data'));
+                $harness->assertSame((string)$captured['body'], (string)($capturedResponse['request_xml'] ?? ''));
+                $harness->assertSame(
+                    $acknowledgement('md5#' . md5('TEST-PRESENTER'), 'md5#' . md5('TEST-CODE')),
+                    (string)($capturedResponse['response_xml'] ?? '')
+                );
                 $harness->assertTrue(str_contains($requestXml, 'FormSubmission-v2-11.xsd'));
                 $harness->assertFalse(str_contains($requestXml, 'COMPANY_LOOKUP'));
                 foreach (
@@ -165,7 +176,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     return [
                         'status_code' => 200,
                         'headers' => [],
-                        'body' => $statusResponse('AP7901', 'PENDING'),
+                        'body' => $statusResponse('000001', 'PENDING'),
                     ];
                 };
                 $client = new \eel_accounts\Client\CompaniesHouseAccountsGatewayClient(
@@ -174,7 +185,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $transactionId,
                     $config
                 );
-                $result = $client->getSubmissionStatus('AP7901', 'LIVE');
+                $capturedExchange = [];
+                $result = $client->getSubmissionStatus(
+                    '000001',
+                    'LIVE',
+                    null,
+                    static function (array $exchange) use (&$capturedExchange): void {
+                        $capturedExchange = $exchange;
+                    }
+                );
                 $requestXml = (string)$captured['body'];
 
                 $harness->assertSame(true, $result['success']);
@@ -182,9 +201,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame('pending', $result['normalized_status']);
                 $harness->assertSame('GetSubmissionStatus', $xmlText($requestXml, 'Class'));
                 $harness->assertSame('0', $xmlText($requestXml, 'GatewayTest'));
-                $harness->assertSame('AP7901', $xmlText($requestXml, 'SubmissionNumber'));
+                $harness->assertSame('000001', $xmlText($requestXml, 'SubmissionNumber'));
                 $harness->assertSame('LIVE-PRESENTER', $xmlText($requestXml, 'PresenterID'));
                 $harness->assertTrue(str_contains($requestXml, 'GetSubmissionStatus-v2-9.xsd'));
+                $harness->assertSame($requestXml, (string)($capturedExchange['request_xml'] ?? ''));
+                $harness->assertSame(
+                    $statusResponse('000001', 'PENDING'),
+                    (string)($capturedExchange['response_xml'] ?? '')
+                );
                 $harness->assertFalse(str_contains((string)$result['request_xml'], 'LIVE-PRESENTER'));
                 $harness->assertFalse(str_contains((string)$result['request_xml'], 'LIVE-CODE'));
                 $harness->assertFalse(str_contains((string)$result['request_xml'], 'LIVE-PACKAGE'));
@@ -213,7 +237,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $transport = static fn(array $request): array => [
                         'status_code' => 200,
                         'headers' => [],
-                        'body' => $statusResponse('AP7901', $raw),
+                        'body' => $statusResponse('000001', $raw),
                     ];
                     $client = new \eel_accounts\Client\CompaniesHouseAccountsGatewayClient(
                         $transport,
@@ -221,7 +245,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         $transactionId,
                         $config
                     );
-                    $result = $client->getSubmissionStatus('AP7901', 'TEST');
+                    $result = $client->getSubmissionStatus('000001', 'TEST');
 
                     $harness->assertSame(true, $result['success']);
                     $harness->assertSame($raw, $result['submission_status']);
@@ -241,7 +265,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     . '</MessageDetails></Header><GovTalkDetails><Keys/></GovTalkDetails><Body>'
                     . '<SubmissionStatus xmlns="http://xmlgw.companieshouse.gov.uk">'
                     . '<Status><SubmissionNumber>OTHER1</SubmissionNumber><StatusCode>ACCEPT</StatusCode></Status>'
-                    . '<Status><SubmissionNumber>AP7901</SubmissionNumber><StatusCode>REJECT</StatusCode>'
+                    . '<Status><SubmissionNumber>000001</SubmissionNumber><StatusCode>REJECT</StatusCode>'
                     . '<CompanyNumber>14337285</CompanyNumber><Rejections>'
                     . '<Reject><RejectCode>9999</RejectCode><Description>First failure</Description>'
                     . '<InstanceNumber>1</InstanceNumber></Reject>'
@@ -259,7 +283,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $transactionId,
                     $config
                 );
-                $result = $client->getSubmissionStatus('AP7901', 'TEST');
+                $result = $client->getSubmissionStatus('000001', 'TEST');
 
                 $harness->assertSame(true, $result['success']);
                 $harness->assertSame('REJECT', $result['submission_status']);
@@ -424,7 +448,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     '<not-closed',
                     '<?xml version="1.0"?><!DOCTYPE x [<!ENTITY secret SYSTEM "file:///etc/passwd">]><x/>',
                     str_repeat('x', 129),
-                    $statusResponse('AP7901', 'NEW_STATUS'),
+                    $statusResponse('000001', 'NEW_STATUS'),
                 ];
                 $errors = ['malformed XML', 'prohibited document type', 'size limit', 'unsupported submission status'];
 
@@ -442,7 +466,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                             'max_response_bytes' => $index === 2 ? 128 : 65536,
                         ]
                     );
-                    $result = $client->getSubmissionStatus('AP7901', 'TEST');
+                    $result = $client->getSubmissionStatus('000001', 'TEST');
 
                     $harness->assertSame(false, $result['success']);
                     $harness->assertTrue(str_contains($result['error'], $errors[$index]));

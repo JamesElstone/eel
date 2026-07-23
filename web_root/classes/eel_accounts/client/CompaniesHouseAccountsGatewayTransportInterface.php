@@ -17,7 +17,15 @@ interface CompaniesHouseAccountsGatewayTransportInterface
         string $schemaManifestSha256
     ): CompaniesHousePreparedAccountsRequest;
 
-    public function sendPreparedAccounts(CompaniesHousePreparedAccountsRequest $request): array;
+    public function sendPreparedAccounts(
+        CompaniesHousePreparedAccountsRequest $request,
+        ?callable $afterReceive = null
+    ): array;
 
-    public function getSubmissionStatus(string $submissionNumber, string $environment): array;
+    public function getSubmissionStatus(
+        string $submissionNumber,
+        string $environment,
+        ?callable $beforeSend = null,
+        ?callable $afterReceive = null
+    ): array;
 }

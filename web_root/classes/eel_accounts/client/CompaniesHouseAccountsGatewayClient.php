@@ -105,7 +105,10 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         );
     }
 
-    public function sendPreparedAccounts(CompaniesHousePreparedAccountsRequest $request): array
+    public function sendPreparedAccounts(
+        CompaniesHousePreparedAccountsRequest $request,
+        ?callable $afterReceive = null
+    ): array
     {
         try {
             $response = $this->send($request->requestXml());
@@ -124,7 +127,15 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             );
         }
 
-        return $this->parseSubmissionResponse(
+        $captureError = $this->captureResponse(
+            $afterReceive,
+            'submit',
+            $request->environment(),
+            $request->transactionId(),
+            (string)($response['body'] ?? ''),
+            (int)($response['status_code'] ?? 0)
+        );
+        $result = $this->parseSubmissionResponse(
             $response,
             $request->environment(),
             $request->submissionNumber(),
@@ -132,9 +143,19 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             $request->redactedRequestXml(),
             $request->secrets()
         );
+        if ($captureError !== '') {
+            $result['evidence_error'] = $captureError;
+        }
+
+        return $result;
     }
 
-    public function getSubmissionStatus(string $submissionNumber, string $environment): array
+    public function getSubmissionStatus(
+        string $submissionNumber,
+        string $environment,
+        ?callable $beforeSend = null,
+        ?callable $afterReceive = null
+    ): array
     {
         try {
             $environment = $this->normaliseEnvironment($environment);
@@ -153,6 +174,32 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
 
         $secrets = $this->secretValues($credentials);
         $redactedRequest = $this->redactXml($requestXml, $secrets);
+        try {
+            if ($beforeSend !== null) {
+                $beforeSend([
+                    'operation' => 'status',
+                    'environment' => $environment,
+                    'transaction_id' => $transactionId,
+                    'request_xml' => $requestXml,
+                    'request_sha256' => hash('sha256', $requestXml),
+                    'request_bytes' => strlen($requestXml),
+                ]);
+            }
+        } catch (\Throwable) {
+            return array_replace(
+                $this->failureResult(
+                    $environment,
+                    'The Companies House status request evidence could not be persisted; nothing was sent.',
+                    false,
+                    $submissionNumber
+                ),
+                [
+                    'pre_send_failure' => true,
+                    'transaction_id' => $transactionId,
+                    'request_xml' => $redactedRequest,
+                ]
+            );
+        }
 
         try {
             $response = $this->send($requestXml);
@@ -171,7 +218,15 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             );
         }
 
-        return $this->parseStatusResponse(
+        $captureError = $this->captureResponse(
+            $afterReceive,
+            'status',
+            $environment,
+            $transactionId,
+            (string)($response['body'] ?? ''),
+            (int)($response['status_code'] ?? 0)
+        );
+        $result = $this->parseStatusResponse(
             $response,
             $environment,
             $submissionNumber,
@@ -179,6 +234,11 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             $redactedRequest,
             $secrets
         );
+        if ($captureError !== '') {
+            $result['evidence_error'] = $captureError;
+        }
+
+        return $result;
     }
 
     private function normaliseEnvironment(string $environment): string
@@ -197,12 +257,8 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         if ($this->credentialLoader instanceof \Closure) {
             $credentials = ($this->credentialLoader)($environment);
         } else {
-            $prefix = 'companieshouse.accounts_filing.' . strtolower($environment) . '.';
-            $credentials = [
-                'presenter_id' => \SecurityStore::loadFact($prefix . 'presenter_id'),
-                'presenter_code' => \SecurityStore::loadFact($prefix . 'presenter_code'),
-                'package_reference' => \SecurityStore::loadFact($prefix . 'package_reference'),
-            ];
+            $credentials = (new \eel_accounts\Service\CompaniesHouseAccountsCredentialService())
+                ->load($environment);
         }
 
         if (!is_array($credentials)) {
@@ -620,6 +676,33 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         }
 
         return $response;
+    }
+
+    private function captureResponse(
+        ?callable $afterReceive,
+        string $operation,
+        string $environment,
+        string $transactionId,
+        string $responseXml,
+        int $statusCode
+    ): string {
+        if ($afterReceive === null || $responseXml === '') {
+            return '';
+        }
+        try {
+            $afterReceive([
+                'operation' => $operation,
+                'environment' => $environment,
+                'transaction_id' => $transactionId,
+                'status_code' => $statusCode,
+                'response_xml' => $responseXml,
+                'response_sha256' => hash('sha256', $responseXml),
+                'response_bytes' => strlen($responseXml),
+            ]);
+            return '';
+        } catch (\Throwable) {
+            return 'The exact Companies House response could not be added to the private transmission archive.';
+        }
     }
 
     private function throttle(): void

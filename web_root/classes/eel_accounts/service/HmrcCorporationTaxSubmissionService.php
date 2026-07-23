@@ -40,6 +40,7 @@ final class HmrcCorporationTaxSubmissionService
     private ?\Closure $manifestResolver;
 
     private string $artifactRoot;
+    private TransmissionArchiveService $archives;
 
     public function __construct(
         ?HmrcCtTransactionEngineTransportInterface $transport = null,
@@ -47,7 +48,8 @@ final class HmrcCorporationTaxSubmissionService
         ?callable $clock = null,
         ?string $artifactRoot = null,
         ?callable $packagePreparer = null,
-        ?callable $manifestResolver = null
+        ?callable $manifestResolver = null,
+        ?TransmissionArchiveService $archiveService = null
     ) {
         $this->transport = $transport ?? new HmrcCtTransactionEngineClient();
         $this->packages = $packages ?? new HmrcSubmissionPackageService();
@@ -59,6 +61,7 @@ final class HmrcCorporationTaxSubmissionService
             ? null
             : \Closure::fromCallable($manifestResolver);
         $this->artifactRoot = $this->resolveArtifactRoot($artifactRoot);
+        $this->archives = $archiveService ?? new TransmissionArchiveService($this->artifactRoot);
     }
 
     /** @return array<string, mixed> */
@@ -242,6 +245,7 @@ final class HmrcCorporationTaxSubmissionService
 
         $previousAttempt = (int)$submission['poll_attempts'];
         $attempt = $previousAttempt + 1;
+        $capturedResponse = null;
         $result = $this->transport->poll(
             (string)$submission['hmrc_correlation_id'],
             (string)$submission['response_endpoint'],
@@ -274,8 +278,8 @@ final class HmrcCorporationTaxSubmissionService
                 }
                 $artifact = $this->storeArtifact(
                     $submissionId,
-                    sprintf('poll-%04d-request-redacted.xml', $attempt),
-                    (string)$request['request_xml']
+                    sprintf('poll-%04d-request.xml', $attempt),
+                    (string)$request['raw_request_xml']
                 );
                 $this->event($submissionId, 'info', 'HMRC poll request persisted before transmission.', [
                     'attempt' => $attempt,
@@ -283,8 +287,16 @@ final class HmrcCorporationTaxSubmissionService
                     'request_sha256' => (string)$request['request_sha256'],
                     'request_bytes' => (int)$request['request_bytes'],
                 ]);
+            },
+            function (array $response) use ($submissionId, $attempt, &$capturedResponse): void {
+                $capturedResponse = $this->storeArtifact(
+                    $submissionId,
+                    sprintf('poll-%04d-response.xml', $attempt),
+                    (string)$response['response_xml']
+                );
             }
         );
+        $result['archived_response'] = $capturedResponse;
 
         return $this->applyConversationResult($submissionId, $result, $actor, true);
     }
@@ -470,6 +482,7 @@ final class HmrcCorporationTaxSubmissionService
             $ctPeriodId,
             ['submission_id' => $submissionId]
         );
+        $capturedResponse = null;
         $result = $this->transport->submit(
             (string)$package['filing_body_xml'],
             (string)$package['utr'],
@@ -498,8 +511,8 @@ final class HmrcCorporationTaxSubmissionService
                 }
                 $artifact = $this->storeArtifact(
                     $submissionId,
-                    'submission-request-redacted.xml',
-                    (string)$request['request_xml']
+                    'submission-request.xml',
+                    (string)$request['raw_request_xml']
                 );
                 $statement = \InterfaceDB::prepareExecute(
                     'UPDATE ' . self::SUBMISSIONS . '
@@ -522,7 +535,7 @@ final class HmrcCorporationTaxSubmissionService
                             'content_type' => 'text/xml; charset=UTF-8',
                             'request_sha256' => (string)$request['request_sha256'],
                             'request_bytes' => (int)$request['request_bytes'],
-                            'persisted_redacted_sha256' => $artifact['sha256'],
+                            'persisted_exact_sha256' => $artifact['sha256'],
                         ]),
                         'submitted_by' => $this->actor($actor),
                         'submitted_by_user_id' => $this->actorUserId($actor),
@@ -544,16 +557,24 @@ final class HmrcCorporationTaxSubmissionService
                 ]);
                 (new FilingEvidenceService())->completeArtifact((int)$govtalkEvidence['id'], [
                     'status' => 'generated',
-                    'filename' => 'submission-request-redacted.xml',
+                    'filename' => 'submission-request.xml',
                     'path' => $artifact['path'],
                     'sha256' => (string)$request['request_sha256'],
                     'schema_identity' => 'GovTalk Document Submission Protocol 2.0 / CT/5',
                     'validation_status' => 'passed',
                     'identifier_embedded' => true,
-                    'metadata' => ['submission_id' => $submissionId, 'persisted_redacted_sha256' => $artifact['sha256']],
+                    'metadata' => ['submission_id' => $submissionId, 'persisted_exact_sha256' => $artifact['sha256']],
                 ]);
+            },
+            function (array $response) use ($submissionId, &$capturedResponse): void {
+                $capturedResponse = $this->storeArtifact(
+                    $submissionId,
+                    'submission-response.xml',
+                    (string)$response['response_xml']
+                );
             }
         );
+        $result['archived_response'] = $capturedResponse;
 
         return $this->applyConversationResult($submissionId, $result, $actor, false);
     }
@@ -745,12 +766,14 @@ final class HmrcCorporationTaxSubmissionService
         int|string|null $actor,
         bool $wasPoll
     ): array {
-        $responseArtifact = null;
-        if (trim((string)($result['response_xml'] ?? '')) !== '') {
+        $responseArtifact = is_array($result['archived_response'] ?? null)
+            ? $result['archived_response']
+            : null;
+        if ($responseArtifact === null && trim((string)($result['response_xml'] ?? '')) !== '') {
             $current = $this->fetchById($submissionId);
             $name = $wasPoll
-                ? sprintf('poll-%04d-response.xml', max(1, (int)($current['poll_attempts'] ?? 1)))
-                : 'submission-response.xml';
+                ? sprintf('poll-%04d-response-redacted.xml', max(1, (int)($current['poll_attempts'] ?? 1)))
+                : 'submission-response-redacted.xml';
             $responseArtifact = $this->storeArtifact($submissionId, $name, (string)$result['response_xml']);
         }
 
@@ -936,6 +959,7 @@ final class HmrcCorporationTaxSubmissionService
 
         $previousAttempt = (int)($submission['cleanup_attempts'] ?? 0);
         $attempt = $previousAttempt + 1;
+        $capturedResponse = null;
         $result = $this->transport->delete(
             $correlationId,
             (string)($submission['response_endpoint'] ?? ''),
@@ -968,14 +992,21 @@ final class HmrcCorporationTaxSubmissionService
                 }
                 $artifact = $this->storeArtifact(
                     $submissionId,
-                    sprintf('delete-%04d-request-redacted.xml', $attempt),
-                    (string)$request['request_xml']
+                    sprintf('delete-%04d-request.xml', $attempt),
+                    (string)$request['raw_request_xml']
                 );
                 $this->event($submissionId, 'info', 'HMRC delete request persisted before transmission.', [
                     'attempt' => $attempt,
                     'request_path' => $artifact['path'],
                     'request_sha256' => (string)$request['request_sha256'],
                 ]);
+            },
+            function (array $response) use ($submissionId, $attempt, &$capturedResponse): void {
+                $capturedResponse = $this->storeArtifact(
+                    $submissionId,
+                    sprintf('delete-%04d-response.xml', $attempt),
+                    (string)$response['response_xml']
+                );
             }
         );
 
@@ -992,11 +1023,11 @@ final class HmrcCorporationTaxSubmissionService
             return $this->commandResult($submissionId, false, [$message]);
         }
 
-        $responseArtifact = null;
-        if (trim((string)($result['response_xml'] ?? '')) !== '') {
+        $responseArtifact = $capturedResponse;
+        if ($responseArtifact === null && trim((string)($result['response_xml'] ?? '')) !== '') {
             $responseArtifact = $this->storeArtifact(
                 $submissionId,
-                sprintf('delete-%04d-response.xml', $attempt),
+                sprintf('delete-%04d-response-redacted.xml', $attempt),
                 (string)$result['response_xml']
             );
         }
@@ -1317,6 +1348,16 @@ final class HmrcCorporationTaxSubmissionService
         $row['needs_poll'] = (string)($row['protocol_state'] ?? '') === 'awaiting_poll';
         $row['cleanup_pending'] = (string)($row['protocol_state'] ?? '') === 'delete_pending';
         $row['uncertain'] = (string)($row['protocol_state'] ?? '') === 'transport_uncertain';
+        try {
+            $row['transmission_archive'] = $this->archives->find(
+                (int)($row['company_id'] ?? 0),
+                'hmrc',
+                (string)($row['environment'] ?? ''),
+                $this->archiveReference((int)($row['id'] ?? 0))
+            );
+        } catch (\Throwable) {
+            $row['transmission_archive'] = null;
+        }
 
         return $row;
     }
@@ -1360,6 +1401,31 @@ final class HmrcCorporationTaxSubmissionService
             'UPDATE ' . self::SUBMISSIONS . ' SET ' . implode(', ', $sets) . ' WHERE id = :id',
             $params
         );
+        $this->syncArchiveLifecycle($submissionId);
+    }
+
+    private function archiveReference(int $submissionId): string
+    {
+        return 'submission-' . sprintf('%06d', $submissionId);
+    }
+
+    private function syncArchiveLifecycle(int $submissionId): void
+    {
+        $submission = $this->fetchById($submissionId);
+        if (!is_array($submission)) {
+            return;
+        }
+        try {
+            $this->archives->updateLifecycle(
+                (int)$submission['company_id'],
+                (int)$submission['accounting_period_id'],
+                'hmrc',
+                (string)$submission['environment'],
+                $this->archiveReference($submissionId),
+                (string)$submission['protocol_state']
+            );
+        } catch (\Throwable) {
+        }
     }
 
     private function commandResult(
@@ -1472,42 +1538,21 @@ final class HmrcCorporationTaxSubmissionService
         if (!preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/D', $filename)) {
             throw new \InvalidArgumentException('The HMRC artifact filename is invalid.');
         }
-        $directory = $this->artifactRoot . DIRECTORY_SEPARATOR . 'submissions'
-            . DIRECTORY_SEPARATOR . (string)$submissionId;
-        if (!is_dir($directory) && !@mkdir($directory, 0700, true) && !is_dir($directory)) {
-            throw new \RuntimeException('Unable to create protected HMRC artifact storage.');
-        }
-        $path = $directory . DIRECTORY_SEPARATOR . $filename;
-        $hash = hash('sha256', $contents);
-        if (is_file($path)) {
-            $existing = (string)hash_file('sha256', $path);
-            if (!hash_equals($hash, $existing)) {
-                throw new \RuntimeException('An immutable HMRC artifact already exists with different bytes.');
-            }
-            return ['path' => $path, 'sha256' => $hash, 'bytes' => strlen($contents)];
-        }
-        $temporary = tempnam($directory, '.hmrc-');
-        if (!is_string($temporary) || $temporary === '') {
-            throw new \RuntimeException('Unable to stage an HMRC artifact.');
-        }
-        try {
-            $written = file_put_contents($temporary, $contents, LOCK_EX);
-            if ($written !== strlen($contents) || !hash_equals($hash, (string)hash_file('sha256', $temporary))) {
-                throw new \RuntimeException('The staged HMRC artifact failed integrity verification.');
-            }
-            @chmod($temporary, 0600);
-            if (!@rename($temporary, $path)) {
-                throw new \RuntimeException('Unable to publish the HMRC artifact atomically.');
-            }
-            $temporary = '';
-            @chmod($path, 0600);
-        } finally {
-            if ($temporary !== '' && is_file($temporary)) {
-                @unlink($temporary);
-            }
+        $submission = $this->fetchById($submissionId);
+        if (!is_array($submission)) {
+            throw new \RuntimeException('The HMRC submission archive identity could not be resolved.');
         }
 
-        return ['path' => $path, 'sha256' => $hash, 'bytes' => strlen($contents)];
+        return $this->archives->store(
+            (int)$submission['company_id'],
+            (int)$submission['accounting_period_id'],
+            'hmrc',
+            (string)$submission['environment'],
+            $this->archiveReference($submissionId),
+            (string)$submission['protocol_state'],
+            $filename,
+            $contents
+        );
     }
 
     private function resolveArtifactRoot(?string $artifactRoot): string
@@ -1523,7 +1568,7 @@ final class HmrcCorporationTaxSubmissionService
             if ($uploadRoot === '') {
                 $uploadRoot = rtrim((string)PROJECT_ROOT, '\\/') . DIRECTORY_SEPARATOR . 'files';
             }
-            $artifactRoot = rtrim($uploadRoot, '\\/') . DIRECTORY_SEPARATOR . 'hmrc_ct600';
+            $artifactRoot = rtrim($uploadRoot, '\\/');
         }
         if (!preg_match('/^(?:[A-Za-z]:[\\\\\/]|\/)/D', $artifactRoot)) {
             throw new \RuntimeException('HMRC artifact storage must use an absolute path.');

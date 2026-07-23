@@ -30,6 +30,7 @@ final class IxbrlAccountsDisclosureService
         'audit_exempt_section_477',
         'directors_acknowledge_responsibilities',
         'members_have_not_required_audit',
+        'companies_house_revised_accounts_public_register_confirmed',
     ];
     private const FIELD_LABELS = [
         'accounting_standard' => 'accounting standard',
@@ -47,6 +48,7 @@ final class IxbrlAccountsDisclosureService
         'audit_exempt_section_477' => 'section 477 audit exemption statement',
         'directors_acknowledge_responsibilities' => 'directors responsibilities acknowledgement',
         'members_have_not_required_audit' => 'members have not required an audit statement',
+        'companies_house_revised_accounts_public_register_confirmed' => 'Companies House revised accounts public-register confirmation',
     ];
 
     public function get(int $companyId, int $accountingPeriodId): ?array
@@ -122,9 +124,6 @@ final class IxbrlAccountsDisclosureService
         } else {
             $disclosures['prepared_under_small_companies_regime'] = null;
         }
-        $missing = $this->missingFields($disclosures);
-        $unsupported = $this->unsupportedProfileFields($disclosures);
-        $profileErrors = $this->unsupportedProfileErrors($disclosures);
         $suggestions = $this->companiesHouseSuggestions($companyId, $period);
         $displayTradingStatus = trim((string)(
             $row['entity_trading_status']
@@ -132,6 +131,10 @@ final class IxbrlAccountsDisclosureService
             ?? ''
         ));
         $tradingEvidence = $this->calculateTradingEvidence($companyId, $period, $dormancy);
+        $companiesHouseRevisionRequired = $this->companiesHouseRevisionRequired($companyId, $accountingPeriodId);
+        $missing = $this->missingFields($disclosures, $companiesHouseRevisionRequired);
+        $unsupported = $this->unsupportedProfileFields($disclosures, $companiesHouseRevisionRequired);
+        $profileErrors = $this->unsupportedProfileErrors($disclosures, $companiesHouseRevisionRequired);
 
         return [
             'success' => true,
@@ -157,6 +160,7 @@ final class IxbrlAccountsDisclosureService
             'accounting_period' => $period,
             'dormancy' => $dormancy,
             'small_companies_regime' => $smallCompanies,
+            'companies_house_revision_required' => $companiesHouseRevisionRequired,
             'errors' => [],
         ];
     }
@@ -203,7 +207,8 @@ final class IxbrlAccountsDisclosureService
         $tradingEvidence = $this->calculateTradingEvidence($companyId, $period, $dormancy);
         [$tradingStatus, $tradingErrors] = $this->deriveTradingStatus($input, $tradingEvidence);
         $input['entity_trading_status'] = $tradingStatus;
-        [$values, $errors] = $this->validate($input, $period, $allowPartial);
+        $companiesHouseRevisionRequired = $this->companiesHouseRevisionRequired($companyId, $accountingPeriodId);
+        [$values, $errors] = $this->validate($input, $period, $allowPartial, $companiesHouseRevisionRequired);
         $errors = array_values(array_unique(array_merge($tradingErrors, $errors)));
         if ($errors !== []) {
             return ['success' => false, 'changed' => false, 'errors' => $errors];
@@ -264,6 +269,7 @@ final class IxbrlAccountsDisclosureService
                              audit_exempt_section_477 = :audit_exempt_section_477,
                              directors_acknowledge_responsibilities = :directors_acknowledge_responsibilities,
                              members_have_not_required_audit = :members_have_not_required_audit,
+                             companies_house_revised_accounts_public_register_confirmed = :companies_house_revised_accounts_public_register_confirmed,
                              revision = :revision,
                              updated_by = :updated_by,
                              updated_at = CURRENT_TIMESTAMP
@@ -283,7 +289,9 @@ final class IxbrlAccountsDisclosureService
                             accounts_approval_date,
                             approving_director_name, prepared_under_small_companies_regime,
                             audit_exempt_section_477, directors_acknowledge_responsibilities,
-                            members_have_not_required_audit, revision, created_by, updated_by,
+                            members_have_not_required_audit,
+                            companies_house_revised_accounts_public_register_confirmed,
+                            revision, created_by, updated_by,
                             created_at, updated_at
                          ) VALUES (
                             :company_id, :accounting_period_id, :accounting_standard,
@@ -296,7 +304,9 @@ final class IxbrlAccountsDisclosureService
                             :accounts_approval_date,
                             :approving_director_name, :prepared_under_small_companies_regime,
                             :audit_exempt_section_477, :directors_acknowledge_responsibilities,
-                            :members_have_not_required_audit, :revision, :created_by, :updated_by,
+                            :members_have_not_required_audit,
+                            :companies_house_revised_accounts_public_register_confirmed,
+                            :revision, :created_by, :updated_by,
                             CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                          )',
                         $params
@@ -340,6 +350,7 @@ final class IxbrlAccountsDisclosureService
             'audit_exempt_section_477',
             'directors_acknowledge_responsibilities',
             'members_have_not_required_audit',
+            'companies_house_revised_accounts_public_register_confirmed',
         ];
         if (!in_array($field, $allowed, true)) {
             return $this->error('That disclosure cannot be edited independently.');
@@ -684,7 +695,12 @@ final class IxbrlAccountsDisclosureService
         }
     }
 
-    private function validate(array $input, array $period, bool $allowPartial = false): array
+    private function validate(
+        array $input,
+        array $period,
+        bool $allowPartial = false,
+        bool $companiesHouseRevisionRequired = false
+    ): array
     {
         $errors = [];
         $standard = trim((string)($input['accounting_standard'] ?? self::ACCOUNTING_STANDARD_FRS_105));
@@ -739,10 +755,16 @@ final class IxbrlAccountsDisclosureService
             'has_material_off_balance_sheet_arrangements',
             'has_director_advances_credits_or_guarantees',
             'has_financial_commitments_guarantees_or_contingencies',
+            'companies_house_revised_accounts_public_register_confirmed',
         ];
         $booleans = [];
         foreach ($booleanFields as $field) {
             $value = $this->booleanValue($input[$field] ?? null);
+            if ($field === 'companies_house_revised_accounts_public_register_confirmed'
+                && !$companiesHouseRevisionRequired) {
+                $booleans[$field] = $value;
+                continue;
+            }
             if ($value === null && !$allowPartial) {
                 $errors[] = 'Confirm ' . (self::FIELD_LABELS[$field] ?? $field) . ' with Yes or No.';
             }
@@ -771,13 +793,18 @@ final class IxbrlAccountsDisclosureService
             'audit_exempt_section_477' => $booleans['audit_exempt_section_477'],
             'directors_acknowledge_responsibilities' => $booleans['directors_acknowledge_responsibilities'],
             'members_have_not_required_audit' => $booleans['members_have_not_required_audit'],
+            'companies_house_revised_accounts_public_register_confirmed' => $booleans['companies_house_revised_accounts_public_register_confirmed'],
         ], array_values(array_unique($errors))];
     }
 
-    private function missingFields(array $disclosures): array
+    private function missingFields(array $disclosures, bool $companiesHouseRevisionRequired = false): array
     {
         $missing = [];
         foreach (self::DISCLOSURE_FIELDS as $field) {
+            if ($field === 'companies_house_revised_accounts_public_register_confirmed'
+                && !$companiesHouseRevisionRequired) {
+                continue;
+            }
             $value = $disclosures[$field] ?? null;
             if ($field === 'accounting_standard') {
                 if ((string)$value !== self::ACCOUNTING_STANDARD_FRS_105) {
@@ -794,6 +821,7 @@ final class IxbrlAccountsDisclosureService
                 'has_material_off_balance_sheet_arrangements',
                 'has_director_advances_credits_or_guarantees',
                 'has_financial_commitments_guarantees_or_contingencies',
+                'companies_house_revised_accounts_public_register_confirmed',
             ], true)) {
                 if ($value === null || !in_array((int)$value, [0, 1], true)) {
                     $missing[] = $field;
@@ -810,7 +838,7 @@ final class IxbrlAccountsDisclosureService
         return $missing;
     }
 
-    private function unsupportedProfileFields(array $disclosures): array
+    private function unsupportedProfileFields(array $disclosures, bool $companiesHouseRevisionRequired = false): array
     {
         $unsupported = [];
         foreach ([
@@ -836,11 +864,16 @@ final class IxbrlAccountsDisclosureService
                 $unsupported[] = $field;
             }
         }
+        if ($companiesHouseRevisionRequired
+            && ($disclosures['companies_house_revised_accounts_public_register_confirmed'] ?? null) !== null
+            && (int)$disclosures['companies_house_revised_accounts_public_register_confirmed'] !== 1) {
+            $unsupported[] = 'companies_house_revised_accounts_public_register_confirmed';
+        }
 
         return $unsupported;
     }
 
-    private function unsupportedProfileErrors(array $disclosures): array
+    private function unsupportedProfileErrors(array $disclosures, bool $companiesHouseRevisionRequired = false): array
     {
         $requiredConfirmations = [];
         foreach ([
@@ -889,6 +922,11 @@ final class IxbrlAccountsDisclosureService
                 . implode(', ', $positiveNotes)
                 . '. The Yes answer has been saved, but the required note detail and taxonomy tagging are not yet supported.';
         }
+        if ($companiesHouseRevisionRequired
+            && ($disclosures['companies_house_revised_accounts_public_register_confirmed'] ?? null) !== null
+            && (int)$disclosures['companies_house_revised_accounts_public_register_confirmed'] !== 1) {
+            $errors[] = 'Confirm that LIVE Companies House revised accounts will become public on the register and that the original accounts remain visible.';
+        }
 
         return $errors;
     }
@@ -911,6 +949,7 @@ final class IxbrlAccountsDisclosureService
             'audit_exempt_section_477' => null,
             'directors_acknowledge_responsibilities' => null,
             'members_have_not_required_audit' => null,
+            'companies_house_revised_accounts_public_register_confirmed' => null,
         ];
     }
 
@@ -928,6 +967,7 @@ final class IxbrlAccountsDisclosureService
             'audit_exempt_section_477',
             'directors_acknowledge_responsibilities',
             'members_have_not_required_audit',
+            'companies_house_revised_accounts_public_register_confirmed',
             'revision',
         ] as $field) {
             if (array_key_exists($field, $row) && $row[$field] !== null) {
@@ -969,6 +1009,24 @@ final class IxbrlAccountsDisclosureService
         }
 
         return $values;
+    }
+
+    private function companiesHouseRevisionRequired(int $companyId, int $accountingPeriodId): bool
+    {
+        try {
+            $comparison = (new YearEndCompaniesHouseComparisonService())->fetchComparison($companyId, $accountingPeriodId);
+            if (empty($comparison['has_exact_filing'])) {
+                return false;
+            }
+            foreach ((array)($comparison['rows'] ?? []) as $row) {
+                if (is_array($row) && (string)($row['status'] ?? '') === 'fail') {
+                    return true;
+                }
+            }
+        } catch (\Throwable) {
+        }
+
+        return false;
     }
 
     private function accountingPeriod(int $companyId, int $accountingPeriodId): ?array

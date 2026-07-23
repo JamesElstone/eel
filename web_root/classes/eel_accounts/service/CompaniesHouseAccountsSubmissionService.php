@@ -71,6 +71,7 @@ final class CompaniesHouseAccountsSubmissionService
         }
         $liveApproved = AccountingConfigurationStore::companiesHouseAccountsLiveApproved();
         $testAccepted = $this->testAccepted((int)($eligibility['id'] ?? 0));
+        $needsRevision = $this->comparisonNeedsRevision($companyId, $accountingPeriodId);
 
         $preparationBlockers = [];
         if (!$locked) {
@@ -78,11 +79,26 @@ final class CompaniesHouseAccountsSubmissionService
         }
         if ($original === null) {
             $preparationBlockers[] = 'An exact-period original Companies House accounts filing is required.';
+        } elseif (!$needsRevision) {
+            $preparationBlockers[] = 'No Companies House comparison variance requires revised accounts for this accounting period.';
         }
         if ((string)($eligibility['decision'] ?? 'pending') === 'pending') {
             $preparationBlockers[] = 'Record Companies House written confirmation that this original filing is eligible for electronic revision.';
         } elseif ((string)($eligibility['decision'] ?? '') === 'ineligible') {
             $preparationBlockers[] = 'Companies House has marked this original filing as ineligible for software amendment; use the paper route.';
+        }
+        if ($needsRevision
+            && trim((string)($eligibility['variance_explanation'] ?? '')) === '') {
+            $preparationBlockers[] = 'Record the Companies House variance explanation before preparing revised accounts.';
+        }
+        $disclosureStatus = (new IxbrlAccountsDisclosureService())->fetch($companyId, $accountingPeriodId);
+        $revisedDisclosureConfirmed = (int)(($disclosureStatus['disclosures'] ?? [])['companies_house_revised_accounts_public_register_confirmed'] ?? 0) === 1;
+        if ($needsRevision && !$revisedDisclosureConfirmed) {
+            $preparationBlockers[] = 'Confirm the Companies House revised-accounts public-register disclosure before approving iXBRL.';
+        }
+        $filingApproval = (new IxbrlAccountsFilingApprovalService())->status($companyId, $accountingPeriodId);
+        if ((string)($filingApproval['state'] ?? '') !== 'current') {
+            $preparationBlockers[] = 'Approve the current accounts disclosure basis before preparing revised accounts.';
         }
         foreach ((array)($readiness['filing_errors'] ?? []) as $error) {
             $error = trim((string)$error);
@@ -302,6 +318,105 @@ final class CompaniesHouseAccountsSubmissionService
         ];
     }
 
+    public function saveVarianceExplanation(
+        int $companyId,
+        int $accountingPeriodId,
+        int $originalDocumentId,
+        string $varianceExplanation,
+        string $actor
+    ): array {
+        $selection = $this->selection($companyId, $accountingPeriodId);
+        if ($selection === null) {
+            return $this->failure('Select a valid company and accounting period.');
+        }
+        if (($this->lockService ?? new YearEndLockService())->isLocked($companyId, $accountingPeriodId)) {
+            return $this->failure('The Companies House variance explanation cannot be changed after Year End is locked.');
+        }
+        if (!\InterfaceDB::tableExists(self::ELIGIBILITY_TABLE)
+            || !\InterfaceDB::columnExists(self::ELIGIBILITY_TABLE, 'variance_explanation')) {
+            return $this->failure('Apply the Companies House revised-disclosures migration before saving the variance explanation.');
+        }
+        $original = $this->exactOriginalDocument($selection);
+        if ($original === null || (int)$original['id'] !== $originalDocumentId) {
+            return $this->failure('The selected document is not the newest exact-period original Companies House filing.');
+        }
+        if (!$this->comparisonNeedsRevision($companyId, $accountingPeriodId)) {
+            return $this->failure('No Companies House variance explanation is required for this accounting period.');
+        }
+        $varianceExplanation = trim($varianceExplanation);
+        if ($varianceExplanation === '') {
+            return $this->failure('Enter the Companies House variance explanation before saving.');
+        }
+
+        $now = gmdate('Y-m-d H:i:s');
+        $insertParams = [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'original_document_id' => $originalDocumentId,
+                'transaction_id' => (string)$original['transaction_id'],
+                'external_id' => (string)$original['document_id'],
+                'channel' => (string)$original['detected_channel'],
+                'decision' => 'pending',
+                'evidence' => '',
+                'variance_explanation' => $varianceExplanation,
+                'created_at' => $now,
+                'updated_at' => $now,
+        ];
+        $existing = \InterfaceDB::fetchOne(
+            'SELECT id FROM ' . self::ELIGIBILITY_TABLE . '
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND original_transaction_id = :transaction_id
+             LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'transaction_id' => (string)$original['transaction_id'],
+            ]
+        );
+        if (is_array($existing)) {
+            \InterfaceDB::prepareExecute(
+                'UPDATE ' . self::ELIGIBILITY_TABLE . '
+                 SET original_document_id = :original_document_id,
+                     original_document_external_id = :external_id,
+                     original_filing_channel = :channel,
+                     variance_explanation = :variance_explanation,
+                     updated_at = :updated_at
+                 WHERE id = :id',
+                [
+                    'original_document_id' => $originalDocumentId,
+                    'external_id' => (string)$original['document_id'],
+                    'channel' => (string)$original['detected_channel'],
+                    'variance_explanation' => $varianceExplanation,
+                    'updated_at' => $now,
+                    'id' => (int)$existing['id'],
+                ]
+            );
+        } else {
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO ' . self::ELIGIBILITY_TABLE . ' (
+                    company_id, accounting_period_id, original_document_id,
+                    original_transaction_id, original_document_external_id,
+                    original_filing_channel, decision, evidence_text,
+                    variance_explanation, decided_by, decided_at, created_at, updated_at
+                 ) VALUES (
+                    :company_id, :accounting_period_id, :original_document_id,
+                    :transaction_id, :external_id, :channel, :decision, :evidence,
+                    :variance_explanation, NULL, NULL, :created_at, :updated_at
+                 )',
+                $insertParams
+            );
+        }
+
+        return [
+            'success' => true,
+            'errors' => [],
+            'warnings' => [],
+            'messages' => ['Companies House variance explanation saved.'],
+            'changed' => true,
+        ];
+    }
+
     public function preflightRevision(
         int $submissionId,
         string $companyAuthCode,
@@ -376,6 +491,7 @@ final class CompaniesHouseAccountsSubmissionService
             return $this->failure((string)(($context['preparation_blockers'] ?? [])[0] ?? 'Revised accounts cannot be prepared yet.'));
         }
         $eligibility = (array)$context['eligibility'];
+        $input = $this->savedRevisionDeclarations($companyId, $accountingPeriodId, $context, $input);
         $originalDocumentId = (int)($input['original_document_id'] ?? 0);
         if ($originalDocumentId <= 0 || $originalDocumentId !== (int)($eligibility['original_document_id'] ?? 0)) {
             return $this->failure('The revised accounts must use the exact original filing covered by the Companies House decision.');
@@ -492,7 +608,7 @@ final class CompaniesHouseAccountsSubmissionService
                     'artifact_path' => (string)$artifact['path'],
                     'artifact_sha256' => (string)$artifact['sha256'],
                     'basis_hash' => (string)$artifact['basis_hash'],
-                    'idempotency_key' => $idempotencyKey,
+            'idempotency_key' => $idempotencyKey,
                     'declarations' => json_encode((array)$artifact['declarations'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
                     'prepared_by' => $actor,
                     'prepared_at' => $now,
@@ -1653,6 +1769,7 @@ final class CompaniesHouseAccountsSubmissionService
                 'reference' => '',
                 'received_at' => '',
             ],
+            'variance_explanation' => '',
         ];
         if ($original === null || !\InterfaceDB::tableExists(self::ELIGIBILITY_TABLE)) {
             return $default;
@@ -1687,10 +1804,56 @@ final class CompaniesHouseAccountsSubmissionService
                 'reference' => (string)($row['evidence_reference'] ?? ''),
                 'received_at' => (string)($row['evidence_received_at'] ?? ''),
             ],
+            'variance_explanation' => (string)($row['variance_explanation'] ?? ''),
             'response_reference' => (string)($row['evidence_reference'] ?? ''),
             'decided_by' => (string)($row['decided_by'] ?? ''),
             'decided_at' => (string)($row['decided_at'] ?? ''),
         ];
+    }
+
+    private function comparisonNeedsRevision(int $companyId, int $accountingPeriodId): bool
+    {
+        try {
+            $comparison = (new YearEndCompaniesHouseComparisonService())->fetchComparison($companyId, $accountingPeriodId);
+            if (empty($comparison['has_exact_filing'])) {
+                return false;
+            }
+            foreach ((array)($comparison['rows'] ?? []) as $row) {
+                if (is_array($row) && (string)($row['status'] ?? '') === 'fail') {
+                    return true;
+                }
+            }
+        } catch (\Throwable) {
+        }
+
+        return false;
+    }
+
+    private function savedRevisionDeclarations(int $companyId, int $accountingPeriodId, array $context, array $input): array
+    {
+        $eligibility = (array)($context['eligibility'] ?? []);
+        $varianceExplanation = trim((string)($eligibility['variance_explanation'] ?? ''));
+        if ($varianceExplanation === '') {
+            $varianceExplanation = trim((string)($input['non_compliance_explanation'] ?? ''));
+        }
+        $approval = (new IxbrlAccountsFilingApprovalService())->status($companyId, $accountingPeriodId);
+        if ((string)($approval['state'] ?? '') !== 'current' || !is_array($approval['approval'] ?? null)) {
+            throw new \RuntimeException('Approve the current accounts disclosure basis before preparing revised accounts.');
+        }
+        $approvedAt = trim((string)(((array)$approval['approval'])['approved_at'] ?? ''));
+        $approvalDate = substr($approvedAt, 0, 10);
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/D', $approvalDate) !== 1) {
+            throw new \RuntimeException('The current disclosure approval has no usable approval date.');
+        }
+
+        return array_replace($input, [
+            'original_document_id' => (int)($eligibility['original_document_id'] ?? 0),
+            'non_compliance_explanation' => $varianceExplanation,
+            'original_non_compliance_explanation' => $varianceExplanation,
+            'significant_amendments' => $varianceExplanation,
+            'revision_approval_date' => $approvalDate,
+            'original_software_filing_confirmed' => true,
+        ]);
     }
 
     private function readiness(int $companyId, int $accountingPeriodId): array

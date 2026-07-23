@@ -55,7 +55,7 @@ final class IxbrlGeneratorService
         return '<?xml version="1.0" encoding="UTF-8"?>'
             . '<html xmlns="http://www.w3.org/1999/xhtml"' . $namespaceAttributes . '><head><title>' . $title . '</title>'
             . '<meta http-equiv="Content-Type" content="application/xhtml+xml; charset=UTF-8"/>' . $metadata . '</head><body>'
-            . '<div style="display:none"><ix:header><ix:references>' . $references . '</ix:references><ix:resources>'
+            . '<div hidden="hidden"><ix:header><ix:references>' . $references . '</ix:references><ix:resources>'
             . $resources . '</ix:resources></ix:header></div>' . (string)($document['body'] ?? '') . '</body></html>';
     }
 

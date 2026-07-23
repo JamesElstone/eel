@@ -28,8 +28,12 @@ $harness->run(_year_end_companies_house_comparisonCard::class, static function (
         $harness->assertSame(false, str_contains($html, 'Companies House Revised Accounts Filing'));
         $harness->assertSame(false, str_contains($html, 'Written evidence'));
         $harness->assertSame(false, str_contains($html, 'Companies House response reference'));
+        $harness->assertSame(true, str_contains($html, 'Why do the Companies House figures need revising?'));
+        $harness->assertSame(true, str_contains($html, 'name="intent" value="save_variance_explanation"'));
+        $harness->assertSame(true, str_contains($html, 'name="variance_explanation"'));
         $harness->assertSame(true, strpos($html, 'Companies House Comparison') < strpos($html, 'Is Fixture Limited eligible'));
-        $harness->assertSame(true, strpos($html, 'Is Fixture Limited eligible') < strpos($html, '<h3 class="card-title">Approval</h3>'));
+        $harness->assertSame(true, strpos($html, 'Is Fixture Limited eligible') < strpos($html, 'Why do the Companies House figures need revising?'));
+        $harness->assertSame(true, strpos($html, 'Why do the Companies House figures need revising?') < strpos($html, '<h3 class="card-title">Approval</h3>'));
     });
 
     $harness->check(_year_end_companies_house_comparisonCard::class, 'blocks the approval UI until an unlocked period has a saved eligibility decision', static function () use ($harness, $card): void {
@@ -44,8 +48,10 @@ $harness->run(_year_end_companies_house_comparisonCard::class, static function (
         $context = companiesHouseComparisonCardContext(['decision' => 'pending', 'original_document_id' => 56], true);
         $html = $card->render($context);
 
-        $harness->assertSame(true, str_contains($html, 'This legacy accounting period is locked, so its existing Year End position is not changed.'));
+        $harness->assertSame(true, str_contains($html, 'The Accounting Period has been locked. No changes can be made until the period is unlocked.'));
+        $harness->assertSame(false, str_contains($html, 'This accounting period is locked, so the saved Companies House variance explanation is frozen.'));
         $harness->assertSame(true, str_contains($html, '<fieldset disabled>'));
+        $harness->assertSame(true, str_contains($html, 'name="variance_explanation" rows="4" required disabled aria-disabled="true"'));
         $harness->assertSame(false, str_contains($html, 'Record whether the company is eligible for XML based web filing before completing this Year End Confirmation.'));
     });
 
@@ -68,17 +74,28 @@ $harness->run(_year_end_companies_house_comparisonCard::class, static function (
         $harness->assertSame(true, str_contains($html, '<td>-</td><td>-</td>'));
         $harness->assertSame(true, str_contains($html, 'Not Filed'));
         $harness->assertSame(true, str_contains($html, 'name="check_code" value="companies_house_no_filing_acknowledgement"'));
+        $harness->assertSame(false, str_contains($html, 'Why do the Companies House figures need revising?'));
     });
 });
 
 function companiesHouseComparisonCardContext(array $eligibility = ['decision' => 'eligible', 'original_document_id' => 56], bool $locked = false): array
 {
+    $eligibilityRecorded = in_array((string)($eligibility['decision'] ?? 'pending'), ['eligible', 'ineligible'], true);
+    $varianceExplanationRecorded = trim((string)($eligibility['variance_explanation'] ?? '')) !== '';
+    $blockedReason = '';
+    if (!$locked && !$eligibilityRecorded) {
+        $blockedReason = 'Record whether the company is eligible for XML based web filing before completing this Year End Confirmation.';
+    } elseif (!$locked && !$varianceExplanationRecorded) {
+        $blockedReason = 'Enter why the Companies House figures need revising before completing this Year End Confirmation.';
+    }
+
     return [
         'company' => ['id' => 12, 'company_name' => 'Fixture Limited', 'accounting_period_id' => 34, 'settings' => []],
         'services' => [
             'companiesHouseComparisonReview' => [
                 'comparison' => [
                     'available' => true,
+                    'has_exact_filing' => true,
                     'comparison_note' => 'Comparison available.',
                     'filing' => ['filing_date' => '2026-02-14'],
                     'rows' => [['label' => 'Fixed assets', 'app_value' => 420.00, 'filed_value' => 250.00, 'variance' => 170.00, 'status' => 'fail']],
@@ -90,9 +107,8 @@ function companiesHouseComparisonCardContext(array $eligibility = ['decision' =>
                 'requires_acknowledgement' => true,
                 'acknowledgement_check_code' => 'companies_house_mismatch_acknowledgement',
                 'acknowledgement_subject' => 'Companies House comparison',
-                'can_acknowledge' => !$locked && in_array((string)($eligibility['decision'] ?? 'pending'), ['eligible', 'ineligible'], true),
-                'acknowledgement_blocked_reason' => !$locked && !in_array((string)($eligibility['decision'] ?? 'pending'), ['eligible', 'ineligible'], true)
-                    ? 'Record whether the company is eligible for XML based web filing before completing this Year End Confirmation.' : '',
+                'can_acknowledge' => !$locked && $eligibilityRecorded && $varianceExplanationRecorded,
+                'acknowledgement_blocked_reason' => $blockedReason,
             ],
         ],
     ];

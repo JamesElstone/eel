@@ -294,6 +294,7 @@ CREATE TABLE `companies_house_accounts_eligibility` (
   `evidence_text` longtext NOT NULL,
   `evidence_reference` varchar(255) DEFAULT NULL,
   `evidence_received_at` datetime DEFAULT NULL,
+  `variance_explanation` longtext DEFAULT NULL,
   `decided_by` varchar(100) DEFAULT NULL,
   `decided_at` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
@@ -1792,6 +1793,7 @@ CREATE TABLE `ixbrl_accounts_disclosures` (
   `audit_exempt_section_477` tinyint(1) DEFAULT NULL,
   `directors_acknowledge_responsibilities` tinyint(1) DEFAULT NULL,
   `members_have_not_required_audit` tinyint(1) DEFAULT NULL,
+  `companies_house_revised_accounts_public_register_confirmed` tinyint(1) DEFAULT NULL,
   `revision` int(10) unsigned NOT NULL DEFAULT 1,
   `created_by` varchar(100) NOT NULL,
   `updated_by` varchar(100) NOT NULL,
@@ -1812,6 +1814,7 @@ CREATE TABLE `ixbrl_accounts_disclosures` (
   CONSTRAINT `chk_ixbrl_disclosures_audit_exempt` CHECK (`audit_exempt_section_477` is null or `audit_exempt_section_477` in (0,1)),
   CONSTRAINT `chk_ixbrl_disclosures_directors_responsibilities` CHECK (`directors_acknowledge_responsibilities` is null or `directors_acknowledge_responsibilities` in (0,1)),
   CONSTRAINT `chk_ixbrl_disclosures_members_audit` CHECK (`members_have_not_required_audit` is null or `members_have_not_required_audit` in (0,1)),
+  CONSTRAINT `chk_ixbrl_disclosures_ch_public_register` CHECK (`companies_house_revised_accounts_public_register_confirmed` is null or `companies_house_revised_accounts_public_register_confirmed` in (0,1)),
   CONSTRAINT `fk_ixbrl_disclosures_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_ixbrl_disclosures_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -3912,6 +3915,8 @@ INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_23_004_companies_house_protocol_conversation.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_23_005_api_keys_editor_permission.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_23_006_companies_house_revised_disclosures.sql');
 INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
 SELECT DISTINCT `role_id`, 'api_keys_editor'
 FROM `role_card_permissions`

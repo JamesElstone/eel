@@ -17,6 +17,8 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         'year.end.companies.house.comparison',
         'year.end.checklist',
         'ixbrl.readiness',
+        'ixbrl.generation',
+        'ixbrl.disclosures',
         'page.context',
     ];
 
@@ -43,6 +45,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         $intent = trim((string)$request->input('intent', ''));
         $allowedIntents = [
             'record_gateway_eligibility',
+            'save_variance_explanation',
             'prepare_revised_accounts',
             'submit_revised_accounts',
             'refresh_revised_accounts_status',
@@ -70,11 +73,13 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             return $this->error($contextError);
         }
 
-        if ($intent !== 'record_gateway_eligibility' && !$this->isLocked($companyId, $accountingPeriodId)) {
+        if (!in_array($intent, ['record_gateway_eligibility', 'save_variance_explanation'], true)
+            && !$this->isLocked($companyId, $accountingPeriodId)) {
             return $this->error('Complete and lock Year End before using Companies House revised-accounts filing.');
         }
-        if ($intent === 'record_gateway_eligibility' && $this->isLocked($companyId, $accountingPeriodId)) {
-            return $this->error('Eligibility cannot be changed after Year End is locked.');
+        if (in_array($intent, ['record_gateway_eligibility', 'save_variance_explanation'], true)
+            && $this->isLocked($companyId, $accountingPeriodId)) {
+            return $this->error('Companies House review answers cannot be changed after Year End is locked.');
         }
         $developerIntent = in_array($intent, [
             'preflight_revised_accounts',
@@ -95,6 +100,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         try {
             $result = match ($intent) {
                 'record_gateway_eligibility' => $this->recordEligibility($request, $companyId, $accountingPeriodId),
+                'save_variance_explanation' => $this->saveVarianceExplanation($request, $companyId, $accountingPeriodId),
                 'prepare_revised_accounts' => $this->prepareRevision($request, $companyId, $accountingPeriodId),
                 'submit_revised_accounts' => $this->submitRevision($request, $companyId, $accountingPeriodId, $services->actionProgress()),
                 'refresh_revised_accounts_status' => $this->refreshStatus($request, $companyId, $accountingPeriodId),
@@ -170,43 +176,24 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         int $companyId,
         int $accountingPeriodId
     ): array {
-        $originalDocumentId = (int)$request->input('original_document_id', 0);
-        $nonCompliance = trim((string)$request->input('non_compliance_explanation', ''));
-        $significantAmendments = trim((string)$request->input('significant_amendments', ''));
-        $approvalDate = trim((string)$request->input('revision_approval_date', ''));
-        $softwareFilingConfirmed = (string)$request->input('original_software_filing_confirmed', '') === '1';
-
-        $errors = [];
-        if ($originalDocumentId <= 0) {
-            $errors[] = 'The exact original Companies House filing is required.';
-        }
-        if ($nonCompliance === '') {
-            $errors[] = 'Explain how the original accounts did not comply with the Companies Act 2006.';
-        }
-        if ($significantAmendments === '') {
-            $errors[] = 'Describe the significant amendments made in the revised accounts.';
-        }
-        if (!$this->isIsoDate($approvalDate)) {
-            $errors[] = 'Enter a valid revision approval date.';
-        }
-        if (!$softwareFilingConfirmed) {
-            $errors[] = 'Confirm that the Companies House eligibility evidence applies to this original filing.';
-        }
-        if ($errors !== []) {
-            return ['success' => false, 'errors' => $errors];
-        }
-
         return $this->service()->prepareRevision(
             $companyId,
             $accountingPeriodId,
-            [
-                'original_document_id' => $originalDocumentId,
-                'non_compliance_explanation' => $nonCompliance,
-                'original_non_compliance_explanation' => $nonCompliance,
-                'significant_amendments' => $significantAmendments,
-                'revision_approval_date' => $approvalDate,
-                'original_software_filing_confirmed' => true,
-            ],
+            [],
+            $this->actor($request)
+        );
+    }
+
+    private function saveVarianceExplanation(
+        RequestFramework $request,
+        int $companyId,
+        int $accountingPeriodId
+    ): array {
+        return $this->service()->saveVarianceExplanation(
+            $companyId,
+            $accountingPeriodId,
+            (int)$request->input('original_document_id', 0),
+            trim((string)$request->input('variance_explanation', '')),
             $this->actor($request)
         );
     }
@@ -404,6 +391,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
     {
         return match ($intent) {
             'record_gateway_eligibility' => 'Companies House filing eligibility recorded.',
+            'save_variance_explanation' => 'Companies House variance explanation saved.',
             'prepare_revised_accounts' => 'Revised accounts prepared for review.',
             'submit_revised_accounts' => 'Revised accounts sent to Companies House.',
             'refresh_revised_accounts_status' => 'Companies House submission status refreshed.',

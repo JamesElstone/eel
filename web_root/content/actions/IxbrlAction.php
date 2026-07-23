@@ -188,6 +188,7 @@ final class IxbrlAction implements ActionInterfaceFramework
                 'audit_exempt_section_477' => $request->input('audit_exempt_section_477', null),
                 'directors_acknowledge_responsibilities' => $request->input('directors_acknowledge_responsibilities', null),
                 'members_have_not_required_audit' => $request->input('members_have_not_required_audit', null),
+                'companies_house_revised_accounts_public_register_confirmed' => $request->input('companies_house_revised_accounts_public_register_confirmed', null),
             ],
             $this->actor($request)
         );

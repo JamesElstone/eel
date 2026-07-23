@@ -255,6 +255,8 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, '>Approving Director</label>'));
         $harness->assertTrue(str_contains($html, 'actions-row actions-row-nowrap ixbrl-core-details-actions'));
         $harness->assertTrue(str_contains($html, 'FRS 105 Notes'));
+        $harness->assertTrue(str_contains($html, 'Companies House Revised Accounts'));
+        $harness->assertTrue(str_contains($html, 'No Companies House revised-accounts disclosure is required'));
         $harness->assertTrue(str_contains($html, 'Sending of Accounts and Returns using this software will be blocked'));
         $harness->assertTrue(str_contains($html, 'Is the business still a going-concern and continue to operate for the foreseeable future?'));
         $harness->assertTrue(str_contains($html, 'Director and Participant Advances are calculated automatically from transactions.'));
@@ -340,6 +342,43 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, 'Complete and lock Year End before confirming the accounts disclosures.'));
         $harness->assertTrue(str_contains($html, 'name="is_still_trading" value="1" required disabled aria-disabled="true"'));
         $harness->assertTrue(str_contains($html, 'type="submit" disabled aria-disabled="true"'));
+    });
+
+    $harness->check(_ixbrl_accounts_disclosuresCard::class, 'renders Companies House revised accounts disclosure immediately after FRS 105 notes', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'services' => [
+                'ixbrl_accounts_disclosures' => [
+                    'available' => true,
+                    'complete' => false,
+                    'stored' => true,
+                    'year_end_locked' => true,
+                    'missing_labels' => ['Companies House revised accounts public-register confirmation'],
+                    'updated_by_display_name' => 'James Elstone',
+                    'companies_house_revision_required' => true,
+                    'disclosures' => [
+                        'accounting_standard' => 'FRS_105',
+                        'companies_house_revised_accounts_public_register_confirmed' => null,
+                    ],
+                    'suggested_disclosures' => [],
+                    'suggestion_sources' => [],
+                    'director_suggestions' => [],
+                    'accounting_period' => ['period_end' => '2025-12-31'],
+                    'trading_status_evidence' => ['has_previous_trading_evidence' => true, 'sources' => []],
+                    'trading_status_answers' => ['is_still_trading' => 1, 'has_ever_traded' => 1],
+                    'dormancy' => ['calculated' => false],
+                ],
+                'ixbrl_filing_approval' => ['state' => 'absent', 'current' => false],
+            ],
+        ]);
+
+        $frs105Position = strpos($html, 'FRS 105 Notes');
+        $companiesHousePosition = strpos($html, 'Companies House Revised Accounts');
+        $approvalPosition = strpos($html, 'Disclosure Approval');
+        $harness->assertTrue($frs105Position !== false && $companiesHousePosition !== false && $frs105Position < $companiesHousePosition);
+        $harness->assertTrue($approvalPosition !== false && $companiesHousePosition < $approvalPosition);
+        $harness->assertTrue(str_contains($html, 'name="disclosure_field" value="companies_house_revised_accounts_public_register_confirmed"'));
+        $harness->assertTrue(str_contains($html, 'become public on the register and the original accounts remain visible'));
     });
 
     $harness->check(_ixbrl_accounts_disclosuresCard::class, 'binds adaptive trading questions for initial and AJAX rendering', static function () use ($harness): void {
@@ -435,6 +474,8 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $readyHtml = $card->render($context);
             $harness->assertTrue(str_contains($readyHtml, 'Filing Ready'));
             $harness->assertTrue(str_contains($readyHtml, 'Download Filing-ready File'));
+            $harness->assertTrue(str_contains($readyHtml, 'Prepare Companies House Revised Accounting iXBRL'));
+            $harness->assertTrue(str_contains($readyHtml, 'name="card_action" value="CompaniesHouseAccounts"'));
         } finally {
             @unlink($path);
         }

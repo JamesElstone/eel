@@ -404,7 +404,7 @@ final class IxbrlAccountingService
             . ($evidenceArtifactId !== '' ? '<meta name="eel-evidence-artifact-id" content="' . $this->e($evidenceArtifactId) . '"/>' : '')
             . '<title>FRS 105 micro-entity accounts</title></head>' . "\n"
             . '<body>' . "\n"
-            . '<div style="display:none"><ix:header>' . "\n"
+            . '<div hidden="hidden"><ix:header>' . "\n"
             . ($hidden !== '' ? '<ix:hidden>' . "\n" . $hidden . '</ix:hidden>' . "\n" : '')
             . '<ix:references><link:schemaRef xlink:type="simple" xlink:href="' . $this->e(IxbrlTaxonomyProfileService::SCHEMA_REF) . '"/></ix:references>' . "\n"
             . '<ix:resources>' . "\n"

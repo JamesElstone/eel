@@ -99,6 +99,26 @@ $harness->run(\eel_accounts\Service\IxbrlAccountsDisclosureService::class, stati
             $notGoingConcernErrors = implode(' ', $profileErrors->invoke($service, $notGoingConcernValues));
             $harness->assertTrue(str_contains($notGoingConcernErrors, 'going-concern basis'));
             $harness->assertTrue(str_contains($notGoingConcernErrors, 'No answer has been saved'));
+
+            $revisionRequired = $noAnswers;
+            unset($revisionRequired['companies_house_revised_accounts_public_register_confirmed']);
+            [, $revisionMissingErrors] = $validate->invoke($service, $revisionRequired, $period, false, true);
+            $harness->assertTrue(str_contains(
+                implode(' ', $revisionMissingErrors),
+                'Companies House revised accounts public-register confirmation'
+            ));
+
+            $revisionRequired['companies_house_revised_accounts_public_register_confirmed'] = 0;
+            [$revisionRejectedValues, $revisionValidationErrors] = $validate->invoke($service, $revisionRequired, $period, false, true);
+            $harness->assertSame([], $revisionValidationErrors);
+            $harness->assertSame(
+                ['companies_house_revised_accounts_public_register_confirmed'],
+                $unsupported->invoke($service, $revisionRejectedValues, true)
+            );
+            $harness->assertTrue(str_contains(
+                implode(' ', $profileErrors->invoke($service, $revisionRejectedValues, true)),
+                'original accounts remain visible'
+            ));
         }
     );
 

@@ -33,11 +33,38 @@ $harness->run(
                     $harness->assertSame(null, $initial['acknowledgement']);
                     $harness->assertSame(false, !empty($initial['access']['is_locked']));
                     $harness->assertSame(1, (int)$initial['mismatch_count']);
+                    $harness->assertSame(false, !empty($initial['can_acknowledge']));
+                    $harness->assertSame(
+                        'Record whether the company is eligible for XML based web filing before completing this Year End Confirmation.',
+                        (string)($initial['acknowledgement_blocked_reason'] ?? '')
+                    );
+
+                    companiesHouseComparisonReviewSeedEligibility($fixture, '');
+                    $needsExplanation = $service->fetchContext($fixture['company_id'], $fixture['accounting_period_id']);
+                    $harness->assertSame(false, !empty($needsExplanation['can_acknowledge']));
+                    $harness->assertSame(
+                        'Enter why the Companies House figures need revising before completing this Year End Confirmation.',
+                        (string)($needsExplanation['acknowledgement_blocked_reason'] ?? '')
+                    );
+
+                    InterfaceDB::execute(
+                        'UPDATE companies_house_accounts_eligibility
+                         SET variance_explanation = :variance_explanation
+                         WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+                        [
+                            'variance_explanation' => 'The filed accounts used the earlier P&L basis.',
+                            'company_id' => $fixture['company_id'],
+                            'accounting_period_id' => $fixture['accounting_period_id'],
+                        ]
+                    );
+                    $ready = $service->fetchContext($fixture['company_id'], $fixture['accounting_period_id']);
+                    $harness->assertSame(true, !empty($ready['can_acknowledge']));
+                    $harness->assertSame('', (string)($ready['acknowledgement_blocked_reason'] ?? ''));
 
                     $acknowledgements = new \eel_accounts\Service\YearEndAcknowledgementService();
                     $basis = $acknowledgements->buildBasis(
                         'companies_house_mismatch_acknowledgement',
-                        (array)$initial['comparison']
+                        (array)$ready['comparison']
                     );
                     $saved = $acknowledgements->save(
                         $fixture['company_id'],
@@ -121,6 +148,7 @@ function companiesHouseComparisonReviewRequireTables(GeneratedServiceClassTestHa
         'companies_house_taxonomy_concepts',
         'year_end_review_acknowledgements',
         'year_end_reviews',
+        'companies_house_accounts_eligibility',
     ] as $table) {
         if (!InterfaceDB::tableExists($table)) {
             $harness->skip($table . ' table is not available.');
@@ -144,6 +172,36 @@ function companiesHouseComparisonReviewFixture(): array
         'metric_fact_id' => $seed + 7,
         'company_number' => 'CR' . substr((string)$seed, -6),
     ];
+}
+
+/** @param array<string, int|string> $fixture */
+function companiesHouseComparisonReviewSeedEligibility(array $fixture, string $varianceExplanation): void
+{
+    InterfaceDB::execute(
+        'INSERT INTO companies_house_accounts_eligibility (
+            company_id, accounting_period_id, original_document_id,
+            original_transaction_id, original_document_external_id,
+            original_filing_channel, decision, evidence_text,
+            variance_explanation, decided_by, decided_at, created_at, updated_at
+         ) VALUES (
+            :company_id, :accounting_period_id, :original_document_id,
+            :original_transaction_id, :original_document_external_id,
+            :original_filing_channel, :decision, :evidence_text,
+            :variance_explanation, :decided_by, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+         )',
+        [
+            'company_id' => $fixture['company_id'],
+            'accounting_period_id' => $fixture['accounting_period_id'],
+            'original_document_id' => $fixture['document_id'],
+            'original_transaction_id' => 'txn-' . $fixture['document_id'],
+            'original_document_external_id' => 'document-' . $fixture['document_id'],
+            'original_filing_channel' => 'software',
+            'decision' => 'eligible',
+            'evidence_text' => '',
+            'variance_explanation' => $varianceExplanation,
+            'decided_by' => 'comparison_review_test',
+        ]
+    );
 }
 
 /** @param array<string, int|string> $fixture */

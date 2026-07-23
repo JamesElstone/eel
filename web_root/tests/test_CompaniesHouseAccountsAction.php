@@ -64,28 +64,31 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
         $harness->assertSame('user:test-admin', (string)($service->calls[0]['actor'] ?? ''));
     });
 
-    $harness->check(CompaniesHouseAccountsAction::class, 'validates revision declarations before preparation', static function () use ($harness): void {
+    $harness->check(CompaniesHouseAccountsAction::class, 'saves the unlocked variance explanation separately from preparation', static function () use ($harness): void {
+        $service = new CompaniesHouseAccountsActionFakeService();
+        $action = companiesHouseAccountsTestAction($service, null, [12, 34], false);
+        $result = $action->handle(companiesHouseAccountsActionRequest([
+            'intent' => 'save_variance_explanation',
+            'original_document_id' => '56',
+            'variance_explanation' => 'The filed figures used the earlier P&L and tax treatment basis.',
+        ]), createTestPageServiceFramework());
+
+        $harness->assertSame(true, $result->isSuccess());
+        $harness->assertSame('saveVarianceExplanation', (string)($service->calls[0]['method'] ?? ''));
+        $harness->assertSame(56, (int)($service->calls[0]['original_document_id'] ?? 0));
+        $harness->assertSame('The filed figures used the earlier P&L and tax treatment basis.', (string)($service->calls[0]['variance_explanation'] ?? ''));
+    });
+
+    $harness->check(CompaniesHouseAccountsAction::class, 'prepares revised accounts from saved declarations', static function () use ($harness): void {
         $service = new CompaniesHouseAccountsActionFakeService();
         $action = companiesHouseAccountsTestAction($service);
-        $input = [
+        $prepared = $action->handle(companiesHouseAccountsActionRequest([
             'intent' => 'prepare_revised_accounts',
-            'original_document_id' => '56',
-            'non_compliance_explanation' => 'The original balance sheet contained incorrect current asset figures.',
-            'significant_amendments' => 'Corrected current assets and retained earnings.',
-            'revision_approval_date' => '2026-07-17',
-        ];
+        ]), createTestPageServiceFramework());
 
-        $missingConfirmation = $action->handle(companiesHouseAccountsActionRequest($input), createTestPageServiceFramework());
-        $harness->assertSame(false, $missingConfirmation->isSuccess());
-        $harness->assertSame(true, str_contains(companiesHouseAccountsActionFlash($missingConfirmation), 'eligibility evidence'));
-        $harness->assertCount(0, $service->calls);
-
-        $input['original_software_filing_confirmed'] = '1';
-        $prepared = $action->handle(companiesHouseAccountsActionRequest($input), createTestPageServiceFramework());
         $harness->assertSame(true, $prepared->isSuccess());
         $harness->assertSame('prepareRevision', (string)($service->calls[0]['method'] ?? ''));
-        $harness->assertSame('2026-07-17', (string)($service->calls[0]['input']['revision_approval_date'] ?? ''));
-        $harness->assertSame(true, (bool)($service->calls[0]['input']['original_software_filing_confirmed'] ?? false));
+        $harness->assertSame([], (array)($service->calls[0]['input'] ?? ['not-empty']));
     });
 
     $harness->check(CompaniesHouseAccountsAction::class, 'keeps TEST submission separate from LIVE confirmation', static function () use ($harness): void {
@@ -234,6 +237,22 @@ final class CompaniesHouseAccountsActionFakeService
         $this->calls[] = compact('companyId', 'accountingPeriodId', 'input', 'actor') + ['method' => 'prepareRevision'];
 
         return ['success' => true, 'messages' => ['Revision prepared.']];
+    }
+
+    public function saveVarianceExplanation(
+        int $companyId,
+        int $accountingPeriodId,
+        int $originalDocumentId,
+        string $varianceExplanation,
+        string $actor
+    ): array {
+        $this->calls[] = compact('companyId', 'accountingPeriodId', 'originalDocumentId', 'varianceExplanation', 'actor') + [
+            'method' => 'saveVarianceExplanation',
+            'original_document_id' => $originalDocumentId,
+            'variance_explanation' => $varianceExplanation,
+        ];
+
+        return ['success' => true, 'messages' => ['Variance explanation saved.']];
     }
 
     public function fetchContext(int $companyId, int $accountingPeriodId): array

@@ -63,24 +63,34 @@ final class CompaniesHouseComparisonReviewService
         $eligibilityRecorded = in_array((string)($eligibility['decision'] ?? 'pending'), ['eligible', 'ineligible'], true);
         $isLocked = !empty($access['is_locked']);
 
-        $requiresAcknowledgement = !$hasExactFiling || $this->mismatchCount($comparison) > 0;
+        $mismatchCount = $this->mismatchCount($comparison);
+        $requiresAcknowledgement = !$hasExactFiling || $mismatchCount > 0;
         $requiresEligibility = $hasExactFiling && $requiresAcknowledgement;
+        $requiresVarianceExplanation = $hasExactFiling && $mismatchCount > 0;
+        $varianceExplanationRecorded = trim((string)($eligibility['variance_explanation'] ?? '')) !== '';
+        $acknowledgementBlockedReason = '';
+        if (!$comparisonCanBeAcknowledged) {
+            $acknowledgementBlockedReason = (string)(($comparison['warnings'] ?? [])[0] ?? 'Complete and lock the prior accounting period before approving this comparison.');
+        } elseif (!$isLocked && $requiresEligibility && !$eligibilityRecorded) {
+            $acknowledgementBlockedReason = 'Record whether the company is eligible for XML based web filing before completing this Year End Confirmation.';
+        } elseif (!$isLocked && $requiresVarianceExplanation && !$varianceExplanationRecorded) {
+            $acknowledgementBlockedReason = 'Enter why the Companies House figures need revising before completing this Year End Confirmation.';
+        }
 
         return [
             'comparison' => $comparison,
             'acknowledgement' => is_array($acknowledgement) ? $acknowledgement : null,
             'access' => $access,
             'eligibility' => $eligibility,
-            'mismatch_count' => $this->mismatchCount($comparison),
+            'mismatch_count' => $mismatchCount,
             'acknowledgement_check_code' => $checkCode,
             'acknowledgement_subject' => $hasExactFiling ? 'Companies House comparison' : 'No exact Companies House filing',
             'requires_acknowledgement' => $requiresAcknowledgement,
-            'can_acknowledge' => $comparisonCanBeAcknowledged && !$isLocked && (!$requiresEligibility || $eligibilityRecorded),
-            'acknowledgement_blocked_reason' => !$comparisonCanBeAcknowledged
-                ? (string)(($comparison['warnings'] ?? [])[0] ?? 'Complete and lock the prior accounting period before approving this comparison.')
-                : (!$isLocked && $requiresEligibility && !$eligibilityRecorded
-                    ? 'Record whether the company is eligible for XML based web filing before completing this Year End Confirmation.'
-                    : ''),
+            'can_acknowledge' => $comparisonCanBeAcknowledged
+                && !$isLocked
+                && (!$requiresEligibility || $eligibilityRecorded)
+                && (!$requiresVarianceExplanation || $varianceExplanationRecorded),
+            'acknowledgement_blocked_reason' => $acknowledgementBlockedReason,
         ];
     }
 

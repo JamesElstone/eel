@@ -124,22 +124,39 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     </form>
                 </div>
             </section>
-            ' . $this->companiesHouseArtifact($context) . '
+            ' . $this->companiesHouseArtifact($context, $companyId, $accountingPeriodId) . '
             ' . $this->computationPeriods($context, $companyId, $accountingPeriodId) . '
         </div>';
     }
 
-    private function companiesHouseArtifact(array $context): string
+    private function companiesHouseArtifact(array $context, int $companyId, int $accountingPeriodId): string
     {
         $filing = (array)(($context['services'] ?? [])['companies_house_ixbrl'] ?? []);
         $submission = is_array($filing['submission'] ?? null) ? $filing['submission'] : null;
         $artifact = (array)($filing['prepared_artifact'] ?? []);
         if ($submission === null || $artifact === []) {
+            $canPrepare = !empty($filing['can_prepare']);
+            $blockers = array_values(array_unique(array_filter(array_map(
+                static fn(mixed $message): string => trim((string)$message),
+                (array)($filing['preparation_blockers'] ?? [])
+            ), static fn(string $message): bool => $message !== '')));
+            $blockersHtml = '';
+            foreach ($blockers as $blocker) {
+                $blockersHtml .= '<div class="helper ixbrl-companies-house-prepare-blocker">' . HelperFramework::escape($blocker) . '</div>';
+            }
             return '<section class="panel-soft"><div class="status-head">'
                 . '<h3 class="card-title">Companies House Revised Accounting iXBRL</h3>'
                 . '<span class="badge muted">Not prepared</span></div>'
-                . '<div class="helper">Prepare revised accounts from the locked Year End Companies House comparison workflow. '
-                . 'That process creates the Companies House-specific artifact and does not transmit it.</div></section>';
+                . '<div class="helper">Prepare the Companies House-specific revised accounts artifact after Year End lock and disclosure approval. This does not transmit it.</div>'
+                . $blockersHtml
+                . '<form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">'
+                . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+                . '<input type="hidden" name="card_action" value="CompaniesHouseAccounts">'
+                . '<input type="hidden" name="intent" value="prepare_revised_accounts">'
+                . '<input type="hidden" name="company_id" value="' . $companyId . '">'
+                . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
+                . '<button class="button primary" type="submit"' . ($canPrepare ? '' : ' disabled') . '>Prepare Companies House Revised Accounting iXBRL</button>'
+                . '</form></section>';
         }
 
         $lifecycle = strtolower(trim((string)($submission['lifecycle'] ?? 'prepared')));

@@ -1,3 +1,102 @@
+.qr-code-service-test {
+  margin: 2rem;
+  color: #111827;
+  background: #f9fafb;
+  font-family: Arial, sans-serif;
+}
+
+.qr-code-service-test main {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 0.75rem;
+}
+
+.qr-code-service-test form {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.qr-code-service-test label,
+.qr-code-service-test .error {
+  font-weight: 600;
+}
+
+.qr-code-service-test input[type="text"],
+.qr-code-service-test select,
+.qr-code-service-test input[type="number"] {
+  box-sizing: border-box;
+  padding: 0.75rem;
+  border: 1px solid #9ca3af;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  background: #ffffff;
+}
+
+.qr-code-service-test input[type="text"] {
+  width: 100%;
+}
+
+.qr-code-service-test select,
+.qr-code-service-test input[type="number"],
+.qr-code-service-test button {
+  width: fit-content;
+}
+
+.qr-code-service-test button {
+  padding: 0.75rem 1rem;
+  border: 0;
+  border-radius: 0.5rem;
+  color: #ffffff;
+  background: #111827;
+  cursor: pointer;
+}
+
+.qr-code-service-test .preview {
+  display: grid;
+  gap: 1rem;
+  justify-items: start;
+}
+
+.qr-code-service-test .preview svg,
+.qr-code-service-test .preview img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  image-rendering: pixelated;
+}
+
+.qr-code-service-test .error {
+  color: #b91c1c;
+}
+
+.qr-code-service-test .note,
+.qr-code-service-test code {
+  background: #f3f4f6;
+}
+
+.qr-code-service-test .note {
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  color: #1f2937;
+}
+
+.qr-code-service-test .note ul {
+  margin: 0.5rem 0 0 1.25rem;
+  padding: 0;
+}
+
+.qr-code-service-test code {
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.25rem;
+}
+
 .mini-form {
   display: flex;
   gap: 10px;
@@ -3341,6 +3440,15 @@
 
 .ct-filing-mapping-action-form {
   display: inline;
+}
+
+.companies-house-revised-disclosure-helper {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+
+.companies-house-variance-actions {
+  margin-top: 0.75rem;
 }
 
 @-moz-document url-prefix() {

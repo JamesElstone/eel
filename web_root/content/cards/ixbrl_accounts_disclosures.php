@@ -98,7 +98,8 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
 
         $complete = !empty($result['complete']);
         $yearEndLocked = !empty($result['year_end_locked']);
-        $controlDisabled = !$yearEndLocked;
+        $approvalCurrent = !empty($approvalStatus['current']) || (string)($approvalStatus['state'] ?? '') === 'current';
+        $controlDisabled = !$yearEndLocked || $approvalCurrent;
         $disabledAttribute = $controlDisabled ? ' disabled aria-disabled="true"' : '';
         $coreButtonDisabled = ' disabled' . ($controlDisabled ? ' aria-disabled="true"' : '');
         $missing = (array)($result['missing_labels'] ?? []);
@@ -200,6 +201,11 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         $updatedBy = trim((string)($result['updated_by_display_name'] ?? ''));
         $updatedAtDisplay = $updatedAt !== '' ? $updatedAt : 'Not yet saved';
         $updatedByDisplay = $updatedBy !== '' ? $updatedBy : 'Not yet saved';
+        $disclosureLockNotice = !$yearEndLocked
+            ? '<div class="standout helper">Complete and lock Year End before confirming the accounts disclosures.</div>'
+            : ($approvalCurrent
+                ? '<div class="standout helper">The disclosure basis is approved and current. Re-open the affected workflow or make the approval stale before changing disclosures.</div>'
+                : '');
         return '<div class="settings-stack">
             <form method="post" action="?page=disclosures" data-ajax="true" data-ixbrl-trading-form="true">
             <input type="hidden" name="card_action" value="Ixbrl">
@@ -218,9 +224,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                     ? '<div class="helper">Still required: ' . HelperFramework::escape(implode(', ', $missing)) . '.</div>'
                     : '') . '
                 ' . $profileErrors . '
-            ' . (!$yearEndLocked
-                ? '<div class="standout helper">Complete and lock Year End before confirming the accounts disclosures.</div>'
-                : '') . '
+            ' . $disclosureLockNotice . '
                     <div class="form-grid" data-state-fields="ixbrl_average_number_employees,ixbrl_accounts_approval_date,ixbrl_approving_director_name" data-state-target="save_ixbrl_core_details">
                     <div class="form-row full table-scroll">
                         <table><tbody>
@@ -297,9 +301,39 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                         ' . $this->yesNo('has_director_advances_credits_or_guarantees', 'Were there any director guarantees requiring disclosure?', $display['has_director_advances_credits_or_guarantees'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
                         ' . $this->yesNo('has_financial_commitments_guarantees_or_contingencies', 'Are there any financial commitments, guarantees or contingencies requiring disclosure?', $display['has_financial_commitments_guarantees_or_contingencies'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
                     </section>
+                    ' . $this->companiesHouseRevisedAccountsPanel($result, $display, $controlDisabled, $companyId, $accountingPeriodId) . '
                 </div>
                 ' . $this->approvalPanel($approvalStatus, $companyId, $accountingPeriodId) . '
         </div>';
+    }
+
+    private function companiesHouseRevisedAccountsPanel(
+        array $result,
+        array $display,
+        bool $controlDisabled,
+        int $companyId,
+        int $accountingPeriodId
+    ): string {
+        if (empty($result['companies_house_revision_required'])) {
+            return '<section class="panel-soft">
+                <h4 class="card-title">Companies House Revised Accounts</h4>
+                <div class="helper">No Companies House revised-accounts disclosure is required for this accounting period.</div>
+            </section>';
+        }
+
+        return '<section class="panel-soft">
+            <h4 class="card-title">Companies House Revised Accounts</h4>
+            <div class="helper companies-house-revised-disclosure-helper">This disclosure is required because the Companies House comparison has variances for an exact-period filing.</div>
+            ' . $this->yesNo(
+                'companies_house_revised_accounts_public_register_confirmed',
+                'Can you confirm that if updated accounts are submitted to Companies House, both the original and the revised versions remain available for public inspection?',
+                $display['companies_house_revised_accounts_public_register_confirmed'] ?? null,
+                $controlDisabled,
+                true,
+                $companyId,
+                $accountingPeriodId
+            ) . '
+        </section>';
     }
 
     private function approvalPanel(array $status, int $companyId, int $accountingPeriodId): string

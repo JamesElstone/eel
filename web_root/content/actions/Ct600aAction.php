@@ -31,7 +31,10 @@ final class Ct600aAction implements ActionInterfaceFramework
         $flashes=[];
         foreach($errors as $error){$flashes[]=['type'=>'error','message'=>(string)$error];}
         if($success&&$message!==''){$flashes[]=['type'=>'success','message'=>$message];}
-        return new ActionResultFramework($success,['tax.ct600a','tax.s455','ct.filing','ixbrl.readiness','ixbrl.disclosures','page.context'],$flashes);
+        return new ActionResultFramework($success,[
+            'tax.ct600a', 'tax.s455', 'ct.filing', 'ixbrl.readiness', 'ixbrl.disclosures',
+            'director.loan.state', 'year.end.state', 'year.end.checklist', 'page.context',
+        ],$flashes);
     }
 
     private function actor(RequestFramework $request): string

@@ -123,8 +123,9 @@ $harness->run(_year_end_loan_confirmationCard::class, static function (Generated
         $harness->assertSame(false, str_contains($html, 'Section 464A and 464C declaration'));
         $harness->assertSame(false, str_contains($html, 'This declaration applies to every CT period within this accounting period.'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_ct600a_review"'));
-        $harness->assertTrue(str_contains($html, 'data-submit-on-change="true"'));
-        $harness->assertTrue(str_contains($html, 'The Year End Confirmation below is the single acknowledgement'));
+        $harness->assertSame(false, str_contains($html, 'data-submit-on-change="true"'));
+        $harness->assertTrue(str_contains($html, 'Save Section 464A and 464C declaration'));
+        $harness->assertTrue(str_contains($html, 'Choose every answer, then save the declaration once.'));
         $harness->assertSame(false, str_contains($html, 'Approver name'));
         $harness->assertSame(false, str_contains($html, 'Approver role'));
         $harness->assertSame(false, str_contains($html, 'Evidence or conclusion note'));
@@ -150,7 +151,7 @@ $harness->run(_year_end_loan_confirmationCard::class, static function (Generated
 
         $html = $card->render($context);
 
-        $harness->assertTrue(str_contains($html, 'data-submit-on-change="true" disabled'));
+        $harness->assertTrue(str_contains($html, 'type="radio" name="missing_parties" value="no" disabled'));
         $harness->assertTrue(str_contains($html, 'Selections are locked because the Year End Confirmation has been recorded. No further changes can be made.'));
     });
 
@@ -177,6 +178,29 @@ $harness->run(_year_end_loan_confirmationCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, 'Re-approve declaration using these answers'));
         $harness->assertSame(false, str_contains($html, 'Revoke approval'));
         $harness->assertSame(false, str_contains($html, 'data-submit-on-change="true" disabled'));
+    });
+
+    $harness->check(_year_end_loan_confirmationCard::class, 'identifies incomplete CT600A answers without falsely reporting changed evidence', static function () use ($harness, $card): void {
+        $context = yearEndDirectorLoanReviewCardContext([
+            'available' => true, 'has_activity' => true, 'can_confirm' => false,
+            'asset_receivable' => 100, 'liability_payable' => 0, 'desired_reclassification_amount' => 0,
+            'posted_reclassification_amount' => 0, 'pending_adjustment_amount' => 0, 'potential_s455_exposure' => 100,
+            'warnings' => [], 'per_director' => [], 'tax_review' => ['director_flags' => []], 'proposed_lines' => [],
+            'ct600a_review_evidence_current' => true,
+            'ct600a_review_complete' => false,
+            'ct600a_review_current' => false,
+        ]);
+        $context['services']['directorLoanReview']['ct600a'] = [
+            'available' => true,
+            'questions' => ['missing_parties' => 'Are any participators missing?'],
+            'review' => ['stored' => true, 'answers' => ['missing_parties' => 'yes'], 'current' => true, 'complete' => false],
+        ];
+
+        $html = $card->render($context);
+
+        $harness->assertTrue(str_contains($html, 'Section 464A and 464C declaration needs completion.'));
+        $harness->assertSame(false, str_contains($html, 'Underlying data changed — re-approve required.'));
+        $harness->assertTrue(str_contains($html, 'Save Section 464A and 464C declaration'));
     });
 
     $harness->check(_year_end_loan_confirmationCard::class, 'blocks confirmation and offers repair for an unresolved legacy offset', static function () use ($harness, $card): void {

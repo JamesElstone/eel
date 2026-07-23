@@ -101,7 +101,9 @@ final class DirectorLoanReconciliationService
             ->fetchTaxReviewSummary($companyId, $accountingPeriodId);
         $ct600a = (new Ct600aService())->fetchReviewForAccountingPeriod($companyId, $accountingPeriodId);
         $ct600aReview = (array)($ct600a['review'] ?? []);
-        $ct600aReviewCurrent = !empty($ct600aReview['current']) && !empty($ct600aReview['complete']);
+        $ct600aReviewEvidenceCurrent = !empty($ct600aReview['current']);
+        $ct600aReviewComplete = !empty($ct600aReview['complete']);
+        $ct600aReviewCurrent = $ct600aReviewEvidenceCurrent && $ct600aReviewComplete;
         $ackService = $this->acknowledgementService ?? new YearEndAcknowledgementService();
         $basis = $this->confirmationBasis($ackService, $statement, $taxReview, $ct600aReview);
         $acknowledgement = $ackService->fetch(
@@ -173,6 +175,8 @@ final class DirectorLoanReconciliationService
             'tax_review' => $taxReview,
             'ct600a' => $ct600a,
             'ct600a_review' => $ct600aReview,
+            'ct600a_review_evidence_current' => $ct600aReviewEvidenceCurrent,
+            'ct600a_review_complete' => $ct600aReviewComplete,
             'ct600a_review_current' => $ct600aReviewCurrent,
             'accounting_period' => (array)$statement['accounting_period'],
             'asset_nominal' => (array)$statement['asset_nominal'],
@@ -249,8 +253,10 @@ final class DirectorLoanReconciliationService
             return ['success' => false, 'errors' => ['There is no Director Loan activity or balance requiring confirmation.']];
         }
         if (empty($context['can_confirm'])) {
-            if (empty($context['ct600a_review_current'])) {
+            if (empty($context['ct600a_review_evidence_current'])) {
                 $errors = ['Review the Section 464A and 464C declaration again before re-approving the Director Loan Year End Confirmation.'];
+            } elseif (empty($context['ct600a_review_complete'])) {
+                $errors = ['Complete the Section 464A and 464C declaration with No answers, or resolve every Yes answer through the relevant records before confirming the Director Loan Year End Review.'];
             } else {
                 $errors = abs((float)($context['legacy_unresolved_reclassification_amount'] ?? 0)) >= 0.005
                     ? ['Repair the legacy Director Loan offset journal before confirming the facts.']

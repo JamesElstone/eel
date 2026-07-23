@@ -62,7 +62,14 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
         $hasActivity = !empty($review['has_activity']);
         $acknowledgement = (array)($review['acknowledgement'] ?? []);
         $acknowledgementCurrent = !empty($review['acknowledgement_current']);
-        $ct600aReviewCurrent = !empty($review['ct600a_review_current']);
+        $ct600aReviewFallback = !empty($review['ct600a_review_current']);
+        $ct600aReviewEvidenceCurrent = array_key_exists('ct600a_review_evidence_current', $review)
+            ? !empty($review['ct600a_review_evidence_current'])
+            : $ct600aReviewFallback;
+        $ct600aReviewComplete = array_key_exists('ct600a_review_complete', $review)
+            ? !empty($review['ct600a_review_complete'])
+            : $ct600aReviewFallback;
+        $ct600aReviewCurrent = $ct600aReviewEvidenceCurrent && $ct600aReviewComplete;
         $legacyRepairRequired = abs((float)($review['legacy_unresolved_reclassification_amount'] ?? 0)) >= 0.005;
 
         $warnings = '';
@@ -116,9 +123,13 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
                 'noteMode' => \eel_accounts\Renderer\YearEndApprovalRenderer::NOTE_HIDDEN,
             ]);
         } else {
-            $confirmation = empty($review['ct600a_review_current'])
-                ? '<div class="panel-soft warn helper"><strong>Underlying data changed — re-approve required.</strong> Review the refreshed Section 464A and 464C declaration above. The Director Loan Year End Confirmation can then be approved again.</div>'
-                : '<div class="panel-soft warn helper">Attribute every Director Loan entry on the Summary tab before confirming these facts.</div>';
+            if (!$ct600aReviewEvidenceCurrent) {
+                $confirmation = '<div class="panel-soft warn helper"><strong>Underlying data changed — re-approve required.</strong> Review the refreshed Section 464A and 464C declaration above. The Director Loan Year End Confirmation can then be approved again.</div>';
+            } elseif (!$ct600aReviewComplete) {
+                $confirmation = '<div class="panel-soft warn helper"><strong>Section 464A and 464C declaration needs completion.</strong> Answer every question No, or resolve each Yes answer through the relevant records before approving the Director Loan Year End Confirmation.</div>';
+            } else {
+                $confirmation = '<div class="panel-soft warn helper">Attribute every Director Loan entry on the Summary tab before confirming these facts.</div>';
+            }
         }
 
         return '<section class="settings-stack">
@@ -173,8 +184,11 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
                 . $this->ct600aRadio((string)$key, 'no', 'No', $value, $locked)
                 . $this->ct600aRadio((string)$key, 'yes', 'Yes', $value, $locked) . '</div></fieldset>';
         }
-        $reapproveAction = !$locked && !empty($review['stored']) && empty($review['current'])
-            ? '<div class="actions-row"><button class="button primary" type="submit">Re-approve declaration using these answers</button></div>'
+        $saveLabel = !empty($review['stored']) && empty($review['current'])
+            ? 'Re-approve declaration using these answers'
+            : 'Save Section 464A and 464C declaration';
+        $saveAction = !$locked
+            ? '<div class="actions-row"><button class="button primary" type="submit">' . HelperFramework::escape($saveLabel) . '</button></div>'
             : '';
 
         return '<section class="settings-stack"><form class="settings-stack" method="post" action="?page=loans" data-ajax="true">'
@@ -182,11 +196,11 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
             . '<input type="hidden" name="card_action" value="Ct600a"><input type="hidden" name="intent" value="save_ct600a_review">'
             . '<input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
             . $fields
-            . $reapproveAction
+            . $saveAction
             . '<div class="helper">'
             . ($locked
                 ? 'Selections are locked because the Year End Confirmation has been recorded. No further changes can be made.'
-                : 'Selections save automatically. The Year End Confirmation below is the single acknowledgement for this loan and CT600A position.')
+                : 'Choose every answer, then save the declaration once. The Year End Confirmation below is the single acknowledgement for this loan and CT600A position.')
             . '</div></form></section>';
     }
 
@@ -194,7 +208,7 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
     {
         $id = 'ct600a_' . $name . '_' . $value;
         return '<label for="' . $id . '"><input id="' . $id . '" type="radio" name="' . HelperFramework::escape($name)
-            . '" value="' . $value . '" data-submit-on-change="true"' . ($locked ? ' disabled' : '')
+            . '" value="' . $value . '"' . ($locked ? ' disabled' : '')
             . ($selected === $value ? ' checked' : '') . ' required> ' . $label . '</label>';
     }
 

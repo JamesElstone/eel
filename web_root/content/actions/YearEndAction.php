@@ -252,7 +252,7 @@ final class YearEndAction implements ActionInterfaceFramework
     private function changedFacts(string $intent, string $checkCode = ''): array
     {
         if ($intent === 'save_notes') {
-            return ['year.end.notes', 'year.end.audit.log'];
+            return ['year.end.notes', 'year.end.state', 'year.end.checklist', 'year.end.audit.log'];
         }
 
         if ($intent === 'save_expense_position_acknowledgement') {

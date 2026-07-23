@@ -466,7 +466,7 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
 
             $harness->assertSame(false, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'exactly 1 active director'));
             $harness->assertSame(true, $result->isSuccess());
-            $harness->assertSame(['year.end.notes', 'year.end.audit.log'], $result->changedFacts());
+            $harness->assertSame(['year.end.notes', 'year.end.state', 'year.end.checklist', 'year.end.audit.log'], $result->changedFacts());
             $harness->assertSame(
                 'Notes from director eligibility test.',
                 (string)InterfaceDB::fetchColumn(

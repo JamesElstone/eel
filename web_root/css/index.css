@@ -2448,6 +2448,12 @@ table.table-condensed .select {
   min-width: 140px;
 }
 
+.api-credential-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
 .form-flex-flow .form-row {
   flex: 1 1 260px;
   min-width: 0;

@@ -30,8 +30,9 @@ final class CompaniesHouseOutbound
         $requestHeaders = is_array($request['headers'] ?? null) ? $request['headers'] : [];
         $credential = self::credential($environment, (string)($request['keys_path'] ?? ''));
         $apiKey = (string)($credential['api_key'] ?? '');
+        $requiresAuthentication = strtolower(trim((string)($request['auth'] ?? 'basic_api_key'))) !== 'none';
 
-        if ($apiKey === '') {
+        if ($requiresAuthentication && $apiKey === '') {
             throw new \RuntimeException('Companies House API key is not configured.');
         }
 
@@ -39,7 +40,9 @@ final class CompaniesHouseOutbound
         // an empty password. eelKit's generic basic_api_key mode maps the new
         // API_IDENTITY/API_KEY fields as username/password, so construct the
         // provider-specific header here instead.
-        $requestHeaders['Authorization'] = 'Basic ' . base64_encode($apiKey . ':');
+        if ($requiresAuthentication) {
+            $requestHeaders['Authorization'] = 'Basic ' . base64_encode($apiKey . ':');
+        }
         $request['headers'] = array_replace($defaultHeaders, $requestHeaders);
 
         return \ApiHelperOutbound::request(array_replace([

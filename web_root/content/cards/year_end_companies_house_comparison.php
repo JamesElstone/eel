@@ -9,8 +9,6 @@ declare(strict_types=1);
 
 final class _year_end_companies_house_comparisonCard extends CardBaseFramework
 {
-    private const CHECK_CODE = 'companies_house_mismatch_acknowledgement';
-
     public function key(): string
     {
         return 'year_end_companies_house_comparison';
@@ -98,22 +96,17 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
 
     private function renderComparisonPanel(array $comparison, array $companySettings): string
     {
-        if (($comparison['comparison_scope'] ?? '') === 'no_exact_match') {
-            $filing = (array)($comparison['filing'] ?? []);
+        if (empty($comparison['available'])) {
+            return $this->panel('Companies House Comparison', $this->renderErrors((array)($comparison['errors'] ?? ['No Companies House comparison is available.'])));
+        }
+
+        if (empty($comparison['has_exact_filing'])) {
+            $filing = (array)($comparison['nearest_filing'] ?? []);
             $reference = trim((string)($filing['period_end'] ?? ''));
             $referenceText = $reference === ''
                 ? ''
                 : ' The nearest stored filing covers the period ending ' . $reference . ' and is shown for reference only.';
-
-            return $this->panel(
-                'Companies House Comparison',
-                '<div class="helper">' . HelperFramework::escape((string)($comparison['comparison_note'] ?? 'No Companies House comparison is available.')) . '</div>'
-                    . '<div class="helper">' . HelperFramework::escape($referenceText) . '</div>'
-            );
-        }
-
-        if (empty($comparison['available'])) {
-            return $this->panel('Companies House Comparison', $this->renderErrors((array)($comparison['errors'] ?? ['No Companies House comparison is available.'])));
+            $comparison['comparison_note'] = trim((string)($comparison['comparison_note'] ?? '') . $referenceText);
         }
 
         $warningsHtml = '';
@@ -141,7 +134,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             <div class="status-head"><h3 class="card-title">Companies House Comparison</h3></div>
             <div class="helper">' . HelperFramework::escape((string)($comparison['comparison_note'] ?? '')) . '</div>
             ' . $warningsHtml . '
-            <div class="helper">Stored filing date: ' . HelperFramework::escape((string)($comparison['filing']['filing_date'] ?? '')) . '</div>
+            <div class="helper">Stored filing date: ' . HelperFramework::escape((string)($comparison['filing']['filing_date'] ?? '-')) . '</div>
             <div class="table-scroll">
                 <table>
                     <thead><tr><th>Metric</th><th>App</th><th>Filed</th><th>Variance</th><th>Status</th></tr></thead>
@@ -160,18 +153,14 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         int $mismatchCount,
         array $review
     ): string {
-        if (empty($comparison['available'])) {
-            return $this->panel('Approval', '<div class="helper">A Companies House filing must be available before a mismatch can be approved.</div>');
-        }
-
-        if ($mismatchCount <= 0) {
+        if (empty($review['requires_acknowledgement'])) {
             return $this->panel('Approval', '<div class="helper">No Companies House mismatch approval is needed for this accounting period.</div>');
         }
 
         $isAcknowledged = !empty($acknowledgement['current']);
         $disabledReason = (string)($review['acknowledgement_blocked_reason'] ?? '');
         $form = \eel_accounts\Renderer\YearEndApprovalRenderer::render([
-            'subject' => 'Companies House comparison',
+            'subject' => (string)($review['acknowledgement_subject'] ?? 'Companies House comparison'),
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
             'locked' => !empty($access['is_locked']),
@@ -184,9 +173,9 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             'note' => (string)($acknowledgement['note'] ?? ''),
             'intent' => 'acknowledge_review_check',
             'revokeIntent' => 'reopen_review_check',
-            'checkboxName' => 'companies_house_mismatch_acknowledgement',
-            'approveFields' => ['check_code' => self::CHECK_CODE],
-            'revokeFields' => ['check_code' => self::CHECK_CODE],
+            'checkboxName' => (string)($review['acknowledgement_check_code'] ?? ''),
+            'approveFields' => ['check_code' => (string)($review['acknowledgement_check_code'] ?? '')],
+            'revokeFields' => ['check_code' => (string)($review['acknowledgement_check_code'] ?? '')],
             'noteName' => 'review_acknowledgement_note',
             'noteId' => 'companies-house-mismatch-note',
         ]);
@@ -483,7 +472,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         return match ($status) {
             'pass', 'success', 'matches' => 'success',
             'fail', 'danger', 'differs' => 'danger',
-            'warning' => 'warning',
+            'warning', 'not_filed' => 'warning',
             default => 'info',
         };
     }

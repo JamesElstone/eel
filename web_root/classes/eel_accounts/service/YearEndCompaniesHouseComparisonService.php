@@ -45,29 +45,6 @@ final class YearEndCompaniesHouseComparisonService
             ];
         }
 
-        $stored = $this->storedDataService ?? new \eel_accounts\Service\CompaniesHouseStoredDataService();
-        $summaries = $stored->fetchDocumentSummariesByCompanyNumber($companyNumber);
-        $nearest = $this->findNearestSummary($summaries, (string)$accountingPeriod['period_end']);
-        if ($nearest === null) {
-            return [
-                'available' => false,
-                'errors' => ['No stored Companies House accounts filings were found for this company.'],
-            ];
-        }
-
-        $exact = $this->findExactSummary($summaries, (string)$accountingPeriod['period_end']);
-        if ($exact === null) {
-            return [
-                'available' => false,
-                'comparison_scope' => 'no_exact_match',
-                'comparison_note' => 'No Companies House accounts filing matches the selected accounting period. No variances have been calculated.',
-                'errors' => ['No Companies House accounts filing matches the selected accounting period.'],
-                'filing' => $nearest,
-                'can_acknowledge' => false,
-            ];
-        }
-
-        $facts = $this->fetchMetricFacts((int)$exact['id']);
         $appMetrics ??= $metrics->fetchBalanceSheetMetricValues(
             $companyId,
             $accountingPeriodId,
@@ -80,46 +57,23 @@ final class YearEndCompaniesHouseComparisonService
         $priorPeriodDependency = (array)($appMetrics['prior_period_dependency'] ?? []);
         $warnings = array_values(array_filter(array_map('strval', (array)($appMetrics['warnings'] ?? []))));
         $threshold = $this->comparisonThreshold($companyId);
-        $rows = [];
-
-        foreach ($this->metricMap() as $metricKey => $label) {
-            $appValue = isset($appMetrics[$metricKey]) ? round((float)$appMetrics[$metricKey], 2) : null;
-            $filedFact = (array)($facts[$metricKey] ?? []);
-            $filedValue = array_key_exists('value', $filedFact) ? round((float)$filedFact['value'], 2) : null;
-            $variance = ($appValue !== null && $filedValue !== null) ? round($appValue - $filedValue, 2) : null;
-            $status = 'not_applicable';
-
-            if ($variance !== null) {
-                if (abs($variance) < 0.005) {
-                    $status = 'pass';
-                } elseif (abs($variance) <= $threshold) {
-                    $status = 'warning';
-                } else {
-                    $status = 'fail';
-                }
-            }
-
-            $rows[] = [
-                'metric_key' => $metricKey,
-                'label' => $label,
-                'app_value' => $appValue,
-                'filed_value' => $filedValue,
-                'variance' => $variance,
-                'status' => $status,
-                'source_concept' => (string)($filedFact['source_concept'] ?? ''),
-            ];
-        }
-
-        $hasExactMatch = true;
+        $stored = $this->storedDataService ?? new \eel_accounts\Service\CompaniesHouseStoredDataService();
+        $summaries = $stored->fetchDocumentSummariesByCompanyNumber($companyNumber);
+        $nearest = $this->findNearestSummary($summaries, (string)$accountingPeriod['period_end']);
+        $exact = $this->findExactSummary($summaries, (string)$accountingPeriod['period_end']);
+        $hasExactFiling = $exact !== null;
+        $facts = $hasExactFiling ? $this->fetchMetricFacts((int)$exact['id']) : [];
+        $rows = $this->buildRows($appMetrics, $facts, $threshold, $hasExactFiling);
         $comparableCount = count(array_filter($rows, static fn(array $row): bool => $row['variance'] !== null));
         $matchedCount = count(array_filter($rows, static fn(array $row): bool => (string)$row['status'] === 'pass'));
         $mismatchCount = count(array_filter($rows, static fn(array $row): bool => in_array((string)$row['status'], ['warning', 'fail'], true)));
-        $comparisonNote = 'This is an advisory nearest-period comparison because no exact Companies House filing matched the selected accounting period.';
-        if ($hasExactMatch && $comparableCount === 0) {
+        $comparisonScope = $hasExactFiling ? 'exact_filing' : ($summaries === [] ? 'no_exact_filing' : ($nearest === null ? 'stored_filing_unparseable' : 'no_exact_filing'));
+        $comparisonNote = 'No exact Companies House accounts filing is available for this accounting period. Filed values and variances are shown as -.';
+        if ($hasExactFiling && $comparableCount === 0) {
             $comparisonNote = 'An exact-period Companies House filing was selected, but it contains no comparable numeric facts for these metrics.';
-        } elseif ($hasExactMatch && $mismatchCount > 0) {
+        } elseif ($hasExactFiling && $mismatchCount > 0) {
             $comparisonNote = 'An exact-period Companies House filing was selected, but ' . $mismatchCount . ' of ' . $comparableCount . ' comparable values differ from the current reconstructed accounts.';
-        } elseif ($hasExactMatch) {
+        } elseif ($hasExactFiling) {
             $comparisonNote = 'An exact-period Companies House filing was selected and all ' . $matchedCount . ' comparable values match the current reconstructed accounts.';
         }
         if (!$reliableClosingBalance) {
@@ -128,8 +82,9 @@ final class YearEndCompaniesHouseComparisonService
 
         return [
             'available' => true,
+            'has_exact_filing' => $hasExactFiling,
             'threshold' => $threshold,
-            'comparison_scope' => $hasExactMatch ? 'exact_match' : 'nearest_match',
+            'comparison_scope' => $comparisonScope,
             'comparison_note' => $comparisonNote,
             'comparable_count' => $comparableCount,
             'matched_count' => $matchedCount,
@@ -138,16 +93,37 @@ final class YearEndCompaniesHouseComparisonService
             'can_acknowledge' => $reliableClosingBalance,
             'prior_period_dependency' => $priorPeriodDependency,
             'warnings' => $warnings,
-            'filing' => [
+            'filing' => $hasExactFiling ? [
                 'document_row_id' => (int)($exact['id'] ?? 0),
                 'filing_date' => (string)($exact['filing_date'] ?? ''),
                 'filing_type' => (string)($exact['filing_type'] ?? ''),
                 'period_start' => (string)($exact['period_start'] ?? ''),
                 'period_end' => (string)($exact['period_end'] ?? ''),
                 'parse_status' => (string)($exact['parse_status'] ?? ''),
-            ],
+            ] : null,
+            'nearest_filing' => $nearest,
             'rows' => $rows,
         ];
+    }
+
+    private function buildRows(array $appMetrics, array $facts, float $threshold, bool $hasExactFiling): array {
+        $rows = [];
+        foreach ($this->metricMap() as $metricKey => $label) {
+            $appValue = isset($appMetrics[$metricKey]) ? round((float)$appMetrics[$metricKey], 2) : null;
+            $filedFact = (array)($facts[$metricKey] ?? []);
+            $filedValue = $hasExactFiling && array_key_exists('value', $filedFact) ? round((float)$filedFact['value'], 2) : null;
+            $variance = ($appValue !== null && $filedValue !== null) ? round($appValue - $filedValue, 2) : null;
+            $status = $hasExactFiling ? 'not_applicable' : 'not_filed';
+            if ($variance !== null) {
+                $status = abs($variance) < 0.005 ? 'pass' : (abs($variance) <= $threshold ? 'warning' : 'fail');
+            }
+            $rows[] = [
+                'metric_key' => $metricKey, 'label' => $label, 'app_value' => $appValue,
+                'filed_value' => $filedValue, 'variance' => $variance, 'status' => $status,
+                'source_concept' => (string)($filedFact['source_concept'] ?? ''),
+            ];
+        }
+        return $rows;
     }
 
     private function findNearestSummary(array $summaries, string $periodEnd): ?array {

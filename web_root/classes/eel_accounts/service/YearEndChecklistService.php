@@ -17,6 +17,7 @@ final class YearEndChecklistService
         'cut_off_journals_review',
         'prepayment_approvals',
         'companies_house_mismatch_acknowledgement',
+        'companies_house_no_filing_acknowledgement',
     ];
 
     private const ACKNOWLEDGEMENT_CHECKS = [
@@ -1797,41 +1798,45 @@ final class YearEndChecklistService
             'latest_filed_accounts_found',
             'Latest filed accounts found',
             'warning',
-            !empty($chComparison['available']) ? 'pass' : 'warning',
-            !empty($chComparison['available'])
+            !empty($chComparison['has_exact_filing']) ? 'pass' : 'warning',
+            !empty($chComparison['has_exact_filing'])
                 ? 'A stored Companies House accounts filing is available for comparison.'
-                : (string)($chComparison['errors'][0] ?? 'No Companies House filing available.'),
-            !empty($chComparison['available']) ? (string)($chComparison['filing']['filing_date'] ?? '') : '',
+                : (string)($chComparison['comparison_note'] ?? $chComparison['errors'][0] ?? 'No Companies House filing available.'),
+            !empty($chComparison['has_exact_filing']) ? (string)($chComparison['filing']['filing_date'] ?? '') : '',
             '?page=companies'
         );
         $sections['companies_house_comparison'][] = $this->makeCheck(
             'period_match_or_nearest_comparison',
             'Period match / nearest comparison',
             'warning',
-            !empty($chComparison['available']) && ($chComparison['comparison_scope'] ?? '') === 'exact_match' ? 'pass' : (!empty($chComparison['available']) ? 'warning' : 'not_applicable'),
+            !empty($chComparison['has_exact_filing']) ? 'pass' : (!empty($chComparison['available']) ? 'warning' : 'not_applicable'),
             !empty($chComparison['available'])
                 ? (string)($chComparison['comparison_note'] ?? '')
                 : 'No Companies House comparison is available yet.',
             '',
             '?page=companies_house&show_card=year_end_companies_house_comparison#companies-house-comparison'
         );
+        $hasExactCompaniesHouseFiling = !empty($chComparison['has_exact_filing']);
+        $comparisonCheckCode = $hasExactCompaniesHouseFiling
+            ? 'companies_house_mismatch_acknowledgement'
+            : 'companies_house_no_filing_acknowledgement';
         $sections['companies_house_comparison'][] = $this->applyReviewAcknowledgement($this->makeCheck(
-            'companies_house_mismatch_acknowledgement',
-            'Accounts comparison metrics',
+            $comparisonCheckCode,
+            $hasExactCompaniesHouseFiling ? 'Accounts comparison metrics' : 'No exact accounts filing',
             'warning',
-            !empty($chComparison['available']) && empty($chComparison['reliable_closing_balance'])
-                ? 'fail'
-                : (!empty($chComparison['available']) && $comparisonFailures > 0 ? 'warning' : (!empty($chComparison['available']) ? 'pass' : 'not_applicable')),
-            !empty($chComparison['available'])
+            $hasExactCompaniesHouseFiling
+                ? (empty($chComparison['reliable_closing_balance']) ? 'fail' : ($comparisonFailures > 0 ? 'warning' : 'pass'))
+                : (!empty($chComparison['available']) ? 'warning' : 'not_applicable'),
+            $hasExactCompaniesHouseFiling
                 ? (empty($chComparison['reliable_closing_balance'])
                     ? (string)(($chComparison['warnings'] ?? [])[0] ?? 'Complete and lock the prior accounting period before approving the comparison.')
                     : ($comparisonFailures > 0
                     ? 'Stored Companies House filing values differ from the reviewed app figures. Acknowledge here only when this is a known filing error to be corrected before HMRC submission.'
                     : 'App-computed balance sheet values match the stored filed accounts.'))
-                : 'No comparison metrics are available.',
-            !empty($chComparison['available']) ? (string)$comparisonFailures : '',
+                : 'No exact Companies House accounts filing is available for this accounting period. Confirm this position before completing Year End.',
+            $hasExactCompaniesHouseFiling ? (string)$comparisonFailures : '',
             '?page=companies_house&show_card=year_end_companies_house_comparison#companies-house-mismatch-acknowledgement',
-            empty($chComparison['available']) || empty($chComparison['reliable_closing_balance']) ? null : $this->acknowledgementBasis('companies_house_mismatch_acknowledgement', $chComparison)
+            empty($chComparison['available']) || empty($chComparison['reliable_closing_balance']) ? null : $this->acknowledgementBasis($comparisonCheckCode, $chComparison)
         ), $reviewAcknowledgements);
 
         $blockingChecksPass = $uncategorisedCount === 0

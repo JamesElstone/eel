@@ -29,6 +29,7 @@ $harness->run(
 
                     $initial = $service->fetchContext($fixture['company_id'], $fixture['accounting_period_id']);
                     $harness->assertSame(true, !empty($initial['comparison']['available']));
+                    $harness->assertSame(true, !empty($initial['comparison']['has_exact_filing']));
                     $harness->assertSame(null, $initial['acknowledgement']);
                     $harness->assertSame(false, !empty($initial['access']['is_locked']));
                     $harness->assertSame(1, (int)$initial['mismatch_count']);
@@ -96,9 +97,10 @@ $harness->run(
                         ['id' => $fixture['document_id']]
                     );
                     $unavailable = $service->fetchContext($fixture['company_id'], $fixture['accounting_period_id']);
-                    $harness->assertSame(false, !empty($unavailable['comparison']['available']));
-                    $harness->assertSame('unverifiable', (string)($unavailable['acknowledgement']['state'] ?? ''));
-                    $harness->assertSame(false, !empty($unavailable['acknowledgement']['current']));
+                    $harness->assertSame(true, !empty($unavailable['comparison']['available']));
+                    $harness->assertSame(false, !empty($unavailable['comparison']['has_exact_filing']));
+                    $harness->assertSame('companies_house_no_filing_acknowledgement', (string)($unavailable['acknowledgement_check_code'] ?? ''));
+                    $harness->assertSame(null, $unavailable['acknowledgement']);
                     $harness->assertSame(0, (int)$unavailable['mismatch_count']);
                 } finally {
                     InterfaceDB::rollBack();

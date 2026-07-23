@@ -11,7 +11,8 @@ namespace eel_accounts\Service;
 
 final class CompaniesHouseComparisonReviewService
 {
-    private const CHECK_CODE = 'companies_house_mismatch_acknowledgement';
+    public const MISMATCH_CHECK_CODE = 'companies_house_mismatch_acknowledgement';
+    public const NO_FILING_CHECK_CODE = 'companies_house_no_filing_acknowledgement';
 
     public function __construct(
         private readonly ?\eel_accounts\Service\YearEndCompaniesHouseComparisonService $comparisonService = null,
@@ -37,11 +38,13 @@ final class CompaniesHouseComparisonReviewService
             ->fetchDataEntryState($companyId, $accountingPeriodId);
         $acknowledgements = $this->acknowledgementService
             ?? new \eel_accounts\Service\YearEndAcknowledgementService();
-        $acknowledgement = $acknowledgements->fetch($companyId, $accountingPeriodId, self::CHECK_CODE);
+        $hasExactFiling = !empty($comparison['has_exact_filing']);
+        $checkCode = $hasExactFiling ? self::MISMATCH_CHECK_CODE : self::NO_FILING_CHECK_CODE;
+        $acknowledgement = $acknowledgements->fetch($companyId, $accountingPeriodId, $checkCode);
 
         if (is_array($acknowledgement)) {
             $basis = !empty($comparison['available'])
-                ? $acknowledgements->buildBasis(self::CHECK_CODE, $comparison)
+                ? $acknowledgements->buildBasis($checkCode, $comparison)
                 : null;
             $evaluation = $acknowledgements->evaluate(
                 $acknowledgement,
@@ -60,16 +63,22 @@ final class CompaniesHouseComparisonReviewService
         $eligibilityRecorded = in_array((string)($eligibility['decision'] ?? 'pending'), ['eligible', 'ineligible'], true);
         $isLocked = !empty($access['is_locked']);
 
+        $requiresAcknowledgement = !$hasExactFiling || $this->mismatchCount($comparison) > 0;
+        $requiresEligibility = $hasExactFiling && $requiresAcknowledgement;
+
         return [
             'comparison' => $comparison,
             'acknowledgement' => is_array($acknowledgement) ? $acknowledgement : null,
             'access' => $access,
             'eligibility' => $eligibility,
             'mismatch_count' => $this->mismatchCount($comparison),
-            'can_acknowledge' => $comparisonCanBeAcknowledged && !$isLocked && $eligibilityRecorded,
+            'acknowledgement_check_code' => $checkCode,
+            'acknowledgement_subject' => $hasExactFiling ? 'Companies House comparison' : 'No exact Companies House filing',
+            'requires_acknowledgement' => $requiresAcknowledgement,
+            'can_acknowledge' => $comparisonCanBeAcknowledged && !$isLocked && (!$requiresEligibility || $eligibilityRecorded),
             'acknowledgement_blocked_reason' => !$comparisonCanBeAcknowledged
                 ? (string)(($comparison['warnings'] ?? [])[0] ?? 'Complete and lock the prior accounting period before approving this comparison.')
-                : (!$isLocked && !$eligibilityRecorded
+                : (!$isLocked && $requiresEligibility && !$eligibilityRecorded
                     ? 'Record whether the company is eligible for XML based web filing before completing this Year End Confirmation.'
                     : ''),
         ];

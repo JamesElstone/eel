@@ -48,6 +48,27 @@ $harness->run(_year_end_companies_house_comparisonCard::class, static function (
         $harness->assertSame(true, str_contains($html, '<fieldset disabled>'));
         $harness->assertSame(false, str_contains($html, 'Record whether the company is eligible for XML based web filing before completing this Year End Confirmation.'));
     });
+
+    $harness->check(_year_end_companies_house_comparisonCard::class, 'renders no-filing rows and its separate acknowledgement', static function () use ($harness, $card): void {
+        $context = companiesHouseComparisonCardContext();
+        $context['services']['companiesHouseComparisonReview']['comparison'] = [
+            'available' => true,
+            'has_exact_filing' => false,
+            'comparison_scope' => 'no_exact_filing',
+            'comparison_note' => 'No exact Companies House accounts filing is available.',
+            'filing' => null,
+            'rows' => [['label' => 'Fixed assets', 'app_value' => 420.00, 'filed_value' => null, 'variance' => null, 'status' => 'not_filed']],
+        ];
+        $context['services']['companiesHouseComparisonReview']['requires_acknowledgement'] = true;
+        $context['services']['companiesHouseComparisonReview']['can_acknowledge'] = true;
+        $context['services']['companiesHouseComparisonReview']['acknowledgement_check_code'] = 'companies_house_no_filing_acknowledgement';
+        $context['services']['companiesHouseComparisonReview']['acknowledgement_subject'] = 'No exact Companies House filing';
+        $html = $card->render($context);
+
+        $harness->assertSame(true, str_contains($html, '<td>-</td><td>-</td>'));
+        $harness->assertSame(true, str_contains($html, 'Not Filed'));
+        $harness->assertSame(true, str_contains($html, 'name="check_code" value="companies_house_no_filing_acknowledgement"'));
+    });
 });
 
 function companiesHouseComparisonCardContext(array $eligibility = ['decision' => 'eligible', 'original_document_id' => 56], bool $locked = false): array
@@ -66,6 +87,9 @@ function companiesHouseComparisonCardContext(array $eligibility = ['decision' =>
                 'acknowledgement' => null,
                 'access' => ['is_locked' => $locked],
                 'mismatch_count' => 1,
+                'requires_acknowledgement' => true,
+                'acknowledgement_check_code' => 'companies_house_mismatch_acknowledgement',
+                'acknowledgement_subject' => 'Companies House comparison',
                 'can_acknowledge' => !$locked && in_array((string)($eligibility['decision'] ?? 'pending'), ['eligible', 'ineligible'], true),
                 'acknowledgement_blocked_reason' => !$locked && !in_array((string)($eligibility['decision'] ?? 'pending'), ['eligible', 'ineligible'], true)
                     ? 'Record whether the company is eligible for XML based web filing before completing this Year End Confirmation.' : '',

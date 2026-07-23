@@ -107,6 +107,9 @@ final class CompaniesHouseAccountsIngestionService
                 if ($content === null) {
                     $parseStatus = 'content_unavailable';
                     $parseError = 'No preferred XHTML/iXBRL content URL was available for this filing.';
+                } elseif ((int)($content['status'] ?? 0) < 200 || (int)($content['status'] ?? 0) >= 300) {
+                    $parseStatus = 'content_fetch_failed';
+                    $parseError = 'The preferred XHTML/iXBRL content request returned HTTP ' . (int)($content['status'] ?? 0) . '.';
                 } elseif ($this->contentLooksLikeXhtml($content)) {
                     $parsed = $this->ixbrlParser->parse((string)($content['body'] ?? ''));
                     $parseStatus = (($parsed['summary']['latest_year_fact_count'] ?? 0) > 0)

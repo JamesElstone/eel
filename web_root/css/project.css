@@ -3442,12 +3442,12 @@
   display: inline;
 }
 
-.companies-house-revised-disclosure-helper {
+.card-body .companies-house-revised-disclosure-helper {
   margin-top: 1rem;
   margin-bottom: 1rem;
 }
 
-.companies-house-variance-actions {
+.card-body .companies-house-variance-actions {
   margin-top: 0.75rem;
 }
 

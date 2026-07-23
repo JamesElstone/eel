@@ -323,7 +323,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
 
         return '<section class="panel-soft">
             <h4 class="card-title">Companies House Revised Accounts</h4>
-            <div class="helper companies-house-revised-disclosure-helper">This disclosure is required because the Companies House comparison has variances for an exact-period filing.</div>
+            <div class="helper companies-house-revised-disclosure-helper">This confirmation is required because the Companies House comparison between what has been filed and what will be filed is different.</div>
             ' . $this->yesNo(
                 'companies_house_revised_accounts_public_register_confirmed',
                 'Can you confirm that if updated accounts are submitted to Companies House, both the original and the revised versions remain available for public inspection?',

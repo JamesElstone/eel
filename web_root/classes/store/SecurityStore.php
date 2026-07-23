@@ -71,8 +71,8 @@ final class SecurityStore
                 $url = trim((string)$row[5]);
                 $apiIdentity = (string)$row[6];
                 $apiKey = (string)$row[7];
-                if ($schema === '' || $url === '' || $apiKey === '') {
-                    throw new RuntimeException('API credential row ' . $rowNumber . ' has a blank schema, URL, or API key.');
+                if ($schema === '' || $apiKey === '') {
+                    throw new RuntimeException('API credential row ' . $rowNumber . ' has a blank schema or API key.');
                 }
                 if (!self::isValidSecretValue($apiIdentity) || !self::isValidSecretValue($apiKey)) {
                     throw new RuntimeException('API credential row ' . $rowNumber . ' has an invalid API identity or API key.');

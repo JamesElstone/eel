@@ -34,6 +34,16 @@ try {
         } finally { @unlink($path); }
     });
 
+    $harness->check(SecurityStore::class, 'accepts credentials with an empty URL', function () use ($harness, $testTempDirectory): void {
+        $path = $testTempDirectory . DIRECTORY_SEPARATOR . 'security-store-empty-url-' . bin2hex(random_bytes(8)) . '.csv';
+        file_put_contents($path, "PROVIDER,GATEWAY,TAG,ENVIRONMENT,SCHEMA,URL,API_IDENTITY,API_KEY\nACME,XML,LOOKUP,TEST,HTTPS,,\"\",\"xml-key\"\n");
+        try {
+            $credential = SecurityStore::loadCredential('ACME', 'XML', 'LOOKUP', 'TEST', $path);
+            $harness->assertSame('', $credential['url']);
+            $harness->assertSame('xml-key', $credential['api_key']);
+        } finally { @unlink($path); }
+    });
+
     $harness->check(SecurityStore::class, 'rejects old malformed duplicate and unconfigured gateway rows', function () use ($harness, $testTempDirectory): void {
         foreach ([
             "PROVIDER,TAG,ENVIRONMENT,SCHEMA,URL,API_KEY\nACME,LOOKUP,TEST,HTTPS,x,key\n",

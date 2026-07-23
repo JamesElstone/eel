@@ -366,6 +366,11 @@ final class CorporationTaxComputationService
             return $summary;
         }
 
+        return $this->persistCalculatedSummaryWithCurrentCaches($companyId, $summary);
+    }
+
+    private function persistCalculatedSummaryWithCurrentCaches(int $companyId, array $summary): array
+    {
         $row = [
             'accounting_period_id' => (int)($summary['accounting_period_id'] ?? 0),
             'ct_period_id' => (int)($summary['ct_period_id'] ?? 0),
@@ -399,7 +404,16 @@ final class CorporationTaxComputationService
         return $summary;
     }
 
-    public function persistSummariesForYearEndLock(int $companyId, int $accountingPeriodId): array
+    /**
+     * @param null|list<array<string, mixed>> $preparedSummaries Summaries from
+     *        the final in-transaction tax revalidation. Supplying them avoids
+     *        rebuilding the same CT and CT600A models immediately afterward.
+     */
+    public function persistSummariesForYearEndLock(
+        int $companyId,
+        int $accountingPeriodId,
+        ?array $preparedSummaries = null
+    ): array
     {
         $scope = $this->vatSupportScope($companyId);
         if (!empty($scope['tax_year_end_read_only'])) {
@@ -419,8 +433,10 @@ final class CorporationTaxComputationService
             ];
         }
 
-        \eel_accounts\Support\RequestCache::clear();
-        $this->clearRuntimeCaches();
+        if ($preparedSummaries === null) {
+            \eel_accounts\Support\RequestCache::clear();
+            $this->clearRuntimeCaches();
+        }
         $periodSync = (new \eel_accounts\Service\CorporationTaxPeriodService())
             ->syncForAccountingPeriod($companyId, $accountingPeriodId);
         if (empty($periodSync['success'])) {
@@ -430,11 +446,29 @@ final class CorporationTaxComputationService
                 'summaries' => [],
             ];
         }
-        $activePeriods = $this->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId);
+        $activePeriods = $preparedSummaries === null
+            ? $this->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId)
+            : [
+                'periods' => array_values(array_filter(
+                    (array)($periodSync['periods'] ?? []),
+                    static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'
+                )),
+                'errors' => [],
+            ];
         $periods = (array)($activePeriods['periods'] ?? []);
         $summaries = [];
         $newRunIds = [];
         $errors = (array)($activePeriods['errors'] ?? []);
+        $preparedByCtPeriod = [];
+        foreach ($preparedSummaries ?? [] as $preparedSummary) {
+            if (!is_array($preparedSummary)) {
+                continue;
+            }
+            $preparedCtPeriodId = (int)($preparedSummary['ct_period_id'] ?? 0);
+            if ($preparedCtPeriodId > 0) {
+                $preparedByCtPeriod[$preparedCtPeriodId] = $preparedSummary;
+            }
+        }
         foreach ($periods as $period) {
             $ctPeriodId = (int)($period['id'] ?? 0);
             if ($ctPeriodId <= 0) {
@@ -451,7 +485,19 @@ final class CorporationTaxComputationService
                 $summaries[] = $summary;
                 continue;
             }
-            $summary = $this->persistSummaryForCtPeriodIdWithCurrentCaches($companyId, $ctPeriodId);
+            if ($preparedSummaries !== null) {
+                $summary = (array)($preparedByCtPeriod[$ctPeriodId] ?? []);
+                if ($summary === []
+                    || empty($summary['available'])
+                    || (int)($summary['accounting_period_id'] ?? 0) !== $accountingPeriodId) {
+                    $errors[] = (string)($period['display_label'] ?? ('CT Period ' . (int)($period['sequence_no'] ?? 0)))
+                        . ': The final validated Corporation Tax summary was not available for persistence.';
+                    continue;
+                }
+                $summary = $this->persistCalculatedSummaryWithCurrentCaches($companyId, $summary);
+            } else {
+                $summary = $this->persistSummaryForCtPeriodIdWithCurrentCaches($companyId, $ctPeriodId);
+            }
             if (empty($summary['available'])) {
                 foreach ((array)($summary['errors'] ?? ['CT period summary could not be persisted.']) as $error) {
                     $errors[] = (string)($period['display_label'] ?? ('CT Period ' . (int)($period['sequence_no'] ?? 0))) . ': ' . (string)$error;
@@ -469,6 +515,10 @@ final class CorporationTaxComputationService
         $returnPositions = new CorporationTaxReturnPositionService($this);
         foreach ($summaries as $summary) {
             $ctPeriodId = (int)($summary['ct_period_id'] ?? 0);
+            if ((string)($summary['return_position_model_version'] ?? '') === CorporationTaxReturnPositionService::MODEL_VERSION) {
+                $canonicalSummaries[] = $summary;
+                continue;
+            }
             $position = $returnPositions->fetchForCtPeriod(
                 $companyId,
                 $accountingPeriodId,

@@ -33,6 +33,16 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
         $harness->assertSame(true, str_contains($action, '$progress->report($message, $percent)'));
         $harness->assertSame(true, str_contains($service, "'Preparing to reopen the accounting period…', 0"));
         $harness->assertSame(true, str_contains($service, "'Finalising the reopened accounting period…', 99"));
+        $harness->assertSame(true, str_contains($service, 'RequestCache::beginFor($this)'));
+        $harness->assertSame(true, str_contains($service, "(array)((\$finalTaxFreeze['tax_readiness'] ?? [])['periods'] ?? [])"));
+
+        $lockStart = strpos($service, 'public function lockPeriod(');
+        $lockEnd = strpos($service, 'private function canLockOverallStatus(', $lockStart !== false ? $lockStart : 0);
+        $harness->assertSame(true, $lockStart !== false && $lockEnd !== false);
+        $lockMethod = substr($service, (int)$lockStart, (int)$lockEnd - (int)$lockStart);
+        $lockFinalProgress = strpos($lockMethod, "'Finalising the locked accounting period…', 99");
+        $lockCommit = strpos($lockMethod, '$this->commitLockTransaction($transaction)');
+        $harness->assertSame(true, $lockFinalProgress !== false && $lockCommit !== false && $lockFinalProgress < $lockCommit);
 
         $unlockStart = strpos($service, 'public function unlockPeriod(');
         $unlockEnd = strpos($service, 'public function recalculateChecklist(', $unlockStart !== false ? $unlockStart : 0);
@@ -40,6 +50,9 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
         $unlockMethod = substr($service, (int)$unlockStart, (int)$unlockEnd - (int)$unlockStart);
         $harness->assertSame(false, str_contains($unlockMethod, '$this->fetchChecklist('));
         $harness->assertSame(false, str_contains($unlockMethod, '$this->fetchChecklistResult('));
+        $unlockFinalProgress = strpos($unlockMethod, "'Finalising the reopened accounting period…', 99");
+        $unlockCommit = strpos($unlockMethod, '$this->commitLockTransaction($transaction)');
+        $harness->assertSame(true, $unlockFinalProgress !== false && $unlockCommit !== false && $unlockFinalProgress < $unlockCommit);
     });
 
     $harness->check('YearEndAction', 'posts confirmed director loan reclassification deltas and remains idempotent', static function () use ($harness, $instance): void {

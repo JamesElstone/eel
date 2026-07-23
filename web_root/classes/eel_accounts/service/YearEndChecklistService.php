@@ -315,6 +315,15 @@ final class YearEndChecklistService
             return $scopeError;
         }
 
+        // Page request caching normally starts after actions have completed. A
+        // Year End close performs several identical, expensive read-model
+        // checks inside the action, so keep a write-aware cache scope for this
+        // workflow. Posting services clear it whenever they mutate the ledger.
+        $actionCacheScope = null;
+        if (!\eel_accounts\Support\RequestCache::isActive()) {
+            $actionCacheScope = \eel_accounts\Support\RequestCache::beginFor($this);
+        }
+
         $transaction = $this->beginLockTransaction();
 
         try {
@@ -396,8 +405,14 @@ final class YearEndChecklistService
                 ]);
             }
 
+            $taxComputationService = new \eel_accounts\Service\CorporationTaxComputationService();
             $progress?->__invoke('Revalidating the approved Corporation Tax basis…', 55);
-            $taxFreezeAfterAdjustments = $this->revalidateApprovedTaxBasis($companyId, $accountingPeriodId);
+            $taxFreezeAfterAdjustments = $this->revalidateApprovedTaxBasis(
+                $companyId,
+                $accountingPeriodId,
+                false,
+                $taxComputationService
+            );
             if (empty($taxFreezeAfterAdjustments['success'])) {
                 return $this->rollbackLockTransaction($transaction, [
                     'success' => false,
@@ -445,7 +460,13 @@ final class YearEndChecklistService
             }
 
             $progress?->__invoke('Confirming the final Corporation Tax position…', 82);
-            $finalTaxFreeze = $this->revalidateApprovedTaxBasis($companyId, $accountingPeriodId, true);
+            $taxComputationService->clearRuntimeCaches();
+            $finalTaxFreeze = $this->revalidateApprovedTaxBasis(
+                $companyId,
+                $accountingPeriodId,
+                true,
+                $taxComputationService
+            );
             if (empty($finalTaxFreeze['success'])) {
                 return $this->rollbackLockTransaction($transaction, [
                     'success' => false,
@@ -462,8 +483,11 @@ final class YearEndChecklistService
             }
 
             $progress?->__invoke('Recording Corporation Tax close evidence…', 88);
-            $taxPersistenceResult = (new \eel_accounts\Service\CorporationTaxComputationService())
-                ->persistSummariesForYearEndLock($companyId, $accountingPeriodId);
+            $taxPersistenceResult = $taxComputationService->persistSummariesForYearEndLock(
+                $companyId,
+                $accountingPeriodId,
+                (array)(($finalTaxFreeze['tax_readiness'] ?? [])['periods'] ?? [])
+            );
             if (empty($taxPersistenceResult['success'])) {
                 return $this->rollbackLockTransaction($transaction, [
                     'success' => false,
@@ -524,9 +548,8 @@ final class YearEndChecklistService
                 'checklist' => $this->fetchChecklist($companyId, $accountingPeriodId),
             ];
 
-            $this->commitLockTransaction($transaction);
-
             $progress?->__invoke('Finalising the locked accounting period…', 99);
+            $this->commitLockTransaction($transaction);
 
             return $result;
         } catch (\Throwable $exception) {
@@ -600,9 +623,13 @@ final class YearEndChecklistService
     private function revalidateApprovedTaxBasis(
         int $companyId,
         int $accountingPeriodId,
-        bool $requireCurrentProvision = false
+        bool $requireCurrentProvision = false,
+        ?\eel_accounts\Service\CorporationTaxComputationService $taxComputationService = null
     ): array {
-        $taxReadiness = (new \eel_accounts\Service\YearEndTaxReadinessService())
+        $taxReadiness = (new \eel_accounts\Service\YearEndTaxReadinessService(
+            null,
+            $taxComputationService
+        ))
             ->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
         $metrics = new \eel_accounts\Service\YearEndMetricsService();
         $freezeService = new \eel_accounts\Service\YearEndTaxFreezeService();
@@ -1066,9 +1093,9 @@ final class YearEndChecklistService
                 return $this->rollbackUnlockTransaction($transaction, $legacyRepair);
             }
 
-            $this->commitLockTransaction($transaction);
             $progress?->__invoke('Preparing the reopened year-end checklist…', 85);
             $progress?->__invoke('Finalising the reopened accounting period…', 99);
+            $this->commitLockTransaction($transaction);
 
             return $result + [
                 'legacy_director_loan_repair' => $legacyRepair,

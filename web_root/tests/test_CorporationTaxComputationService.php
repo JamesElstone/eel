@@ -12,6 +12,17 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 (new GeneratedServiceClassTestHarness())->run(
     \eel_accounts\Service\CorporationTaxComputationService::class,
     static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\CorporationTaxComputationService $service): void {
+        $harness->check(\eel_accounts\Service\CorporationTaxComputationService::class, 'reuses final validated summaries when recording year-end evidence', static function () use ($harness): void {
+            $source = (string)file_get_contents(
+                dirname(__DIR__) . DIRECTORY_SEPARATOR . 'classes' . DIRECTORY_SEPARATOR . 'eel_accounts'
+                . DIRECTORY_SEPARATOR . 'service' . DIRECTORY_SEPARATOR . 'CorporationTaxComputationService.php'
+            );
+            $harness->assertSame(true, str_contains($source, '?array $preparedSummaries = null'));
+            $harness->assertSame(true, str_contains($source, '$preparedByCtPeriod[$preparedCtPeriodId] = $preparedSummary'));
+            $harness->assertSame(true, str_contains($source, '$this->persistCalculatedSummaryWithCurrentCaches($companyId, $summary)'));
+            $harness->assertSame(true, str_contains($source, "return_position_model_version'] ?? '') === CorporationTaxReturnPositionService::MODEL_VERSION"));
+        });
+
         $harness->check(\eel_accounts\Service\CorporationTaxComputationService::class, 'keeps brought-forward losses visible when dividend capacity creates a further loss', static function () use ($harness, $service): void {
             $method = new ReflectionMethod($service, 'dividendCapacityLossCalculation');
             $method->setAccessible(true);

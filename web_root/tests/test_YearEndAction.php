@@ -496,6 +496,11 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             );
 
             $harness->assertSame(true, $acknowledge->isSuccess());
+            $harness->assertSame(
+                ['cut.off.journals', 'year.end.state', 'year.end.checklist', 'year.end.audit.log'],
+                $acknowledge->changedFacts()
+            );
+            $harness->assertSame(false, in_array('page.reload', $acknowledge->changedFacts(), true));
             $harness->assertSame(1, InterfaceDB::countWhere('year_end_review_acknowledgements', [
                 'company_id' => (int)$fixture['company_id'],
                 'accounting_period_id' => (int)$fixture['accounting_period_id'],
@@ -508,11 +513,25 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             );
 
             $harness->assertSame(true, $reopen->isSuccess());
+            $harness->assertSame(
+                ['cut.off.journals', 'year.end.state', 'year.end.checklist', 'year.end.audit.log'],
+                $reopen->changedFacts()
+            );
             $harness->assertSame(0, InterfaceDB::countWhere('year_end_review_acknowledgements', [
                 'company_id' => (int)$fixture['company_id'],
                 'accounting_period_id' => (int)$fixture['accounting_period_id'],
                 'check_code' => 'cut_off_journals_review',
             ]));
+
+            $missingBasis = $instance->handle(
+                yearEndActionReviewCheckRequest((int)$fixture['company_id'], 999999999, 'acknowledge_review_check'),
+                createTestPageServiceFramework()
+            );
+            $harness->assertSame(false, $missingBasis->isSuccess());
+            $harness->assertSame(true, str_contains(
+                (string)($missingBasis->flashMessages()[0]['message'] ?? ''),
+                'accounting period could not be found'
+            ));
 
             $prepaymentApproval = $instance->handle(
                 yearEndActionReviewCheckRequest((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'acknowledge_review_check', 'prepayment_approvals'),

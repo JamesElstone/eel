@@ -11,6 +11,9 @@ namespace eel_accounts\Service;
 
 final class JournalCutOffReviewService
 {
+    private const CHECK_CODE = 'cut_off_journals_review';
+    private const CACHE_NAMESPACE = 'year-end.journal-cut-off-basis';
+
     public function __construct(
         private readonly ?\eel_accounts\Service\YearEndMetricsService $metricsService = null,
         private readonly ?\eel_accounts\Service\YearEndAcknowledgementService $acknowledgementService = null,
@@ -28,7 +31,7 @@ final class JournalCutOffReviewService
         $acknowledgement = $acknowledgements->fetch(
             $companyId,
             $accountingPeriodId,
-            'cut_off_journals_review'
+            self::CHECK_CODE
         );
 
         if (!is_array($acknowledgement)) {
@@ -38,7 +41,10 @@ final class JournalCutOffReviewService
             ];
         }
 
-        $basis = $this->currentBasis($companyId, $accountingPeriodId, $acknowledgements);
+        $basisResult = $this->fetchApprovalBasis($companyId, $accountingPeriodId);
+        $basis = !empty($basisResult['available']) && is_array($basisResult['basis'] ?? null)
+            ? $basisResult['basis']
+            : null;
         $evaluation = $acknowledgements->evaluate($acknowledgement, $basis, !empty($access['is_locked']));
         $acknowledgement['state'] = (string)($evaluation['state'] ?? 'unverifiable');
         $acknowledgement['current'] = !empty($evaluation['current']);
@@ -49,11 +55,27 @@ final class JournalCutOffReviewService
         ];
     }
 
-    private function currentBasis(
-        int $companyId,
-        int $accountingPeriodId,
-        \eel_accounts\Service\YearEndAcknowledgementService $acknowledgements
-    ): ?array {
+    /** @return array{available: bool, basis: ?array, errors: list<string>} */
+    public function fetchApprovalBasis(int $companyId, int $accountingPeriodId): array
+    {
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            self::CACHE_NAMESPACE,
+            \eel_accounts\Support\RequestCache::key($companyId, $accountingPeriodId),
+            fn(): array => $this->buildApprovalBasis($companyId, $accountingPeriodId)
+        );
+    }
+
+    /** @return array{available: bool, basis: ?array, errors: list<string>} */
+    private function buildApprovalBasis(int $companyId, int $accountingPeriodId): array
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return [
+                'available' => false,
+                'basis' => null,
+                'errors' => ['Select a company and accounting period before approving journal cut-off review.'],
+            ];
+        }
+
         $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService(
             preTaxProfitLossService: new \eel_accounts\Service\PreTaxProfitLossService(
                 new \eel_accounts\Service\PeriodLedgerReadService()
@@ -61,13 +83,21 @@ final class JournalCutOffReviewService
         );
         $accountingPeriod = $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
         if (!is_array($accountingPeriod)) {
-            return null;
+            return [
+                'available' => false,
+                'basis' => null,
+                'errors' => ['The selected accounting period could not be found.'],
+            ];
         }
 
         $periodStart = (string)($accountingPeriod['period_start'] ?? '');
         $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
-        if ($periodStart === '' || $periodEnd === '') {
-            return null;
+        if (!$this->validDate($periodStart) || !$this->validDate($periodEnd) || $periodStart > $periodEnd) {
+            return [
+                'available' => false,
+                'basis' => null,
+                'errors' => ['The selected accounting period does not have valid start and end dates.'],
+            ];
         }
 
         $lock = new \eel_accounts\Service\YearEndLockService();
@@ -88,6 +118,19 @@ final class JournalCutOffReviewService
                 ->fetchContext($companyId, $accountingPeriodId),
         ];
 
-        return $acknowledgements->buildBasis('cut_off_journals_review', $facts);
+        $basis = ($this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService())
+            ->buildBasis(self::CHECK_CODE, $facts);
+
+        return [
+            'available' => true,
+            'basis' => $basis,
+            'errors' => [],
+        ];
+    }
+
+    private function validDate(string $value): bool
+    {
+        $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+        return $date !== false && $date->format('Y-m-d') === $value;
     }
 }

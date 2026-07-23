@@ -169,7 +169,7 @@ final class YearEndAction implements ActionInterfaceFramework
             !empty($result['success']),
             (array)($result['errors'] ?? []),
             $this->successMessage($intent, $result),
-            $this->changedFacts($intent)
+            $this->changedFacts($intent, (string)$request->input('check_code', ''))
         );
     }
 
@@ -249,7 +249,7 @@ final class YearEndAction implements ActionInterfaceFramework
         return new ActionResultFramework($success, $changedFacts ?? $this->changedFacts(''), $flashMessages);
     }
 
-    private function changedFacts(string $intent): array
+    private function changedFacts(string $intent, string $checkCode = ''): array
     {
         if ($intent === 'save_notes') {
             return ['year.end.notes', 'year.end.audit.log'];
@@ -260,6 +260,10 @@ final class YearEndAction implements ActionInterfaceFramework
         }
 
         if (in_array($intent, ['acknowledge_review_check', 'reopen_review_check'], true)) {
+            if (trim($checkCode) === 'cut_off_journals_review') {
+                return ['cut.off.journals', 'year.end.state', 'year.end.checklist', 'year.end.audit.log'];
+            }
+
             return ['page.reload', 'page.context', 'year.end.checklist', 'year.end.audit.log'];
         }
 

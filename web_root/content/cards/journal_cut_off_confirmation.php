@@ -45,7 +45,7 @@ final class _journal_cut_off_confirmationCard extends CardBaseFramework
 
     protected function additionalInvalidationFacts(): array
     {
-        return ['page.context', 'year.end.state', 'year.end.checklist'];
+        return ['cut.off.journals', 'page.context', 'year.end.state', 'year.end.checklist'];
     }
 
     public function handleError(string $serviceKey, array $error, array $context): string

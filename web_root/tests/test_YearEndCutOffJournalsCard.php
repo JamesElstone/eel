@@ -41,6 +41,12 @@ $harness->run(_journal_cut_offsCard::class, static function (GeneratedServiceCla
 });
 
 $harness->run(_journal_cut_off_confirmationCard::class, static function (GeneratedServiceClassTestHarness $harness, _journal_cut_off_confirmationCard $card): void {
+    $harness->check(_journal_cut_off_confirmationCard::class, 'refreshes with the shared cut-off journal fact', static function () use ($harness, $card): void {
+        $harness->assertSame(true, in_array('cut.off.journals', $card->invalidationFacts(), true));
+        $harness->assertSame(true, in_array('cut.off.journals', (new _journal_cut_off_createCard())->invalidationFacts(), true));
+        $harness->assertSame(true, in_array('cut.off.journals', (new _journal_manual_entryCard())->invalidationFacts(), true));
+    });
+
     $harness->check(_journal_cut_off_confirmationCard::class, 'renders local cut-off review acknowledgement action', static function () use ($harness, $card): void {
         $services = $card->services();
 

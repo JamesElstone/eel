@@ -225,6 +225,8 @@ final class TransactionJournalService
             ];
         }
 
+        \eel_accounts\Support\RequestCache::forgetNamespace('year-end.journal-cut-off-basis');
+
         return [
             'success' => true,
             'created' => $existingJournal === null,
@@ -311,6 +313,8 @@ final class TransactionJournalService
                 'errors' => (array)($reversal['errors'] ?? ['The transaction journal could not be reversed.']),
             ];
         }
+
+        \eel_accounts\Support\RequestCache::forgetNamespace('year-end.journal-cut-off-basis');
 
         return [
             'success' => true,

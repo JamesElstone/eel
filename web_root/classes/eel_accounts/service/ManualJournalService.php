@@ -343,6 +343,7 @@ final class ManualJournalService
         \eel_accounts\Support\RequestCache::forgetNamespace('director-loan.statement');
         \eel_accounts\Support\RequestCache::forgetNamespace('tax.s455');
         \eel_accounts\Support\RequestCache::forgetNamespace('tax.ct600a');
+        \eel_accounts\Support\RequestCache::forgetNamespace('year-end.journal-cut-off-basis');
 
         return [
             'success' => true,

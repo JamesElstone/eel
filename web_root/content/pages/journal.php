@@ -50,6 +50,7 @@ final class _journal extends PageContextFramework
             ],
             [
                 'tab' => 'Adjustments',
+                'on_demand' => true,
                 'cards' => [
                     'journal_cut_off_create',
                     'journal_manual_entry',
@@ -57,6 +58,7 @@ final class _journal extends PageContextFramework
             ],
             [
                 'tab' => 'Year End Confirmation',
+                'on_demand' => true,
                 'cards' => [
                     'journal_cut_off_confirmation',
                 ],

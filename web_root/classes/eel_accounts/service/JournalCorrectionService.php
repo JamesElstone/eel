@@ -361,6 +361,7 @@ final class JournalCorrectionService
                 'source_journal_id' => $sourceJournalId,
             ]
         );
+        \eel_accounts\Support\RequestCache::forgetNamespace('year-end.journal-cut-off-basis');
         return ['success' => true, 'errors' => [], 'replacement_journal_id' => $replacementJournalId];
     }
 

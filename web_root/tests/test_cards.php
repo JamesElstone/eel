@@ -467,6 +467,10 @@ final class TestCardsHarness
 
         $this->assertSame(true, $hasCutOffJournalsAdjustment);
         $this->assertPageFinalTabContains($journalPage, 'Year End Confirmation', ['journal_cut_off_confirmation']);
+        $journalLayout = $journalPage->cardLayout();
+        $this->assertSame(false, !empty($journalLayout[0]['on_demand']));
+        $this->assertSame(true, !empty($journalLayout[1]['on_demand']));
+        $this->assertSame(true, !empty($journalLayout[2]['on_demand']));
 
         test_output_line('Cards: journal page includes split cut-off journal cards under Adjustments.');
     }

@@ -40,6 +40,7 @@ final class YearEndChecklistService
         private readonly ?\eel_accounts\Contract\DatabaseBackupCreatorInterface $backupCreator = null,
         private readonly ?\eel_accounts\Service\NonAssetReviewService $nonAssetReviewService = null,
         private readonly ?\eel_accounts\Service\EmptyMonthConfirmationService $emptyMonthConfirmationService = null,
+        private readonly ?\eel_accounts\Service\JournalCutOffReviewService $journalCutOffReviewService = null,
     ) {
     }
 
@@ -1022,6 +1023,33 @@ final class YearEndChecklistService
             return ['success' => false, 'errors' => ['This year-end check cannot be acknowledged.']];
         }
 
+        if ($checkCode === 'cut_off_journals_review') {
+            $basis = null;
+            if ($acknowledged) {
+                $basisResult = ($this->journalCutOffReviewService ?? new \eel_accounts\Service\JournalCutOffReviewService(
+                    metricsService: $this->metricsService,
+                    acknowledgementService: $this->acknowledgementService
+                ))->fetchApprovalBasis($companyId, $accountingPeriodId);
+                if (empty($basisResult['available']) || !is_array($basisResult['basis'] ?? null)) {
+                    return [
+                        'success' => false,
+                        'errors' => (array)($basisResult['errors'] ?? ['The current live review basis could not be verified. Refresh the related workflow and try again.']),
+                    ];
+                }
+                $basis = $basisResult['basis'];
+            }
+
+            return $this->persistAcknowledgement(
+                $companyId,
+                $accountingPeriodId,
+                $checkCode,
+                $acknowledged,
+                $basis,
+                $note,
+                $changedBy
+            );
+        }
+
         $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId);
         if (empty($checklistResult['success'])) {
             return $checklistResult;
@@ -1041,11 +1069,30 @@ final class YearEndChecklistService
         if ($acknowledged && !is_array($basis)) {
             return ['success' => false, 'errors' => ['The current live review basis could not be verified. Refresh the related workflow and try again.']];
         }
-        $basisFacts = (array)($basis['facts'] ?? $basis);
+        return $this->persistAcknowledgement(
+            $companyId,
+            $accountingPeriodId,
+            $checkCode,
+            $acknowledged,
+            is_array($basis) ? $basis : null,
+            $note,
+            $changedBy
+        );
+    }
+
+    private function persistAcknowledgement(
+        int $companyId,
+        int $accountingPeriodId,
+        string $checkCode,
+        bool $acknowledged,
+        ?array $basis,
+        string $note,
+        string $changedBy
+    ): array {
         $service = $this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService();
         $existing = $service->fetch($companyId, $accountingPeriodId, $checkCode);
         $result = $acknowledged
-            ? $service->save($companyId, $accountingPeriodId, $checkCode, $basis, $changedBy, $note)
+            ? $service->save($companyId, $accountingPeriodId, $checkCode, (array)$basis, $changedBy, $note)
             : $service->revoke($companyId, $accountingPeriodId, $checkCode);
         if (empty($result['success'])) {
             return $result;

@@ -46,7 +46,7 @@ final class _api_keys_editorCard extends CardBaseFramework
             . $this->select('Gateway', 'credential[gateway]', 'gateway', $catalog)
             . $this->select('Tag', 'credential[tag]', 'tag', $catalog)
             . $this->select('Environment', 'credential[environment]', 'environment', $catalog)
-            . $this->input('Schema', 'credential[schema]')
+            . $this->schemaSelect()
             . $this->input('URL', 'credential[url]', 'url')
             . $this->secretInput('API identity', 'credential[api_identity]', 'Set/replace API identity (optional for new credentials)')
             . $this->secretInput('API key', 'credential[api_key]', 'Set/replace API key')
@@ -84,6 +84,11 @@ final class _api_keys_editorCard extends CardBaseFramework
     private function input(string $label, string $name, string $type = 'text', string $placeholder = ''): string
     {
         return '<label>' . HelperFramework::escape($label) . '<input class="input" name="' . HelperFramework::escape($name) . '" type="' . HelperFramework::escape($type) . '" value="" autocomplete="off"' . ($placeholder !== '' ? ' placeholder="' . HelperFramework::escape($placeholder) . '"' : '') . '></label>';
+    }
+
+    private function schemaSelect(): string
+    {
+        return '<label>Schema<select class="select" name="credential[schema]"><option value="HTTPS" selected>HTTPS</option><option value="HTTP">HTTP</option></select></label>';
     }
 
     private function secretInput(string $label, string $name, string $placeholder): string

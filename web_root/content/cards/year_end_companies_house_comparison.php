@@ -38,15 +38,6 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
                     'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
-            [
-                'key' => 'companiesHouseAccountsFiling',
-                'service' => \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
-                'method' => 'fetchContext',
-                'params' => [
-                    'companyId' => ':company.id',
-                    'accountingPeriodId' => ':company.accounting_period_id',
-                ],
-            ],
         ];
     }
 
@@ -68,153 +59,59 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             ? $review['acknowledgement']
             : null;
         $mismatchCount = (int)($review['mismatch_count'] ?? 0);
-        $filing = (array)($context['services']['companiesHouseAccountsFiling'] ?? []);
 
         return '<section class="settings-stack" id="year-end-companies-house-comparison">
-            ' . $this->renderAccountsFilingPanel($companyId, $accountingPeriodId, $filing, $access) . '
             ' . $this->renderComparisonPanel($comparison, $companySettings) . '
+            ' . $this->renderEligibilityQuestion($company, $companyId, $accountingPeriodId, (array)($review['eligibility'] ?? []), $access) . '
             ' . $this->renderAcknowledgementPanel($companyId, $accountingPeriodId, $comparison, $acknowledgement, $access, $mismatchCount, $review) . '
         </section>';
     }
 
-    private function renderAccountsFilingPanel(
-        int $companyId,
-        int $accountingPeriodId,
-        array $filing,
-        array $comparisonAccess
-    ): string {
-        if ($filing === []) {
-            return $this->filingPanel(
-                'Unavailable',
-                'muted',
-                '<div class="helper">The revised-accounts filing context is not available.</div>'
-            );
-        }
-
-        $locked = array_key_exists('locked', $filing)
-            ? !empty($filing['locked'])
-            : !empty($comparisonAccess['is_locked']);
-        $feature = (array)($filing['feature'] ?? []);
-        $mode = strtoupper(trim((string)($feature['mode'] ?? 'DISABLED')));
-        $eligibility = (array)($filing['eligibility'] ?? []);
+    private function renderEligibilityQuestion(array $company, int $companyId, int $accountingPeriodId, array $eligibility, array $access): string
+    {
+        $companyName = trim((string)($company['company_name'] ?? 'this company'));
         $decision = strtolower(trim((string)($eligibility['decision'] ?? 'pending')));
-        $submission = is_array($filing['submission'] ?? null) ? $filing['submission'] : null;
-        $status = $this->submissionStatus($submission);
+        $yesChecked = $decision !== 'ineligible' ? ' checked' : '';
+        $noChecked = $decision === 'ineligible' ? ' checked' : '';
+        $originalDocumentId = (int)($eligibility['original_document_id'] ?? 0);
+        $unavailable = $originalDocumentId <= 0;
+        $disabled = (!empty($access['is_locked']) || $unavailable) ? ' disabled' : '';
+        $helper = $unavailable
+            ? 'A matching Companies House filing is required before eligibility can be recorded.'
+            : (!empty($access['is_locked'])
+            ? 'This legacy accounting period is locked, so its existing Year End position is not changed.'
+            : ($decision === 'pending'
+                ? 'Record a Yes or No decision before completing the Companies House Year End Confirmation. Add supporting notes or evidence to the Approval below.'
+                : 'Change this decision if needed before completing the Companies House Year End Confirmation. Add supporting notes or evidence to the Approval below.'));
 
-        $summary = '<div class="summary-grid four">'
-            . $this->metric('Accounting period', $this->periodLabel((array)($filing['accounting_period'] ?? [])))
-            . $this->metric('Original filing document', $this->originalDocumentLabel($eligibility))
-            . $this->metric('Detected filing channel', HelperFramework::labelFromKey((string)($eligibility['detected_channel'] ?? $eligibility['original_filing_channel'] ?? 'unknown'), '_'))
-            . $this->metric('Gateway mode', $mode)
-            . '</div>';
-
-        if (!$locked) {
-            return $this->filingPanel(
-                'Year End not locked',
-                'warning',
-                $summary . '<div class="helper">Lock Year End before preparing or filing revised accounts.</div>'
-            );
-        }
-
-        if ($decision === 'ineligible') {
-            return $this->filingPanel(
-                'Electronic filing unavailable',
-                'danger',
-                $summary
-                    . $this->eligibilityEvidence($eligibility)
-                    . '<div class="helper">Companies House has marked this filing as ineligible for electronic revision. Use the paper amendment route.</div>'
-            );
-        }
-
-        if ($decision !== 'eligible') {
-            return $this->filingPanel(
-                'Eligibility confirmation required',
-                'warning',
-                $summary
-                    . '<div class="helper">Record Companies House&rsquo;s written decision for this exact original filing before preparing revised accounts.</div>'
-                    . $this->eligibilityForm($companyId, $accountingPeriodId, $eligibility)
-            );
-        }
-
-        $summary .= $this->eligibilityEvidence($eligibility);
-
-        if ($status === 'accepted') {
-            return $this->filingPanel(
-                'Accepted',
-                'success',
-                $summary . $this->submissionSummary($submission)
-                    . '<div class="helper">Companies House accepted the revised accounts. The comparison will update after the revised filing appears on the public register.</div>'
-            );
-        }
-
-        if (in_array($status, ['submitting', 'pending', 'parked', 'transport_unknown'], true)) {
-            $detail = $status === 'transport_unknown'
-                ? 'The submission outcome is uncertain. Refresh this submission; do not send a duplicate.'
-                : 'Companies House has not issued a terminal response. Refresh this existing submission rather than sending another copy.';
-
-            return $this->filingPanel(
-                HelperFramework::labelFromKey($status, '_'),
-                in_array($status, ['submitting', 'pending'], true) ? 'info' : 'warning',
-                $summary . $this->submissionSummary($submission)
-                    . '<div class="helper">' . HelperFramework::escape($detail) . '</div>'
-                    . $this->transmitLink()
-            );
-        }
-
-        if (in_array($status, ['rejected', 'reject', 'internal_failure', 'failed'], true)) {
-            return $this->filingPanel(
-                match ($status) {
-                    'internal_failure' => 'Companies House internal failure',
-                    'failed' => 'Submission failed',
-                    default => 'Submission rejected',
-                },
-                'danger',
-                $summary . $this->submissionSummary($submission)
-                    . $this->messageList($this->submissionErrors($submission), 'Companies House response')
-                    . '<div class="helper">Correct the reported issue and prepare a new submission. Do not reuse the rejected submission number.</div>'
-                    . (!empty($filing['can_prepare'])
-                        ? $this->prepareForm($companyId, $accountingPeriodId, $eligibility)
-                        : $this->messageList($this->blockers($filing), 'Preparation blockers'))
-            );
-        }
-
-        $preparedArtifact = is_array($filing['prepared_artifact'] ?? null)
-            ? $filing['prepared_artifact']
-            : (array)($submission['artifact'] ?? []);
-        if ($status === 'prepared' || $preparedArtifact !== []) {
-            return $this->filingPanel(
-                'Prepared for submission',
-                !empty($filing['can_submit']) ? 'success' : 'warning',
-                $summary
-                    . $this->submissionSummary($submission)
-                    . $this->artifactSummary($preparedArtifact)
-                    . $this->messageList($this->blockers($filing), 'Submission blockers')
-                    . (!empty($filing['can_submit'])
-                        ? $this->transmitLink()
-                        : '')
-            );
-        }
-
-        $blockers = $this->blockers($filing);
-        if (empty($filing['can_prepare'])) {
-            return $this->filingPanel(
-                !empty(($filing['readiness'] ?? [])['ready_for_filing']) ? 'Filing disabled' : 'Accounts not ready',
-                'warning',
-                $summary . $this->messageList($blockers, 'Preparation blockers')
-            );
-        }
-
-        return $this->filingPanel(
-            'Ready to prepare',
-            'success',
-            $summary
-                . '<div class="helper">Preparing creates an immutable revised-accounts artifact for review. It does not submit anything to Companies House.</div>'
-                . $this->prepareForm($companyId, $accountingPeriodId, $eligibility)
-        );
+        return '<form method="post" action="?page=companies_house" data-ajax="true" class="settings-stack" id="companies-house-xml-eligibility">'
+            . $this->actionHiddenFields($companyId, $accountingPeriodId, 'record_gateway_eligibility')
+            . '<input type="hidden" name="original_document_id" value="' . $originalDocumentId . '">
+                <fieldset' . $disabled . '>
+                    <legend>Is ' . HelperFramework::escape($companyName) . ' eligible for XML based web filing?</legend>
+                    <label class="checkbox-row"><input type="radio" name="eligibility_decision" value="eligible" required data-submit-on-change="true"' . $yesChecked . '><span>Yes</span></label>
+                    <label class="checkbox-row"><input type="radio" name="eligibility_decision" value="ineligible" required data-submit-on-change="true"' . $noChecked . '><span>No</span></label>
+                </fieldset>
+                <div class="helper">' . HelperFramework::escape($helper) . '</div>
+            </form>';
     }
 
     private function renderComparisonPanel(array $comparison, array $companySettings): string
     {
+        if (($comparison['comparison_scope'] ?? '') === 'no_exact_match') {
+            $filing = (array)($comparison['filing'] ?? []);
+            $reference = trim((string)($filing['period_end'] ?? ''));
+            $referenceText = $reference === ''
+                ? ''
+                : ' The nearest stored filing covers the period ending ' . $reference . ' and is shown for reference only.';
+
+            return $this->panel(
+                'Companies House Comparison',
+                '<div class="helper">' . HelperFramework::escape((string)($comparison['comparison_note'] ?? 'No Companies House comparison is available.')) . '</div>'
+                    . '<div class="helper">' . HelperFramework::escape($referenceText) . '</div>'
+            );
+        }
+
         if (empty($comparison['available'])) {
             return $this->panel('Companies House Comparison', $this->renderErrors((array)($comparison['errors'] ?? ['No Companies House comparison is available.'])));
         }
@@ -303,29 +200,6 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         </section>';
     }
 
-    private function eligibilityForm(int $companyId, int $accountingPeriodId, array $eligibility, bool $locked = false): string
-    {
-        $originalDocumentId = (int)($eligibility['original_document_id'] ?? 0);
-        $disabled = $locked ? ' disabled' : '';
-
-        return '<form method="post" action="?page=companies_house" data-ajax="true" class="settings-stack">'
-            . $this->actionHiddenFields($companyId, $accountingPeriodId, 'record_gateway_eligibility')
-            . '<input type="hidden" name="original_document_id" value="' . $originalDocumentId . '">
-                <label>Companies House decision
-                    <select name="eligibility_decision" required data-no-submit-on-change="true"' . $disabled . '>
-                        <option value="eligible">Eligible for XML revised-accounts filing</option>
-                        <option value="ineligible">Ineligible — paper amendment required</option>
-                    </select>
-                </label>
-                <label>Written evidence
-                    <textarea name="eligibility_evidence" rows="5" required placeholder="Paste or summarise the Companies House response for this filing."' . $disabled . '></textarea>
-                </label>
-                <label>Companies House response reference (optional)
-                    <input type="text" name="response_reference" maxlength="255"' . $disabled . '>
-                </label>
-                <button class="button" type="submit"' . $disabled . '>Record eligibility decision</button>
-            </form>';
-    }
 
     private function prepareForm(int $companyId, int $accountingPeriodId, array $eligibility, bool $locked = false): string
     {

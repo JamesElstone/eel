@@ -182,20 +182,29 @@ final class CompaniesHouseAccountsSubmissionService
         ];
     }
 
+    public function fetchEligibility(int $companyId, int $accountingPeriodId): array
+    {
+        $selection = $this->selection($companyId, $accountingPeriodId);
+        if ($selection === null) {
+            return ['decision' => 'pending', 'original_document_id' => 0];
+        }
+
+        return $this->eligibility($selection, $this->exactOriginalDocument($selection));
+    }
+
     public function recordEligibility(
         int $companyId,
         int $accountingPeriodId,
         int $originalDocumentId,
         string $decision,
-        string $evidence,
         string $actor
     ): array {
         $selection = $this->selection($companyId, $accountingPeriodId);
         if ($selection === null) {
             return $this->failure('Select a valid company and accounting period.');
         }
-        if (!(($this->lockService ?? new YearEndLockService())->isLocked($companyId, $accountingPeriodId))) {
-            return $this->failure('Lock Year End before recording revised-accounts eligibility.');
+        if (($this->lockService ?? new YearEndLockService())->isLocked($companyId, $accountingPeriodId)) {
+            return $this->failure('Eligibility cannot be changed after Year End is locked.');
         }
         if (!\InterfaceDB::tableExists(self::ELIGIBILITY_TABLE)) {
             return $this->failure('The Companies House accounts-filing migration has not been applied.');
@@ -204,10 +213,6 @@ final class CompaniesHouseAccountsSubmissionService
         $decision = strtolower(trim($decision));
         if (!in_array($decision, ['eligible', 'ineligible'], true)) {
             return $this->failure('Choose whether Companies House confirmed the original filing as eligible or ineligible.');
-        }
-        $evidence = trim($evidence);
-        if ($evidence === '' || mb_strlen($evidence) > 16000) {
-            return $this->failure('Enter the Companies House written response, up to 16,000 characters.');
         }
         $actor = $this->actor($actor);
         $original = $this->exactOriginalDocument($selection);
@@ -235,9 +240,9 @@ final class CompaniesHouseAccountsSubmissionService
                      original_document_external_id = :external_id,
                      original_filing_channel = :channel,
                      decision = :decision,
-                     evidence_text = :evidence,
-                     evidence_reference = :reference,
-                     evidence_received_at = :received_at,
+                    evidence_text = :evidence,
+                    evidence_reference = NULL,
+                    evidence_received_at = NULL,
                      decided_by = :actor,
                      decided_at = :decided_at,
                      updated_at = :updated_at
@@ -247,9 +252,7 @@ final class CompaniesHouseAccountsSubmissionService
                     'external_id' => (string)$original['document_id'],
                     'channel' => (string)$original['detected_channel'],
                     'decision' => $decision,
-                    'evidence' => $evidence,
-                    'reference' => 'Companies House XML Team written response',
-                    'received_at' => $now,
+                    'evidence' => '',
                     'actor' => $actor,
                     'decided_at' => $now,
                     'updated_at' => $now,
@@ -267,7 +270,7 @@ final class CompaniesHouseAccountsSubmissionService
                  ) VALUES (
                     :company_id, :accounting_period_id, :original_document_id,
                     :transaction_id, :external_id, :channel, :decision, :evidence,
-                    :reference, :received_at, :actor, :decided_at, :created_at, :updated_at
+                    NULL, NULL, :actor, :decided_at, :created_at, :updated_at
                  )',
                 [
                     'company_id' => $companyId,
@@ -277,9 +280,7 @@ final class CompaniesHouseAccountsSubmissionService
                     'external_id' => (string)$original['document_id'],
                     'channel' => (string)$original['detected_channel'],
                     'decision' => $decision,
-                    'evidence' => $evidence,
-                    'reference' => 'Companies House XML Team written response',
-                    'received_at' => $now,
+                    'evidence' => '',
                     'actor' => $actor,
                     'decided_at' => $now,
                     'created_at' => $now,

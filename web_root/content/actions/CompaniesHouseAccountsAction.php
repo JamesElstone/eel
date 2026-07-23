@@ -70,8 +70,11 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             return $this->error($contextError);
         }
 
-        if (!$this->isLocked($companyId, $accountingPeriodId)) {
+        if ($intent !== 'record_gateway_eligibility' && !$this->isLocked($companyId, $accountingPeriodId)) {
             return $this->error('Complete and lock Year End before using Companies House revised-accounts filing.');
+        }
+        if ($intent === 'record_gateway_eligibility' && $this->isLocked($companyId, $accountingPeriodId)) {
+            return $this->error('Eligibility cannot be changed after Year End is locked.');
         }
         $developerIntent = in_array($intent, [
             'preflight_revised_accounts',
@@ -146,8 +149,6 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
     ): array {
         $originalDocumentId = (int)$request->input('original_document_id', 0);
         $decision = strtolower(trim((string)$request->input('eligibility_decision', '')));
-        $evidence = trim((string)$request->input('eligibility_evidence', ''));
-        $responseReference = trim((string)$request->input('response_reference', ''));
 
         if ($originalDocumentId <= 0) {
             return ['success' => false, 'errors' => ['Select the exact original Companies House filing before recording eligibility.']];
@@ -155,19 +156,11 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         if (!in_array($decision, ['eligible', 'ineligible'], true)) {
             return ['success' => false, 'errors' => ['Record whether Companies House confirmed the filing as eligible or ineligible.']];
         }
-        if ($evidence === '') {
-            return ['success' => false, 'errors' => ['Companies House written evidence is required.']];
-        }
-        if ($responseReference !== '') {
-            $evidence = 'Response reference: ' . $responseReference . "\n" . $evidence;
-        }
-
         return $this->service()->recordEligibility(
             $companyId,
             $accountingPeriodId,
             $originalDocumentId,
             $decision,
-            $evidence,
             $this->actor($request)
         );
     }

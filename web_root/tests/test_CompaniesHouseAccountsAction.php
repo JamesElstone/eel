@@ -47,15 +47,13 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
         $harness->assertCount(0, $service->calls);
     });
 
-    $harness->check(CompaniesHouseAccountsAction::class, 'records exact-filing eligibility with written evidence', static function () use ($harness): void {
+    $harness->check(CompaniesHouseAccountsAction::class, 'records an unlocked XML filing eligibility decision without separate evidence fields', static function () use ($harness): void {
         $service = new CompaniesHouseAccountsActionFakeService();
-        $action = companiesHouseAccountsTestAction($service);
+        $action = companiesHouseAccountsTestAction($service, null, [12, 34], false);
         $result = $action->handle(companiesHouseAccountsActionRequest([
             'intent' => 'record_gateway_eligibility',
             'original_document_id' => '56',
             'eligibility_decision' => 'eligible',
-            'eligibility_evidence' => 'Confirmed by the Companies House XML Team.',
-            'response_reference' => 'Email 17 July 2026',
         ]), createTestPageServiceFramework());
 
         $harness->assertSame(true, $result->isSuccess());
@@ -63,7 +61,6 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
         $harness->assertSame('recordEligibility', (string)($service->calls[0]['method'] ?? ''));
         $harness->assertSame(56, (int)($service->calls[0]['original_document_id'] ?? 0));
         $harness->assertSame('eligible', (string)($service->calls[0]['decision'] ?? ''));
-        $harness->assertSame(true, str_contains((string)($service->calls[0]['evidence'] ?? ''), 'Email 17 July 2026'));
         $harness->assertSame('user:test-admin', (string)($service->calls[0]['actor'] ?? ''));
     });
 
@@ -222,10 +219,9 @@ final class CompaniesHouseAccountsActionFakeService
         int $accountingPeriodId,
         int $originalDocumentId,
         string $decision,
-        string $evidence,
         string $actor
     ): array {
-        $this->calls[] = compact('companyId', 'accountingPeriodId', 'originalDocumentId', 'decision', 'evidence', 'actor') + [
+        $this->calls[] = compact('companyId', 'accountingPeriodId', 'originalDocumentId', 'decision', 'actor') + [
             'method' => 'recordEligibility',
             'original_document_id' => $originalDocumentId,
         ];

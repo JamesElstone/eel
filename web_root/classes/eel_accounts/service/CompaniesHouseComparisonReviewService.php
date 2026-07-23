@@ -17,6 +17,7 @@ final class CompaniesHouseComparisonReviewService
         private readonly ?\eel_accounts\Service\YearEndCompaniesHouseComparisonService $comparisonService = null,
         private readonly ?\eel_accounts\Service\YearEndAcknowledgementService $acknowledgementService = null,
         private readonly ?\eel_accounts\Service\AccountingPeriodAccessService $accessService = null,
+        private readonly ?\eel_accounts\Service\CompaniesHouseAccountsSubmissionService $accountsSubmissionService = null,
     ) {
     }
 
@@ -54,16 +55,23 @@ final class CompaniesHouseComparisonReviewService
         $comparisonCanBeAcknowledged = array_key_exists('can_acknowledge', $comparison)
             ? !empty($comparison['can_acknowledge'])
             : !empty($comparison['available']);
+        $eligibility = ($this->accountsSubmissionService ?? new \eel_accounts\Service\CompaniesHouseAccountsSubmissionService())
+            ->fetchEligibility($companyId, $accountingPeriodId);
+        $eligibilityRecorded = in_array((string)($eligibility['decision'] ?? 'pending'), ['eligible', 'ineligible'], true);
+        $isLocked = !empty($access['is_locked']);
 
         return [
             'comparison' => $comparison,
             'acknowledgement' => is_array($acknowledgement) ? $acknowledgement : null,
             'access' => $access,
+            'eligibility' => $eligibility,
             'mismatch_count' => $this->mismatchCount($comparison),
-            'can_acknowledge' => $comparisonCanBeAcknowledged && empty($access['is_locked']),
+            'can_acknowledge' => $comparisonCanBeAcknowledged && !$isLocked && $eligibilityRecorded,
             'acknowledgement_blocked_reason' => !$comparisonCanBeAcknowledged
                 ? (string)(($comparison['warnings'] ?? [])[0] ?? 'Complete and lock the prior accounting period before approving this comparison.')
-                : '',
+                : (!$isLocked && !$eligibilityRecorded
+                    ? 'Record whether the company is eligible for XML based web filing before completing this Year End Confirmation.'
+                    : ''),
         ];
     }
 

@@ -977,6 +977,17 @@ final class YearEndChecklistService
             }
         }
 
+        if ($acknowledged && $checkCode === 'companies_house_mismatch_acknowledgement') {
+            $eligibility = (new \eel_accounts\Service\CompaniesHouseAccountsSubmissionService())
+                ->fetchEligibility($companyId, $accountingPeriodId);
+            if (!in_array((string)($eligibility['decision'] ?? 'pending'), ['eligible', 'ineligible'], true)) {
+                return [
+                    'success' => false,
+                    'errors' => ['Record whether the company is eligible for XML based web filing before completing this Year End Confirmation.'],
+                ];
+            }
+        }
+
         return $this->saveAcknowledgement($companyId, $accountingPeriodId, $checkCode, $acknowledged, $note, $changedBy);
     }
 

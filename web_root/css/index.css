@@ -2432,6 +2432,28 @@ table.table-condensed .select {
   align-items: flex-start;
 }
 
+.api-credential-metadata {
+  display: flex;
+  flex-flow: row wrap;
+  gap: 14px;
+  padding-bottom: 14px;
+  align-items: flex-start;
+}
+
+.api-credential-metadata > label {
+  display: flex;
+  flex: 1 1 160px;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 140px;
+}
+
+.api-credential-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
 .form-flex-flow .form-row {
   flex: 1 1 260px;
   min-width: 0;

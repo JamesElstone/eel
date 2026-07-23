@@ -41,16 +41,16 @@ final class _api_keys_editorCard extends CardBaseFramework
             . '<input type="hidden" name="card_action" value="ApiKeysEditor"><input type="hidden" name="edit_credential_id" value="" data-api-credential-id>'
             . '<section class="panel-soft"><h3 class="card-title">Existing API Keys</h3><div class="table-scroll"><table><thead><tr><th>Provider</th><th>Gateway</th><th>Tag</th><th>Environment</th><th>Schema</th><th>URL</th><th>Action</th></tr></thead><tbody>'
             . $this->rows($rows) . '</tbody></table></div></section>'
-            . '<section class="panel-soft"><h3 class="card-title" data-api-credential-editor-title>Add Credential</h3><div class="form-grid">'
+            . '<section class="panel-soft"><h3 class="card-title" data-api-credential-editor-title>Add Credential</h3><div class="api-credential-metadata">'
             . $this->select('Provider', 'credential[provider]', 'provider', $catalog)
             . $this->select('Gateway', 'credential[gateway]', 'gateway', $catalog)
             . $this->select('Tag', 'credential[tag]', 'tag', $catalog)
             . $this->select('Environment', 'credential[environment]', 'environment', $catalog)
-            . $this->input('Schema', 'credential[schema]')
+            . $this->schemaSelect() . '</div><div class="form-grid">'
             . $this->input('URL', 'credential[url]', 'url')
             . $this->secretInput('API identity', 'credential[api_identity]', 'Set/replace API identity (optional for new credentials)')
             . $this->secretInput('API key', 'credential[api_key]', 'Set/replace API key')
-            . '</div><button class="button primary" type="submit">Save API Credential</button></section></form>';
+            . '</div><div class="api-credential-actions"><button class="button primary" type="submit">Save API Credential</button><button class="button" type="button" data-api-credential-clear="true">Clear</button></div></section></form>';
     }
 
     /** @param list<array<string, mixed>> $rows */
@@ -76,7 +76,7 @@ final class _api_keys_editorCard extends CardBaseFramework
             $value = (string)($entry[$field] ?? '');
             if ($value !== '') { $options[$value] = (string)($entry[$field . '_label'] ?? $value); }
         }
-        $html = '<label>' . HelperFramework::escape($label) . '<select class="select" name="' . HelperFramework::escape($name) . '" data-api-credential-field="' . HelperFramework::escape($field) . '"><option value="">Select ' . HelperFramework::escape($label) . '</option>';
+        $html = '<label>' . HelperFramework::escape($label) . '<select class="select" name="' . HelperFramework::escape($name) . '" data-api-credential-field="' . HelperFramework::escape($field) . '" data-no-submit-on-change="true"><option value="">Select ' . HelperFramework::escape($label) . '</option>';
         foreach ($options as $value => $optionLabel) { $html .= '<option value="' . HelperFramework::escape($value) . '">' . HelperFramework::escape($optionLabel) . '</option>'; }
         return $html . '</select></label>';
     }
@@ -84,6 +84,11 @@ final class _api_keys_editorCard extends CardBaseFramework
     private function input(string $label, string $name, string $type = 'text', string $placeholder = ''): string
     {
         return '<label>' . HelperFramework::escape($label) . '<input class="input" name="' . HelperFramework::escape($name) . '" type="' . HelperFramework::escape($type) . '" value="" autocomplete="off"' . ($placeholder !== '' ? ' placeholder="' . HelperFramework::escape($placeholder) . '"' : '') . '></label>';
+    }
+
+    private function schemaSelect(): string
+    {
+        return '<label>Schema<select class="select" name="credential[schema]"><option value="HTTPS" selected>HTTPS</option><option value="HTTP">HTTP</option></select></label>';
     }
 
     private function secretInput(string $label, string $name, string $placeholder): string

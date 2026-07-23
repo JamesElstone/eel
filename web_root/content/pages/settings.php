@@ -33,6 +33,7 @@ final class _settings extends PageContextFramework
     {
         return [
             'api_mode',
+            'api_keys_editor',
             'settings_import_review',
             'api_connectivity_test',
             'hmrc_anti_fraud_test',

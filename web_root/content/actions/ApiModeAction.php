@@ -15,6 +15,7 @@ final class ApiModeAction implements ActionInterfaceFramework
         $intent = trim((string)$request->input('intent'));
 
         $current_chMode = \eel_accounts\Store\AccountingConfigurationStore::companiesHouseMode();
+        $current_chAccountsFilingMode = \eel_accounts\Store\AccountingConfigurationStore::companiesHouseAccountsFilingMode();
         $current_hmrcMode = \eel_accounts\Store\AccountingConfigurationStore::hmrcMode();
 
         switch ($intent) {
@@ -47,6 +48,10 @@ final class ApiModeAction implements ActionInterfaceFramework
 
                 $requested_hmrcMode = HelperFramework::normaliseEnvironmentMode((string)$request->input('hmrc_api_mode'));
                 $requested_chMode = HelperFramework::normaliseEnvironmentMode((string)$request->input('companies_house_api_mode'));
+                $requested_chAccountsFilingMode = strtoupper(trim((string)$request->input('ch_accounts_filing_mode')));
+                if (!in_array($requested_chAccountsFilingMode, ['DISABLED', 'TEST', 'LIVE'], true)) {
+                    $requested_chAccountsFilingMode = 'DISABLED';
+                }
 
                 $changed = false;
 
@@ -54,6 +59,12 @@ final class ApiModeAction implements ActionInterfaceFramework
                 if ($current_chMode <> $requested_chMode) {
                     \eel_accounts\Store\AccountingConfigurationStore::setCompaniesHouseMode($requested_chMode);
                     $flashMessages[] = 'Companies House API mode saved as ' . $requested_chMode . '.';
+                    $changed = true;
+                }
+
+                if ($current_chAccountsFilingMode <> $requested_chAccountsFilingMode) {
+                    \eel_accounts\Store\AccountingConfigurationStore::setCompaniesHouseAccountsFilingMode($requested_chAccountsFilingMode);
+                    $flashMessages[] = 'Companies House XML environment saved as ' . $requested_chAccountsFilingMode . '.';
                     $changed = true;
                 }
 

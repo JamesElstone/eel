@@ -3910,6 +3910,12 @@ INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_23_003_transmission_archive_artifact_metadata.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_23_004_companies_house_protocol_conversation.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_23_005_api_keys_editor_permission.sql');
+INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
+SELECT DISTINCT `role_id`, 'api_keys_editor'
+FROM `role_card_permissions`
+WHERE `card_key` = 'api_mode';
 INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
 SELECT DISTINCT `role_id`, 'companies_house_transmission'
 FROM `role_card_permissions`

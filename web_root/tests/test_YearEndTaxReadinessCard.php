@@ -49,7 +49,7 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
 
         $html = $card->render($context);
 
-        $harness->assertTrue(str_contains($html, 'Corporation Tax Filling Scope Check'));
+        $harness->assertTrue(str_contains($html, 'Corporation Tax Filing Scope Check'));
         $harness->assertTrue(str_contains($html, '<th>Supplement ID</th><th>Supplement Name</th><th>Question</th><th>HMRC Guidance</th><th>Answer</th>'));
         $harness->assertTrue(str_contains($html, 'name="card_action" value="Ixbrl"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_ct_filing_scope_answer"'));

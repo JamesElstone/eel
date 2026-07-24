@@ -8,9 +8,28 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
-require_once dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'tools' . DIRECTORY_SEPARATOR . 'php' . DIRECTORY_SEPARATOR . 'dbUnicodeDiagnostic.php';
 
 $harness = new GeneratedServiceClassTestHarness();
+
+$harness->check('dbUnicodeDiagnostic.php', 'loads within the test bootstrap without warnings', function () use ($harness): void {
+    $warnings = [];
+    set_error_handler(static function (int $severity, string $message) use (&$warnings): bool {
+        if ($severity === E_WARNING) {
+            $warnings[] = $message;
+            return true;
+        }
+
+        return false;
+    });
+
+    try {
+        require_once dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'tools' . DIRECTORY_SEPARATOR . 'php' . DIRECTORY_SEPARATOR . 'dbUnicodeDiagnostic.php';
+    } finally {
+        restore_error_handler();
+    }
+
+    $harness->assertSame([], $warnings);
+});
 
 $harness->check('dbUnicodeDiagnostic.php', 'compares UTF-8 bytes and code points exactly', function () use ($harness): void {
     $value = 'Crème – 日本語 🚀';

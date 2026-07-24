@@ -43,7 +43,7 @@ final class ActionProgressFramework
         $event = [
             'type' => 'progress',
             'sequence' => ++$this->sequence,
-            'message' => $message,
+            'message' => '[' . date('d/m/Y H:i:s') . '] - ' . $message,
         ];
 
         if ($percent !== null) {

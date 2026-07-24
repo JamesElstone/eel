@@ -26,17 +26,16 @@ $harness->check(ActionProgressFramework::class, 'stays inactive until progress i
     $harness->assertSame(true, $progress->isStarted());
     $harness->assertSame(false, $progress->isTerminal());
 
-    $harness->assertSame([
-        'type' => 'progress',
-        'sequence' => 1,
-        'message' => 'Loading transactions',
-    ], json_decode($lines[0], true, 512, JSON_THROW_ON_ERROR));
-    $harness->assertSame([
-        'type' => 'progress',
-        'sequence' => 2,
-        'message' => 'Matching records',
-        'percent' => 40,
-    ], json_decode($lines[1], true, 512, JSON_THROW_ON_ERROR));
+    $firstProgress = json_decode($lines[0], true, 512, JSON_THROW_ON_ERROR);
+    $harness->assertSame('progress', $firstProgress['type']);
+    $harness->assertSame(1, $firstProgress['sequence']);
+    $harness->assertTrue((bool)preg_match('/^\[\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}\] - Loading transactions$/', $firstProgress['message']));
+
+    $secondProgress = json_decode($lines[1], true, 512, JSON_THROW_ON_ERROR);
+    $harness->assertSame('progress', $secondProgress['type']);
+    $harness->assertSame(2, $secondProgress['sequence']);
+    $harness->assertSame(40, $secondProgress['percent']);
+    $harness->assertTrue((bool)preg_match('/^\[\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}\] - Matching records$/', $secondProgress['message']));
 
     $response = ResponseFramework::json(['success' => true, 'cards' => ['card-id' => '<p>Updated</p>']]);
     $harness->assertSame(true, $progress->complete($response));

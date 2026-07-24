@@ -25,17 +25,6 @@ final class _year_end_profit_loss_confirmCard extends CardBaseFramework
     {
         return [
             [
-                'key' => 'yearEndProfitLossConfirm',
-                'service' => \eel_accounts\Service\RetainedEarningsCloseService::class,
-                'method' => 'fetchContext',
-                'params' => [
-                    'companyId' => ':company.id',
-                    'accountingPeriodId' => ':company.accounting_period_id',
-                    'corporationTaxProvision' => ':profit_loss.summary.corporation_tax_provision',
-                    'depreciationPreview' => ':profit_loss.summary.depreciation_preview',
-                ],
-            ],
-            [
                 'key' => 'sectionReview',
                 'service' => \eel_accounts\Service\YearEndSectionApprovalService::class,
                 'method' => 'fetchReview',
@@ -50,7 +39,7 @@ final class _year_end_profit_loss_confirmCard extends CardBaseFramework
 
     protected function additionalInvalidationFacts(): array
     {
-        return ['page.context', 'year.end.state', 'year.end.checklist', 'year.end.retained.earnings'];
+        return ['year.end.state', 'year.end.checklist', 'year.end.retained.earnings'];
     }
 
     public function handleError(string $serviceKey, array $error, array $context): string
@@ -60,7 +49,8 @@ final class _year_end_profit_loss_confirmCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $close = (array)($context['services']['yearEndProfitLossConfirm'] ?? []);
+        $sectionReview = (array)($context['services']['sectionReview'] ?? []);
+        $close = (array)($sectionReview['display'] ?? []);
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $companySettings = (array)($company['settings'] ?? []);
@@ -82,7 +72,6 @@ final class _year_end_profit_loss_confirmCard extends CardBaseFramework
         $pendingPrepaymentHtml = abs($pendingPrepaymentAmount) >= 0.005
             ? '<div class="helper">These figures include a pending prepayment expense adjustment of ' . HelperFramework::escape($this->money($companySettings, $pendingPrepaymentAmount)) . '.</div>'
             : '';
-        $sectionReview = (array)($context['services']['sectionReview'] ?? []);
         $journalLinesHtml = $this->journalLinesHtml((array)($close['journal_lines'] ?? []), $companySettings);
         $existingJournal = (array)($close['existing_journal'] ?? []);
         $existingHtml = $existingJournal !== []

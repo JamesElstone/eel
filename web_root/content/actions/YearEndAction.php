@@ -273,6 +273,11 @@ final class YearEndAction implements ActionInterfaceFramework
 
     private function changedFacts(string $intent, string $checkCode = ''): array
     {
+        if (in_array($intent, ['approve_section_review', 'revoke_section_review'], true)
+            && trim($checkCode) === 'retained_earnings_close_confirmation') {
+            return ['year.end.state', 'year.end.checklist', 'year.end.retained.earnings', 'year.end.audit.log'];
+        }
+
         if ($intent === 'save_notes') {
             return ['year.end.notes', 'year.end.state', 'year.end.checklist', 'year.end.audit.log'];
         }

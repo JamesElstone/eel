@@ -55,6 +55,15 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
         $harness->assertSame(true, $unlockFinalProgress !== false && $unlockCommit !== false && $unlockFinalProgress < $unlockCommit);
     });
 
+    $harness->check(YearEndAction::class, 'narrows P&L section approval invalidation to the affected Year End facts', static function () use ($harness, $instance): void {
+        $method = new ReflectionMethod($instance, 'changedFacts');
+        $facts = (array)$method->invoke($instance, 'approve_section_review', 'retained_earnings_close_confirmation');
+
+        $harness->assertSame(false, in_array('page.context', $facts, true));
+        $harness->assertSame(true, in_array('year.end.retained.earnings', $facts, true));
+        $harness->assertSame(true, in_array('year.end.checklist', $facts, true));
+    });
+
     $harness->check('YearEndAction', 'posts confirmed director loan reclassification deltas and remains idempotent', static function () use ($harness, $instance): void {
         yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness, $instance): void {
             $instance = yearEndActionTestInstanceWithDirectorCount(1);

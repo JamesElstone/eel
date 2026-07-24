@@ -261,17 +261,38 @@
 
             const checkbox = form.querySelector('[data-director-loan-offset-ack-checkbox], [data-year-end-ack-checkbox]');
             const submitButton = form.querySelector('[data-director-loan-offset-ack-submit], [data-year-end-ack-submit]');
+            const blockingQuestionSets = Array.from(form.querySelectorAll('[data-year-end-approval-required-value]'));
+            const scopeWarning = form.querySelector('[data-year-end-approval-scope-warning]');
 
             if (!(checkbox instanceof HTMLInputElement) || !(submitButton instanceof HTMLButtonElement)) {
                 return;
             }
 
             const syncAcknowledgement = () => {
-                submitButton.disabled = !checkbox.checked;
+                const hasBlockingAnswer = blockingQuestionSets.some((questionSet) => {
+                    const requiredValue = String(questionSet.dataset.yearEndApprovalRequiredValue || '');
+                    const selected = questionSet.querySelector('input[type="radio"]:checked');
+                    return requiredValue !== '' && selected instanceof HTMLInputElement && selected.value !== requiredValue;
+                });
+                const controlsInitiallyDisabled = form.dataset.yearEndAckControlsInitiallyDisabled === '1';
+                if (!controlsInitiallyDisabled) {
+                    checkbox.disabled = hasBlockingAnswer;
+                }
+                submitButton.disabled = controlsInitiallyDisabled || hasBlockingAnswer || !checkbox.checked;
+                if (hasBlockingAnswer) {
+                    checkbox.checked = false;
+                }
+                if (scopeWarning instanceof HTMLElement) {
+                    scopeWarning.hidden = !hasBlockingAnswer;
+                }
             };
 
             if (form.dataset.directorLoanOffsetAckBound !== '1') {
+                form.dataset.yearEndAckControlsInitiallyDisabled = checkbox.disabled ? '1' : '0';
                 checkbox.addEventListener('change', syncAcknowledgement);
+                blockingQuestionSets.forEach((questionSet) => {
+                    questionSet.addEventListener('change', syncAcknowledgement);
+                });
                 form.dataset.directorLoanOffsetAckBound = '1';
             }
 

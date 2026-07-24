@@ -41,7 +41,7 @@ final class YearEndApprovalRenderer
         }
 
         return '<section class="panel-soft success settings-stack">
-            <div class="eyebrow">Year End Confirmation</div>
+            <h3>Year End Confirmation</h3>
             ' . ($note !== '' ? '<div class="summary-value">' . \HelperFramework::escape($note) . '</div>' : '') . '
             ' . self::approvedQuestionSummary((array)($options['questions'] ?? []), (array)($options['answers'] ?? [])) . '
             <div class="stat-foot">' . \HelperFramework::escape(self::approvedFoot(
@@ -79,6 +79,7 @@ final class YearEndApprovalRenderer
         $noteMode = self::noteMode((string)($options['noteMode'] ?? self::NOTE_OPTIONAL));
         $checkboxName = trim((string)($options['checkboxName'] ?? 'approval_confirmed'));
         $approveFields = (array)($options['approveFields'] ?? []);
+        $questions = (array)($options['questions'] ?? []);
         unset($approveFields[$checkboxName]);
         $buttonAttributes = $disabled
             ? ' disabled' . ($disabledReason !== '' ? ' title="' . \HelperFramework::escape($disabledReason) . '"' : '')
@@ -88,12 +89,13 @@ final class YearEndApprovalRenderer
             $confirmationText = 'I confirm that I have reviewed the ' . $subject . ' shown above and approve it as accurate for Year End.';
         }
 
-        return self::staleEvidence($options) . '<section class="panel-soft warn full settings-stack">
-            <div class="eyebrow">Year End Confirmation</div>
+        return self::staleEvidence($options) . '<section class="panel-soft full settings-stack">
+            <h3>Year End Confirmation</h3>
             <form method="post" data-ajax="true" class="form-grid" data-year-end-ack-form="true">
                 ' . self::commonFields($companyId, $accountingPeriodId, $intent) . '
                 ' . self::hiddenFields($approveFields) . '
-                ' . self::questionFields((array)($options['questions'] ?? []), (array)($options['answers'] ?? []), $disabled) . '
+                ' . self::questionFields($questions, (array)($options['answers'] ?? []), $disabled) . '
+                ' . self::questionBlockingNotice($questions) . '
                 <label class="checkbox-row full">
                     <input type="checkbox" name="' . \HelperFramework::escape($checkboxName) . '" value="1" required data-year-end-ack-checkbox' . ($disabled ? ' disabled' : '') . '>
                     <span>' . \HelperFramework::escape($confirmationText) . '</span>
@@ -121,7 +123,7 @@ final class YearEndApprovalRenderer
             : 'Review required — underlying data changed.';
 
         return '<section class="panel-soft warn full settings-stack">
-            <div class="eyebrow">Previous Year End Confirmation</div>
+            <h3>Previous Year End Confirmation</h3>
             <div class="summary-value">' . \HelperFramework::escape($message) . '</div>
             ' . ($note !== '' ? '<div class="helper">Original note: ' . \HelperFramework::escape($note) . '</div>' : '') . '
             <div class="stat-foot">' . \HelperFramework::escape(self::approvedFoot($approvedAt, $approvedBy)) . '</div>
@@ -175,14 +177,17 @@ final class YearEndApprovalRenderer
             $required = !empty($question['required']) ? ' required' : '';
             $disabledAttribute = $disabled ? ' disabled' : '';
             if ((string)($question['type'] ?? '') === 'text') {
-                $html .= '<div class="form-row full"><label>' . \HelperFramework::escape($prompt)
+                $html .= '<div class="form-row full year-end-approval-question"><label>' . \HelperFramework::escape($prompt)
                     . '<textarea class="input" name="' . \HelperFramework::escape($field) . '" rows="3"'
                     . $required . $disabledAttribute . '>' . \HelperFramework::escape((string)$value) . '</textarea></label></div>';
                 continue;
             }
 
             $options = (array)($question['options'] ?? []);
-            $html .= '<fieldset class="panel-soft full"><legend>' . \HelperFramework::escape($prompt) . '</legend><div class="actions-row">';
+            $requiredValue = array_key_exists('required_value', $question)
+                ? ' data-year-end-approval-required-value="' . \HelperFramework::escape((string)$question['required_value']) . '"'
+                : '';
+            $html .= '<fieldset class="panel-soft full year-end-approval-question"' . $requiredValue . '><legend>' . \HelperFramework::escape($prompt) . '</legend><div class="actions-row">';
             foreach ($options as $optionValue => $optionLabel) {
                 $inputId = self::fieldId($id . '-' . (string)$optionValue);
                 $html .= '<label for="' . \HelperFramework::escape($inputId) . '"><input id="'
@@ -196,12 +201,22 @@ final class YearEndApprovalRenderer
         return $html;
     }
 
+    private static function questionBlockingNotice(array $questions): string
+    {
+        foreach ($questions as $question) {
+            if (array_key_exists('required_value', (array)$question)) {
+                return '<div class="panel-soft warn helper full" data-year-end-approval-scope-warning hidden>A Yes answer means this period includes a matter outside the scope supported by this application.</div>';
+            }
+        }
+        return '';
+    }
+
     private static function approvedQuestionSummary(array $questions, array $answers): string
     {
         if ($questions === [] || $answers === []) {
             return '';
         }
-        $items = '';
+        $rows = '';
         foreach ($questions as $question) {
             $question = (array)$question;
             $id = (string)($question['id'] ?? '');
@@ -211,10 +226,13 @@ final class YearEndApprovalRenderer
             $options = (array)($question['options'] ?? []);
             $answer = (string)$answers[$id];
             $label = (string)($options[$answer] ?? $answer);
-            $items .= '<dt>' . \HelperFramework::escape((string)($question['prompt'] ?? $id)) . '</dt><dd>'
-                . \HelperFramework::escape($label) . '</dd>';
+            $rows .= '<tr><td>' . \HelperFramework::escape((string)($question['prompt'] ?? $id)) . '</td><td>'
+                . \HelperFramework::escape($label) . '</td></tr>';
         }
-        return $items !== '' ? '<dl class="definition-list">' . $items . '</dl>' : '';
+        return $rows !== ''
+            ? '<div class="table-scroll-mini"><table class="table-condensed"><thead><tr><th>Question</th><th>Answer</th></tr></thead><tbody>'
+                . $rows . '</tbody></table></div>'
+            : '';
     }
 
     private static function hiddenFields(array $fields): string

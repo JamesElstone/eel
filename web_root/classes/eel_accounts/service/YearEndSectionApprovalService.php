@@ -154,9 +154,10 @@ final class YearEndSectionApprovalService
                 $checkCode,
                 'Retained earnings reserve review captured for approval'
             );
+            $preparedContext = (array)($prepared['context'] ?? []);
             $bundle = $this->tableAvailable()
-                ? $this->refreshBundle($companyId, $accountingPeriodId, $checkCode)
-                : $this->buildBundle($companyId, $accountingPeriodId, $checkCode);
+                ? $this->refreshBundle($companyId, $accountingPeriodId, $checkCode, $preparedContext)
+                : $this->buildBundle($companyId, $accountingPeriodId, $checkCode, $preparedContext);
             if (empty($bundle['available'])) {
                 return ['success' => false, 'errors' => (array)($bundle['errors'] ?? ['The current section review is unavailable.'])];
             }
@@ -249,10 +250,15 @@ final class YearEndSectionApprovalService
         );
     }
 
-    public function refreshBundle(int $companyId, int $accountingPeriodId, string $checkCode): array
+    public function refreshBundle(
+        int $companyId,
+        int $accountingPeriodId,
+        string $checkCode,
+        ?array $preparedRetainedEarningsContext = null
+    ): array
     {
         $checkCode = $this->checkCode($checkCode);
-        $bundle = $this->buildBundle($companyId, $accountingPeriodId, $checkCode);
+        $bundle = $this->buildBundle($companyId, $accountingPeriodId, $checkCode, $preparedRetainedEarningsContext);
         $bundle['source_token'] = $this->sourceToken($companyId, $accountingPeriodId, $checkCode);
         $bundle['definition_token'] = $this->definitionToken($checkCode);
         if (!$this->tableAvailable()) {
@@ -306,10 +312,18 @@ final class YearEndSectionApprovalService
         return $this->refreshBundle($companyId, $accountingPeriodId, $checkCode);
     }
 
-    private function buildBundle(int $companyId, int $accountingPeriodId, string $checkCode): array
+    private function buildBundle(
+        int $companyId,
+        int $accountingPeriodId,
+        string $checkCode,
+        ?array $preparedRetainedEarningsContext = null
+    ): array
     {
         if ($checkCode === 'director_loan_year_end_review') {
             return $this->directorLoanBundle($companyId, $accountingPeriodId);
+        }
+        if ($checkCode === 'retained_earnings_close_confirmation') {
+            return $this->retainedEarningsBundle($companyId, $accountingPeriodId, $preparedRetainedEarningsContext);
         }
         if (in_array($checkCode, ['companies_house_mismatch_acknowledgement', 'companies_house_no_filing_acknowledgement'], true)) {
             return $this->companiesHouseBundle($companyId, $accountingPeriodId, $checkCode);
@@ -334,13 +348,6 @@ final class YearEndSectionApprovalService
                     $bundle['approval_errors'] = empty($prepayment['available'])
                         ? (array)($prepayment['errors'] ?? ['The prepayment review is not available.'])
                         : ['Record an explicit decision for every prepayment candidate and complete all pre-paid service dates before approving this section.'];
-                }
-            }
-            if ($checkCode === 'retained_earnings_close_confirmation') {
-                $retained = (new RetainedEarningsCloseService())->fetchContext($companyId, $accountingPeriodId);
-                if (empty($retained['can_acknowledge'])) {
-                    $bundle['can_approve'] = false;
-                    $bundle['approval_errors'] = [(string)(($retained['prior_period_dependency'] ?? [])['detail'] ?? 'The current Profit & Loss close cannot yet be approved.')];
                 }
             }
             return $bundle;
@@ -380,6 +387,60 @@ final class YearEndSectionApprovalService
             'desired_reclassification_amount' => (string)($display['desired_reclassification_amount'] ?? '0.00'),
         ];
         return $this->bundle('director_loan_year_end_review', $facts, $questions, $display);
+    }
+
+    /**
+     * Profit & Loss confirmation is intentionally independent of the full
+     * checklist.  Constructing the checklist recalculates unrelated tax and
+     * s455 evidence, which makes this otherwise small approval needlessly slow.
+     */
+    private function retainedEarningsBundle(
+        int $companyId,
+        int $accountingPeriodId,
+        ?array $preparedContext = null
+    ): array {
+        $service = new RetainedEarningsCloseService();
+        $context = $preparedContext ?? $service->fetchContext($companyId, $accountingPeriodId);
+        if (empty($context['available'])) {
+            return [
+                'available' => false,
+                'errors' => (array)($context['errors'] ?? ['Profit & Loss confirmation is unavailable.']),
+                'check_code' => 'retained_earnings_close_confirmation',
+            ];
+        }
+
+        $bundle = $this->bundle(
+            'retained_earnings_close_confirmation',
+            $service->acknowledgementBasisForContext($context),
+            [],
+            $this->retainedEarningsDisplay($context)
+        );
+        if (empty($context['can_acknowledge'])) {
+            $bundle['can_approve'] = false;
+            $bundle['approval_errors'] = [
+                (string)(($context['prior_period_dependency'] ?? [])['detail']
+                    ?? 'The current Profit & Loss close cannot yet be approved.'),
+            ];
+        }
+        return $bundle;
+    }
+
+    /** @return array<string,mixed> */
+    private function retainedEarningsDisplay(array $context): array
+    {
+        return array_intersect_key($context, array_flip([
+            'available',
+            'errors',
+            'accounting_period',
+            'summary',
+            'depreciation_preview',
+            'journal_lines',
+            'existing_journal',
+            'reserve_review',
+            'prior_period_dependency',
+            'warnings',
+            'can_acknowledge',
+        ]));
     }
 
     private function companiesHouseBundle(int $companyId, int $accountingPeriodId, string $checkCode): array

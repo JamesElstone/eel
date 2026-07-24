@@ -198,6 +198,13 @@
   width: 100%;
 }
 
+/* Keep questions readable while the surrounding approval panel indicates warning status. */
+.year-end-approval-question,
+.year-end-approval-question legend,
+.year-end-approval-question label {
+  color: #000;
+}
+
 .journal-cut-off-create-fields {
   display: flex;
   flex-flow: row wrap;

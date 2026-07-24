@@ -68,6 +68,29 @@ $harness->run(\eel_accounts\Service\YearEndSectionApprovalService::class, static
         $harness->assertSame('no', (string)$approved['answers']['ct600a.missing_parties']);
     });
 
+    $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'builds the P&L bundle directly from the prepared retained earnings context', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod($service, 'retainedEarningsBundle');
+        $bundle = (array)$method->invoke($service, 12, 34, [
+            'available' => true,
+            'can_acknowledge' => true,
+            'summary' => ['current_profit_loss' => 125.50],
+            'journal_lines' => [['nominal_account_id' => 7, 'debit' => 125.50, 'credit' => 0]],
+            'reserve_review' => ['available' => true, 'snapshot_current' => true, 'rows' => []],
+            'prior_period_dependency' => ['satisfied' => true],
+            'accounting_period' => ['id' => 34],
+        ]);
+
+        $harness->assertSame('retained_earnings_close_confirmation', (string)$bundle['check_code']);
+        $harness->assertSame(125.50, (float)((($bundle['facts']['facts'] ?? [])['summary'] ?? [])['current_profit_loss'] ?? 0));
+        $harness->assertSame(34, (int)(($bundle['display']['accounting_period'] ?? [])['id'] ?? 0));
+
+        $source = (string)file_get_contents(__DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'classes' . DIRECTORY_SEPARATOR . 'eel_accounts' . DIRECTORY_SEPARATOR . 'service' . DIRECTORY_SEPARATOR . 'YearEndSectionApprovalService.php');
+        $start = strpos($source, 'private function retainedEarningsBundle(');
+        $end = strpos($source, 'private function retainedEarningsDisplay(', $start !== false ? $start : 0);
+        $provider = $start !== false && $end !== false ? substr($source, $start, $end - $start) : '';
+        $harness->assertSame(false, str_contains($provider, 'fetchChecklist('));
+    });
+
     $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'ships the persistent bundle migration and master-schema definition', static function () use ($harness): void {
         $root = dirname(__DIR__, 2);
         $schema = (string)file_get_contents($root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'eel_accounts.schema.sql');

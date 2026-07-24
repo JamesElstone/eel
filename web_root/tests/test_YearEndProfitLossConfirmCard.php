@@ -114,19 +114,13 @@ $harness->run(_year_end_profit_loss_confirmCard::class, static function (Generat
         $harness->assertSame(true, str_contains($html, 'difference -£ 75.50'));
     });
 
-    $harness->check(_year_end_profit_loss_confirmCard::class, 'reuses the profit and loss corporation tax provision', static function () use ($harness, $card): void {
+    $harness->check(_year_end_profit_loss_confirmCard::class, 'uses the canonical section bundle as the single P&L data source', static function () use ($harness, $card): void {
         $services = $card->services();
         $params = (array)($services[0]['params'] ?? []);
 
-        $harness->assertSame(false, array_key_exists('loadFullPreview', $params));
-        $harness->assertSame(
-            ':profit_loss.summary.corporation_tax_provision',
-            (string)($params['corporationTaxProvision'] ?? '')
-        );
-        $harness->assertSame(
-            ':profit_loss.summary.depreciation_preview',
-            (string)($params['depreciationPreview'] ?? '')
-        );
+        $harness->assertSame(1, count($services));
+        $harness->assertSame(\eel_accounts\Service\YearEndSectionApprovalService::class, (string)($services[0]['service'] ?? ''));
+        $harness->assertSame('retained_earnings_close_confirmation', (string)($params['checkCode'] ?? ''));
     });
 });
 
@@ -192,8 +186,8 @@ function yearEndProfitLossConfirmCardContext(bool $acknowledged, bool $stale, ar
             'settings' => ['default_currency_symbol' => '&#163;'],
         ],
         'services' => [
-            'yearEndProfitLossConfirm' => $close,
             'sectionReview' => [
+                'display' => $close,
                 'acknowledgement' => $acknowledged ? [
                     'acknowledged_at' => '2026-07-06 10:00:00',
                     'acknowledged_by' => 'Fixture Reviewer using the web_app',

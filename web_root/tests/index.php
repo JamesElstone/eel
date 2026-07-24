@@ -7,6 +7,8 @@
  */
 declare(strict_types=1);
 
+set_time_limit(0);
+
 if (PHP_SAPI !== 'cli' && !eel_tests_developer_options_enabled()) {
     http_response_code(403);
     header('Content-Type: text/plain; charset=utf-8');

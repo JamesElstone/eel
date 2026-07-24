@@ -11,12 +11,19 @@ final class Ct600BuilderService
     public const CT_NAMESPACE = 'http://www.govtalk.gov.uk/taxation/CT/5';
 
     private ?\Closure $returnModelBuilder;
+    private ?string $artifactRoot;
 
-    /** @param null|callable(int,int,int):array $returnModelBuilder */
-    public function __construct(?callable $returnModelBuilder = null)
+    /**
+     * @param null|callable(int,int,int):array $returnModelBuilder
+     * @param null|string $artifactRoot Root directory containing company artifact directories.
+     */
+    public function __construct(?callable $returnModelBuilder = null, ?string $artifactRoot = null)
     {
         $this->returnModelBuilder = $returnModelBuilder !== null
             ? \Closure::fromCallable($returnModelBuilder)
+            : null;
+        $this->artifactRoot = $artifactRoot !== null && trim($artifactRoot) !== ''
+            ? rtrim($artifactRoot, '\\/')
             : null;
     }
 
@@ -565,12 +572,13 @@ final class Ct600BuilderService
     private function store(int $companyId, int $ctPeriodId, string $hash, string $xml): string
     {
         $root = defined('PROJECT_ROOT') ? (string)PROJECT_ROOT : dirname(__DIR__, 4);
-        $directory = rtrim($root, '\\/') . DIRECTORY_SEPARATOR . 'files' . DIRECTORY_SEPARATOR
-            . 'ct600' . DIRECTORY_SEPARATOR . $companyId . DIRECTORY_SEPARATOR . $ctPeriodId;
+        $artifactRoot = $this->artifactRoot
+            ?? rtrim($root, '\\/') . DIRECTORY_SEPARATOR . 'files';
+        $directory = $artifactRoot . DIRECTORY_SEPARATOR . $companyId . DIRECTORY_SEPARATOR . 'hmrc';
         if (!is_dir($directory) && !@mkdir($directory, 0770, true) && !is_dir($directory)) {
             throw new \RuntimeException('The immutable CT600 artifact directory could not be created.');
         }
-        $path = $directory . DIRECTORY_SEPARATOR . 'ct600-' . $hash . '.xml';
+        $path = $directory . DIRECTORY_SEPARATOR . 'ct600-' . $ctPeriodId . '-' . $hash . '.xml';
         if (is_file($path)) {
             $existing = hash_file('sha256', $path);
             if (!is_string($existing) || !hash_equals($hash, $existing)) {

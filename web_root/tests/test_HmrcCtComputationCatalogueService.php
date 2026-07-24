@@ -4,7 +4,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 (new GeneratedServiceClassTestHarness())->run(\eel_accounts\Service\HmrcCtComputationCatalogueService::class, static function (GeneratedServiceClassTestHarness $h, \eel_accounts\Service\HmrcCtComputationCatalogueService $service): void {
     $h->check($service::class, 'rejects a missing taxonomy directory', static function () use ($h, $service): void { try { $service->catalogueDirectory(1, '__missing__'); $h->assertTrue(false); } catch (InvalidArgumentException) { $h->assertTrue(true); } });
     $h->check($service::class, 'reads a standard taxonomy-package manifest and resolves its entry point', static function () use ($h, $service): void {
-        $root = test_tmp_directory() . DIRECTORY_SEPARATOR . 'ct-2025-taxonomy-package';
+        $root = test_register_cleanup_path(
+            test_tmp_directory() . DIRECTORY_SEPARATOR . 'ct-2025-taxonomy-package-' . bin2hex(random_bytes(4))
+        );
         $meta = $root . DIRECTORY_SEPARATOR . 'META-INF';
         $schemaDirectory = $root . DIRECTORY_SEPARATOR . 'www.hmrc.gov.uk' . DIRECTORY_SEPARATOR . 'schemas'
             . DIRECTORY_SEPARATOR . 'ct' . DIRECTORY_SEPARATOR . 'comp' . DIRECTORY_SEPARATOR . '2025-01-01';
@@ -31,7 +33,9 @@ XML);
         $h->assertSame(realpath($entryPoint), $manifest['entry_point_path']);
     });
     $h->check($service::class, 'recognises the official CT 2024 v1.0.0 manifest identity and entry point layout', static function () use ($h, $service): void {
-        $root = test_tmp_directory() . DIRECTORY_SEPARATOR . 'ct-2024-taxonomy-package';
+        $root = test_register_cleanup_path(
+            test_tmp_directory() . DIRECTORY_SEPARATOR . 'ct-2024-taxonomy-package-' . bin2hex(random_bytes(4))
+        );
         $meta = $root . DIRECTORY_SEPARATOR . 'META-INF';
         $schemaDirectory = $root . DIRECTORY_SEPARATOR . 'www.hmrc.gov.uk' . DIRECTORY_SEPARATOR . 'schemas'
             . DIRECTORY_SEPARATOR . 'ct' . DIRECTORY_SEPARATOR . 'comp' . DIRECTORY_SEPARATOR . '2024-01-01';
@@ -67,7 +71,9 @@ XML);
             return;
         }
         $year = '2098';
-        $root = test_tmp_directory() . DIRECTORY_SEPARATOR . 'CT' . $year . '-v1.0.0';
+        $root = test_register_cleanup_path(
+            test_tmp_directory() . DIRECTORY_SEPARATOR . 'CT' . $year . '-v1.0.0-' . bin2hex(random_bytes(4))
+        );
         $meta = $root . DIRECTORY_SEPARATOR . 'META-INF';
         $schemaDirectory = $root . DIRECTORY_SEPARATOR . 'www.hmrc.gov.uk' . DIRECTORY_SEPARATOR . 'schemas'
             . DIRECTORY_SEPARATOR . 'ct' . DIRECTORY_SEPARATOR . 'comp' . DIRECTORY_SEPARATOR . $year . '-01-01';
@@ -162,7 +168,9 @@ XML);
                 )'
             );
         }
-        $entryPoint = test_tmp_directory() . DIRECTORY_SEPARATOR . 'ct-2024-resolution-entry-point.xsd';
+        $entryPoint = test_register_cleanup_path(
+            test_tmp_directory() . DIRECTORY_SEPARATOR . 'ct-2024-resolution-entry-point-' . bin2hex(random_bytes(4)) . '.xsd'
+        );
         file_put_contents($entryPoint, '<?xml version="1.0"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"/>');
         InterfaceDB::prepareExecute(
             'INSERT INTO hmrc_ct_computation_packages

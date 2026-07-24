@@ -12,7 +12,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             static function () use ($h): void {
                 $companyId = 98731;
                 $periodId = 98732;
-                $root = test_tmp_directory() . DIRECTORY_SEPARATOR . 'transmission-' . bin2hex(random_bytes(4));
+                $root = test_register_cleanup_path(
+                    test_tmp_directory() . DIRECTORY_SEPARATOR . 'transmission-' . bin2hex(random_bytes(4))
+                );
                 try {
                     InterfaceDB::prepareExecute(
                         'INSERT INTO companies (id, company_name, company_number, is_active, created_at)

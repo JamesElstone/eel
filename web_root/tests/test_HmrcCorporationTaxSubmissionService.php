@@ -356,8 +356,9 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'errors' => [],
                         'error' => '',
                     ];
-                    $artifactRoot = test_tmp_directory() . DIRECTORY_SEPARATOR
-                        . 'hmrc-ct-service-' . bin2hex(random_bytes(4));
+                    $artifactRoot = test_register_cleanup_path(
+                        test_tmp_directory() . DIRECTORY_SEPARATOR . 'hmrc-ct-service-' . bin2hex(random_bytes(4))
+                    );
                     $service = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService(
                         $transport,
                         null,
@@ -592,7 +593,9 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         $transport,
                         null,
                         static fn(): string => '2026-07-19 11:00:00',
-                        test_tmp_directory() . DIRECTORY_SEPARATOR . 'hmrc-uncertain-' . bin2hex(random_bytes(4)),
+                        test_register_cleanup_path(
+                            test_tmp_directory() . DIRECTORY_SEPARATOR . 'hmrc-uncertain-' . bin2hex(random_bytes(4))
+                        ),
                         $package,
                         $resolver
                     );

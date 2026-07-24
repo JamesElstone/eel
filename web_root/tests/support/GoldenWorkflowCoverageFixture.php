@@ -528,7 +528,7 @@ final class GoldenWorkflowCoverageFixture
             'residual_value' => 0.00,
             'status' => 'active',
             'manual_addition_reason' => 'opening_balance',
-            'manual_offset_nominal_id' => 91007,
+            'manual_offset_nominal_id' => GoldenAccountsFixture::nominalId(91007),
             'manual_evidence_path' => 'GOLDEN-TEST/evidence/warning-car.pdf',
             'manual_evidence_sha256' => hash('sha256', 'GOLDEN-TEST-warning-car-evidence'),
             'manual_evidence_original_filename' => 'golden-test-warning-car.pdf',
@@ -628,11 +628,11 @@ final class GoldenWorkflowCoverageFixture
         self::transaction(9463, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, 9441, 9421, '2025-11-01', 250.00, 91020, 'manual', ['description' => 'GOLDEN-TEST transfer from current', 'transfer_account_id' => 9420, 'is_internal_transfer' => 1, 'balance' => 250.00]);
         self::transaction(9464, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, 9440, 9420, '2025-12-01', -300.00, null, 'manual', ['description' => 'GOLDEN-TEST split tools and overhead', 'balance' => 950.00]);
         self::transaction(9465, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, 9440, 9420, '2026-01-05', 100.00, 91024, 'manual', ['description' => 'GOLDEN-TEST incorporation share payment', 'balance' => 1050.00]);
-        self::transaction(9466, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, 9440, 9420, '2026-02-01', -250.00, 91007, 'manual', ['description' => 'GOLDEN-TEST dividend payment', 'balance' => 800.00]);
+        self::transaction(9466, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, 9440, 9420, '2026-02-01', -250.00, GoldenAccountsFixture::nominalId(91007), 'manual', ['description' => 'GOLDEN-TEST dividend payment', 'balance' => 800.00]);
         self::transaction(9467, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, 9440, 9420, '2026-03-01', -900.00, 91005, 'manual', ['description' => 'GOLDEN-TEST expense claim repayment', 'balance' => -100.00]);
         self::transaction(9468, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, 9440, 9420, '2026-04-01', -1000.00, 91013, 'manual', ['description' => 'GOLDEN-TEST asset acquisition', 'balance' => -1100.00]);
         self::transaction(9469, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, 9440, 9420, '2026-09-01', 400.00, 91013, 'manual', ['description' => 'GOLDEN-TEST asset disposal receipt', 'balance' => -700.00]);
-        self::transaction(9470, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, 9440, 9420, '2026-09-15', -75.00, 91012, 'manual', ['description' => 'GOLDEN-TEST HMRC obligation payment', 'balance' => -775.00]);
+        self::transaction(9470, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, 9440, 9420, '2026-09-15', -75.00, GoldenAccountsFixture::nominalId(91012), 'manual', ['description' => 'GOLDEN-TEST HMRC obligation payment', 'balance' => -775.00]);
 
         self::insert('statement_import_rows', [
             'id' => 9443,
@@ -658,12 +658,12 @@ final class GoldenWorkflowCoverageFixture
         self::journal(9482, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, '2025-11-01', 'bank_csv', 'transaction:9462', 'GOLDEN-TEST one-sided transfer journal', [[91020, 250.00, 0.00], [91001, 0.00, 250.00]]);
         self::journal(9483, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, '2025-12-01', 'bank_csv', 'transaction:9464', 'GOLDEN-TEST split transaction journal', [[91013, 100.00, 0.00], [91004, 200.00, 0.00], [91001, 0.00, 300.00]]);
         self::journal(9484, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, '2026-01-05', 'bank_csv', 'transaction:9465', 'GOLDEN-TEST share capital receipt', [[91001, 100.00, 0.00], [91024, 0.00, 100.00]]);
-        self::journal(9485, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, '2026-02-01', 'bank_csv', 'transaction:9466', 'GOLDEN-TEST dividend payment', [[91007, 250.00, 0.00], [91001, 0.00, 250.00]]);
+        self::journal(9485, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, '2026-02-01', 'bank_csv', 'transaction:9466', 'GOLDEN-TEST dividend payment', [[GoldenAccountsFixture::nominalId(91007), 250.00, 0.00], [91001, 0.00, 250.00]]);
         self::journal(9487, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, '2026-03-01', 'bank_csv', 'transaction:9467', 'GOLDEN-TEST claim repayment', [[91005, 900.00, 0.00], [91001, 0.00, 900.00]]);
         self::journal(9488, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, '2026-04-01', 'bank_csv', 'transaction:9468', 'GOLDEN-TEST asset purchase', [[91013, 1000.00, 0.00], [91001, 0.00, 1000.00]]);
-        self::journal(9489, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, '2026-09-01', 'asset_depreciation', 'asset:9560:depreciation', 'GOLDEN-TEST asset depreciation', [[91017, 200.00, 0.00], [91014, 0.00, 200.00]]);
+        self::journal(9489, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, '2026-09-01', 'asset_depreciation', 'asset:9560:depreciation', 'GOLDEN-TEST asset depreciation', [[GoldenAccountsFixture::nominalId(91017), 200.00, 0.00], [91014, 0.00, 200.00]]);
         self::journal(9490, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, '2026-09-01', 'asset_disposal', 'asset:9560:disposal', 'GOLDEN-TEST balanced asset disposal', [[91001, 400.00, 0.00], [91014, 200.00, 0.00], [91025, 400.00, 0.00], [91013, 0.00, 1000.00]]);
-        self::journal(9491, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, '2026-09-15', 'bank_csv', 'transaction:9470', 'GOLDEN-TEST HMRC payment', [[91012, 75.00, 0.00], [91001, 0.00, 75.00]]);
+        self::journal(9491, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, '2026-09-15', 'bank_csv', 'transaction:9470', 'GOLDEN-TEST HMRC payment', [[GoldenAccountsFixture::nominalId(91012), 75.00, 0.00], [91001, 0.00, 75.00]]);
         self::journal(9492, GoldenAccountsFixture::COMPLETE_COMPANY_ID, self::COMPLETE_PERIOD_ID, '2026-09-30', 'manual', 'golden-year-end-adjustment', 'GOLDEN-TEST year-end accrual', [[91004, 50.00, 0.00], [91021, 0.00, 50.00]], [
             'journal_tag' => 'year_end_adjustment',
             'journal_key' => 'golden-accrual',
@@ -780,7 +780,7 @@ final class GoldenWorkflowCoverageFixture
         self::insert('dividend_reserve_classification_rules', [
             'id' => 9530,
             'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
-            'nominal_account_id' => 91007,
+            'nominal_account_id' => GoldenAccountsFixture::nominalId(91007),
             'treatment' => 'distributable',
             'note' => 'GOLDEN-TEST reviewed distributable reserve.',
             'is_active' => 1,
@@ -1068,7 +1068,7 @@ final class GoldenWorkflowCoverageFixture
             'residual_value' => 0.00,
             'status' => 'active',
             'manual_addition_reason' => 'opening_balance',
-            'manual_offset_nominal_id' => 91007,
+            'manual_offset_nominal_id' => GoldenAccountsFixture::nominalId(91007),
             'manual_evidence_path' => 'GOLDEN-TEST/evidence/used-high-co2-car.pdf',
             'manual_evidence_sha256' => hash('sha256', 'GOLDEN-TEST-used-high-co2-car-evidence'),
             'manual_evidence_original_filename' => 'golden-test-used-high-co2-car.pdf',

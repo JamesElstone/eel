@@ -342,6 +342,9 @@ function goldenCt600aCt600Builder(array $filing): \eel_accounts\Service\Ct600Bui
             $companyId,
             $accountingPeriodId,
             $ctPeriodId
+        ),
+        test_register_cleanup_path(
+            test_tmp_directory() . DIRECTORY_SEPARATOR . 'golden-ct600a-' . bin2hex(random_bytes(4))
         )
     );
 }

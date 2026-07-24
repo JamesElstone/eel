@@ -230,6 +230,7 @@ final class GeneratedServiceClassTestHarness
             if (class_exists('UploadedFileTestFixture', false)) {
                 UploadedFileTestFixture::cleanup();
             }
+            test_cleanup_registered_paths();
         }
     }
 

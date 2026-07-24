@@ -132,10 +132,14 @@ function ct600_builder_test_return(array $amounts, array $taxBands, string $arti
 }
 
 /** @return array<string,mixed> */
-function ct600_builder_test_build(array $return, int $ctPeriodId): array
+function ct600_builder_test_build(array $return, int $ctPeriodId, ?string $artifactRoot = null): array
 {
+    $artifactRoot ??= test_register_cleanup_path(
+        test_tmp_directory() . DIRECTORY_SEPARATOR . 'ct600-builder-' . bin2hex(random_bytes(4))
+    );
     $service = new \eel_accounts\Service\Ct600BuilderService(
-        static fn(int $companyId, int $accountingPeriodId, int $periodId): array => $return
+        static fn(int $companyId, int $accountingPeriodId, int $periodId): array => $return,
+        $artifactRoot
     );
     return $service->buildForIds(997001, 997002, $ctPeriodId, [
         'declaration_confirmed' => true,
@@ -211,6 +215,9 @@ function ct600_builder_test_assert_official_schema(
             \eel_accounts\Service\Ct600BuilderService::class,
             'is deterministic and accepts an uppercase V artifact version',
             static function () use ($harness): void {
+                $artifactRoot = test_register_cleanup_path(
+                    test_tmp_directory() . DIRECTORY_SEPARATOR . 'ct600-builder-' . bin2hex(random_bytes(4))
+                );
                 $return = ct600_builder_test_return(
                     [
                         'chargeable_profits' => '70000',
@@ -232,13 +239,18 @@ function ct600_builder_test_assert_official_schema(
                     ]],
                     'V1.994'
                 );
-                $first = ct600_builder_test_build($return, 997011);
-                $second = ct600_builder_test_build($return, 997011);
+                $first = ct600_builder_test_build($return, 997011, $artifactRoot);
+                $second = ct600_builder_test_build($return, 997011, $artifactRoot);
 
                 $harness->assertSame(true, (bool)($first['ok'] ?? false));
                 $harness->assertSame($first['xml'], $second['xml']);
                 $harness->assertSame($first['body_sha256'], $second['body_sha256']);
                 $harness->assertSame($first['path'], $second['path']);
+                $harness->assertSame(
+                    $artifactRoot . DIRECTORY_SEPARATOR . '997001' . DIRECTORY_SEPARATOR . 'hmrc'
+                        . DIRECTORY_SEPARATOR . 'ct600-997011-' . $first['body_sha256'] . '.xml',
+                    $first['path']
+                );
                 $xpath = ct600_builder_test_xpath((string)$first['xml']);
                 $harness->assertSame(
                     '2014-v1.994',

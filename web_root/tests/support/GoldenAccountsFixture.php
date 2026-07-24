@@ -29,6 +29,8 @@ final class GoldenAccountsFixture
 
     /** @var array<int, array<string, mixed>> */
     private static array $fourPeriodPrepaymentEvidence = [];
+    /** @var array<int, int> */
+    private static array $resolvedNominalIds = [];
 
     /** @var list<array{id: int, label: string, start: string, end: string}> */
     private const PERIODS = [
@@ -116,17 +118,17 @@ final class GoldenAccountsFixture
                 'overheads' => 91004,
                 'director_loan' => 91005,
                 'director_loan_asset' => 91006,
-                'retained_earnings' => 91007,
+                'retained_earnings' => self::nominalId(91007),
                 'corporation_tax_expense' => 91008,
                 'corporation_tax_liability' => 91009,
-                'hmrc_penalty' => 91010,
-                'hmrc_interest' => 91011,
-                'hmrc_payable' => 91012,
+                'hmrc_penalty' => self::nominalId(91010),
+                'hmrc_interest' => self::nominalId(91011),
+                'hmrc_payable' => self::nominalId(91012),
                 'plant_machinery' => 91013,
                 'plant_machinery_accumulated_depreciation' => 91014,
-                'motor_vehicles_vans' => 91015,
+                'motor_vehicles_vans' => self::nominalId(91015),
                 'motor_vehicles_accumulated_depreciation' => 91016,
-                'depreciation_expense' => 91017,
+                'depreciation_expense' => self::nominalId(91017),
                 'prepayments' => 91018,
                 'annual_subscriptions' => 91019,
             ],
@@ -218,7 +220,7 @@ final class GoldenAccountsFixture
             [91011, '6231', 'Golden Test HMRC Interest', 'expense', 'allowable', 'overhead'],
             [91012, '2210', 'Golden Test HMRC Penalties & Interest Payable', 'liability', 'other', 'hmrc_payable'],
             [91013, 'G1300', 'Golden Test Plant and Machinery', 'asset', 'capital', 'fixed_asset'],
-            [91014, '1309', 'Golden Test Plant and Machinery Accumulated Depreciation', 'asset', 'capital', 'fixed_asset'],
+            [91014, 'GOLD-1309', 'Golden Test Plant and Machinery Accumulated Depreciation', 'asset', 'capital', 'fixed_asset'],
             [91015, '1322', 'Golden Test Motor Vehicles - Vans', 'asset', 'capital', 'fixed_asset'],
             [91016, '1329', 'Golden Test Motor Vehicles Accumulated Depreciation', 'asset', 'capital', 'fixed_asset'],
             [91017, '6200', 'Golden Test Depreciation Expense', 'expense', 'disallowable', 'depreciation_expense'],
@@ -226,12 +228,26 @@ final class GoldenAccountsFixture
             [91019, 'GOLD-PREPAY-EXP', 'Golden Test Annual Subscriptions', 'expense', 'allowable', 'overhead'],
         ];
         foreach ($rows as [$id, $code, $name, $type, $tax, $subtypeCode]) {
+            $existingId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM nominal_accounts WHERE code = :code LIMIT 1',
+                ['code' => $code]
+            );
+            if ($existingId > 0) {
+                self::$resolvedNominalIds[$id] = $existingId;
+                continue;
+            }
             self::insert('nominal_accounts', [
                 'id' => $id, 'code' => $code, 'name' => $name, 'account_type' => $type,
                 'account_subtype_id' => $subtypeId($subtypeCode), 'tax_treatment' => $tax,
                 'prepayment_candidate' => $id === 91019 ? 1 : 0, 'is_active' => 1, 'sort_order' => $id,
             ]);
+            self::$resolvedNominalIds[$id] = $id;
         }
+    }
+
+    public static function nominalId(int $fixtureId): int
+    {
+        return self::$resolvedNominalIds[$fixtureId] ?? $fixtureId;
     }
 
     private static function seedCompanies(): void
@@ -730,9 +746,9 @@ final class GoldenAccountsFixture
             self::seedAssetRegisterRow($assetId, $assetCode, $description, 'tools_equipment', 91013, 91014, '2022-09-15', $cost, $journalId, $transactionId);
         }
 
-        self::seedAssetPurchaseTransaction(9173, 9112, 9141, '2023-10-11', 'Electric service van', 9000.00, 91015, -1200.00);
-        self::journal(9214, 9112, '2023-10-11', 'bank_csv', 'transaction:9173', 91015, 91001, 9000.00);
-        self::seedAssetRegisterRow(9254, 'GOLDEN-VAN-001', 'Electric service van', 'van', 91015, 91016, '2023-10-11', 9000.00, 9214, 9173);
+        self::seedAssetPurchaseTransaction(9173, 9112, 9141, '2023-10-11', 'Electric service van', 9000.00, self::nominalId(91015), -1200.00);
+        self::journal(9214, 9112, '2023-10-11', 'bank_csv', 'transaction:9173', self::nominalId(91015), 91001, 9000.00);
+        self::seedAssetRegisterRow(9254, 'GOLDEN-VAN-001', 'Electric service van', 'van', self::nominalId(91015), 91016, '2023-10-11', 9000.00, 9214, 9173);
         self::insert('asset_vehicle_details', [
             'asset_id' => 9254,
             'company_id' => self::GOLDEN_COMPANY_ID,
@@ -835,10 +851,10 @@ final class GoldenAccountsFixture
             'reference' => 'GOLDEN-HMRC-PAYMENT-Y4', 'amount' => -690.00, 'currency' => 'GBP',
             'source_type' => 'statement_csv', 'source_account_label' => 'Golden Current Account',
             'balance' => 7110.00, 'counterparty_name' => 'HMRC Synthetic',
-            'dedupe_hash' => hash('sha256', 'GOLDEN-HMRC-PAYMENT-Y4'), 'nominal_account_id' => 91012,
+            'dedupe_hash' => hash('sha256', 'GOLDEN-HMRC-PAYMENT-Y4'), 'nominal_account_id' => self::nominalId(91012),
             'category_status' => 'manual', 'document_download_status' => 'skipped',
         ]);
-        self::journal(9240, 9114, '2026-02-15', 'bank_csv', 'transaction:9193', 91012, 91001, 690.00);
+        self::journal(9240, 9114, '2026-02-15', 'bank_csv', 'transaction:9193', self::nominalId(91012), 91001, 690.00);
         $service->markPaid($penaltyId, 600.00, 'GOLDEN-HMRC-PAYMENT-Y4', 'Paid in golden year four.');
         $service->markPaid($interestId, 90.00, 'GOLDEN-HMRC-PAYMENT-Y4', 'Paid in golden year four.');
     }

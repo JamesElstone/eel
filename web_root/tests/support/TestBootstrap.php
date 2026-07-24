@@ -94,6 +94,45 @@ if (!function_exists('test_tmp_directory')) {
     }
 }
 
+if (!function_exists('test_register_cleanup_path')) {
+    function test_register_cleanup_path(string $path): string
+    {
+        $path = rtrim($path, '\\/');
+        $testRoot = rtrim(test_tmp_directory(), '\\/');
+        if ($path === '' || !str_starts_with($path . DIRECTORY_SEPARATOR, $testRoot . DIRECTORY_SEPARATOR)) {
+            throw new InvalidArgumentException('Test cleanup paths must be contained within the test temporary directory.');
+        }
+
+        $GLOBALS['eel_accounts_test_cleanup_paths'][$path] = true;
+        return $path;
+    }
+}
+
+if (!function_exists('test_cleanup_registered_paths')) {
+    function test_cleanup_registered_paths(): void
+    {
+        $paths = array_keys((array)($GLOBALS['eel_accounts_test_cleanup_paths'] ?? []));
+        $GLOBALS['eel_accounts_test_cleanup_paths'] = [];
+
+        foreach ($paths as $path) {
+            if (is_dir($path) && !is_link($path)) {
+                $iterator = new RecursiveIteratorIterator(
+                    new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
+                    RecursiveIteratorIterator::CHILD_FIRST
+                );
+                foreach ($iterator as $item) {
+                    $item->isDir() && !$item->isLink()
+                        ? @rmdir($item->getPathname())
+                        : @unlink($item->getPathname());
+                }
+                @rmdir($path);
+            } elseif (is_file($path) || is_link($path)) {
+                @unlink($path);
+            }
+        }
+    }
+}
+
 defined('AF_HEADER_PREFIX') || define('AF_HEADER_PREFIX', 'X-AntiFraud-');
 defined('AF_COOKIE_PREFIX') || define('AF_COOKIE_PREFIX', 'af_');
 

@@ -17,7 +17,7 @@ $harness->run(\eel_accounts\Service\StatementCsvExportService::class, static fun
             mkdir($directory, 0777, true);
         }
 
-        $path = $directory . DIRECTORY_SEPARATOR . 'statement-csv-export.csv';
+        $path = test_register_cleanup_path($directory . DIRECTORY_SEPARATOR . 'statement-csv-export.csv');
         file_put_contents($path, "date,description,amount\n2026-02-01,Example,12.34\n");
 
         $method = new ReflectionMethod(\eel_accounts\Service\StatementCsvExportService::class, 'buildMappedCsv');
@@ -40,7 +40,7 @@ $harness->run(\eel_accounts\Service\StatementCsvExportService::class, static fun
             mkdir($directory, 0777, true);
         }
 
-        $path = $directory . DIRECTORY_SEPARATOR . 'statement-csv-export-committed.csv';
+        $path = test_register_cleanup_path($directory . DIRECTORY_SEPARATOR . 'statement-csv-export-committed.csv');
         file_put_contents($path, "date,description,amount\n2026-02-01,Original,12.34\n");
 
         $method = new ReflectionMethod(\eel_accounts\Service\StatementCsvExportService::class, 'buildMappedCsv');
@@ -69,7 +69,7 @@ $harness->run(\eel_accounts\Service\StatementCsvExportService::class, static fun
             mkdir($directory, 0777, true);
         }
 
-        $path = $directory . DIRECTORY_SEPARATOR . 'statement-csv-export-month.csv';
+        $path = test_register_cleanup_path($directory . DIRECTORY_SEPARATOR . 'statement-csv-export-month.csv');
         file_put_contents($path, "processed,created,description,amount\n2026-01-31,2026-01-30,January,10.00\n2026-02-01,2026-01-31,February,20.00\n,2026-02-15,Created February,30.00\n");
 
         $method = new ReflectionMethod(\eel_accounts\Service\StatementCsvExportService::class, 'buildMappedCsv');

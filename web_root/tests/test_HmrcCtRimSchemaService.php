@@ -13,7 +13,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertFalse((bool)$method->invoke($service, '2026-02-30'));
         });
         $harness->check($service::class, 'catalogues full nested paths and effective leaf metadata', static function () use ($harness, $service): void {
-            $directory = test_tmp_directory() . DIRECTORY_SEPARATOR . 'rim-schema-inspection';
+            $directory = test_register_cleanup_path(
+                test_tmp_directory() . DIRECTORY_SEPARATOR . 'rim-schema-inspection-' . bin2hex(random_bytes(4))
+            );
             if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
                 throw new RuntimeException('Unable to create the RIM schema fixture directory.');
             }

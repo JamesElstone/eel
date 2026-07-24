@@ -67,7 +67,9 @@ EEL Accounts is currently designed for UK micro-entity companies with straightfo
 
 For details of the types of companies supported by EEL Accounts, see the [Supported Company Scope](SUPPORTED_COMPANY_SCOPE.md).
 
----
+   For MariaDB through ODBC, configure the named DSN itself with `CHARSET=utf8mb4` on both Windows and FreeBSD. After setup, run `tools/bin/dbUnicodeDiagnostic.sh` (or `tools\bat\dbUnicodeDiagnostic.bat` on Windows) to verify parameterised Unicode and JSON values round-trip byte-for-byte. A successful round trip is the authoritative check for named DSNs because PDO cannot read their ODBC `CHARSET` setting directly.
+
+5. Run the database setup tool. It makes sure `secure/app.php` exists, configures the database if needed, runs migrations, loads the baseline schema first if the configured database has no eelKit application tables, and then refreshes the external IP setting:
 
 ## Core Workflow
 

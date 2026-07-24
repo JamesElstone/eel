@@ -44,17 +44,46 @@ final class PdoDB
     }
 
     private static function connectWithCredentials(string $dsn, ?string $username = null, ?string $password = null, array $options = []): PDO {
+        return new PDO(
+            $dsn,
+            $username,
+            $password,
+            self::connectionOptions($dsn, $options)
+        );
+    }
+
+    /**
+     * Builds PDO options without replacing options supplied by the caller.
+     *
+     * @param array<int, mixed> $options
+     * @return array<int, mixed>
+     */
+    public static function connectionOptions(string $dsn, array $options = [], ?string $osFamily = null): array {
         $baseOptions = [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         ];
 
-        return new PDO(
-            $dsn,
-            $username,
-            $password,
-            $options + $baseOptions
-        );
+        $frameworkOptions = [];
+        if (self::dsnDriverName($dsn) === 'odbc' && ($osFamily ?? PHP_OS_FAMILY) === 'Windows') {
+            foreach ([
+                'PDO\\ODBC::ATTR_ASSUME_UTF8',
+                'Pdo\\Odbc::ATTR_ASSUME_UTF8',
+                'PDO::ODBC_ATTR_ASSUME_UTF8',
+            ] as $constantName) {
+                if (!defined($constantName)) {
+                    continue;
+                }
+
+                $attribute = constant($constantName);
+                if (is_int($attribute) && !array_key_exists($attribute, $options)) {
+                    $frameworkOptions[$attribute] = true;
+                }
+                break;
+            }
+        }
+
+        return $options + $frameworkOptions + $baseOptions;
     }
 
     private static function connect(): PDO {

@@ -122,6 +122,24 @@ Direct PHP:
 php tools/php/setExternalIP.php
 ```
 
+## dbUnicodeDiagnostic
+
+Tests the configured database connection with parameterised ASCII, en dash, accented, CJK, four-byte Unicode, and JSON values. It reports the PDO driver, OS family, ODBC charset verification status, and MariaDB server/connection character sets without printing the configured DSN or credentials. It creates and removes a temporary table, so the database user requires `CREATE TEMPORARY TABLES`.
+
+Linux, macOS, or Git Bash:
+
+```sh
+tools/bin/dbUnicodeDiagnostic.sh
+```
+
+Windows Command Prompt:
+
+```bat
+tools\bat\dbUnicodeDiagnostic.bat
+```
+
+For MariaDB ODBC, configure `CHARSET=utf8mb4` in the system DSN on both Windows and FreeBSD. Named DSNs are not directly inspectable through PDO; the byte-exact PASS result is the authoritative verification.
+
 ## resetPassword
 
 Connects to the configured database, finds a user by display name or email address, resets the user's password, and optionally resets OTP setup.

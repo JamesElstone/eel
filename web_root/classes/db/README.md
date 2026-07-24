@@ -10,7 +10,18 @@ This folder contains the small database layer used by eelKit.
 
 SQL logging is buffered by `LogStore` and flushed in batches and during normal shutdown instead of calling `fflush()` for every query. Long-running workers can call `PdoDB::flushSqlLogs()` explicitly. SQL log timestamps use `Y-m-d H:i:s.u`; the CSV field shape remains unchanged.
 
-Database settings are read from `secure/app.php` under the `db` key. For MariaDB via ODBC, use an ODBC DSN such as `odbc:wccg` and keep real credentials out of version control.
+Database settings are read from `secure/app.php` under the `db` key. For MariaDB via ODBC, use an ODBC DSN such as `odbc:wccg`, configure that DSN with `CHARSET=utf8mb4`, and keep real credentials out of version control.
+
+## Unicode diagnostic
+
+Run the CLI diagnostic after configuring a MariaDB ODBC connection:
+
+```sh
+tools/bin/dbUnicodeDiagnostic.sh
+# Windows Command Prompt: tools\bat\dbUnicodeDiagnostic.bat
+```
+
+It reports the PDO driver, OS family, effective MariaDB server/connection character sets, and a byte-exact parameterised Unicode and JSON round trip. A named ODBC DSN cannot expose its `CHARSET` value through PDO, so the tool reports that as not directly verifiable; a successful round trip is the authoritative check. The configured database user needs `CREATE TEMPORARY TABLES`; the diagnostic removes its temporary table before it exits.
 
 ## FreeBSD MariaDB ODBC Setup
 
@@ -95,6 +106,8 @@ USER=local
 PASSWORD=replace_with_real_password
 CHARSET=utf8mb4
 ```
+
+Windows MariaDB Connector/ODBC DSNs must also include `CHARSET=utf8mb4` in the ODBC Data Source Administrator (or the equivalent DSN configuration). On Windows, eelKit enables the PDO ODBC UTF-8 assumption only when the installed PHP PDO ODBC extension exposes that option.
 
 Use `SERVER=localhost` for local socket style access, or `SERVER=127.0.0.1` to force TCP loopback.
 
@@ -189,4 +202,5 @@ Example config value:
 - If ODBC reports access denied for `local` at `localhost`, create or fix that exact MariaDB user.
 - If using `SERVER=127.0.0.1`, ensure `local` at `127.0.0.1` exists.
 - Do not rely on `PDO::lastInsertId()` with MariaDB through PDO ODBC in this project.
+- Keep database and text columns on `utf8mb4`. Audit legacy `latin1` data before repair; do not blindly reinterpret non-ASCII values without evidence of the intended text.
 - Do not commit real DSN passwords or production credentials.

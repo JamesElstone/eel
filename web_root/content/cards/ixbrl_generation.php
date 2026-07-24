@@ -98,6 +98,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     <h3 class="card-title">HMRC Accounting iXBRL</h3>
                     <span class="badge ' . HelperFramework::escape($this->statusClass($displayStatus)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($displayStatus, '_')) . '</span>
                 </div>
+                <div class="helper ixbrl-complete-filing-set-helper">Generate the approved HMRC accounts iXBRL export and review its structural and Arelle validation results.</div>
                 <div class="summary-grid">
                     ' . $this->metric('Generated At', (string)($run['generated_at'] ?? 'Not Generated')) . '
                     ' . $this->metric('Facts', (string)(int)($run['fact_count'] ?? 0)) . '
@@ -159,7 +160,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             return '<section class="panel-soft"><div class="status-head">'
                 . '<h3 class="card-title">Companies House Revised Accounting iXBRL</h3>'
                 . '<span class="badge muted">Not prepared</span></div>'
-                . '<div class="helper">Prepare the Companies House-specific revised accounts artifact after Year End lock and disclosure approval. This does not transmit it.</div>'
+                . '<div class="helper ixbrl-complete-filing-set-helper">Prepare the Companies House-specific revised accounts iXBRL from the approved filing basis. This does not transmit it.</div>'
                 . $this->arelleOutput($revisedValidation)
                 . $blockersHtml
                 . '<form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">'
@@ -183,6 +184,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             . '<h3 class="card-title">Companies House Revised Accounting iXBRL</h3>'
             . '<span class="badge ' . $badge . '">'
             . HelperFramework::escape(HelperFramework::labelFromKey($lifecycle, '_')) . '</span></div>'
+            . '<div class="helper ixbrl-complete-filing-set-helper">This is the prepared Companies House revised-accounts iXBRL artifact. It has not been transmitted by this page.</div>'
             . '<div class="summary-grid">'
             . $this->metric('Generated At', (string)($submission['prepared_at'] ?? ''))
             . $this->metric('Facts', (string)(int)($baseRun['fact_count'] ?? 0))
@@ -241,9 +243,10 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     . '<input type="hidden" name="intent" value="download_computation_ixbrl">'
                     . '<button class="button compact primary" type="submit">Download ' . HelperFramework::escape($ctPeriodLabel) . ' iXBRL</button></form>'
                 : (trim((string)($run['generated_filename'] ?? '')) !== '' ? 'Generated, not filing-ready' : 'Not generated');
-            $html .= '<section class="panel-soft"><div class="status-head"><h4>' . HelperFramework::escape($ctPeriodLabel) . ' iXBRL</h4><span class="badge '
+            $html .= '<section class="panel-soft"><div class="status-head"><h3>' . HelperFramework::escape($ctPeriodLabel) . ' iXBRL</h3><span class="badge '
                 . ($fileable ? 'success' : ($fresh ? 'warning' : 'muted')) . '">'
                 . ($fileable ? 'Filing ready' : ($fresh ? 'Generated, not fileable' : 'Not generated')) . '</span></div>'
+                . '<div class="helper ixbrl-complete-filing-set-helper">Generate a separate Corporation Tax computation iXBRL for this filing period and review its validation status.</div>'
                 . '<div class="summary-grid four">'
                 . $this->metric('CT period', $start . ' to ' . $end)
                 . $this->metricHtml('Artifact', $artifact)
@@ -357,7 +360,9 @@ final class _ixbrl_generationCard extends CardBaseFramework
             foreach (array_slice($messages, 0, 20) as $message) {
                 $items .= '<li>' . HelperFramework::escape(is_scalar($message) ? (string)$message : (string)json_encode($message)) . '</li>';
             }
-            $html .= '<section class="panel-soft"><h4>' . HelperFramework::escape($label) . '</h4><ul>' . $items . '</ul></section>';
+            $html .= '<section class="panel-soft"><h3>' . HelperFramework::escape($label) . '</h3>'
+                . '<div class="helper ixbrl-complete-filing-set-helper">These are structural checks performed before external Arelle validation.</div>'
+                . '<ul>' . $items . '</ul></section>';
         }
 
         return $html;

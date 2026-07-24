@@ -145,6 +145,11 @@ final class IxbrlFactBuilderService
             return null;
         }
 
+        $cacheKey = \eel_accounts\Support\RequestCache::key($companyId, $accountingPeriodId);
+        $result = \eel_accounts\Support\RequestCache::remember(
+            'ixbrl.fact-builder.latest-run',
+            $cacheKey,
+            function () use ($companyId, $accountingPeriodId): ?array {
         $row = \InterfaceDB::fetchOne(
             'SELECT r.*, COUNT(f.id) AS fact_count
              FROM ixbrl_generation_runs r
@@ -162,6 +167,9 @@ final class IxbrlFactBuilderService
         $row['run_freshness'] = $this->getRunFreshness((int)$row['id']);
         $row['facts_current'] = (string)($row['run_freshness']['state'] ?? '') === 'current';
         return $row;
+            }
+        );
+        return is_array($result) ? $result : null;
     }
 
     public function getRunFreshness(int $runId): array
@@ -178,6 +186,11 @@ final class IxbrlFactBuilderService
                 'detail' => 'Apply the latest iXBRL taxonomy migration and rebuild the facts.',
             ];
         }
+        $cacheKey = \eel_accounts\Support\RequestCache::key($runId);
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'ixbrl.fact-builder.run-freshness',
+            $cacheKey,
+            function () use ($runId): array {
         $run = \InterfaceDB::fetchOne(
             'SELECT id, company_id, accounting_period_id, basis_version, basis_hash,
                     filing_approval_id, filing_approval_hash
@@ -232,6 +245,8 @@ final class IxbrlFactBuilderService
             'built_hash' => $builtHash,
             'current_hash' => $currentHash,
         ];
+            }
+        );
     }
 
     /**

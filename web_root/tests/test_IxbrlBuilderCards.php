@@ -485,6 +485,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                         'generated_path' => $path,
                         'generated_filename' => 'accounts.xhtml',
                         'validation_status' => 'passed',
+                        'validation_errors_json' => json_encode(['Internal structural check failure.']),
                         'external_validation_status' => 'failed',
                         'external_validator_version' => '2.37.0',
                         'external_validation_errors_json' => json_encode(['Accounting schema failure from Arelle.']),
@@ -516,6 +517,11 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $harness->assertFalse(str_contains($draftHtml, 'name="intent" value="validate_ixbrl_external"'));
             $harness->assertTrue(str_contains($draftHtml, 'Arelle Status') && str_contains($draftHtml, 'Installed'));
             $harness->assertTrue(str_contains($draftHtml, 'Arelle Validation') && str_contains($draftHtml, 'Failed'));
+            $harness->assertTrue(str_contains($draftHtml, '<h3 class="card-title">HMRC Accounting iXBRL</h3>'));
+            $harness->assertTrue(str_contains($draftHtml, 'Generate the approved HMRC accounts iXBRL export and review its structural and Arelle validation results.'));
+            $harness->assertTrue(str_contains($draftHtml, 'Prepare the Companies House-specific revised accounts iXBRL from the approved filing basis.'));
+            $harness->assertTrue(str_contains($draftHtml, '<h3>Internal errors</h3>'));
+            $harness->assertTrue(str_contains($draftHtml, 'These are structural checks performed before external Arelle validation.'));
             $harness->assertFalse(str_contains($draftHtml, 'Arelle validation output'));
             $harness->assertTrue(str_contains($draftHtml, 'Accounting schema failure from Arelle.'));
             $harness->assertTrue(str_contains($draftHtml, 'Companies House schema failure from Arelle.'));
@@ -554,6 +560,8 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         ];
         $draft = $card->render($context);
         $harness->assertTrue(str_contains($draft, 'Corporation Tax iXBRL'));
+        $harness->assertTrue(str_contains($draft, '<h3>Corporation Tax Period 6 iXBRL</h3>'));
+        $harness->assertTrue(str_contains($draft, 'Generate a separate Corporation Tax computation iXBRL for this filing period and review its validation status.'));
         $harness->assertTrue(str_contains($draft, '<div class="summary-label">CT period</div>'));
         $harness->assertTrue(str_contains($draft, '2025-01-01 to 2025-12-31'));
         $harness->assertTrue(str_contains($draft, 'generate_computation_ixbrl'));

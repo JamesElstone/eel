@@ -17,6 +17,11 @@ final class IxbrlAccountsReportService
 
     public function build(int $companyId, int $accountingPeriodId): array
     {
+        $cacheKey = \eel_accounts\Support\RequestCache::key($companyId, $accountingPeriodId);
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'ixbrl.accounts-report',
+            $cacheKey,
+            function () use ($companyId, $accountingPeriodId): array {
         $company = \InterfaceDB::fetchOne(
             'SELECT * FROM companies WHERE id = :id LIMIT 1',
             ['id' => $companyId]
@@ -211,6 +216,8 @@ final class IxbrlAccountsReportService
             'basis' => $basis,
             'basis_hash' => hash('sha256', $this->canonicalJson($basis)),
         ];
+            }
+        );
     }
 
     private function priorLockedPeriod(int $companyId, string $periodStart): ?array

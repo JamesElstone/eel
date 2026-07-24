@@ -14,6 +14,11 @@ final class IxbrlReadinessService
 {
     public function getReadiness(int $companyId, int $accountingPeriodId): array
     {
+        $cacheKey = \eel_accounts\Support\RequestCache::key($companyId, $accountingPeriodId);
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'ixbrl.readiness',
+            $cacheKey,
+            function () use ($companyId, $accountingPeriodId): array {
         $company = $this->fetchCompany($companyId);
         $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
         $settings = $companyId > 0 ? (new \eel_accounts\Store\CompanySettingsStore($companyId))->all() : [];
@@ -361,6 +366,8 @@ final class IxbrlReadinessService
             'external_validation' => $externalValidation,
             'arelle_status' => $arelleStatus,
         ];
+            }
+        );
     }
 
     private function addCheck(

@@ -23,6 +23,11 @@ final class IxbrlAccountsFilingApprovalService
 
     public function status(int $companyId, int $accountingPeriodId): array
     {
+        $cacheKey = \eel_accounts\Support\RequestCache::key($companyId, $accountingPeriodId);
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'ixbrl.filing-approval.status',
+            $cacheKey,
+            function () use ($companyId, $accountingPeriodId): array {
         if (!$this->schemaReady()) {
             return $this->statusResult('absent', false, null, null, [
                 'Apply the accounts filing approval migration before approving disclosures.',
@@ -54,6 +59,8 @@ final class IxbrlAccountsFilingApprovalService
             $candidate,
             $errors,
             $latest
+        );
+            }
         );
     }
 

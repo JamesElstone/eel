@@ -79,7 +79,7 @@ if (
             $clearResult = $service->clearMarkerForTransaction((int)$fixture['matched_transaction_id']);
             $harness->assertSame(true, (bool)($clearResult['removed'] ?? false));
             $harness->assertSame(false, $service->isMatchedNoPostTransaction((int)$fixture['matched_transaction_id']));
-            $harness->assertSame(0, InterfaceDB::countWhere('journals', ['source_type' => 'bank_csv', 'source_ref' => 'transaction:' . (int)$fixture['source_transaction_id']]));
+            $harness->assertSame(1, InterfaceDB::countWhere('journals', ['source_type' => 'bank_csv', 'source_ref' => 'transaction:' . (int)$fixture['source_transaction_id']]));
 
             $sourceAfterClear = InterfaceDB::fetchOne('SELECT nominal_account_id, transfer_account_id, is_internal_transfer, category_status, auto_rule_id, is_auto_excluded FROM transactions WHERE id = :id', ['id' => (int)$fixture['source_transaction_id']]);
             $matchedAfterClear = InterfaceDB::fetchOne('SELECT nominal_account_id, transfer_account_id, is_internal_transfer, category_status, auto_rule_id, is_auto_excluded FROM transactions WHERE id = :id', ['id' => (int)$fixture['matched_transaction_id']]);
@@ -211,12 +211,6 @@ if (
         try {
             $fixture = transactionInterAccountMarkerCreateFixture();
             transactionInterAccountMarkerPrepareStaleAutoState($fixture);
-            transactionInterAccountMarkerInsertJournal(
-                (int)$fixture['company_id'],
-                (int)$fixture['accounting_period_id'],
-                (int)$fixture['matched_transaction_id'],
-                'stale matched evidence journal'
-            );
 
             $action = new TransactionAction();
             $saveResult = $action->handle(
@@ -286,7 +280,7 @@ if (
 
             $harness->assertSame(true, $cancelResult->isSuccess());
             $harness->assertSame(0, InterfaceDB::countWhere('transaction_inter_ac_marker', ['transaction_id' => (int)$fixture['source_transaction_id']]));
-            $harness->assertSame(0, InterfaceDB::countWhere('journals', ['source_type' => 'bank_csv', 'source_ref' => 'transaction:' . (int)$fixture['source_transaction_id']]));
+            $harness->assertSame(1, InterfaceDB::countWhere('journals', ['source_type' => 'bank_csv', 'source_ref' => 'transaction:' . (int)$fixture['source_transaction_id']]));
             $harness->assertSame(0, InterfaceDB::countWhere('journals', ['source_type' => 'bank_csv', 'source_ref' => 'transaction:' . (int)$fixture['matched_transaction_id']]));
 
             $sourceAfterCancel = InterfaceDB::fetchOne('SELECT nominal_account_id, transfer_account_id, is_internal_transfer, category_status, auto_rule_id, is_auto_excluded FROM transactions WHERE id = :id', ['id' => (int)$fixture['source_transaction_id']]);

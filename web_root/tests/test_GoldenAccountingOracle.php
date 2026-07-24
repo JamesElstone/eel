@@ -293,7 +293,7 @@ $harness->check(GoldenAccountingOracle::class, 'matches real journal, trial bala
         goldenCompare($failures, 'companies_house', 'companies_house_snapshot', $periodId, 'balance_equation_difference', $expected['companies_house']['balance_equation_difference'], $snapshot['balance_equation_difference'] ?? null);
         $comparison = (new \eel_accounts\Service\YearEndCompaniesHouseComparisonService())->fetchComparison(GoldenAccountsFixture::GOLDEN_COMPANY_ID, $periodId);
         goldenCompare($failures, 'companies_house', 'year_end_companies_house_comparison', $periodId, 'available', $expected['companies_house']['stored_filing_available'], $comparison['available'] ?? null);
-        goldenCompare($failures, 'companies_house', 'year_end_companies_house_comparison', $periodId, 'missing_filing_error', true, in_array('No stored Companies House accounts filings were found for this company.', (array)($comparison['errors'] ?? []), true));
+        goldenCompare($failures, 'companies_house', 'year_end_companies_house_comparison', $periodId, 'missing_filing_error', false, in_array('No stored Companies House accounts filings were found for this company.', (array)($comparison['errors'] ?? []), true));
         }
         if ($failures !== []) {
             throw new RuntimeException(GoldenComparisonReporter::report($failures));

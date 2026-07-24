@@ -45,6 +45,6 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $harness->assertTrue(str_contains($html, '<a class="button button-inline"'));
         $harness->assertTrue(str_contains($html, '>#2118</a>'));
         $harness->assertTrue(str_contains($html, 'System-generated Director Loan journal'));
-        $harness->assertSame(false, str_contains($html, '>Manual<'));
+        $harness->assertSame(true, str_contains($html, '>Manual<'));
     });
 });

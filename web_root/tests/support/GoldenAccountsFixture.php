@@ -207,25 +207,25 @@ final class GoldenAccountsFixture
             return $id;
         };
         $rows = [
-            [91001, 'G100', 'Golden Test Bank', 'asset', 'other', 'bank'],
-            [91002, 'G400', 'Golden Test Sales', 'income', 'allowable', null],
-            [91003, 'G500', 'Golden Test Materials', 'cost_of_sales', 'allowable', null],
-            [91004, 'G600', 'Golden Test Overheads', 'expense', 'allowable', 'overhead'],
-            [91005, 'G800', 'Golden Test Director Loan', 'liability', 'other', 'director_loan_liability'],
-            [91006, 'G801', 'Golden Test Director Loan Asset', 'asset', 'other', 'director_loan_asset'],
+            [91001, 'GOLDEN-TEST-91001', 'Golden Test Bank', 'asset', 'other', 'bank'],
+            [91002, 'GOLDEN-TEST-91002', 'Golden Test Sales', 'income', 'allowable', null],
+            [91003, 'GOLDEN-TEST-91003', 'Golden Test Materials', 'cost_of_sales', 'allowable', null],
+            [91004, 'GOLDEN-TEST-91004', 'Golden Test Overheads', 'expense', 'allowable', 'overhead'],
+            [91005, 'GOLDEN-TEST-91005', 'Golden Test Director Loan', 'liability', 'other', 'director_loan_liability'],
+            [91006, 'GOLDEN-TEST-91006', 'Golden Test Director Loan Asset', 'asset', 'other', 'director_loan_asset'],
             [91007, '3000', 'Golden Test Retained Earnings', 'equity', 'other', 'capital_reserves'],
-            [91008, 'G700', 'Golden Test Corporation Tax Expense', 'expense', 'disallowable', 'corp_tax_expense'],
-            [91009, 'G810', 'Golden Test Corporation Tax Liability', 'liability', 'other', 'corp_tax'],
+            [91008, 'GOLDEN-TEST-91008', 'Golden Test Corporation Tax Expense', 'expense', 'disallowable', 'corp_tax_expense'],
+            [91009, 'GOLDEN-TEST-91009', 'Golden Test Corporation Tax Liability', 'liability', 'other', 'corp_tax'],
             [91010, '6230', 'Golden Test HMRC Penalties', 'expense', 'disallowable', 'overhead'],
             [91011, '6231', 'Golden Test HMRC Interest', 'expense', 'allowable', 'overhead'],
             [91012, '2210', 'Golden Test HMRC Penalties & Interest Payable', 'liability', 'other', 'hmrc_payable'],
-            [91013, 'G1300', 'Golden Test Plant and Machinery', 'asset', 'capital', 'fixed_asset'],
-            [91014, 'GOLD-1309', 'Golden Test Plant and Machinery Accumulated Depreciation', 'asset', 'capital', 'fixed_asset'],
+            [91013, 'GOLDEN-TEST-91013', 'Golden Test Plant and Machinery', 'asset', 'capital', 'fixed_asset'],
+            [91014, 'GOLDEN-TEST-91014', 'Golden Test Plant and Machinery Accumulated Depreciation', 'asset', 'capital', 'fixed_asset'],
             [91015, '1322', 'Golden Test Motor Vehicles - Vans', 'asset', 'capital', 'fixed_asset'],
-            [91016, '1329', 'Golden Test Motor Vehicles Accumulated Depreciation', 'asset', 'capital', 'fixed_asset'],
+            [91016, 'GOLDEN-TEST-91016', 'Golden Test Motor Vehicles Accumulated Depreciation', 'asset', 'capital', 'fixed_asset'],
             [91017, '6200', 'Golden Test Depreciation Expense', 'expense', 'disallowable', 'depreciation_expense'],
-            [91018, 'GOLD-PREPAY-ASSET', 'Golden Test Prepayments', 'asset', 'other', 'prepayments'],
-            [91019, 'GOLD-PREPAY-EXP', 'Golden Test Annual Subscriptions', 'expense', 'allowable', 'overhead'],
+            [91018, 'GOLDEN-TEST-91018', 'Golden Test Prepayments', 'asset', 'other', 'prepayments'],
+            [91019, 'GOLDEN-TEST-91019', 'Golden Test Annual Subscriptions', 'expense', 'allowable', 'overhead'],
         ];
         foreach ($rows as [$id, $code, $name, $type, $tax, $subtypeCode]) {
             $existingId = (int)InterfaceDB::fetchColumn(
@@ -236,11 +236,15 @@ final class GoldenAccountsFixture
                 self::$resolvedNominalIds[$id] = $existingId;
                 continue;
             }
-            self::insert('nominal_accounts', [
-                'id' => $id, 'code' => $code, 'name' => $name, 'account_type' => $type,
-                'account_subtype_id' => $subtypeId($subtypeCode), 'tax_treatment' => $tax,
-                'prepayment_candidate' => $id === 91019 ? 1 : 0, 'is_active' => 1, 'sort_order' => $id,
-            ]);
+            try {
+                self::insert('nominal_accounts', [
+                    'id' => $id, 'code' => $code, 'name' => $name, 'account_type' => $type,
+                    'account_subtype_id' => $subtypeId($subtypeCode), 'tax_treatment' => $tax,
+                    'prepayment_candidate' => $id === 91019 ? 1 : 0, 'is_active' => 1, 'sort_order' => $id,
+                ]);
+            } catch (Throwable $exception) {
+                throw new RuntimeException('Could not seed Golden nominal ' . $id . ' (' . $code . '): ' . $exception->getMessage(), 0, $exception);
+            }
             self::$resolvedNominalIds[$id] = $id;
         }
     }
@@ -325,6 +329,10 @@ final class GoldenAccountsFixture
             'id' => 9199, 'company_id' => self::GOLDEN_COMPANY_ID,
             'setting' => 'corporation_tax_liability_nominal_id', 'type' => 'int', 'value' => '91009',
         ]);
+        self::insert('company_settings', [
+            'id' => 9200, 'company_id' => self::GOLDEN_COMPANY_ID,
+            'setting' => 'default_sales_nominal_id', 'type' => 'int', 'value' => (string)self::nominalId(91002),
+        ]);
 
         foreach (self::PERIODS as $index => $period) {
             self::insertPeriod(self::GOLDEN_COMPANY_ID, $period);
@@ -403,6 +411,7 @@ final class GoldenAccountsFixture
             [9808, 'corporation_tax_liability_nominal_id', '91009'],
             [9809, 'default_currency', 'GBP'],
             [9810, 'utr', '1234567890'],
+            [9811, 'default_sales_nominal_id', (string)self::nominalId(91002)],
         ] as [$id, $setting, $value]) {
             self::insert('company_settings', [
                 'id' => $id,

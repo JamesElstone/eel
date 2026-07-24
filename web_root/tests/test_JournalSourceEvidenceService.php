@@ -369,7 +369,7 @@ $harness->run(
             static function () use ($harness, $service): void {
                 InterfaceDB::beginTransaction();
                 try {
-                    StandardNominalTestFixture::ensureNominals(['1300', '1330', '6200']);
+                    StandardNominalTestFixture::ensureNominals(['1300', '1330', '2000', '6200']);
                     $assetNominalId = StandardNominalTestFixture::id('1300');
                     $marker = substr(hash('sha256', __FILE__ . microtime(true) . random_int(1, PHP_INT_MAX)), 0, 10);
                     InterfaceDB::prepareExecute(

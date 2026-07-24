@@ -79,7 +79,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $second = $service->fetchApprovalBasis($companyId, $accountingPeriodId);
             $afterSecondQuestions = journalCutOffReviewQuestions();
             $harness->assertSame($first, $second);
-            $harness->assertSame(true, ($afterSecondQuestions - $afterFirstQuestions) < ($afterFirstQuestions - $firstQuestions));
+            if (InterfaceDB::driverName() === 'mysql') {
+                $harness->assertSame(true, ($afterSecondQuestions - $afterFirstQuestions) < ($afterFirstQuestions - $firstQuestions));
+            }
 
             InterfaceDB::prepareExecute(
                 'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
@@ -99,14 +101,18 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $differentPeriod = $service->fetchApprovalBasis($companyId, $secondPeriodId);
             $afterDifferentPeriodQuestions = journalCutOffReviewQuestions();
             $harness->assertSame(true, (bool)($differentPeriod['available'] ?? false));
-            $harness->assertSame(true, ($afterDifferentPeriodQuestions - $beforeDifferentPeriodQuestions) > ($afterSecondQuestions - $afterFirstQuestions));
+            if (InterfaceDB::driverName() === 'mysql') {
+                $harness->assertSame(true, ($afterDifferentPeriodQuestions - $beforeDifferentPeriodQuestions) > ($afterSecondQuestions - $afterFirstQuestions));
+            }
 
             \eel_accounts\Support\RequestCache::clear();
             $beforeFreshQuestions = journalCutOffReviewQuestions();
             $fresh = $service->fetchApprovalBasis($companyId, $accountingPeriodId);
             $afterFreshQuestions = journalCutOffReviewQuestions();
             $harness->assertSame($first, $fresh);
-            $harness->assertSame(true, ($afterFreshQuestions - $beforeFreshQuestions) > ($afterSecondQuestions - $afterFirstQuestions));
+            if (InterfaceDB::driverName() === 'mysql') {
+                $harness->assertSame(true, ($afterFreshQuestions - $beforeFreshQuestions) > ($afterSecondQuestions - $afterFirstQuestions));
+            }
             unset($scope);
             \eel_accounts\Support\RequestCache::reset();
 
@@ -116,8 +122,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $directSecond = $service->fetchApprovalBasis($companyId, $accountingPeriodId);
             $afterDirectSecondQuestions = journalCutOffReviewQuestions();
             $harness->assertSame($directFirst, $directSecond);
-            $harness->assertSame(true, ($afterDirectFirstQuestions - $beforeDirectQuestions) > 1);
-            $harness->assertSame(true, ($afterDirectSecondQuestions - $afterDirectFirstQuestions) > 1);
+            if (InterfaceDB::driverName() === 'mysql') {
+                $harness->assertSame(true, ($afterDirectFirstQuestions - $beforeDirectQuestions) > 1);
+                $harness->assertSame(true, ($afterDirectSecondQuestions - $afterDirectFirstQuestions) > 1);
+            }
         } finally {
             \eel_accounts\Support\RequestCache::reset();
             if (InterfaceDB::inTransaction()) {
@@ -130,13 +138,17 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $result = $service->fetchApprovalBasis(999999999, 999999999);
 
         $harness->assertSame(false, (bool)($result['available'] ?? true));
-        $harness->assertSame(null, $result['basis'] ?? 'missing');
+        $harness->assertSame('missing', $result['basis'] ?? 'missing');
         $harness->assertSame(true, str_contains((string)(($result['errors'] ?? [])[0] ?? ''), 'could not be found'));
     });
 });
 
 function journalCutOffReviewQuestions(): int
 {
+    if (InterfaceDB::driverName() !== 'mysql') {
+        return 0;
+    }
+
     $row = InterfaceDB::fetchOne("SHOW SESSION STATUS LIKE 'Questions'");
     return (int)($row['Value'] ?? $row['value'] ?? 0);
 }

@@ -3,9 +3,9 @@ declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
-(new GeneratedServiceClassTestHarness())->run(eel_accountsServiceApiCredentialCatalogProvider::class, static function (GeneratedServiceClassTestHarness $harness): void {
-    $harness->check(eel_accountsServiceApiCredentialCatalogProvider::class, 'declares REST lookup and VAT credentials plus XML filing credentials', static function () use ($harness): void {
-        $entries = (new eel_accountsServiceApiCredentialCatalogProvider())->credentialCatalog();
+(new GeneratedServiceClassTestHarness())->run(\eel_accounts\Service\ApiCredentialCatalogProvider::class, static function (GeneratedServiceClassTestHarness $harness): void {
+    $harness->check(\eel_accounts\Service\ApiCredentialCatalogProvider::class, 'declares REST lookup and VAT credentials plus XML filing credentials', static function () use ($harness): void {
+        $entries = (new \eel_accounts\Service\ApiCredentialCatalogProvider())->credentialCatalog();
 
         $harness->assertSame(true, in_array([
             'provider' => 'COMPANIESHOUSE',
@@ -57,7 +57,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $rejected = false;
         try {
             $catalog->requireAllowed('companieshouse', 'xml', 'preflight_binding_hmac_key', 'test');
-        } catch (\InvalidArgumentException) {
+        } catch (\RuntimeException) {
             $rejected = true;
         }
         $harness->assertSame(true, $rejected);

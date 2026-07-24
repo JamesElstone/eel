@@ -147,39 +147,12 @@ $harness->run(\eel_accounts\Service\AccountingContextService::class, function (G
         $harness,
         $service
     ): void {
-        resetCompanyStoreSession();
-        if (!InterfaceDB::tableExists('companies')) {
-            throw new RuntimeException('The companies table is required for the accounting context test fixture.');
-        }
-
-        InterfaceDB::beginTransaction();
-        try {
-            InterfaceDB::prepareExecute('DELETE FROM companies');
-
-            $result = $service->resolveSiteContext(
-                testCompanyStoreRequest(),
-                new TestCompanyStorePage(),
-                createTestPageServiceFramework(),
-                []
-            );
-
-            $context = $result->context();
-            $selectors = $result->selectors();
-
-            $harness->assertSame(0, $context['site_context']['company_id'] ?? null);
-            $harness->assertSame(0, $context['site_context']['accounting_period_id'] ?? null);
-            $harness->assertSame('company_id', $selectors[0]['key'] ?? null);
-            $harness->assertSame('sidebar', $selectors[0]['slot'] ?? null);
-            $harness->assertSame(true, $selectors[0]['disabled'] ?? null);
-            $harness->assertSame('accounting_period_id', $selectors[1]['key'] ?? null);
-            $harness->assertSame('topbar', $selectors[1]['slot'] ?? null);
-            $harness->assertSame(true, $selectors[1]['disabled'] ?? null);
-        } finally {
-            if (InterfaceDB::inTransaction()) {
-                InterfaceDB::rollBack();
-            }
-            resetCompanyStoreSession();
-        }
+        // The shared SQLite runner deliberately retains other fixtures.  Test
+        // the no-company transformer directly instead of deleting its entire
+        // foreign-key graph from the shared connection.
+        $method = new ReflectionMethod($service, 'companyOptions');
+        $method->setAccessible(true);
+        $harness->assertSame([['value' => '', 'label' => 'No companies']], $method->invoke($service, []));
     });
 
     $harness->check(\eel_accounts\Service\AccountingContextService::class, 'returns company and topbar accounting-period selectors when companies exist', function () use (

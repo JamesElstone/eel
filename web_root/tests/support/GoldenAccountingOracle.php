@@ -237,7 +237,7 @@ final class GoldenAccountingOracle
                 'equity_capital_reserves' => $capitalAndReserves,
                 'balance_equation_difference' => $balanceEquationDifference,
                 'is_balance_sheet_balanced' => abs($balanceEquationDifference) < 0.005,
-                'stored_filing_available' => false,
+                'stored_filing_available' => true,
             ],
             'assets' => $period['asset_purchases'],
             'director_loan' => [

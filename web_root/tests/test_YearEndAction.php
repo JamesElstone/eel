@@ -37,7 +37,7 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
         $harness->assertSame(true, str_contains($service, "(array)((\$finalTaxFreeze['tax_readiness'] ?? [])['periods'] ?? [])"));
 
         $lockStart = strpos($service, 'public function lockPeriod(');
-        $lockEnd = strpos($service, 'private function canLockOverallStatus(', $lockStart !== false ? $lockStart : 0);
+        $lockEnd = strpos($service, 'public function saveNotes(', $lockStart !== false ? $lockStart : 0);
         $harness->assertSame(true, $lockStart !== false && $lockEnd !== false);
         $lockMethod = substr($service, (int)$lockStart, (int)$lockEnd - (int)$lockStart);
         $lockFinalProgress = strpos($lockMethod, "'Finalising the locked accounting period…', 99");

@@ -179,14 +179,14 @@ final class GoldenWorkflowCoverageFixture
         }
 
         foreach ([
-            [91020, 'G101', 'Golden Test Savings Bank', 'asset', 'other', $subtypeIds['bank']],
-            [91021, '2100', 'Golden Test Trade Creditors', 'liability', 'other', null],
-            [91022, '2150', 'Golden Test Dividends Payable', 'liability', 'other', null],
-            [91023, '2200', 'Golden Test VAT Control', 'liability', 'other', null],
-            [91024, '3100', 'Golden Test Share Capital', 'equity', 'other', $subtypeIds['capital_reserves']],
-            [91025, '6250', 'Golden Test Asset Disposal Loss', 'expense', 'allowable', $subtypeIds['overhead']],
-            [91026, '9999', 'Golden Test Uncategorised', 'expense', 'other', $subtypeIds['overhead']],
-            [91027, '1321', 'Golden Test Motor Vehicles - Cars', 'asset', 'capital', $subtypeIds['fixed_asset']],
+            [91020, 'GOLDEN-TEST-91020', 'Golden Test Savings Bank', 'asset', 'other', $subtypeIds['bank']],
+            [91021, 'GOLDEN-TEST-91021', 'Golden Test Trade Creditors', 'liability', 'other', null],
+            [91022, 'GOLDEN-TEST-91022', 'Golden Test Dividends Payable', 'liability', 'other', null],
+            [91023, 'GOLDEN-TEST-91023', 'Golden Test VAT Control', 'liability', 'other', null],
+            [91024, 'GOLDEN-TEST-91024', 'Golden Test Share Capital', 'equity', 'other', $subtypeIds['capital_reserves']],
+            [91025, 'GOLDEN-TEST-91025', 'Golden Test Asset Disposal Loss', 'expense', 'allowable', $subtypeIds['overhead']],
+            [91026, 'GOLDEN-TEST-91026', 'Golden Test Uncategorised', 'expense', 'other', $subtypeIds['overhead']],
+            [91027, 'GOLDEN-TEST-91027', 'Golden Test Motor Vehicles - Cars', 'asset', 'capital', $subtypeIds['fixed_asset']],
         ] as [$id, $code, $name, $accountType, $taxTreatment, $subtypeId]) {
             self::insert('nominal_accounts', [
                 'id' => $id,

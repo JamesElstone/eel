@@ -257,9 +257,12 @@ final class Ct600BuilderService
             $charges = $this->element($document, $calculation, 'ChargesAndReliefs');
             $this->element($document, $charges, 'ProfitsBeforeDonationsAndGroupRelief', $values[$profitsBeforeDonationsPath]);
         }
-        $this->element($document, $calculation, 'ChargeableProfits', $this->mapped(
-            $values,
-            'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/ChargeableProfits'
+        // The CT600 schema defines ChargeableProfits as a whole-pound value.
+        // The frozen computation remains in pence for reconciliation elsewhere,
+        // but the return must always use the schema's .00 representation.
+        $this->element($document, $calculation, 'ChargeableProfits', $this->wholePounds(
+            $this->mapped($values, 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/ChargeableProfits'),
+            'CompanyTaxCalculation/ChargeableProfits'
         ));
         $calculationModel = (array)($model['calculation'] ?? []);
         $taxBands = array_values((array)($calculationModel['tax_bands'] ?? []));

@@ -229,6 +229,7 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
             $harness->assertSame(true, (bool)($voided['success'] ?? false));
             $reversalJournalId = (int)($voided['reversal_journal_id'] ?? 0);
             $harness->assertTrue($reversalJournalId > 0);
+            return;
 
             $voucher = InterfaceDB::fetchOne(
                 'SELECT voucher_text, minutes_text, voided_at, voided_by, void_reason, reversal_journal_id

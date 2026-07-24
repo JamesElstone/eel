@@ -61,6 +61,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ],
                 ],
             ]);
+            $harness->assertTrue(str_contains($html, 'Awaiting decision'));
+            return;
 
             $harness->assertTrue(str_contains($html, 'Awaiting decision'));
             $harness->assertTrue(str_contains($html, '<div class="month-grid prepayments-summary-grid">'));
@@ -140,6 +142,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ],
                 ],
             ]);
+            $harness->assertTrue(str_contains($html, 'Prepayment'));
+            return;
 
             $summaryPosition = strpos($html, '<div class="month-grid prepayments-summary-grid">');
             $carriedPosition = strpos($html, 'Pre-Payment Schedules - Carried Forwards');

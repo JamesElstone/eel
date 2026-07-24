@@ -157,8 +157,8 @@ $harness->run(\eel_accounts\Outbound\HmrcOutbound::class, function (GeneratedSer
         file_put_contents(
             $tempPath,
             implode(PHP_EOL, [
-                'PROVIDER,TAG,ENVIRONMENT,SCHEMA,URL,API_KEY',
-                'HMRC,VAT_CHECK,TEST,HTTPS,test-api.service.hmrc.gov.uk,client-id:client-secret',
+                'PROVIDER,GATEWAY,TAG,ENVIRONMENT,SCHEMA,URL,API_IDENTITY,API_KEY',
+                'HMRC,REST,VAT_CHECK,TEST,HTTPS,test-api.service.hmrc.gov.uk,client-id,client-secret',
             ]) . PHP_EOL
         );
 
@@ -177,7 +177,7 @@ $harness->run(\eel_accounts\Outbound\HmrcOutbound::class, function (GeneratedSer
             $harness->assertTrue(false, 'Expected anti-fraud validation to fail when the FPH_VALIDATOR tag is missing.');
         } catch (RuntimeException $exception) {
             $harness->assertSame(
-                'HMRC anti-fraud validator credentials are not configured (HMRC / FPH_VALIDATOR / TEST).',
+                'HMRC anti-fraud validator credentials are not configured (HMRC / FPH_VALIDATOR / TEST): API credential not found for HMRC / REST / FPH_VALIDATOR / TEST.',
                 $exception->getMessage()
             );
         }

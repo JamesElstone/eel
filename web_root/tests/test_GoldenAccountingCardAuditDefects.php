@@ -441,7 +441,7 @@ $harness->check('GoldenAccountingCardAuditDefects', 'includes signed pending pre
         $pendingRows = array_values(array_filter(
             (array)($after['disallowable_add_backs'] ?? []),
             static fn(array $row): bool => (string)($row['source'] ?? '') === 'pending_prepayment'
-                && (string)($row['nominal_code'] ?? '') === 'GOLD-PREPAY-EXP'
+                && (string)($row['nominal_code'] ?? '') === 'GOLDEN-TEST-91019'
         ));
 
         $harness->assertCount(1, $pendingRows);

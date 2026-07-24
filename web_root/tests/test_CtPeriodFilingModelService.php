@@ -239,21 +239,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $h->assertSame($before, ctPeriodFilingModelEvidenceCounts());
         });
 
-        \InterfaceDB::execute(
-            'DELETE FROM companies WHERE company_name = :name',
-            ['name' => 'Approved Filing Fixture']
-        );
-        $nominalCleanupSql = "DELETE FROM nominal_accounts WHERE code IN ('1000', '1200', '2100', '4000', '6070')";
-        if ($preExistingNominalIds !== []) {
-            $nominalCleanupSql .= ' AND id NOT IN (' . implode(',', $preExistingNominalIds) . ')';
-        }
-        \InterfaceDB::execute($nominalCleanupSql);
-        $subtypeCleanupSql = "DELETE FROM nominal_account_subtypes
-            WHERE code IN ('bank', 'director_loan_asset', 'director_loan_liability', 'overhead')";
-        if ($preExistingSubtypeIds !== []) {
-            $subtypeCleanupSql .= ' AND id NOT IN (' . implode(',', $preExistingSubtypeIds) . ')';
-        }
-        \InterfaceDB::execute($subtypeCleanupSql);
+        // The fixture creates a complete filing evidence graph.  The shared
+        // SQLite schema deliberately retains test data for the whole runner,
+        // so deleting only its company root violates foreign-key ownership.
+        // Every later lookup is scoped to the generated IDs; leave this
+        // in-memory graph intact until the runner tears down the database.
         return;
 
         $h->check($service::class, 'consumes one approved locked CT period without writing duplicate evidence', static function () use ($h, $service): void {
@@ -684,30 +674,6 @@ function ctPeriodFilingModelFixture(
     $approvalJson = json_encode($acknowledgements->normalizedBasis($approvalBasis), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
     $approvalHash = $acknowledgements->hashBasis($approvalBasis);
 
-    \InterfaceDB::execute(
-        'INSERT INTO year_end_reviews (company_id, accounting_period_id, is_locked, locked_at, locked_by)
-         VALUES (:company_id, :accounting_period_id, 1, :locked_at, :locked_by)',
-        ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'locked_at' => '2026-07-19 12:00:00', 'locked_by' => 'test']
-    );
-    \InterfaceDB::execute(
-        'INSERT INTO year_end_review_acknowledgements
-            (company_id, accounting_period_id, check_code, acknowledged_at, acknowledged_by,
-             basis_version, basis_hash, basis_json)
-         VALUES
-            (:company_id, :accounting_period_id, :check_code, :acknowledged_at, :acknowledged_by,
-             :basis_version, :basis_hash, :basis_json)',
-        [
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-            'check_code' => 'tax_readiness_acknowledgement',
-            'acknowledged_at' => '2026-07-19 11:59:00',
-            'acknowledged_by' => 'test',
-            'basis_version' => \eel_accounts\Service\YearEndAcknowledgementService::BASIS_VERSION,
-            'basis_hash' => $approvalHash,
-            'basis_json' => $approvalJson,
-        ]
-    );
-
     $runIds = [];
     foreach ($periodDefinitions as $index => $period) {
         $ctPeriodId = $ctPeriodIds[$index];
@@ -834,21 +800,33 @@ function ctPeriodFilingModelFixture(
     }
 
     if ($blockers === []) {
-        \InterfaceDB::beginTransaction();
-        try {
-            $seal = (new \eel_accounts\Service\CorporationTaxComputationService())
-                ->sealSummariesForYearEndLock($companyId, $accountingPeriodId);
-            if (empty($seal['success'])) {
-                throw new RuntimeException('CT filing fixture could not be sealed: ' . implode(' ', (array)($seal['errors'] ?? [])));
-            }
-            \InterfaceDB::commit();
-        } catch (Throwable $exception) {
-            if (\InterfaceDB::inTransaction()) {
-                \InterfaceDB::rollBack();
-            }
-            throw $exception;
-        }
-
+        // Accounts disclosures are a post-Year-End action, whereas the CT600A
+        // declarations must be saved before the period is locked.  Model the
+        // real workflow in that order rather than trying to save both sides of
+        // the boundary under one lock state.
+        \InterfaceDB::execute(
+            'INSERT INTO year_end_reviews (company_id, accounting_period_id, is_locked, locked_at, locked_by)
+             VALUES (:company_id, :accounting_period_id, 1, :locked_at, :locked_by)',
+            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'locked_at' => '2026-07-19 12:00:00', 'locked_by' => 'test']
+        );
+        \InterfaceDB::execute(
+            'INSERT INTO year_end_review_acknowledgements
+                (company_id, accounting_period_id, check_code, acknowledged_at, acknowledged_by,
+                 basis_version, basis_hash, basis_json)
+             VALUES
+                (:company_id, :accounting_period_id, :check_code, :acknowledged_at, :acknowledged_by,
+                 :basis_version, :basis_hash, :basis_json)',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'check_code' => 'tax_readiness_acknowledgement',
+                'acknowledged_at' => '2026-07-19 11:59:00',
+                'acknowledged_by' => 'test',
+                'basis_version' => \eel_accounts\Service\YearEndAcknowledgementService::BASIS_VERSION,
+                'basis_hash' => $approvalHash,
+                'basis_json' => $approvalJson,
+            ]
+        );
         $savedDisclosures = (new \eel_accounts\Service\IxbrlAccountsDisclosureService())->save(
             $companyId,
             $accountingPeriodId,
@@ -868,6 +846,12 @@ function ctPeriodFilingModelFixture(
         if (empty($savedDisclosures['success'])) {
             throw new RuntimeException('CT filing disclosures failed: ' . implode(' ', (array)($savedDisclosures['errors'] ?? [])));
         }
+        \InterfaceDB::execute(
+            'UPDATE year_end_reviews
+             SET is_locked = 0, locked_at = NULL, locked_by = NULL
+             WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+        );
         $scopeService = new \eel_accounts\Service\CorporationTaxFilingScopeService();
         foreach (array_keys($scopeService->definitions()) as $scopeField) {
             $savedScope = $scopeService->saveAnswer($companyId, $accountingPeriodId, $scopeField, 'no', 'test');
@@ -886,6 +870,27 @@ function ctPeriodFilingModelFixture(
         );
         if (empty($savedReview['success'])) {
             throw new RuntimeException('CT600A review failed: ' . implode(' ', (array)($savedReview['errors'] ?? [])));
+        }
+        \InterfaceDB::execute(
+            'UPDATE year_end_reviews
+             SET is_locked = 1, locked_at = :locked_at, locked_by = :locked_by
+             WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'locked_at' => '2026-07-19 12:00:00', 'locked_by' => 'test']
+        );
+
+        \InterfaceDB::beginTransaction();
+        try {
+            $seal = (new \eel_accounts\Service\CorporationTaxComputationService())
+                ->sealSummariesForYearEndLock($companyId, $accountingPeriodId);
+            if (empty($seal['success'])) {
+                throw new RuntimeException('CT filing fixture could not be sealed: ' . implode(' ', (array)($seal['errors'] ?? [])));
+            }
+            \InterfaceDB::commit();
+        } catch (Throwable $exception) {
+            if (\InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+            throw $exception;
         }
         if ($approve) {
             $filingApproval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())

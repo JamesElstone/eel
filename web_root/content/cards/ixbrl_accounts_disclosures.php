@@ -305,7 +305,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                     </section>
                     ' . $this->companiesHouseRevisedAccountsPanel($result, $display, $controlDisabled, $companyId, $accountingPeriodId) . '
                 </div>
-                ' . $this->approvalPanel($approvalStatus, $companyId, $accountingPeriodId) . '
+                ' . $this->approvalPanel($approvalStatus, $companyId, $accountingPeriodId, $yearEndLocked) . '
         </div>';
     }
 
@@ -338,7 +338,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         </section>';
     }
 
-    private function approvalPanel(array $status, int $companyId, int $accountingPeriodId): string
+    private function approvalPanel(array $status, int $companyId, int $accountingPeriodId, bool $yearEndLocked): string
     {
         $state = (string)($status['state'] ?? 'absent');
         $approval = is_array($status['approval'] ?? null) ? (array)$status['approval'] : [];
@@ -362,7 +362,9 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         foreach ((array)($status['errors'] ?? []) as $error) {
             $errors .= '<div class="standout helper">' . HelperFramework::escape((string)$error) . '</div>';
         }
-        $disabled = empty($status['can_approve']) ? ' disabled aria-disabled="true"' : '';
+        $disabled = empty($status['can_approve']) || $current || !$yearEndLocked
+            ? ' disabled aria-disabled="true"'
+            : '';
 
         return '<section class="panel-soft ixbrl-approval-panel">
             <div class="status-head"><h3 class="card-title">Disclosure Approval</h3><span class="badge ' . $badge . '">' . $label . '</span></div>
@@ -374,7 +376,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <div class="form-row"><label for="ixbrl_filing_approval_note">Approval note (optional)</label>
-                    <textarea class="input" id="ixbrl_filing_approval_note" name="approval_note" rows="2"></textarea></div>
+                    <textarea class="input" id="ixbrl_filing_approval_note" name="approval_note" rows="2"' . $disabled . '></textarea></div>
                 <div class="helper ixbrl-approval-confirmation">I here by confirm that the information on this page is a true and accurate reflection of this business.</div>
                 <div class="actions-row"><button class="button primary" type="submit"' . $disabled . '>I Approve this Statement of Fact</button></div>
             </form>

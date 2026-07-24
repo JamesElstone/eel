@@ -59,18 +59,21 @@ $harness->run(_ixbrl_readinessCard::class, static function (GeneratedServiceClas
                 'can_validate' => false,
                 'ready_for_filing' => false,
                 'checks' => [[
+                    'key' => 'year_end_locked',
                     'label' => 'Year End finalised',
                     'complete' => false,
                     'status' => 'danger',
                     'status_label' => 'Generation blocked',
                     'detail' => 'Complete and lock Year End.',
                 ], [
+                    'key' => 'facts_generated',
                     'label' => 'Facts available',
                     'complete' => false,
                     'status' => 'danger',
                     'status_label' => 'Build Blocked',
                     'detail' => 'Build facts are not available.',
                 ], [
+                    'key' => 'ixbrl_external_validation',
                     'label' => 'External validation',
                     'complete' => false,
                     'status' => 'danger',
@@ -105,7 +108,14 @@ $harness->run(_ixbrl_readinessCard::class, static function (GeneratedServiceClas
         $statusPosition = strpos($html, '<div class="summary-label">Status</div>');
         $buildPosition = strpos($html, 'Build facts');
         $harness->assertTrue($statusPosition !== false && $buildPosition !== false && $statusPosition < $buildPosition);
-        $harness->assertFalse(str_contains($html, 'panel-soft'));
+        $harness->assertTrue(str_contains($html, '<h3 class="card-title">Filing status</h3>'));
+        $harness->assertTrue(str_contains($html, '<h3 class="card-title">Year End and disclosure approval</h3>'));
+        $harness->assertTrue(str_contains($html, '<h3 class="card-title">Generated facts and iXBRL validation</h3>'));
+        $harness->assertTrue(str_contains($html, '<h4 class="card-title">Filing outputs</h4>'));
+        $harness->assertTrue(str_contains($html, 'HMRC accounts iXBRL'));
+        $harness->assertTrue(str_contains($html, 'HMRC Corporation Tax iXBRL'));
+        $harness->assertTrue(str_contains($html, 'Companies House revised accounts iXBRL'));
+        $harness->assertTrue(str_contains($html, 'panel-soft'));
         $harness->assertTrue(str_contains($html, 'Ready to build facts'));
         $harness->assertTrue(str_contains($html, 'Not ready'));
         $harness->assertFalse(str_contains($html, 'Generation blocked'));
@@ -341,6 +351,32 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
 
         $harness->assertTrue(str_contains($html, 'Complete and lock Year End before confirming the accounts disclosures.'));
         $harness->assertTrue(str_contains($html, 'name="is_still_trading" value="1" required disabled aria-disabled="true"'));
+        $harness->assertTrue(str_contains($html, 'type="submit" disabled aria-disabled="true"'));
+    });
+
+    $harness->check(_ixbrl_accounts_disclosuresCard::class, 'disables the disclosure approval controls once the current basis is approved', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'services' => [
+                'ixbrl_accounts_disclosures' => [
+                    'available' => true,
+                    'complete' => true,
+                    'stored' => true,
+                    'year_end_locked' => true,
+                    'disclosures' => ['accounting_standard' => 'FRS_105'],
+                    'suggested_disclosures' => [],
+                    'suggestion_sources' => [],
+                    'director_suggestions' => [],
+                    'accounting_period' => ['period_end' => '2025-12-31'],
+                    'trading_status_evidence' => ['has_previous_trading_evidence' => false],
+                    'dormancy' => ['calculated' => false],
+                ],
+                'ixbrl_filing_approval' => ['state' => 'current', 'current' => true, 'can_approve' => true, 'year_end_locked' => true],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'name="approval_note" rows="2" disabled aria-disabled="true"'));
+        $harness->assertTrue(str_contains($html, '>I Approve this Statement of Fact</button>'));
         $harness->assertTrue(str_contains($html, 'type="submit" disabled aria-disabled="true"'));
     });
 

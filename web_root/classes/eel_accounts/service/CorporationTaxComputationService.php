@@ -642,8 +642,13 @@ final class CorporationTaxComputationService
                 continue;
             }
             $approvalBasis = json_decode((string)($run['approval_basis_json'] ?? ''), true);
-            $freezeManifest = is_array($approvalBasis) && is_array($approvalBasis['freeze_manifest'] ?? null)
-                ? (array)$approvalBasis['freeze_manifest']
+            // Tax approval is now a V2 section bundle. Its calculation facts
+            // live under `facts`; retain the flat lookup for historical seals.
+            $approvalFacts = is_array($approvalBasis) && is_array($approvalBasis['facts'] ?? null)
+                ? (array)$approvalBasis['facts']
+                : (is_array($approvalBasis) ? $approvalBasis : []);
+            $freezeManifest = is_array($approvalFacts['freeze_manifest'] ?? null)
+                ? (array)$approvalFacts['freeze_manifest']
                 : [];
             $freezeManifestHash = $freezeManifest !== []
                 ? (new YearEndAcknowledgementService())->hashBasis($freezeManifest)

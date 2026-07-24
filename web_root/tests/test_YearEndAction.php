@@ -64,6 +64,15 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
         $harness->assertSame(true, in_array('year.end.checklist', $facts, true));
     });
 
+    $harness->check(YearEndAction::class, 'narrows Journal Cut-Off approval invalidation to the affected Year End facts', static function () use ($harness, $instance): void {
+        $method = new ReflectionMethod($instance, 'changedFacts');
+        $facts = (array)$method->invoke($instance, 'revoke_section_review', 'cut_off_journals_review');
+
+        $harness->assertSame(false, in_array('page.context', $facts, true));
+        $harness->assertSame(true, in_array('cut.off.journals', $facts, true));
+        $harness->assertSame(true, in_array('year.end.audit.log', $facts, true));
+    });
+
     $harness->check('YearEndAction', 'posts confirmed director loan reclassification deltas and remains idempotent', static function () use ($harness, $instance): void {
         yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness, $instance): void {
             $instance = yearEndActionTestInstanceWithDirectorCount(1);

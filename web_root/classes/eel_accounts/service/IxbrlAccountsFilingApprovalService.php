@@ -42,13 +42,7 @@ final class IxbrlAccountsFilingApprovalService
             );
         }
 
-        $matching = $this->approvalByHash($companyId, $accountingPeriodId, (string)$candidate['basis_hash']);
-        if ($matching !== null
-            && ((string)($matching['basis_version'] ?? '') !== self::BASIS_VERSION
-                || !hash_equals((string)$candidate['basis_json'], (string)($matching['basis_json'] ?? ''))
-                || !hash_equals((string)$candidate['basis_hash'], hash('sha256', (string)($matching['basis_json'] ?? ''))))) {
-            $matching = null;
-        }
+        $matching = $this->matchingApprovalForCandidate($companyId, $accountingPeriodId, $candidate);
         $current = $matching !== null;
         $errors = $current
             ? []
@@ -82,6 +76,9 @@ final class IxbrlAccountsFilingApprovalService
 
         return (array)\InterfaceDB::transaction(function () use ($companyId, $accountingPeriodId, $approvedBy, $note, $progress): array {
             $candidate = $this->candidate($companyId, $accountingPeriodId, true);
+            if ($this->matchingApprovalForCandidate($companyId, $accountingPeriodId, $candidate) !== null) {
+                throw new \RuntimeException('This Statement of Fact is already approved and current for this locked accounting period.');
+            }
             $disclosure = (array)$candidate['disclosure'];
             $yearEnd = (array)$candidate['year_end'];
 
@@ -801,6 +798,20 @@ final class IxbrlAccountsFilingApprovalService
             ['company_id' => $companyId, 'period_id' => $accountingPeriodId, 'basis_hash' => $basisHash]
         );
         return is_array($row) ? $row : null;
+    }
+
+    /** @param array<string, mixed> $candidate */
+    private function matchingApprovalForCandidate(int $companyId, int $accountingPeriodId, array $candidate): ?array
+    {
+        $matching = $this->approvalByHash($companyId, $accountingPeriodId, (string)($candidate['basis_hash'] ?? ''));
+        if ($matching === null
+            || (string)($matching['basis_version'] ?? '') !== self::BASIS_VERSION
+            || !hash_equals((string)($candidate['basis_json'] ?? ''), (string)($matching['basis_json'] ?? ''))
+            || !hash_equals((string)($candidate['basis_hash'] ?? ''), hash('sha256', (string)($matching['basis_json'] ?? '')))) {
+            return null;
+        }
+
+        return $matching;
     }
 
     private function statusResult(

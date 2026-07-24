@@ -80,12 +80,14 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         $provision = (array)($taxReadiness['provision'] ?? []);
         $taxBasisReady = (string)($taxReadiness['freeze_status'] ?? '') === 'ready_for_approval';
         $sectionReview = (array)($context['services']['sectionReview'] ?? []);
+        $scopeGateBlocked = !empty($sectionReview['scope_gate']) && empty($sectionReview['scope_ready']);
         $acknowledgementForm = $this->acknowledgementHtml(
             $sectionReview,
             $companyId,
             $accountingPeriodId,
             $this->money($companySettings, $taxReadiness['estimated_corporation_tax'] ?? 0),
-            $taxBasisReady
+            $taxBasisReady,
+            $scopeGateBlocked
         );
 
         return '<section class="settings-stack" id="tax-readiness">
@@ -122,7 +124,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
                 . '<div class="actions-row actions-row-nowrap year-end-tax-scope-answer">' . $this->scopeRadio((string)$key, 'no', 'No', $answer)
                 . $this->scopeRadio((string)$key, 'yes', 'Yes', $answer) . '</div></form></td></tr>';
         }
-        return '<section class="panel-soft settings-stack"><h3 class="card-title">Corporation Tax Filing Scope Check</h3>'
+        return '<section class="panel-soft settings-stack" data-year-end-tax-scope-table="true"><h3 class="card-title">Corporation Tax Filing Scope Check</h3>'
             . '<div class="table-scroll"><table class="year-end-tax-scope-table"><thead><tr><th>Supplement ID</th><th>Supplement Name</th><th>Question</th><th>HMRC Guidance</th><th>Answer</th></tr></thead><tbody>'
             . $rows . '</tbody></table></div></section>';
     }
@@ -144,7 +146,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         return [];
     }
 
-    private function acknowledgementHtml(array $review, int $companyId, int $accountingPeriodId, string $totalCorporationTaxDue, bool $taxBasisReady): string
+    private function acknowledgementHtml(array $review, int $companyId, int $accountingPeriodId, string $totalCorporationTaxDue, bool $taxBasisReady, bool $scopeGateBlocked): string
     {
         $acknowledgement = (array)($review['acknowledgement'] ?? []);
         return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
@@ -165,7 +167,8 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             'questions' => (array)($review['questions'] ?? []),
             'answers' => (array)($review['answers'] ?? []),
             'renderQuestions' => false,
-            'disabled' => !$taxBasisReady || empty($review['can_approve']),
+            'clientScopeGate' => !empty($review['scope_gate']),
+            'disabled' => !$taxBasisReady || (empty($review['can_approve']) && !$scopeGateBlocked),
             'disabledReason' => !$taxBasisReady
                 ? 'Year End Confirmation is disabled until all tax basis checks have passed.'
                 : (string)(($review['approval_errors'] ?? [])[0] ?? ''),

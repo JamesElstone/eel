@@ -65,6 +65,8 @@ final class YearEndSectionApprovalService
             'answers' => $answers,
             'can_approve' => !array_key_exists('can_approve', $bundle) || !empty($bundle['can_approve']),
             'approval_errors' => (array)($bundle['approval_errors'] ?? []),
+            'scope_gate' => !empty($bundle['scope_gate']),
+            'scope_ready' => !empty($bundle['scope_ready']),
         ];
     }
 
@@ -111,7 +113,14 @@ final class YearEndSectionApprovalService
         } elseif (empty($cached['is_current']) || !$this->sourceTokenMatches($cached, $companyId, $accountingPeriodId, $checkCode)) {
             // The rebuilt bundle is deliberately returned without approval. The
             // user must see any changed question or fact before signing it off.
+            $previousBundle = $this->decodeBundle($cached);
             $bundle = $this->refreshBundle($companyId, $accountingPeriodId, $checkCode);
+            if ($checkCode === 'tax_readiness_acknowledgement'
+                && $this->taxBundleChangedOnlyByScope($previousBundle, $bundle)) {
+                // A scope-table edit is an intentional gate-control change.
+                // Re-read and sign its persisted answers now; do not make the
+                // user wait for a calculation-card refresh and submit twice.
+            } else {
             return [
                 'success' => false,
                 'status' => 409,
@@ -119,6 +128,7 @@ final class YearEndSectionApprovalService
                 'bundle' => $bundle,
                 'errors' => ['The section changed while it was being reviewed. Review the refreshed facts and submit the approval again.'],
             ];
+            }
         } else {
             $bundle = $this->decodeBundle($cached);
         }
@@ -446,6 +456,8 @@ final class YearEndSectionApprovalService
         $bundle = $this->bundle('tax_readiness_acknowledgement', $facts, $questions, $facts);
         $bundle['answer_source'] = 'persisted_filing_scope';
         $bundle['current_answers'] = $currentAnswers;
+        $bundle['scope_gate'] = true;
+        $bundle['scope_ready'] = !empty($scope['complete']);
 
         if ((array)($scope['unanswered_fields'] ?? []) !== []) {
             $bundle['can_approve'] = false;
@@ -600,6 +612,27 @@ final class YearEndSectionApprovalService
             : $submitted;
     }
 
+    private function taxBundleChangedOnlyByScope(array $previous, array $current): bool
+    {
+        $normalise = static function (array $bundle): array {
+            foreach (['facts', 'display'] as $key) {
+                $value = (array)($bundle[$key] ?? []);
+                unset($value['filing_scope_revision'], $value['filing_scope_basis_hash']);
+                $bundle[$key] = $value;
+            }
+            unset(
+                $bundle['source_token'],
+                $bundle['current_answers'],
+                $bundle['scope_ready'],
+                $bundle['can_approve'],
+                $bundle['approval_errors']
+            );
+            return $bundle;
+        };
+
+        return hash_equals($this->canonicalJson($normalise($previous)), $this->canonicalJson($normalise($current)));
+    }
+
     private function validateAnswers(array $questions, array $submitted): array
     {
         $answers = [];
@@ -672,6 +705,14 @@ final class YearEndSectionApprovalService
 
     private function sourceToken(int $companyId, int $accountingPeriodId, string $checkCode): string
     {
+        if (in_array($checkCode, ['companies_house_mismatch_acknowledgement', 'companies_house_no_filing_acknowledgement'], true)) {
+            $context = (new CompaniesHouseComparisonReviewService())->fetchContext($companyId, $accountingPeriodId);
+            return hash('sha256', $this->canonicalJson([
+                'comparison' => (array)($context['comparison'] ?? []),
+                'eligibility' => (array)($context['eligibility'] ?? []),
+            ]));
+        }
+
         if ($checkCode !== 'director_loan_year_end_review') {
             return $this->sectionSourceToken($companyId, $accountingPeriodId, $checkCode);
         }
@@ -825,7 +866,7 @@ final class YearEndSectionApprovalService
             'director_loan_year_end_review' => (new Ct600aService())->reviewQuestions(),
             // Scope answers are persisted by the filing-scope table and signed
             // by the tax V2 provider, rather than submitted in the approval form.
-            'tax_readiness_acknowledgement' => ['provider' => 'tax_filing_scope_v1'],
+            'tax_readiness_acknowledgement' => ['provider' => 'tax_filing_scope_v2'],
             'companies_house_mismatch_acknowledgement' => $this->companiesHouseQuestions(true),
             // Version the direct display provider so checklist-era cached
             // bundles are rebuilt with the P&L card's required display model.

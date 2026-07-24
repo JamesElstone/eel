@@ -18,7 +18,7 @@ namespace eel_accounts\Service;
  */
 final class CorporationTaxReturnPositionService
 {
-    public const MODEL_VERSION = 'corporation-tax-return-position-v1';
+    public const MODEL_VERSION = 'corporation-tax-return-position-v2';
 
     public function __construct(
         private readonly ?CorporationTaxComputationService $computationService = null,
@@ -146,31 +146,16 @@ final class CorporationTaxReturnPositionService
                 $blocking[] = $message;
             }
         }
-        $scope = $precomputedFilingScope ?? (new CorporationTaxFilingScopeService())->fetch($companyId, $accountingPeriodId);
-        if ($precomputedFilingScope !== null && !array_key_exists('complete', $scope)) {
-            $answers = (array)($scope['answers'] ?? []);
-            $scope['available'] = true;
-            $scope['complete'] = $answers !== [] && !in_array(true, array_map(
-                static fn(mixed $answer): bool => (string)$answer !== 'no',
-                $answers
-            ), true);
-            $scope['errors'] = [];
-        }
-        if (empty($scope['available'])) {
-            foreach ((array)($scope['errors'] ?? ['The Corporation Tax filing scope is unavailable.']) as $error) {
-                $blocking[] = (string)$error;
-            }
-        } elseif (empty($scope['complete'])) {
-            foreach ((array)($scope['errors'] ?? []) as $error) {
-                $blocking[] = (string)$error;
-            }
-        }
+        // Supplementary-page scope is a Year End and filing gate.  It does
+        // not change Corporation Tax amounts or the return-position model.
+        // The optional argument remains for immutable-model compatibility.
+        unset($precomputedFilingScope);
         $blocking = array_values(array_unique($blocking));
         $payment = (new HmrcObligationService())->fetchCtPaymentPositionForAccountingPeriod(
             $companyId,
             $accountingPeriodId
         );
-        $complete = !empty($ct600a['complete']) && !empty($scope['complete']) && $blocking === [];
+        $complete = !empty($ct600a['complete']) && $blocking === [];
         $provisional = !$complete
             || (string)($ct600a['s455']['window_status'] ?? $ct600a['s455']['basis']['window_status'] ?? '') === 'provisional_window_open'
             || !empty($summary['provisional']);
@@ -211,7 +196,6 @@ final class CorporationTaxReturnPositionService
             // to an individual CT return. The accounting-period aggregate
             // calculates the amount still payable.
             'payment_outstanding' => null,
-            'scope_complete' => !empty($scope['complete']),
             'complete' => $complete,
             'provisional' => $provisional,
             'position_status' => $complete ? 'complete' : 'provisional',
@@ -227,7 +211,6 @@ final class CorporationTaxReturnPositionService
                 'computation' => (string)($summary['computation_hash'] ?? $summary['basis_hash'] ?? ''),
                 'ct600a' => (string)($ct600a['basis_hash'] ?? ''),
                 'ct600a_review' => (string)(($ct600a['review'] ?? [])['basis_hash'] ?? ''),
-                'filing_scope' => (string)($scope['basis_hash'] ?? ''),
             ],
         ]);
         $hashBasis = $position;

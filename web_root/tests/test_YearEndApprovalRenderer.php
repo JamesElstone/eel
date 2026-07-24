@@ -153,6 +153,7 @@ $harness->run(\eel_accounts\Renderer\YearEndApprovalRenderer::class, static func
             'locked' => false,
             'intent' => 'approve_section_review',
             'renderQuestions' => false,
+            'clientScopeGate' => true,
             'questions' => [[
                 'id' => 'filing_scope.ct600b',
                 'prompt' => 'Does CT600B apply?',
@@ -165,6 +166,7 @@ $harness->run(\eel_accounts\Renderer\YearEndApprovalRenderer::class, static func
 
         $harness->assertSame(false, str_contains($html, 'name="approval_answers[filing_scope.ct600b]"'));
         $harness->assertSame(false, str_contains($html, 'data-year-end-approval-scope-warning hidden'));
+        $harness->assertSame(true, str_contains($html, 'data-year-end-tax-scope-gate="true"'));
         $harness->assertSame(true, str_contains($html, 'Approve for Year End'));
     });
 });

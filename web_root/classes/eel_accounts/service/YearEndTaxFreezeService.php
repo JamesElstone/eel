@@ -12,7 +12,7 @@ namespace eel_accounts\Service;
 /** Builds the stable, calculation-only Corporation Tax basis approved at Year End. */
 final class YearEndTaxFreezeService
 {
-    public const BASIS_VERSION = 'year_end_ct_freeze_v2';
+    public const BASIS_VERSION = 'year_end_ct_freeze_v3';
 
     /**
      * @param list<array<string, mixed>> $periods
@@ -25,7 +25,7 @@ final class YearEndTaxFreezeService
         array $periods,
         array $errors = [],
         ?int $expectedPeriodCount = null,
-        array $filingScope = []
+        array $_filingScope = []
     ): array {
         usort($periods, static fn(array $left, array $right): int => [
             (string)($left['period_start'] ?? ''),
@@ -56,7 +56,6 @@ final class YearEndTaxFreezeService
                 'corporation_tax_liability' => $this->money(array_sum(array_map(static fn(array $period): float => (float)($period['estimated_corporation_tax'] ?? 0), $periods))),
                 'tax_payable' => $this->money(array_sum(array_map(static fn(array $period): float => (float)($period['tax_payable'] ?? $period['estimated_corporation_tax'] ?? 0), $periods))),
             ],
-            'filing_scope' => $this->filingScopeBasis($filingScope),
             'blocking_diagnostic_codes' => array_values(array_map(
                 static fn(array $diagnostic): string => (string)($diagnostic['code'] ?? ''),
                 $blockingDiagnostics
@@ -85,26 +84,6 @@ final class YearEndTaxFreezeService
         return [
             'check_code' => 'tax_readiness_acknowledgement',
             'freeze_manifest' => $manifest,
-        ];
-    }
-
-    /** @return array<string, mixed> */
-    private function filingScopeBasis(array $filingScope): array
-    {
-        $basis = $filingScope['basis'] ?? null;
-        if (!is_array($basis)) {
-            return [
-                'available' => false,
-                'scope_version' => '',
-                'answers' => [],
-            ];
-        }
-
-        return [
-            'available' => !empty($filingScope['available']),
-            'scope_version' => (string)($basis['scope_version'] ?? ''),
-            'answers' => (array)($basis['answers'] ?? []),
-            'definitions' => (array)($filingScope['definitions'] ?? []),
         ];
     }
 

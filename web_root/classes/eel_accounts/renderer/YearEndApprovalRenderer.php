@@ -81,6 +81,7 @@ final class YearEndApprovalRenderer
         $approveFields = (array)($options['approveFields'] ?? []);
         $questions = (array)($options['questions'] ?? []);
         $renderQuestions = !array_key_exists('renderQuestions', $options) || !empty($options['renderQuestions']);
+        $clientScopeGate = !empty($options['clientScopeGate']);
         unset($approveFields[$checkboxName]);
         $buttonAttributes = $disabled
             ? ' disabled' . ($disabledReason !== '' ? ' title="' . \HelperFramework::escape($disabledReason) . '"' : '')
@@ -92,7 +93,7 @@ final class YearEndApprovalRenderer
 
         return self::staleEvidence($options) . '<section class="panel-soft full settings-stack">
             <h3>Year End Confirmation</h3>
-            <form method="post" data-ajax="true" class="form-grid" data-year-end-ack-form="true">
+            <form method="post" data-ajax="true" class="form-grid" data-year-end-ack-form="true"' . ($clientScopeGate ? ' data-year-end-tax-scope-gate="true"' : '') . '>
                 ' . self::commonFields($companyId, $accountingPeriodId, $intent) . '
                 ' . self::hiddenFields($approveFields) . '
                 ' . ($renderQuestions

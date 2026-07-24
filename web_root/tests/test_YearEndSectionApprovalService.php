@@ -80,6 +80,13 @@ $harness->run(\eel_accounts\Service\YearEndSectionApprovalService::class, static
         $harness->assertSame(true, !empty($approved['success']));
     });
 
+    $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'uses a non-empty source token for Companies House bundles', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod($service, 'sourceToken');
+        $token = (string)$method->invoke($service, 0, 0, 'companies_house_mismatch_acknowledgement');
+
+        $harness->assertSame(64, strlen($token));
+    });
+
     $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'uses the persisted filing-scope answers instead of browser-submitted duplicates', static function () use ($harness, $service): void {
         $method = new ReflectionMethod($service, 'approvalAnswers');
         $answers = (array)$method->invoke($service, [
@@ -88,6 +95,33 @@ $harness->run(\eel_accounts\Service\YearEndSectionApprovalService::class, static
         ], ['filing_scope.ct600b' => 'yes']);
 
         $harness->assertSame('no', (string)$answers['filing_scope.ct600b']);
+    });
+
+    $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'accepts a refreshed tax approval bundle when only its scope gate changed', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod($service, 'taxBundleChangedOnlyByScope');
+        $previous = [
+            'source_token' => 'scope-v1',
+            'facts' => ['total_tax' => '100.00', 'filing_scope_revision' => 1, 'filing_scope_basis_hash' => 'one'],
+            'display' => ['total_tax' => '100.00', 'filing_scope_revision' => 1, 'filing_scope_basis_hash' => 'one'],
+            'current_answers' => ['filing_scope.ct600b' => ''],
+            'scope_ready' => false,
+            'can_approve' => false,
+            'approval_errors' => ['Answer every question.'],
+        ];
+        $scopeChanged = $previous;
+        $scopeChanged['source_token'] = 'scope-v2';
+        $scopeChanged['facts']['filing_scope_revision'] = 2;
+        $scopeChanged['facts']['filing_scope_basis_hash'] = 'two';
+        $scopeChanged['display']['filing_scope_revision'] = 2;
+        $scopeChanged['display']['filing_scope_basis_hash'] = 'two';
+        $scopeChanged['current_answers']['filing_scope.ct600b'] = 'no';
+        $scopeChanged['scope_ready'] = true;
+        $scopeChanged['can_approve'] = true;
+        $scopeChanged['approval_errors'] = [];
+
+        $harness->assertSame(true, (bool)$method->invoke($service, $previous, $scopeChanged));
+        $scopeChanged['facts']['total_tax'] = '101.00';
+        $harness->assertSame(false, (bool)$method->invoke($service, $previous, $scopeChanged));
     });
 
     $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'builds the P&L bundle directly from the prepared retained earnings context', static function () use ($harness, $service): void {

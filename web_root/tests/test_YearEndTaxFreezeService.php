@@ -54,7 +54,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue((string)($initial['freeze_manifest_hash'] ?? '') !== (string)($changed['freeze_manifest_hash'] ?? ''));
         });
 
-        $harness->check(\eel_accounts\Service\YearEndTaxFreezeService::class, 'includes completed filing-scope facts in the deterministic approval hash', static function () use ($harness, $service): void {
+        $harness->check(\eel_accounts\Service\YearEndTaxFreezeService::class, 'excludes filing-scope gates from the deterministic calculation hash', static function () use ($harness, $service): void {
             $scope = [
                 'available' => true,
                 'basis' => [
@@ -91,13 +91,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $withReorderedScope = $service->build(49, 79, yearEndTaxFreezePeriods(), [], 2, $reorderedScope);
             $withChangedScope = $service->build(49, 79, yearEndTaxFreezePeriods(), [], 2, $changedScope);
 
-            $harness->assertSame(true, (bool)(($withScope['freeze_manifest'] ?? [])['filing_scope']['available'] ?? false));
+            $harness->assertSame(false, array_key_exists('filing_scope', (array)($withScope['freeze_manifest'] ?? [])));
             $harness->assertSame(
-                (string)($withScope['freeze_manifest_hash'] ?? ''),
-                (string)($withReorderedScope['freeze_manifest_hash'] ?? 'different')
+                (string)($withoutScope['freeze_manifest_hash'] ?? ''),
+                (string)($withScope['freeze_manifest_hash'] ?? 'different')
             );
-            $harness->assertTrue((string)($withoutScope['freeze_manifest_hash'] ?? '') !== (string)($withScope['freeze_manifest_hash'] ?? ''));
-            $harness->assertTrue((string)($withScope['freeze_manifest_hash'] ?? '') !== (string)($withChangedScope['freeze_manifest_hash'] ?? ''));
+            $harness->assertSame((string)($withScope['freeze_manifest_hash'] ?? ''), (string)($withReorderedScope['freeze_manifest_hash'] ?? 'different'));
+            $harness->assertSame((string)($withScope['freeze_manifest_hash'] ?? ''), (string)($withChangedScope['freeze_manifest_hash'] ?? 'different'));
         });
 
         $harness->check(\eel_accounts\Service\YearEndTaxFreezeService::class, 'blocks approval for amount-affecting diagnostics and missing CT computations', static function () use ($harness, $service): void {

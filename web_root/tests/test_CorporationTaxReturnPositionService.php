@@ -57,6 +57,21 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $h->assertTrue(!array_key_exists('s464a_tax', $position));
         });
 
+        $h->check($service::class, 'keeps filing-scope gates out of the calculated return position', static function () use ($h, $service, $summary, $ct600a): void {
+            $withoutScope = $service->fromModels(0, 0, 1, $summary, $ct600a);
+            $withBlockedScope = $service->fromModels(0, 0, 1, $summary, $ct600a, 'precomputed', [
+                'available' => true,
+                'complete' => false,
+                'answers' => ['ct600b' => 'yes'],
+                'errors' => ['CT600B may be required.'],
+            ]);
+
+            $h->assertSame(true, (bool)$withBlockedScope['complete']);
+            $h->assertSame((string)$withoutScope['basis_hash'], (string)$withBlockedScope['basis_hash']);
+            $h->assertSame(false, array_key_exists('scope_complete', $withBlockedScope));
+            $h->assertSame(false, array_key_exists('filing_scope', (array)$withBlockedScope['evidence_hashes']));
+        });
+
         $h->check($service::class, 'keeps return liability, L2P relief and partial payment separate', static function () use ($h, $service): void {
             $aggregate = $service->aggregatePositions(
                 1,

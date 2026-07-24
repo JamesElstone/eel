@@ -263,6 +263,11 @@
             const submitButton = form.querySelector('[data-director-loan-offset-ack-submit], [data-year-end-ack-submit]');
             const blockingQuestionSets = Array.from(form.querySelectorAll('[data-year-end-approval-required-value]'));
             const scopeWarning = form.querySelector('[data-year-end-approval-scope-warning]');
+            const scopeGate = form.dataset.yearEndTaxScopeGate === 'true';
+            const taxReadiness = scopeGate ? form.closest('#tax-readiness') : null;
+            const scopeForms = taxReadiness instanceof HTMLElement
+                ? Array.from(taxReadiness.querySelectorAll('[data-year-end-tax-scope-table] form'))
+                : [];
 
             if (!(checkbox instanceof HTMLInputElement) || !(submitButton instanceof HTMLButtonElement)) {
                 return;
@@ -274,12 +279,17 @@
                     const selected = questionSet.querySelector('input[type="radio"]:checked');
                     return requiredValue !== '' && selected instanceof HTMLInputElement && selected.value !== requiredValue;
                 });
+                const scopeReady = !scopeGate || (scopeForms.length > 0 && scopeForms.every((scopeForm) => {
+                    const selected = scopeForm.querySelector('input[name="scope_answer"]:checked');
+                    return selected instanceof HTMLInputElement && selected.value === 'no';
+                }));
+                const scopeBlocked = scopeGate && !scopeReady;
                 const controlsInitiallyDisabled = form.dataset.yearEndAckControlsInitiallyDisabled === '1';
                 if (!controlsInitiallyDisabled) {
-                    checkbox.disabled = hasBlockingAnswer;
+                    checkbox.disabled = hasBlockingAnswer || scopeBlocked;
                 }
-                submitButton.disabled = controlsInitiallyDisabled || hasBlockingAnswer || !checkbox.checked;
-                if (hasBlockingAnswer) {
+                submitButton.disabled = controlsInitiallyDisabled || hasBlockingAnswer || scopeBlocked || !checkbox.checked;
+                if (hasBlockingAnswer || scopeBlocked) {
                     checkbox.checked = false;
                 }
                 if (scopeWarning instanceof HTMLElement) {
@@ -292,6 +302,9 @@
                 checkbox.addEventListener('change', syncAcknowledgement);
                 blockingQuestionSets.forEach((questionSet) => {
                     questionSet.addEventListener('change', syncAcknowledgement);
+                });
+                scopeForms.forEach((scopeForm) => {
+                    scopeForm.addEventListener('change', syncAcknowledgement);
                 });
                 form.dataset.directorLoanOffsetAckBound = '1';
             }

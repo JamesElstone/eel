@@ -1658,6 +1658,7 @@ CREATE TABLE `ixbrl_generation_runs` (
   `validation_status` varchar(32) NOT NULL DEFAULT 'not_validated',
   `validation_errors_json` longtext DEFAULT NULL,
   `external_validator` varchar(50) DEFAULT NULL,
+  `external_validator_version` varchar(100) DEFAULT NULL,
   `external_validation_status` varchar(32) NOT NULL DEFAULT 'not_configured',
   `external_validation_errors_json` longtext DEFAULT NULL,
   `external_validation_warnings_json` longtext DEFAULT NULL,

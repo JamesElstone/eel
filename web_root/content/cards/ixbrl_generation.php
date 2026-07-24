@@ -55,6 +55,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
         $canGenerateAll = $canGenerate
             && $this->allComputationPeriodsReady($context)
             && $this->companiesHouseArtifactReady($context);
+        $developerOptions = (bool)AppConfigurationStore::get('developer_options', false);
         $runFreshness = (array)($run['run_freshness'] ?? []);
         $stale = (int)($run['fact_count'] ?? 0) > 0
             && (string)($runFreshness['state'] ?? '') !== 'current';
@@ -92,6 +93,14 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     <button class="button primary" type="submit"' . ($canGenerateAll ? '' : ' disabled') . '>Generate all filing iXBRLs</button>
                 </form>
                 ' . ($canGenerateAll ? '' : '<div class="helper">Approve a generation-ready accounts basis, resolve every CT-period computation blocker, and prepare the Companies House revised-accounts prerequisites when required.</div>') . '
+                ' . ($developerOptions ? '<form method="post" action="?page=disclosures" data-ajax="true" class="actions-row ixbrl-developer-cleanup-action">'
+                    . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+                    . '<input type="hidden" name="card_action" value="Ixbrl">'
+                    . '<input type="hidden" name="intent" value="sync_missing_ixbrl_runs">'
+                    . '<input type="hidden" name="company_id" value="' . $companyId . '">'
+                    . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
+                    . '<button class="button danger" type="submit" title="Developer only" data-chicken-check="true" data-chicken-title="Synchronise missing iXBRL runs" data-chicken-message="Remove database records for accounts iXBRL artifacts that no longer exist on disk?<br><br>This permanently removes missing-file run history and dependent facts. Companies House-referenced runs are retained. No files are deleted." data-chicken-confirm-text="Synchronise" data-chicken-button-class="button danger">Synchronise missing iXBRL runs</button>'
+                    . '</form>' : '') . '
             </section>
             <section class="panel-soft">
                 <div class="status-head">

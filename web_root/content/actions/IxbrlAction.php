@@ -132,6 +132,23 @@ final class IxbrlAction implements ActionInterfaceFramework
                     $services->actionProgress(),
                     $this->actor($request)
                 );
+            } elseif ($intent === 'sync_missing_ixbrl_runs') {
+                if (!(bool)AppConfigurationStore::get('developer_options', false)) {
+                    return $this->result(false, ['Developer options must be enabled to synchronise iXBRL run records.'], $changedFacts);
+                }
+                $cleanup = (new \eel_accounts\Service\IxbrlGenerationRunCleanupService())
+                    ->removeMissingArtifacts($companyId, $accountingPeriodId);
+                $result = [
+                    'success' => !empty($cleanup['success']),
+                    'errors' => (array)($cleanup['errors'] ?? []),
+                    'messages' => [
+                        (int)($cleanup['deleted_count'] ?? 0) . ' missing iXBRL run record(s) removed; '
+                        . (int)($cleanup['present_count'] ?? 0) . ' artifact-backed run(s) retained.',
+                    ],
+                    'warnings' => !empty($cleanup['skipped_count'])
+                        ? [(int)$cleanup['skipped_count'] . ' missing-file run(s) retained because they are referenced by Companies House submissions.']
+                        : [],
+                ];
             } elseif (in_array($intent, ['generate_computation_ixbrl', 'validate_computation_ixbrl'], true)) {
                 if ($intent === 'generate_computation_ixbrl') {
                     $progress = $services->actionProgress();

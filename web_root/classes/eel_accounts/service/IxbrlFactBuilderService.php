@@ -102,6 +102,7 @@ final class IxbrlFactBuilderService
                      validation_status = :validation_status,
                      external_validation_status = :external_validation_status,
                      external_validator = NULL,
+                     external_validator_version = NULL,
                      external_validation_errors_json = NULL,
                      external_validation_warnings_json = NULL,
                      external_validation_log_path = NULL,
@@ -267,7 +268,7 @@ final class IxbrlFactBuilderService
                 throw new \RuntimeException('Apply the latest iXBRL database migrations before building facts.');
             }
         }
-        foreach (['basis_version', 'basis_hash', 'external_validated_sha256'] as $column) {
+        foreach (['basis_version', 'basis_hash', 'external_validator_version', 'external_validated_sha256'] as $column) {
             if (!\InterfaceDB::columnExists('ixbrl_generation_runs', $column)) {
                 throw new \RuntimeException('Apply the latest iXBRL database migrations before building facts.');
             }

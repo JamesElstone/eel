@@ -232,6 +232,7 @@ final class IxbrlExternalValidationService
         \InterfaceDB::prepareExecute(
             'UPDATE ixbrl_generation_runs
              SET external_validator = :validator,
+                 external_validator_version = :validator_version,
                  external_validation_status = :status,
                  external_validation_errors_json = :errors,
                  external_validation_warnings_json = :warnings,
@@ -243,6 +244,7 @@ final class IxbrlExternalValidationService
              WHERE id = :id',
             [
                 'validator' => (string)($result['validator'] ?? 'arelle'),
+                'validator_version' => trim((string)($result['version'] ?? '')) ?: null,
                 'status' => (string)($result['status'] ?? 'error'),
                 'errors' => json_encode((array)($result['errors'] ?? []), JSON_UNESCAPED_SLASHES),
                 'warnings' => json_encode((array)($result['warnings'] ?? []), JSON_UNESCAPED_SLASHES),

@@ -25,6 +25,31 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(false, $status['blocking'] ?? true);
         });
 
+        $harness->check(\eel_accounts\Service\IxbrlExternalValidationService::class, 'stores the Arelle version returned by the validation run', static function () use ($harness, $service): void {
+            InterfaceDB::beginTransaction();
+            $fixture = ixbrlExternalValidationFixture();
+            try {
+                $storeResult = new ReflectionMethod($service, 'storeResult');
+                $storeResult->setAccessible(true);
+                $storeResult->invoke($service, $fixture['run_id'], [
+                    'validator' => 'arelle',
+                    'version' => 'Arelle(r) 2.41.6 (64bit)',
+                    'status' => 'passed',
+                    'errors' => [],
+                    'warnings' => [],
+                ]);
+                $version = InterfaceDB::fetchColumn(
+                    'SELECT external_validator_version FROM ixbrl_generation_runs WHERE id = :id',
+                    ['id' => $fixture['run_id']]
+                );
+
+                $harness->assertSame('Arelle(r) 2.41.6 (64bit)', $version);
+            } finally {
+                @unlink($fixture['path']);
+                InterfaceDB::rollBack();
+            }
+        });
+
         $harness->check(\eel_accounts\Service\IxbrlExternalValidationService::class, 'rejects an artifact that has no current filing approval', static function () use ($harness): void {
             InterfaceDB::beginTransaction();
             $fixture = ixbrlExternalValidationFixture();

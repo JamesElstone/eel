@@ -535,9 +535,20 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $context['ixbrl']['latest_run']['external_validation_status'] = 'passed';
             $readyHtml = $card->render($context);
             $harness->assertTrue(str_contains($readyHtml, 'Filing Ready'));
+            $harness->assertTrue(str_contains($readyHtml, 'Arelle version: 2.37.0'));
+            $harness->assertFalse(str_contains($readyHtml, 'Arelle validation: Passed'));
             $harness->assertTrue(str_contains($readyHtml, 'Download Accounting iXBRL'));
             $harness->assertTrue(str_contains($readyHtml, 'Generate Companies House iXBRL'));
             $harness->assertTrue(str_contains($readyHtml, 'name="card_action" value="CompaniesHouseAccounts"'));
+            $harness->assertTrue(str_contains($readyHtml, 'name="intent" value="sync_missing_ixbrl_runs"'));
+            $harness->assertTrue(str_contains($readyHtml, 'data-chicken-title="Synchronise missing iXBRL runs"'));
+            $developerOptions = (bool)AppConfigurationStore::get('developer_options', false);
+            try {
+                AppConfigurationStore::set('developer_options', false);
+                $harness->assertFalse(str_contains($card->render($context), 'name="intent" value="sync_missing_ixbrl_runs"'));
+            } finally {
+                AppConfigurationStore::set('developer_options', $developerOptions);
+            }
         } finally {
             @unlink($path);
         }
@@ -637,5 +648,13 @@ $harness->run(IxbrlAction::class, static function (GeneratedServiceClassTestHarn
         $harness->assertTrue(str_contains($source, 'prepareRevision($companyId, $accountingPeriodId, [], $actor)'));
         $harness->assertTrue(str_contains($source, 'projectForAccountingPeriod($companyId, $accountingPeriodId)'));
         $harness->assertTrue(str_contains($source, '$services->actionProgress()'));
+    });
+
+    $harness->check(IxbrlAction::class, 'guards missing-artifact cleanup behind developer options', static function () use ($harness): void {
+        $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content'
+            . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'IxbrlAction.php');
+        $harness->assertTrue(str_contains($source, '$intent === \'sync_missing_ixbrl_runs\''));
+        $harness->assertTrue(str_contains($source, 'developer_options'));
+        $harness->assertTrue(str_contains($source, 'IxbrlGenerationRunCleanupService'));
     });
 });

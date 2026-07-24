@@ -80,7 +80,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             <section class="panel-soft">
                 <div class="status-head">
                     <div>
-                        <h3 class="card-title">Complete filing set</h3>
+                        <h3 class="card-title">Complete Filing Set</h3>
                         <div class="helper ixbrl-complete-filing-set-helper">Generate and validate the HMRC accounts iXBRL, every Corporation Tax iXBRL, and the Companies House revised-accounts iXBRL when revision is required.</div>
                     </div>
                 </div>
@@ -98,7 +98,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     <input type="hidden" name="intent" value="generate_all_filing_ixbrl">
                     <input type="hidden" name="company_id" value="' . $companyId . '">
                     <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                    <button class="button primary" type="submit"' . ($canGenerateAll ? '' : ' disabled') . '>Generate all filing iXBRLs</button>
+                    <button class="button primary" type="submit"' . ($canGenerateAll ? '' : ' disabled') . '>Generate All Filing iXBRLs</button>
                 </form>
                 ' . ($canGenerateAll ? '' : '<div class="helper">Approve a generation-ready accounts basis, resolve every CT-period computation blocker, and prepare the Companies House revised-accounts prerequisites when required.</div>') . '
             </section>

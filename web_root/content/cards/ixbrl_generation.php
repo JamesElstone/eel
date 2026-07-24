@@ -377,7 +377,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
         if ($version !== '') {
             $html .= '<div class="helper">Arelle version: ' . HelperFramework::escape($version) . '</div>';
         }
-        if ($errors === [] && $warnings === []) {
+        if ($errors === [] && $warnings === [] && $version === '') {
             $html .= '<div class="helper">No Arelle verification result yet.</div>';
         }
         foreach (['Errors' => $errors, 'Warnings' => $warnings] as $label => $messages) {

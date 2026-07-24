@@ -64,14 +64,14 @@ final class _ixbrl_generationCard extends CardBaseFramework
         $fileExists = !$stale
             && trim((string)($run['generated_path'] ?? '')) !== ''
             && is_file((string)$run['generated_path']);
-        $download = $readyForFiling && $fileExists
+        $download = $readyForFiling
             ? '<form method="post" action="?page=disclosures">'
                 . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
                 . '<input type="hidden" name="card_action" value="Ixbrl">'
                 . '<input type="hidden" name="intent" value="download_ixbrl_filing">'
                 . '<input type="hidden" name="company_id" value="' . $companyId . '">'
                 . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
-                . '<button class="button primary" type="submit">Download Accounting iXBRL</button>'
+                . '<button class="button primary" type="submit"' . ($fileExists ? '' : ' disabled') . '>Download Accounting iXBRL</button>'
                 . '</form>'
             : '';
         $artifact = $download !== '' ? $download : 'Not generated';
@@ -174,6 +174,16 @@ final class _ixbrl_generationCard extends CardBaseFramework
         }
 
         $lifecycle = strtolower(trim((string)($submission['lifecycle'] ?? 'prepared')));
+        $artifactPath = trim((string)($artifact['path'] ?? ''));
+        $artifactExists = $artifactPath !== '' && is_file($artifactPath);
+        $artifactDownload = '<form method="post" action="?page=disclosures">'
+            . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+            . '<input type="hidden" name="card_action" value="CompaniesHouseAccounts">'
+            . '<input type="hidden" name="intent" value="download_revised_accounts_ixbrl">'
+            . '<input type="hidden" name="company_id" value="' . $companyId . '">'
+            . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
+            . '<button class="button compact primary" type="submit"' . ($artifactExists ? '' : ' disabled') . '>Download Companies House iXBRL</button>'
+            . '</form>';
         $badge = match ($lifecycle) {
             'accepted' => 'success',
             'rejected', 'failed', 'internal_failure' => 'danger',
@@ -194,6 +204,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             . $this->metric('Arelle Validation', $this->validationLabel((string)($revisedValidation['status'] ?? $baseRun['external_validation_status'] ?? 'not_run')))
             . $this->metric('Arelle Validated At', (string)($revisedValidation['validated_at'] ?? $baseRun['external_validated_at'] ?? ''))
             . $this->metric('Submission number', (string)($submission['submission_number'] ?? 'Allocated on send'))
+            . $this->metricHtml('Artifact', $artifactDownload)
             . '</div>'
             . $this->arelleOutput($revisedValidation)
             . '</section>';
@@ -233,25 +244,27 @@ final class _ixbrl_generationCard extends CardBaseFramework
             $ready = !empty($status['ready']);
             $fresh = !empty($status['fresh']);
             $fileable = !empty($status['fileable']);
+            $artifactPath = trim((string)($run['generated_path'] ?? ''));
+            $artifactExists = $artifactPath !== '' && is_file($artifactPath);
             $hidden = HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
                 . '<input type="hidden" name="card_action" value="Ixbrl">'
                 . '<input type="hidden" name="company_id" value="' . $companyId . '">'
                 . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
                 . '<input type="hidden" name="ct_period_id" value="' . $ctPeriodId . '">';
-            $artifact = $fileable
+            $artifact = trim((string)($run['generated_filename'] ?? '')) !== ''
                 ? '<form method="post" action="?page=disclosures">' . $hidden
                     . '<input type="hidden" name="intent" value="download_computation_ixbrl">'
-                    . '<button class="button compact primary" type="submit">Download ' . HelperFramework::escape($ctPeriodLabel) . ' iXBRL</button></form>'
-                : (trim((string)($run['generated_filename'] ?? '')) !== '' ? 'Generated, not filing-ready' : 'Not generated');
+                    . '<button class="button compact primary" type="submit"' . ($fileable && $artifactExists ? '' : ' disabled') . '>Download ' . HelperFramework::escape($ctPeriodLabel) . ' iXBRL</button></form>'
+                : 'Not generated';
             $html .= '<section class="panel-soft"><div class="status-head"><h3>' . HelperFramework::escape($ctPeriodLabel) . ' iXBRL</h3><span class="badge '
                 . ($fileable ? 'success' : ($fresh ? 'warning' : 'muted')) . '">'
                 . ($fileable ? 'Filing ready' : ($fresh ? 'Generated, not fileable' : 'Not generated')) . '</span></div>'
                 . '<div class="helper ixbrl-complete-filing-set-helper">Generate a separate Corporation Tax computation iXBRL for this filing period and review its validation status.</div>'
                 . '<div class="summary-grid four">'
                 . $this->metric('CT period', $start . ' to ' . $end)
-                . $this->metricHtml('Artifact', $artifact)
                 . $this->metric('Internal validation', $this->validationLabel((string)($run['validation_status'] ?? 'not_run')))
                 . $this->metric('Arelle validation', $this->validationLabel((string)($run['external_validation_status'] ?? 'not_run')))
+                . $this->metricHtml('Artifact', $artifact)
                 . '</div>'
                 . $this->arelleOutput($run);
             $errors = array_values(array_unique(array_merge((array)($status['errors'] ?? []), (array)($status['artifact_errors'] ?? []))));
@@ -383,7 +396,8 @@ final class _ixbrl_generationCard extends CardBaseFramework
             $html .= '<div class="helper">Arelle version: ' . HelperFramework::escape($version) . '</div>';
         }
         if ($errors === [] && $warnings === [] && $version === '') {
-            $html .= '<div class="helper">No Arelle verification result yet.</div>';
+            $html .= '<div class="helper">Arelle validation: '
+                . HelperFramework::escape($this->validationLabel($status)) . '</div>';
         }
         foreach (['Errors' => $errors, 'Warnings' => $warnings] as $label => $messages) {
             if ($messages === []) {

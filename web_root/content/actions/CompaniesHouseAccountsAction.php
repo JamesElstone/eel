@@ -54,6 +54,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             'poll_revised_accounts_status',
             'ack_revised_accounts_status',
             'retrieve_revised_accounts_document',
+            'download_revised_accounts_ixbrl',
             'download_protocol_evidence',
             'reconcile_revised_accounts_status',
         ];
@@ -91,6 +92,9 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         }
         if ($intent === 'download_protocol_evidence') {
             $this->downloadProtocolEvidence($request, $companyId, $accountingPeriodId);
+        }
+        if ($intent === 'download_revised_accounts_ixbrl') {
+            $this->downloadRevisedAccountsIxbrl($companyId, $accountingPeriodId);
         }
 
         try {
@@ -142,6 +146,28 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         }
 
         return $this->result($intent, $result);
+    }
+
+    private function downloadRevisedAccountsIxbrl(int $companyId, int $accountingPeriodId): never
+    {
+        $filing = $this->service()->fetchContext($companyId, $accountingPeriodId);
+        $artifact = (array)($filing['prepared_artifact'] ?? []);
+        $path = trim((string)($artifact['path'] ?? ''));
+        if ($path === '' || !is_file($path)) {
+            header('Content-Type: text/plain; charset=utf-8', true, 404);
+            echo 'The prepared Companies House iXBRL artifact was not found.';
+            exit;
+        }
+
+        $filename = basename((string)($artifact['filename'] ?? 'companies-house-revised-accounts.xhtml'));
+        header('Content-Type: application/xhtml+xml; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . str_replace('"', '', $filename) . '"');
+        $size = filesize($path);
+        if (is_int($size)) {
+            header('Content-Length: ' . $size);
+        }
+        readfile($path);
+        exit;
     }
 
     private function recordEligibility(

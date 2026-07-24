@@ -46,6 +46,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(str_contains($xhtml, 'name="core:ProfitLoss" contextRef="current_period_duration" unitRef="GBP" decimals="2" format="ixt:numdotdecimal" sign="-">127.11'));
             $harness->assertFalse(str_contains($xhtml, '<section'));
             $harness->assertFalse(str_contains($xhtml, ' lang="en"'));
+            $harness->assertFalse(str_contains($xhtml, ' xml:lang="en"'));
 
             $validator = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'validateInlineXbrl');
             $validator->setAccessible(true);

@@ -158,6 +158,15 @@ final class IxbrlRevisedAccountsArtifactService
             ];
         }
 
+        // The Companies House schema does not permit either language attribute on
+        // the XHTML root. Remove legacy attributes while deriving the separate
+        // revised artifact, so a current ordinary filing artifact remains usable.
+        $root = $document->documentElement;
+        if ($root instanceof \DOMElement) {
+            $root->removeAttribute('lang');
+            $root->removeAttributeNS('http://www.w3.org/XML/1998/namespace', 'lang');
+        }
+
         $xpath = new \DOMXPath($document);
         $xpath->registerNamespace('xhtml', self::XHTML_NS);
         $xpath->registerNamespace('ix', self::IX_NS);

@@ -154,6 +154,7 @@ final class CompaniesHouseAccountsSubmissionService
             'sha256' => (string)($submission['revised_artifact_sha256'] ?? ''),
             'basis_hash' => (string)($submission['basis_hash'] ?? ''),
         ];
+        $revisedValidation = $this->latestRevisedArtifactValidation($companyId, $accountingPeriodId);
 
         return [
             'company' => $selection['company'],
@@ -184,6 +185,7 @@ final class CompaniesHouseAccountsSubmissionService
                 ? []
                 : $this->conversation()->exchanges((int)$submission['id']),
             'prepared_artifact' => $preparedArtifact,
+            'revised_validation' => $revisedValidation,
             'sequence' => $sequence,
             'can_prepare' => $preparationBlockers === [],
             'can_submit' => $submissionBlockers === [],
@@ -574,7 +576,12 @@ final class CompaniesHouseAccountsSubmissionService
         $artifact = ($this->artifactService ?? new IxbrlRevisedAccountsArtifactService())
             ->prepare($companyId, $accountingPeriodId, $input, (string)$evidenceArtifact['display_id']);
         if (empty($artifact['success'])) {
-            $evidenceService->failArtifact((int)$evidenceArtifact['id'], (string)(($artifact['errors'] ?? [])[0] ?? 'Revised accounts preparation failed.'));
+            $validation = (array)($artifact['validation'] ?? []);
+            $evidenceService->failArtifact(
+                (int)$evidenceArtifact['id'],
+                (string)(($artifact['errors'] ?? [])[0] ?? 'Revised accounts preparation failed.'),
+                $validation === [] ? [] : ['arelle_validation' => $validation]
+            );
             return [
                 'success' => false,
                 'errors' => (array)($artifact['errors'] ?? ['The revised accounts could not be prepared.']),
@@ -2370,6 +2377,48 @@ final class CompaniesHouseAccountsSubmissionService
         return ['success' => false, 'errors' => [$message], 'warnings' => [], 'messages' => [], 'changed' => false];
     }
 
+    /** @return array{status: string, version: string, errors: list<mixed>, warnings: list<mixed>, log_path: string} */
+    private function latestRevisedArtifactValidation(int $companyId, int $accountingPeriodId): array
+    {
+        if (!\InterfaceDB::tableExists('filing_evidence_artifacts')
+            || !\InterfaceDB::tableExists('filing_evidence_bundles')) {
+            return [];
+        }
+        $row = \InterfaceDB::fetchOne(
+            'SELECT a.validator_version, a.validation_status, a.metadata_json
+             FROM filing_evidence_artifacts a
+             INNER JOIN filing_evidence_bundles b ON b.id = a.bundle_id
+             WHERE b.company_id = :company_id
+               AND b.accounting_period_id = :period_id
+               AND a.artifact_role = :role
+             ORDER BY a.id DESC
+             LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'period_id' => $accountingPeriodId,
+                'role' => 'companies_house_revised_accounts_ixbrl',
+            ]
+        );
+        if (!is_array($row)) {
+            return [];
+        }
+        $metadata = json_decode((string)($row['metadata_json'] ?? ''), true);
+        $validation = is_array($metadata) && is_array($metadata['arelle_validation'] ?? null)
+            ? $metadata['arelle_validation']
+            : [];
+        $fallbackErrors = is_array($metadata) && trim((string)($metadata['error'] ?? '')) !== ''
+            ? [(string)$metadata['error']]
+            : [];
+
+        return [
+            'status' => (string)($validation['status'] ?? $row['validation_status'] ?? 'not_run'),
+            'version' => (string)($validation['version'] ?? $row['validator_version'] ?? ''),
+            'errors' => array_values((array)($validation['errors'] ?? $fallbackErrors)),
+            'warnings' => array_values((array)($validation['warnings'] ?? [])),
+            'log_path' => (string)($validation['log_path'] ?? ''),
+        ];
+    }
+
     private function emptyContext(string $message): array
     {
         return [
@@ -2393,6 +2442,7 @@ final class CompaniesHouseAccountsSubmissionService
             'status_cycle' => null,
             'exchanges' => [],
             'prepared_artifact' => null,
+            'revised_validation' => [],
             'sequence' => [
                 'configured' => false,
                 'next_number' => '',

@@ -486,7 +486,21 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                         'generated_filename' => 'accounts.xhtml',
                         'validation_status' => 'passed',
                         'external_validation_status' => 'failed',
+                        'external_validator_version' => '2.37.0',
+                        'external_validation_errors_json' => json_encode(['Accounting schema failure from Arelle.']),
+                        'external_validation_warnings_json' => json_encode(['Accounting Arelle warning.']),
                         'run_freshness' => ['state' => 'current'],
+                    ],
+                ],
+                'services' => [
+                    'companies_house_ixbrl' => [
+                        'submission' => null,
+                        'prepared_artifact' => [],
+                        'revised_validation' => [
+                            'status' => 'failed',
+                            'errors' => ['Companies House schema failure from Arelle.'],
+                            'warnings' => [],
+                        ],
                     ],
                 ],
             ];
@@ -502,6 +516,9 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $harness->assertFalse(str_contains($draftHtml, 'name="intent" value="validate_ixbrl_external"'));
             $harness->assertTrue(str_contains($draftHtml, 'Arelle Status') && str_contains($draftHtml, 'Installed'));
             $harness->assertTrue(str_contains($draftHtml, 'Arelle Validation') && str_contains($draftHtml, 'Failed'));
+            $harness->assertTrue(str_contains($draftHtml, 'Arelle validation output'));
+            $harness->assertTrue(str_contains($draftHtml, 'Accounting schema failure from Arelle.'));
+            $harness->assertTrue(str_contains($draftHtml, 'Companies House schema failure from Arelle.'));
             $harness->assertTrue(str_contains($draftHtml, 'Review draft only'));
             $harness->assertTrue(str_contains($draftHtml, '<div class="summary-label">Artifact</div>'));
             $harness->assertTrue(str_contains($draftHtml, '<div class="summary-value">Not generated</div>'));
@@ -527,7 +544,11 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                 'latest_run' => [],
                 'computation_periods' => [[
                     'ct_period' => ['id' => 6, 'period_start' => '2025-01-01', 'period_end' => '2025-12-31'],
-                    'status' => ['ready' => true, 'fresh' => true, 'fileable' => false, 'run' => ['generated_filename' => 'draft.xhtml']],
+                    'status' => ['ready' => true, 'fresh' => true, 'fileable' => false, 'run' => [
+                        'generated_filename' => 'draft.xhtml',
+                        'external_validation_status' => 'failed',
+                        'external_validation_errors_json' => json_encode(['CT schema failure from Arelle.']),
+                    ]],
                 ]],
             ],
         ];
@@ -541,6 +562,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         $harness->assertFalse(str_contains($draft, 'download_computation_ixbrl'));
         $harness->assertTrue(str_contains($draft, 'Generated, not filing-ready'));
         $harness->assertFalse(str_contains($draft, 'draft.xhtml'));
+        $harness->assertTrue(str_contains($draft, 'CT schema failure from Arelle.'));
 
         $context['ixbrl']['computation_periods'][0]['status']['errors'] = [
             'Approve the current disclosures and filing basis before preparing CT filing output.',

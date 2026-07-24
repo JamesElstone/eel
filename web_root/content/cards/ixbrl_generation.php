@@ -115,7 +115,8 @@ final class _ixbrl_generationCard extends CardBaseFramework
                         . HelperFramework::escape((string)($runFreshness['detail'] ?? 'The latest facts are stale.'))
                         . '</div>'
                     : '') . '
-                ' . $this->validationDetails($run) . '
+                ' . $this->internalValidationDetails($run) . '
+                ' . $this->arelleOutput($run) . '
                 ' . (!$readyForFiling && $fileExists
                     ? '<div class="helper"><span class="badge warning">Review draft only</span> The generated file is withheld from filing download until the current file passes every validation and hash check.</div>'
                     : '') . '
@@ -155,6 +156,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . '<h3 class="card-title">Companies House Revised Accounting iXBRL</h3>'
                 . '<span class="badge muted">Not prepared</span></div>'
                 . '<div class="helper">Prepare the Companies House-specific revised accounts artifact after Year End lock and disclosure approval. This does not transmit it.</div>'
+                . $this->arelleOutput((array)($filing['revised_validation'] ?? []))
                 . $blockersHtml
                 . '<form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">'
                 . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
@@ -182,7 +184,9 @@ final class _ixbrl_generationCard extends CardBaseFramework
             . $this->metric('SHA-256', (string)($artifact['sha256'] ?? ''))
             . $this->metric('Submission number', (string)($submission['submission_number'] ?? 'Allocated on send'))
             . $this->metric('Environment', (string)($submission['environment'] ?? ''))
-            . '</div><div class="helper">This revised artifact is distinct from the HMRC accounts iXBRL and uses the Companies House document policy.</div></section>';
+            . '</div><div class="helper">This revised artifact is distinct from the HMRC accounts iXBRL and uses the Companies House document policy.</div>'
+            . $this->arelleOutput((array)($filing['revised_validation'] ?? []))
+            . '</section>';
     }
 
     /** @param list<string> $blockers */
@@ -237,7 +241,8 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . $this->metricHtml('Artifact', $artifact)
                 . $this->metric('Internal validation', $this->validationLabel((string)($run['validation_status'] ?? 'not_run')))
                 . $this->metric('Arelle validation', $this->validationLabel((string)($run['external_validation_status'] ?? 'not_run')))
-                . '</div>';
+                . '</div>'
+                . $this->arelleOutput($run);
             $errors = array_values(array_unique(array_merge((array)($status['errors'] ?? []), (array)($status['artifact_errors'] ?? []))));
             $staleArtifactErrors = [
                 'The computation artifact filing basis is stale.',
@@ -329,15 +334,11 @@ final class _ixbrl_generationCard extends CardBaseFramework
         };
     }
 
-    private function validationDetails(array $run): string
+    private function internalValidationDetails(array $run): string
     {
         $internalErrors = json_decode((string)($run['validation_errors_json'] ?? '[]'), true);
-        $externalErrors = json_decode((string)($run['external_validation_errors_json'] ?? '[]'), true);
-        $externalWarnings = json_decode((string)($run['external_validation_warnings_json'] ?? '[]'), true);
         $groups = [
             'Internal errors' => is_array($internalErrors) ? $internalErrors : [],
-            'Arelle errors' => is_array($externalErrors) ? $externalErrors : [],
-            'Arelle warnings' => is_array($externalWarnings) ? $externalWarnings : [],
         ];
         $html = '';
         foreach ($groups as $label => $messages) {
@@ -352,5 +353,49 @@ final class _ixbrl_generationCard extends CardBaseFramework
         }
 
         return $html;
+    }
+
+    private function arelleOutput(array $result): string
+    {
+        $status = trim((string)($result['external_validation_status'] ?? $result['status'] ?? ''));
+        $version = trim((string)($result['external_validator_version'] ?? $result['version'] ?? ''));
+        $errors = $this->validationMessages($result['external_validation_errors_json'] ?? $result['errors'] ?? []);
+        $warnings = $this->validationMessages($result['external_validation_warnings_json'] ?? $result['warnings'] ?? []);
+        $hasLog = trim((string)($result['external_validation_log_path'] ?? $result['log_path'] ?? '')) !== '';
+        if ($status === '' || $status === 'not_run' || $status === 'not_configured') {
+            return '';
+        }
+
+        $html = '<section class="panel-soft ixbrl-arelle-output"><div class="status-head"><h4>Arelle validation output</h4>'
+            . '<span class="badge ' . ($status === 'passed' ? 'success' : 'danger') . '">'
+            . HelperFramework::escape($this->validationLabel($status)) . '</span></div>';
+        if ($version !== '') {
+            $html .= '<div class="helper">Arelle version: ' . HelperFramework::escape($version) . '</div>';
+        }
+        foreach (['Errors' => $errors, 'Warnings' => $warnings] as $label => $messages) {
+            if ($messages === []) {
+                continue;
+            }
+            $html .= '<h5>' . $label . '</h5><ul>';
+            foreach (array_slice($messages, 0, 20) as $message) {
+                $html .= '<li>' . HelperFramework::escape(is_scalar($message) ? (string)$message : (string)json_encode($message)) . '</li>';
+            }
+            $html .= '</ul>';
+        }
+        if ($hasLog) {
+            $html .= '<div class="helper">Arelle diagnostic log recorded for this validation.</div>';
+        }
+
+        return $html . '</section>';
+    }
+
+    /** @return list<mixed> */
+    private function validationMessages(mixed $value): array
+    {
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            return is_array($decoded) ? array_values($decoded) : ($value === '' ? [] : [$value]);
+        }
+        return is_array($value) ? array_values($value) : [];
     }
 }

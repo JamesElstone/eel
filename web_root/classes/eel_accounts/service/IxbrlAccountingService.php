@@ -399,7 +399,7 @@ final class IxbrlAccountingService
             . ' xmlns:xlink="http://www.w3.org/1999/xlink"'
             . ' xmlns:iso4217="http://www.xbrl.org/2003/iso4217"'
             . $namespaceAttributes
-            . ' xml:lang="en">' . "\n"
+            . '>' . "\n"
             . '<head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>'
             . ($evidenceArtifactId !== '' ? '<meta name="eel-evidence-artifact-id" content="' . $this->e($evidenceArtifactId) . '"/>' : '')
             . '<title>FRS 105 micro-entity accounts</title></head>' . "\n"

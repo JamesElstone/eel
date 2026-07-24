@@ -293,14 +293,19 @@ final class FilingEvidenceService
             'A filing artifact was frozen and hashed.', ['artifact_id' => $row['artifact_id'], 'sha256' => $sha], $artifactRowId);
     }
 
-    public function failArtifact(int $artifactRowId, string $message): void
+    public function failArtifact(int $artifactRowId, string $message, array $metadata = []): void
     {
         $row = \InterfaceDB::fetchOne('SELECT * FROM filing_evidence_artifacts WHERE id = :id', ['id' => $artifactRowId]);
         if (!is_array($row)) { return; }
         \InterfaceDB::prepareExecute(
             'UPDATE filing_evidence_artifacts SET artifact_status = :status, validation_status = :validation_status,
              metadata_json = :metadata, completed_at = CURRENT_TIMESTAMP WHERE id = :id',
-            ['status' => 'failed', 'validation_status' => 'failed', 'metadata' => $this->canonicalJson(['error' => $message]), 'id' => $artifactRowId]
+            [
+                'status' => 'failed',
+                'validation_status' => 'failed',
+                'metadata' => $this->canonicalJson(array_merge(['error' => $message], $metadata)),
+                'id' => $artifactRowId,
+            ]
         );
         $this->recordEvent((int)$row['bundle_id'], 'artifact_failed', 'error', 'system', $message, ['artifact_id' => $row['artifact_id']], $artifactRowId);
     }

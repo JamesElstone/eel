@@ -18,7 +18,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 . ' xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"'
                 . ' xmlns:xbrli="http://www.xbrl.org/2003/instance"'
                 . ' xmlns:bus="http://xbrl.frc.org.uk/cd/2026-01-01/business"'
-                . ' xmlns:ixt="http://www.xbrl.org/inlineXBRL/transformation/2015-02-26">'
+                . ' xmlns:ixt="http://www.xbrl.org/inlineXBRL/transformation/2015-02-26" xml:lang="en">'
                 . '<head/><body><h1>Original accounts</h1><div style="display:none"><ix:header><ix:resources>'
                 . '<xbrli:context id="current_period_duration"/>'
                 . '</ix:resources></ix:header></div><p id="preserved">Preserved content</p></body></html>';
@@ -36,6 +36,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(str_starts_with($xhtml, '<?xml version="1.0"?>' . "\n"));
             $harness->assertFalse(str_contains(strtok($xhtml, "\n"), 'encoding='));
             $harness->assertTrue(str_contains($xhtml, 'id="preserved"'));
+            $harness->assertFalse(str_contains($xhtml, ' xml:lang="en"'));
             $harness->assertTrue(str_contains($xhtml, 'ReportAnAmendedRevisedVersionPreviouslyFiledReportTruefalse'));
         });
     }

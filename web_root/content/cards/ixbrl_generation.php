@@ -169,7 +169,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . '<input type="hidden" name="intent" value="prepare_revised_accounts">'
                 . '<input type="hidden" name="company_id" value="' . $companyId . '">'
                 . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
-                . '<button class="button primary" type="submit"' . ($canPrepare ? '' : ' disabled') . '>Generate Companies House iXBRL</button>'
+                . '<button class="button primary" type="submit" data-processing-text="Generating Companies House iXBRL…" data-processing-state="disabled"' . ($canPrepare ? '' : ' disabled') . '>Generate Companies House iXBRL</button>'
                 . '</form></section>';
         }
 
@@ -190,7 +190,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             . '<input type="hidden" name="intent" value="prepare_revised_accounts">'
             . '<input type="hidden" name="company_id" value="' . $companyId . '">'
             . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
-            . '<button class="button primary" type="submit"' . (!empty($filing['can_prepare']) ? '' : ' disabled') . '>Regenerate Companies House iXBRL</button>'
+            . '<button class="button primary" type="submit" data-processing-text="Generating Companies House iXBRL…" data-processing-state="disabled"' . (!empty($filing['can_prepare']) ? '' : ' disabled') . '>Generate Companies House iXBRL</button>'
             . '</form>';
         $badge = match ($lifecycle) {
             'accepted' => 'success',

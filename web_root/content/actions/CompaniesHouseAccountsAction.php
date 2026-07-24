@@ -101,7 +101,12 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             $result = match ($intent) {
                 'record_gateway_eligibility' => $this->recordEligibility($request, $companyId, $accountingPeriodId),
                 'save_variance_explanation' => $this->saveVarianceExplanation($request, $companyId, $accountingPeriodId),
-                'prepare_revised_accounts' => $this->prepareRevision($request, $companyId, $accountingPeriodId),
+                'prepare_revised_accounts' => $this->prepareRevision(
+                    $request,
+                    $companyId,
+                    $accountingPeriodId,
+                    $services->actionProgress()
+                ),
                 'submit_revised_accounts' => $this->submitRevision($request, $companyId, $accountingPeriodId, $services->actionProgress()),
                 'refresh_revised_accounts_status' => $this->refreshStatus($request, $companyId, $accountingPeriodId),
                 'preflight_revised_accounts' => $this->preflightRevision(
@@ -196,13 +201,16 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
     private function prepareRevision(
         RequestFramework $request,
         int $companyId,
-        int $accountingPeriodId
+        int $accountingPeriodId,
+        ActionProgressFramework $progress
     ): array {
+        @set_time_limit(0);
         return $this->service()->prepareRevision(
             $companyId,
             $accountingPeriodId,
             [],
-            $this->actor($request)
+            $this->actor($request),
+            $progress
         );
     }
 

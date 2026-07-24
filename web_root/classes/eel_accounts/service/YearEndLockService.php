@@ -328,8 +328,12 @@ final class YearEndLockService
                 'action' => $normalisedAction,
                 'action_by' => $this->actorValue($actionBy),
                 'action_at' => (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s'),
-                'old_value_json' => $oldValue !== null ? json_encode($oldValue, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) : null,
-                'new_value_json' => $newValue !== null ? json_encode($newValue, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) : null,
+                'old_value_json' => $oldValue !== null
+                    ? \eel_accounts\Support\PersistentJson::encode($oldValue, JSON_UNESCAPED_SLASHES)
+                    : null,
+                'new_value_json' => $newValue !== null
+                    ? \eel_accounts\Support\PersistentJson::encode($newValue, JSON_UNESCAPED_SLASHES)
+                    : null,
                 'notes' => $notes !== null && trim($notes) !== '' ? trim($notes) : null,
             ]
         );

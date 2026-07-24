@@ -309,7 +309,7 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
 
     private function relativePath(string $url): string { return ltrim((string)parse_url($url, PHP_URL_PATH), '/'); }
     private function normaliseDate(string $date): ?string { $value=\DateTimeImmutable::createFromFormat('!j/n/Y',str_replace('-','/',$date)); return $value?->format('Y-m-d') ?: null; }
-    private function canonicalJson(array $value): string { $json=json_encode($value,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE); if(!is_string($json)){throw new \RuntimeException('Companies House schema manifest could not be encoded.');} return $json; }
+    private function canonicalJson(array $value): string { return \eel_accounts\Support\PersistentJson::encode($value, JSON_UNESCAPED_SLASHES); }
     private function lastInsertId(): int { return (int)(\InterfaceDB::fetchColumn(strtolower(\InterfaceDB::driverName())==='sqlite'?'SELECT last_insert_rowid()':'SELECT LAST_INSERT_ID()') ?: 0); }
     private function progress(mixed $progress,string $message,int $percent): void { if($progress instanceof \ActionProgressFramework){$progress->report($message,$percent);return;} if(is_callable($progress)){$progress($message,$percent);} }
     private function ensureDirectory(string $path): void { if(!is_dir($path)&&!mkdir($path,0770,true)&&!is_dir($path)){throw new \RuntimeException('Companies House schema cache directory could not be created.');} }

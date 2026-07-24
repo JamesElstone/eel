@@ -98,6 +98,21 @@ $harness->run(\eel_accounts\Service\YearEndAcknowledgementService::class, static
         $harness->assertSame('stale', (string)$service->evaluate($legacy, null, true)['state']);
     });
 
+    $harness->check(\eel_accounts\Service\YearEndAcknowledgementService::class, 'encodes signed Unicode facts safely for database round trips', static function () use ($harness, $service): void {
+        $encode = new ReflectionMethod($service, 'encodeBasis');
+        $encode->setAccessible(true);
+        $basis = [
+            'check_code' => 'cut_off_journals_review',
+            'facts' => ['nominal_name' => 'Intercompany current account – Elstone IT Services Ltd'],
+        ];
+        $json = (string)$encode->invoke($service, $basis);
+
+        $harness->assertSame(false, str_contains($json, '–'));
+        $harness->assertSame(true, str_contains($json, '\\u2013'));
+        $harness->assertSame(hash('sha256', $json), $service->hashBasis($basis));
+        $harness->assertSame($basis, json_decode($json, true));
+    });
+
     $harness->check(\eel_accounts\Service\YearEndAcknowledgementService::class, 'builds compact evidence for every consolidated acknowledgement code', static function () use ($harness, $service): void {
         foreach ([
             'director_loan_closing_balance',

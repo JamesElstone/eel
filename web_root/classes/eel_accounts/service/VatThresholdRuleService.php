@@ -313,11 +313,14 @@ final class VatThresholdRuleService
         });
 
         $canonicalRows = array_map(fn(array $row): array => $this->canonicalRow($row), $rows);
-        $datasetJson = json_encode($canonicalRows, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        $datasetJson = \eel_accounts\Support\PersistentJson::encode($canonicalRows, JSON_UNESCAPED_SLASHES);
         $datasetHash = hash('sha256', $datasetJson);
 
         foreach ($rows as &$row) {
-            $rowHash = hash('sha256', json_encode($this->canonicalRow($row), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+            $rowHash = hash('sha256', \eel_accounts\Support\PersistentJson::encode(
+                $this->canonicalRow($row),
+                JSON_UNESCAPED_SLASHES
+            ));
             $row += [
                 'source_url' => self::NOTICE_URL,
                 'source_content_id' => $contentId,

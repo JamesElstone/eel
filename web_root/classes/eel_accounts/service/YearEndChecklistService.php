@@ -563,19 +563,23 @@ final class YearEndChecklistService
         }
     }
 
-    private function canLockOverallStatus(string $overallStatus): bool
-    {
-        return $overallStatus === 'ready_for_review';
-    }
-
     private function preflightLockPeriod(int $companyId, int $accountingPeriodId, array $checklist): array
     {
-        $overallStatus = (string)($checklist['overall_status'] ?? 'not_started');
-        if (!$this->canLockOverallStatus($overallStatus)) {
+        if (empty($checklist['lock_ready'])) {
+            $blockingChecks = array_values(array_filter(
+                (array)($checklist['blocking_checks'] ?? []),
+                'is_array'
+            ));
+            $messages = array_values(array_filter(array_map(
+                static fn(array $check): string => trim((string)($check['title'] ?? '')),
+                $blockingChecks
+            )));
             return [
                 'success' => false,
                 'status' => 422,
-                'errors' => ['Resolve the year-end checklist warnings and blocking checks before locking this period.'],
+                'errors' => [$messages !== []
+                    ? 'Resolve the visible blocking Year End checks: ' . implode(', ', $messages) . '.'
+                    : 'Resolve the visible blocking Year End checks before locking this period.'],
                 'checklist' => $checklist,
             ];
         }
@@ -650,20 +654,21 @@ final class YearEndChecklistService
             ];
         }
 
-        $acknowledgementService = $this->acknowledgementService
-            ?? new \eel_accounts\Service\YearEndAcknowledgementService();
-        $acknowledgement = $acknowledgementService->fetch(
+        // The checklist evaluates this check through the V2 section approval
+        // bundle (including the persisted filing-scope answers).  Use that
+        // exact contract here too: comparing the old, pre-V2 acknowledgement
+        // basis made a green checklist fail during the close preflight.
+        $review = (new \eel_accounts\Service\YearEndSectionApprovalService())->fetchReview(
             $companyId,
             $accountingPeriodId,
             'tax_readiness_acknowledgement'
         );
-        $evaluation = $acknowledgementService->evaluate($acknowledgement, $basis);
-        if (empty($evaluation['current'])) {
+        if (empty($review['acknowledgement_current'])) {
             return [
                 'success' => false,
                 'errors' => ['The amount-affecting Corporation Tax basis changed after approval. Review and approve the updated tax basis before closing Year End.'],
                 'tax_readiness' => $taxReadiness,
-                'acknowledgement_state' => (string)($evaluation['state'] ?? 'absent'),
+                'acknowledgement_state' => (string)($review['acknowledgement_state'] ?? 'absent'),
             ];
         }
 
@@ -1252,6 +1257,10 @@ final class YearEndChecklistService
         $transactionTail = (new \eel_accounts\Service\YearEndTransactionTailService($metrics))->fetchContext($companyId, $accountingPeriodId);
         $prepaymentReview = (new \eel_accounts\Service\PrepaymentReviewService($metrics, $lock))->fetchContext($companyId, $accountingPeriodId);
         $prepaymentRepair = (new \eel_accounts\Service\PrepaymentScheduleService())->fetchRepairContext($companyId, $accountingPeriodId);
+        $prepaymentLockReadiness = (new \eel_accounts\Service\PrepaymentPostingService())
+            ->inspectForYearEndLock($companyId, $accountingPeriodId);
+        $depreciationLockReadiness = ($this->assetService ?? new \eel_accounts\Service\AssetService())
+            ->previewDepreciationRun($companyId, $accountingPeriodId);
         $duplicateRepayments = $metrics->duplicateRepaymentRiskSummary($companyId, $periodStart, $periodEnd);
         $financialStatements = $metrics->financialStatementsSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd, $trialBalance);
         $taxReadiness = $tax->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
@@ -1279,6 +1288,11 @@ final class YearEndChecklistService
             $potentialAssetThreshold
         );
         $potentialAssetCandidateCount = (int)($potentialAssetCandidates['count'] ?? 0);
+        $journalCutOffBasisResult = ($this->journalCutOffReviewService
+            ?? new \eel_accounts\Service\JournalCutOffReviewService(
+                metricsService: $metrics,
+                acknowledgementService: $this->acknowledgementService
+            ))->fetchApprovalBasis($companyId, $accountingPeriodId);
         $chComparison = $comparison->fetchComparison(
             $companyId,
             $accountingPeriodId,
@@ -1433,7 +1447,7 @@ final class YearEndChecklistService
         $directorLoanHasActivity = !empty($directorLoanReview['available']) && !empty($directorLoanReview['has_activity']);
         $directorLoanUnattributedCount = (int)($directorLoanReview['unattributed_count'] ?? 0);
         $directorLoanCheckStatus = empty($directorLoanReview['available'])
-            ? 'not_applicable'
+            ? 'fail'
             : (!$directorLoanHasActivity
                 ? 'pass'
                 : ($directorLoanUnattributedCount > 0 ? 'fail' : 'warning'));
@@ -1630,7 +1644,7 @@ final class YearEndChecklistService
             'prepayments_review',
             'Prepayments review',
             'fail',
-            empty($prepaymentReview['available']) ? 'not_applicable' : ($prepaymentPendingCount > 0 ? 'fail' : 'pass'),
+            empty($prepaymentReview['available']) ? 'fail' : ($prepaymentPendingCount > 0 ? 'fail' : 'pass'),
             empty($prepaymentReview['available'])
                 ? (string)(($prepaymentReview['errors'] ?? [])[0] ?? 'Prepayment review is not available.')
                 : ($prepaymentPendingCount > 0
@@ -1642,6 +1656,32 @@ final class YearEndChecklistService
             '?page=prepayments'
         );
         $sections['year_end_accounts_review'][] = $this->prepaymentScheduleIntegrityCheck($prepaymentRepair);
+        $sections['year_end_accounts_review'][] = $this->makeCheck(
+            'prepayment_lock_readiness',
+            'Prepayment lock readiness',
+            'fail',
+            !empty($prepaymentLockReadiness['success']) ? 'pass' : 'fail',
+            !empty($prepaymentLockReadiness['success'])
+                ? 'Prepayment schedules, approvals, sources, allocations, and posting evidence are ready for the Year End close.'
+                : (string)(((array)($prepaymentLockReadiness['errors'] ?? []))[0]
+                    ?? 'Prepayment schedules could not be validated for the Year End close.'),
+            !empty($prepaymentLockReadiness['success']) ? 'Ready' : 'Blocked',
+            '?page=prepayments'
+        );
+        $sections['year_end_accounts_review'][] = $this->makeCheck(
+            'depreciation_lock_readiness',
+            'Depreciation lock readiness',
+            'fail',
+            !empty($depreciationLockReadiness['success']) ? 'pass' : 'fail',
+            !empty($depreciationLockReadiness['success'])
+                ? 'The depreciation run can be calculated for this accounting period.'
+                : (string)(((array)($depreciationLockReadiness['errors'] ?? []))[0]
+                    ?? 'Depreciation could not be checked before locking this period.'),
+            !empty($depreciationLockReadiness['success'])
+                ? $this->money($settings, $depreciationLockReadiness['total_amount'] ?? 0)
+                : 'Blocked',
+            '?page=assets'
+        );
 
         $sections['year_end_accounts_review'][] = $this->applyReviewAcknowledgement($this->makeCheck(
             'prepayment_approvals',
@@ -1660,15 +1700,16 @@ final class YearEndChecklistService
             'cut_off_journals_review',
             'Cut-off journals review',
             'warning',
-            'warning',
-            'Review whether any accruals, deferred income, prepayments, or other year-end cut-off journals are required.',
-            'Pending',
+            !empty($journalCutOffBasisResult['available']) ? 'warning' : 'fail',
+            !empty($journalCutOffBasisResult['available'])
+                ? 'Review whether any accruals, deferred income, prepayments, or other year-end cut-off journals are required.'
+                : (string)(((array)($journalCutOffBasisResult['errors'] ?? []))[0]
+                    ?? 'The current journal cut-off approval basis is unavailable.'),
+            !empty($journalCutOffBasisResult['available']) ? 'Pending' : 'Blocked',
             '?page=journal&show_card=journal_cut_off_confirmation',
-            $this->acknowledgementBasis('cut_off_journals_review', [
-                'trial_balance' => $trialBalance,
-                'posted_source_work' => $postedSourceWork,
-                'prepayment_review' => $prepaymentReview,
-            ])
+            !empty($journalCutOffBasisResult['available']) && is_array($journalCutOffBasisResult['basis'] ?? null)
+                ? $journalCutOffBasisResult['basis']
+                : null
         ), $reviewAcknowledgements);
 
         $taxPeriodDisplay = $this->taxPeriodDisplay($taxReadiness);
@@ -1698,7 +1739,6 @@ final class YearEndChecklistService
 
         $ctPeriodTaxFactChecks = $this->ctPeriodTaxFactChecks($taxReadiness, $ctPeriodFacts);
         array_push($sections['corporation_tax_readiness'], ...$ctPeriodTaxFactChecks);
-        $ctPeriodTaxFactsPass = !in_array('fail', array_column($ctPeriodTaxFactChecks, 'status'), true);
 
         $taxFreezeReady = !empty($taxReadiness['available'])
             && (string)($taxReadiness['freeze_status'] ?? '') === 'ready_for_approval';
@@ -1747,7 +1787,7 @@ final class YearEndChecklistService
         $taxProvisionAvailable = !empty($taxReadiness['available']) && !empty($taxProvision['available']);
         $taxProvisionCurrent = $taxProvisionAvailable && in_array($taxProvisionStatus, ['posted', 'not_required'], true);
         $taxProvisionCheckStatus = empty($taxReadiness['available'])
-            ? 'not_applicable'
+            ? 'fail'
             : ($taxProvisionAvailable ? 'pass' : 'fail');
         $taxProvisionDetail = empty($taxReadiness['available'])
             ? 'A Corporation Tax estimate is needed before the provision can be prepared.'
@@ -1856,41 +1896,17 @@ final class YearEndChecklistService
             );
         }
 
-        $blockingChecksPass = $uncategorisedCount === 0
-            && $missingMonths === 0
-            && $autoAttentionCount === 0
-            && abs((float)$suspenseSummary['closing_balance']) < 0.005
-            && !empty($trialBalance['balances'])
-            && !empty($trialBalance['exists'])
-            && $journalIntegrityIssues === 0
-            && $unpostedSourceWorkCount === 0
-            && $continuityWarningCount === 0
-            && $priorPeriodDependencySatisfied
-            && $retainedEarningsCloseCurrent
-            && $taxProvisionAvailable
-            && !empty($ownershipReadiness['available'])
-            && !empty($ownershipReadiness['pass'])
-            && $ctPeriodTaxFactsPass
-            && $taxFreezeReady
-            && $this->acknowledgementCurrentInSections($sections, 'tax_readiness_acknowledgement')
-            && (empty($expensePosition['available'])
-                || $this->acknowledgementCurrentInSections($sections, 'expense_position_acknowledgement'))
-            && (empty($duplicateRepayments['available']) || (int)($duplicateRepayments['risk_count'] ?? 0) === 0)
-            && ($potentialAssetCandidateCount === 0
-                || $this->acknowledgementCurrentInSections($sections, 'fixed_asset_review_placeholder'))
-            && $vehicleReviewWarnings === []
-            && (empty($transactionTail['available'])
-                || $this->acknowledgementCurrentInSections($sections, 'transaction_tail_review'))
-            && $prepaymentPendingCount === 0
-            && $this->prepaymentSchedulesCurrent($prepaymentRepair)
-            && $this->acknowledgementCurrentInSections($sections, 'prepayment_approvals')
-            && $this->acknowledgementCurrentInSections($sections, 'cut_off_journals_review')
-            && $this->noStaleCanonicalSectionApprovals($sections)
-            && !empty($directorLoanReview['available'])
-            && (!$directorLoanHasActivity || (
-                $directorLoanUnattributedCount === 0
-                && $this->acknowledgementCurrentInSections($sections, 'director_loan_year_end_review')
-            ));
+        $sections = $this->applyLockBlockingMetadata($sections);
+        $blockingChecks = $this->blockingChecks($sections);
+        $blockingCheckCodes = array_values(array_map(
+            static fn(array $check): string => (string)($check['check_code'] ?? ''),
+            $blockingChecks
+        ));
+        $blockingChecksPass = $blockingChecks === [];
+        $blockingTitles = array_values(array_filter(array_map(
+            static fn(array $check): string => trim((string)($check['title'] ?? '')),
+            $blockingChecks
+        )));
         $sections['final_review_lock'][] = $this->makeCheck(
             'lock_readiness_checklist',
             'Lock readiness checklist',
@@ -1898,7 +1914,9 @@ final class YearEndChecklistService
             $blockingChecksPass ? 'pass' : 'fail',
             $blockingChecksPass
                 ? 'All blocking year-end checks currently pass.'
-                : 'One or more blocking checks still fail, so this period cannot be locked yet.',
+                : count($blockingChecks) . ' visible blocking '
+                    . (count($blockingChecks) === 1 ? 'check remains' : 'checks remain')
+                    . ': ' . implode(', ', $blockingTitles) . '.',
             $blockingChecksPass ? 'Ready to lock' : 'Not ready',
             '?page=year_end&show_card=year_end_state'
         );
@@ -1929,6 +1947,9 @@ final class YearEndChecklistService
             'review_acknowledgements' => $reviewAcknowledgements,
             'month_tiles' => $monthTiles,
             'auto_decision_summary' => $autoDecisionSummary,
+            'lock_ready' => $blockingChecksPass,
+            'blocking_check_codes' => $blockingCheckCodes,
+            'blocking_checks' => $blockingChecks,
             'sections' => $sections,
             'checks_flat' => $checks,
             'expense_position' => $expensePosition,
@@ -2482,6 +2503,7 @@ final class YearEndChecklistService
             'workflow_label' => 'Open Related Workflow',
             'workflow_fields' => $this->workflowFields($workflowUrl),
             'basis_data' => $basisData,
+            'blocks_lock' => false,
         ];
     }
 
@@ -2599,11 +2621,10 @@ final class YearEndChecklistService
         $check['review_acknowledgement'] = $acknowledgement;
         if (in_array((string)($check['status'] ?? ''), ['warning', 'fail'], true)) {
             $check['status'] = 'pass';
-            $check['metric_value'] = $checkCode === 'companies_house_mismatch_acknowledgement'
-                ? 'Acknowledged'
-                : (trim((string)($check['metric_value'] ?? '')) !== ''
-                ? (string)$check['metric_value']
-                : 'Reviewed');
+            $check['metric_value'] = $this->acknowledgedMetricValue(
+                $checkCode,
+                (string)($check['metric_value'] ?? '')
+            );
             $check['detail_text'] = 'Review acknowledged for this period. ' . (string)($check['detail_text'] ?? '');
         }
 
@@ -2626,7 +2647,13 @@ final class YearEndChecklistService
                     continue;
                 }
 
-                if (\eel_accounts\Service\YearEndSectionApprovalService::supports($checkCode)) {
+                if (in_array($checkCode, [
+                    'director_loan_year_end_review',
+                    'tax_readiness_acknowledgement',
+                    'retained_earnings_close_confirmation',
+                    'companies_house_mismatch_acknowledgement',
+                    'companies_house_no_filing_acknowledgement',
+                ], true)) {
                     $review = (new \eel_accounts\Service\YearEndSectionApprovalService())->fetchReview(
                         $companyId,
                         $accountingPeriodId,
@@ -2665,9 +2692,10 @@ final class YearEndChecklistService
                 unset($check['previous_acknowledgement']);
                 if (in_array((string)($check['status'] ?? ''), ['warning', 'fail'], true)) {
                     $check['status'] = 'pass';
-                    $check['metric_value'] = str_starts_with($checkCode, 'companies_house_')
-                        ? 'Acknowledged'
-                        : (trim((string)($check['metric_value'] ?? '')) !== '' ? (string)$check['metric_value'] : 'Reviewed');
+                    $check['metric_value'] = $this->acknowledgedMetricValue(
+                        $checkCode,
+                        (string)($check['metric_value'] ?? '')
+                    );
                     $detail = (string)($check['detail_text'] ?? '');
                     $detail = preg_replace('/^Review required — [^.]+\.\s*/', '', $detail) ?? $detail;
                     $check['detail_text'] = 'Review acknowledged for this period. ' . $detail;
@@ -2676,6 +2704,24 @@ final class YearEndChecklistService
             }
         }
         return $sections;
+    }
+
+    private function acknowledgedMetricValue(string $checkCode, string $currentMetric): string
+    {
+        if (str_starts_with($checkCode, 'companies_house_')) {
+            return 'Acknowledged';
+        }
+
+        $currentMetric = trim($currentMetric);
+        if ($currentMetric === '' || in_array(strtolower($currentMetric), [
+            'pending',
+            'approval required',
+            'review required',
+        ], true)) {
+            return 'Reviewed';
+        }
+
+        return $currentMetric;
     }
 
     private function acknowledgementBasis(string $checkCode, array $facts): array
@@ -2730,11 +2776,6 @@ final class YearEndChecklistService
         );
     }
 
-    private function prepaymentSchedulesCurrent(array $repair): bool
-    {
-        return !empty($repair['available']) && (int)($repair['missing_count'] ?? 0) === 0;
-    }
-
     private function findChecklistCheck(array $checklist, string $checkCode): ?array
     {
         foreach ((array)($checklist['checks_flat'] ?? []) as $check) {
@@ -2746,40 +2787,57 @@ final class YearEndChecklistService
         return null;
     }
 
-    private function acknowledgementCurrentInSections(array $sections, string $checkCode): bool
+    /**
+     * Mark the exact visible rows which are prerequisites for locking. A failed
+     * severity is blocking by default; acknowledgement rows are also blocking
+     * whenever they are applicable, even though their pending UI state is a
+     * warning rather than a data-integrity failure.
+     *
+     * @param array<string, list<array<string, mixed>>> $sections
+     * @return array<string, list<array<string, mixed>>>
+     */
+    private function applyLockBlockingMetadata(array $sections): array
     {
-        foreach ($sections as $checks) {
-            foreach ((array)$checks as $check) {
-                if (is_array($check)
-                    && (string)($check['check_code'] ?? '') === $checkCode
-                    && !empty($check['acknowledgement_current'])) {
-                    return true;
+        foreach ($sections as $sectionKey => $checks) {
+            foreach ((array)$checks as $index => $check) {
+                if (!is_array($check)) {
+                    continue;
                 }
+
+                $status = (string)($check['status'] ?? '');
+                $applicable = $status !== 'not_applicable';
+                $checkCode = (string)($check['check_code'] ?? '');
+                $check['blocks_lock'] = $applicable && (
+                    (string)($check['severity'] ?? '') === 'fail'
+                    || in_array($checkCode, self::ACKNOWLEDGEMENT_CHECKS, true)
+                );
+                $sections[$sectionKey][$index] = $check;
             }
         }
-        return false;
+
+        return $sections;
     }
 
     /**
-     * A card and the lock gate must agree: if a canonical section card says
-     * its approved facts are stale, the period cannot be locked even when the
-     * current metric happens to be a passing value.
+     * @param array<string, list<array<string, mixed>>> $sections
+     * @return list<array<string, mixed>>
      */
-    private function noStaleCanonicalSectionApprovals(array $sections): bool
+    private function blockingChecks(array $sections): array
     {
+        $blocking = [];
         foreach ($sections as $checks) {
             foreach ((array)$checks as $check) {
-                if (!is_array($check)
-                    || !\eel_accounts\Service\YearEndSectionApprovalService::supports((string)($check['check_code'] ?? ''))) {
+                if (!is_array($check) || empty($check['blocks_lock'])) {
                     continue;
                 }
-                if (in_array((string)($check['acknowledgement_state'] ?? ''), ['stale', 'unverifiable'], true)) {
-                    return false;
+                if (in_array((string)($check['status'] ?? ''), ['pass', 'ready', 'locked'], true)) {
+                    continue;
                 }
+                $blocking[] = $check;
             }
         }
 
-        return true;
+        return $blocking;
     }
 
     private function fetchReviewAcknowledgements(int $companyId, int $accountingPeriodId): array

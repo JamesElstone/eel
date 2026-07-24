@@ -13,6 +13,61 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static function (GeneratedServiceClassTestHarness $harness): void {
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'derives lock readiness exclusively from visible blocking checks', static function () use ($harness): void {
+        $service = new \eel_accounts\Service\YearEndChecklistService();
+        $mark = new ReflectionMethod($service, 'applyLockBlockingMetadata');
+        $mark->setAccessible(true);
+        $find = new ReflectionMethod($service, 'blockingChecks');
+        $find->setAccessible(true);
+
+        $sections = $mark->invoke($service, [
+            'review' => [
+                [
+                    'check_code' => 'visible_failure',
+                    'title' => 'Visible failure',
+                    'severity' => 'fail',
+                    'status' => 'fail',
+                    'blocks_lock' => false,
+                ],
+                [
+                    'check_code' => 'informational_warning',
+                    'title' => 'Informational warning',
+                    'severity' => 'warning',
+                    'status' => 'warning',
+                    'blocks_lock' => false,
+                ],
+            ],
+        ]);
+        $blocking = $find->invoke($service, $sections);
+
+        $harness->assertSame(true, (bool)$sections['review'][0]['blocks_lock']);
+        $harness->assertSame(false, (bool)$sections['review'][1]['blocks_lock']);
+        $harness->assertSame(1, count($blocking));
+        $harness->assertSame('visible_failure', (string)$blocking[0]['check_code']);
+    });
+
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'preflight reports the visible blocker instead of relying on overall warning status', static function () use ($harness): void {
+        $service = new \eel_accounts\Service\YearEndChecklistService();
+        $preflight = new ReflectionMethod($service, 'preflightLockPeriod');
+        $preflight->setAccessible(true);
+        $result = $preflight->invoke($service, 1, 1, [
+            'overall_status' => 'in_progress',
+            'lock_ready' => false,
+            'blocking_checks' => [[
+                'check_code' => 'cut_off_journals_review',
+                'title' => 'Cut-off journals review',
+                'status' => 'warning',
+                'blocks_lock' => true,
+            ]],
+        ]);
+
+        $harness->assertSame(false, (bool)($result['success'] ?? true));
+        $harness->assertSame(
+            'Resolve the visible blocking Year End checks: Cut-off journals review.',
+            (string)(($result['errors'] ?? [])[0] ?? '')
+        );
+    });
+
     $harness->check(\eel_accounts\Service\AssetService::class, 'depreciation preview reports pending year-end depreciation', static function () use ($harness): void {
         yearEndChecklistServiceRequireDepreciationLockTables($harness);
 
@@ -86,7 +141,8 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
             $preflight = new ReflectionMethod($service, 'preflightLockPeriod');
             $preflight->setAccessible(true);
             $preflightResult = $preflight->invoke($service, $companyId, $accountingPeriodId, [
-                'overall_status' => 'ready_for_review',
+                'overall_status' => 'in_progress',
+                'lock_ready' => true,
                 'retained_earnings_close' => [
                     'acknowledged' => true,
                     'acknowledgement_stale' => false,

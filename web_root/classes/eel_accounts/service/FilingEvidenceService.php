@@ -507,8 +507,9 @@ final class FilingEvidenceService
             if (array_is_list($item)) { return array_map($normalise, $item); }
             ksort($item, SORT_STRING); foreach ($item as $key => $child) { $item[$key] = $normalise($child); } return $item;
         };
-        $json = json_encode($normalise($value), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
-        if (!is_string($json)) { throw new \RuntimeException('Filing evidence could not be encoded.'); }
-        return $json;
+        return \eel_accounts\Support\PersistentJson::encode(
+            $normalise($value),
+            JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION
+        );
     }
 }

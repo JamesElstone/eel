@@ -967,6 +967,9 @@ final class Ct600aService
     private function canonicalJson(array $value): string
     {
         $sort=function(mixed $item)use(&$sort):mixed{if(!is_array($item)){return $item;}if(!array_is_list($item)){ksort($item,SORT_STRING);}foreach($item as $k=>$v){$item[$k]=$sort($v);}return $item;};
-        return (string)json_encode($sort($value),JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_PRESERVE_ZERO_FRACTION|JSON_THROW_ON_ERROR);
+        return \eel_accounts\Support\PersistentJson::encode(
+            $sort($value),
+            JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION
+        );
     }
 }

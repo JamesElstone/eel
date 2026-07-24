@@ -504,12 +504,6 @@ final class IxbrlParserService
     }
 
     private function encodeJson(array $value): string {
-        $json = json_encode($value, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
-
-        if ($json === false) {
-            throw new \RuntimeException('Unable to encode iXBRL dimensions as JSON.');
-        }
-
-        return $json;
+        return \eel_accounts\Support\PersistentJson::encode($value, \JSON_UNESCAPED_SLASHES);
     }
 }

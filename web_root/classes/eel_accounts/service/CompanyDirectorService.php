@@ -125,7 +125,7 @@ final class CompanyDirectorService
                 'appointed_on' => $this->normaliseDate($officer['appointed_on'] ?? null),
                 'resigned_on' => $this->normaliseDate($officer['resigned_on'] ?? null),
                 'is_active' => trim((string)($officer['resigned_on'] ?? '')) === '' ? 1 : 0,
-                'source_json' => json_encode($officer, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+                'source_json' => \eel_accounts\Support\PersistentJson::encode($officer, JSON_UNESCAPED_SLASHES),
             ];
         }
 

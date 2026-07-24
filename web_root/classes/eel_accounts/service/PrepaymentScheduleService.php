@@ -1252,10 +1252,10 @@ final class PrepaymentScheduleService
 
     private function hash(array $basis): string
     {
-        $json = json_encode($basis, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
-        if (!is_string($json)) {
-            throw new \RuntimeException('The prepayment calculation basis could not be encoded.');
-        }
+        $json = \eel_accounts\Support\PersistentJson::encode(
+            $basis,
+            JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION
+        );
         return hash('sha256', $json);
     }
 

@@ -27,6 +27,18 @@ final class PrepaymentPostingService
     }
 
     /**
+     * Read-only readiness inspection for the visible Year End checklist.
+     * The transactional preflight still performs a synchronising validation
+     * immediately before posting to protect against concurrent changes.
+     *
+     * @return array<string, mixed>
+     */
+    public function inspectForYearEndLock(int $companyId, int $accountingPeriodId): array
+    {
+        return $this->validateState($companyId, $accountingPeriodId, false, false, false);
+    }
+
+    /**
      * Final-state validation used by the low-level period lock. This never
      * creates journals or synchronises schedules: the normal Year End close
      * must already have posted every required adjustment.

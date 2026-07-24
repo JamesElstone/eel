@@ -562,9 +562,9 @@ final class CorporationTaxReturnPositionService
             return $item;
         };
 
-        return (string)json_encode(
+        return \eel_accounts\Support\PersistentJson::encode(
             $sort($value),
-            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR
+            JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION
         );
     }
 }

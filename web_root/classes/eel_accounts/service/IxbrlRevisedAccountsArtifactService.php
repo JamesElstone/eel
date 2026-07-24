@@ -362,12 +362,10 @@ final class IxbrlRevisedAccountsArtifactService
                 }
             }
         }
-        $json = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
-        if (!is_string($json)) {
-            throw new \RuntimeException('Could not fingerprint the revised-accounts basis.');
-        }
-
-        return $json;
+        return \eel_accounts\Support\PersistentJson::encode(
+            $value,
+            JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION
+        );
     }
 
     private function canonicalValue(mixed $value): mixed

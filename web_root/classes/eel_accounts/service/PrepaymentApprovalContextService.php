@@ -38,9 +38,28 @@ final class PrepaymentApprovalContextService
         $basis = !empty($review['available'])
             ? $this->buildApprovalBasis($review)
             : null;
+        $expectedBasisVersion = (string)($acknowledgement['basis_version'] ?? '');
+        if (is_array($basis)
+            && $expectedBasisVersion === \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION) {
+            $storedBasis = json_decode((string)($acknowledgement['basis_json'] ?? ''), true);
+            $basis = [
+                'contract_version' => \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION,
+                'check_code' => self::CHECK_CODE,
+                'facts' => $basis,
+                'questions' => [],
+                'answers' => is_array($storedBasis) && is_array($storedBasis['answers'] ?? null)
+                    ? $storedBasis['answers']
+                    : [],
+            ];
+        }
         $access = ($this->accessService ?? new \eel_accounts\Service\AccountingPeriodAccessService())
             ->fetchDataEntryState($companyId, $accountingPeriodId);
-        $evaluation = $acknowledgements->evaluate($acknowledgement, $basis, !empty($access['is_locked']));
+        $evaluation = $acknowledgements->evaluate(
+            $acknowledgement,
+            $basis,
+            !empty($access['is_locked']),
+            $expectedBasisVersion
+        );
 
         $acknowledgement['state'] = (string)($evaluation['state'] ?? 'absent');
         $acknowledgement['current'] = !empty($evaluation['current']);

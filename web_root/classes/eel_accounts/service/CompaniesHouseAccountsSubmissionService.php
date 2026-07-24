@@ -669,7 +669,10 @@ final class CompaniesHouseAccountsSubmissionService
                     'artifact_sha256' => (string)$artifact['sha256'],
                     'basis_hash' => (string)$artifact['basis_hash'],
             'idempotency_key' => $idempotencyKey,
-                    'declarations' => json_encode((array)$artifact['declarations'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+                    'declarations' => \eel_accounts\Support\PersistentJson::encode(
+                        (array)$artifact['declarations'],
+                        JSON_UNESCAPED_SLASHES
+                    ),
                     'prepared_by' => $actor,
                     'prepared_at' => $now,
                     'status_updated_at' => $now,
@@ -1275,7 +1278,7 @@ final class CompaniesHouseAccountsSubmissionService
             'poll_transaction_id' => trim((string)($result['transaction_id'] ?? '')) ?: null,
             'raw_status' => $rawStatus !== '' ? $rawStatus : null,
             'normalized_status' => $lifecycle,
-            'result_json' => json_encode($cycleResult, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            'result_json' => \eel_accounts\Support\PersistentJson::encode($cycleResult, JSON_UNESCAPED_SLASHES),
             'acknowledgement_state' => 'required',
             'polled_at' => $now,
         ]);
@@ -2300,7 +2303,9 @@ final class CompaniesHouseAccountsSubmissionService
                 'gateway_code' => $gatewayCode !== '' ? $gatewayCode : null,
                 'gateway_description' => $gatewayDescription !== '' ? $gatewayDescription : null,
                 'examiner_comments' => $examinerComments !== '' ? $examinerComments : null,
-                'context' => $context === [] ? null : json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+                'context' => $context === []
+                    ? null
+                    : \eel_accounts\Support\PersistentJson::encode($context, JSON_UNESCAPED_SLASHES),
                 'actor' => $actor,
                 'created_at' => gmdate('Y-m-d H:i:s'),
             ]
@@ -2419,7 +2424,10 @@ final class CompaniesHouseAccountsSubmissionService
                 }
             }
         }
-        $json = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
+        $json = \eel_accounts\Support\PersistentJson::encode(
+            $value,
+            JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION
+        );
         if (!is_string($json)) {
             throw new \RuntimeException('Could not fingerprint the Companies House submission basis.');
         }

@@ -236,7 +236,12 @@ final class YearEndAcknowledgementService
 
     private function encodeBasis(array $basis): string
     {
-        $json = json_encode($this->normalizeArray($basis), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
+        // Keep the signed representation ASCII-safe. Some ODBC/MariaDB
+        // connections transcode unescaped Unicode while persisting LONGTEXT
+        // (for example, an en dash becomes mojibake). Escaped code points
+        // survive that round trip byte-for-byte, so basis_hash continues to
+        // describe the exact basis_json that can later be verified.
+        $json = json_encode($this->normalizeArray($basis), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
         if (!is_string($json)) {
             throw new \RuntimeException('Unable to encode the Year End acknowledgement basis.');
         }

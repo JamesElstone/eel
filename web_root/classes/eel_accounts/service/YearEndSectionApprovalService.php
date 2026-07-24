@@ -110,7 +110,9 @@ final class YearEndSectionApprovalService
             // A first approval can safely use a newly generated bundle: the
             // card itself obtains this bundle before displaying its form.
             $bundle = $this->refreshBundle($companyId, $accountingPeriodId, $checkCode);
-        } elseif (empty($cached['is_current']) || !$this->sourceTokenMatches($cached, $companyId, $accountingPeriodId, $checkCode)) {
+        } elseif (empty($cached['is_current'])
+            || !$this->sourceTokenMatches($cached, $companyId, $accountingPeriodId, $checkCode)
+            || !$this->bundleHashMatchesLive($cached, $companyId, $accountingPeriodId, $checkCode)) {
             // The rebuilt bundle is deliberately returned without approval. The
             // user must see any changed question or fact before signing it off.
             $previousBundle = $this->decodeBundle($cached);
@@ -714,6 +716,21 @@ final class YearEndSectionApprovalService
         return $current === '' || hash_equals($stored, $current);
     }
 
+    private function bundleHashMatchesLive(
+        array $cached,
+        int $companyId,
+        int $accountingPeriodId,
+        string $checkCode
+    ): bool {
+        $liveBundle = $this->buildBundle($companyId, $accountingPeriodId, $checkCode);
+        $liveBundle['source_token'] = $this->sourceToken($companyId, $accountingPeriodId, $checkCode);
+        $liveBundle['definition_token'] = $this->definitionToken($checkCode);
+        $liveHash = hash('sha256', $this->canonicalJson($liveBundle));
+
+        return trim((string)($cached['source_hash'] ?? '')) !== ''
+            && hash_equals((string)$cached['source_hash'], $liveHash);
+    }
+
     private function sourceToken(int $companyId, int $accountingPeriodId, string $checkCode): string
     {
         if (in_array($checkCode, ['companies_house_mismatch_acknowledgement', 'companies_house_no_filing_acknowledgement'], true)) {
@@ -920,7 +937,10 @@ final class YearEndSectionApprovalService
             }
             return $item;
         };
-        return (string)json_encode($normalise($value), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR);
+        return \eel_accounts\Support\PersistentJson::encode(
+            $normalise($value),
+            JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION
+        );
     }
 
     private function tableAvailable(): bool

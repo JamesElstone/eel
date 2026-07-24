@@ -3605,13 +3605,7 @@ final class StatementUploadService
     }
 
     private function encodeJson(array $payload): string {
-        $encoded = json_encode($payload, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
-
-        if (!is_string($encoded)) {
-            throw new \RuntimeException('JSON encoding failed for staged import data.');
-        }
-
-        return $encoded;
+        return \eel_accounts\Support\PersistentJson::encode($payload, \JSON_UNESCAPED_SLASHES);
     }
 
     private static function hashText(?string $value): string {

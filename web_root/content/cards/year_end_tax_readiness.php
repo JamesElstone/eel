@@ -90,9 +90,9 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
 
         return '<section class="settings-stack" id="tax-readiness">
             ' . $this->overallTaxPositionHtml($companySettings, $taxReadiness, $provision) . '
-            ' . $this->corporationTaxScope($filingScope, $companyId, $accountingPeriodId) . '
             ' . $this->ctPeriodSectionsHtml($companySettings, $taxReadiness, $companyId, $accountingPeriodId) . '
             ' . $this->provisionHtml($companySettings, $provision) . '
+            ' . $this->corporationTaxScope($filingScope, $companyId, $accountingPeriodId) . '
             ' . $this->reviewApprovalHtml($acknowledgementForm) . '
         </section>';
     }

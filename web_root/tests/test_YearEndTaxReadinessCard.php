@@ -58,6 +58,7 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(false, str_contains($html, 'value="yes" required data-submit-on-change="true" checked'));
         $harness->assertSame(false, str_contains($html, 'value="no" required data-submit-on-change="true" checked'));
         $harness->assertSame(false, str_contains($html, 'Unsure'));
+        $harness->assertTrue((int)strrpos($html, 'Corporation Tax Filing Scope Check') < (int)strpos($html, 'Tax Basis Review And Approval'));
     });
 
     $harness->check(_year_end_tax_readinessCard::class, 'renders compact tax readiness status and acknowledgement control', static function () use ($harness, $card): void {

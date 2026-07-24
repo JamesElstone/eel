@@ -516,7 +516,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $harness->assertFalse(str_contains($draftHtml, 'name="intent" value="validate_ixbrl_external"'));
             $harness->assertTrue(str_contains($draftHtml, 'Arelle Status') && str_contains($draftHtml, 'Installed'));
             $harness->assertTrue(str_contains($draftHtml, 'Arelle Validation') && str_contains($draftHtml, 'Failed'));
-            $harness->assertTrue(str_contains($draftHtml, 'Arelle validation output'));
+            $harness->assertFalse(str_contains($draftHtml, 'Arelle validation output'));
             $harness->assertTrue(str_contains($draftHtml, 'Accounting schema failure from Arelle.'));
             $harness->assertTrue(str_contains($draftHtml, 'Companies House schema failure from Arelle.'));
             $harness->assertTrue(str_contains($draftHtml, 'Review draft only'));

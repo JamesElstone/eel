@@ -142,6 +142,10 @@ final class _ixbrl_generationCard extends CardBaseFramework
         $filing = (array)(($context['services'] ?? [])['companies_house_ixbrl'] ?? []);
         $submission = is_array($filing['submission'] ?? null) ? $filing['submission'] : null;
         $artifact = (array)($filing['prepared_artifact'] ?? []);
+        $baseRun = (array)($context['ixbrl']['latest_run'] ?? []);
+        $readiness = (array)($context['ixbrl']['readiness'] ?? []);
+        $arelleStatus = (array)($readiness['arelle_status'] ?? []);
+        $revisedValidation = (array)($filing['revised_validation'] ?? []);
         if ($submission === null || $artifact === []) {
             $canPrepare = !empty($filing['can_prepare']);
             $blockers = array_values(array_unique(array_filter(array_map(
@@ -156,7 +160,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . '<h3 class="card-title">Companies House Revised Accounting iXBRL</h3>'
                 . '<span class="badge muted">Not prepared</span></div>'
                 . '<div class="helper">Prepare the Companies House-specific revised accounts artifact after Year End lock and disclosure approval. This does not transmit it.</div>'
-                . $this->arelleOutput((array)($filing['revised_validation'] ?? []))
+                . $this->arelleOutput($revisedValidation)
                 . $blockersHtml
                 . '<form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">'
                 . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
@@ -180,12 +184,16 @@ final class _ixbrl_generationCard extends CardBaseFramework
             . '<span class="badge ' . $badge . '">'
             . HelperFramework::escape(HelperFramework::labelFromKey($lifecycle, '_')) . '</span></div>'
             . '<div class="summary-grid">'
-            . $this->metric('Artifact', (string)($artifact['filename'] ?? ''))
-            . $this->metric('SHA-256', (string)($artifact['sha256'] ?? ''))
+            . $this->metric('Generated At', (string)($submission['prepared_at'] ?? ''))
+            . $this->metric('Facts', (string)(int)($baseRun['fact_count'] ?? 0))
+            . $this->metric('Export Type', $this->exportTypeLabel((string)($baseRun['export_type'] ?? '')))
+            . $this->metric('Validation', $this->validationLabel((string)($baseRun['validation_status'] ?? 'not_run')))
+            . $this->metric('Arelle Status', !empty($arelleStatus['installed']) ? 'Installed' : 'Not Installed')
+            . $this->metric('Arelle Validation', $this->validationLabel((string)($revisedValidation['status'] ?? $baseRun['external_validation_status'] ?? 'not_run')))
+            . $this->metric('Arelle Validated At', (string)($revisedValidation['validated_at'] ?? $baseRun['external_validated_at'] ?? ''))
             . $this->metric('Submission number', (string)($submission['submission_number'] ?? 'Allocated on send'))
-            . $this->metric('Environment', (string)($submission['environment'] ?? ''))
-            . '</div><div class="helper">This revised artifact is distinct from the HMRC accounts iXBRL and uses the Companies House document policy.</div>'
-            . $this->arelleOutput((array)($filing['revised_validation'] ?? []))
+            . '</div>'
+            . $this->arelleOutput($revisedValidation)
             . '</section>';
     }
 
@@ -361,16 +369,16 @@ final class _ixbrl_generationCard extends CardBaseFramework
         $version = trim((string)($result['external_validator_version'] ?? $result['version'] ?? ''));
         $errors = $this->validationMessages($result['external_validation_errors_json'] ?? $result['errors'] ?? []);
         $warnings = $this->validationMessages($result['external_validation_warnings_json'] ?? $result['warnings'] ?? []);
-        $hasLog = trim((string)($result['external_validation_log_path'] ?? $result['log_path'] ?? '')) !== '';
         if ($status === '' || $status === 'not_run' || $status === 'not_configured') {
             return '';
         }
 
-        $html = '<section class="panel-soft ixbrl-arelle-output"><div class="status-head"><h4>Arelle validation output</h4>'
-            . '<span class="badge ' . ($status === 'passed' ? 'success' : 'danger') . '">'
-            . HelperFramework::escape($this->validationLabel($status)) . '</span></div>';
+        $html = '<section class="panel-soft ixbrl-arelle-output">';
         if ($version !== '') {
             $html .= '<div class="helper">Arelle version: ' . HelperFramework::escape($version) . '</div>';
+        }
+        if ($errors === [] && $warnings === []) {
+            $html .= '<div class="helper">No Arelle verification result yet.</div>';
         }
         foreach (['Errors' => $errors, 'Warnings' => $warnings] as $label => $messages) {
             if ($messages === []) {
@@ -382,10 +390,6 @@ final class _ixbrl_generationCard extends CardBaseFramework
             }
             $html .= '</ul>';
         }
-        if ($hasLog) {
-            $html .= '<div class="helper">Arelle diagnostic log recorded for this validation.</div>';
-        }
-
         return $html . '</section>';
     }
 

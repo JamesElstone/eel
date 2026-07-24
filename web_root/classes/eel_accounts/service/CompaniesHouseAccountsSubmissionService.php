@@ -2377,7 +2377,7 @@ final class CompaniesHouseAccountsSubmissionService
         return ['success' => false, 'errors' => [$message], 'warnings' => [], 'messages' => [], 'changed' => false];
     }
 
-    /** @return array{status: string, version: string, errors: list<mixed>, warnings: list<mixed>, log_path: string} */
+    /** @return array{status: string, version: string, validated_at: string, errors: list<mixed>, warnings: list<mixed>, log_path: string} */
     private function latestRevisedArtifactValidation(int $companyId, int $accountingPeriodId): array
     {
         if (!\InterfaceDB::tableExists('filing_evidence_artifacts')
@@ -2385,7 +2385,7 @@ final class CompaniesHouseAccountsSubmissionService
             return [];
         }
         $row = \InterfaceDB::fetchOne(
-            'SELECT a.validator_version, a.validation_status, a.metadata_json
+            'SELECT a.validator_version, a.validation_status, a.completed_at, a.metadata_json
              FROM filing_evidence_artifacts a
              INNER JOIN filing_evidence_bundles b ON b.id = a.bundle_id
              WHERE b.company_id = :company_id
@@ -2413,6 +2413,7 @@ final class CompaniesHouseAccountsSubmissionService
         return [
             'status' => (string)($validation['status'] ?? $row['validation_status'] ?? 'not_run'),
             'version' => (string)($validation['version'] ?? $row['validator_version'] ?? ''),
+            'validated_at' => (string)($validation['validated_at'] ?? $row['completed_at'] ?? ''),
             'errors' => array_values((array)($validation['errors'] ?? $fallbackErrors)),
             'warnings' => array_values((array)($validation['warnings'] ?? [])),
             'log_path' => (string)($validation['log_path'] ?? ''),

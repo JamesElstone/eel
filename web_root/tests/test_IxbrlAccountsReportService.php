@@ -15,5 +15,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             }
             $harness->assertTrue($thrown);
         });
+
+        $harness->check($service::class, 'declares an explicit report-basis version', static function () use ($harness, $service): void {
+            $harness->assertTrue(str_starts_with($service::BASIS_VERSION, 'ixbrl-accounts-report-v'));
+        });
     }
 );

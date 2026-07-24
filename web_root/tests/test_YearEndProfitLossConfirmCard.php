@@ -33,7 +33,7 @@ $harness->run(_year_end_profit_loss_confirmCard::class, static function (Generat
         $html = $card->render(yearEndProfitLossConfirmCardContext(true, false));
 
         $harness->assertSame(true, str_contains($html, 'Approved at 2026-07-06 10:00:00 by Fixture Reviewer using the web_app.'));
-        $harness->assertSame(true, str_contains($html, 'name="retained_earnings_close_acknowledgement" value="0"'));
+        $harness->assertSame(true, str_contains($html, 'name="check_code" value="retained_earnings_close_confirmation"'));
         $harness->assertSame(true, str_contains($html, 'Revoke approval'));
         $harness->assertSame(false, str_contains($html, 'checked required'));
     });
@@ -193,6 +193,15 @@ function yearEndProfitLossConfirmCardContext(bool $acknowledged, bool $stale, ar
         ],
         'services' => [
             'yearEndProfitLossConfirm' => $close,
+            'sectionReview' => [
+                'acknowledgement' => $acknowledged ? [
+                    'acknowledged_at' => '2026-07-06 10:00:00',
+                    'acknowledged_by' => 'Fixture Reviewer using the web_app',
+                ] : [],
+                'acknowledgement_current' => $acknowledged && !$stale,
+                'acknowledgement_state' => $stale ? 'stale' : ($acknowledged ? 'current' : 'absent'),
+                'can_approve' => true,
+            ],
         ],
     ];
 }

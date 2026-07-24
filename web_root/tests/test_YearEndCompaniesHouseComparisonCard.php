@@ -14,101 +14,102 @@ $harness->run(_year_end_companies_house_comparisonCard::class, static function (
     GeneratedServiceClassTestHarness $harness,
     _year_end_companies_house_comparisonCard $card
 ): void {
-    $harness->check(_year_end_companies_house_comparisonCard::class, 'renders the comparison, XML eligibility choice, and approval in order', static function () use ($harness, $card): void {
-        $context = companiesHouseComparisonCardContext();
-        $html = $card->render($context);
+    $harness->check(_year_end_companies_house_comparisonCard::class, 'renders comparison gates inside the single section approval', static function () use ($harness, $card): void {
+        $html = $card->render(companiesHouseComparisonCardContext());
 
         $harness->assertCount(1, $card->services());
         $harness->assertSame(true, str_contains($html, 'Companies House Comparison'));
-        $harness->assertSame(true, str_contains($html, 'Is Fixture Limited eligible for XML based web filing?'));
-        $harness->assertSame(true, str_contains($html, 'type="radio" name="eligibility_decision" value="eligible" required data-submit-on-change="true" checked'));
-        $harness->assertSame(true, str_contains($html, 'type="radio" name="eligibility_decision" value="ineligible" required data-submit-on-change="true"'));
-        $harness->assertSame(true, str_contains($html, 'data-ajax="true"'));
-        $harness->assertSame(false, str_contains($html, 'Save eligibility decision'));
-        $harness->assertSame(false, str_contains($html, 'Companies House Revised Accounts Filing'));
-        $harness->assertSame(false, str_contains($html, 'Written evidence'));
-        $harness->assertSame(false, str_contains($html, 'Companies House response reference'));
+        $harness->assertSame(true, str_contains($html, 'Is this original Companies House filing eligible for an XML based revised-accounts submission?'));
+        $harness->assertSame(true, str_contains($html, 'name="approval_answers[companies_house.xml_eligibility]"'));
         $harness->assertSame(true, str_contains($html, 'Why do the Companies House figures need revising?'));
-        $harness->assertSame(true, str_contains($html, 'name="intent" value="save_variance_explanation"'));
-        $harness->assertSame(true, str_contains($html, 'name="variance_explanation"'));
-        $harness->assertSame(true, strpos($html, 'Companies House Comparison') < strpos($html, 'Is Fixture Limited eligible'));
-        $harness->assertSame(true, strpos($html, 'Is Fixture Limited eligible') < strpos($html, 'Why do the Companies House figures need revising?'));
-        $harness->assertSame(true, strpos($html, 'Why do the Companies House figures need revising?') < strpos($html, '<h3 class="card-title">Approval</h3>'));
+        $harness->assertSame(true, str_contains($html, 'name="approval_answers[companies_house.variance_explanation]"'));
+        $harness->assertSame(true, str_contains($html, 'name="intent" value="approve_section_review"'));
+        $harness->assertSame(false, str_contains($html, 'name="eligibility_decision"'));
+        $harness->assertSame(false, str_contains($html, 'name="intent" value="save_variance_explanation"'));
+        $harness->assertSame(true, strpos($html, 'Companies House Comparison') < strpos($html, 'Is this original Companies House filing'));
     });
 
-    $harness->check(_year_end_companies_house_comparisonCard::class, 'blocks the approval UI until an unlocked period has a saved eligibility decision', static function () use ($harness, $card): void {
-        $context = companiesHouseComparisonCardContext(['decision' => 'pending', 'original_document_id' => 56], false);
-        $html = $card->render($context);
-
-        $harness->assertSame(true, str_contains($html, 'Record whether the company is eligible for XML based web filing before completing this Year End Confirmation.'));
-        $harness->assertSame(true, str_contains($html, 'data-year-end-ack-checkbox disabled'));
-    });
-
-    $harness->check(_year_end_companies_house_comparisonCard::class, 'preserves locked legacy positions without making eligibility a blocker', static function () use ($harness, $card): void {
-        $context = companiesHouseComparisonCardContext(['decision' => 'pending', 'original_document_id' => 56], true);
-        $html = $card->render($context);
-
-        $harness->assertSame(true, str_contains($html, 'The Accounting Period has been locked. No changes can be made until the period is unlocked.'));
-        $harness->assertSame(false, str_contains($html, 'This accounting period is locked, so the saved Companies House variance explanation is frozen.'));
-        $harness->assertSame(true, str_contains($html, '<fieldset disabled>'));
-        $harness->assertSame(true, str_contains($html, 'name="variance_explanation" rows="4" required disabled aria-disabled="true"'));
-        $harness->assertSame(false, str_contains($html, 'Record whether the company is eligible for XML based web filing before completing this Year End Confirmation.'));
-    });
-
-    $harness->check(_year_end_companies_house_comparisonCard::class, 'renders no-filing rows and its separate acknowledgement', static function () use ($harness, $card): void {
+    $harness->check(_year_end_companies_house_comparisonCard::class, 'shows approved gate answers from the acknowledgement basis', static function () use ($harness, $card): void {
         $context = companiesHouseComparisonCardContext();
-        $context['services']['companiesHouseComparisonReview']['comparison'] = [
+        $context['services']['sectionReview']['acknowledgement'] = [
+            'acknowledged_at' => '2026-07-24 10:00:00',
+            'acknowledged_by' => 'Fixture user',
+            'note' => 'Corrective filing needed.',
+        ];
+        $context['services']['sectionReview']['acknowledgement_current'] = true;
+        $context['services']['sectionReview']['answers'] = [
+            'companies_house.xml_eligibility' => 'eligible',
+            'companies_house.variance_explanation' => 'The filed fixed assets value was incomplete.',
+        ];
+        $html = $card->render($context);
+
+        $harness->assertSame(true, str_contains($html, 'Corrective filing needed.'));
+        $harness->assertSame(true, str_contains($html, 'The filed fixed assets value was incomplete.'));
+        $harness->assertSame(true, str_contains($html, 'Revoke approval'));
+        $harness->assertSame(false, str_contains($html, 'Save Variance Explanation'));
+    });
+
+    $harness->check(_year_end_companies_house_comparisonCard::class, 'uses the existing no-filing check code without a parallel acknowledgement', static function () use ($harness, $card): void {
+        $context = companiesHouseComparisonCardContext();
+        $context['services']['sectionReview']['check_code'] = 'companies_house_no_filing_acknowledgement';
+        $context['services']['sectionReview']['display']['comparison'] = [
             'available' => true,
             'has_exact_filing' => false,
             'comparison_scope' => 'no_exact_filing',
             'comparison_note' => 'No exact Companies House accounts filing is available.',
             'filing' => null,
             'rows' => [['label' => 'Fixed assets', 'app_value' => 420.00, 'filed_value' => null, 'variance' => null, 'status' => 'not_filed']],
+            'can_acknowledge' => true,
         ];
-        $context['services']['companiesHouseComparisonReview']['requires_acknowledgement'] = true;
-        $context['services']['companiesHouseComparisonReview']['can_acknowledge'] = true;
-        $context['services']['companiesHouseComparisonReview']['acknowledgement_check_code'] = 'companies_house_no_filing_acknowledgement';
-        $context['services']['companiesHouseComparisonReview']['acknowledgement_subject'] = 'No exact Companies House filing';
+        $context['services']['sectionReview']['questions'] = [];
         $html = $card->render($context);
 
-        $harness->assertSame(true, str_contains($html, '<td>-</td><td>-</td>'));
+        $harness->assertSame(true, str_contains($html, 'No exact Companies House accounts filing is available.'));
         $harness->assertSame(true, str_contains($html, 'Not Filed'));
         $harness->assertSame(true, str_contains($html, 'name="check_code" value="companies_house_no_filing_acknowledgement"'));
         $harness->assertSame(false, str_contains($html, 'Why do the Companies House figures need revising?'));
     });
 });
 
-function companiesHouseComparisonCardContext(array $eligibility = ['decision' => 'eligible', 'original_document_id' => 56], bool $locked = false): array
+function companiesHouseComparisonCardContext(): array
 {
-    $eligibilityRecorded = in_array((string)($eligibility['decision'] ?? 'pending'), ['eligible', 'ineligible'], true);
-    $varianceExplanationRecorded = trim((string)($eligibility['variance_explanation'] ?? '')) !== '';
-    $blockedReason = '';
-    if (!$locked && !$eligibilityRecorded) {
-        $blockedReason = 'Record whether the company is eligible for XML based web filing before completing this Year End Confirmation.';
-    } elseif (!$locked && !$varianceExplanationRecorded) {
-        $blockedReason = 'Enter why the Companies House figures need revising before completing this Year End Confirmation.';
-    }
-
     return [
         'company' => ['id' => 12, 'company_name' => 'Fixture Limited', 'accounting_period_id' => 34, 'settings' => []],
         'services' => [
-            'companiesHouseComparisonReview' => [
-                'comparison' => [
-                    'available' => true,
-                    'has_exact_filing' => true,
-                    'comparison_note' => 'Comparison available.',
-                    'filing' => ['filing_date' => '2026-02-14'],
-                    'rows' => [['label' => 'Fixed assets', 'app_value' => 420.00, 'filed_value' => 250.00, 'variance' => 170.00, 'status' => 'fail']],
-                ],
-                'eligibility' => $eligibility,
+            'sectionReview' => [
+                'available' => true,
+                'check_code' => 'companies_house_mismatch_acknowledgement',
                 'acknowledgement' => null,
-                'access' => ['is_locked' => $locked],
-                'mismatch_count' => 1,
-                'requires_acknowledgement' => true,
-                'acknowledgement_check_code' => 'companies_house_mismatch_acknowledgement',
-                'acknowledgement_subject' => 'Companies House comparison',
-                'can_acknowledge' => !$locked && $eligibilityRecorded && $varianceExplanationRecorded,
-                'acknowledgement_blocked_reason' => $blockedReason,
+                'acknowledgement_state' => 'absent',
+                'acknowledgement_current' => false,
+                'answers' => [],
+                'questions' => [
+                    [
+                        'id' => 'companies_house.xml_eligibility',
+                        'prompt' => 'Is this original Companies House filing eligible for an XML based revised-accounts submission?',
+                        'type' => 'choice',
+                        'options' => ['eligible' => 'Yes', 'ineligible' => 'No'],
+                        'required' => true,
+                    ],
+                    [
+                        'id' => 'companies_house.variance_explanation',
+                        'prompt' => 'Why do the Companies House figures need revising?',
+                        'type' => 'text',
+                        'required' => true,
+                    ],
+                ],
+                'display' => [
+                    'comparison' => [
+                        'available' => true,
+                        'has_exact_filing' => true,
+                        'can_acknowledge' => true,
+                        'comparison_note' => 'Comparison available.',
+                        'filing' => ['filing_date' => '2026-02-14'],
+                        'rows' => [['label' => 'Fixed assets', 'app_value' => 420.00, 'filed_value' => 250.00, 'variance' => 170.00, 'status' => 'fail']],
+                    ],
+                    'access' => ['is_locked' => false],
+                    'mismatch_count' => 1,
+                ],
             ],
         ],
     ];

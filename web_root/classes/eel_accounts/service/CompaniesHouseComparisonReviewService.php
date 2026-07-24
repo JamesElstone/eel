@@ -58,8 +58,10 @@ final class CompaniesHouseComparisonReviewService
         $comparisonCanBeAcknowledged = array_key_exists('can_acknowledge', $comparison)
             ? !empty($comparison['can_acknowledge'])
             : !empty($comparison['available']);
-        $eligibility = ($this->accountsSubmissionService ?? new \eel_accounts\Service\CompaniesHouseAccountsSubmissionService())
-            ->fetchEligibility($companyId, $accountingPeriodId);
+        $accountsSubmissionService = $this->accountsSubmissionService
+            ?? new \eel_accounts\Service\CompaniesHouseAccountsSubmissionService();
+        $eligibility = $accountsSubmissionService->fetchEligibility($companyId, $accountingPeriodId);
+        $revisionMetadata = $accountsSubmissionService->revisionMetadataEditability($companyId, $accountingPeriodId);
         $eligibilityRecorded = in_array((string)($eligibility['decision'] ?? 'pending'), ['eligible', 'ineligible'], true);
         $isLocked = !empty($access['is_locked']);
 
@@ -82,6 +84,7 @@ final class CompaniesHouseComparisonReviewService
             'acknowledgement' => is_array($acknowledgement) ? $acknowledgement : null,
             'access' => $access,
             'eligibility' => $eligibility,
+            'revision_metadata' => $revisionMetadata,
             'mismatch_count' => $mismatchCount,
             'acknowledgement_check_code' => $checkCode,
             'acknowledgement_subject' => $hasExactFiling ? 'Companies House comparison' : 'No exact Companies House filing',

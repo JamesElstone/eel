@@ -77,10 +77,6 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             && !$this->isLocked($companyId, $accountingPeriodId)) {
             return $this->error('Complete and lock Year End before using Companies House revised-accounts filing.');
         }
-        if (in_array($intent, ['record_gateway_eligibility', 'save_variance_explanation'], true)
-            && $this->isLocked($companyId, $accountingPeriodId)) {
-            return $this->error('Companies House review answers cannot be changed after Year End is locked.');
-        }
         $developerIntent = in_array($intent, [
             'preflight_revised_accounts',
             'submit_preflighted_revised_accounts',

@@ -31,6 +31,16 @@ final class _year_end_expenses_confirmationCard extends CardBaseFramework
                     'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
+            [
+                'key' => 'sectionReview',
+                'service' => \eel_accounts\Service\YearEndSectionApprovalService::class,
+                'method' => 'fetchReview',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                    'checkCode' => 'expense_position_acknowledgement',
+                ],
+            ],
         ];
     }
 
@@ -58,7 +68,7 @@ final class _year_end_expenses_confirmationCard extends CardBaseFramework
         }
 
         $totals = (array)($expenses['totals'] ?? []);
-        $acknowledged = !empty($expenses['expense_position_acknowledged']);
+        $sectionReview = (array)($context['services']['sectionReview'] ?? []);
         $rowsHtml = '';
         foreach ((array)($expenses['claimants'] ?? []) as $claimant) {
             $rowsHtml .= '<tr>
@@ -78,11 +88,7 @@ final class _year_end_expenses_confirmationCard extends CardBaseFramework
         }
 
         $acknowledgementForm = $this->acknowledgementHtml(
-            $acknowledged,
-            (string)($expenses['expense_position_acknowledgement_state'] ?? 'absent'),
-            (string)($expenses['expense_position_acknowledged_at'] ?? ''),
-            (string)($expenses['expense_position_acknowledged_by'] ?? ''),
-            (string)($expenses['expense_position_approval_note'] ?? ''),
+            $sectionReview,
             $companyId,
             $accountingPeriodId
         );
@@ -104,22 +110,27 @@ final class _year_end_expenses_confirmationCard extends CardBaseFramework
         </section>';
     }
 
-    private function acknowledgementHtml(bool $acknowledged, string $state, string $acknowledgedAt, string $acknowledgedBy, string $note, int $companyId, int $accountingPeriodId): string
+    private function acknowledgementHtml(array $review, int $companyId, int $accountingPeriodId): string
     {
+        $acknowledgement = (array)($review['acknowledgement'] ?? []);
         return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
             'subject' => 'expense position',
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
-            'acknowledged' => $acknowledged,
-            'acknowledgementState' => $state,
-            'acknowledgedAt' => $acknowledgedAt,
-            'acknowledgedBy' => $acknowledgedBy,
-            'note' => $note,
-            'intent' => 'save_expense_position_acknowledgement',
-            'revokeIntent' => 'save_expense_position_acknowledgement',
-            'checkboxName' => 'expense_position_acknowledgement',
-            'approveFields' => ['expense_position_acknowledgement' => '1'],
-            'revokeFields' => ['expense_position_acknowledgement' => '0'],
+            'acknowledged' => !empty($review['acknowledgement_current']),
+            'acknowledgementState' => (string)($review['acknowledgement_state'] ?? 'absent'),
+            'acknowledgedAt' => (string)($acknowledgement['acknowledged_at'] ?? ''),
+            'acknowledgedBy' => (string)($acknowledgement['acknowledged_by'] ?? ''),
+            'note' => (string)($acknowledgement['note'] ?? ''),
+            'intent' => 'approve_section_review',
+            'revokeIntent' => 'revoke_section_review',
+            'approveFields' => ['check_code' => 'expense_position_acknowledgement'],
+            'revokeFields' => ['check_code' => 'expense_position_acknowledgement'],
+            'noteName' => 'approval_note',
+            'questions' => (array)($review['questions'] ?? []),
+            'answers' => (array)($review['answers'] ?? []),
+            'disabled' => empty($review['can_approve']),
+            'disabledReason' => (string)(($review['approval_errors'] ?? [])[0] ?? ''),
         ]);
     }
 

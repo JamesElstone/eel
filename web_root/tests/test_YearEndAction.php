@@ -65,7 +65,8 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
                 yearEndActionDirectorLoanTestRequest(
                     (int)$fixture['company_id'],
                     (int)$fixture['accounting_period_id'],
-                    'save_director_loan_year_end_review'
+                    'approve_section_review',
+                    yearEndActionDirectorLoanApprovalPayload()
                 ),
                 createTestPageServiceFramework()
             );
@@ -86,15 +87,26 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             yearEndActionDirectorLoanTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 200.00, 0.00, 'asset-increase');
             $third = $instance->handle($request, createTestPageServiceFramework());
             $harness->assertSame(false, $third->isSuccess());
+            $refreshed = $instance->handle(
+                yearEndActionDirectorLoanTestRequest(
+                    (int)$fixture['company_id'],
+                    (int)$fixture['accounting_period_id'],
+                    'approve_section_review',
+                    yearEndActionDirectorLoanApprovalPayload()
+                ),
+                createTestPageServiceFramework()
+            );
             $reconfirmed = $instance->handle(
                 yearEndActionDirectorLoanTestRequest(
                     (int)$fixture['company_id'],
                     (int)$fixture['accounting_period_id'],
-                    'save_director_loan_year_end_review'
+                    'approve_section_review',
+                    yearEndActionDirectorLoanApprovalPayload()
                 ),
                 createTestPageServiceFramework()
             );
             $fourth = $instance->handle($request, createTestPageServiceFramework());
+            $harness->assertSame(false, $refreshed->isSuccess());
             $harness->assertSame(true, $reconfirmed->isSuccess());
             $harness->assertSame(true, $fourth->isSuccess());
             $harness->assertSame(2, (int)InterfaceDB::fetchColumn(
@@ -152,6 +164,22 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
 
             $harness->assertSame(false, $result->isSuccess());
             $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'locked'));
+
+            foreach (['approve_section_review', 'revoke_section_review'] as $intent) {
+                $sectionResult = $instance->handle(
+                    yearEndActionDirectorLoanTestRequest(
+                        (int)$fixture['company_id'],
+                        (int)$fixture['accounting_period_id'],
+                        $intent,
+                        $intent === 'approve_section_review'
+                            ? yearEndActionDirectorLoanApprovalPayload()
+                            : ['check_code' => 'director_loan_year_end_review']
+                    ),
+                    createTestPageServiceFramework()
+                );
+                $harness->assertSame(false, $sectionResult->isSuccess());
+                $harness->assertSame(true, str_contains((string)($sectionResult->flashMessages()[0]['message'] ?? ''), 'locked'));
+            }
         });
     });
 
@@ -219,14 +247,14 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
                 yearEndActionDirectorLoanTestRequest(
                     (int)$fixture['company_id'],
                     (int)$fixture['accounting_period_id'],
-                    'save_director_loan_year_end_review',
-                    ['director_loan_year_end_review' => '1']
+                    'approve_section_review',
+                    array_merge(yearEndActionDirectorLoanApprovalPayload(), ['approval_note' => ''])
                 ),
                 createTestPageServiceFramework()
             );
 
             $harness->assertSame(true, $result->isSuccess());
-            $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'Year End Review saved'));
+            $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'section approval saved'));
             $acknowledgedAt = (string)InterfaceDB::fetchColumn(
                 'SELECT COALESCE(acknowledged_at, \'\')
                  FROM year_end_review_acknowledgements
@@ -252,10 +280,14 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
                  WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id AND check_code = :check_code',
                 ['company_id' => (int)$fixture['company_id'], 'accounting_period_id' => (int)$fixture['accounting_period_id'], 'check_code' => 'director_loan_year_end_review']
             )));
+            $harness->assertSame(\eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION, (string)InterfaceDB::fetchColumn(
+                'SELECT basis_version FROM year_end_review_acknowledgements WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id AND check_code = :check_code',
+                ['company_id' => (int)$fixture['company_id'], 'accounting_period_id' => (int)$fixture['accounting_period_id'], 'check_code' => 'director_loan_year_end_review']
+            ));
         });
     });
 
-    $harness->check('YearEndAction', 'locks CT600A declarations after the director loan year-end confirmation', static function () use ($harness): void {
+    $harness->check('YearEndAction', 'stores CT600A answers in the director loan section approval', static function () use ($harness): void {
         yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness): void {
             if (!InterfaceDB::tableExists('year_end_review_acknowledgements')
                 || !InterfaceDB::columnExists('year_end_review_acknowledgements', 'basis_hash')) {
@@ -268,25 +300,21 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
                 yearEndActionDirectorLoanTestRequest(
                     (int)$fixture['company_id'],
                     (int)$fixture['accounting_period_id'],
-                    'save_director_loan_year_end_review',
-                    ['director_loan_year_end_review' => '1']
+                    'approve_section_review',
+                    yearEndActionDirectorLoanApprovalPayload()
                 ),
                 createTestPageServiceFramework()
             );
 
-            $ct600a = new \eel_accounts\Service\Ct600aService();
-            $update = $ct600a->saveReview(
-                (int)$fixture['company_id'],
-                (int)$fixture['accounting_period_id'],
-                array_fill_keys(array_keys($ct600a->reviewQuestions()), 'no'),
-                'director',
-                'Primary Director',
-                ''
+            $basisJson = (string)InterfaceDB::fetchColumn(
+                'SELECT basis_json FROM year_end_review_acknowledgements WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id AND check_code = :check_code',
+                ['company_id' => (int)$fixture['company_id'], 'accounting_period_id' => (int)$fixture['accounting_period_id'], 'check_code' => 'director_loan_year_end_review']
             );
+            $basis = json_decode($basisJson, true);
 
             $harness->assertSame(true, $confirmation->isSuccess());
-            $harness->assertSame(false, !empty($update['success']));
-            $harness->assertTrue(str_contains((string)($update['errors'][0] ?? ''), 'locked'));
+            $harness->assertSame('no', (string)($basis['answers']['ct600a.missing_parties'] ?? ''));
+            $harness->assertSame(true, is_array($basis['questions'] ?? null));
         });
     });
 
@@ -796,6 +824,19 @@ function yearEndActionDirectorLoanTestRequest(int $companyId, int $accountingPer
         ['X-AntiFraud-Client-Device-ID' => testCurrentAntiFraudDeviceId()],
         null
     );
+}
+
+/** @return array<string, mixed> */
+function yearEndActionDirectorLoanApprovalPayload(): array
+{
+    $answers = [];
+    foreach ((new \eel_accounts\Service\Ct600aService())->reviewQuestions() as $key => $_prompt) {
+        $answers['ct600a.' . (string)$key] = 'no';
+    }
+    return [
+        'check_code' => 'director_loan_year_end_review',
+        'approval_answers' => $answers,
+    ];
 }
 
 function yearEndActionEmptyMonthTestWithFixture(GeneratedServiceClassTestHarness $harness, callable $callback): void

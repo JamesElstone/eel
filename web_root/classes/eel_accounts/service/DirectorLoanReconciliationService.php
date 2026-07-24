@@ -99,19 +99,39 @@ final class DirectorLoanReconciliationService
 
         $taxReview = ($this->directorLoanService ?? new DirectorLoanService())
             ->fetchTaxReviewSummary($companyId, $accountingPeriodId);
-        $ct600a = (new Ct600aService())->fetchReviewForAccountingPeriod($companyId, $accountingPeriodId);
-        $ct600aReview = (array)($ct600a['review'] ?? []);
-        $ct600aReviewEvidenceCurrent = !empty($ct600aReview['current']);
-        $ct600aReviewComplete = !empty($ct600aReview['complete']);
-        $ct600aReviewCurrent = $ct600aReviewEvidenceCurrent && $ct600aReviewComplete;
         $ackService = $this->acknowledgementService ?? new YearEndAcknowledgementService();
-        $basis = $this->confirmationBasis($ackService, $statement, $taxReview, $ct600aReview);
         $acknowledgement = $ackService->fetch(
             $companyId,
             $accountingPeriodId,
             self::YEAR_END_ACKNOWLEDGEMENT_CODE
         );
-        $evaluation = $ackService->evaluate($acknowledgement, $basis, false);
+        $ct600a = (new Ct600aService())->fetchReviewForAccountingPeriod($companyId, $accountingPeriodId);
+        $ct600aReview = (array)($ct600a['review'] ?? []);
+        $sectionAnswers = $this->sectionApprovalAnswers($acknowledgement);
+        if ($sectionAnswers !== []) {
+            $allNo = true;
+            $answers = [];
+            foreach ((array)($ct600a['questions'] ?? []) as $key => $_prompt) {
+                $answer = (string)($sectionAnswers['ct600a.' . (string)$key] ?? '');
+                $answers[(string)$key] = $answer;
+                $allNo = $allNo && $answer === 'no';
+            }
+            $ct600aReview = [
+                'stored' => true,
+                'current' => $allNo,
+                'complete' => $allNo,
+                'answers' => $answers,
+                'basis_hash' => (string)($acknowledgement['basis_hash'] ?? ''),
+            ];
+            $ct600a['review'] = $ct600aReview;
+        }
+        $ct600aReviewEvidenceCurrent = !empty($ct600aReview['current']);
+        $ct600aReviewComplete = !empty($ct600aReview['complete']);
+        $ct600aReviewCurrent = $ct600aReviewEvidenceCurrent && $ct600aReviewComplete;
+        $basis = $this->confirmationBasis($ackService, $statement, $taxReview, $ct600aReview);
+        $evaluation = (string)($acknowledgement['basis_version'] ?? '') === YearEndSectionApprovalService::CONTRACT_VERSION
+            ? $this->evaluateSectionApproval($ackService, $acknowledgement, $basis)
+            : $ackService->evaluate($acknowledgement, $basis, false);
 
         $legacyOffset = $this->legacyUnattributedOffset(
             $companyId,
@@ -568,6 +588,34 @@ final class DirectorLoanReconciliationService
             'ct600a_review_basis_hash' => (string)($ct600aReview['basis_hash'] ?? ''),
             'desired_reclassification_amount' => number_format((float)$statement['desired_reclassification'], 2, '.', ''),
         ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function sectionApprovalAnswers(?array $acknowledgement): array
+    {
+        if (!is_array($acknowledgement)
+            || (string)($acknowledgement['basis_version'] ?? '') !== YearEndSectionApprovalService::CONTRACT_VERSION) {
+            return [];
+        }
+        $basis = json_decode((string)($acknowledgement['basis_json'] ?? ''), true);
+        return is_array($basis) && is_array($basis['answers'] ?? null) ? (array)$basis['answers'] : [];
+    }
+
+    /** @return array{state:string,current:bool,acknowledgement:?array} */
+    private function evaluateSectionApproval(YearEndAcknowledgementService $service, ?array $acknowledgement, array $legacyBasis): array
+    {
+        $stored = is_array($acknowledgement) ? json_decode((string)($acknowledgement['basis_json'] ?? ''), true) : null;
+        if (!is_array($stored) || !is_array($stored['facts'] ?? null)) {
+            return ['state' => 'stale', 'current' => false, 'acknowledgement' => $acknowledgement];
+        }
+
+        $currentFacts = (array)($legacyBasis['facts'] ?? []);
+        unset($currentFacts['ct600a_review_current'], $currentFacts['ct600a_review_basis_hash']);
+        $current = hash_equals(
+            $service->hashBasis(['facts' => (array)$stored['facts']]),
+            $service->hashBasis(['facts' => $currentFacts])
+        );
+        return ['state' => $current ? 'current' : 'stale', 'current' => $current, 'acknowledgement' => $acknowledgement];
     }
 
     private function reclassificationLines(

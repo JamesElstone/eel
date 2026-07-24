@@ -278,8 +278,8 @@ final class IxbrlReadinessService
         $generatedPath = is_array($latestRun) ? trim((string)($latestRun['generated_path'] ?? '')) : '';
         $fileExists = $generatedPath !== '' && is_file($generatedPath);
         $validationPassed = $generated && (string)($latestRun['validation_status'] ?? '') === 'passed';
-        $this->addCheck($checks, 'ixbrl_generated', 'iXBRL export generated', $generated && $fileExists, ['filing'], $generated && $fileExists ? 'Generated filing export file exists.' : 'No current generated export file exists.');
-        $this->addCheck($checks, 'ixbrl_validation_passed', 'iXBRL structural validation passed', $validationPassed, ['filing'], $validationPassed ? 'Latest generated export passed internal structural validation.' : 'No current internally validated export exists.');
+        $this->addCheck($checks, 'ixbrl_generated', 'iXBRL export generated', $generated && $fileExists, ['filing'], $generated && $fileExists ? 'Generated filing export file exists.' : 'Generate the current HMRC Accounting iXBRL export.');
+        $this->addCheck($checks, 'ixbrl_validation_passed', 'iXBRL structural validation passed', $validationPassed, ['filing'], $validationPassed ? 'Latest generated export passed internal structural validation.' : 'Generate the current export so its internal structural validation can run.');
 
         $externalValidation = (new \eel_accounts\Service\IxbrlExternalValidationService())->externalStatusForRun($latestRun);
         $this->addCheck(
@@ -308,7 +308,7 @@ final class IxbrlReadinessService
             ['filing'],
             $artifactCurrent
                 ? 'The current file matches the generated and Arelle-validated SHA-256 values.'
-                : 'Generate and externally validate the current file; all three SHA-256 values must match.'
+                : 'The generated, Arelle-validated, and current-file SHA-256 values must match so the file Arelle checked is the unchanged file used for filing.'
         );
 
         $buildBlocking = $this->incompleteForStage($checks, 'build');

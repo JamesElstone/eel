@@ -615,7 +615,9 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         }
     }
 
-    foreach ($periods as $periodId) {
+    // Periods must reopen newest first: an earlier period remains protected
+    // while a following accounting period is still locked.
+    foreach (array_reverse($periods) as $periodId) {
         $unlock = (new \eel_accounts\Service\YearEndLockService())
             ->unlockPeriod($companyId, $periodId, 'golden_year_end_test_cleanup', 'Restore shared in-memory fixture state after lock assertions.');
         $harness->assertTrue(!empty($unlock['success']));

@@ -50,12 +50,15 @@ final class IxbrlAccountsFilingApprovalService
             $matching = null;
         }
         $current = $matching !== null;
+        $errors = $current
+            ? []
+            : $this->staleApprovalErrors($latest, (array)$candidate['basis']);
         return $this->statusResult(
             $current ? 'current' : ($latest === null ? 'absent' : 'stale'),
             true,
             $matching ?? $latest,
             $candidate,
-            [],
+            $errors,
             $latest
         );
     }
@@ -190,6 +193,7 @@ final class IxbrlAccountsFilingApprovalService
                 );
             $progress?->__invoke('Verifying the approval and fact snapshot…', 95);
             $this->verifyPersisted($approvalId, $factRunId, $candidate, $ctBasisIds);
+            $this->verifyCurrentCandidate($companyId, $accountingPeriodId, $candidate);
 
             return [
                 'approval_id' => $approvalId,
@@ -299,7 +303,7 @@ final class IxbrlAccountsFilingApprovalService
                 'errors' => (array)$profile['errors'],
             ],
             'accounts_report' => [
-                'basis_version' => IxbrlTaxonomyProfileService::BASIS_VERSION,
+                'basis_version' => IxbrlAccountsReportService::BASIS_VERSION,
                 'basis_hash' => (string)$report['basis_hash'],
             ],
             'ct_periods' => array_map(static fn(array $period): array => [
@@ -710,6 +714,73 @@ final class IxbrlAccountsFilingApprovalService
             || count($ctBasisIds) !== count((array)$candidate['ct_periods'])) {
             throw new \RuntimeException('The approved facts or CT filing bases failed their integrity check.');
         }
+    }
+
+    private function verifyCurrentCandidate(int $companyId, int $accountingPeriodId, array $approvedCandidate): void
+    {
+        $current = $this->candidate($companyId, $accountingPeriodId, true);
+        if (!hash_equals(
+            (string)($approvedCandidate['basis_hash'] ?? ''),
+            (string)($current['basis_hash'] ?? '')
+        ) || !hash_equals(
+            (string)($approvedCandidate['basis_json'] ?? ''),
+            (string)($current['basis_json'] ?? '')
+        )) {
+            throw new \RuntimeException(
+                'The filing basis changed while approval was being created. No approval was saved; refresh the application runtime and approve again.'
+            );
+        }
+    }
+
+    /** @param array<string,mixed>|null $approval */
+    private function staleApprovalErrors(?array $approval, array $currentBasis): array
+    {
+        $storedBasis = is_array($approval)
+            ? json_decode((string)($approval['basis_json'] ?? ''), true)
+            : null;
+        if (!is_array($storedBasis)) {
+            return ['The previous filing approval cannot be compared with the current filing basis. Approve again.'];
+        }
+
+        $changed = $this->changedBasisSections($storedBasis, $currentBasis);
+        if ($changed === ['accounts_report']) {
+            return [
+                'The Accounts Report generation basis changed. Reload the PHP web runtime if this is a deployment, then approve the current filing basis again.',
+            ];
+        }
+
+        $messages = [];
+        foreach ($changed as $section) {
+            $messages[] = match ($section) {
+                'disclosures' => 'Accounts disclosures changed after the previous filing approval.',
+                'year_end_lock' => 'The Year End lock changed after the previous filing approval.',
+                'corporation_tax_filing_scope', 'ct_periods' => 'The Corporation Tax filing basis changed after the previous filing approval.',
+                'company', 'filing_identity', 'accounts_facts', 'accounting_period' => 'The accounts identity or figures changed after the previous filing approval.',
+                'accounts_report' => 'The Accounts Report basis changed after the previous filing approval.',
+                default => 'The current filing basis changed after the previous approval.',
+            };
+        }
+
+        return array_values(array_unique($messages !== [] ? $messages : [
+            'The current filing basis changed after the previous approval.',
+        ]));
+    }
+
+    /** @return list<string> */
+    private function changedBasisSections(array $storedBasis, array $currentBasis): array
+    {
+        $sections = array_values(array_unique(array_merge(array_keys($storedBasis), array_keys($currentBasis))));
+        sort($sections, SORT_STRING);
+        $changed = [];
+        foreach ($sections as $section) {
+            $stored = array_key_exists($section, $storedBasis) ? $storedBasis[$section] : null;
+            $current = array_key_exists($section, $currentBasis) ? $currentBasis[$section] : null;
+            if (!hash_equals($this->canonicalJson(['value' => $stored]), $this->canonicalJson(['value' => $current]))) {
+                $changed[] = (string)$section;
+            }
+        }
+
+        return $changed;
     }
 
     private function latestApproval(int $companyId, int $accountingPeriodId): ?array

@@ -43,6 +43,7 @@ final class YearEndApprovalRenderer
         return '<section class="panel-soft success settings-stack">
             <div class="eyebrow">Year End Confirmation</div>
             ' . ($note !== '' ? '<div class="summary-value">' . \HelperFramework::escape($note) . '</div>' : '') . '
+            ' . self::approvedQuestionSummary((array)($options['questions'] ?? []), (array)($options['answers'] ?? [])) . '
             <div class="stat-foot">' . \HelperFramework::escape(self::approvedFoot(
                 (string)($options['approvedAt'] ?? $options['acknowledgedAt'] ?? ''),
                 (string)($options['approvedBy'] ?? $options['acknowledgedBy'] ?? '')
@@ -92,6 +93,7 @@ final class YearEndApprovalRenderer
             <form method="post" data-ajax="true" class="form-grid" data-year-end-ack-form="true">
                 ' . self::commonFields($companyId, $accountingPeriodId, $intent) . '
                 ' . self::hiddenFields($approveFields) . '
+                ' . self::questionFields((array)($options['questions'] ?? []), (array)($options['answers'] ?? []), $disabled) . '
                 <label class="checkbox-row full">
                     <input type="checkbox" name="' . \HelperFramework::escape($checkboxName) . '" value="1" required data-year-end-ack-checkbox' . ($disabled ? ' disabled' : '') . '>
                     <span>' . \HelperFramework::escape($confirmationText) . '</span>
@@ -152,6 +154,67 @@ final class YearEndApprovalRenderer
             <label for="' . \HelperFramework::escape($noteId) . '">Confirmation notes</label>
             <textarea class="input" id="' . \HelperFramework::escape($noteId) . '" name="' . \HelperFramework::escape($noteName) . '" rows="3"' . ($noteMode === self::NOTE_REQUIRED ? ' required' : '') . ($disabled ? ' disabled' : '') . '></textarea>
         </div>';
+    }
+
+    /**
+     * Questions are generated from the same canonical bundle which is hashed
+     * for approval.  Cards must not hand-roll parallel acknowledgement forms.
+     */
+    private static function questionFields(array $questions, array $answers, bool $disabled): string
+    {
+        $html = '';
+        foreach ($questions as $question) {
+            $question = (array)$question;
+            $id = trim((string)($question['id'] ?? ''));
+            $prompt = trim((string)($question['prompt'] ?? ''));
+            if ($id === '' || $prompt === '') {
+                continue;
+            }
+            $field = 'approval_answers[' . $id . ']';
+            $value = $answers[$id] ?? '';
+            $required = !empty($question['required']) ? ' required' : '';
+            $disabledAttribute = $disabled ? ' disabled' : '';
+            if ((string)($question['type'] ?? '') === 'text') {
+                $html .= '<div class="form-row full"><label>' . \HelperFramework::escape($prompt)
+                    . '<textarea class="input" name="' . \HelperFramework::escape($field) . '" rows="3"'
+                    . $required . $disabledAttribute . '>' . \HelperFramework::escape((string)$value) . '</textarea></label></div>';
+                continue;
+            }
+
+            $options = (array)($question['options'] ?? []);
+            $html .= '<fieldset class="panel-soft full"><legend>' . \HelperFramework::escape($prompt) . '</legend><div class="actions-row">';
+            foreach ($options as $optionValue => $optionLabel) {
+                $inputId = self::fieldId($id . '-' . (string)$optionValue);
+                $html .= '<label for="' . \HelperFramework::escape($inputId) . '"><input id="'
+                    . \HelperFramework::escape($inputId) . '" type="radio" name="' . \HelperFramework::escape($field)
+                    . '" value="' . \HelperFramework::escape((string)$optionValue) . '"'
+                    . ((string)$value === (string)$optionValue ? ' checked' : '') . $required . $disabledAttribute . '> '
+                    . \HelperFramework::escape((string)$optionLabel) . '</label>';
+            }
+            $html .= '</div></fieldset>';
+        }
+        return $html;
+    }
+
+    private static function approvedQuestionSummary(array $questions, array $answers): string
+    {
+        if ($questions === [] || $answers === []) {
+            return '';
+        }
+        $items = '';
+        foreach ($questions as $question) {
+            $question = (array)$question;
+            $id = (string)($question['id'] ?? '');
+            if ($id === '' || !array_key_exists($id, $answers)) {
+                continue;
+            }
+            $options = (array)($question['options'] ?? []);
+            $answer = (string)$answers[$id];
+            $label = (string)($options[$answer] ?? $answer);
+            $items .= '<dt>' . \HelperFramework::escape((string)($question['prompt'] ?? $id)) . '</dt><dd>'
+                . \HelperFramework::escape($label) . '</dd>';
+        }
+        return $items !== '' ? '<dl class="definition-list">' . $items . '</dl>' : '';
     }
 
     private static function hiddenFields(array $fields): string

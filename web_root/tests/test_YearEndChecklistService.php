@@ -60,8 +60,21 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
             $companyId = (int)$fixture['company_id'];
             $accountingPeriodId = (int)$fixture['accounting_period_id'];
 
-            $acknowledged = (new \eel_accounts\Service\YearEndChecklistService())
-                ->saveRetainedEarningsCloseAcknowledgement($companyId, $accountingPeriodId, true, 'test');
+            $sectionApproval = new \eel_accounts\Service\YearEndSectionApprovalService();
+            $review = $sectionApproval->fetchReview(
+                $companyId,
+                $accountingPeriodId,
+                'retained_earnings_close_confirmation'
+            );
+            $harness->assertSame(true, (bool)($review['available'] ?? false));
+            $harness->assertSame(true, (bool)($review['can_approve'] ?? false));
+            $acknowledged = $sectionApproval->approve(
+                $companyId,
+                $accountingPeriodId,
+                'retained_earnings_close_confirmation',
+                [],
+                'test'
+            );
             $harness->assertSame(true, (bool)($acknowledged['success'] ?? false));
             $retainedEarningsContext = (new \eel_accounts\Service\RetainedEarningsCloseService())->fetchContext($companyId, $accountingPeriodId);
             $harness->assertSame(true, (bool)($retainedEarningsContext['acknowledged'] ?? false));
@@ -346,7 +359,7 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
         $harness->assertSame('26 trial balance line(s)', (string)$trialBalanceMetric->invoke($service, ['line_count' => 26]));
     });
 
-    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'review acknowledgement clears advisory warning checks only', static function () use ($harness): void {
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'legacy acknowledgements never clear canonical section checks', static function () use ($harness): void {
         $service = new \eel_accounts\Service\YearEndChecklistService();
         $method = new ReflectionMethod($service, 'applyReviewAcknowledgement');
         $method->setAccessible(true);
@@ -372,9 +385,10 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
             ],
         ]);
 
-        $harness->assertSame('pass', (string)$acknowledged['status']);
-        $harness->assertSame('Reviewed', (string)$acknowledged['metric_value']);
-        $harness->assertSame(true, str_contains((string)$acknowledged['detail_text'], 'Review acknowledged'));
+        $harness->assertSame('warning', (string)$acknowledged['status']);
+        $harness->assertSame('stale', (string)($acknowledged['acknowledgement_state'] ?? ''));
+        $harness->assertSame(false, (bool)($acknowledged['acknowledgement_current'] ?? true));
+        $harness->assertSame(true, str_contains((string)$acknowledged['detail_text'], 'Review required'));
 
         $fail = $method->invoke($service, [
             'check_code' => 'lock_readiness_checklist',
@@ -388,6 +402,17 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
         ]);
 
         $harness->assertSame('fail', (string)$fail['status']);
+
+        $staleGate = new ReflectionMethod($service, 'noStaleCanonicalSectionApprovals');
+        $staleGate->setAccessible(true);
+        $harness->assertSame(false, (bool)$staleGate->invoke($service, [[[
+            'check_code' => 'fixed_asset_review_placeholder',
+            'acknowledgement_state' => 'stale',
+        ]]]));
+        $harness->assertSame(true, (bool)$staleGate->invoke($service, [[[
+            'check_code' => 'fixed_asset_review_placeholder',
+            'acknowledgement_state' => 'current',
+        ]]]));
     });
 
     $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'missing legacy prepayment schedules are a dedicated blocking check', static function () use ($harness): void {
@@ -667,12 +692,18 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
 
             if (InterfaceDB::tableExists('year_end_review_acknowledgements')
                 && InterfaceDB::columnExists('year_end_review_acknowledgements', 'basis_hash')) {
-                $approval = $service->acknowledgeReviewCheck(
+                $sectionApproval = new \eel_accounts\Service\YearEndSectionApprovalService();
+                $review = $sectionApproval->fetchReview(
+                    (int)$fixture['company_id'],
+                    (int)$fixture['accounting_period_id'],
+                    'fixed_asset_review_placeholder'
+                );
+                $harness->assertSame(true, (bool)($review['available'] ?? false));
+                $approval = $sectionApproval->approve(
                     (int)$fixture['company_id'],
                     (int)$fixture['accounting_period_id'],
                     'fixed_asset_review_placeholder',
-                    true,
-                    'Reviewed candidate.',
+                    [],
                     'test'
                 );
                 $harness->assertSame(true, (bool)($approval['success'] ?? false));
@@ -1339,10 +1370,22 @@ function yearEndChecklistServiceApproveDirectorLoanOffset(array $fixture): void
 {
     $companyId = (int)$fixture['company_id'];
     $accountingPeriodId = (int)$fixture['accounting_period_id'];
-    $result = (new \eel_accounts\Service\DirectorLoanReconciliationService())->saveYearEndReview(
+    $approval = new \eel_accounts\Service\YearEndSectionApprovalService();
+    $review = $approval->fetchReview(
         $companyId,
         $accountingPeriodId,
-        true,
+        'director_loan_year_end_review'
+    );
+    $answers = [];
+    foreach ((array)($review['questions'] ?? []) as $question) {
+        $question = (array)$question;
+        $answers[(string)$question['id']] = (string)($question['required_value'] ?? '');
+    }
+    $result = $approval->approve(
+        $companyId,
+        $accountingPeriodId,
+        'director_loan_year_end_review',
+        $answers,
         'test'
     );
     if (empty($result['success'])) {

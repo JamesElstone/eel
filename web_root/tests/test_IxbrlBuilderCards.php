@@ -440,6 +440,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                         'can_generate' => false,
                         'can_validate' => true,
                         'ready_for_filing' => false,
+                        'generation_errors' => ['Approve the current accounts disclosure basis before generating iXBRL.'],
                         'arelle_status' => ['installed' => true],
                     ],
                     'latest_run' => [
@@ -459,6 +460,8 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $harness->assertFalse(str_contains($draftHtml, 'Arelle external validation has not been configured or run.'));
             $harness->assertTrue(str_contains($draftHtml, 'Generate Accounting Period iXBRL</button>'));
             $harness->assertTrue(str_contains($draftHtml, 'Generate Accounting Period iXBRL</button>') && str_contains($draftHtml, 'disabled'));
+            $harness->assertTrue(str_contains($draftHtml, 'Generation requirements'));
+            $harness->assertTrue(str_contains($draftHtml, 'Approve the current accounts disclosure basis before generating iXBRL.'));
             $harness->assertFalse(str_contains($draftHtml, 'Run External Validation'));
             $harness->assertFalse(str_contains($draftHtml, 'name="intent" value="validate_ixbrl_external"'));
             $harness->assertTrue(str_contains($draftHtml, 'Arelle Status') && str_contains($draftHtml, 'Installed'));

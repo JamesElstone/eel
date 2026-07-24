@@ -33,6 +33,16 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
                     'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
+            [
+                'key' => 'sectionReview',
+                'service' => \eel_accounts\Service\YearEndSectionApprovalService::class,
+                'method' => 'fetchReview',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                    'checkCode' => 'prepayment_approvals',
+                ],
+            ],
         ];
     }
 
@@ -52,7 +62,7 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $approvalContext = (array)($context['services']['prepaymentWorkflowContext'] ?? []);
-        $acknowledgement = $approvalContext['approval'] ?? null;
+        $sectionReview = (array)($context['services']['sectionReview'] ?? []);
         $review = (array)($approvalContext['review'] ?? []);
 
         return '<section class="settings-stack" id="year-end-prepayment-approvals">
@@ -62,7 +72,7 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
             ]) . '
             ' . $this->carriedSchedulesHtml($context) . '
             ' . $this->acknowledgementHtml(
-                is_array($acknowledgement) ? $acknowledgement : null,
+                $sectionReview,
                 $companyId,
                 $accountingPeriodId,
                 empty($review['available']),
@@ -252,26 +262,30 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
         </div>';
     }
 
-    private function acknowledgementHtml(?array $acknowledgement, int $companyId, int $accountingPeriodId, bool $reviewUnavailable, int $incompleteCount): string
+    private function acknowledgementHtml(array $review, int $companyId, int $accountingPeriodId, bool $reviewUnavailable, int $incompleteCount): string
     {
         $disabled = $reviewUnavailable || $incompleteCount > 0;
         return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
             'subject' => 'prepayment position',
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
-            'acknowledged' => !empty($acknowledgement['current']),
-            'acknowledgementState' => (string)($acknowledgement['state'] ?? ''),
-            'acknowledgedAt' => (string)($acknowledgement['acknowledged_at'] ?? ''),
-            'acknowledgedBy' => (string)($acknowledgement['acknowledged_by'] ?? ''),
-            'note' => (string)($acknowledgement['note'] ?? ''),
-            'intent' => 'acknowledge_review_check',
-            'revokeIntent' => 'reopen_review_check',
+            'acknowledged' => !empty($review['acknowledgement_current']),
+            'acknowledgementState' => (string)($review['acknowledgement_state'] ?? 'absent'),
+            'acknowledgedAt' => (string)(($review['acknowledgement'] ?? [])['acknowledged_at'] ?? ''),
+            'acknowledgedBy' => (string)(($review['acknowledgement'] ?? [])['acknowledged_by'] ?? ''),
+            'note' => (string)(($review['acknowledgement'] ?? [])['note'] ?? ''),
+            'intent' => 'approve_section_review',
+            'revokeIntent' => 'revoke_section_review',
             'approveFields' => ['check_code' => 'prepayment_approvals'],
             'revokeFields' => ['check_code' => 'prepayment_approvals'],
-            'noteName' => 'review_acknowledgement_note',
+            'noteName' => 'approval_note',
             'noteId' => 'prepayment-approvals-note',
-            'disabled' => $disabled,
-            'disabledReason' => $disabled ? $this->blockedApprovalTitle($reviewUnavailable, $incompleteCount) : '',
+            'questions' => (array)($review['questions'] ?? []),
+            'answers' => (array)($review['answers'] ?? []),
+            'disabled' => $disabled || empty($review['can_approve']),
+            'disabledReason' => $disabled
+                ? $this->blockedApprovalTitle($reviewUnavailable, $incompleteCount)
+                : (string)(($review['approval_errors'] ?? [])[0] ?? ''),
         ]);
     }
 

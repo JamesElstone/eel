@@ -76,7 +76,12 @@ final class YearEndAcknowledgementService
         return $result;
     }
 
-    public function evaluate(?array $acknowledgement, ?array $currentBasis, bool $approvedPreClosePosition = false): array
+    public function evaluate(
+        ?array $acknowledgement,
+        ?array $currentBasis,
+        bool $approvedPreClosePosition = false,
+        ?string $expectedBasisVersion = null
+    ): array
     {
         if (!is_array($acknowledgement)) {
             return ['state' => 'absent', 'current' => false, 'acknowledgement' => null];
@@ -84,7 +89,8 @@ final class YearEndAcknowledgementService
 
         $storedVersion = trim((string)($acknowledgement['basis_version'] ?? ''));
         $storedHash = trim((string)($acknowledgement['basis_hash'] ?? ''));
-        if ($storedVersion === '' || $storedHash === '' || !hash_equals(self::BASIS_VERSION, $storedVersion)) {
+        $expectedBasisVersion = trim((string)$expectedBasisVersion) !== '' ? trim((string)$expectedBasisVersion) : self::BASIS_VERSION;
+        if ($storedVersion === '' || $storedHash === '' || !hash_equals($expectedBasisVersion, $storedVersion)) {
             return ['state' => 'stale', 'current' => false, 'acknowledgement' => $acknowledgement];
         }
 
@@ -119,7 +125,8 @@ final class YearEndAcknowledgementService
         array $currentBasis,
         string $changedBy,
         string $note = '',
-        bool $supportScopeVerified = false
+        bool $supportScopeVerified = false,
+        ?string $basisVersion = null
     ): array {
         if (!$supportScopeVerified) {
             (new \eel_accounts\Service\VatSupportScopeService())
@@ -171,7 +178,7 @@ final class YearEndAcknowledgementService
             'acknowledged_at' => $now,
             'acknowledged_by' => $actor,
             'note' => trim($note) !== '' ? trim($note) : null,
-            'basis_version' => self::BASIS_VERSION,
+            'basis_version' => trim((string)$basisVersion) !== '' ? trim((string)$basisVersion) : self::BASIS_VERSION,
             'basis_hash' => $basisHash,
             'basis_json' => $basisJson,
             'created_at' => $now,

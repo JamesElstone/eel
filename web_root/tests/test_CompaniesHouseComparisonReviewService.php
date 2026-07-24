@@ -80,6 +80,58 @@ $harness->run(
                     $harness->assertSame('current', (string)($current['acknowledgement']['state'] ?? ''));
                     $harness->assertSame(true, !empty($current['acknowledgement']['current']));
 
+                    $metadataChange = (new \eel_accounts\Service\CompaniesHouseAccountsSubmissionService())
+                        ->saveVarianceExplanation(
+                            $fixture['company_id'],
+                            $fixture['accounting_period_id'],
+                            $fixture['document_id'],
+                            'The filed accounts used the earlier P&L and tax treatment basis.',
+                            'comparison_review_test'
+                        );
+                    $harness->assertSame(true, !empty($metadataChange['success']));
+                    $harness->assertSame(true, str_contains(
+                        implode(' ', (array)($metadataChange['messages'] ?? [])),
+                        'Year End Confirmation was invalidated'
+                    ));
+                    $invalidated = $service->fetchContext($fixture['company_id'], $fixture['accounting_period_id']);
+                    $harness->assertSame(null, $invalidated['acknowledgement']);
+
+                    $saved = $acknowledgements->save(
+                        $fixture['company_id'],
+                        $fixture['accounting_period_id'],
+                        'companies_house_mismatch_acknowledgement',
+                        $basis,
+                        'comparison_review_test',
+                        'Re-approved fixture.'
+                    );
+                    $harness->assertSame(true, !empty($saved['success']));
+
+                    $eligibilityChange = (new \eel_accounts\Service\CompaniesHouseAccountsSubmissionService())
+                        ->recordEligibility(
+                            $fixture['company_id'],
+                            $fixture['accounting_period_id'],
+                            $fixture['document_id'],
+                            'ineligible',
+                            'comparison_review_test'
+                        );
+                    $harness->assertSame(true, !empty($eligibilityChange['success']));
+                    $harness->assertSame(true, str_contains(
+                        implode(' ', (array)($eligibilityChange['messages'] ?? [])),
+                        'Year End Confirmation was invalidated'
+                    ));
+                    $eligibilityInvalidated = $service->fetchContext($fixture['company_id'], $fixture['accounting_period_id']);
+                    $harness->assertSame(null, $eligibilityInvalidated['acknowledgement']);
+
+                    $saved = $acknowledgements->save(
+                        $fixture['company_id'],
+                        $fixture['accounting_period_id'],
+                        'companies_house_mismatch_acknowledgement',
+                        $basis,
+                        'comparison_review_test',
+                        'Re-approved fixture after eligibility change.'
+                    );
+                    $harness->assertSame(true, !empty($saved['success']));
+
                     InterfaceDB::execute(
                         'UPDATE companies_house_document_facts
                          SET normalised_numeric = :normalised_numeric,

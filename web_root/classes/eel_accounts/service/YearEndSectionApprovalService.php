@@ -1,0 +1,722 @@
+<?php
+/**
+ * EEL Accounts
+ * Copyright (c) 2026 James Elstone
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3)
+ * See LICENSE file for details.
+ */
+declare(strict_types=1);
+
+namespace eel_accounts\Service;
+
+/**
+ * The sole approval contract for Year End sections.  A section provider owns
+ * its facts and questions; cards only render the returned review model.
+ */
+final class YearEndSectionApprovalService
+{
+    public const CONTRACT_VERSION = 'year_end_section_v2';
+
+    private const SECTION_CODES = [
+        'director_loan_year_end_review',
+        'tax_readiness_acknowledgement',
+        'expense_position_acknowledgement',
+        'retained_earnings_close_confirmation',
+        'transaction_tail_review',
+        'prepayment_approvals',
+        'cut_off_journals_review',
+        'fixed_asset_review_placeholder',
+        'companies_house_mismatch_acknowledgement',
+        'companies_house_no_filing_acknowledgement',
+    ];
+
+    public static function supports(string $checkCode): bool
+    {
+        return in_array(trim($checkCode), self::SECTION_CODES, true);
+    }
+
+    public function fetchReview(int $companyId, int $accountingPeriodId, string $checkCode): array
+    {
+        $checkCode = $this->checkCode($checkCode);
+        $bundle = $this->fetchBundle($companyId, $accountingPeriodId, $checkCode);
+        $acknowledgements = new YearEndAcknowledgementService();
+        $acknowledgement = $acknowledgements->fetch($companyId, $accountingPeriodId, $checkCode);
+        $answers = $this->storedAnswers($acknowledgement);
+        $basis = $this->approvalBasis($bundle, $answers);
+        $evaluation = $acknowledgements->evaluate(
+            $acknowledgement,
+            $basis,
+            false,
+            self::CONTRACT_VERSION
+        );
+
+        return [
+            'available' => !empty($bundle['available']),
+            'errors' => (array)($bundle['errors'] ?? []),
+            'check_code' => $checkCode,
+            'bundle' => $bundle,
+            'display' => (array)($bundle['display'] ?? []),
+            'questions' => (array)($bundle['questions'] ?? []),
+            'acknowledgement' => $acknowledgement,
+            'acknowledgement_state' => (string)($evaluation['state'] ?? 'absent'),
+            'acknowledgement_current' => !empty($evaluation['current']),
+            'acknowledged_at' => (string)($acknowledgement['acknowledged_at'] ?? ''),
+            'acknowledged_by' => (string)($acknowledgement['acknowledged_by'] ?? ''),
+            'answers' => $answers,
+            'can_approve' => !array_key_exists('can_approve', $bundle) || !empty($bundle['can_approve']),
+            'approval_errors' => (array)($bundle['approval_errors'] ?? []),
+        ];
+    }
+
+    /** Resolve the existing Companies House check code without exposing two UI approvals. */
+    public function fetchCompaniesHouseReview(int $companyId, int $accountingPeriodId): array
+    {
+        foreach (['companies_house_mismatch_acknowledgement', 'companies_house_no_filing_acknowledgement'] as $checkCode) {
+            $cached = $this->cachedBundle($companyId, $accountingPeriodId, $checkCode);
+            if (is_array($cached) && !empty($cached['is_current'])) {
+                return $this->fetchReview($companyId, $accountingPeriodId, $checkCode);
+            }
+        }
+
+        $comparison = (new YearEndCompaniesHouseComparisonService())->fetchComparison($companyId, $accountingPeriodId);
+        return $this->fetchReview(
+            $companyId,
+            $accountingPeriodId,
+            !empty($comparison['has_exact_filing'])
+                ? 'companies_house_mismatch_acknowledgement'
+                : 'companies_house_no_filing_acknowledgement'
+        );
+    }
+
+    public function approve(
+        int $companyId,
+        int $accountingPeriodId,
+        string $checkCode,
+        array $answers,
+        string $actor,
+        string $note = ''
+    ): array {
+        $checkCode = $this->checkCode($checkCode);
+        (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'approve this Year End section');
+
+        $cached = $this->cachedBundle($companyId, $accountingPeriodId, $checkCode);
+        if (!$this->tableAvailable()) {
+            // Compatibility for installations that are mid-migration. Normal
+            // operation always uses the persisted bundle branch below.
+            $bundle = $this->buildBundle($companyId, $accountingPeriodId, $checkCode);
+        } elseif (!is_array($cached)) {
+            // A first approval can safely use a newly generated bundle: the
+            // card itself obtains this bundle before displaying its form.
+            $bundle = $this->refreshBundle($companyId, $accountingPeriodId, $checkCode);
+        } elseif (empty($cached['is_current']) || !$this->sourceTokenMatches($cached, $companyId, $accountingPeriodId, $checkCode)) {
+            // The rebuilt bundle is deliberately returned without approval. The
+            // user must see any changed question or fact before signing it off.
+            $bundle = $this->refreshBundle($companyId, $accountingPeriodId, $checkCode);
+            return [
+                'success' => false,
+                'status' => 409,
+                'requires_review' => true,
+                'bundle' => $bundle,
+                'errors' => ['The section changed while it was being reviewed. Review the refreshed facts and submit the approval again.'],
+            ];
+        } else {
+            $bundle = $this->decodeBundle($cached);
+        }
+        if (empty($bundle['available'])) {
+            return ['success' => false, 'errors' => (array)($bundle['errors'] ?? ['The current section review is unavailable.'])];
+        }
+        if (array_key_exists('can_approve', $bundle) && empty($bundle['can_approve'])) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'errors' => (array)($bundle['approval_errors'] ?? ['Resolve the outstanding section checks before approving it.']),
+            ];
+        }
+
+        $validation = $this->validateAnswers((array)($bundle['questions'] ?? []), $answers);
+        if (empty($validation['success'])) {
+            return $validation;
+        }
+
+        if ($checkCode === 'retained_earnings_close_confirmation') {
+            // Retained earnings approval owns the distributable-reserve
+            // snapshot as well as the confirmation itself.  Capture it before
+            // signing the canonical basis, then rebuild so that snapshot is
+            // part of the exact facts being approved.
+            $prepared = (new RetainedEarningsCloseService())
+                ->prepareForAcknowledgement($companyId, $accountingPeriodId, $actor);
+            if (empty($prepared['success'])) {
+                return $prepared;
+            }
+            $this->invalidate(
+                $companyId,
+                $accountingPeriodId,
+                $checkCode,
+                'Retained earnings reserve review captured for approval'
+            );
+            $bundle = $this->tableAvailable()
+                ? $this->refreshBundle($companyId, $accountingPeriodId, $checkCode)
+                : $this->buildBundle($companyId, $accountingPeriodId, $checkCode);
+            if (empty($bundle['available'])) {
+                return ['success' => false, 'errors' => (array)($bundle['errors'] ?? ['The current section review is unavailable.'])];
+            }
+            if (array_key_exists('can_approve', $bundle) && empty($bundle['can_approve'])) {
+                return [
+                    'success' => false,
+                    'status' => 422,
+                    'errors' => (array)($bundle['approval_errors'] ?? ['Resolve the outstanding section checks before approving it.']),
+                ];
+            }
+            $validation = $this->validateAnswers((array)($bundle['questions'] ?? []), $answers);
+            if (empty($validation['success'])) {
+                return $validation;
+            }
+        }
+
+        $acknowledgements = new YearEndAcknowledgementService();
+        $existing = $acknowledgements->fetch($companyId, $accountingPeriodId, $checkCode);
+        $basis = $this->approvalBasis($bundle, (array)$validation['answers']);
+        $result = $acknowledgements->save(
+            $companyId,
+            $accountingPeriodId,
+            $checkCode,
+            $basis,
+            $actor,
+            $note,
+            false,
+            self::CONTRACT_VERSION
+        );
+        if (empty($result['success'])) {
+            return $result;
+        }
+
+        (new YearEndLockService())->writeAuditLog(
+            $companyId,
+            $accountingPeriodId,
+            'review_check_acknowledged',
+            $actor,
+            $existing,
+            (array)($result['acknowledgement'] ?? []),
+            trim($note) !== '' ? trim($note) : null
+        );
+
+        return $result;
+    }
+
+    public function revoke(int $companyId, int $accountingPeriodId, string $checkCode, string $actor, string $note = ''): array
+    {
+        $checkCode = $this->checkCode($checkCode);
+        (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'revoke this Year End section approval');
+        $acknowledgements = new YearEndAcknowledgementService();
+        $existing = $acknowledgements->fetch($companyId, $accountingPeriodId, $checkCode);
+        $result = $acknowledgements->revoke($companyId, $accountingPeriodId, $checkCode);
+        if (empty($result['success'])) {
+            return $result;
+        }
+
+        (new YearEndLockService())->writeAuditLog(
+            $companyId,
+            $accountingPeriodId,
+            'review_check_reopened',
+            $actor,
+            $existing,
+            ['check_code' => $checkCode, 'acknowledged' => false],
+            trim($note) !== '' ? trim($note) : null
+        );
+
+        return $result;
+    }
+
+    /** Mark a cached section dirty from any accounting mutation. */
+    public function invalidate(int $companyId, int $accountingPeriodId, string $checkCode, string $reason = ''): void
+    {
+        if (!$this->tableAvailable() || $companyId <= 0 || $accountingPeriodId <= 0) {
+            return;
+        }
+
+        $checkCode = $this->checkCode($checkCode);
+        \InterfaceDB::execute(
+            'UPDATE year_end_section_review_bundles
+             SET is_current = 0, invalidated_at = :invalidated_at, invalidated_reason = :reason
+             WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id AND check_code = :check_code',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'check_code' => $checkCode,
+                'invalidated_at' => (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s'),
+                'reason' => trim($reason) !== '' ? trim($reason) : null,
+            ]
+        );
+    }
+
+    public function refreshBundle(int $companyId, int $accountingPeriodId, string $checkCode): array
+    {
+        $checkCode = $this->checkCode($checkCode);
+        $bundle = $this->buildBundle($companyId, $accountingPeriodId, $checkCode);
+        $bundle['source_token'] = $this->sourceToken($companyId, $accountingPeriodId, $checkCode);
+        $bundle['definition_token'] = $this->definitionToken($checkCode);
+        if (!$this->tableAvailable()) {
+            return $bundle;
+        }
+
+        $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
+        $json = $this->canonicalJson($bundle);
+        $params = [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'check_code' => $checkCode,
+            'contract_version' => self::CONTRACT_VERSION,
+            'source_hash' => hash('sha256', $json),
+            'bundle_json' => $json,
+            'is_current' => !empty($bundle['available']) ? 1 : 0,
+            'generated_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ];
+        $sql = 'INSERT INTO year_end_section_review_bundles (
+                    company_id, accounting_period_id, check_code, contract_version,
+                    source_hash, bundle_json, is_current, generated_at, created_at, updated_at
+                ) VALUES (
+                    :company_id, :accounting_period_id, :check_code, :contract_version,
+                    :source_hash, :bundle_json, :is_current, :generated_at, :created_at, :updated_at
+                )';
+        $sql .= \InterfaceDB::driverName() === 'sqlite'
+            ? ' ON CONFLICT(company_id, accounting_period_id, check_code) DO UPDATE SET
+                    contract_version = excluded.contract_version, source_hash = excluded.source_hash,
+                    bundle_json = excluded.bundle_json, is_current = excluded.is_current,
+                    generated_at = excluded.generated_at, invalidated_at = NULL,
+                    invalidated_reason = NULL, updated_at = excluded.updated_at'
+            : ' ON DUPLICATE KEY UPDATE
+                    contract_version = VALUES(contract_version), source_hash = VALUES(source_hash),
+                    bundle_json = VALUES(bundle_json), is_current = VALUES(is_current),
+                    generated_at = VALUES(generated_at), invalidated_at = NULL,
+                    invalidated_reason = NULL, updated_at = VALUES(updated_at)';
+        \InterfaceDB::execute($sql, $params);
+        return $bundle;
+    }
+
+    private function fetchBundle(int $companyId, int $accountingPeriodId, string $checkCode): array
+    {
+        $cached = $this->cachedBundle($companyId, $accountingPeriodId, $checkCode);
+        if (is_array($cached)
+            && !empty($cached['is_current'])
+            && $this->sourceTokenMatches($cached, $companyId, $accountingPeriodId, $checkCode)) {
+            return $this->decodeBundle($cached);
+        }
+        return $this->refreshBundle($companyId, $accountingPeriodId, $checkCode);
+    }
+
+    private function buildBundle(int $companyId, int $accountingPeriodId, string $checkCode): array
+    {
+        if ($checkCode === 'director_loan_year_end_review') {
+            return $this->directorLoanBundle($companyId, $accountingPeriodId);
+        }
+        if (in_array($checkCode, ['companies_house_mismatch_acknowledgement', 'companies_house_no_filing_acknowledgement'], true)) {
+            return $this->companiesHouseBundle($companyId, $accountingPeriodId, $checkCode);
+        }
+
+        $checklist = (new YearEndChecklistService())->fetchChecklist($companyId, $accountingPeriodId) ?? [];
+        foreach ((array)($checklist['checks_flat'] ?? []) as $check) {
+            if ((string)($check['check_code'] ?? '') !== $checkCode) {
+                continue;
+            }
+            $facts = (array)($check['basis_data'] ?? $check);
+            $bundle = $this->bundle($checkCode, $facts, [], $facts);
+            if ((string)($check['status'] ?? '') === 'fail'
+                && $checkCode !== 'retained_earnings_close_confirmation') {
+                $bundle['can_approve'] = false;
+                $bundle['approval_errors'] = ['Resolve the blocking Year End check before approving this section.'];
+            }
+            if ($checkCode === 'prepayment_approvals') {
+                $prepayment = (new PrepaymentReviewService())->fetchContext($companyId, $accountingPeriodId);
+                if (empty($prepayment['available']) || (int)($prepayment['pending_count'] ?? 0) > 0) {
+                    $bundle['can_approve'] = false;
+                    $bundle['approval_errors'] = empty($prepayment['available'])
+                        ? (array)($prepayment['errors'] ?? ['The prepayment review is not available.'])
+                        : ['Record an explicit decision for every prepayment candidate and complete all pre-paid service dates before approving this section.'];
+                }
+            }
+            if ($checkCode === 'retained_earnings_close_confirmation') {
+                $retained = (new RetainedEarningsCloseService())->fetchContext($companyId, $accountingPeriodId);
+                if (empty($retained['can_acknowledge'])) {
+                    $bundle['can_approve'] = false;
+                    $bundle['approval_errors'] = [(string)(($retained['prior_period_dependency'] ?? [])['detail'] ?? 'The current Profit & Loss close cannot yet be approved.')];
+                }
+            }
+            return $bundle;
+        }
+
+        return ['available' => false, 'errors' => ['The requested Year End section is not available.'], 'check_code' => $checkCode];
+    }
+
+    private function directorLoanBundle(int $companyId, int $accountingPeriodId): array
+    {
+        $display = (new DirectorLoanReconciliationService())->fetchYearEndConfirmationContext($companyId, $accountingPeriodId);
+        if (empty($display['available'])) {
+            return ['available' => false, 'errors' => (array)($display['errors'] ?? ['Director Loan review is unavailable.']), 'check_code' => 'director_loan_year_end_review'];
+        }
+        $ct600a = (array)($display['ct600a'] ?? []);
+        $questions = [];
+        foreach ((array)($ct600a['questions'] ?? []) as $id => $prompt) {
+            $questions[] = [
+                'id' => 'ct600a.' . (string)$id,
+                'prompt' => (string)$prompt,
+                'version' => hash('sha256', (string)$prompt),
+                'type' => 'choice',
+                'options' => ['no' => 'No', 'yes' => 'Yes'],
+                'required' => true,
+                'required_value' => 'no',
+            ];
+        }
+        $facts = [
+            'accounting_period_id' => $accountingPeriodId,
+            'entry_count' => (int)(($display['confirmation_basis']['facts']['entry_count'] ?? 0)),
+            'entry_facts' => (array)(($display['confirmation_basis']['facts']['entry_facts'] ?? [])),
+            'director_facts' => (array)(($display['confirmation_basis']['facts']['director_facts'] ?? [])),
+            'unattributed_count' => (int)($display['unattributed_count'] ?? 0),
+            'invalid_director_count' => (int)($display['invalid_director_count'] ?? 0),
+            'legacy_unresolved_reclassification_net_amount' => (string)($display['legacy_unresolved_reclassification_net_amount'] ?? '0.00'),
+            'potential_s455_exposure_amount' => (string)($display['potential_s455_exposure'] ?? '0.00'),
+            'desired_reclassification_amount' => (string)($display['desired_reclassification_amount'] ?? '0.00'),
+        ];
+        return $this->bundle('director_loan_year_end_review', $facts, $questions, $display);
+    }
+
+    private function companiesHouseBundle(int $companyId, int $accountingPeriodId, string $checkCode): array
+    {
+        $display = (new CompaniesHouseComparisonReviewService())->fetchContext($companyId, $accountingPeriodId);
+        $comparison = (array)($display['comparison'] ?? []);
+        if (empty($comparison['available'])) {
+            return ['available' => false, 'errors' => (array)($comparison['errors'] ?? ['Companies House comparison is unavailable.']), 'check_code' => $checkCode];
+        }
+
+        $hasExactFiling = !empty($comparison['has_exact_filing']);
+        $actualCode = $hasExactFiling ? 'companies_house_mismatch_acknowledgement' : 'companies_house_no_filing_acknowledgement';
+        if ($actualCode !== $checkCode) {
+            return ['available' => false, 'errors' => ['The Companies House filing position changed. Refresh this section before approving it.'], 'check_code' => $checkCode];
+        }
+
+        $questions = $hasExactFiling
+            ? $this->companiesHouseQuestions((int)($display['mismatch_count'] ?? 0) > 0)
+            : [];
+        $bundle = $this->bundle($checkCode, $comparison, $questions, $display);
+        if (empty($comparison['reliable_closing_balance'])) {
+            $bundle['can_approve'] = false;
+            $bundle['approval_errors'] = [(string)(($comparison['warnings'] ?? [])[0] ?? 'The Companies House comparison is not reliable enough to approve.')];
+        }
+        return $bundle;
+    }
+
+    private function bundle(string $checkCode, array $facts, array $questions, array $display): array
+    {
+        return [
+            'available' => true,
+            'errors' => [],
+            'contract_version' => self::CONTRACT_VERSION,
+            'check_code' => $checkCode,
+            'facts' => $facts,
+            'questions' => $questions,
+            'display' => $display,
+            'can_approve' => true,
+            'approval_errors' => [],
+        ];
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function companiesHouseQuestions(bool $includeVarianceExplanation): array
+    {
+        $eligibilityPrompt = 'Is this original Companies House filing eligible for an XML based revised-accounts submission?';
+        $questions = [[
+            'id' => 'companies_house.xml_eligibility',
+            'prompt' => $eligibilityPrompt,
+            'version' => hash('sha256', $eligibilityPrompt),
+            'type' => 'choice',
+            'options' => ['eligible' => 'Yes', 'ineligible' => 'No'],
+            'required' => true,
+        ]];
+        if ($includeVarianceExplanation) {
+            $variancePrompt = 'Why do the Companies House figures need revising?';
+            $questions[] = [
+                'id' => 'companies_house.variance_explanation',
+                'prompt' => $variancePrompt,
+                'version' => hash('sha256', $variancePrompt),
+                'type' => 'text',
+                'required' => true,
+            ];
+        }
+        return $questions;
+    }
+
+    private function approvalBasis(array $bundle, array $answers): array
+    {
+        return [
+            'contract_version' => self::CONTRACT_VERSION,
+            'check_code' => (string)($bundle['check_code'] ?? ''),
+            'facts' => (array)($bundle['facts'] ?? []),
+            'questions' => (array)($bundle['questions'] ?? []),
+            'answers' => $answers,
+        ];
+    }
+
+    private function validateAnswers(array $questions, array $submitted): array
+    {
+        $answers = [];
+        $errors = [];
+        foreach ($questions as $question) {
+            $question = (array)$question;
+            $id = trim((string)($question['id'] ?? ''));
+            if ($id === '') {
+                continue;
+            }
+            $value = $submitted[$id] ?? null;
+            if (is_string($value)) {
+                $value = trim($value);
+            }
+            if (!empty($question['required']) && ($value === null || $value === '')) {
+                $errors[] = 'Answer: ' . (string)($question['prompt'] ?? $id);
+                continue;
+            }
+            $options = (array)($question['options'] ?? []);
+            if ($value !== null && $options !== [] && !array_key_exists((string)$value, $options)) {
+                $errors[] = 'Select a valid answer for: ' . (string)($question['prompt'] ?? $id);
+                continue;
+            }
+            if (array_key_exists('required_value', $question) && (string)$value !== (string)$question['required_value']) {
+                $errors[] = 'Resolve the Yes answer before approving: ' . (string)($question['prompt'] ?? $id);
+                continue;
+            }
+            $answers[$id] = $value;
+        }
+        return $errors === [] ? ['success' => true, 'answers' => $answers] : ['success' => false, 'errors' => $errors];
+    }
+
+    private function storedAnswers(?array $acknowledgement): array
+    {
+        if (!is_array($acknowledgement)) {
+            return [];
+        }
+        $basis = json_decode((string)($acknowledgement['basis_json'] ?? ''), true);
+        return is_array($basis) && is_array($basis['answers'] ?? null) ? $basis['answers'] : [];
+    }
+
+    private function cachedBundle(int $companyId, int $accountingPeriodId, string $checkCode): ?array
+    {
+        if (!$this->tableAvailable()) {
+            return null;
+        }
+        $row = \InterfaceDB::fetchOne(
+            'SELECT contract_version, source_hash, bundle_json, is_current
+             FROM year_end_section_review_bundles
+             WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id AND check_code = :check_code
+             LIMIT 1',
+            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'check_code' => $checkCode]
+        );
+        return is_array($row) && (string)($row['contract_version'] ?? '') === self::CONTRACT_VERSION ? $row : null;
+    }
+
+    private function sourceTokenMatches(array $cached, int $companyId, int $accountingPeriodId, string $checkCode): bool
+    {
+        $bundle = $this->decodeBundle($cached);
+        if (!hash_equals((string)($bundle['definition_token'] ?? ''), $this->definitionToken($checkCode))) {
+            return false;
+        }
+        $stored = (string)($bundle['source_token'] ?? '');
+        if ($stored === '') {
+            return false;
+        }
+        $current = $this->sourceToken($companyId, $accountingPeriodId, $checkCode);
+        return $current === '' || hash_equals($stored, $current);
+    }
+
+    private function sourceToken(int $companyId, int $accountingPeriodId, string $checkCode): string
+    {
+        if ($checkCode !== 'director_loan_year_end_review') {
+            return $this->sectionSourceToken($companyId, $accountingPeriodId, $checkCode);
+        }
+
+        $tokens = [];
+        if (\InterfaceDB::tableExists('journals') && \InterfaceDB::tableExists('journal_lines')) {
+            $row = \InterfaceDB::fetchOne(
+                'SELECT COUNT(jl.id) AS item_count,
+                        COALESCE(MAX(jl.id), 0) AS last_id,
+                        COALESCE(MAX(j.updated_at), \'\') AS last_change
+                 FROM journals j
+                 INNER JOIN journal_lines jl ON jl.journal_id = j.id
+                 WHERE j.company_id = :company_id AND j.accounting_period_id = :accounting_period_id AND j.is_posted = 1',
+                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            );
+            $tokens['posted_journals'] = is_array($row) ? $row : [];
+        }
+
+        foreach (['company_directors', 'company_parties', 'company_party_roles', 'company_shareholdings'] as $table) {
+            $token = $this->companyTableToken($table, $companyId);
+            if ($token !== null) {
+                $tokens[$table] = $token;
+            }
+        }
+        $ct600aToken = $this->companyPeriodTableToken('corporation_tax_ct600a_events', $companyId, $accountingPeriodId);
+        if ($ct600aToken !== null) {
+            $tokens['ct600a_events'] = $ct600aToken;
+        }
+
+        return $tokens === [] ? '' : hash('sha256', $this->canonicalJson($tokens));
+    }
+
+    /**
+     * Cheap row-change fingerprints keep ordinary section bundles fast to read
+     * while still forcing a refresh if an underlying Year End data set changes.
+     * Individual actions also invalidate their relevant bundle immediately.
+     */
+    private function sectionSourceToken(int $companyId, int $accountingPeriodId, string $checkCode): string
+    {
+        $tables = match ($checkCode) {
+            'tax_readiness_acknowledgement' => [
+                ['corporation_tax_periods', 'accounting_period_id'],
+                ['corporation_tax_period_facts', 'accounting_period_id'],
+                ['corporation_tax_s455_reviews', 'accounting_period_id'],
+                ['corporation_tax_ct600a_events', 'accounting_period_id'],
+                ['corporation_tax_ct600a_reviews', 'accounting_period_id'],
+                ['corporation_tax_ct600a_accounting_reviews', 'accounting_period_id'],
+                ['corporation_tax_scope_confirmations', 'accounting_period_id'],
+                ['corporation_tax_computation_runs', 'accounting_period_id'],
+            ],
+            'expense_position_acknowledgement' => [
+                ['expense_claims', 'accounting_period_id'],
+                ['expense_claimants', null],
+            ],
+            'retained_earnings_close_confirmation' => [
+                ['journals', 'accounting_period_id'],
+                ['prepayment_reviews', 'accounting_period_id'],
+                ['corporation_tax_periods', 'accounting_period_id'],
+                ['dividend_reserve_review_snapshots', 'accounting_period_id'],
+                ['dividend_reserve_classification_rules', null],
+            ],
+            'transaction_tail_review' => [
+                ['transactions', 'accounting_period_id'],
+                ['company_accounts', null],
+            ],
+            'prepayment_approvals' => [
+                ['prepayment_reviews', 'accounting_period_id'],
+                ['prepayment_schedules', 'source_accounting_period_id'],
+            ],
+            'cut_off_journals_review' => [
+                ['journals', 'accounting_period_id'],
+                ['prepayment_reviews', 'accounting_period_id'],
+            ],
+            'fixed_asset_review_placeholder' => [
+                ['transactions', 'accounting_period_id'],
+                ['expense_claims', 'accounting_period_id'],
+                ['asset_register', null],
+            ],
+            default => [],
+        };
+
+        $tokens = [];
+        foreach ($tables as [$table, $periodColumn]) {
+            $token = $this->sectionTableToken($table, $companyId, $accountingPeriodId, $periodColumn);
+            if ($token !== null) {
+                $tokens[$table] = $token;
+            }
+        }
+        return $tokens === [] ? '' : hash('sha256', $this->canonicalJson($tokens));
+    }
+
+    private function sectionTableToken(string $table, int $companyId, int $accountingPeriodId, ?string $periodColumn): ?array
+    {
+        if (!\InterfaceDB::tableExists($table) || !\InterfaceDB::columnExists($table, 'company_id')) {
+            return null;
+        }
+        $conditions = ['company_id = :company_id'];
+        $params = ['company_id' => $companyId];
+        if ($periodColumn !== null && \InterfaceDB::columnExists($table, $periodColumn)) {
+            $conditions[] = $periodColumn . ' = :accounting_period_id';
+            $params['accounting_period_id'] = $accountingPeriodId;
+        }
+        $updatedAt = \InterfaceDB::columnExists($table, 'updated_at') ? 'COALESCE(MAX(updated_at), \'\')' : "''";
+        $row = \InterfaceDB::fetchOne(
+            'SELECT COUNT(*) AS item_count, COALESCE(MAX(id), 0) AS last_id, ' . $updatedAt . ' AS last_change
+             FROM ' . $table . ' WHERE ' . implode(' AND ', $conditions),
+            $params
+        );
+        return is_array($row) ? $row : null;
+    }
+
+    private function companyTableToken(string $table, int $companyId): ?array
+    {
+        if (!\InterfaceDB::tableExists($table)) {
+            return null;
+        }
+        $updatedAt = \InterfaceDB::columnExists($table, 'updated_at') ? 'COALESCE(MAX(updated_at), \'\')' : "''";
+        $row = \InterfaceDB::fetchOne(
+            'SELECT COUNT(*) AS item_count, COALESCE(MAX(id), 0) AS last_id, ' . $updatedAt . ' AS last_change
+             FROM ' . $table . ' WHERE company_id = :company_id',
+            ['company_id' => $companyId]
+        );
+        return is_array($row) ? $row : null;
+    }
+
+    private function companyPeriodTableToken(string $table, int $companyId, int $accountingPeriodId): ?array
+    {
+        if (!\InterfaceDB::tableExists($table)) {
+            return null;
+        }
+        $updatedAt = \InterfaceDB::columnExists($table, 'updated_at') ? 'COALESCE(MAX(updated_at), \'\')' : "''";
+        $row = \InterfaceDB::fetchOne(
+            'SELECT COUNT(*) AS item_count, COALESCE(MAX(id), 0) AS last_id, ' . $updatedAt . ' AS last_change
+             FROM ' . $table . ' WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+        );
+        return is_array($row) ? $row : null;
+    }
+
+    private function definitionToken(string $checkCode): string
+    {
+        $questions = match ($checkCode) {
+            'director_loan_year_end_review' => (new Ct600aService())->reviewQuestions(),
+            'companies_house_mismatch_acknowledgement' => $this->companiesHouseQuestions(true),
+            default => [],
+        };
+        return hash('sha256', $this->canonicalJson([
+            'contract_version' => self::CONTRACT_VERSION,
+            'check_code' => $checkCode,
+            'questions' => $questions,
+        ]));
+    }
+
+    private function decodeBundle(array $row): array
+    {
+        $bundle = json_decode((string)($row['bundle_json'] ?? ''), true);
+        return is_array($bundle) ? $bundle : ['available' => false, 'errors' => ['The cached section review could not be read.']];
+    }
+
+    private function checkCode(string $checkCode): string
+    {
+        $checkCode = trim($checkCode);
+        if (!self::supports($checkCode)) {
+            throw new \InvalidArgumentException('Unknown Year End approval section.');
+        }
+        return $checkCode;
+    }
+
+    private function canonicalJson(array $value): string
+    {
+        $normalise = function (mixed $item) use (&$normalise): mixed {
+            if (!is_array($item)) {
+                return $item;
+            }
+            if (!array_is_list($item)) {
+                ksort($item, SORT_STRING);
+            }
+            foreach ($item as $key => $child) {
+                $item[$key] = $normalise($child);
+            }
+            return $item;
+        };
+        return (string)json_encode($normalise($value), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR);
+    }
+
+    private function tableAvailable(): bool
+    {
+        return \InterfaceDB::tableExists('year_end_section_review_bundles');
+    }
+}

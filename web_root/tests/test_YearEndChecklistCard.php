@@ -74,7 +74,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
         $harness->assertSame(false, str_contains($html, 'name="check_code" value="prepayment_approvals"'));
         $harness->assertSame(false, str_contains($html, 'name="intent" value="acknowledge_review_check"'));
         $harness->assertSame(false, str_contains($html, 'Mark reviewed'));
-        $harness->assertSame(true, str_contains($html, 'name="intent" value="reopen_review_check"'));
+        $harness->assertSame(true, str_contains($html, 'name="intent" value="revoke_section_review"'));
         $harness->assertSame(true, str_contains($html, 'Reopen review'));
     });
 
@@ -157,6 +157,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
         $harness->assertSame(true, str_contains($html, 'name="check_code" value="fixed_asset_review_placeholder"'));
         $harness->assertSame(true, str_contains($html, 'name="check_code" value="director_loan_tax_review"'));
         $harness->assertSame(false, str_contains($html, 'name="check_code" value="companies_house_mismatch_acknowledgement"'));
+        $harness->assertSame(true, str_contains($html, 'name="intent" value="approve_section_review"'));
         $harness->assertSame(true, str_contains($html, 'Accounts comparison metrics'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="show_card" value="year_end_companies_house_comparison">'));
     });

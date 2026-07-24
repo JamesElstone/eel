@@ -30,10 +30,14 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
     {
         return [
             [
-                'key' => 'directorLoanReview',
-                'service' => \eel_accounts\Service\DirectorLoanReconciliationService::class,
-                'method' => 'fetchYearEndConfirmationContext',
-                'params' => ['companyId' => ':company.id', 'accountingPeriodId' => ':company.accounting_period_id'],
+                'key' => 'sectionReview',
+                'service' => \eel_accounts\Service\YearEndSectionApprovalService::class,
+                'method' => 'fetchReview',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                    'checkCode' => 'director_loan_year_end_review',
+                ],
             ],
         ];
     }
@@ -50,26 +54,19 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $review = (array)($context['services']['directorLoanReview'] ?? []);
-        if (empty($review['available'])) {
-            return $this->errors((array)($review['errors'] ?? ['Director Loan Year End Review is unavailable.']));
+        $sectionReview = (array)($context['services']['sectionReview'] ?? []);
+        if (empty($sectionReview['available'])) {
+            return $this->errors((array)($sectionReview['errors'] ?? ['Director Loan Year End Review is unavailable.']));
         }
+        $review = (array)($sectionReview['display'] ?? []);
 
         $companyId = (int)($context['company']['id'] ?? 0);
         $accountingPeriodId = (int)($context['company']['accounting_period_id'] ?? 0);
         $settings = (array)($context['company']['settings'] ?? []);
         $locked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
         $hasActivity = !empty($review['has_activity']);
-        $acknowledgement = (array)($review['acknowledgement'] ?? []);
-        $acknowledgementCurrent = !empty($review['acknowledgement_current']);
-        $ct600aReviewFallback = !empty($review['ct600a_review_current']);
-        $ct600aReviewEvidenceCurrent = array_key_exists('ct600a_review_evidence_current', $review)
-            ? !empty($review['ct600a_review_evidence_current'])
-            : $ct600aReviewFallback;
-        $ct600aReviewComplete = array_key_exists('ct600a_review_complete', $review)
-            ? !empty($review['ct600a_review_complete'])
-            : $ct600aReviewFallback;
-        $ct600aReviewCurrent = $ct600aReviewEvidenceCurrent && $ct600aReviewComplete;
+        $acknowledgement = (array)($sectionReview['acknowledgement'] ?? []);
+        $acknowledgementCurrent = !empty($sectionReview['acknowledgement_current']);
         $legacyRepairRequired = abs((float)($review['legacy_unresolved_reclassification_amount'] ?? 0)) >= 0.005;
 
         $warnings = '';
@@ -105,31 +102,27 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
                 <div class="summary-value">Repair the legacy Director Loan offset before confirming these facts.</div>
                 <div class="helper">The repair reverses the combined unattributed historical offset without changing its source journals. Confirm the refreshed facts after it completes.</div>
             </section>';
-        } elseif (!empty($review['can_confirm'])) {
+        } elseif ((int)($review['unattributed_count'] ?? 0) === 0) {
             $confirmation = \eel_accounts\Renderer\YearEndApprovalRenderer::render([
                 'subject' => 'Director Loan Year End facts',
                 'confirmationText' => self::CONFIRMATION_TEXT,
                 'companyId' => $companyId,
                 'accountingPeriodId' => $accountingPeriodId,
                 'acknowledged' => $acknowledgementCurrent,
-                'acknowledgementState' => (string)($review['acknowledgement_state'] ?? ''),
-                'acknowledgedAt' => (string)($review['acknowledged_at'] ?? ''),
-                'acknowledgedBy' => (string)($review['acknowledged_by'] ?? ''),
-                'intent' => 'save_director_loan_year_end_review',
-                'revokeIntent' => 'save_director_loan_year_end_review',
+                'acknowledgementState' => (string)($sectionReview['acknowledgement_state'] ?? ''),
+                'acknowledgedAt' => (string)($sectionReview['acknowledged_at'] ?? ''),
+                'acknowledgedBy' => (string)($sectionReview['acknowledged_by'] ?? ''),
+                'questions' => (array)($sectionReview['questions'] ?? []),
+                'answers' => (array)($sectionReview['answers'] ?? []),
+                'intent' => 'approve_section_review',
+                'revokeIntent' => 'revoke_section_review',
                 'checkboxName' => 'director_loan_year_end_review',
-                'approveFields' => ['director_loan_year_end_review' => '1'],
-                'revokeFields' => ['director_loan_year_end_review' => '0'],
+                'approveFields' => ['check_code' => 'director_loan_year_end_review'],
+                'revokeFields' => ['check_code' => 'director_loan_year_end_review'],
                 'noteMode' => \eel_accounts\Renderer\YearEndApprovalRenderer::NOTE_HIDDEN,
             ]);
         } else {
-            if (!$ct600aReviewEvidenceCurrent) {
-                $confirmation = '<div class="panel-soft warn helper"><strong>Underlying data changed — re-approve required.</strong> Review the refreshed Section 464A and 464C declaration above. The Director Loan Year End Confirmation can then be approved again.</div>';
-            } elseif (!$ct600aReviewComplete) {
-                $confirmation = '<div class="panel-soft warn helper"><strong>Section 464A and 464C declaration needs completion.</strong> Answer every question No, or resolve each Yes answer through the relevant records before approving the Director Loan Year End Confirmation.</div>';
-            } else {
-                $confirmation = '<div class="panel-soft warn helper">Attribute every Director Loan entry on the Summary tab before confirming these facts.</div>';
-            }
+            $confirmation = '<div class="panel-soft warn helper">Attribute every Director Loan entry on the Summary tab before confirming these facts.</div>';
         }
 
         return '<section class="settings-stack">
@@ -155,12 +148,6 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
                     [(array)($review['asset_nominal'] ?? []), (array)($review['liability_nominal'] ?? [])]
                 ) . '
             </section>
-            ' . $this->ct600aDeclarations(
-                $context,
-                $companyId,
-                $accountingPeriodId,
-                $locked || ($acknowledgementCurrent && $ct600aReviewCurrent)
-            ) . '
             ' . $confirmation . '
         </section>';
     }

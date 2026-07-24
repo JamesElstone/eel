@@ -40,6 +40,16 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
                     'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
+            [
+                'key' => 'sectionReview',
+                'service' => \eel_accounts\Service\YearEndSectionApprovalService::class,
+                'method' => 'fetchReview',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                    'checkCode' => 'tax_readiness_acknowledgement',
+                ],
+            ],
         ];
     }
 
@@ -69,15 +79,9 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
 
         $provision = (array)($taxReadiness['provision'] ?? []);
         $taxBasisReady = (string)($taxReadiness['freeze_status'] ?? '') === 'ready_for_approval';
-        $check = $this->check((array)($checklist['checks_flat'] ?? []), 'tax_readiness_acknowledgement');
-        $acknowledgement = (array)($check['review_acknowledgement'] ?? $check['previous_acknowledgement'] ?? []);
-        $acknowledged = !empty($check['acknowledgement_current']);
+        $sectionReview = (array)($context['services']['sectionReview'] ?? []);
         $acknowledgementForm = $this->acknowledgementHtml(
-            $acknowledged,
-            (string)($check['acknowledgement_state'] ?? 'absent'),
-            (string)($acknowledgement['acknowledged_at'] ?? ''),
-            (string)($acknowledgement['acknowledged_by'] ?? ''),
-            (string)($acknowledgement['note'] ?? ''),
+            $sectionReview,
             $companyId,
             $accountingPeriodId,
             $this->money($companySettings, $taxReadiness['estimated_corporation_tax'] ?? 0),
@@ -140,25 +144,30 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         return [];
     }
 
-    private function acknowledgementHtml(bool $acknowledged, string $state, string $acknowledgedAt, string $acknowledgedBy, string $note, int $companyId, int $accountingPeriodId, string $totalCorporationTaxDue, bool $taxBasisReady): string
+    private function acknowledgementHtml(array $review, int $companyId, int $accountingPeriodId, string $totalCorporationTaxDue, bool $taxBasisReady): string
     {
+        $acknowledgement = (array)($review['acknowledgement'] ?? []);
         return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
             'subject' => 'Total Corporation Tax Due to HMRC, including the CT600A position and associated-company count for every CT period',
             'confirmationText' => 'I confirm the Total Corporation Tax Due to HMRC of ' . $totalCorporationTaxDue . ' shown above is the amount the company will pay to HMRC for this accounting period.',
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
-            'acknowledged' => $acknowledged,
-            'acknowledgementState' => $state,
-            'acknowledgedAt' => $acknowledgedAt,
-            'acknowledgedBy' => $acknowledgedBy,
-            'note' => $note,
-            'intent' => 'save_tax_readiness_acknowledgement',
-            'revokeIntent' => 'save_tax_readiness_acknowledgement',
-            'checkboxName' => 'tax_readiness_acknowledgement',
-            'approveFields' => ['tax_readiness_acknowledgement' => '1'],
-            'revokeFields' => ['tax_readiness_acknowledgement' => '0'],
-            'disabled' => !$taxBasisReady,
-            'disabledReason' => $taxBasisReady ? '' : 'Year End Confirmation is disabled until all tax basis checks have passed.',
+            'acknowledged' => !empty($review['acknowledgement_current']),
+            'acknowledgementState' => (string)($review['acknowledgement_state'] ?? 'absent'),
+            'acknowledgedAt' => (string)($acknowledgement['acknowledged_at'] ?? ''),
+            'acknowledgedBy' => (string)($acknowledgement['acknowledged_by'] ?? ''),
+            'note' => (string)($acknowledgement['note'] ?? ''),
+            'intent' => 'approve_section_review',
+            'revokeIntent' => 'revoke_section_review',
+            'approveFields' => ['check_code' => 'tax_readiness_acknowledgement'],
+            'revokeFields' => ['check_code' => 'tax_readiness_acknowledgement'],
+            'noteName' => 'approval_note',
+            'questions' => (array)($review['questions'] ?? []),
+            'answers' => (array)($review['answers'] ?? []),
+            'disabled' => !$taxBasisReady || empty($review['can_approve']),
+            'disabledReason' => !$taxBasisReady
+                ? 'Year End Confirmation is disabled until all tax basis checks have passed.'
+                : (string)(($review['approval_errors'] ?? [])[0] ?? ''),
         ]);
     }
 

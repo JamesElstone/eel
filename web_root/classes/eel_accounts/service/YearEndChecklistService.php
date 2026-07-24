@@ -1839,6 +1839,17 @@ final class YearEndChecklistService
             empty($chComparison['available']) || empty($chComparison['reliable_closing_balance']) ? null : $this->acknowledgementBasis($comparisonCheckCode, $chComparison)
         ), $reviewAcknowledgements);
 
+        // V2 approvals are evaluated by their canonical section providers.
+        // The legacy per-check basis is intentionally not used to decide their
+        // freshness, otherwise the new full question snapshot would always
+        // look stale to the checklist.
+        $sections = $this->applyCanonicalSectionApprovalStates(
+            $sections,
+            $reviewAcknowledgements,
+            $companyId,
+            $accountingPeriodId
+        );
+
         $blockingChecksPass = $uncategorisedCount === 0
             && $missingMonths === 0
             && $autoAttentionCount === 0
@@ -1868,6 +1879,7 @@ final class YearEndChecklistService
             && $this->prepaymentSchedulesCurrent($prepaymentRepair)
             && $this->acknowledgementCurrentInSections($sections, 'prepayment_approvals')
             && $this->acknowledgementCurrentInSections($sections, 'cut_off_journals_review')
+            && $this->noStaleCanonicalSectionApprovals($sections)
             && !empty($directorLoanReview['available'])
             && (!$directorLoanHasActivity || (
                 $directorLoanUnattributedCount === 0
@@ -2545,13 +2557,23 @@ final class YearEndChecklistService
 
         $check['review_clearable'] = in_array($checkCode, self::REVIEW_ACKNOWLEDGEABLE_CHECKS, true);
         $acknowledgement = $acknowledgements[$checkCode] ?? null;
-        $evaluation = ($this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService())
-            ->evaluate(
-                is_array($acknowledgement) ? $acknowledgement : null,
-                is_array($check['basis_data'] ?? null) ? $check['basis_data'] : null,
-                !empty($acknowledgement['_period_locked'])
-                    && $checkCode !== 'director_loan_year_end_review'
-            );
+        $isCanonicalSection = \eel_accounts\Service\YearEndSectionApprovalService::supports($checkCode);
+        $isCurrentCanonicalVersion = is_array($acknowledgement)
+            && (string)($acknowledgement['basis_version'] ?? '')
+                === \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION;
+        $evaluation = $isCanonicalSection && !$isCurrentCanonicalVersion
+            ? [
+                'state' => is_array($acknowledgement) ? 'stale' : 'absent',
+                'current' => false,
+                'acknowledgement' => $acknowledgement,
+            ]
+            : ($this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService())
+                ->evaluate(
+                    is_array($acknowledgement) ? $acknowledgement : null,
+                    is_array($check['basis_data'] ?? null) ? $check['basis_data'] : null,
+                    !empty($acknowledgement['_period_locked'])
+                        && $checkCode !== 'director_loan_year_end_review'
+                );
         $check['acknowledgement_state'] = (string)($evaluation['state'] ?? 'absent');
         $check['acknowledgement_current'] = !empty($evaluation['current']);
 
@@ -2580,6 +2602,78 @@ final class YearEndChecklistService
         }
 
         return $check;
+    }
+
+    private function applyCanonicalSectionApprovalStates(
+        array $sections,
+        array $acknowledgements,
+        int $companyId,
+        int $accountingPeriodId
+    ): array {
+        foreach ($sections as $sectionKey => $checks) {
+            foreach ((array)$checks as $index => $check) {
+                $check = (array)$check;
+                $checkCode = (string)($check['check_code'] ?? '');
+                $acknowledgement = $acknowledgements[$checkCode] ?? null;
+                if (!is_array($acknowledgement)
+                    || (string)($acknowledgement['basis_version'] ?? '') !== \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION) {
+                    continue;
+                }
+
+                if (in_array($checkCode, [
+                    'director_loan_year_end_review',
+                    'companies_house_mismatch_acknowledgement',
+                    'companies_house_no_filing_acknowledgement',
+                ], true)) {
+                    $review = (new \eel_accounts\Service\YearEndSectionApprovalService())->fetchReview(
+                        $companyId,
+                        $accountingPeriodId,
+                        $checkCode
+                    );
+                    $current = !empty($review['acknowledgement_current']);
+                    $state = (string)($review['acknowledgement_state'] ?? 'stale');
+                } else {
+                    $storedBasis = json_decode((string)($acknowledgement['basis_json'] ?? ''), true);
+                    $currentBasis = is_array($check['basis_data'] ?? null) && is_array($storedBasis)
+                        ? [
+                            'contract_version' => \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION,
+                            'check_code' => $checkCode,
+                            'facts' => (array)$check['basis_data'],
+                            'questions' => (array)($storedBasis['questions'] ?? []),
+                            'answers' => (array)($storedBasis['answers'] ?? []),
+                        ]
+                        : null;
+                    $evaluation = ($this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService())
+                        ->evaluate(
+                            $acknowledgement,
+                            $currentBasis,
+                            false,
+                            \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION
+                        );
+                    $current = !empty($evaluation['current']);
+                    $state = (string)($evaluation['state'] ?? 'stale');
+                }
+                $check['acknowledgement_state'] = $state;
+                $check['acknowledgement_current'] = $current;
+                if (!$current) {
+                    continue;
+                }
+
+                $check['review_acknowledgement'] = $acknowledgement;
+                unset($check['previous_acknowledgement']);
+                if (in_array((string)($check['status'] ?? ''), ['warning', 'fail'], true)) {
+                    $check['status'] = 'pass';
+                    $check['metric_value'] = str_starts_with($checkCode, 'companies_house_')
+                        ? 'Acknowledged'
+                        : (trim((string)($check['metric_value'] ?? '')) !== '' ? (string)$check['metric_value'] : 'Reviewed');
+                    $detail = (string)($check['detail_text'] ?? '');
+                    $detail = preg_replace('/^Review required — [^.]+\.\s*/', '', $detail) ?? $detail;
+                    $check['detail_text'] = 'Review acknowledged for this period. ' . $detail;
+                }
+                $sections[$sectionKey][$index] = $check;
+            }
+        }
+        return $sections;
     }
 
     private function acknowledgementBasis(string $checkCode, array $facts): array
@@ -2662,6 +2756,28 @@ final class YearEndChecklistService
             }
         }
         return false;
+    }
+
+    /**
+     * A card and the lock gate must agree: if a canonical section card says
+     * its approved facts are stale, the period cannot be locked even when the
+     * current metric happens to be a passing value.
+     */
+    private function noStaleCanonicalSectionApprovals(array $sections): bool
+    {
+        foreach ($sections as $checks) {
+            foreach ((array)$checks as $check) {
+                if (!is_array($check)
+                    || !\eel_accounts\Service\YearEndSectionApprovalService::supports((string)($check['check_code'] ?? ''))) {
+                    continue;
+                }
+                if (in_array((string)($check['acknowledgement_state'] ?? ''), ['stale', 'unverifiable'], true)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     private function fetchReviewAcknowledgements(int $companyId, int $accountingPeriodId): array

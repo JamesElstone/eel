@@ -40,6 +40,16 @@ final class _journal_cut_off_confirmationCard extends CardBaseFramework
                     'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
+            [
+                'key' => 'sectionReview',
+                'service' => \eel_accounts\Service\YearEndSectionApprovalService::class,
+                'method' => 'fetchReview',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                    'checkCode' => 'cut_off_journals_review',
+                ],
+            ],
         ];
     }
 
@@ -60,17 +70,13 @@ final class _journal_cut_off_confirmationCard extends CardBaseFramework
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $data = (array)($context['services']['cutOffJournals'] ?? []);
         $review = (array)($context['services']['journalCutOffReview'] ?? []);
-        $acknowledgement = $review['acknowledgement'] ?? null;
+        $sectionReview = (array)($context['services']['sectionReview'] ?? []);
         $access = (array)($review['access'] ?? []);
-
-        if (!is_array($acknowledgement)) {
-            $acknowledgement = null;
-        }
 
         return '<section class="settings-stack" id="journal-cut-off">
             ' . $this->renderPostedAdjustments((array)($data['adjustments'] ?? [])) . '
             ' . $this->renderManualEntries((array)($data['adjustments'] ?? [])) . '
-            ' . $this->acknowledgementHtml($acknowledgement, $companyId, $accountingPeriodId, $access) . '
+            ' . $this->acknowledgementHtml($sectionReview, $companyId, $accountingPeriodId, $access) . '
         </section>';
     }
 
@@ -107,29 +113,33 @@ final class _journal_cut_off_confirmationCard extends CardBaseFramework
     }
 
     private function acknowledgementHtml(
-        ?array $acknowledgement,
+        array $review,
         int $companyId,
         int $accountingPeriodId,
         array $access
     ): string
     {
-        $acknowledged = !empty($acknowledgement['current']);
+        $acknowledgement = (array)($review['acknowledgement'] ?? []);
         return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
             'subject' => 'journal cut-off position',
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
-            'acknowledged' => $acknowledged,
-            'acknowledgementState' => (string)($acknowledgement['state'] ?? ''),
+            'acknowledged' => !empty($review['acknowledgement_current']),
+            'acknowledgementState' => (string)($review['acknowledgement_state'] ?? 'absent'),
             'acknowledgedAt' => (string)($acknowledgement['acknowledged_at'] ?? ''),
             'acknowledgedBy' => (string)($acknowledgement['acknowledged_by'] ?? ''),
             'note' => (string)($acknowledgement['note'] ?? ''),
             'locked' => !empty($access['is_locked']),
-            'intent' => 'acknowledge_review_check',
-            'revokeIntent' => 'reopen_review_check',
+            'intent' => 'approve_section_review',
+            'revokeIntent' => 'revoke_section_review',
             'approveFields' => ['check_code' => 'cut_off_journals_review'],
             'revokeFields' => ['check_code' => 'cut_off_journals_review'],
-            'noteName' => 'review_acknowledgement_note',
+            'noteName' => 'approval_note',
             'noteId' => 'journal-cut-off-review-note',
+            'questions' => (array)($review['questions'] ?? []),
+            'answers' => (array)($review['answers'] ?? []),
+            'disabled' => empty($review['can_approve']),
+            'disabledReason' => (string)(($review['approval_errors'] ?? [])[0] ?? ''),
             'missingContextHtml' => '<div class="helper">Select a company and accounting period before approving journal cut-off review.</div>',
         ]);
     }

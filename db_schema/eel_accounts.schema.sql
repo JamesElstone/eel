@@ -3723,6 +3723,36 @@ CREATE TABLE `year_end_review_acknowledgements` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Cached canonical Year End review bundles. Approval history remains in
+-- year_end_review_acknowledgements and year_end_audit_log.
+--
+
+DROP TABLE IF EXISTS `year_end_section_review_bundles`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `year_end_section_review_bundles` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `check_code` varchar(100) NOT NULL,
+  `contract_version` varchar(50) NOT NULL,
+  `source_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `bundle_json` longtext NOT NULL,
+  `is_current` tinyint(1) NOT NULL DEFAULT 1,
+  `generated_at` datetime NOT NULL,
+  `invalidated_at` datetime DEFAULT NULL,
+  `invalidated_reason` varchar(255) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_year_end_section_review_bundle` (`company_id`,`accounting_period_id`,`check_code`),
+  KEY `idx_year_end_section_review_bundle_current` (`company_id`,`accounting_period_id`,`is_current`),
+  CONSTRAINT `fk_year_end_section_review_bundle_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_year_end_section_review_bundle_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `schema_migrations`
 --
 
@@ -3917,6 +3947,8 @@ INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_23_005_api_keys_editor_permission.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_23_006_companies_house_revised_disclosures.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_24_001_year_end_section_review_bundles.sql');
 INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
 SELECT DISTINCT `role_id`, 'api_keys_editor'
 FROM `role_card_permissions`

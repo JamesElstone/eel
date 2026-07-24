@@ -40,6 +40,16 @@ final class _not_an_assetCard extends CardBaseFramework
                     'threshold' => ':company.settings.potential_asset_threshold',
                 ],
             ],
+            [
+                'key' => 'sectionReview',
+                'service' => \eel_accounts\Service\YearEndSectionApprovalService::class,
+                'method' => 'fetchReview',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                    'checkCode' => 'fixed_asset_review_placeholder',
+                ],
+            ],
         ];
     }
 
@@ -80,10 +90,10 @@ final class _not_an_assetCard extends CardBaseFramework
             $context,
             $dataEntryPermitted ? $this->thresholdForm($companyId, $accountingPeriodId, $threshold, $settings) : $this->readOnlyHelper($dataEntry)
         );
-        $acknowledgement = $review['acknowledgement'] ?? null;
+        $sectionReview = (array)($context['services']['sectionReview'] ?? []);
 
         return $tableHtml . $this->yearEndAcknowledgementHtml(
-            is_array($acknowledgement) ? $acknowledgement : null,
+            $sectionReview,
             $companyId,
             $accountingPeriodId,
             $dataEntry
@@ -91,7 +101,7 @@ final class _not_an_assetCard extends CardBaseFramework
     }
 
     private function yearEndAcknowledgementHtml(
-        ?array $acknowledgement,
+        array $review,
         int $companyId,
         int $accountingPeriodId,
         array $dataEntry
@@ -102,19 +112,23 @@ final class _not_an_assetCard extends CardBaseFramework
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
             'locked' => !empty($dataEntry['is_locked']),
-            'disabled' => empty($dataEntry['permitted']),
-            'disabledReason' => (string)($dataEntry['reason'] ?? ''),
-            'acknowledged' => !empty($acknowledgement['current']),
-            'acknowledgementState' => (string)($acknowledgement['state'] ?? 'absent'),
-            'acknowledgedAt' => (string)($acknowledgement['acknowledged_at'] ?? ''),
-            'acknowledgedBy' => (string)($acknowledgement['acknowledged_by'] ?? ''),
-            'note' => (string)($acknowledgement['note'] ?? ''),
-            'intent' => 'acknowledge_review_check',
-            'revokeIntent' => 'reopen_review_check',
+            'acknowledged' => !empty($review['acknowledgement_current']),
+            'acknowledgementState' => (string)($review['acknowledgement_state'] ?? 'absent'),
+            'acknowledgedAt' => (string)(($review['acknowledgement'] ?? [])['acknowledged_at'] ?? ''),
+            'acknowledgedBy' => (string)(($review['acknowledgement'] ?? [])['acknowledged_by'] ?? ''),
+            'note' => (string)(($review['acknowledgement'] ?? [])['note'] ?? ''),
+            'intent' => 'approve_section_review',
+            'revokeIntent' => 'revoke_section_review',
             'approveFields' => ['check_code' => 'fixed_asset_review_placeholder'],
             'revokeFields' => ['check_code' => 'fixed_asset_review_placeholder'],
-            'noteName' => 'review_acknowledgement_note',
+            'noteName' => 'approval_note',
             'noteId' => 'fixed-asset-review-note',
+            'questions' => (array)($review['questions'] ?? []),
+            'answers' => (array)($review['answers'] ?? []),
+            'disabled' => empty($dataEntry['permitted']) || empty($review['can_approve']),
+            'disabledReason' => empty($dataEntry['permitted'])
+                ? (string)($dataEntry['reason'] ?? '')
+                : (string)(($review['approval_errors'] ?? [])[0] ?? ''),
         ]);
     }
 

@@ -221,7 +221,10 @@ final class _year_end_checklistCard extends CardBaseFramework
             return '';
         }
 
-        $intent = $isAcknowledged ? 'reopen_review_check' : 'acknowledge_review_check';
+        $canonicalSection = \eel_accounts\Service\YearEndSectionApprovalService::supports($checkCode);
+        $intent = $canonicalSection
+            ? ($isAcknowledged ? 'revoke_section_review' : 'approve_section_review')
+            : ($isAcknowledged ? 'reopen_review_check' : 'acknowledge_review_check');
         $label = $isAcknowledged ? 'Reopen review' : 'Mark reviewed';
         $buttonClass = $isAcknowledged ? 'button' : 'button primary';
         $confirmAttributes = $isAcknowledged

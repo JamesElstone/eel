@@ -12,6 +12,9 @@ namespace eel_accounts\Service;
 /** Builds the single source model used by iXBRL facts, rendering and freshness. */
 final class IxbrlAccountsReportService
 {
+    /** Increment whenever the deterministic report-basis construction changes. */
+    public const BASIS_VERSION = 'ixbrl-accounts-report-v1';
+
     public function build(int $companyId, int $accountingPeriodId): array
     {
         $company = \InterfaceDB::fetchOne(
@@ -202,6 +205,7 @@ final class IxbrlAccountsReportService
             'comparative' => $comparative,
             'application_name' => $basis['application_name'],
             'application_version' => $basis['application_version'],
+            'basis_version' => self::BASIS_VERSION,
             'micro_entity_eligibility' => $eligibility,
             'presentation_currency' => $presentationCurrency,
             'basis' => $basis,

@@ -31,5 +31,23 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $h->assertTrue(str_contains($exception->getMessage(), 'identify its approver'));
             }
         });
+
+        $h->check($service::class, 'explains a report-only approval mismatch as a report-generation change', static function () use ($h, $service): void {
+            $method = new ReflectionMethod($service, 'staleApprovalErrors');
+            $method->setAccessible(true);
+            $stored = [
+                'company' => ['id' => 1],
+                'accounts_report' => ['basis_version' => 'ixbrl-accounts-report-v0', 'basis_hash' => 'old'],
+            ];
+            $current = [
+                'company' => ['id' => 1],
+                'accounts_report' => ['basis_version' => 'ixbrl-accounts-report-v1', 'basis_hash' => 'new'],
+            ];
+            $errors = $method->invoke($service, ['basis_json' => json_encode($stored)], $current);
+
+            $h->assertSame([
+                'The Accounts Report generation basis changed. Reload the PHP web runtime if this is a deployment, then approve the current filing basis again.',
+            ], $errors);
+        });
     }
 );

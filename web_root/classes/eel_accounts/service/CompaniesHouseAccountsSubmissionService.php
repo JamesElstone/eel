@@ -96,15 +96,9 @@ final class CompaniesHouseAccountsSubmissionService
         if ($needsRevision && !$revisedDisclosureConfirmed) {
             $preparationBlockers[] = 'Confirm the Companies House revised-accounts public-register disclosure before approving iXBRL.';
         }
-        $filingApproval = (new IxbrlAccountsFilingApprovalService())->status($companyId, $accountingPeriodId);
-        if ((string)($filingApproval['state'] ?? '') !== 'current') {
-            $preparationBlockers[] = 'Approve the current accounts disclosure basis before preparing revised accounts.';
-        }
-        foreach ((array)($readiness['filing_errors'] ?? []) as $error) {
-            $error = trim((string)$error);
-            if ($error !== '') {
-                $preparationBlockers[] = $error;
-            }
+        $ixbrlPreparationBlocker = $this->ixbrlPreparationBlocker($readiness);
+        if ($ixbrlPreparationBlocker !== '') {
+            $preparationBlockers[] = $ixbrlPreparationBlocker;
         }
 
         $lifecycle = (string)($submission['lifecycle'] ?? '');
@@ -205,7 +199,46 @@ final class CompaniesHouseAccountsSubmissionService
             return ['decision' => 'pending', 'original_document_id' => 0];
         }
 
-        return $this->eligibility($selection, $this->exactOriginalDocument($selection));
+        $eligibility = $this->eligibility($selection, $this->exactOriginalDocument($selection));
+
+        // The Year End section approval is authoritative once present. Legacy
+        // eligibility rows are only a pre-rollout fallback; they must not be
+        // able to alter an approved section's filing decision afterwards.
+        foreach (['companies_house_mismatch_acknowledgement', 'companies_house_no_filing_acknowledgement'] as $checkCode) {
+            $acknowledgement = (new YearEndAcknowledgementService())->fetch($companyId, $accountingPeriodId, $checkCode);
+            $basis = json_decode((string)($acknowledgement['basis_json'] ?? ''), true);
+            if (!is_array($basis) || (string)($acknowledgement['basis_version'] ?? '') !== YearEndSectionApprovalService::CONTRACT_VERSION) {
+                continue;
+            }
+            $answers = (array)($basis['answers'] ?? []);
+            $decision = (string)($answers['companies_house.xml_eligibility'] ?? 'pending');
+            if (in_array($decision, ['eligible', 'ineligible'], true)) {
+                $eligibility['decision'] = $decision;
+                $eligibility['variance_explanation'] = (string)($answers['companies_house.variance_explanation'] ?? '');
+                $eligibility['decision_source'] = 'year_end_section_approval';
+                return $eligibility;
+            }
+        }
+
+        return $eligibility;
+    }
+
+    /** @return array{editable: bool, message: string, lifecycle: string} */
+    public function revisionMetadataEditability(int $companyId, int $accountingPeriodId): array
+    {
+        $submission = $this->latestSubmission($companyId, $accountingPeriodId);
+        $lifecycle = strtolower(trim((string)($submission['lifecycle'] ?? '')));
+        if (in_array($lifecycle, ['prepared', 'submitting', 'transport_unknown', 'pending', 'parked', 'accepted'], true)) {
+            return [
+                'editable' => false,
+                'lifecycle' => $lifecycle,
+                'message' => $lifecycle === 'accepted'
+                    ? 'Companies House revision metadata is retained with the accepted filing and cannot be changed.'
+                    : 'Companies House revision metadata cannot change while a revised-accounts artifact or submission is active.',
+            ];
+        }
+
+        return ['editable' => true, 'message' => '', 'lifecycle' => $lifecycle];
     }
 
     public function recordEligibility(
@@ -219,8 +252,9 @@ final class CompaniesHouseAccountsSubmissionService
         if ($selection === null) {
             return $this->failure('Select a valid company and accounting period.');
         }
-        if (($this->lockService ?? new YearEndLockService())->isLocked($companyId, $accountingPeriodId)) {
-            return $this->failure('Eligibility cannot be changed after Year End is locked.');
+        $editability = $this->revisionMetadataEditability($companyId, $accountingPeriodId);
+        if (empty($editability['editable'])) {
+            return $this->failure((string)$editability['message']);
         }
         if (!\InterfaceDB::tableExists(self::ELIGIBILITY_TABLE)) {
             return $this->failure('The Companies House accounts-filing migration has not been applied.');
@@ -237,7 +271,7 @@ final class CompaniesHouseAccountsSubmissionService
         }
 
         $existing = \InterfaceDB::fetchOne(
-            'SELECT id FROM ' . self::ELIGIBILITY_TABLE . '
+            'SELECT id, decision FROM ' . self::ELIGIBILITY_TABLE . '
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id
                AND original_transaction_id = :transaction_id
@@ -248,6 +282,8 @@ final class CompaniesHouseAccountsSubmissionService
                 'transaction_id' => (string)$original['transaction_id'],
             ]
         );
+        $metadataChanged = !is_array($existing)
+            || strtolower(trim((string)($existing['decision'] ?? ''))) !== $decision;
         $now = gmdate('Y-m-d H:i:s');
         if (is_array($existing)) {
             \InterfaceDB::prepareExecute(
@@ -305,6 +341,12 @@ final class CompaniesHouseAccountsSubmissionService
             );
         }
 
+        $approvalInvalidated = $metadataChanged && $this->invalidateCompaniesHouseComparisonApproval(
+            $companyId,
+            $accountingPeriodId,
+            $actor
+        );
+
         return [
             'success' => true,
             'errors' => [],
@@ -313,6 +355,9 @@ final class CompaniesHouseAccountsSubmissionService
                 $decision === 'eligible'
                     ? 'Companies House electronic revised-accounts eligibility recorded.'
                     : 'Companies House marked this filing as ineligible for software amendment.',
+                ...($approvalInvalidated
+                    ? ['The existing Companies House Year End Confirmation was invalidated and must be approved again.']
+                    : []),
             ],
             'changed' => true,
         ];
@@ -329,8 +374,9 @@ final class CompaniesHouseAccountsSubmissionService
         if ($selection === null) {
             return $this->failure('Select a valid company and accounting period.');
         }
-        if (($this->lockService ?? new YearEndLockService())->isLocked($companyId, $accountingPeriodId)) {
-            return $this->failure('The Companies House variance explanation cannot be changed after Year End is locked.');
+        $editability = $this->revisionMetadataEditability($companyId, $accountingPeriodId);
+        if (empty($editability['editable'])) {
+            return $this->failure((string)$editability['message']);
         }
         if (!\InterfaceDB::tableExists(self::ELIGIBILITY_TABLE)
             || !\InterfaceDB::columnExists(self::ELIGIBILITY_TABLE, 'variance_explanation')) {
@@ -363,7 +409,7 @@ final class CompaniesHouseAccountsSubmissionService
                 'updated_at' => $now,
         ];
         $existing = \InterfaceDB::fetchOne(
-            'SELECT id FROM ' . self::ELIGIBILITY_TABLE . '
+            'SELECT id, variance_explanation FROM ' . self::ELIGIBILITY_TABLE . '
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id
                AND original_transaction_id = :transaction_id
@@ -374,6 +420,8 @@ final class CompaniesHouseAccountsSubmissionService
                 'transaction_id' => (string)$original['transaction_id'],
             ]
         );
+        $metadataChanged = !is_array($existing)
+            || trim((string)($existing['variance_explanation'] ?? '')) !== $varianceExplanation;
         if (is_array($existing)) {
             \InterfaceDB::prepareExecute(
                 'UPDATE ' . self::ELIGIBILITY_TABLE . '
@@ -408,11 +456,22 @@ final class CompaniesHouseAccountsSubmissionService
             );
         }
 
+        $approvalInvalidated = $metadataChanged && $this->invalidateCompaniesHouseComparisonApproval(
+            $companyId,
+            $accountingPeriodId,
+            $this->actor($actor)
+        );
+
         return [
             'success' => true,
             'errors' => [],
             'warnings' => [],
-            'messages' => ['Companies House variance explanation saved.'],
+            'messages' => array_merge(
+                ['Companies House variance explanation saved.'],
+                $approvalInvalidated
+                    ? ['The existing Companies House Year End Confirmation was invalidated and must be approved again.']
+                    : []
+            ),
             'changed' => true,
         ];
     }
@@ -1868,6 +1927,106 @@ final class CompaniesHouseAccountsSubmissionService
         } catch (\Throwable $exception) {
             return ['ready_for_filing' => false, 'filing_errors' => [$exception->getMessage()]];
         }
+    }
+
+    private function ixbrlPreparationBlocker(array $readiness): string
+    {
+        $checks = [];
+        foreach ((array)($readiness['checks'] ?? []) as $check) {
+            if (is_array($check) && trim((string)($check['key'] ?? '')) !== '') {
+                $checks[(string)$check['key']] = $check;
+            }
+        }
+
+        if (empty($readiness['can_generate'])) {
+            foreach ((array)($readiness['generation_errors'] ?? []) as $error) {
+                $error = trim((string)$error);
+                if (str_contains($error, 'Accounts Report generation basis changed')) {
+                    return $error;
+                }
+            }
+            if (empty($checks['filing_basis_approved']['complete'])) {
+                return 'Approve the current accounts disclosure basis before generating iXBRL.';
+            }
+            foreach ((array)($readiness['generation_errors'] ?? []) as $error) {
+                $error = trim((string)$error);
+                if ($error !== '') {
+                    return $error;
+                }
+            }
+            return 'Resolve the accounts iXBRL generation requirements before preparing revised accounts.';
+        }
+
+        if (empty($readiness['can_validate'])) {
+            return 'Generate the HMRC Accounting iXBRL; internal and Arelle validation run automatically.';
+        }
+
+        if (empty($readiness['ready_for_filing'])) {
+            $external = (array)($readiness['external_validation'] ?? []);
+            if ((string)($external['status'] ?? '') !== 'passed') {
+                $detail = trim((string)($external['detail'] ?? ''));
+                if ($detail !== '') {
+                    return $detail;
+                }
+                foreach ((array)($external['errors'] ?? []) as $error) {
+                    $error = trim((string)$error);
+                    if ($error !== '') {
+                        return $error;
+                    }
+                }
+                return 'The generated HMRC Accounting iXBRL must pass Arelle validation before revised accounts can be prepared.';
+            }
+            if (empty($checks['ixbrl_validated_artifact_current']['complete'])) {
+                return 'The generated, Arelle-validated, and current-file SHA-256 values must match so the file Arelle checked is the unchanged file used for filing.';
+            }
+            foreach ((array)($readiness['filing_errors'] ?? []) as $error) {
+                $error = trim((string)$error);
+                if ($error !== '') {
+                    return $error;
+                }
+            }
+        }
+
+        return '';
+    }
+
+    private function invalidateCompaniesHouseComparisonApproval(
+        int $companyId,
+        int $accountingPeriodId,
+        string $actor
+    ): bool {
+        $invalidated = false;
+        foreach (['companies_house_mismatch_acknowledgement', 'companies_house_no_filing_acknowledgement'] as $checkCode) {
+            (new YearEndSectionApprovalService())->invalidate(
+                $companyId,
+                $accountingPeriodId,
+                $checkCode,
+                'Companies House eligibility or variance metadata changed.'
+            );
+            $acknowledgements = new YearEndAcknowledgementService();
+            $existing = $acknowledgements->fetch($companyId, $accountingPeriodId, $checkCode);
+            if (!is_array($existing) || (string)($existing['basis_version'] ?? '') === YearEndSectionApprovalService::CONTRACT_VERSION) {
+                continue;
+            }
+
+            $result = $acknowledgements->revoke($companyId, $accountingPeriodId, $checkCode, true);
+            if (empty($result['success'])) {
+                throw new \RuntimeException('The existing Companies House Year End Confirmation could not be invalidated.');
+            }
+            ($this->lockService ?? new YearEndLockService())->writeAuditLog(
+                $companyId,
+                $accountingPeriodId,
+                'companies_house_revision_metadata_changed',
+                $actor,
+                $existing,
+                ['check_code' => $checkCode, 'acknowledged' => false],
+                'Companies House eligibility or variance metadata changed; the prior Year End Confirmation was invalidated.',
+                true
+            );
+            $invalidated = true;
+        }
+
+        return $invalidated;
     }
 
     private function latestSubmission(int $companyId, int $accountingPeriodId): ?array

@@ -26,10 +26,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 );
                 test_confirm_ct_period_facts((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
 
-                $directorLoanAck = (new \eel_accounts\Service\DirectorLoanReconciliationService())->saveYearEndReview(
+                $directorLoanAck = yearEndClosePreviewApproveDirectorLoan(
                     (int)$fixture['company_id'],
                     (int)$fixture['accounting_period_id'],
-                    true,
                     'test'
                 );
                 $harness->assertSame(true, (bool)($directorLoanAck['success'] ?? false));
@@ -334,8 +333,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ]
                 );
 
-                $dla = new \eel_accounts\Service\DirectorLoanReconciliationService();
-                $acknowledgement = $dla->saveYearEndReview($companyId, $firstPeriodId, true, 'test');
+                $acknowledgement = yearEndClosePreviewApproveDirectorLoan($companyId, $firstPeriodId, 'test');
                 $harness->assertTrue(!empty($acknowledgement['success']));
 
                 $laterPeriodContext = $service->pendingBalanceSheetAdjustmentContext(
@@ -359,7 +357,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertCount(1, $offsetPeriods);
                 $harness->assertSame($firstPeriodId, (int)($offsetPeriods[0]['accounting_period_id'] ?? 0));
 
-                $laterAcknowledgement = $dla->saveYearEndReview($companyId, $secondPeriodId, true, 'test');
+                $laterAcknowledgement = yearEndClosePreviewApproveDirectorLoan($companyId, $secondPeriodId, 'test');
                 $harness->assertTrue(!empty($laterAcknowledgement['success']));
 
                 $targetOnlyContext = $service->pendingBalanceSheetAdjustmentContext(
@@ -545,6 +543,18 @@ function yearEndClosePreviewCreateFixture(): array
         'company_id' => $companyId,
         'accounting_period_id' => $accountingPeriodId,
     ];
+}
+
+function yearEndClosePreviewApproveDirectorLoan(int $companyId, int $accountingPeriodId, string $actor): array
+{
+    $approval = new \eel_accounts\Service\YearEndSectionApprovalService();
+    $review = $approval->fetchReview($companyId, $accountingPeriodId, 'director_loan_year_end_review');
+    $answers = [];
+    foreach ((array)($review['questions'] ?? []) as $question) {
+        $question = (array)$question;
+        $answers[(string)$question['id']] = (string)($question['required_value'] ?? '');
+    }
+    return $approval->approve($companyId, $accountingPeriodId, 'director_loan_year_end_review', $answers, $actor);
 }
 
 function yearEndClosePreviewInsertJournal(int $companyId, int $accountingPeriodId, string $sourceRef, string $date, array $lines): void

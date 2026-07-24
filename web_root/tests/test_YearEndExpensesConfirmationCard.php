@@ -42,9 +42,9 @@ $harness->run(_year_end_expenses_confirmationCard::class, static function (Gener
         $harness->assertSame(true, str_contains($html, 'Payments in period'));
         $harness->assertSame(true, str_contains($html, 'Balance carried forward (c/f)'));
         $harness->assertSame(true, str_contains($html, 'Alex Example'));
-        $harness->assertSame(true, str_contains($html, 'save_expense_position_acknowledgement'));
+        $harness->assertSame(true, str_contains($html, 'revoke_section_review'));
         $harness->assertSame(true, str_contains($html, 'Approved at 2026-07-06 10:00:00 by Alex Example using the web_app.'));
-        $harness->assertSame(true, str_contains($html, 'name="expense_position_acknowledgement" value="0"'));
+        $harness->assertSame(true, str_contains($html, 'name="check_code" value="expense_position_acknowledgement"'));
         $harness->assertSame(true, str_contains($html, 'Revoke approval'));
         $harness->assertSame(false, str_contains($html, 'data-chicken-check="true"'));
         $harness->assertSame(false, str_contains($html, 'checked required'));
@@ -77,6 +77,16 @@ function yearEndExpensesConfirmationCardContext(array $expenses): array
         ],
         'services' => [
             'yearEndExpensesConfirmation' => $expenses,
+            'sectionReview' => [
+                'acknowledgement' => [
+                    'acknowledged_at' => (string)($expenses['expense_position_acknowledged_at'] ?? ''),
+                    'acknowledged_by' => (string)($expenses['expense_position_acknowledged_by'] ?? ''),
+                    'note' => (string)($expenses['expense_position_approval_note'] ?? ''),
+                ],
+                'acknowledgement_current' => !empty($expenses['expense_position_acknowledged']),
+                'acknowledgement_state' => (string)($expenses['expense_position_acknowledgement_state'] ?? 'absent'),
+                'can_approve' => true,
+            ],
         ],
     ];
 }

@@ -48,6 +48,10 @@ final class _ixbrl_generationCard extends CardBaseFramework
         $arelleStatus = (array)($readiness['arelle_status'] ?? []);
         $canGenerate = !empty($readiness['can_generate']);
         $readyForFiling = !empty($readiness['ready_for_filing']);
+        $generationBlockers = array_values(array_unique(array_filter(array_map(
+            static fn(mixed $message): string => trim((string)$message),
+            (array)($readiness['generation_errors'] ?? [])
+        ), static fn(string $message): bool => $message !== '')));
         $canGenerateAll = $canGenerate && $this->allComputationPeriodsReady($context);
         $runFreshness = (array)($run['run_freshness'] ?? []);
         $stale = (int)($run['fact_count'] ?? 0) > 0
@@ -123,6 +127,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                         <button class="button primary" type="submit"' . ($canGenerate ? '' : ' disabled') . '>Generate Accounting Period iXBRL</button>
                     </form>
                 </div>
+                ' . (!$canGenerate ? $this->generationBlockers($generationBlockers) : '') . '
             </section>
             ' . $this->companiesHouseArtifact($context, $companyId, $accountingPeriodId) . '
             ' . $this->computationPeriods($context, $companyId, $accountingPeriodId) . '
@@ -176,6 +181,21 @@ final class _ixbrl_generationCard extends CardBaseFramework
             . $this->metric('Submission number', (string)($submission['submission_number'] ?? 'Allocated on send'))
             . $this->metric('Environment', (string)($submission['environment'] ?? ''))
             . '</div><div class="helper">This revised artifact is distinct from the HMRC accounts iXBRL and uses the Companies House document policy.</div></section>';
+    }
+
+    /** @param list<string> $blockers */
+    private function generationBlockers(array $blockers): string
+    {
+        if ($blockers === []) {
+            return '<div class="helper">Resolve the accounts filing-basis requirements before generating iXBRL.</div>';
+        }
+
+        $html = '<div class="helper"><strong>Generation requirements</strong><ul>';
+        foreach ($blockers as $blocker) {
+            $html .= '<li>' . HelperFramework::escape($blocker) . '</li>';
+        }
+
+        return $html . '</ul></div>';
     }
 
     private function computationPeriods(array $context, int $companyId, int $accountingPeriodId): string

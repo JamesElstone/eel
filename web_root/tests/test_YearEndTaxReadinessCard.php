@@ -155,7 +155,7 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
             'acknowledged_by' => 'Alex Example using the web_app',
         ]));
 
-        $harness->assertSame(true, str_contains($html, 'save_tax_readiness_acknowledgement'));
+        $harness->assertSame(true, str_contains($html, 'revoke_section_review'));
         $harness->assertSame(false, str_contains($html, 'Open Tax Workflow'));
         $harness->assertSame(true, str_contains($html, 'Overall Tax Position'));
         $harness->assertSame(true, str_contains($html, 'Corporation Tax Items Requiring Review'));
@@ -183,7 +183,7 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="accounting_period_id" value="70">'));
         $harness->assertSame(false, str_contains($html, '?page=corporation_tax&amp;company_id=33'));
         $harness->assertSame(true, str_contains($html, 'Approved at 2026-07-03 12:00:00 by Alex Example using the web_app.'));
-        $harness->assertSame(true, str_contains($html, 'name="tax_readiness_acknowledgement" value="0"'));
+        $harness->assertSame(true, str_contains($html, 'name="check_code" value="tax_readiness_acknowledgement"'));
         $harness->assertSame(true, str_contains($html, 'Revoke approval'));
         $harness->assertSame(false, str_contains($html, 'data-chicken-check="true"'));
         $harness->assertSame(false, str_contains($html, 'checked required'));
@@ -285,6 +285,12 @@ function yearEndTaxReadinessCardContext(array $taxReadiness, array $acknowledgem
         ],
         'services' => [
             'yearEndTaxReadiness' => $taxReadiness,
+            'sectionReview' => [
+                'acknowledgement' => $acknowledgement,
+                'acknowledgement_current' => $acknowledgement !== [],
+                'acknowledgement_state' => $acknowledgement === [] ? 'absent' : 'current',
+                'can_approve' => true,
+            ],
         ],
     ];
 }

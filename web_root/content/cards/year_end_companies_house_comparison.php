@@ -28,9 +28,9 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
     {
         return [
             [
-                'key' => 'companiesHouseComparisonReview',
-                'service' => \eel_accounts\Service\CompaniesHouseComparisonReviewService::class,
-                'method' => 'fetchContext',
+                'key' => 'sectionReview',
+                'service' => \eel_accounts\Service\YearEndSectionApprovalService::class,
+                'method' => 'fetchCompaniesHouseReview',
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
@@ -46,46 +46,49 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $review = (array)($context['services']['companiesHouseComparisonReview'] ?? []);
+        $sectionReview = (array)($context['services']['sectionReview'] ?? []);
+        if (empty($sectionReview['available'])) {
+            return $this->renderErrors((array)($sectionReview['errors'] ?? ['Companies House comparison is unavailable.']));
+        }
+        $review = (array)($sectionReview['display'] ?? []);
         $comparison = (array)($review['comparison'] ?? []);
         $access = (array)($review['access'] ?? []);
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $companySettings = (array)($company['settings'] ?? []);
-        $acknowledgement = is_array($review['acknowledgement'] ?? null)
-            ? $review['acknowledgement']
+        $acknowledgement = is_array($sectionReview['acknowledgement'] ?? null)
+            ? $sectionReview['acknowledgement']
             : null;
         $mismatchCount = (int)($review['mismatch_count'] ?? 0);
         $lockNotice = !empty($access['is_locked'])
-            ? '<div class="helper">The Accounting Period has been locked. No changes can be made until the period is unlocked.</div>'
+            ? '<div class="helper">The Accounting Period has been locked. No changes can be made until it is unlocked.</div>'
             : '';
 
         return '<section class="settings-stack" id="year-end-companies-house-comparison">
             ' . $lockNotice . '
             ' . $this->renderComparisonPanel($comparison, $companySettings) . '
-            ' . $this->renderEligibilityQuestion($company, $companyId, $accountingPeriodId, (array)($review['eligibility'] ?? []), $access) . '
-            ' . $this->renderVarianceExplanationQuestion($companyId, $accountingPeriodId, (array)($review['eligibility'] ?? []), $comparison, $access, $mismatchCount) . '
-            ' . $this->renderAcknowledgementPanel($companyId, $accountingPeriodId, $comparison, $acknowledgement, $access, $mismatchCount, $review) . '
+            ' . $this->renderAcknowledgementPanel($companyId, $accountingPeriodId, $comparison, $acknowledgement, $access, $mismatchCount, $sectionReview) . '
         </section>';
     }
 
-    private function renderEligibilityQuestion(array $company, int $companyId, int $accountingPeriodId, array $eligibility, array $access): string
+    private function renderEligibilityQuestion(array $company, int $companyId, int $accountingPeriodId, array $eligibility, array $revisionMetadata): string
     {
         $companyName = trim((string)($company['company_name'] ?? 'this company'));
         $decision = strtolower(trim((string)($eligibility['decision'] ?? 'pending')));
-        $yesChecked = $decision !== 'ineligible' ? ' checked' : '';
-        $noChecked = $decision === 'ineligible' ? ' checked' : '';
+        $yesChecked = $decision === 'eligible' ? ' checked' : '';
+        $noChecked = $decision !== 'eligible' ? ' checked' : '';
         $originalDocumentId = (int)($eligibility['original_document_id'] ?? 0);
         $unavailable = $originalDocumentId <= 0;
-        $disabled = (!empty($access['is_locked']) || $unavailable) ? ' disabled' : '';
+        $metadataEditable = !array_key_exists('editable', $revisionMetadata) || !empty($revisionMetadata['editable']);
+        $disabled = (!$metadataEditable || $unavailable) ? ' disabled' : '';
         $helper = $unavailable
             ? 'A matching Companies House filing is required before eligibility can be recorded.'
-            : (!empty($access['is_locked'])
-            ? ''
-            : ($decision === 'pending'
-                ? 'Record a Yes or No decision before completing the Companies House Year End Confirmation. Add supporting notes or evidence to the Approval below.'
-                : 'Change this decision if needed before completing the Companies House Year End Confirmation. Add supporting notes or evidence to the Approval below.'));
+            : (!$metadataEditable
+                ? (string)($revisionMetadata['message'] ?? 'Companies House revision metadata cannot be changed for the current filing state.')
+                : ($decision === 'pending'
+                    ? 'No is shown by default but has not been recorded. Select Yes to record electronic revised-accounts eligibility.'
+                    : 'Change this decision if needed before preparing revised accounts.'));
 
         return '<form method="post" action="?page=companies_house" data-ajax="true" class="settings-stack" id="companies-house-xml-eligibility">'
             . $this->actionHiddenFields($companyId, $accountingPeriodId, 'record_gateway_eligibility')
@@ -104,7 +107,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         int $accountingPeriodId,
         array $eligibility,
         array $comparison,
-        array $access,
+        array $revisionMetadata,
         int $mismatchCount
     ): string {
         if (empty($comparison['has_exact_filing']) || $mismatchCount <= 0) {
@@ -115,12 +118,12 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         if ($originalDocumentId <= 0) {
             return '';
         }
-        $locked = !empty($access['is_locked']);
-        $disabled = $locked ? ' disabled aria-disabled="true"' : '';
+        $metadataEditable = !array_key_exists('editable', $revisionMetadata) || !empty($revisionMetadata['editable']);
+        $disabled = $metadataEditable ? '' : ' disabled aria-disabled="true"';
         $value = (string)($eligibility['variance_explanation'] ?? '');
-        $helper = $locked
-            ? ''
-            : 'Use one explanation covering all Companies House variances. This wording will be used when preparing the revised accounts disclosure.';
+        $helper = $metadataEditable
+            ? 'Use one explanation covering all Companies House variances. This wording will be used when preparing the revised accounts disclosure.'
+            : (string)($revisionMetadata['message'] ?? 'Companies House revision metadata cannot be changed for the current filing state.');
 
         return '<form method="post" action="?page=companies_house" data-ajax="true" class="settings-stack" id="companies-house-variance-explanation">'
             . $this->actionHiddenFields($companyId, $accountingPeriodId, 'save_variance_explanation')
@@ -195,32 +198,37 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         ?array $acknowledgement,
         array $access,
         int $mismatchCount,
-        array $review
+        array $sectionReview
     ): string {
-        if (empty($review['requires_acknowledgement'])) {
+        if (!empty($comparison['has_exact_filing']) && $mismatchCount <= 0) {
             return $this->panel('Approval', '<div class="helper">No Companies House mismatch approval is needed for this accounting period.</div>');
         }
 
-        $isAcknowledged = !empty($acknowledgement['current']);
-        $disabledReason = (string)($review['acknowledgement_blocked_reason'] ?? '');
+        $isAcknowledged = !empty($sectionReview['acknowledgement_current']);
+        $disabled = empty($comparison['can_acknowledge']);
+        $disabledReason = $disabled
+            ? (string)(($comparison['warnings'] ?? [])[0] ?? 'The comparison must be available and reliable before it can be approved.')
+            : '';
         $form = \eel_accounts\Renderer\YearEndApprovalRenderer::render([
-            'subject' => (string)($review['acknowledgement_subject'] ?? 'Companies House comparison'),
+            'subject' => !empty($comparison['has_exact_filing']) ? 'Companies House comparison' : 'No exact Companies House filing',
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
             'locked' => !empty($access['is_locked']),
-            'disabled' => empty($review['can_acknowledge']),
+            'disabled' => $disabled,
             'disabledReason' => $disabledReason,
             'acknowledged' => $isAcknowledged,
-            'acknowledgementState' => (string)($acknowledgement['state'] ?? ''),
-            'acknowledgedAt' => (string)($acknowledgement['acknowledged_at'] ?? ''),
-            'acknowledgedBy' => (string)($acknowledgement['acknowledged_by'] ?? ''),
+            'acknowledgementState' => (string)($sectionReview['acknowledgement_state'] ?? ''),
+            'acknowledgedAt' => (string)($sectionReview['acknowledged_at'] ?? ''),
+            'acknowledgedBy' => (string)($sectionReview['acknowledged_by'] ?? ''),
             'note' => (string)($acknowledgement['note'] ?? ''),
-            'intent' => 'acknowledge_review_check',
-            'revokeIntent' => 'reopen_review_check',
-            'checkboxName' => (string)($review['acknowledgement_check_code'] ?? ''),
-            'approveFields' => ['check_code' => (string)($review['acknowledgement_check_code'] ?? '')],
-            'revokeFields' => ['check_code' => (string)($review['acknowledgement_check_code'] ?? '')],
-            'noteName' => 'review_acknowledgement_note',
+            'questions' => (array)($sectionReview['questions'] ?? []),
+            'answers' => (array)($sectionReview['answers'] ?? []),
+            'intent' => 'approve_section_review',
+            'revokeIntent' => 'revoke_section_review',
+            'checkboxName' => (string)($sectionReview['check_code'] ?? ''),
+            'approveFields' => ['check_code' => (string)($sectionReview['check_code'] ?? '')],
+            'revokeFields' => ['check_code' => (string)($sectionReview['check_code'] ?? '')],
+            'noteName' => 'approval_note',
             'noteId' => 'companies-house-mismatch-note',
         ]);
 

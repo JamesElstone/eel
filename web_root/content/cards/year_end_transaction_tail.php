@@ -36,6 +36,16 @@ final class _year_end_transaction_tailCard extends CardBaseFramework
                     'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
+            [
+                'key' => 'sectionReview',
+                'service' => \eel_accounts\Service\YearEndSectionApprovalService::class,
+                'method' => 'fetchReview',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                    'checkCode' => 'transaction_tail_review',
+                ],
+            ],
         ];
     }
 
@@ -61,7 +71,7 @@ final class _year_end_transaction_tailCard extends CardBaseFramework
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriod = (array)($tail['accounting_period'] ?? []);
         $accountingPeriodId = (int)($accountingPeriod['id'] ?? ($company['accounting_period_id'] ?? 0));
-        $acknowledgement = $tail['acknowledgement'] ?? $tail['previous_acknowledgement'] ?? null;
+        $sectionReview = (array)($context['services']['sectionReview'] ?? []);
         $rowsHtml = '';
         foreach ((array)($tail['rows'] ?? []) as $row) {
             $amount = array_key_exists('last_transaction_amount', $row) ? $row['last_transaction_amount'] : null;
@@ -89,29 +99,32 @@ final class _year_end_transaction_tailCard extends CardBaseFramework
                     <tbody>' . $rowsHtml . '</tbody>
                 </table>
             </div>
-            ' . $this->acknowledgementHtml(is_array($acknowledgement) ? $acknowledgement : null, (string)($tail['acknowledgement_state'] ?? 'absent'), $companyId, $accountingPeriodId) . '
+            ' . $this->acknowledgementHtml($sectionReview, $companyId, $accountingPeriodId) . '
         </section>';
     }
 
-    private function acknowledgementHtml(?array $acknowledgement, string $state, int $companyId, int $accountingPeriodId): string
+    private function acknowledgementHtml(array $review, int $companyId, int $accountingPeriodId): string
     {
-        $acknowledged = $state === 'current';
+        $acknowledgement = (array)($review['acknowledgement'] ?? []);
         return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
             'subject' => 'transaction cut-off position',
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
-            'acknowledged' => $acknowledged,
-            'acknowledgementState' => $state,
+            'acknowledged' => !empty($review['acknowledgement_current']),
+            'acknowledgementState' => (string)($review['acknowledgement_state'] ?? 'absent'),
             'acknowledgedAt' => (string)($acknowledgement['acknowledged_at'] ?? ''),
             'acknowledgedBy' => (string)($acknowledgement['acknowledged_by'] ?? ''),
             'note' => (string)($acknowledgement['note'] ?? ''),
-            'intent' => 'save_transaction_tail_acknowledgement',
-            'revokeIntent' => 'save_transaction_tail_acknowledgement',
-            'checkboxName' => 'transaction_tail_acknowledgement',
-            'approveFields' => ['transaction_tail_acknowledgement' => '1'],
-            'revokeFields' => ['transaction_tail_acknowledgement' => '0'],
-            'noteName' => 'review_acknowledgement_note',
+            'intent' => 'approve_section_review',
+            'revokeIntent' => 'revoke_section_review',
+            'approveFields' => ['check_code' => 'transaction_tail_review'],
+            'revokeFields' => ['check_code' => 'transaction_tail_review'],
+            'noteName' => 'approval_note',
             'noteId' => 'transaction-tail-acknowledgement-note',
+            'questions' => (array)($review['questions'] ?? []),
+            'answers' => (array)($review['answers'] ?? []),
+            'disabled' => empty($review['can_approve']),
+            'disabledReason' => (string)(($review['approval_errors'] ?? [])[0] ?? ''),
         ]);
     }
 

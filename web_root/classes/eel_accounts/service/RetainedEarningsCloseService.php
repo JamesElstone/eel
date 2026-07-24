@@ -204,10 +204,21 @@ final class RetainedEarningsCloseService
         ];
         $service = $this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService();
         $acknowledgement = $service->fetch($companyId, $accountingPeriodId, 'retained_earnings_close_confirmation');
+        $isCanonicalSectionApproval = (string)($acknowledgement['basis_version'] ?? '')
+            === \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION;
         $evaluation = $service->evaluate(
             $acknowledgement,
-            $this->acknowledgementBasisForContext($context),
-            ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId)
+            $isCanonicalSectionApproval
+                ? [
+                    'contract_version' => \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION,
+                    'check_code' => 'retained_earnings_close_confirmation',
+                    'facts' => $this->acknowledgementBasisForContext($context),
+                    'questions' => [],
+                    'answers' => [],
+                ]
+                : $this->acknowledgementBasisForContext($context),
+            ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId),
+            $isCanonicalSectionApproval ? \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION : null
         );
 
         return $context + [
@@ -247,14 +258,18 @@ final class RetainedEarningsCloseService
         }
     }
 
-    private function saveAcknowledgementInternal(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy, string $note): array
+    /**
+     * Captures the distributable-reserve review that forms part of a Profit &
+     * Loss approval, without creating a separate acknowledgement record.
+     *
+     * The canonical Year End section approval calls this before saving its
+     * question-and-facts snapshot.  The legacy save path uses it too, so both
+     * routes retain exactly the same prerequisite behaviour.
+     */
+    public function prepareForAcknowledgement(int $companyId, int $accountingPeriodId, string $changedBy = 'web_app'): array
     {
         (new \eel_accounts\Service\VatSupportScopeService())
-            ->assertTaxAndYearEndSupported($companyId, 'save a retained earnings Year End acknowledgement');
-        if (!$acknowledged) {
-            return ($this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService())
-                ->revoke($companyId, $accountingPeriodId, 'retained_earnings_close_confirmation');
-        }
+            ->assertTaxAndYearEndSupported($companyId, 'prepare a retained earnings Year End acknowledgement');
 
         $context = $this->fetchContext($companyId, $accountingPeriodId);
         if (empty($context['available'])) {
@@ -263,9 +278,9 @@ final class RetainedEarningsCloseService
 
         // The P&L approval is also the approval of the distributable-profit
         // classifications displayed alongside it.  Capture those current
-        // classifications here so approval does not depend on the user
-        // separately submitting the reserve-review card first.
-        if ($acknowledged && empty((($context['reserve_review'] ?? [])['snapshot_current'] ?? false))) {
+        // classifications here so approval does not depend on a separately
+        // submitted reserve-review card.
+        if (empty((($context['reserve_review'] ?? [])['snapshot_current'] ?? false))) {
             $treatments = [];
             foreach ((array)(($context['reserve_review'] ?? [])['rows'] ?? []) as $row) {
                 $nominalAccountId = (int)($row['nominal_account_id'] ?? 0);
@@ -290,6 +305,22 @@ final class RetainedEarningsCloseService
                 'context' => $context,
             ];
         }
+
+        return ['success' => true, 'context' => $context];
+    }
+
+    private function saveAcknowledgementInternal(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy, string $note): array
+    {
+        if (!$acknowledged) {
+            return ($this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService())
+                ->revoke($companyId, $accountingPeriodId, 'retained_earnings_close_confirmation');
+        }
+
+        $prepared = $this->prepareForAcknowledgement($companyId, $accountingPeriodId, $changedBy);
+        if (empty($prepared['success'])) {
+            return $prepared;
+        }
+        $context = (array)($prepared['context'] ?? []);
         $service = $this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService();
         return $service->save(
             $companyId,

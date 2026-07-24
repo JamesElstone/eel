@@ -35,6 +35,16 @@ final class _year_end_profit_loss_confirmCard extends CardBaseFramework
                     'depreciationPreview' => ':profit_loss.summary.depreciation_preview',
                 ],
             ],
+            [
+                'key' => 'sectionReview',
+                'service' => \eel_accounts\Service\YearEndSectionApprovalService::class,
+                'method' => 'fetchReview',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                    'checkCode' => 'retained_earnings_close_confirmation',
+                ],
+            ],
         ];
     }
 
@@ -72,17 +82,15 @@ final class _year_end_profit_loss_confirmCard extends CardBaseFramework
         $pendingPrepaymentHtml = abs($pendingPrepaymentAmount) >= 0.005
             ? '<div class="helper">These figures include a pending prepayment expense adjustment of ' . HelperFramework::escape($this->money($companySettings, $pendingPrepaymentAmount)) . '.</div>'
             : '';
-        $acknowledged = !empty($close['acknowledged']);
-        $stale = !empty($close['acknowledgement_stale']);
+        $sectionReview = (array)($context['services']['sectionReview'] ?? []);
         $journalLinesHtml = $this->journalLinesHtml((array)($close['journal_lines'] ?? []), $companySettings);
         $existingJournal = (array)($close['existing_journal'] ?? []);
         $existingHtml = $existingJournal !== []
             ? '<div class="helper">A retained earnings close journal already exists for this period and will be replaced from these agreed figures when the period is locked.</div>'
             : '';
-        $staleHtml = $stale
+        $staleHtml = (string)($sectionReview['acknowledgement_state'] ?? 'absent') === 'stale'
             ? '<div class="helper">Figures have changed since the last agreement. Review them and agree again before locking.</div>'
             : '';
-        $acknowledgement = (array)($close['acknowledgement'] ?? []);
         $reserveReview = (array)($close['reserve_review'] ?? []);
         $reserveReviewCurrent = !empty($reserveReview['snapshot_current']);
         $sourceCoverageGate = $this->sourceCoverageGate($context);
@@ -99,11 +107,7 @@ final class _year_end_profit_loss_confirmCard extends CardBaseFramework
             ? '<div class="helper"><span class="badge warning">Source Coverage review required</span> ' . HelperFramework::escape((string)$sourceCoverageGate['reason']) . '</div>'
             : '';
         $acknowledgementForm = $this->acknowledgementHtml(
-            $acknowledged && !$stale && !$sourceCoverageGate['blocked'],
-            $sourceCoverageGate['blocked'] ? 'stale' : (string)($close['acknowledgement_state'] ?? 'absent'),
-            (string)($acknowledgement['acknowledged_at'] ?? ''),
-            (string)($acknowledgement['acknowledged_by'] ?? ''),
-            (string)($acknowledgement['note'] ?? ''),
+            $sectionReview,
             $companyId,
             $accountingPeriodId,
             $canAcknowledge,
@@ -155,24 +159,29 @@ final class _year_end_profit_loss_confirmCard extends CardBaseFramework
         ];
     }
 
-    private function acknowledgementHtml(bool $acknowledged, string $state, string $acknowledgedAt, string $acknowledgedBy, string $note, int $companyId, int $accountingPeriodId, bool $canAcknowledge, string $blockedReason): string
+    private function acknowledgementHtml(array $review, int $companyId, int $accountingPeriodId, bool $canAcknowledge, string $blockedReason): string
     {
+        $acknowledgement = (array)($review['acknowledgement'] ?? []);
         return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
             'subject' => 'profit and loss close, including the distributable profit review',
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
-            'acknowledged' => $acknowledged,
-            'acknowledgementState' => $state,
-            'acknowledgedAt' => $acknowledgedAt,
-            'acknowledgedBy' => $acknowledgedBy,
-            'note' => $note,
-            'disabled' => !$canAcknowledge,
-            'disabledReason' => !$canAcknowledge ? $blockedReason : '',
-            'intent' => 'save_retained_earnings_close_acknowledgement',
-            'revokeIntent' => 'save_retained_earnings_close_acknowledgement',
-            'checkboxName' => 'retained_earnings_close_acknowledgement',
-            'approveFields' => ['retained_earnings_close_acknowledgement' => '1'],
-            'revokeFields' => ['retained_earnings_close_acknowledgement' => '0'],
+            'acknowledged' => !empty($review['acknowledgement_current']),
+            'acknowledgementState' => (string)($review['acknowledgement_state'] ?? 'absent'),
+            'acknowledgedAt' => (string)($acknowledgement['acknowledged_at'] ?? ''),
+            'acknowledgedBy' => (string)($acknowledgement['acknowledged_by'] ?? ''),
+            'note' => (string)($acknowledgement['note'] ?? ''),
+            'disabled' => !$canAcknowledge || empty($review['can_approve']),
+            'disabledReason' => !$canAcknowledge
+                ? $blockedReason
+                : (string)(($review['approval_errors'] ?? [])[0] ?? ''),
+            'intent' => 'approve_section_review',
+            'revokeIntent' => 'revoke_section_review',
+            'approveFields' => ['check_code' => 'retained_earnings_close_confirmation'],
+            'revokeFields' => ['check_code' => 'retained_earnings_close_confirmation'],
+            'noteName' => 'approval_note',
+            'questions' => (array)($review['questions'] ?? []),
+            'answers' => (array)($review['answers'] ?? []),
         ]);
     }
 

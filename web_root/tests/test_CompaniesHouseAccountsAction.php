@@ -64,6 +64,19 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
         $harness->assertSame('user:test-admin', (string)($service->calls[0]['actor'] ?? ''));
     });
 
+    $harness->check(CompaniesHouseAccountsAction::class, 'allows revision metadata actions after Year End lock', static function () use ($harness): void {
+        $service = new CompaniesHouseAccountsActionFakeService();
+        $action = companiesHouseAccountsTestAction($service, null, [12, 34], true);
+        $result = $action->handle(companiesHouseAccountsActionRequest([
+            'intent' => 'record_gateway_eligibility',
+            'original_document_id' => '56',
+            'eligibility_decision' => 'eligible',
+        ]), createTestPageServiceFramework());
+
+        $harness->assertSame(true, $result->isSuccess());
+        $harness->assertSame('recordEligibility', (string)($service->calls[0]['method'] ?? ''));
+    });
+
     $harness->check(CompaniesHouseAccountsAction::class, 'saves the unlocked variance explanation separately from preparation', static function () use ($harness): void {
         $service = new CompaniesHouseAccountsActionFakeService();
         $action = companiesHouseAccountsTestAction($service, null, [12, 34], false);

@@ -15,11 +15,12 @@ $harness->run(_year_end_prepayment_approvalsCard::class, static function (Genera
     $harness->check(_year_end_prepayment_approvalsCard::class, 'renders prepayment acknowledgement action and revoke state', static function () use ($harness, $card): void {
         $services = $card->services();
 
-        $harness->assertCount(1, $services);
+        $harness->assertCount(2, $services);
         $harness->assertSame('prepaymentWorkflowContext', (string)($services[0]['key'] ?? ''));
         $harness->assertSame(\eel_accounts\Service\PrepaymentWorkflowContextService::class, (string)($services[0]['service'] ?? ''));
         $harness->assertSame('fetchContext', (string)($services[0]['method'] ?? ''));
         $harness->assertSame($services[0], (new _prepayments_reviewCard())->services()[0] ?? null);
+        $harness->assertSame(\eel_accounts\Service\YearEndSectionApprovalService::class, (string)($services[1]['service'] ?? ''));
 
         $uncheckedHtml = $card->render(yearEndPrepaymentApprovalsCardContext(null));
 
@@ -30,7 +31,7 @@ $harness->run(_year_end_prepayment_approvalsCard::class, static function (Genera
         $harness->assertSame(true, str_contains($uncheckedHtml, 'Carried-forward prepayments affecting this period'));
         $harness->assertSame(true, str_contains($uncheckedHtml, 'Carried annual service fixture'));
         $harness->assertSame(true, str_contains($uncheckedHtml, 'Carried schedules</div><div class="summary-value">1'));
-        $harness->assertSame(true, str_contains($uncheckedHtml, 'name="intent" value="acknowledge_review_check"'));
+        $harness->assertSame(true, str_contains($uncheckedHtml, 'name="intent" value="approve_section_review"'));
         $harness->assertSame(true, str_contains($uncheckedHtml, 'name="check_code" value="prepayment_approvals"'));
         $harness->assertSame(true, str_contains($uncheckedHtml, 'I confirm that I have reviewed the prepayment position shown above'));
         $harness->assertSame(true, str_contains($uncheckedHtml, 'disabled data-year-end-ack-submit'));
@@ -55,10 +56,10 @@ $harness->run(_year_end_prepayment_approvalsCard::class, static function (Genera
             'state' => 'current',
         ]));
 
-        $harness->assertSame(true, str_contains($acknowledgedHtml, 'name="intent" value="reopen_review_check"'));
+        $harness->assertSame(true, str_contains($acknowledgedHtml, 'name="intent" value="revoke_section_review"'));
         $harness->assertSame(true, str_contains($acknowledgedHtml, 'Approved at 2026-07-06 10:00:00 by Alex Example using the web_app.'));
         $harness->assertSame(true, str_contains($acknowledgedHtml, 'Revoke approval'));
-        $harness->assertSame(false, str_contains($acknowledgedHtml, 'name="intent" value="acknowledge_review_check"'));
+        $harness->assertSame(false, str_contains($acknowledgedHtml, 'name="intent" value="approve_section_review"'));
 
         $blockedHtml = $card->render(yearEndPrepaymentApprovalsCardContext(null, 2));
         $harness->assertSame(true, str_contains($blockedHtml, 'Awaiting decision: 2.'));
@@ -136,6 +137,12 @@ function yearEndPrepaymentApprovalsCardContext(?array $acknowledgement, int $pen
                     ]],
                 ],
                 'approval' => $acknowledgement,
+            ],
+            'sectionReview' => [
+                'acknowledgement' => $acknowledgement,
+                'acknowledgement_current' => !empty($acknowledgement['current']),
+                'acknowledgement_state' => (string)($acknowledgement['state'] ?? 'absent'),
+                'can_approve' => true,
             ],
         ],
     ];

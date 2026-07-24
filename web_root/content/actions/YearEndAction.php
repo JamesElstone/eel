@@ -105,6 +105,21 @@ final class YearEndAction implements ActionInterfaceFramework
                     $this->truthy($request->input('director_loan_year_end_review', '0')),
                     $actor
                 ),
+                'approve_section_review' => (new \eel_accounts\Service\YearEndSectionApprovalService())->approve(
+                    $companyId,
+                    $accountingPeriodId,
+                    (string)$request->input('check_code', ''),
+                    (array)$request->input('approval_answers', []),
+                    $actor,
+                    (string)$request->input('approval_note', '')
+                ),
+                'revoke_section_review' => (new \eel_accounts\Service\YearEndSectionApprovalService())->revoke(
+                    $companyId,
+                    $accountingPeriodId,
+                    (string)$request->input('check_code', ''),
+                    $actor,
+                    (string)$request->input('approval_note', '')
+                ),
                 'save_tax_readiness_acknowledgement' => (new \eel_accounts\Service\YearEndChecklistService())->saveTaxReadinessAcknowledgement(
                     $companyId,
                     $accountingPeriodId,
@@ -165,8 +180,13 @@ final class YearEndAction implements ActionInterfaceFramework
             $result = ['success' => false, 'errors' => [$exception->getMessage()]];
         }
 
+        $successful = !empty($result['success']);
+        if ($successful) {
+            $this->invalidateSectionBundles($companyId, $accountingPeriodId, $intent, (string)$request->input('check_code', ''));
+        }
+
         return $this->result(
-            !empty($result['success']),
+            $successful,
             (array)($result['errors'] ?? []),
             $this->successMessage($intent, $result),
             $this->changedFacts($intent, (string)$request->input('check_code', ''))
@@ -294,6 +314,10 @@ final class YearEndAction implements ActionInterfaceFramework
             'save_expense_position_acknowledgement' => 'Expense position approval saved.',
             'save_retained_earnings_close_acknowledgement' => 'Retained earnings approval saved.',
             'save_transaction_tail_acknowledgement' => 'Transaction cut-off approval saved.',
+            'approve_section_review' => !empty($result['requires_review'])
+                ? 'The section was refreshed. Review it and approve again.'
+                : 'Year-end section approval saved.',
+            'revoke_section_review' => 'Year-end section approval revoked.',
             'acknowledge_review_check' => 'Year-end approval saved.',
             'reopen_review_check' => 'Year-end approval revoked.',
             'post_director_loan_offset' => 'Director loan control reclassification journal posted.',
@@ -307,6 +331,38 @@ final class YearEndAction implements ActionInterfaceFramework
     private function requiresSingleDirectorCheck(string $intent): bool
     {
         return false;
+    }
+
+    private function invalidateSectionBundles(int $companyId, int $accountingPeriodId, string $intent, string $checkCode): void
+    {
+        $sections = match ($intent) {
+            'set_participator_loan_attribution', 'post_director_loan_offset', 'repair_legacy_director_loan_offset', 'create_adjustment' => ['director_loan_year_end_review'],
+            'save_opening_balance', 'recalculate' => [
+                'director_loan_year_end_review',
+                'tax_readiness_acknowledgement',
+                'expense_position_acknowledgement',
+                'retained_earnings_close_confirmation',
+                'transaction_tail_review',
+                'prepayment_approvals',
+                'cut_off_journals_review',
+                'fixed_asset_review_placeholder',
+                'companies_house_mismatch_acknowledgement',
+                'companies_house_no_filing_acknowledgement',
+            ],
+            'acknowledge_review_check', 'reopen_review_check' => trim($checkCode) !== '' ? [$checkCode] : [],
+            default => [],
+        };
+        foreach ($sections as $section) {
+            try {
+                (new \eel_accounts\Service\YearEndSectionApprovalService())->invalidate(
+                    $companyId,
+                    $accountingPeriodId,
+                    $section,
+                    'Related Year End data changed.'
+                );
+            } catch (\Throwable) {
+            }
+        }
     }
 
     private function requiresResolvedSourceCoverage(string $intent, RequestFramework $request): bool
@@ -349,6 +405,8 @@ final class YearEndAction implements ActionInterfaceFramework
             'save_opening_balance',
             'create_adjustment',
             'save_director_loan_year_end_review',
+            'approve_section_review',
+            'revoke_section_review',
             'save_tax_readiness_acknowledgement',
             'save_retained_earnings_close_acknowledgement',
             'save_transaction_tail_acknowledgement',

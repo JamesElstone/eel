@@ -16,7 +16,7 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
         $definition = (array)($services[0] ?? []);
         $params = (array)($definition['params'] ?? []);
 
-        $harness->assertSame(1, count($services));
+        $harness->assertSame(2, count($services));
         $harness->assertSame('nonAssetReview', $definition['key'] ?? null);
         $harness->assertSame(\eel_accounts\Service\NonAssetReviewService::class, $definition['service'] ?? null);
         $harness->assertSame('fetchContext', $definition['method'] ?? null);
@@ -24,6 +24,7 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
         $harness->assertSame(':company.accounting_period_id', $params['accountingPeriodId'] ?? null);
         $harness->assertSame(':company.settings.tools_small_equipment_nominal_id', $params['toolsSmallEquipmentNominalId'] ?? null);
         $harness->assertSame(':company.settings.potential_asset_threshold', $params['threshold'] ?? null);
+        $harness->assertSame(\eel_accounts\Service\YearEndSectionApprovalService::class, $services[1]['service'] ?? null);
     });
 
     $harness->check(_not_an_assetCard::class, 'renders threshold select paginated table and export controls', static function () use ($harness, $card): void {
@@ -240,12 +241,13 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
                     'data_entry' => ['permitted' => true, 'is_locked' => false, 'reason_code' => '', 'reason' => ''],
                     'acknowledgement' => null,
                 ],
+                'sectionReview' => ['can_approve' => true],
             ],
         ]);
 
         $harness->assertTrue(str_contains($html, 'No Tools &amp; Small Equipment items are over the selected threshold.'));
         $harness->assertTrue(str_contains($html, 'Year End Confirmation'));
-        $harness->assertTrue(str_contains($html, 'name="intent" value="acknowledge_review_check"'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="approve_section_review"'));
         $harness->assertTrue(str_contains($html, 'name="check_code" value="fixed_asset_review_placeholder"'));
         $harness->assertTrue(str_contains($html, 'name="approval_confirmed" value="1" required data-year-end-ack-checkbox'));
         $harness->assertTrue(str_contains($html, '>Approve for Year End</button>'));
@@ -285,6 +287,7 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
                     ],
                     'acknowledgement' => null,
                 ],
+                'sectionReview' => ['can_approve' => true],
             ],
         ];
 
@@ -306,6 +309,12 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
             'acknowledged_at' => '2026-07-13 12:00:00',
             'acknowledged_by' => 'reviewer',
             'note' => 'Reviewed before locking.',
+        ];
+        $context['services']['sectionReview'] = [
+            'acknowledgement' => $context['services']['nonAssetReview']['acknowledgement'],
+            'acknowledgement_current' => true,
+            'acknowledgement_state' => 'current',
+            'can_approve' => true,
         ];
         $approvedHtml = $card->render($context);
         $harness->assertTrue(str_contains($approvedHtml, 'This accounting period is locked, so this approval cannot be revoked.'));

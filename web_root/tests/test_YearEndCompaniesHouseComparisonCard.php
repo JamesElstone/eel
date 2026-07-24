@@ -19,14 +19,15 @@ $harness->run(_year_end_companies_house_comparisonCard::class, static function (
 
         $harness->assertCount(1, $card->services());
         $harness->assertSame(true, str_contains($html, 'Companies House Comparison'));
-        $harness->assertSame(true, str_contains($html, 'Is this original Companies House filing eligible for an XML based revised-accounts submission?'));
+        $harness->assertSame(true, str_contains($html, 'Is this Company eligible to submit revised accounts using the Companies House XML Gateway Service?'));
         $harness->assertSame(true, str_contains($html, 'name="approval_answers[companies_house.xml_eligibility]"'));
         $harness->assertSame(true, str_contains($html, 'Why do the Companies House figures need revising?'));
         $harness->assertSame(true, str_contains($html, 'name="approval_answers[companies_house.variance_explanation]"'));
         $harness->assertSame(true, str_contains($html, 'name="intent" value="approve_section_review"'));
         $harness->assertSame(false, str_contains($html, 'name="eligibility_decision"'));
         $harness->assertSame(false, str_contains($html, 'name="intent" value="save_variance_explanation"'));
-        $harness->assertSame(true, strpos($html, 'Companies House Comparison') < strpos($html, 'Is this original Companies House filing'));
+        $harness->assertSame(true, strpos($html, 'Companies House Comparison') < strpos($html, 'Is this Company eligible to submit revised accounts'));
+        $harness->assertSame(true, str_contains($html, 'data-year-end-approval-required-value="eligible"'));
     });
 
     $harness->check(_year_end_companies_house_comparisonCard::class, 'shows approved gate answers from the acknowledgement basis', static function () use ($harness, $card): void {
@@ -86,10 +87,11 @@ function companiesHouseComparisonCardContext(): array
                 'questions' => [
                     [
                         'id' => 'companies_house.xml_eligibility',
-                        'prompt' => 'Is this original Companies House filing eligible for an XML based revised-accounts submission?',
+                        'prompt' => 'Is this Company eligible to submit revised accounts using the Companies House XML Gateway Service?',
                         'type' => 'choice',
                         'options' => ['eligible' => 'Yes', 'ineligible' => 'No'],
                         'required' => true,
+                        'required_value' => 'eligible',
                     ],
                     [
                         'id' => 'companies_house.variance_explanation',

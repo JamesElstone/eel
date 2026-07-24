@@ -68,6 +68,18 @@ $harness->run(\eel_accounts\Service\YearEndSectionApprovalService::class, static
         $harness->assertSame('no', (string)$approved['answers']['ct600a.missing_parties']);
     });
 
+    $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'requires a Yes Companies House XML Gateway eligibility answer', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod($service, 'validateAnswers');
+        $questionsMethod = new ReflectionMethod($service, 'companiesHouseQuestions');
+        $questions = (array)$questionsMethod->invoke($service, false);
+
+        $blocked = (array)$method->invoke($service, $questions, ['companies_house.xml_eligibility' => 'ineligible']);
+        $approved = (array)$method->invoke($service, $questions, ['companies_house.xml_eligibility' => 'eligible']);
+
+        $harness->assertSame(false, !empty($blocked['success']));
+        $harness->assertSame(true, !empty($approved['success']));
+    });
+
     $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'uses the persisted filing-scope answers instead of browser-submitted duplicates', static function () use ($harness, $service): void {
         $method = new ReflectionMethod($service, 'approvalAnswers');
         $answers = (array)$method->invoke($service, [

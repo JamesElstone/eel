@@ -558,7 +558,7 @@ final class YearEndSectionApprovalService
     /** @return list<array<string, mixed>> */
     private function companiesHouseQuestions(bool $includeVarianceExplanation): array
     {
-        $eligibilityPrompt = 'Is this original Companies House filing eligible for an XML based revised-accounts submission?';
+        $eligibilityPrompt = 'Is this Company eligible to submit revised accounts using the Companies House XML Gateway Service?';
         $questions = [[
             'id' => 'companies_house.xml_eligibility',
             'prompt' => $eligibilityPrompt,
@@ -566,6 +566,7 @@ final class YearEndSectionApprovalService
             'type' => 'choice',
             'options' => ['eligible' => 'Yes', 'ineligible' => 'No'],
             'required' => true,
+            'required_value' => 'eligible',
         ]];
         if ($includeVarianceExplanation) {
             $variancePrompt = 'Why do the Companies House figures need revising?';

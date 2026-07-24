@@ -184,6 +184,14 @@ final class _ixbrl_generationCard extends CardBaseFramework
             . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
             . '<button class="button compact primary" type="submit"' . ($artifactExists ? '' : ' disabled') . '>Download Companies House iXBRL</button>'
             . '</form>';
+        $regenerate = '<form method="post" action="?page=disclosures" data-ajax="true">'
+            . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+            . '<input type="hidden" name="card_action" value="CompaniesHouseAccounts">'
+            . '<input type="hidden" name="intent" value="prepare_revised_accounts">'
+            . '<input type="hidden" name="company_id" value="' . $companyId . '">'
+            . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
+            . '<button class="button primary" type="submit"' . (!empty($filing['can_prepare']) ? '' : ' disabled') . '>Regenerate Companies House iXBRL</button>'
+            . '</form>';
         $badge = match ($lifecycle) {
             'accepted' => 'success',
             'rejected', 'failed', 'internal_failure' => 'danger',
@@ -207,6 +215,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             . $this->metricHtml('Artifact', $artifactDownload)
             . '</div>'
             . $this->arelleOutput($revisedValidation)
+            . '<div class="actions-row">' . $regenerate . '</div>'
             . '</section>';
     }
 

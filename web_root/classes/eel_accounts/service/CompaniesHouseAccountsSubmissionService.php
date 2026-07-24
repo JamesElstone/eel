@@ -102,9 +102,8 @@ final class CompaniesHouseAccountsSubmissionService
         }
 
         $lifecycle = (string)($submission['lifecycle'] ?? '');
-        if (in_array($lifecycle, ['prepared', 'submitting', 'transport_unknown', 'pending', 'parked', 'accepted'], true)) {
+        if (in_array($lifecycle, ['submitting', 'transport_unknown', 'pending', 'parked', 'accepted'], true)) {
             $preparationBlockers[] = match ($lifecycle) {
-                'prepared' => 'A revised-accounts artifact is already prepared for this filing basis.',
                 'accepted' => 'Companies House has already accepted revised accounts for this filing basis.',
                 default => 'A revised-accounts submission is already active and must be resolved before preparing another.',
             };

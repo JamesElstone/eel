@@ -85,7 +85,7 @@ final class IxbrlRevisedAccountsArtifactService
             return $transformed;
         }
 
-        $directory = $this->managedDirectory();
+        $directory = $this->managedDirectory($companyId);
         if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
             return ['success' => false, 'errors' => ['Could not create the revised-accounts artifact directory.'], 'warnings' => []];
         }
@@ -97,7 +97,7 @@ final class IxbrlRevisedAccountsArtifactService
 
         $sha256 = hash_file('sha256', $path);
         if (!is_string($sha256) || $sha256 === '') {
-            $this->removeManagedArtifact($path);
+            $this->removeManagedArtifact($path, $companyId);
             return ['success' => false, 'errors' => ['The revised-accounts artifact could not be fingerprinted.'], 'warnings' => []];
         }
         $sha256 = strtolower($sha256);
@@ -105,7 +105,7 @@ final class IxbrlRevisedAccountsArtifactService
         $validation = ($this->validationService ?? new IxbrlExternalValidationService())
             ->validateArtifact($path);
         if ((string)($validation['status'] ?? '') !== 'passed') {
-            $this->removeManagedArtifact($path);
+            $this->removeManagedArtifact($path, $companyId);
             return [
                 'success' => false,
                 'errors' => (array)($validation['errors'] ?? ['The revised accounts did not pass Arelle validation.']),
@@ -115,7 +115,7 @@ final class IxbrlRevisedAccountsArtifactService
         }
         $validatedHash = strtolower(trim((string)($validation['validated_sha256'] ?? '')));
         if ($validatedHash === '' || !hash_equals($sha256, $validatedHash)) {
-            $this->removeManagedArtifact($path);
+            $this->removeManagedArtifact($path, $companyId);
             return [
                 'success' => false,
                 'errors' => ['The revised artifact does not match the file validated by Arelle.'],
@@ -340,19 +340,33 @@ final class IxbrlRevisedAccountsArtifactService
         return $parsed instanceof \DateTimeImmutable ? $parsed->format('j F Y') : $date;
     }
 
-    private function managedDirectory(): string
+    private function managedDirectory(int $companyId): string
     {
-        return $this->outputDirectory !== null && trim($this->outputDirectory) !== ''
-            ? rtrim($this->outputDirectory, '\\/')
-            : PROJECT_ROOT . 'outbound' . DIRECTORY_SEPARATOR . 'companies_house' . DIRECTORY_SEPARATOR . 'revised_accounts';
+        if ($this->outputDirectory !== null && trim($this->outputDirectory) !== '') {
+            return rtrim($this->outputDirectory, '\\/');
+        }
+
+        $company = \InterfaceDB::fetchOne(
+            'SELECT company_number FROM companies WHERE id = :id LIMIT 1',
+            ['id' => $companyId]
+        );
+        $companyNumber = strtoupper((string)preg_replace('/[^A-Za-z0-9]/', '', trim((string)($company['company_number'] ?? ''))));
+        if ($companyNumber === '') {
+            throw new \RuntimeException('A Companies House number is required to store the revised iXBRL artifact.');
+        }
+
+        return rtrim((string)PROJECT_ROOT, '\\/')
+            . DIRECTORY_SEPARATOR . 'files'
+            . DIRECTORY_SEPARATOR . $companyNumber
+            . DIRECTORY_SEPARATOR . 'ixbrl';
     }
 
-    private function removeManagedArtifact(string $path): void
+    private function removeManagedArtifact(string $path, int $companyId): void
     {
         if ($path === '' || !is_file($path)) {
             return;
         }
-        $managed = realpath($this->managedDirectory());
+        $managed = realpath($this->managedDirectory($companyId));
         $directory = realpath(dirname($path));
         if ($managed !== false && $directory !== false && strcasecmp($managed, $directory) === 0) {
             @unlink($path);

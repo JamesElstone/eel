@@ -94,7 +94,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             . $this->actionHiddenFields($companyId, $accountingPeriodId, 'record_gateway_eligibility')
             . '<input type="hidden" name="original_document_id" value="' . $originalDocumentId . '">
                 <fieldset' . $disabled . '>
-                    <legend>Is ' . HelperFramework::escape($companyName) . ' eligible for XML based web filing?</legend>
+                    <legend>Is this Company eligible to use an XML based filing for revised accounts?</legend>
                     <label class="checkbox-row"><input type="radio" name="eligibility_decision" value="eligible" required data-submit-on-change="true"' . $yesChecked . '><span>Yes</span></label>
                     <label class="checkbox-row"><input type="radio" name="eligibility_decision" value="ineligible" required data-submit-on-change="true"' . $noChecked . '><span>No</span></label>
                 </fieldset>

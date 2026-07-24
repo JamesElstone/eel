@@ -1192,7 +1192,11 @@ final class YearEndChecklistService
         ];
     }
 
-    public function fetchChecklist(int $companyId, int $accountingPeriodId): ?array {
+    public function fetchChecklist(
+        int $companyId,
+        int $accountingPeriodId,
+        bool $evaluateCanonicalSectionApprovals = true
+    ): ?array {
         $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService(
             preTaxProfitLossService: new \eel_accounts\Service\PreTaxProfitLossService(
                 new \eel_accounts\Service\PeriodLedgerReadService()
@@ -1843,12 +1847,14 @@ final class YearEndChecklistService
         // The legacy per-check basis is intentionally not used to decide their
         // freshness, otherwise the new full question snapshot would always
         // look stale to the checklist.
-        $sections = $this->applyCanonicalSectionApprovalStates(
-            $sections,
-            $reviewAcknowledgements,
-            $companyId,
-            $accountingPeriodId
-        );
+        if ($evaluateCanonicalSectionApprovals) {
+            $sections = $this->applyCanonicalSectionApprovalStates(
+                $sections,
+                $reviewAcknowledgements,
+                $companyId,
+                $accountingPeriodId
+            );
+        }
 
         $blockingChecksPass = $uncategorisedCount === 0
             && $missingMonths === 0
@@ -2620,11 +2626,7 @@ final class YearEndChecklistService
                     continue;
                 }
 
-                if (in_array($checkCode, [
-                    'director_loan_year_end_review',
-                    'companies_house_mismatch_acknowledgement',
-                    'companies_house_no_filing_acknowledgement',
-                ], true)) {
+                if (\eel_accounts\Service\YearEndSectionApprovalService::supports($checkCode)) {
                     $review = (new \eel_accounts\Service\YearEndSectionApprovalService())->fetchReview(
                         $companyId,
                         $accountingPeriodId,

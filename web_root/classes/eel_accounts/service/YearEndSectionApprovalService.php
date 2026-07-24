@@ -348,7 +348,11 @@ final class YearEndSectionApprovalService
             return $this->companiesHouseBundle($companyId, $accountingPeriodId, $checkCode);
         }
 
-        $checklist = (new YearEndChecklistService())->fetchChecklist($companyId, $accountingPeriodId) ?? [];
+        $checklist = (new YearEndChecklistService())->fetchChecklist(
+            $companyId,
+            $accountingPeriodId,
+            false
+        ) ?? [];
         foreach ((array)($checklist['checks_flat'] ?? []) as $check) {
             if ((string)($check['check_code'] ?? '') !== $checkCode) {
                 continue;
@@ -416,7 +420,14 @@ final class YearEndSectionApprovalService
      */
     private function taxReadinessBundle(int $companyId, int $accountingPeriodId): array
     {
-        $checklist = (new YearEndChecklistService())->fetchChecklist($companyId, $accountingPeriodId) ?? [];
+        // This bundle is also used while the checklist evaluates the V2
+        // acknowledgement. Avoid re-entering that evaluation here; the tax
+        // facts themselves remain identical.
+        $checklist = (new YearEndChecklistService())->fetchChecklist(
+            $companyId,
+            $accountingPeriodId,
+            false
+        ) ?? [];
         $check = [];
         foreach ((array)($checklist['checks_flat'] ?? []) as $candidate) {
             if ((string)($candidate['check_code'] ?? '') === 'tax_readiness_acknowledgement') {

@@ -404,6 +404,18 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
 
             $harness->assertSame(true, $v2Approval->isSuccess());
             $harness->assertSame('no', (string)($signedBasis['answers']['filing_scope.ct600b'] ?? ''));
+
+            $checklist = (new \eel_accounts\Service\YearEndChecklistService())
+                ->fetchChecklist($companyId, $accountingPeriodId) ?? [];
+            $taxCheck = [];
+            foreach ((array)($checklist['checks_flat'] ?? []) as $check) {
+                if ((string)($check['check_code'] ?? '') === 'tax_readiness_acknowledgement') {
+                    $taxCheck = (array)$check;
+                    break;
+                }
+            }
+            $harness->assertSame('current', (string)($taxCheck['acknowledgement_state'] ?? ''));
+            $harness->assertSame(true, (bool)($taxCheck['acknowledgement_current'] ?? false));
         });
     });
 

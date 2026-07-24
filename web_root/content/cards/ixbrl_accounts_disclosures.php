@@ -99,6 +99,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         $complete = !empty($result['complete']);
         $yearEndLocked = !empty($result['year_end_locked']);
         $approvalCurrent = !empty($approvalStatus['current']) || (string)($approvalStatus['state'] ?? '') === 'current';
+        $approvalBlockerNotice = $this->approvalBlockerNotice($approvalStatus);
         $controlDisabled = !$yearEndLocked || $approvalCurrent;
         $disabledAttribute = $controlDisabled ? ' disabled aria-disabled="true"' : '';
         $coreButtonDisabled = ' disabled' . ($controlDisabled ? ' aria-disabled="true"' : '');
@@ -206,7 +207,8 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
             : ($approvalCurrent
                 ? '<div class="standout helper">The disclosure basis is approved and current. Re-open the affected workflow or make the approval stale before changing disclosures.</div>'
                 : '');
-        return '<div class="settings-stack">
+        return '<div class="settings-stack">'
+            . $approvalBlockerNotice . '
             <form method="post" action="?page=disclosures" data-ajax="true" data-ixbrl-trading-form="true">
             <input type="hidden" name="card_action" value="Ixbrl">
             ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
@@ -376,6 +378,33 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                 <div class="helper ixbrl-approval-confirmation">I here by confirm that the information on this page is a true and accurate reflection of this business.</div>
                 <div class="actions-row"><button class="button primary" type="submit"' . $disabled . '>I Approve this Statement of Fact</button></div>
             </form>
+        </section>';
+    }
+
+    private function approvalBlockerNotice(array $status): string
+    {
+        if (!empty($status['can_approve'])) {
+            return '';
+        }
+
+        $errors = array_values(array_filter(
+            array_map('strval', (array)($status['errors'] ?? [])),
+            static fn(string $error): bool => trim($error) !== ''
+        ));
+        if ($errors === []) {
+            return '';
+        }
+
+        $reasons = '<ul>';
+        foreach ($errors as $error) {
+            $reasons .= '<li>' . HelperFramework::escape($error) . '</li>';
+        }
+        $reasons .= '</ul>';
+
+        return '<section class="panel-soft warn ixbrl-approval-blocker">
+            <h3 class="card-title">Disclosure approval unavailable</h3>
+            <div class="helper">Disclosure approval cannot be entered at this time because:</div>'
+            . $reasons . '
         </section>';
     }
 

@@ -83,15 +83,15 @@ final class _ixbrl_generationCard extends CardBaseFramework
                         <h3 class="card-title">Complete filing set</h3>
                         <div class="helper ixbrl-complete-filing-set-helper">Generate and validate the HMRC accounts iXBRL, every Corporation Tax iXBRL, and the Companies House revised-accounts iXBRL when revision is required.</div>
                     </div>
-                    ' . ($developerOptions ? '<form method="post" action="?page=disclosures" data-ajax="true" class="actions-row ixbrl-developer-cleanup-action">'
-                        . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
-                        . '<input type="hidden" name="card_action" value="Ixbrl">'
-                        . '<input type="hidden" name="intent" value="sync_missing_ixbrl_runs">'
-                        . '<input type="hidden" name="company_id" value="' . $companyId . '">'
-                        . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
-                        . '<button class="button danger" type="submit" title="Developer only" data-chicken-check="true" data-chicken-title="Synchronise missing iXBRL runs" data-chicken-message="Remove database records for accounts iXBRL artifacts that no longer exist on disk?<br><br>This permanently removes missing-file run history and dependent facts. Companies House-referenced runs are retained. No files are deleted." data-chicken-confirm-text="Synchronise" data-chicken-button-class="button danger">Synchronise missing iXBRL runs</button>'
-                        . '</form>' : '') . '
                 </div>
+                ' . ($developerOptions ? '<div class="actions-row ixbrl-developer-cleanup-action"><form method="post" action="?page=disclosures" data-ajax="true">'
+                    . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+                    . '<input type="hidden" name="card_action" value="Ixbrl">'
+                    . '<input type="hidden" name="intent" value="sync_missing_ixbrl_runs">'
+                    . '<input type="hidden" name="company_id" value="' . $companyId . '">'
+                    . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
+                    . '<button class="button danger" type="submit" title="Developer only" data-chicken-check="true" data-chicken-title="Synchronise missing iXBRL runs" data-chicken-message="Remove database records for accounts iXBRL artifacts that no longer exist on disk?<br><br>This permanently removes missing-file run history and dependent facts. Companies House-referenced runs are retained. No files are deleted." data-chicken-confirm-text="Synchronise" data-chicken-button-class="button danger">Synchronise missing iXBRL runs</button>'
+                    . '</form></div>' : '') . '
                 <form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">
                     ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="Ixbrl">

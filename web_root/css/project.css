@@ -3460,7 +3460,6 @@
 
 .ixbrl-developer-cleanup-action {
   justify-content: flex-end;
-  margin-top: 0.75rem;
 }
 
 @-moz-document url-prefix() {

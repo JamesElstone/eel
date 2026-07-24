@@ -229,7 +229,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     . '<input type="hidden" name="intent" value="download_computation_ixbrl">'
                     . '<button class="button compact primary" type="submit">Download ' . HelperFramework::escape($ctPeriodLabel) . ' iXBRL</button></form>'
                 : (trim((string)($run['generated_filename'] ?? '')) !== '' ? 'Generated, not filing-ready' : 'Not generated');
-            $html .= '<section class="panel-soft"><div class="status-head"><h4>Corporation Tax iXBRL</h4><span class="badge '
+            $html .= '<section class="panel-soft"><div class="status-head"><h4>' . HelperFramework::escape($ctPeriodLabel) . ' iXBRL</h4><span class="badge '
                 . ($fileable ? 'success' : ($fresh ? 'warning' : 'muted')) . '">'
                 . ($fileable ? 'Filing ready' : ($fresh ? 'Generated, not fileable' : 'Not generated')) . '</span></div>'
                 . '<div class="summary-grid four">'

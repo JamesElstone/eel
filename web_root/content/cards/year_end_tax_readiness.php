@@ -106,9 +106,9 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         $answers = (array)($scope['answers'] ?? []);
         $rows = '';
         foreach ((array)($scope['definitions'] ?? []) as $key => $definition) {
-            $answer = (string)($answers[$key] ?? 'no');
+            $answer = (string)($answers[$key] ?? '');
             if (!in_array($answer, ['yes', 'no'], true)) {
-                $answer = 'yes';
+                $answer = '';
             }
             $rows .= '<tr><td>' . HelperFramework::escape((string)$definition['page']) . '</td>'
                 . '<td>' . HelperFramework::escape((string)$definition['label']) . '</td>'
@@ -164,6 +164,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             'noteName' => 'approval_note',
             'questions' => (array)($review['questions'] ?? []),
             'answers' => (array)($review['answers'] ?? []),
+            'renderQuestions' => false,
             'disabled' => !$taxBasisReady || empty($review['can_approve']),
             'disabledReason' => !$taxBasisReady
                 ? 'Year End Confirmation is disabled until all tax basis checks have passed.'

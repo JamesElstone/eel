@@ -143,4 +143,28 @@ $harness->run(\eel_accounts\Renderer\YearEndApprovalRenderer::class, static func
         $harness->assertSame(true, str_contains($html, 'data-year-end-approval-required-value="no"'));
         $harness->assertSame(true, str_contains($html, 'data-year-end-approval-scope-warning hidden'));
     });
+
+    $harness->check(\eel_accounts\Renderer\YearEndApprovalRenderer::class, 'can use a separately persisted question table without duplicating fields', static function () use ($harness): void {
+        $html = \eel_accounts\Renderer\YearEndApprovalRenderer::render([
+            'subject' => 'Corporation Tax position',
+            'companyId' => 12,
+            'accountingPeriodId' => 34,
+            'acknowledged' => false,
+            'locked' => false,
+            'intent' => 'approve_section_review',
+            'renderQuestions' => false,
+            'questions' => [[
+                'id' => 'filing_scope.ct600b',
+                'prompt' => 'Does CT600B apply?',
+                'type' => 'choice',
+                'options' => ['no' => 'No', 'yes' => 'Yes'],
+                'required' => true,
+                'required_value' => 'no',
+            ]],
+        ]);
+
+        $harness->assertSame(false, str_contains($html, 'name="approval_answers[filing_scope.ct600b]"'));
+        $harness->assertSame(false, str_contains($html, 'data-year-end-approval-scope-warning hidden'));
+        $harness->assertSame(true, str_contains($html, 'Approve for Year End'));
+    });
 });

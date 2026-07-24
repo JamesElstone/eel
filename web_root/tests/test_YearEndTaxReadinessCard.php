@@ -55,7 +55,8 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_ct_filing_scope_answer"'));
         $harness->assertTrue(str_contains($html, 'action="?page=corporation_tax"'));
         $harness->assertTrue(str_contains($html, 'data-submit-on-change="true"'));
-        $harness->assertTrue(str_contains($html, 'value="yes" required data-submit-on-change="true" checked'));
+        $harness->assertSame(false, str_contains($html, 'value="yes" required data-submit-on-change="true" checked'));
+        $harness->assertSame(false, str_contains($html, 'value="no" required data-submit-on-change="true" checked'));
         $harness->assertSame(false, str_contains($html, 'Unsure'));
     });
 

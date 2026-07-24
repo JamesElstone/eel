@@ -68,6 +68,16 @@ $harness->run(\eel_accounts\Service\YearEndSectionApprovalService::class, static
         $harness->assertSame('no', (string)$approved['answers']['ct600a.missing_parties']);
     });
 
+    $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'uses the persisted filing-scope answers instead of browser-submitted duplicates', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod($service, 'approvalAnswers');
+        $answers = (array)$method->invoke($service, [
+            'answer_source' => 'persisted_filing_scope',
+            'current_answers' => ['filing_scope.ct600b' => 'no'],
+        ], ['filing_scope.ct600b' => 'yes']);
+
+        $harness->assertSame('no', (string)$answers['filing_scope.ct600b']);
+    });
+
     $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'builds the P&L bundle directly from the prepared retained earnings context', static function () use ($harness, $service): void {
         $method = new ReflectionMethod($service, 'retainedEarningsBundle');
         $bundle = (array)$method->invoke($service, 12, 34, [
@@ -89,6 +99,14 @@ $harness->run(\eel_accounts\Service\YearEndSectionApprovalService::class, static
         $end = strpos($source, 'private function retainedEarningsDisplay(', $start !== false ? $start : 0);
         $provider = $start !== false && $end !== false ? substr($source, $start, $end - $start) : '';
         $harness->assertSame(false, str_contains($provider, 'fetchChecklist('));
+    });
+
+    $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'versions the direct P&L provider so checklist-era bundles refresh', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod($service, 'definitionToken');
+        $pnlToken = (string)$method->invoke($service, 'retained_earnings_close_confirmation');
+        $defaultToken = (string)$method->invoke($service, 'transaction_tail_review');
+
+        $harness->assertSame(false, hash_equals($pnlToken, $defaultToken));
     });
 
     $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'ships the persistent bundle migration and master-schema definition', static function () use ($harness): void {

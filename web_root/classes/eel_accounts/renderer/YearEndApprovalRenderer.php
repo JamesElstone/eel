@@ -80,6 +80,7 @@ final class YearEndApprovalRenderer
         $checkboxName = trim((string)($options['checkboxName'] ?? 'approval_confirmed'));
         $approveFields = (array)($options['approveFields'] ?? []);
         $questions = (array)($options['questions'] ?? []);
+        $renderQuestions = !array_key_exists('renderQuestions', $options) || !empty($options['renderQuestions']);
         unset($approveFields[$checkboxName]);
         $buttonAttributes = $disabled
             ? ' disabled' . ($disabledReason !== '' ? ' title="' . \HelperFramework::escape($disabledReason) . '"' : '')
@@ -94,8 +95,10 @@ final class YearEndApprovalRenderer
             <form method="post" data-ajax="true" class="form-grid" data-year-end-ack-form="true">
                 ' . self::commonFields($companyId, $accountingPeriodId, $intent) . '
                 ' . self::hiddenFields($approveFields) . '
-                ' . self::questionFields($questions, (array)($options['answers'] ?? []), $disabled) . '
-                ' . self::questionBlockingNotice($questions) . '
+                ' . ($renderQuestions
+                    ? self::questionFields($questions, (array)($options['answers'] ?? []), $disabled)
+                        . self::questionBlockingNotice($questions)
+                    : '') . '
                 <label class="checkbox-row full">
                     <input type="checkbox" name="' . \HelperFramework::escape($checkboxName) . '" value="1" required data-year-end-ack-checkbox' . ($disabled ? ' disabled' : '') . '>
                     <span>' . \HelperFramework::escape($confirmationText) . '</span>

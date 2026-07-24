@@ -133,7 +133,10 @@ final class YearEndSectionApprovalService
             ];
         }
 
-        $validation = $this->validateAnswers((array)($bundle['questions'] ?? []), $answers);
+        $validation = $this->validateAnswers(
+            (array)($bundle['questions'] ?? []),
+            $this->approvalAnswers($bundle, $answers)
+        );
         if (empty($validation['success'])) {
             return $validation;
         }
@@ -168,7 +171,10 @@ final class YearEndSectionApprovalService
                     'errors' => (array)($bundle['approval_errors'] ?? ['Resolve the outstanding section checks before approving it.']),
                 ];
             }
-            $validation = $this->validateAnswers((array)($bundle['questions'] ?? []), $answers);
+            $validation = $this->validateAnswers(
+                (array)($bundle['questions'] ?? []),
+                $this->approvalAnswers($bundle, $answers)
+            );
             if (empty($validation['success'])) {
                 return $validation;
             }
@@ -322,6 +328,9 @@ final class YearEndSectionApprovalService
         if ($checkCode === 'director_loan_year_end_review') {
             return $this->directorLoanBundle($companyId, $accountingPeriodId);
         }
+        if ($checkCode === 'tax_readiness_acknowledgement') {
+            return $this->taxReadinessBundle($companyId, $accountingPeriodId);
+        }
         if ($checkCode === 'retained_earnings_close_confirmation') {
             return $this->retainedEarningsBundle($companyId, $accountingPeriodId, $preparedRetainedEarningsContext);
         }
@@ -387,6 +396,69 @@ final class YearEndSectionApprovalService
             'desired_reclassification_amount' => (string)($display['desired_reclassification_amount'] ?? '0.00'),
         ];
         return $this->bundle('director_loan_year_end_review', $facts, $questions, $display);
+    }
+
+    /**
+     * The supplementary-page table is edited and persisted directly on the
+     * card.  Its answers are nevertheless part of this V2 approval: the
+     * canonical bundle reads those saved answers again at submit time rather
+     * than trusting hidden browser fields.
+     */
+    private function taxReadinessBundle(int $companyId, int $accountingPeriodId): array
+    {
+        $checklist = (new YearEndChecklistService())->fetchChecklist($companyId, $accountingPeriodId) ?? [];
+        $check = [];
+        foreach ((array)($checklist['checks_flat'] ?? []) as $candidate) {
+            if ((string)($candidate['check_code'] ?? '') === 'tax_readiness_acknowledgement') {
+                $check = (array)$candidate;
+                break;
+            }
+        }
+        if ($check === []) {
+            return ['available' => false, 'errors' => ['The Corporation Tax Year End review is unavailable.'], 'check_code' => 'tax_readiness_acknowledgement'];
+        }
+
+        $scope = (new CorporationTaxFilingScopeService())->fetch($companyId, $accountingPeriodId);
+        if (empty($scope['available'])) {
+            return ['available' => false, 'errors' => (array)($scope['errors'] ?? ['The Corporation Tax filing-scope review is unavailable.']), 'check_code' => 'tax_readiness_acknowledgement'];
+        }
+
+        $questions = [];
+        $currentAnswers = [];
+        foreach ((array)($scope['definitions'] ?? []) as $key => $definition) {
+            $questionId = 'filing_scope.' . (string)$key;
+            $prompt = (string)($definition['question'] ?? $key);
+            $questions[] = [
+                'id' => $questionId,
+                'prompt' => $prompt,
+                'version' => hash('sha256', $prompt),
+                'type' => 'choice',
+                'options' => ['no' => 'No', 'yes' => 'Yes'],
+                'required' => true,
+                'required_value' => 'no',
+            ];
+            $currentAnswers[$questionId] = (string)(($scope['answers'] ?? [])[$key] ?? '');
+        }
+
+        $facts = (array)($check['basis_data'] ?? $check);
+        $facts['filing_scope_revision'] = (int)($scope['revision'] ?? 0);
+        $facts['filing_scope_basis_hash'] = (string)($scope['basis_hash'] ?? '');
+        $bundle = $this->bundle('tax_readiness_acknowledgement', $facts, $questions, $facts);
+        $bundle['answer_source'] = 'persisted_filing_scope';
+        $bundle['current_answers'] = $currentAnswers;
+
+        if ((array)($scope['unanswered_fields'] ?? []) !== []) {
+            $bundle['can_approve'] = false;
+            $bundle['approval_errors'] = ['Answer every Corporation Tax filing-scope question before approving Year End.'];
+        } elseif (!empty($scope['errors'])) {
+            $bundle['can_approve'] = false;
+            $bundle['approval_errors'] = (array)$scope['errors'];
+        } elseif ((string)($check['status'] ?? '') === 'fail') {
+            $bundle['can_approve'] = false;
+            $bundle['approval_errors'] = ['Resolve the blocking Year End tax checks before approving this section.'];
+        }
+
+        return $bundle;
     }
 
     /**
@@ -517,6 +589,14 @@ final class YearEndSectionApprovalService
             'questions' => (array)($bundle['questions'] ?? []),
             'answers' => $answers,
         ];
+    }
+
+    /** @param array<string,mixed> $bundle @param array<string,mixed> $submitted */
+    private function approvalAnswers(array $bundle, array $submitted): array
+    {
+        return (string)($bundle['answer_source'] ?? '') === 'persisted_filing_scope'
+            ? (array)($bundle['current_answers'] ?? [])
+            : $submitted;
     }
 
     private function validateAnswers(array $questions, array $submitted): array
@@ -679,6 +759,14 @@ final class YearEndSectionApprovalService
                 $tokens[$table] = $token;
             }
         }
+        if ($checkCode === 'tax_readiness_acknowledgement') {
+            $scope = (new CorporationTaxFilingScopeService())->fetch($companyId, $accountingPeriodId);
+            $tokens['corporation_tax_filing_scope'] = [
+                'available' => !empty($scope['available']),
+                'revision' => (int)($scope['revision'] ?? 0),
+                'basis_hash' => (string)($scope['basis_hash'] ?? ''),
+            ];
+        }
         return $tokens === [] ? '' : hash('sha256', $this->canonicalJson($tokens));
     }
 
@@ -734,7 +822,13 @@ final class YearEndSectionApprovalService
     {
         $questions = match ($checkCode) {
             'director_loan_year_end_review' => (new Ct600aService())->reviewQuestions(),
+            // Scope answers are persisted by the filing-scope table and signed
+            // by the tax V2 provider, rather than submitted in the approval form.
+            'tax_readiness_acknowledgement' => ['provider' => 'tax_filing_scope_v1'],
             'companies_house_mismatch_acknowledgement' => $this->companiesHouseQuestions(true),
+            // Version the direct display provider so checklist-era cached
+            // bundles are rebuilt with the P&L card's required display model.
+            'retained_earnings_close_confirmation' => ['provider' => 'retained_earnings_direct_v1'],
             default => [],
         };
         return hash('sha256', $this->canonicalJson([

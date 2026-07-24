@@ -386,6 +386,24 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
                  WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id AND check_code = :check_code',
                 ['company_id' => (int)$fixture['company_id'], 'accounting_period_id' => (int)$fixture['accounting_period_id'], 'check_code' => 'tax_readiness_acknowledgement']
             ));
+
+            $v2Approval = $instance->handle(
+                yearEndActionDirectorLoanTestRequest(
+                    $companyId,
+                    $accountingPeriodId,
+                    'approve_section_review',
+                    ['check_code' => 'tax_readiness_acknowledgement']
+                ),
+                createTestPageServiceFramework()
+            );
+            $signedBasis = json_decode((string)InterfaceDB::fetchColumn(
+                'SELECT basis_json FROM year_end_review_acknowledgements
+                 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id AND check_code = :check_code',
+                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'check_code' => 'tax_readiness_acknowledgement']
+            ), true);
+
+            $harness->assertSame(true, $v2Approval->isSuccess());
+            $harness->assertSame('no', (string)($signedBasis['answers']['filing_scope.ct600b'] ?? ''));
         });
     });
 

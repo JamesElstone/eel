@@ -6,7 +6,7 @@ namespace eel_accounts\Service;
 
 final class CorporationTaxFilingScopeService
 {
-    public const SCOPE_VERSION = 'ct-supplementary-scope-v2';
+    public const SCOPE_VERSION = 'ct-supplementary-scope-v3';
 
     /** @return array<string,array{page:string,label:string,question:string,url:string}> */
     public function definitions(): array
@@ -43,13 +43,22 @@ final class CorporationTaxFilingScopeService
             'SELECT * FROM corporation_tax_scope_confirmations WHERE company_id = :company_id AND accounting_period_id = :period_id',
             ['company_id' => $companyId, 'period_id' => $accountingPeriodId]
         );
-        $answers = is_array($row) ? json_decode((string)$row['answers_json'], true) : [];
-        $answers = is_array($answers) ? $answers : [];
+        $storedAnswers = is_array($row) ? json_decode((string)$row['answers_json'], true) : [];
+        $storedAnswers = is_array($storedAnswers) ? $storedAnswers : [];
+        $currentVersion = is_array($row) && (string)($row['scope_version'] ?? '') === self::SCOPE_VERSION;
+        $answers = array_fill_keys(array_keys($this->definitions()), '');
+        if ($currentVersion) {
+            foreach ($answers as $key => $_answer) {
+                $value = $storedAnswers[$key] ?? '';
+                $answers[$key] = in_array($value, ['no', 'yes'], true) ? (string)$value : '';
+            }
+        }
         $errors = [];
+        $unanswered = [];
         foreach ($this->definitions() as $key => $definition) {
-            $answer = (string)($answers[$key] ?? 'no');
-            if (!in_array($answer, ['no', 'yes'], true)) {
-                $errors[] = $definition['page'] . ' scope must be answered Yes or No.';
+            $answer = (string)($answers[$key] ?? '');
+            if ($answer === '') {
+                $unanswered[] = $key;
             } elseif ($answer !== 'no') {
                 $errors[] = $definition['page'] . ' may be required: ' . $definition['label'] . '.';
             }
@@ -58,19 +67,19 @@ final class CorporationTaxFilingScopeService
             'scope_version' => self::SCOPE_VERSION,
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
-            'answers' => array_replace(array_fill_keys(array_keys($this->definitions()), 'no'), $answers),
-            'revision' => (int)($row['revision'] ?? 0),
+            'answers' => $answers,
+            'revision' => $currentVersion ? (int)($row['revision'] ?? 0) : 0,
         ];
         $basisJson = $this->canonicalJson($basis);
-        if (is_array($row) && (!hash_equals((string)$row['basis_hash'], hash('sha256', $basisJson))
-            || (string)$row['scope_version'] !== self::SCOPE_VERSION)) {
+        if ($currentVersion && !hash_equals((string)$row['basis_hash'], hash('sha256', $basisJson))) {
             $errors[] = 'The Corporation Tax scope confirmation is stale or failed its integrity check.';
         }
         return [
             'available' => true,
-            'stored' => is_array($row),
-            'complete' => $errors === [],
+            'stored' => $currentVersion,
+            'complete' => $currentVersion && $unanswered === [] && $errors === [],
             'errors' => array_values(array_unique($errors)),
+            'unanswered_fields' => $unanswered,
             'definitions' => $this->definitions(),
             'answers' => $basis['answers'],
             'revision' => $basis['revision'],

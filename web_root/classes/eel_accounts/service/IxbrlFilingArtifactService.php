@@ -103,8 +103,8 @@ final class IxbrlFilingArtifactService
             );
         }
 
-        $fileHash = hash_file('sha256', $path);
-        if (!is_string($fileHash) || !hash_equals($outputHash, strtolower($fileHash))) {
+        $fileHash = (new IxbrlArtifactFingerprintService())->sha256($path);
+        if (!is_string($fileHash) || !hash_equals($outputHash, $fileHash)) {
             return $this->failure(
                 'tampered',
                 'The generated accounts iXBRL file has changed since it was generated and validated.',

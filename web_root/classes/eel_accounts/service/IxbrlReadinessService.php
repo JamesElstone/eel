@@ -298,7 +298,7 @@ final class IxbrlReadinessService
 
         $outputHash = is_array($latestRun) ? trim((string)($latestRun['output_sha256'] ?? '')) : '';
         $validatedHash = is_array($latestRun) ? trim((string)($latestRun['external_validated_sha256'] ?? '')) : '';
-        $diskHash = $fileExists ? (string)(hash_file('sha256', $generatedPath) ?: '') : '';
+        $diskHash = $fileExists ? ((new IxbrlArtifactFingerprintService())->sha256($generatedPath) ?? '') : '';
         $artifactCurrent = $fileExists
             && $outputHash !== ''
             && $validatedHash !== ''

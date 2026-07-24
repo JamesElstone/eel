@@ -240,10 +240,13 @@ final class IxbrlTaxComputationService
             }
         }
         $stored = isset($run['run_id']) ? \InterfaceDB::fetchOne('SELECT * FROM corporation_tax_computation_runs WHERE id = :id', ['id' => (int)$run['run_id']]) : null;
-        $artifactErrors = $this->artifactErrors($companyId, $accountingPeriodId, $ctPeriodId, $model, $package, $profile, $stored, false);
+        $artifactHash = is_array($stored)
+            ? (new IxbrlArtifactFingerprintService())->sha256((string)($stored['generated_path'] ?? ''))
+            : null;
+        $artifactErrors = $this->artifactErrors($companyId, $accountingPeriodId, $ctPeriodId, $model, $package, $profile, $stored, false, $artifactHash);
         $fresh = $artifactErrors === [];
         $fileableErrors = $fresh
-            ? $this->artifactErrors($companyId, $accountingPeriodId, $ctPeriodId, $model, $package, $profile, $stored, true)
+            ? $this->artifactErrors($companyId, $accountingPeriodId, $ctPeriodId, $model, $package, $profile, $stored, true, $artifactHash)
             : $artifactErrors;
         return [
             'ready' => $errors === [], 'errors' => array_values(array_unique($errors)),
@@ -531,7 +534,8 @@ final class IxbrlTaxComputationService
         ?array $package,
         ?array $profile,
         ?array $stored,
-        bool $requireValidation
+        bool $requireValidation,
+        ?string $artifactHash
     ): array {
         $errors = [];
         if (empty($model['available']) || !is_array($stored)) {
@@ -559,10 +563,8 @@ final class IxbrlTaxComputationService
             || !hash_equals((string)($stored['ixbrl_mapping_hash'] ?? ''), (string)($profile['content_hash'] ?? ''))) {
             $errors[] = 'The computation mapping profile is stale or changed.';
         }
-        $path = trim((string)($stored['generated_path'] ?? ''));
         $outputHash = strtolower(trim((string)($stored['output_sha256'] ?? '')));
-        $actualHash = $path !== '' && is_file($path) ? hash_file('sha256', $path) : false;
-        if (!is_string($actualHash) || preg_match('/^[a-f0-9]{64}$/', $outputHash) !== 1 || !hash_equals($outputHash, strtolower($actualHash))) {
+        if ($artifactHash === null || preg_match('/^[a-f0-9]{64}$/', $outputHash) !== 1 || !hash_equals($outputHash, $artifactHash)) {
             $errors[] = 'The computation artifact file is missing or has changed.';
         }
         if ($requireValidation) {

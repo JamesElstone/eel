@@ -171,6 +171,7 @@ final class CompaniesHouseAccountsSubmissionService
                 'test_accepted' => $testAccepted,
             ],
             'eligibility' => $eligibility,
+            'revision_required' => $needsRevision,
             'readiness' => $readiness,
             'submission' => $submission,
             'preflight' => $submission === null

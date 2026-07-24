@@ -129,7 +129,8 @@ final class IxbrlAction implements ActionInterfaceFramework
                 $result = $this->generateAllFilingIxbrl(
                     $companyId,
                     $accountingPeriodId,
-                    $services->actionProgress()
+                    $services->actionProgress(),
+                    $this->actor($request)
                 );
             } elseif (in_array($intent, ['generate_computation_ixbrl', 'validate_computation_ixbrl'], true)) {
                 if ($intent === 'generate_computation_ixbrl') {
@@ -318,7 +319,8 @@ final class IxbrlAction implements ActionInterfaceFramework
     private function generateAllFilingIxbrl(
         int $companyId,
         int $accountingPeriodId,
-        ActionProgressFramework $progress
+        ActionProgressFramework $progress,
+        string $actor
     ): array
     {
         @set_time_limit(0);
@@ -341,6 +343,18 @@ final class IxbrlAction implements ActionInterfaceFramework
         ));
         if ($periods === []) {
             return ['success' => false, 'errors' => ['No current CT periods are available for computations generation.']];
+        }
+
+        $companiesHouse = (new \eel_accounts\Service\CompaniesHouseAccountsSubmissionService())
+            ->fetchContext($companyId, $accountingPeriodId);
+        $companiesHouseRequired = !empty($companiesHouse['revision_required']);
+        $companiesHouseArtifact = (array)($companiesHouse['prepared_artifact'] ?? []);
+        $companiesHousePrepared = trim((string)($companiesHouseArtifact['filename'] ?? '')) !== '';
+        if ($companiesHouseRequired && !$companiesHousePrepared && empty($companiesHouse['can_prepare'])) {
+            return [
+                'success' => false,
+                'errors' => (array)($companiesHouse['preparation_blockers'] ?? ['The Companies House revised-accounts iXBRL is not ready to prepare.']),
+            ];
         }
 
         $errors = [];
@@ -417,6 +431,24 @@ final class IxbrlAction implements ActionInterfaceFramework
                 'errors' => array_values(array_unique($errors)),
                 'warnings' => array_values(array_unique($warnings)),
             ];
+        }
+
+        if ($companiesHouseRequired && !$companiesHousePrepared) {
+            $progress->report('Preparing the Companies House revised-accounts iXBRL…', 94);
+            $companiesHouseResult = (new \eel_accounts\Service\CompaniesHouseAccountsSubmissionService())
+                ->prepareRevision($companyId, $accountingPeriodId, [], $actor);
+            if (empty($companiesHouseResult['success'])) {
+                return [
+                    'success' => false,
+                    'errors' => (array)($companiesHouseResult['errors'] ?? ['Companies House revised-accounts iXBRL preparation failed.']),
+                    'warnings' => array_values(array_unique($warnings)),
+                ];
+            }
+            $messages[] = 'Companies House revised-accounts iXBRL prepared.';
+        } elseif ($companiesHouseRequired) {
+            $messages[] = 'Companies House revised-accounts iXBRL is already prepared for the current basis.';
+        } else {
+            $messages[] = 'Companies House revised-accounts iXBRL is not required for this accounting period.';
         }
 
         $progress->report('Finalising the filing iXBRL set…', 98);

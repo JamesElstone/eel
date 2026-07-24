@@ -52,7 +52,9 @@ final class _ixbrl_generationCard extends CardBaseFramework
             static fn(mixed $message): string => trim((string)$message),
             (array)($readiness['generation_errors'] ?? [])
         ), static fn(string $message): bool => $message !== '')));
-        $canGenerateAll = $canGenerate && $this->allComputationPeriodsReady($context);
+        $canGenerateAll = $canGenerate
+            && $this->allComputationPeriodsReady($context)
+            && $this->companiesHouseArtifactReady($context);
         $runFreshness = (array)($run['run_freshness'] ?? []);
         $stale = (int)($run['fact_count'] ?? 0) > 0
             && (string)($runFreshness['state'] ?? '') !== 'current';
@@ -69,7 +71,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . '<input type="hidden" name="intent" value="download_ixbrl_filing">'
                 . '<input type="hidden" name="company_id" value="' . $companyId . '">'
                 . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
-                . '<button class="button primary" type="submit">Download Filing-ready File</button>'
+                . '<button class="button primary" type="submit">Download Accounting iXBRL</button>'
                 . '</form>'
             : '';
         $artifact = $download !== '' ? $download : 'Not generated';
@@ -78,7 +80,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 <div class="status-head">
                     <div>
                         <h3 class="card-title">Complete filing set</h3>
-                        <div class="helper ixbrl-complete-filing-set-helper">Generate and validate the accounts iXBRL and every computation iXBRL for this accounting period in one operation.</div>
+                        <div class="helper ixbrl-complete-filing-set-helper">Generate and validate the HMRC accounts iXBRL, every Corporation Tax iXBRL, and the Companies House revised-accounts iXBRL when revision is required.</div>
                     </div>
                 </div>
                 <form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">
@@ -89,7 +91,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                     <button class="button primary" type="submit"' . ($canGenerateAll ? '' : ' disabled') . '>Generate all filing iXBRLs</button>
                 </form>
-                ' . ($canGenerateAll ? '' : '<div class="helper">Approve a generation-ready accounts basis and resolve every CT-period computation blocker first.</div>') . '
+                ' . ($canGenerateAll ? '' : '<div class="helper">Approve a generation-ready accounts basis, resolve every CT-period computation blocker, and prepare the Companies House revised-accounts prerequisites when required.</div>') . '
             </section>
             <section class="panel-soft">
                 <div class="status-head">
@@ -124,7 +126,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                         <input type="hidden" name="intent" value="generate_ixbrl_preview">
                         <input type="hidden" name="company_id" value="' . $companyId . '">
                         <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                        <button class="button primary" type="submit"' . ($canGenerate ? '' : ' disabled') . '>Generate Accounting Period iXBRL</button>
+                        <button class="button primary" type="submit"' . ($canGenerate ? '' : ' disabled') . '>Generate Accounting iXBRL</button>
                     </form>
                 </div>
                 ' . (!$canGenerate ? $this->generationBlockers($generationBlockers) : '') . '
@@ -160,7 +162,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . '<input type="hidden" name="intent" value="prepare_revised_accounts">'
                 . '<input type="hidden" name="company_id" value="' . $companyId . '">'
                 . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
-                . '<button class="button primary" type="submit"' . ($canPrepare ? '' : ' disabled') . '>Prepare Companies House Revised Accounting iXBRL</button>'
+                . '<button class="button primary" type="submit"' . ($canPrepare ? '' : ' disabled') . '>Generate Companies House iXBRL</button>'
                 . '</form></section>';
         }
 
@@ -210,6 +212,8 @@ final class _ixbrl_generationCard extends CardBaseFramework
             $status = (array)($item['status'] ?? []);
             $run = (array)($status['run'] ?? []);
             $ctPeriodId = (int)($period['ct_period_id'] ?? $period['id'] ?? 0);
+            $ctPeriodNumber = (int)($period['sequence_no'] ?? $period['ct_period_sequence_no'] ?? $ctPeriodId);
+            $ctPeriodLabel = 'Corporation Tax Period ' . $ctPeriodNumber;
             $start = (string)($period['period_start'] ?? '');
             $end = (string)($period['period_end'] ?? '');
             $ready = !empty($status['ready']);
@@ -223,7 +227,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             $artifact = $fileable
                 ? '<form method="post" action="?page=disclosures">' . $hidden
                     . '<input type="hidden" name="intent" value="download_computation_ixbrl">'
-                    . '<button class="button compact primary" type="submit">Download iXBRL File</button></form>'
+                    . '<button class="button compact primary" type="submit">Download ' . HelperFramework::escape($ctPeriodLabel) . ' iXBRL</button></form>'
                 : (trim((string)($run['generated_filename'] ?? '')) !== '' ? 'Generated, not filing-ready' : 'Not generated');
             $html .= '<section class="panel-soft"><div class="status-head"><h4>Corporation Tax iXBRL</h4><span class="badge '
                 . ($fileable ? 'success' : ($fresh ? 'warning' : 'muted')) . '">'
@@ -250,7 +254,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             }
             $html .= '<div class="form-row-actions"><form method="post" action="?page=disclosures" data-ajax="true">' . $hidden
                 . '<input type="hidden" name="intent" value="generate_computation_ixbrl"><button class="button primary" type="submit"'
-                . ($ready ? '' : ' disabled') . '>Generate Corporation Tax Period iXBRL</button></form>';
+                . ($ready ? '' : ' disabled') . '>Generate ' . HelperFramework::escape($ctPeriodLabel) . ' iXBRL</button></form>';
             $html .= '</div></section>';
         }
         return $html;
@@ -272,6 +276,17 @@ final class _ixbrl_generationCard extends CardBaseFramework
         }
 
         return true;
+    }
+
+    private function companiesHouseArtifactReady(array $context): bool
+    {
+        $filing = (array)(($context['services'] ?? [])['companies_house_ixbrl'] ?? []);
+        if (empty($filing['revision_required'])) {
+            return true;
+        }
+
+        $artifact = (array)($filing['prepared_artifact'] ?? []);
+        return trim((string)($artifact['filename'] ?? '')) !== '' || !empty($filing['can_prepare']);
     }
 
     private function metric(string $label, string $value): string

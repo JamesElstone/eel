@@ -20,7 +20,7 @@ namespace {
         public static function jpegUpload(string $name = 'asset-evidence.jpg'): array
         {
             self::configureUploadsRoot();
-            $path = tempnam(sys_get_temp_dir(), 'eel-upload-');
+            $path = tempnam(test_tmp_directory(), 'eel-upload-');
             if (!is_string($path) || $path === '') {
                 throw new RuntimeException('Unable to create a temporary upload fixture.');
             }
@@ -98,7 +98,9 @@ namespace {
                 return;
             }
 
-            self::$uploadsRoot = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'eel-asset-evidence-' . bin2hex(random_bytes(6));
+            self::$uploadsRoot = test_tmp_directory()
+                . DIRECTORY_SEPARATOR . 'eel-asset-evidence-'
+                . bin2hex(random_bytes(6));
             if (!mkdir(self::$uploadsRoot, 0700, true) && !is_dir(self::$uploadsRoot)) {
                 throw new RuntimeException('Unable to create the temporary uploads root.');
             }

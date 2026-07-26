@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__) . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARATOR . 'TestOutput.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'TestPaths.php';
 
 /** @param list<string> $files */
 function eel_accounts_run_selected_tests(array $files): void
@@ -67,7 +68,7 @@ function eel_accounts_acquire_selected_test_lock(): mixed
 {
     $frameworkRunner = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'index.php';
     $runnerPath = (string)(realpath($frameworkRunner) ?: $frameworkRunner);
-    $lockPath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'eelkit-test-runner-'
+    $lockPath = test_tmp_directory() . DIRECTORY_SEPARATOR . 'eelkit-test-runner-'
         . hash('sha256', $runnerPath) . '.lock';
     $handle = @fopen($lockPath, 'c+');
     if (!is_resource($handle) || !flock($handle, LOCK_EX | LOCK_NB)) {

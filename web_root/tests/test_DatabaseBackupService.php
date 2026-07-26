@@ -108,7 +108,7 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
         $method->invoke($service, "\xA3 0.00", 'legacy_table', 'metric_value', '2308')
     );
 
-    $backupDirectory = sys_get_temp_dir() . DIRECTORY_SEPARATOR
+    $backupDirectory = test_tmp_directory() . DIRECTORY_SEPARATOR
         . 'eel_accounts_backup_service_test_' . getmypid() . '_' . bin2hex(random_bytes(6));
     if (!is_dir($backupDirectory)) {
         mkdir($backupDirectory, 0755, true);

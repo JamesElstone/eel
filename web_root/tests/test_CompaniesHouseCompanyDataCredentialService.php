@@ -10,7 +10,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             \eel_accounts\Service\CompaniesHouseCompanyDataCredentialService::class,
             'loads shared XML presenter credentials without a filing package reference',
             static function () use ($harness): void {
-                $path = tempnam(sys_get_temp_dir(), 'eel-ch-company-data-');
+                $path = tempnam(test_tmp_directory(), 'eel-ch-company-data-');
                 if (!is_string($path)) {
                     throw new RuntimeException('Unable to create credential fixture.');
                 }

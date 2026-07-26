@@ -17,9 +17,7 @@ use eel_accounts\Service\IxbrlTaxonomyProfileService;
 (new GeneratedServiceClassTestHarness())->run(
     RevisedAccountsPreSubmissionValidator::class,
     static function (GeneratedServiceClassTestHarness $harness): void {
-        $privateFixtureRoot = dirname(__DIR__, 2)
-            . DIRECTORY_SEPARATOR . 'files'
-            . DIRECTORY_SEPARATOR . 'tmp'
+        $privateFixtureRoot = test_tmp_directory()
             . DIRECTORY_SEPARATOR . 'ixbrl';
         $artifact = $privateFixtureRoot
             . DIRECTORY_SEPARATOR . 'generated'
@@ -29,7 +27,7 @@ use eel_accounts\Service\IxbrlTaxonomyProfileService;
             . DIRECTORY_SEPARATOR . 'get-submission-status-accepted.xml';
         if (!is_file($artifact) || !is_file($responsePath)) {
             $harness->skip(
-                'Private revised-accounts validation fixtures are not installed below files/tmp/.'
+                'Private revised-accounts validation fixtures are not installed below the configured test temporary directory.'
             );
         }
         $sha256 = hash_file('sha256', $artifact);

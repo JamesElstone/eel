@@ -218,7 +218,8 @@ $harness->check(AppConfigurationStore::class, 'rejects empty configuration set p
 
 $harness->check(AppConfigurationStore::class, 'throws without emitting warnings when config writes fail', function () use ($harness): void {
     $method = new ReflectionMethod(AppConfigurationStore::class, 'writeConfigFile');
-    $targetDirectory = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'eelkit-config-write-target';
+    $targetDirectory = test_tmp_directory()
+        . DIRECTORY_SEPARATOR . 'eelkit-config-write-target';
 
     if (!is_dir($targetDirectory) && !mkdir($targetDirectory) && !is_dir($targetDirectory)) {
         $harness->skip('Unable to create temporary write target.');

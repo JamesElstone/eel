@@ -1215,7 +1215,7 @@ function goldenAssertFirstPeriodLockBoundary(GeneratedServiceClassTestHarness $h
     $harness->assertSame($reviewBefore, $lockService->fetchReview($companyId, 9111));
 
     $uploadBase = testPageServiceUploadBasePath();
-    $csvPath = tempnam(sys_get_temp_dir(), 'golden-lock-');
+    $csvPath = tempnam(test_tmp_directory(), 'golden-lock-');
     if (!is_string($csvPath)) {
         throw new RuntimeException('Unable to create the golden upload control file.');
     }

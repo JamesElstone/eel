@@ -12,7 +12,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(LogStore::class);
 
-$logPath = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'log-store-buffered' . DIRECTORY_SEPARATOR . 'buffered.log';
+$logPath = test_tmp_directory() . DIRECTORY_SEPARATOR
+    . 'log-store-buffered' . DIRECTORY_SEPARATOR . 'buffered.log';
 $logDirectory = dirname($logPath);
 if (!is_dir($logDirectory) && !mkdir($logDirectory, 0777, true) && !is_dir($logDirectory)) {
     throw new RuntimeException('Unable to create LogStore test directory.');

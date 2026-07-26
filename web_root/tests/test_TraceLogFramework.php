@@ -19,7 +19,11 @@ final class TraceLogFrameworkTestCaller
 }
 
 $harness = new GeneratedServiceClassTestHarness();
-$traceTestRoot = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'trace-log-framework';
+$traceTestRoot = test_tmp_directory() . DIRECTORY_SEPARATOR . 'trace-log-framework';
+$relativeTraceTestRoot = ltrim(
+    str_replace('\\', '/', substr($traceTestRoot, strlen(APP_ROOT))),
+    '/'
+);
 
 $ensureTraceTestDirectory = static function (string $path): void {
     if (!is_dir($path) && !mkdir($path, 0777, true) && !is_dir($path)) {
@@ -142,13 +146,13 @@ $harness->check(TraceLogFramework::class, 'disables tracing after a write failur
     }
 });
 
-$harness->check(TraceLogFramework::class, 'resolves relative trace paths under APP_ROOT', function () use ($harness, $withTraceConfig, $ensureTraceTestDirectory, $traceTestRoot): void {
+$harness->check(TraceLogFramework::class, 'resolves relative trace paths under APP_ROOT', function () use ($harness, $withTraceConfig, $ensureTraceTestDirectory, $traceTestRoot, $relativeTraceTestRoot): void {
     $directory = $traceTestRoot . DIRECTORY_SEPARATOR . 'relative';
     $file = $directory . DIRECTORY_SEPARATOR . date('Y-m-d') . '_trace.csv';
     $ensureTraceTestDirectory($directory);
     @unlink($file);
 
-    $withTraceConfig('tests/tmp/trace-log-framework/relative', function () use ($harness, $file): void {
+    $withTraceConfig($relativeTraceTestRoot . '/relative', function () use ($harness, $file): void {
         TraceLogFrameworkTestCaller::writeLine();
         $harness->assertTrue(is_file($file));
     });

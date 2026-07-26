@@ -53,7 +53,8 @@ $removeDirectory = static function (string $path) use (&$removeDirectory): void 
 };
 
 $withPageFiles = static function (array $files, callable $callback) use ($removeDirectory): void {
-    $directory = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'navigation-framework-pages';
+    $directory = test_tmp_directory()
+        . DIRECTORY_SEPARATOR . 'navigation-framework-pages';
     $removeDirectory($directory);
 
     if (!mkdir($directory, 0777, true) && !is_dir($directory)) {

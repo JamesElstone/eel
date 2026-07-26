@@ -45,7 +45,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         });
 
         $harness->check(\eel_accounts\Service\ManualAssetEvidenceStorageService::class, 'rejects non HTTP upload temporary files', static function () use ($harness, $service): void {
-            $tmpFile = tempnam(sys_get_temp_dir(), 'manual_asset_evidence_');
+            $tmpFile = tempnam(test_tmp_directory(), 'manual_asset_evidence_');
             if ($tmpFile === false) {
                 $harness->skip('Unable to create a temporary file.');
             }
@@ -73,7 +73,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         });
 
         $harness->check(\eel_accounts\Service\ManualAssetEvidenceStorageService::class, 'deletes stored evidence by absolute path', static function () use ($harness, $service): void {
-            $tmpFile = tempnam(sys_get_temp_dir(), 'manual_asset_evidence_delete_');
+            $tmpFile = tempnam(
+                test_tmp_directory(),
+                'manual_asset_evidence_delete_'
+            );
             if ($tmpFile === false) {
                 $harness->skip('Unable to create a temporary file.');
             }

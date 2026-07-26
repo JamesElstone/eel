@@ -7,6 +7,9 @@
  */
 declare(strict_types=1);
 
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support'
+    . DIRECTORY_SEPARATOR . 'TestPaths.php';
+
 set_time_limit(0);
 
 if (PHP_SAPI !== 'cli' && !eel_tests_developer_options_enabled()) {
@@ -99,7 +102,7 @@ function eel_tests_app_config_path(): string
 function eel_tests_acquire_process_lock(): array
 {
     $runnerPath = (string)(realpath(__FILE__) ?: __FILE__);
-    $lockPath = sys_get_temp_dir()
+    $lockPath = test_tmp_directory()
         . DIRECTORY_SEPARATOR
         . 'eelkit-test-runner-'
         . hash('sha256', $runnerPath)

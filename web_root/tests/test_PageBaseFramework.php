@@ -135,7 +135,7 @@ $harness->check(PageBaseFramework::class, 'identifies only explicitly on-demand 
 
 $harness->check(PageBaseFramework::class, 'injects authenticated user metadata into request context', function () use ($harness): void {
     $page = new PageBaseAuthContextTestPage(123, 2);
-    $services = new PageServiceFramework(new AppService(APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp'));
+    $services = new PageServiceFramework(new AppService(test_tmp_directory()));
     $request = new RequestFramework(['page' => $page->id()], [], ['REQUEST_METHOD' => 'GET'], [], []);
 
     $context = $page->buildContextForRequest($request, $services, ActionResultFramework::none());
@@ -146,7 +146,7 @@ $harness->check(PageBaseFramework::class, 'injects authenticated user metadata i
 
 $harness->check(PageBaseFramework::class, 'injects CSRF token into page context', function () use ($harness): void {
     $page = new PageBaseAuthContextTestPage(123, 2);
-    $services = new PageServiceFramework(new AppService(APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp'));
+    $services = new PageServiceFramework(new AppService(test_tmp_directory()));
     $request = new RequestFramework(['page' => $page->id()], [], ['REQUEST_METHOD' => 'GET'], [], []);
 
     $context = $page->buildContextForRequest($request, $services, ActionResultFramework::none());
@@ -158,7 +158,7 @@ $harness->check(PageBaseFramework::class, 'injects CSRF token into page context'
 
 $harness->check(PageBaseFramework::class, 'uses zero auth metadata for unauthenticated request context', function () use ($harness): void {
     $page = new PageBaseAuthContextTestPage(0, 2);
-    $services = new PageServiceFramework(new AppService(APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp'));
+    $services = new PageServiceFramework(new AppService(test_tmp_directory()));
     $request = new RequestFramework(['page' => $page->id()], [], ['REQUEST_METHOD' => 'GET'], [], []);
 
     $context = $page->buildContextForRequest($request, $services, ActionResultFramework::none());

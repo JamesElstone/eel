@@ -37,7 +37,7 @@ return array (
   ),
   'uploads' => 
   array (
-    'upload_base_dir' => 'files',
+    'upload_base_dir' => 'web_root/tests/tmp',
     'export_key' => '3KwECjQFlWmpTztcBAuviitPhE8uAJFL',
   ),
   'site_context' => 

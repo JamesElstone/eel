@@ -66,7 +66,7 @@ final class AppServiceCircularConsumerBTestClass
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(AppService::class);
 
-$appServices = new AppService(APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp');
+$appServices = new AppService(test_tmp_directory());
 
 $harness->check(AppService::class, 'resolves nullable concrete dependencies without defaults', function () use ($harness, $appServices): void {
     $consumer = $appServices->get(AppServiceNullableConsumerTestClass::class);

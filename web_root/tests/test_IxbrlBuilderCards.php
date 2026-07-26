@@ -481,7 +481,7 @@ $harness->run(_ixbrl_facts_previewCard::class, static function (GeneratedService
 
 $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceClassTestHarness $harness, _ixbrl_generationCard $card): void {
     $harness->check(_ixbrl_generationCard::class, 'uses shared capabilities and withholds filing download until fully ready', static function () use ($harness, $card): void {
-        $path = tempnam(sys_get_temp_dir(), 'ixbrl-card-');
+        $path = tempnam(test_tmp_directory(), 'ixbrl-card-');
         if ($path === false) {
             $harness->skip('Could not create a temporary iXBRL card artifact.');
         }

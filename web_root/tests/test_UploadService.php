@@ -367,7 +367,7 @@ $harness->run(\eel_accounts\Service\StatementUploadService::class, static functi
         $method->setAccessible(true);
         $errors = [];
 
-        $filename = tempnam(sys_get_temp_dir(), 'eel-upload-row-count-');
+        $filename = tempnam(test_tmp_directory(), 'eel-upload-row-count-');
         if (!is_string($filename) || $filename === '') {
             throw new RuntimeException('Unable to create the synthetic CSV fixture.');
         }

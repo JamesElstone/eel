@@ -12,9 +12,7 @@ use eel_accounts\Scripts\Ixbrl\ReferenceComparisonDiagnostic;
 (new GeneratedServiceClassTestHarness())->run(
     ReferenceComparisonDiagnostic::class,
     static function (GeneratedServiceClassTestHarness $harness): void {
-        $fixtureDirectory = dirname(__DIR__, 2)
-            . DIRECTORY_SEPARATOR . 'files'
-            . DIRECTORY_SEPARATOR . 'tmp'
+        $fixtureDirectory = test_tmp_directory()
             . DIRECTORY_SEPARATOR . 'ixbrl'
             . DIRECTORY_SEPARATOR . 'references';
         $goldenPath = $fixtureDirectory
@@ -27,7 +25,7 @@ use eel_accounts\Scripts\Ixbrl\ReferenceComparisonDiagnostic;
             || !is_file($eelPath)
             || !is_file($laterEelPath)) {
             $harness->skip(
-                'Private iXBRL references are not installed below files/tmp/.'
+                'Private iXBRL references are not installed below the configured test temporary directory.'
             );
         }
 

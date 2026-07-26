@@ -20,7 +20,7 @@ $harness->run(\eel_accounts\Service\StatementUploadService::class, function (Gen
     });
 
     $harness->check(\eel_accounts\Service\StatementUploadService::class, 'detects MIME type from real statement file content', function () use ($harness, $service): void {
-        $path = tempnam(sys_get_temp_dir(), 'statement-mime-');
+        $path = tempnam(test_tmp_directory(), 'statement-mime-');
         if (!is_string($path) || $path === '') {
             $harness->skip('Unable to create a temporary statement file.');
         }

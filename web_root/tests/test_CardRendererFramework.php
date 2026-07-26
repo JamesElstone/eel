@@ -82,7 +82,7 @@ $harness->run(CardRendererFramework::class, function (GeneratedServiceClassTestH
         $harness->skip('Card renderer did not instantiate.');
     }
 
-    $services = new PageServiceFramework(new AppService(APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp'));
+    $services = new PageServiceFramework(new AppService(test_tmp_directory()));
 
     $resolveCardService = new ReflectionMethod(CardRendererFramework::class, 'resolveCardService');
     $resolveCardService->setAccessible(true);

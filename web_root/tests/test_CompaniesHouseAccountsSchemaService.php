@@ -41,7 +41,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     if (!is_string($body)) { return ['status_code'=>404,'headers'=>[],'body'=>'','final_url'=>$url]; }
                     return ['status_code'=>200,'headers'=>['ETag'=>'fixture'],'body'=>$body,'final_url'=>$url];
                 };
-                $cache = sys_get_temp_dir() . '/eel-ch-schema-' . bin2hex(random_bytes(5));
+                $cache = test_tmp_directory() . DIRECTORY_SEPARATOR
+                    . 'eel-ch-schema-' . bin2hex(random_bytes(5));
                 $service = new \eel_accounts\Service\CompaniesHouseAccountsSchemaService($fetcher, $cache);
                 $first = $service->ensureCurrent();
                 $second = $service->ensureCurrent();
@@ -67,7 +68,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     . '<tr><td><a href="/v1-0/schema/forms/GetSubmissionStatus-v2-9.xsd">GetSubmissionStatus-v2-9.xsd</a></td><td>Live</td></tr>'
                     . '<tr><td><a href="/v1-0/schema/forms/GetStatusAck-v1-1.xsd">GetStatusAck-v1-1.xsd</a></td><td>Live</td></tr></table></html>';
                 $fetcher = static function (string $url) use (&$calls, $html): array { $calls[]=$url; return ['status_code'=>200,'headers'=>[],'body'=>$html,'final_url'=>$url]; };
-                $service = new \eel_accounts\Service\CompaniesHouseAccountsSchemaService($fetcher, sys_get_temp_dir() . '/eel-ch-schema-' . bin2hex(random_bytes(5)));
+                $service = new \eel_accounts\Service\CompaniesHouseAccountsSchemaService(
+                    $fetcher,
+                    test_tmp_directory() . DIRECTORY_SEPARATOR
+                        . 'eel-ch-schema-' . bin2hex(random_bytes(5))
+                );
                 try { $service->ensureCurrent(); $harness->assertTrue(false, 'Deprecated profile should block.'); }
                 catch (RuntimeException $exception) { $harness->assertTrue(str_contains($exception->getMessage(), 'software update is required')); }
                 $harness->assertSame(1, count($calls));

@@ -153,7 +153,7 @@ $harness->check(CardBaseFramework::class, 'stores pagination state with a card-p
 
     $context = $card->handle(
         $request,
-        new PageServiceFramework(new AppService(APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp')),
+        new PageServiceFramework(new AppService(test_tmp_directory())),
         ['page' => ['page_id' => 'test']],
         ActionResultFramework::none()
     );

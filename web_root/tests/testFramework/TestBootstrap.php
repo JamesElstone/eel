@@ -18,6 +18,9 @@ defined('APP_ACTIONS') || define('APP_ACTIONS', APP_CONTENT . 'actions' . DIRECT
 defined('APP_JS') || define('APP_JS', APP_ROOT . 'js' . DIRECTORY_SEPARATOR);
 defined('APP_CSS') || define('APP_CSS', APP_ROOT . 'css' . DIRECTORY_SEPARATOR);
 
+require_once dirname(__DIR__) . DIRECTORY_SEPARATOR . 'support'
+    . DIRECTORY_SEPARATOR . 'TestPaths.php';
+
 defined('AF_HEADER_PREFIX') || define('AF_HEADER_PREFIX', 'X-AntiFraud-');
 defined('AF_COOKIE_PREFIX') || define('AF_COOKIE_PREFIX', 'af_');
 

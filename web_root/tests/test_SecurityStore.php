@@ -17,7 +17,7 @@ final class SecurityStoreTestCredentialCatalogProvider implements ApiCredentialC
 
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(SecurityStore::class);
-$testTempDirectory = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp';
+$testTempDirectory = test_tmp_directory();
 if (!is_dir($testTempDirectory)) { mkdir($testTempDirectory, 0777, true); }
 $previousProviders = AppConfigurationStore::get('api_credentials.catalog_providers', []);
 AppConfigurationStore::set('api_credentials.catalog_providers', [SecurityStoreTestCredentialCatalogProvider::class]);

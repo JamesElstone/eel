@@ -204,7 +204,7 @@ $setSiteContextTestConfig = static function (?string $providerClass): void {
 };
 
 $createSiteContextTestServices = static function (): PageServiceFramework {
-    return new PageServiceFramework(new AppService(APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp'));
+    return new PageServiceFramework(new AppService(test_tmp_directory()));
 };
 
 $createSiteContextTestRequest = static function (array $post = [], array $server = []): RequestFramework {

@@ -404,7 +404,11 @@ $harness->run(\eel_accounts\Service\TransactionAutoApprovalService::class, stati
             $harness->assertSame([$staleCheckedTransactionId, $checkedTransactionId], array_map(static fn(array $row): int => (int)($row['id'] ?? 0), $unpostedRows));
             $harness->assertSame([$confirmedTransactionId], array_map(static fn(array $row): int => (int)($row['id'] ?? 0), $confirmedRows));
 
-            $monthStatus = (new \eel_accounts\Service\StatementUploadService(sys_get_temp_dir()))->buildMonthStatus(
+            $monthStatus = (
+                new \eel_accounts\Service\StatementUploadService(
+                    test_tmp_directory()
+                )
+            )->buildMonthStatus(
                 (int)$fixture['company_id'],
                 (int)$fixture['accounting_period_id']
             );

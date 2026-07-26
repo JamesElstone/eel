@@ -18,7 +18,7 @@ if (!class_exists('NotAnAction', false)) {
     }
 }
 
-$pageServices = new PageServiceFramework(new AppService(APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp'));
+$pageServices = new PageServiceFramework(new AppService(test_tmp_directory()));
 $sessionAuthenticationService = new SessionAuthenticationService();
 $sessionAuthenticationService->startSession();
 $csrfToken = $sessionAuthenticationService->csrfToken();

@@ -16,7 +16,7 @@ final class ApiKeysEditorTestCatalogProvider implements ApiCredentialCatalogProv
 
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(ApiKeysEditorService::class);
-$tmp = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp';
+$tmp = test_tmp_directory();
 if (!is_dir($tmp)) { mkdir($tmp, 0777, true); }
 $harness->check(ApiKeysEditorService::class, 'lists only metadata and writes distinct gateway credentials', function () use ($harness, $tmp): void {
     $path = $tmp . DIRECTORY_SEPARATOR . 'api-keys-editor-' . bin2hex(random_bytes(8)) . '.csv';

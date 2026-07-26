@@ -14,7 +14,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
     static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\IxbrlGenerationRunCleanupService $service): void {
         $harness->check(\eel_accounts\Service\IxbrlGenerationRunCleanupService::class, 'removes only missing unreferenced artifacts', static function () use ($harness, $service): void {
             InterfaceDB::beginTransaction();
-            $presentPath = tempnam(sys_get_temp_dir(), 'ixbrl-cleanup-');
+            $presentPath = tempnam(test_tmp_directory(), 'ixbrl-cleanup-');
             if ($presentPath === false) {
                 $harness->skip('Could not create an iXBRL cleanup artifact fixture.');
             }

@@ -201,7 +201,7 @@ final class GeneratedServiceClassTestHarness
             || str_contains($name, 'root')
             || str_contains($name, 'base')
         ) {
-            return APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp';
+            return test_tmp_directory();
         }
 
         return 'test';

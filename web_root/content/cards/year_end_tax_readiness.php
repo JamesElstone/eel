@@ -94,12 +94,17 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             ' . $this->overallTaxPositionHtml($companySettings, $taxReadiness, $provision) . '
             ' . $this->ctPeriodSectionsHtml($companySettings, $taxReadiness, $companyId, $accountingPeriodId) . '
             ' . $this->provisionHtml($companySettings, $provision) . '
-            ' . $this->corporationTaxScope($filingScope, $companyId, $accountingPeriodId) . '
+            ' . $this->corporationTaxScope(
+                $filingScope,
+                $companyId,
+                $accountingPeriodId,
+                !empty($sectionReview['acknowledgement_current'])
+            ) . '
             ' . $this->reviewApprovalHtml($acknowledgementForm) . '
         </section>';
     }
 
-    private function corporationTaxScope(array $scope, int $companyId, int $accountingPeriodId): string
+    private function corporationTaxScope(array $scope, int $companyId, int $accountingPeriodId, bool $disabled): string
     {
         if (empty($scope['available'])) {
             return '<section class="panel-soft"><h3 class="card-title">Corporation Tax Filing Scope Check</h3><div class="standout helper">'
@@ -121,19 +126,20 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
                 . '<input type="hidden" name="card_action" value="Ixbrl"><input type="hidden" name="intent" value="save_ct_filing_scope_answer">'
                 . '<input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
                 . '<input type="hidden" name="scope_field" value="' . HelperFramework::escape((string)$key) . '">'
-                . '<div class="actions-row actions-row-nowrap year-end-tax-scope-answer">' . $this->scopeRadio((string)$key, 'no', 'No', $answer)
-                . $this->scopeRadio((string)$key, 'yes', 'Yes', $answer) . '</div></form></td></tr>';
+                . '<div class="actions-row actions-row-nowrap year-end-tax-scope-answer">' . $this->scopeRadio((string)$key, 'no', 'No', $answer, $disabled)
+                . $this->scopeRadio((string)$key, 'yes', 'Yes', $answer, $disabled) . '</div></form></td></tr>';
         }
         return '<section class="panel-soft settings-stack" data-year-end-tax-scope-table="true"><h3 class="card-title">Corporation Tax Filing Scope Check</h3>'
+            . ($disabled ? '<div class="helper">Revoke the Year End Confirmation before changing a filing-scope decision.</div>' : '')
             . '<div class="table-scroll"><table class="year-end-tax-scope-table"><thead><tr><th>Supplement ID</th><th>Supplement Name</th><th>Question</th><th>HMRC Guidance</th><th>Answer</th></tr></thead><tbody>'
             . $rows . '</tbody></table></div></section>';
     }
 
-    private function scopeRadio(string $field, string $value, string $label, string $selected): string
+    private function scopeRadio(string $field, string $value, string $label, string $selected, bool $disabled): string
     {
         $id = 'ct_scope_' . $field . '_' . $value;
         return '<label for="' . $id . '"><input id="' . $id . '" type="radio" name="scope_answer" value="' . $value
-            . '" required data-submit-on-change="true"' . ($selected === $value ? ' checked' : '') . '> ' . $label . '</label>';
+            . '" required data-submit-on-change="true"' . ($disabled ? ' disabled' : '') . ($selected === $value ? ' checked' : '') . '> ' . $label . '</label>';
     }
 
     private function check(array $checks, string $checkCode): array

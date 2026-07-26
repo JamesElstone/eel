@@ -61,6 +61,26 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertTrue((int)strrpos($html, 'Corporation Tax Filing Scope Check') < (int)strpos($html, 'Tax Basis Review And Approval'));
     });
 
+    $harness->check(_year_end_tax_readinessCard::class, 'locks filing-scope decisions while the Year End Confirmation is approved', static function () use ($harness, $card): void {
+        $context = yearEndTaxReadinessCardContext([
+            'available' => true,
+            'provision' => ['available' => true, 'status' => 'not_required'],
+            'periods' => [],
+        ], ['acknowledged_at' => '2026-07-26 12:00:00', 'acknowledged_by' => 'Tester']);
+        $context['services']['corporation_tax_filing_scope'] = [
+            'available' => true,
+            'answers' => ['ct600b' => 'no'],
+            'definitions' => [
+                'ct600b' => ['page' => 'CT600B', 'label' => 'Controlled foreign companies', 'question' => 'Does this apply?', 'url' => 'https://www.gov.uk/'],
+            ],
+        ];
+
+        $html = $card->render($context);
+
+        $harness->assertTrue(str_contains($html, 'data-submit-on-change="true" disabled checked'));
+        $harness->assertTrue(str_contains($html, 'Revoke the Year End Confirmation before changing a filing-scope decision.'));
+    });
+
     $harness->check(_year_end_tax_readinessCard::class, 'renders compact tax readiness status and acknowledgement control', static function () use ($harness, $card): void {
         $html = $card->render(yearEndTaxReadinessCardContext([
             'available' => true,

@@ -108,12 +108,18 @@ final class IxbrlBalanceSheetMetricsService
         $buckets = $this->emptyBuckets();
         $sources = array_fill_keys(array_keys($buckets), []);
         $equity = 0.0;
-        $directorLoanPresentation = $accountingPeriodId !== null && $accountingPeriodId > 0
-            ? (new DirectorLoanReportingPresentationService())->resolveForReporting($companyId, $accountingPeriodId)
+        $directorLoanStatement = $accountingPeriodId !== null && $accountingPeriodId > 0
+            ? (new DirectorLoanService())->fetchStatement($companyId, $accountingPeriodId)
             : [];
-        $directorLoanLiabilityNominalId = !empty($directorLoanPresentation['applicable'])
-            ? (int)($directorLoanPresentation['liability_nominal_account_id'] ?? 0)
-            : 0;
+        $directorLoanLiabilityNominalId = (int)($directorLoanStatement['liability_nominal']['id'] ?? 0);
+        $directorLoanWithinOneYear = 0.0;
+        $directorLoanAfterOneYear = 0.0;
+        foreach ((array)($directorLoanStatement['per_director'] ?? []) as $position) {
+            $amount = (float)($position['reportable_liability'] ?? 0);
+            if ((string)($position['classification'] ?? '') === DirectorLoanReportingPresentationService::AFTER_MORE_THAN_ONE_YEAR) $directorLoanAfterOneYear += $amount;
+            else $directorLoanWithinOneYear += $amount;
+        }
+        $directorLoanPresentation = ['within_one_year' => round($directorLoanWithinOneYear, 2), 'after_more_than_one_year' => round($directorLoanAfterOneYear, 2)];
 
         foreach ($rows as $row) {
             $nominalAccountId = (int)($row['nominal_account_id'] ?? 0);
@@ -152,14 +158,18 @@ final class IxbrlBalanceSheetMetricsService
                 } else {
                     $isPresentedDirectorLoanLiability = $directorLoanLiabilityNominalId > 0
                         && $nominalAccountId === $directorLoanLiabilityNominalId;
-                    $bucket = $isPresentedDirectorLoanLiability
-                        ? ((string)($directorLoanPresentation['classification'] ?? '')
-                            === DirectorLoanReportingPresentationService::AFTER_MORE_THAN_ONE_YEAR
-                                ? 'creditors_after_more_than_one_year'
-                                : 'creditors_within_one_year')
-                        : ($this->isLongTermLiabilitySubtype($subtype)
+                    if ($isPresentedDirectorLoanLiability) {
+                        $within = (float)($directorLoanPresentation['within_one_year'] ?? 0);
+                        $after = (float)($directorLoanPresentation['after_more_than_one_year'] ?? 0);
+                        $buckets['creditors_within_one_year'] += $within;
+                        $buckets['creditors_after_more_than_one_year'] += $after;
+                        $this->addSource($sources, 'creditors_within_one_year', $label, $within);
+                        $this->addSource($sources, 'creditors_after_more_than_one_year', $label, $after);
+                        continue;
+                    }
+                    $bucket = $this->isLongTermLiabilitySubtype($subtype)
                             ? 'creditors_after_more_than_one_year'
-                            : 'creditors_within_one_year');
+                            : 'creditors_within_one_year';
                 }
                 $buckets[$bucket] += $amount;
                 $this->addSource($sources, $bucket, $label, $amount);

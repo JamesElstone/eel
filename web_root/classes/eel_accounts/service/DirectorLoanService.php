@@ -70,9 +70,7 @@ final class DirectorLoanService
 
         $periodStart = (string)$period['period_start'];
         $periodEnd = (string)$period['period_end'];
-        $reportingPresentation = (new DirectorLoanReportingPresentationService())
-            ->resolveForReporting($companyId, $accountingPeriodId);
-        $setOffPermitted = !empty($reportingPresentation['set_off_permitted']);
+        $partyTermsService = new ParticipatorLoanPartyTermsService();
         $rawLines = $this->rawLines(
             $companyId,
             $periodStart,
@@ -172,6 +170,12 @@ final class DirectorLoanService
         foreach ($groups as $key => $position) {
             $asset = round((float)$position['opening_asset'] + (float)$position['movement_asset'], 2);
             $liability = round((float)$position['opening_liability'] + (float)$position['movement_liability'], 2);
+            $partyId = (int)($position['director_id'] ?? 0);
+            $partyTerms = $partyId > 0
+                ? $partyTermsService->resolved($companyId, $accountingPeriodId, $partyId)
+                : [];
+            $setOffPermitted = !empty($partyTerms['set_off_right_confirmed'])
+                && in_array((string)($partyTerms['settlement_intention'] ?? ''), ['net', 'simultaneous'], true);
             $desired = $key === 'unattributed' || !$setOffPermitted
                 ? 0.0
                 : round(min(max(0.0, $asset), max(0.0, $liability)), 2);
@@ -183,6 +187,12 @@ final class DirectorLoanService
                 'gross_liability' => $liability,
                 'desired_reclassification' => $desired,
                 'set_off_permitted' => $setOffPermitted,
+                'party_terms' => $partyTerms,
+                'classification' => (string)($partyTerms['repayment_timing'] ?? 'within_12_months') === 'after_12_months'
+                    && !empty($partyTerms['deferment_right_confirmed'])
+                    && empty($partyTerms['repayable_on_demand'])
+                    ? DirectorLoanReportingPresentationService::AFTER_MORE_THAN_ONE_YEAR
+                    : DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR,
                 'reportable_asset' => $reportableAsset,
                 'reportable_liability' => $reportableLiability,
                 'net_closing_position' => $netLiability,
@@ -250,9 +260,9 @@ final class DirectorLoanService
             'liability_payable' => $liabilityPayable,
             'reportable_asset_receivable' => $reportableAssetReceivable,
             'reportable_liability_payable' => $reportableLiabilityPayable,
-            'set_off_permitted' => $setOffPermitted,
-            'set_off_evidence' => (string)($reportingPresentation['set_off_evidence'] ?? ''),
-            'reporting_presentation' => $reportingPresentation,
+            'set_off_permitted' => !empty(array_filter($perDirector, static fn(array $position): bool => !empty($position['set_off_permitted']))),
+            'set_off_evidence' => '',
+            'reporting_presentation' => [],
             'desired_reclassification' => $desiredReclassification,
             'posted_reclassification' => $postedAmount,
             'pending_reclassification' => round($desiredReclassification - $postedAmount, 2),
@@ -367,7 +377,7 @@ final class DirectorLoanService
                 continue;
             }
 
-            $presentation = (array)($statement['reporting_presentation'] ?? []);
+            $presentation = (array)($position['party_terms'] ?? []);
             $repaymentReductions = round(
                 $cashRepayments
                 + $amountsLegallySetOff
@@ -396,10 +406,13 @@ final class DirectorLoanService
                 'closing_company_to_director_balance' => $closingReceivable,
                 'closing_company_liability' => $closingLiability,
                 'interest_rate_percent' => (float)($presentation['interest_rate_percent'] ?? 0),
-                'interest_rate' => (string)($presentation['interest_rate'] ?? '0%'),
-                'main_terms' => (string)($presentation['main_terms'] ?? 'Unsecured.'),
-                'repayment_conditions' => (string)($presentation['repayment_conditions'] ?? 'Repayable on demand.'),
-                'main_conditions' => (string)($presentation['main_conditions'] ?? 'Unsecured. Repayable on demand.'),
+                'interest_rate' => number_format((float)($presentation['interest_rate_percent'] ?? 0), 4, '.', '') . '%',
+                'main_terms' => ucfirst((string)($presentation['security_type'] ?? 'unsecured')) . '.',
+                'repayment_conditions' => !empty($presentation['repayable_on_demand'])
+                    ? 'Repayable on demand.'
+                    : ((string)($presentation['repayment_timing'] ?? 'within_12_months') === 'after_12_months'
+                        ? 'Repayable after 12 months.' : 'Repayable within 12 months.'),
+                'main_conditions' => ucfirst((string)($presentation['security_type'] ?? 'unsecured')) . '.',
                 'set_off_permitted' => !empty($position['set_off_permitted']),
             ];
         }

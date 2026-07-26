@@ -12,7 +12,7 @@ final class DirectorLoanAction implements ActionInterfaceFramework
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
         $intent = trim((string)$request->input('intent', $request->input('global_action', '')));
-        if ($intent !== 'save_director_loan_reporting_presentation') {
+        if ($intent !== 'save_participator_loan_party_terms') {
             return ActionResultFramework::none();
         }
 
@@ -21,31 +21,21 @@ final class DirectorLoanAction implements ActionInterfaceFramework
 
         try {
             $result = match ($intent) {
-                default => (new \eel_accounts\Service\DirectorLoanReportingPresentationService())->save(
+                'save_participator_loan_party_terms' => (new \eel_accounts\Service\ParticipatorLoanPartyTermsService())->save(
                     $companyId,
-                    $accountingPeriodId,
-                    (string)$request->input('classification', ''),
-                    $this->actor($request),
+                    (int)$request->input('party_id', 0),
                     [
-                        'set_off_right_confirmed' => $this->checked(
-                            $request->input('set_off_right_confirmed', '')
-                        ),
-                        'set_off_net_settlement_intended' => $this->checked(
-                            $request->input('set_off_net_settlement_intended', '')
-                        ),
-                        'set_off_evidence' => (string)$request->input('set_off_evidence', ''),
-                        'deferment_right_confirmed' => $this->checked(
-                            $request->input('deferment_right_confirmed', '')
-                        ),
-                        'deferment_evidence' => (string)$request->input('deferment_evidence', ''),
                         'interest_rate_percent' => (string)$request->input('interest_rate_percent', '0'),
-                        'main_terms' => (string)$request->input('main_terms', 'Unsecured.'),
-                        'repayment_conditions' => (string)$request->input(
-                            'repayment_conditions',
-                            'Repayable on demand.'
-                        ),
-                    ]
+                        'security_type' => (string)$request->input('security_type', 'unsecured'),
+                        'repayable_on_demand' => $this->checked($request->input('repayable_on_demand', '')),
+                        'repayment_timing' => (string)$request->input('repayment_timing', 'within_12_months'),
+                        'deferment_right_confirmed' => $this->checked($request->input('deferment_right_confirmed', '')),
+                        'set_off_right_confirmed' => $this->checked($request->input('set_off_right_confirmed', '')),
+                        'settlement_intention' => (string)$request->input('settlement_intention', 'independently'),
+                    ],
+                    $this->actor($request)
                 ),
+                default => throw new \LogicException('Unsupported participator loan terms action.'),
             };
         } catch (Throwable $exception) {
             $result = ['success' => false, 'errors' => [$exception->getMessage()]];
@@ -57,9 +47,10 @@ final class DirectorLoanAction implements ActionInterfaceFramework
             $messages[] = [
                 'type' => 'success',
                 'message' => match ($intent) {
-                    default => !empty($result['changed'])
-                        ? 'Director Loan statutory presentation and supporting evidence saved.'
+                    'save_participator_loan_party_terms' => !empty($result['changed'])
+                        ? 'Participator loan party terms saved.'
                         : 'No change was needed.',
+                    default => 'Participator loan party terms saved.',
                 },
             ];
         } else {

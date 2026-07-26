@@ -1026,6 +1026,63 @@
         });
     }
 
+    function initialiseParticipatorLoanTermsForms(root = document) {
+        root.querySelectorAll('[data-participator-loan-terms-entity]').forEach((select) => {
+            if (!(select instanceof HTMLSelectElement) || select.dataset.participatorLoanTermsBound === '1') {
+                return;
+            }
+            select.dataset.participatorLoanTermsBound = '1';
+            const form = select.closest('form');
+            if (!(form instanceof HTMLFormElement)) {
+                return;
+            }
+            const applyTerms = () => {
+                const option = select.selectedOptions[0];
+                if (!(option instanceof HTMLOptionElement) || option.value === '') {
+                    return;
+                }
+                const setValue = (name, value) => {
+                    const control = form.elements.namedItem(name);
+                    if (control instanceof HTMLInputElement || control instanceof HTMLSelectElement) control.value = value;
+                };
+                const setChecked = (name, value) => {
+                    const control = form.elements.namedItem(name);
+                    if (control instanceof HTMLInputElement) control.checked = value === '1';
+                };
+                setValue('interest_rate_percent', String(option.dataset.interestRatePercent || '0.0000'));
+                setValue('security_type', String(option.dataset.securityType || 'unsecured'));
+                setChecked('repayable_on_demand', String(option.dataset.repayableOnDemand || '0'));
+                setValue('repayment_timing', String(option.dataset.repaymentTiming || 'within_12_months'));
+                setChecked('deferment_right_confirmed', String(option.dataset.defermentRightConfirmed || '0'));
+                setChecked('set_off_right_confirmed', String(option.dataset.setOffRightConfirmed || '0'));
+                setValue('settlement_intention', String(option.dataset.settlementIntention || 'independently'));
+                const title = form.querySelector('[data-participator-loan-terms-title]');
+                if (title instanceof HTMLElement) title.textContent = option.dataset.explicit === '1' ? 'Edit terms' : 'Add terms';
+            };
+            select.addEventListener('change', applyTerms);
+        });
+        root.querySelectorAll('[data-participator-loan-terms-edit="true"]').forEach((button) => {
+            if (!(button instanceof HTMLButtonElement) || button.dataset.participatorLoanTermsEditBound === '1') {
+                return;
+            }
+            button.dataset.participatorLoanTermsEditBound = '1';
+            button.addEventListener('click', () => {
+                const form = document.getElementById('participator-loan-terms-add');
+                const select = form instanceof HTMLFormElement
+                    ? form.querySelector('[data-participator-loan-terms-entity]')
+                    : null;
+                const partyId = String(button.dataset.partyId || '');
+                if (!(select instanceof HTMLSelectElement) || partyId === '') {
+                    return;
+                }
+                select.value = partyId;
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+                form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                select.focus({ preventScroll: true });
+            });
+        });
+    }
+
     function initialiseIxbrlTradingForms(root = document) {
         const forms = root.querySelectorAll ? root.querySelectorAll('[data-ixbrl-trading-form="true"]') : [];
 
@@ -1277,6 +1334,7 @@
     initialiseTransactionAutoApprovalControls(document);
     initialiseYearEndStateForms(document);
     initialiseIxbrlTradingForms(document);
+    initialiseParticipatorLoanTermsForms(document);
     restoreStoredCardMaximizedStates(document);
     applyVatSupportReadOnlyState();
 
@@ -1298,6 +1356,7 @@
                     initialiseTransactionAutoApprovalControls(node);
                     initialiseYearEndStateForms(node);
                     initialiseIxbrlTradingForms(node);
+                    initialiseParticipatorLoanTermsForms(node);
                     restoreStoredCardMaximizedStates(node);
                     applyVatSupportReadOnlyState();
                 }

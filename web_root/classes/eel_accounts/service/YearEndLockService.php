@@ -216,6 +216,15 @@ final class YearEndLockService
                 ];
             }
 
+            $partyTermsSnapshot = (new ParticipatorLoanPartyTermsService())
+                ->snapshotPeriod($companyId, $accountingPeriodId, $lockedBy);
+            if (empty($partyTermsSnapshot['success'])) {
+                if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                    \InterfaceDB::rollBack();
+                }
+                return ['success' => false, 'errors' => (array)($partyTermsSnapshot['errors'] ?? ['Participator loan terms could not be frozen before locking this period.'])];
+            }
+
             $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
             \InterfaceDB::execute(
                 'UPDATE year_end_reviews

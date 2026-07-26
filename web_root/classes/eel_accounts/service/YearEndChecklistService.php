@@ -505,6 +505,16 @@ final class YearEndChecklistService
                 ]);
             }
 
+            $progress?->__invoke('Freezing participator loan terms…', 91);
+            $partyTermsSnapshot = (new \eel_accounts\Service\ParticipatorLoanPartyTermsService())
+                ->snapshotPeriod($companyId, $accountingPeriodId, $lockedBy);
+            if (empty($partyTermsSnapshot['success'])) {
+                return $this->rollbackLockTransaction($transaction, [
+                    'success' => false,
+                    'status' => 422,
+                    'errors' => (array)($partyTermsSnapshot['errors'] ?? ['Participator loan terms could not be frozen before locking this period.']),
+                ]);
+            }
             $progress?->__invoke('Locking the accounting period…', 92);
             $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
             $result = $lock->lockPeriod($companyId, $accountingPeriodId, $lockedBy);

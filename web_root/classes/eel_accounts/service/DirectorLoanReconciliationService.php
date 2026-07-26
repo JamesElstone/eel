@@ -78,6 +78,10 @@ final class DirectorLoanReconciliationService
         if (abs((float)($context['pending_adjustment_amount'] ?? 0)) >= 0.005) {
             $errors[] = 'The posted Director Loan reclassification is not current with the calculated period-end position.';
         }
+        if ((float)($context['posted_reclassification_amount'] ?? 0) > 0.004
+            && empty($context['set_off_permitted'])) {
+            $errors[] = 'The posted Director Loan set-off is unsupported because both legal set-off confirmations and their evidence are not current.';
+        }
 
         return [
             'success' => $errors === [],
@@ -142,6 +146,7 @@ final class DirectorLoanReconciliationService
         $unresolvedPosted = 0.0;
         $legacyNetAmount = 0.0;
         $proposedLines = [];
+        $requiresSetOffIncrease = false;
         foreach ((array)$statement['per_director'] as $position) {
             $directorId = (int)($position['director_id'] ?? 0);
             $posted = round((float)($position['posted_reclassification'] ?? 0), 2);
@@ -154,6 +159,9 @@ final class DirectorLoanReconciliationService
             $pending = round((float)($position['pending_reclassification'] ?? 0), 2);
             if (abs($pending) < 0.005) {
                 continue;
+            }
+            if ($pending > 0.004) {
+                $requiresSetOffIncrease = true;
             }
             $proposedLines = array_merge(
                 $proposedLines,
@@ -170,11 +178,20 @@ final class DirectorLoanReconciliationService
         $unattributedCount = (int)($statement['unattributed_count'] ?? 0)
             + (int)($statement['invalid_director_count'] ?? 0);
         $confirmationCurrent = !empty($evaluation['current']);
+        $setOffPermitted = !empty($statement['set_off_permitted']);
+        $isLocked = ($this->lockService ?? new YearEndLockService())
+            ->isLocked($companyId, $accountingPeriodId);
         $pendingAmount = round((float)($statement['pending_reclassification_magnitude'] ?? 0), 2);
+        $requiresSetOffReversal = !$setOffPermitted
+            && !$requiresSetOffIncrease
+            && (float)($statement['posted_reclassification'] ?? 0) > 0.004
+            && $proposedLines !== [];
         $canPost = abs($pendingAmount) >= 0.005
-            && $confirmationCurrent
+            && ($confirmationCurrent || $requiresSetOffReversal)
             && $unattributedCount === 0
             && $unresolvedPosted < 0.005
+            && !$isLocked
+            && (!$requiresSetOffIncrease || $setOffPermitted)
             && $proposedLines !== [];
 
         $warnings = [];
@@ -185,6 +202,17 @@ final class DirectorLoanReconciliationService
         }
         if ($unresolvedPosted >= 0.005) {
             $warnings[] = 'A legacy Director Loan offset journal cannot be attributed deterministically and remains an unresolved historical accounting record.';
+        }
+        if (!$setOffPermitted) {
+            foreach ((array)$statement['per_director'] as $position) {
+                if (min(
+                    max(0.0, (float)($position['gross_asset'] ?? 0)),
+                    max(0.0, (float)($position['gross_liability'] ?? 0))
+                ) >= 0.005) {
+                    $warnings[] = 'Same-party Director Loan asset and liability balances remain gross because the legal right of set-off and net-or-simultaneous settlement intention have not both been evidenced.';
+                    break;
+                }
+            }
         }
 
         return [
@@ -215,6 +243,15 @@ final class DirectorLoanReconciliationService
             'desired_reclassification_amount' => (float)$statement['desired_reclassification'],
             'posted_reclassification_amount' => (float)$statement['posted_reclassification'],
             'pending_adjustment_amount' => $pendingAmount,
+            'set_off_permitted' => $setOffPermitted,
+            'set_off_evidence' => (string)($statement['set_off_evidence'] ?? ''),
+            'requires_set_off_increase' => $requiresSetOffIncrease,
+            'requires_set_off_reversal' => $requiresSetOffReversal,
+            'unsupported_posted_set_off_amount' => $requiresSetOffReversal
+                ? round((float)($statement['posted_reclassification'] ?? 0), 2)
+                : 0.0,
+            'reporting_presentation' => (array)($statement['reporting_presentation'] ?? []),
+            'is_locked' => $isLocked,
             'proposed_lines' => $proposedLines,
             'legacy_unresolved_reclassification_amount' => $unresolvedPosted,
             'legacy_unresolved_reclassification_net_amount' => $legacyNetAmount,
@@ -235,7 +272,11 @@ final class DirectorLoanReconciliationService
                 $confirmationCurrent,
                 $unattributedCount,
                 $unresolvedPosted,
-                $pendingAmount
+                $pendingAmount,
+                $setOffPermitted,
+                $requiresSetOffIncrease,
+                $requiresSetOffReversal,
+                $isLocked
             ),
         ];
     }
@@ -285,14 +326,26 @@ final class DirectorLoanReconciliationService
             return ['success' => false, 'errors' => $errors];
         }
 
-        return $service->save(
+        $approval = new YearEndSectionApprovalService();
+        $review = $approval->fetchReview(
+            $companyId,
+            $accountingPeriodId,
+            self::YEAR_END_ACKNOWLEDGEMENT_CODE
+        );
+        $answers = [];
+        foreach ((array)($review['questions'] ?? []) as $question) {
+            if (!is_array($question) || trim((string)($question['id'] ?? '')) === '') {
+                continue;
+            }
+            $answers[(string)$question['id']] = (string)($question['required_value'] ?? '');
+        }
+
+        return $approval->approve(
             $companyId,
             $accountingPeriodId,
             self::YEAR_END_ACKNOWLEDGEMENT_CODE,
-            (array)$context['confirmation_basis'],
-            $changedBy,
-            '',
-            true
+            $answers,
+            $changedBy
         );
     }
 
@@ -320,8 +373,19 @@ final class DirectorLoanReconciliationService
                 'context' => $context,
             ];
         }
+        if (!empty($context['requires_set_off_increase']) && empty($context['set_off_permitted'])) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'errors' => ['A Director Loan set-off cannot be posted until both legal conditions and supporting evidence have been recorded.'],
+                'context' => $context,
+            ];
+        }
 
         $period = (array)$context['accounting_period'];
+        $journalNotes = !empty($context['requires_set_off_reversal'])
+            ? 'Reverses a prior same-director set-off because the legally enforceable right and net-or-simultaneous settlement intention are not both supported by current evidence.'
+            : 'Applies the evidenced same-director control-account set-off. Both a legally enforceable right and an intention to settle net or simultaneously were confirmed; balances belonging to different directors are never offset.';
         $result = ($this->journalService ?? new ManualJournalService())->saveTaggedJournal(
             $companyId,
             $accountingPeriodId,
@@ -333,7 +397,7 @@ final class DirectorLoanReconciliationService
             'system_generated',
             null,
             null,
-            'Applies the calculated same-director control-account reclassification. No balances belonging to different directors are offset.',
+            $journalNotes,
             $changedBy,
             self::OFFSET_JOURNAL_SOURCE_TYPE
         );
@@ -575,6 +639,7 @@ final class DirectorLoanReconciliationService
             ];
         }
 
+        $presentation = (array)($statement['reporting_presentation'] ?? []);
         return $service->buildBasis(self::YEAR_END_ACKNOWLEDGEMENT_CODE, [
             'accounting_period_id' => (int)$statement['accounting_period']['id'],
             'entry_count' => count($entryFacts),
@@ -587,6 +652,10 @@ final class DirectorLoanReconciliationService
             'ct600a_review_current' => !empty($ct600aReview['current']) && !empty($ct600aReview['complete']),
             'ct600a_review_basis_hash' => (string)($ct600aReview['basis_hash'] ?? ''),
             'desired_reclassification_amount' => number_format((float)$statement['desired_reclassification'], 2, '.', ''),
+            'set_off_right_confirmed' => !empty($presentation['set_off_right_confirmed']),
+            'set_off_net_settlement_intended' => !empty($presentation['set_off_net_settlement_intended']),
+            'set_off_evidence' => (string)($presentation['set_off_evidence'] ?? ''),
+            'set_off_permitted' => !empty($presentation['set_off_permitted']),
         ]);
     }
 
@@ -669,7 +738,11 @@ final class DirectorLoanReconciliationService
         bool $confirmationCurrent,
         int $unattributedCount,
         float $unresolvedPosted,
-        float $pending
+        float $pending,
+        bool $setOffPermitted,
+        bool $requiresSetOffIncrease,
+        bool $requiresSetOffReversal,
+        bool $isLocked
     ): string {
         if (abs($pending) < 0.005) {
             return 'The Director Loan control reclassification is already current.';
@@ -679,6 +752,17 @@ final class DirectorLoanReconciliationService
         }
         if ($unresolvedPosted >= 0.005) {
             return 'A legacy unattributed offset journal must be resolved through the normal unlock, review and re-lock workflow.';
+        }
+        if ($requiresSetOffIncrease && !$setOffPermitted) {
+            return 'Confirm both the legally enforceable right of set-off and the intention to settle net or simultaneously, and record the supporting evidence, before applying the reclassification.';
+        }
+        if ($isLocked) {
+            return $requiresSetOffReversal
+                ? 'Unlock the accounting period before reversing the unsupported Director Loan set-off, then review and re-lock the corrected year end.'
+                : 'Unlock the accounting period before changing the Director Loan control reclassification.';
+        }
+        if ($requiresSetOffReversal) {
+            return '';
         }
         if (!$confirmationCurrent) {
             return 'Save the current factual Director Loan Year End Review before applying the control reclassification.';

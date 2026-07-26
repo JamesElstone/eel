@@ -25,6 +25,7 @@ final class IxbrlAccountsDisclosureService
         'has_director_advances_credits_or_guarantees',
         'has_financial_commitments_guarantees_or_contingencies',
         'accounts_approval_date',
+        'approving_director_id',
         'approving_director_name',
         'prepared_under_small_companies_regime',
         'audit_exempt_section_477',
@@ -43,6 +44,7 @@ final class IxbrlAccountsDisclosureService
         'has_director_advances_credits_or_guarantees' => 'director guarantees',
         'has_financial_commitments_guarantees_or_contingencies' => 'financial commitments, guarantees or contingencies',
         'accounts_approval_date' => 'accounts approval date',
+        'approving_director_id' => 'approving director selection',
         'approving_director_name' => 'approving director',
         'prepared_under_small_companies_regime' => 'small companies regime statement',
         'audit_exempt_section_477' => 'section 477 audit exemption statement',
@@ -75,11 +77,12 @@ final class IxbrlAccountsDisclosureService
     {
         $period = $this->accountingPeriod($companyId, $accountingPeriodId);
         $defaults = $this->emptyDisclosures();
+        $schemaReady = $this->schemaReady();
         if ($period === null) {
             return [
                 'success' => false,
                 'available' => false,
-                'schema_ready' => \InterfaceDB::tableExists(self::TABLE),
+                'schema_ready' => $schemaReady,
                 'complete' => false,
                 'missing_fields' => array_keys(self::FIELD_LABELS),
                 'missing_labels' => array_values(self::FIELD_LABELS),
@@ -91,7 +94,7 @@ final class IxbrlAccountsDisclosureService
                 'errors' => ['The selected accounting period could not be found for this company.'],
             ];
         }
-        if (!\InterfaceDB::tableExists(self::TABLE)) {
+        if (!$schemaReady) {
             return [
                 'success' => false,
                 'available' => false,
@@ -108,7 +111,7 @@ final class IxbrlAccountsDisclosureService
                 'suggestion_sources' => [],
                 'director_suggestions' => $this->directorSuggestions($companyId),
                 'accounting_period' => $period,
-                'errors' => ['The iXBRL accounts disclosures migration has not been applied.'],
+                'errors' => ['The latest iXBRL approving-director migration has not been applied.'],
             ];
         }
 
@@ -125,6 +128,12 @@ final class IxbrlAccountsDisclosureService
             $disclosures['prepared_under_small_companies_regime'] = null;
         }
         $suggestions = $this->companiesHouseSuggestions($companyId, $period);
+        $directorApprovalDate = trim((string)(
+            $row['accounts_approval_date']
+            ?? $suggestions['values']['accounts_approval_date']
+            ?? $period['period_end']
+            ?? ''
+        ));
         $displayTradingStatus = trim((string)(
             $row['entity_trading_status']
             ?? $suggestions['values']['entity_trading_status']
@@ -135,6 +144,22 @@ final class IxbrlAccountsDisclosureService
         $missing = $this->missingFields($disclosures, $companiesHouseRevisionRequired);
         $unsupported = $this->unsupportedProfileFields($disclosures, $companiesHouseRevisionRequired);
         $profileErrors = $this->unsupportedProfileErrors($disclosures, $companiesHouseRevisionRequired);
+        $directorValidationErrors = [];
+        if ($row !== null) {
+            [, $directorValidationErrors] = $this->resolveApprovingDirector(
+                $companyId,
+                $row['approving_director_id'] ?? null,
+                trim((string)($row['accounts_approval_date'] ?? ''))
+            );
+            if ($directorValidationErrors !== []) {
+                $missing[] = 'approving_director_id';
+                $missing = array_values(array_unique($missing));
+                $profileErrors = array_values(array_unique(array_merge(
+                    $profileErrors,
+                    $directorValidationErrors
+                )));
+            }
+        }
 
         return [
             'success' => true,
@@ -156,11 +181,12 @@ final class IxbrlAccountsDisclosureService
             'trading_status_answers' => $this->tradingStatusAnswers($displayTradingStatus),
             'suggested_disclosures' => (array)($suggestions['values'] ?? []),
             'suggestion_sources' => (array)($suggestions['sources'] ?? []),
-            'director_suggestions' => $this->directorSuggestions($companyId),
+            'director_suggestions' => $this->directorSuggestions($companyId, $directorApprovalDate),
             'accounting_period' => $period,
             'dormancy' => $dormancy,
             'small_companies_regime' => $smallCompanies,
             'companies_house_revision_required' => $companiesHouseRevisionRequired,
+            'director_validation_errors' => $directorValidationErrors,
             'errors' => [],
         ];
     }
@@ -172,8 +198,8 @@ final class IxbrlAccountsDisclosureService
         string $changedBy = 'web_app',
         bool $allowPartial = false
     ): array {
-        if (!\InterfaceDB::tableExists(self::TABLE)) {
-            return $this->error('The iXBRL accounts disclosures migration has not been applied.');
+        if (!$this->schemaReady()) {
+            return $this->error('The latest iXBRL approving-director migration has not been applied.');
         }
 
         $period = $this->accountingPeriod($companyId, $accountingPeriodId);
@@ -207,9 +233,16 @@ final class IxbrlAccountsDisclosureService
         $tradingEvidence = $this->calculateTradingEvidence($companyId, $period, $dormancy);
         [$tradingStatus, $tradingErrors] = $this->deriveTradingStatus($input, $tradingEvidence);
         $input['entity_trading_status'] = $tradingStatus;
+        [$approvingDirector, $directorErrors] = $this->resolveApprovingDirector(
+            $companyId,
+            $input['approving_director_id'] ?? null,
+            trim((string)($input['accounts_approval_date'] ?? ''))
+        );
+        $input['approving_director_id'] = $approvingDirector['id'] ?? null;
+        $input['approving_director_name'] = $approvingDirector['full_name'] ?? '';
         $companiesHouseRevisionRequired = $this->companiesHouseRevisionRequired($companyId, $accountingPeriodId);
         [$values, $errors] = $this->validate($input, $period, $allowPartial, $companiesHouseRevisionRequired);
-        $errors = array_values(array_unique(array_merge($tradingErrors, $errors)));
+        $errors = array_values(array_unique(array_merge($tradingErrors, $directorErrors, $errors)));
         if ($errors !== []) {
             return ['success' => false, 'changed' => false, 'errors' => $errors];
         }
@@ -264,6 +297,7 @@ final class IxbrlAccountsDisclosureService
                              has_director_advances_credits_or_guarantees = :has_director_advances_credits_or_guarantees,
                              has_financial_commitments_guarantees_or_contingencies = :has_financial_commitments_guarantees_or_contingencies,
                              accounts_approval_date = :accounts_approval_date,
+                             approving_director_id = :approving_director_id,
                              approving_director_name = :approving_director_name,
                              prepared_under_small_companies_regime = :prepared_under_small_companies_regime,
                              audit_exempt_section_477 = :audit_exempt_section_477,
@@ -287,7 +321,8 @@ final class IxbrlAccountsDisclosureService
                             has_director_advances_credits_or_guarantees,
                             has_financial_commitments_guarantees_or_contingencies,
                             accounts_approval_date,
-                            approving_director_name, prepared_under_small_companies_regime,
+                            approving_director_id, approving_director_name,
+                            prepared_under_small_companies_regime,
                             audit_exempt_section_477, directors_acknowledge_responsibilities,
                             members_have_not_required_audit,
                             companies_house_revised_accounts_public_register_confirmed,
@@ -302,7 +337,8 @@ final class IxbrlAccountsDisclosureService
                             :has_director_advances_credits_or_guarantees,
                             :has_financial_commitments_guarantees_or_contingencies,
                             :accounts_approval_date,
-                            :approving_director_name, :prepared_under_small_companies_regime,
+                            :approving_director_id, :approving_director_name,
+                            :prepared_under_small_companies_regime,
                             :audit_exempt_section_477, :directors_acknowledge_responsibilities,
                             :members_have_not_required_audit,
                             :companies_house_revised_accounts_public_register_confirmed,
@@ -364,8 +400,8 @@ final class IxbrlAccountsDisclosureService
         if ($normalised === null) {
             return $this->error('Choose Yes or No before saving this disclosure.');
         }
-        if (!\InterfaceDB::tableExists(self::TABLE)) {
-            return $this->error('The iXBRL accounts disclosures migration has not been applied.');
+        if (!$this->schemaReady()) {
+            return $this->error('The latest iXBRL approving-director migration has not been applied.');
         }
 
         $existing = $this->get($companyId, $accountingPeriodId);
@@ -737,9 +773,20 @@ final class IxbrlAccountsDisclosureService
             }
         }
 
+        $directorIdRaw = $input['approving_director_id'] ?? null;
+        $directorId = is_int($directorIdRaw)
+            ? $directorIdRaw
+            : (is_string($directorIdRaw) && preg_match('/^[1-9]\d*$/D', trim($directorIdRaw)) === 1
+                ? (int)trim($directorIdRaw)
+                : null);
+        if ($directorId === null || $directorId <= 0) {
+            $directorId = null;
+            $errors[] = 'Choose the director who approved the accounts.';
+        }
+
         $directorName = trim((string)($input['approving_director_name'] ?? ''));
-        if (!$allowPartial && $directorName === '') {
-            $errors[] = 'Enter the name of the director who approved the accounts.';
+        if ($directorId !== null && $directorName === '') {
+            $errors[] = 'The selected approving director does not have a recorded name.';
         } elseif (mb_strlen($directorName) > 255) {
             $errors[] = 'The approving director name must be 255 characters or fewer.';
         }
@@ -788,6 +835,7 @@ final class IxbrlAccountsDisclosureService
             'has_director_advances_credits_or_guarantees' => $booleans['has_director_advances_credits_or_guarantees'],
             'has_financial_commitments_guarantees_or_contingencies' => $booleans['has_financial_commitments_guarantees_or_contingencies'],
             'accounts_approval_date' => $approvalDate,
+            'approving_director_id' => $directorId,
             'approving_director_name' => $directorName,
             'prepared_under_small_companies_regime' => $booleans['prepared_under_small_companies_regime'],
             'audit_exempt_section_477' => $booleans['audit_exempt_section_477'],
@@ -944,6 +992,7 @@ final class IxbrlAccountsDisclosureService
             'has_director_advances_credits_or_guarantees' => null,
             'has_financial_commitments_guarantees_or_contingencies' => null,
             'accounts_approval_date' => null,
+            'approving_director_id' => null,
             'approving_director_name' => null,
             'prepared_under_small_companies_regime' => null,
             'audit_exempt_section_477' => null,
@@ -956,6 +1005,7 @@ final class IxbrlAccountsDisclosureService
     private function normaliseStoredRow(array $row): array
     {
         foreach ([
+            'approving_director_id',
             'average_number_employees',
             'entity_dormant',
             'micro_entity_eligibility_confirmed',
@@ -1046,24 +1096,143 @@ final class IxbrlAccountsDisclosureService
         return is_array($row) ? $row : null;
     }
 
-    private function directorSuggestions(int $companyId): array
+    private function schemaReady(): bool
+    {
+        return \InterfaceDB::tableExists(self::TABLE)
+            && \InterfaceDB::tableExists('company_directors')
+            && \InterfaceDB::columnExists(self::TABLE, 'approving_director_id');
+    }
+
+    private function directorSuggestions(int $companyId, string $approvalDate = ''): array
     {
         if ($companyId <= 0 || !\InterfaceDB::tableExists('company_directors')) {
             return [];
         }
 
+        $approvalDate = $this->isIsoDate($approvalDate) ? $approvalDate : '';
+        $sql = 'SELECT id, full_name, officer_role, appointed_on, resigned_on, is_active
+                FROM company_directors
+                WHERE company_id = :company_id
+                  AND LOWER(TRIM(officer_role)) = :director_role';
+        $params = ['company_id' => $companyId, 'director_role' => 'director'];
+        if ($approvalDate !== '') {
+            $sql .= '
+                  AND (appointed_on IS NULL OR appointed_on <= :approval_date_appointed)
+                  AND (resigned_on IS NULL OR resigned_on >= :approval_date_resigned)';
+            $params['approval_date_appointed'] = $approvalDate;
+            $params['approval_date_resigned'] = $approvalDate;
+        } else {
+            $sql .= '
+                  AND is_active = 1';
+        }
+        $sql .= '
+                ORDER BY full_name ASC, id ASC';
+
         return array_values(array_filter(array_map(
-            static fn(array $row): string => trim((string)($row['full_name'] ?? '')),
-            \InterfaceDB::fetchAll(
-                'SELECT full_name
-                 FROM company_directors
-                 WHERE company_id = :company_id
-                   AND source = :source
-                   AND is_active = 1
-                 ORDER BY full_name ASC, id ASC',
-                ['company_id' => $companyId, 'source' => 'companies_house']
-            )
-        ), static fn(string $name): bool => $name !== ''));
+            static function (array $row): array {
+                return [
+                    'id' => (int)($row['id'] ?? 0),
+                    'full_name' => trim((string)($row['full_name'] ?? '')),
+                    'officer_role' => trim((string)($row['officer_role'] ?? '')),
+                    'appointed_on' => ($row['appointed_on'] ?? null) !== null
+                        ? (string)$row['appointed_on']
+                        : null,
+                    'resigned_on' => ($row['resigned_on'] ?? null) !== null
+                        ? (string)$row['resigned_on']
+                        : null,
+                    'is_active' => (int)($row['is_active'] ?? 0),
+                ];
+            },
+            \InterfaceDB::fetchAll($sql, $params)
+        ), static fn(array $director): bool => $director['id'] > 0 && $director['full_name'] !== ''));
+    }
+
+    /**
+     * Resolve the posted structured identity and derive the statutory name
+     * snapshot. Current active status is deliberately not used: validity is
+     * based on whether the director was in office on the approval date.
+     *
+     * @return array{0: ?array, 1: array<int, string>}
+     */
+    private function resolveApprovingDirector(int $companyId, mixed $directorIdRaw, string $approvalDate): array
+    {
+        $directorId = is_int($directorIdRaw)
+            ? $directorIdRaw
+            : (is_string($directorIdRaw) && preg_match('/^[1-9]\d*$/D', trim($directorIdRaw)) === 1
+                ? (int)trim($directorIdRaw)
+                : 0);
+        if ($directorId <= 0) {
+            return [null, ['Choose the director who approved the accounts.']];
+        }
+        if ($companyId <= 0 || !\InterfaceDB::tableExists('company_directors')) {
+            return [null, ['The structured company-director records are not available.']];
+        }
+
+        $director = \InterfaceDB::fetchOne(
+            'SELECT id, company_id, full_name, officer_role, appointed_on, resigned_on, is_active
+             FROM company_directors
+             WHERE id = :director_id
+               AND company_id = :company_id
+             LIMIT 1',
+            ['director_id' => $directorId, 'company_id' => $companyId]
+        );
+        if (!is_array($director)) {
+            return [null, ['Choose a director recorded for this company.']];
+        }
+        if (strtolower(trim((string)($director['officer_role'] ?? ''))) !== 'director') {
+            return [null, ['The selected officer is not recorded as a director of this company.']];
+        }
+
+        $fullName = trim((string)($director['full_name'] ?? ''));
+        if ($fullName === '') {
+            return [null, ['The selected approving director does not have a recorded name.']];
+        }
+
+        if ($this->isIsoDate($approvalDate)) {
+            $appointedOn = trim((string)($director['appointed_on'] ?? ''));
+            if ($appointedOn !== '' && $appointedOn > $approvalDate) {
+                return [null, [
+                    'The selected director was not in office on the accounts approval date; '
+                    . 'their appointment began on ' . $appointedOn . '.',
+                ]];
+            }
+            $resignedOn = trim((string)($director['resigned_on'] ?? ''));
+            if ($resignedOn !== '' && $resignedOn < $approvalDate) {
+                return [null, [
+                    'The selected director was not in office on the accounts approval date; '
+                    . 'their appointment ended on ' . $resignedOn . '.',
+                ]];
+            }
+        }
+
+        return [[
+            'id' => (int)$director['id'],
+            'company_id' => (int)$director['company_id'],
+            'full_name' => $fullName,
+            'officer_role' => (string)$director['officer_role'],
+            'appointed_on' => ($director['appointed_on'] ?? null) !== null
+                ? (string)$director['appointed_on']
+                : null,
+            'resigned_on' => ($director['resigned_on'] ?? null) !== null
+                ? (string)$director['resigned_on']
+                : null,
+            'is_active' => (int)($director['is_active'] ?? 0),
+        ], []];
+    }
+
+    private function isIsoDate(string $value): bool
+    {
+        $value = trim($value);
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/D', $value) !== 1) {
+            return false;
+        }
+        $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+        $errors = \DateTimeImmutable::getLastErrors();
+
+        return $date !== false
+            && ($errors === false
+                || ((int)$errors['warning_count'] === 0 && (int)$errors['error_count'] === 0))
+            && $date->format('Y-m-d') === $value;
     }
 
     private function companiesHouseSuggestions(int $companyId, array $period): array

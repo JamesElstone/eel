@@ -125,15 +125,18 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         if ($tradingAnswers === []) {
             $tradingAnswers = $this->tradingStatusAnswers((string)($display['entity_trading_status'] ?? ''));
         }
+        $selectedDirectorId = (int)($display['approving_director_id'] ?? 0);
         $directorOptions = '<option value="">Select approving director</option>';
-        foreach ((array)($result['director_suggestions'] ?? []) as $name) {
-            $name = trim((string)$name);
-            if ($name === '') {
+        foreach ((array)($result['director_suggestions'] ?? []) as $director) {
+            $director = (array)$director;
+            $directorId = (int)($director['id'] ?? 0);
+            $directorName = trim((string)($director['full_name'] ?? ''));
+            if ($directorId <= 0 || $directorName === '') {
                 continue;
             }
-            $directorOptions .= '<option value="' . HelperFramework::escape($name) . '"'
-                . ((string)($display['approving_director_name'] ?? '') === $name ? ' selected' : '')
-                . '>' . HelperFramework::escape($name) . '</option>';
+            $directorOptions .= '<option value="' . $directorId . '"'
+                . ($selectedDirectorId === $directorId ? ' selected' : '')
+                . '>' . HelperFramework::escape($directorName) . '</option>';
         }
         $sourceSummary = $this->sourceSummary($suggestionSources, !empty($result['stored']));
         $profileErrors = '';
@@ -227,12 +230,21 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                     : '') . '
                 ' . $profileErrors . '
             ' . $disclosureLockNotice . '
-                    <div class="form-grid" data-state-fields="ixbrl_average_number_employees,ixbrl_accounts_approval_date,ixbrl_approving_director_name" data-state-target="save_ixbrl_core_details">
+                    <div class="form-grid" data-state-fields="ixbrl_average_number_employees,ixbrl_accounts_approval_date,ixbrl_approving_director_id" data-state-target="save_ixbrl_core_details">
                     <div class="form-row full table-scroll">
                         <table><tbody>
                             <tr><th scope="row"><label>Accounting standard</label></th><td><input class="input" value="FRS 105" readonly' . $disabledAttribute . '></td></tr>
                             <tr><th scope="row"><label for="ixbrl_average_number_employees">Average number of employees</label></th><td><input class="input" id="ixbrl_average_number_employees" name="average_number_employees" type="number" min="0" step="1" required value="' . HelperFramework::escape($this->nullableValue($display['average_number_employees'] ?? null)) . '" data-state-default="' . HelperFramework::escape($this->nullableValue($display['average_number_employees'] ?? null)) . '"' . $disabledAttribute . '></td></tr>
                             <tr><th scope="row"><label for="ixbrl_accounts_approval_date">Accounts approval date</label></th><td><div class="actions-row actions-row-nowrap"><input class="input" id="ixbrl_accounts_approval_date" name="accounts_approval_date" type="date" required value="' . HelperFramework::escape((string)($display['accounts_approval_date'] ?? '')) . '" data-state-default="' . HelperFramework::escape((string)($display['accounts_approval_date'] ?? '')) . '"' . $disabledAttribute . '><button class="button primary" type="button" data-set-today-for="ixbrl_accounts_approval_date"' . $disabledAttribute . '>Today</button></div></td></tr>
+                            <tr>
+                                <th scope="row"><label for="ixbrl_approving_director_id">Director signing and approving the accounts</label></th>
+                                <td>
+                                    <select class="select" id="ixbrl_approving_director_id" name="approving_director_id" required data-state-default="' . ($selectedDirectorId > 0 ? $selectedDirectorId : '') . '"' . $disabledAttribute . '>
+                                        ' . $directorOptions . '
+                                    </select>
+                                    <div class="helper">The selected officer’s name is used as the approving and signing director in the generated iXBRL.</div>
+                                </td>
+                            </tr>
                             <tr><th scope="row">Last updated on</th><td>' . HelperFramework::escape($updatedAtDisplay) . '</td></tr>
                             <tr><th scope="row">Last updated by</th><td>' . HelperFramework::escape($updatedByDisplay) . '</td></tr>
                         </tbody></table>
@@ -258,12 +270,6 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                     </div>
                     <div class="form-row full">
                         <div class="actions-row actions-row-nowrap ixbrl-core-details-actions">
-                            <div class="mini-field">
-                                <label for="ixbrl_approving_director_name">Approving Director</label>
-                                <select class="select" id="ixbrl_approving_director_name" name="approving_director_name" required data-state-default="' . HelperFramework::escape((string)($display['approving_director_name'] ?? '')) . '"' . $disabledAttribute . '>
-                                    ' . $directorOptions . '
-                                </select>
-                            </div>
                             <button class="button primary" id="save_ixbrl_core_details" type="submit"' . $coreButtonDisabled . '>Save Basic Information</button>
                         </div>
                     </div>

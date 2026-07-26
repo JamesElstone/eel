@@ -33,6 +33,7 @@ final class _loans extends PageContextFramework
     {
         return [
             'director_loan_state',
+            'director_loan_terms',
             'director_loan_attribution',
             'director_loan_s455',
             'director_loan_ct600a',
@@ -48,6 +49,12 @@ final class _loans extends PageContextFramework
                 'tab' => 'Statement',
                 'cards' => [
                     'director_loan_state',
+                ],
+            ],
+            [
+                'tab' => 'Terms',
+                'cards' => [
+                    'director_loan_terms',
                 ],
             ],
             [

@@ -106,7 +106,7 @@ final class IxbrlBalanceSheetMetricsService
         );
 
         $buckets = $this->emptyBuckets();
-        $sources = [];
+        $sources = array_fill_keys(array_keys($buckets), []);
         $equity = 0.0;
         $directorLoanPresentation = $accountingPeriodId !== null && $accountingPeriodId > 0
             ? (new DirectorLoanReportingPresentationService())->resolveForReporting($companyId, $accountingPeriodId)
@@ -123,11 +123,13 @@ final class IxbrlBalanceSheetMetricsService
             $balance = round((float)($row['debit_credit_balance'] ?? 0), 2);
 
             if ($accountType === 'asset') {
-                $bucket = $this->isFixedAssetSubtype($subtype)
-                    ? 'fixed_assets'
-                    : ($this->isPrepaymentsAccruedIncomeSubtype($subtype)
-                        ? 'prepayments_accrued_income'
-                        : 'current_assets');
+                $bucket = $this->isCalledUpShareCapitalNotPaidSubtype($subtype)
+                    ? 'called_up_share_capital_not_paid'
+                    : ($this->isFixedAssetSubtype($subtype)
+                        ? 'fixed_assets'
+                        : ($this->isPrepaymentsAccruedIncomeSubtype($subtype)
+                            ? 'prepayments_accrued_income'
+                            : 'current_assets'));
                 $amount = $balance;
                 $buckets[$bucket] += $amount;
                 $this->addSource($sources, $bucket, $label, $amount);
@@ -143,16 +145,22 @@ final class IxbrlBalanceSheetMetricsService
                     continue;
                 }
 
-                $isPresentedDirectorLoanLiability = $directorLoanLiabilityNominalId > 0
-                    && $nominalAccountId === $directorLoanLiabilityNominalId;
-                $bucket = $isPresentedDirectorLoanLiability
-                    ? ((string)($directorLoanPresentation['classification'] ?? '')
-                        === DirectorLoanReportingPresentationService::AFTER_MORE_THAN_ONE_YEAR
+                if ($this->isProvisionForLiabilitiesSubtype($subtype)) {
+                    $bucket = 'provisions_for_liabilities';
+                } elseif ($this->isAccrualsDeferredIncomeSubtype($subtype)) {
+                    $bucket = 'accruals_deferred_income';
+                } else {
+                    $isPresentedDirectorLoanLiability = $directorLoanLiabilityNominalId > 0
+                        && $nominalAccountId === $directorLoanLiabilityNominalId;
+                    $bucket = $isPresentedDirectorLoanLiability
+                        ? ((string)($directorLoanPresentation['classification'] ?? '')
+                            === DirectorLoanReportingPresentationService::AFTER_MORE_THAN_ONE_YEAR
+                                ? 'creditors_after_more_than_one_year'
+                                : 'creditors_within_one_year')
+                        : ($this->isLongTermLiabilitySubtype($subtype)
                             ? 'creditors_after_more_than_one_year'
-                            : 'creditors_within_one_year')
-                    : ($this->isLongTermLiabilitySubtype($subtype)
-                        ? 'creditors_after_more_than_one_year'
-                        : 'creditors_within_one_year');
+                            : 'creditors_within_one_year');
+                }
                 $buckets[$bucket] += $amount;
                 $this->addSource($sources, $bucket, $label, $amount);
                 continue;
@@ -165,11 +173,14 @@ final class IxbrlBalanceSheetMetricsService
             }
         }
 
+        $buckets['called_up_share_capital_not_paid'] = round($buckets['called_up_share_capital_not_paid'], 2);
         $buckets['fixed_assets'] = round($buckets['fixed_assets'], 2);
         $buckets['current_assets'] = round($buckets['current_assets'], 2);
         $buckets['prepayments_accrued_income'] = round($buckets['prepayments_accrued_income'], 2);
         $buckets['creditors_within_one_year'] = round($buckets['creditors_within_one_year'], 2);
         $buckets['creditors_after_more_than_one_year'] = round($buckets['creditors_after_more_than_one_year'], 2);
+        $buckets['provisions_for_liabilities'] = round($buckets['provisions_for_liabilities'], 2);
+        $buckets['accruals_deferred_income'] = round($buckets['accruals_deferred_income'], 2);
         $buckets['creditors_after_one_year'] = $buckets['creditors_after_more_than_one_year'];
         $buckets['net_current_assets_liabilities'] = round(
             $buckets['current_assets']
@@ -178,13 +189,20 @@ final class IxbrlBalanceSheetMetricsService
             2
         );
         $buckets['total_assets_less_current_liabilities'] = round(
-            $buckets['fixed_assets']
+            $buckets['called_up_share_capital_not_paid']
+                + $buckets['fixed_assets']
                 + $buckets['current_assets']
                 + $buckets['prepayments_accrued_income']
                 - $buckets['creditors_within_one_year'],
             2
         );
-        $buckets['net_assets_liabilities'] = round($buckets['total_assets_less_current_liabilities'] - $buckets['creditors_after_more_than_one_year'], 2);
+        $buckets['net_assets_liabilities'] = round(
+            $buckets['total_assets_less_current_liabilities']
+                - $buckets['creditors_after_more_than_one_year']
+                - $buckets['provisions_for_liabilities']
+                - $buckets['accruals_deferred_income'],
+            2
+        );
         $buckets['equity_capital_reserves'] = round($equity, 2);
         $buckets['equity'] = $buckets['equity_capital_reserves'];
         $sources['creditors_after_one_year'] = (array)($sources['creditors_after_more_than_one_year'] ?? []);
@@ -192,12 +210,15 @@ final class IxbrlBalanceSheetMetricsService
         $this->addFormulaSource($sources, 'net_current_assets_liabilities', 'Current assets', $buckets['current_assets'], 'current_assets');
         $this->addFormulaSource($sources, 'net_current_assets_liabilities', 'Prepayments and accrued income', $buckets['prepayments_accrued_income'], 'prepayments_accrued_income');
         $this->addFormulaSource($sources, 'net_current_assets_liabilities', 'Less: creditors due within one year', -$buckets['creditors_within_one_year'], 'creditors_within_one_year');
+        $this->addFormulaSource($sources, 'total_assets_less_current_liabilities', 'Called-up share capital not paid', $buckets['called_up_share_capital_not_paid'], 'called_up_share_capital_not_paid');
         $this->addFormulaSource($sources, 'total_assets_less_current_liabilities', 'Fixed assets', $buckets['fixed_assets'], 'fixed_assets');
         $this->addFormulaSource($sources, 'total_assets_less_current_liabilities', 'Current assets', $buckets['current_assets'], 'current_assets');
         $this->addFormulaSource($sources, 'total_assets_less_current_liabilities', 'Prepayments and accrued income', $buckets['prepayments_accrued_income'], 'prepayments_accrued_income');
         $this->addFormulaSource($sources, 'total_assets_less_current_liabilities', 'Less: creditors due within one year', -$buckets['creditors_within_one_year'], 'creditors_within_one_year');
         $this->addFormulaSource($sources, 'net_assets_liabilities', 'Total assets less current liabilities', $buckets['total_assets_less_current_liabilities'], 'total_assets_less_current_liabilities');
         $this->addFormulaSource($sources, 'net_assets_liabilities', 'Less: creditors due after one year', -$buckets['creditors_after_more_than_one_year'], 'creditors_after_more_than_one_year');
+        $this->addFormulaSource($sources, 'net_assets_liabilities', 'Less: provisions for liabilities', -$buckets['provisions_for_liabilities'], 'provisions_for_liabilities');
+        $this->addFormulaSource($sources, 'net_assets_liabilities', 'Less: accruals and deferred income', -$buckets['accruals_deferred_income'], 'accruals_deferred_income');
         $this->assertSourcesReconcile($sources, $buckets);
         $priorPeriodDependency = $this->priorPeriodDependency($companyId, $periodStart);
         $balanceEquationDifference = round($buckets['net_assets_liabilities'] - $buckets['equity_capital_reserves'], 2);
@@ -415,12 +436,15 @@ final class IxbrlBalanceSheetMetricsService
     private function emptyBuckets(): array
     {
         return [
+            'called_up_share_capital_not_paid' => 0.0,
             'fixed_assets' => 0.0,
             'current_assets' => 0.0,
             'prepayments_accrued_income' => 0.0,
             'creditors_within_one_year' => 0.0,
             'creditors_after_more_than_one_year' => 0.0,
             'creditors_after_one_year' => 0.0,
+            'provisions_for_liabilities' => 0.0,
+            'accruals_deferred_income' => 0.0,
             'net_current_assets_liabilities' => 0.0,
             'total_assets_less_current_liabilities' => 0.0,
             'net_assets_liabilities' => 0.0,
@@ -433,6 +457,16 @@ final class IxbrlBalanceSheetMetricsService
     {
         return in_array($subtype, ['fixed_asset', 'fixed_assets'], true)
             || str_starts_with($subtype, 'fixed_asset_');
+    }
+
+    private function isCalledUpShareCapitalNotPaidSubtype(string $subtype): bool
+    {
+        $subtype = strtolower(trim($subtype));
+        return in_array($subtype, [
+            'called_up_share_capital_not_paid',
+            'called_up_capital_not_paid',
+            'share_capital_not_paid',
+        ], true);
     }
 
     private function isPrepaymentsAccruedIncomeSubtype(string $subtype): bool
@@ -451,6 +485,30 @@ final class IxbrlBalanceSheetMetricsService
     private function isLongTermLiabilitySubtype(string $subtype): bool
     {
         return in_array($subtype, ['long_term_liability', 'non_current_liability', 'creditors_after_one_year', 'creditors_after_more_than_one_year', 'director_loan_long_term_liability'], true);
+    }
+
+    private function isProvisionForLiabilitiesSubtype(string $subtype): bool
+    {
+        $subtype = strtolower(trim($subtype));
+        return in_array($subtype, [
+            'provision',
+            'provisions',
+            'liability_provision',
+            'provisions_for_liabilities',
+        ], true);
+    }
+
+    private function isAccrualsDeferredIncomeSubtype(string $subtype): bool
+    {
+        $subtype = strtolower(trim($subtype));
+        return in_array($subtype, [
+            'accrual',
+            'accruals',
+            'accrued_liability',
+            'accrued_liabilities',
+            'deferred_income',
+            'accruals_deferred_income',
+        ], true);
     }
 
     private function addSource(
@@ -487,12 +545,15 @@ final class IxbrlBalanceSheetMetricsService
     private function assertSourcesReconcile(array $sources, array $buckets): void
     {
         foreach ([
+            'called_up_share_capital_not_paid',
             'fixed_assets',
             'current_assets',
             'prepayments_accrued_income',
             'creditors_within_one_year',
             'creditors_after_more_than_one_year',
             'creditors_after_one_year',
+            'provisions_for_liabilities',
+            'accruals_deferred_income',
             'net_current_assets_liabilities',
             'total_assets_less_current_liabilities',
             'net_assets_liabilities',

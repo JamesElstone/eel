@@ -206,7 +206,21 @@ final class IxbrlAccountsMappingService
             );
         }
 
-        foreach (['fixed_assets', 'current_assets', 'prepayments_accrued_income', 'creditors_within_one_year', 'creditors_after_more_than_one_year', 'net_current_assets_liabilities', 'total_assets_less_current_liabilities', 'net_assets_liabilities', 'equity_capital_reserves', 'equity'] as $key) {
+        foreach ([
+            'called_up_share_capital_not_paid',
+            'fixed_assets',
+            'current_assets',
+            'prepayments_accrued_income',
+            'creditors_within_one_year',
+            'creditors_after_more_than_one_year',
+            'provisions_for_liabilities',
+            'accruals_deferred_income',
+            'net_current_assets_liabilities',
+            'total_assets_less_current_liabilities',
+            'net_assets_liabilities',
+            'equity_capital_reserves',
+            'equity',
+        ] as $key) {
             $buckets[$key] = round((float)($closingBuckets[$key] ?? 0), 2);
         }
         $buckets['creditors_after_one_year'] = $buckets['creditors_after_more_than_one_year'];
@@ -231,7 +245,10 @@ final class IxbrlAccountsMappingService
         $buckets['depreciation_write_offs'] = $depreciationWriteOffs;
         $buckets['other_charges'] = $otherCharges;
         $buckets['cost_of_sales'] = $costOfSales;
-        $buckets['gross_profit_loss'] = round($income - $costOfSales, 2);
+        // The visible micro Format 2 subtotal follows the presented lines:
+        // turnover less raw materials and consumables. Other income and other
+        // external charges are shown below that subtotal.
+        $buckets['gross_profit_loss'] = round($turnover - $rawMaterialsConsumables, 2);
         $buckets['administrative_expenses'] = $administrativeExpenses;
         $buckets['expenses'] = round($costOfSales + $administrativeExpenses, 2);
         $buckets['profit_loss_before_tax'] = $profitBeforeTax;
@@ -243,10 +260,12 @@ final class IxbrlAccountsMappingService
         $this->addFormulaSource($sources, 'expenses', 'Depreciation and other amounts written off assets', $depreciationWriteOffs, 'depreciation_write_offs');
         $this->addFormulaSource($sources, 'expenses', 'Other charges', $otherCharges, 'other_charges');
         $this->addFormulaSource($sources, 'gross_profit_loss', 'Turnover', $turnover, 'turnover');
-        $this->addFormulaSource($sources, 'gross_profit_loss', 'Other income', $otherIncome, 'other_income');
-        $this->addFormulaSource($sources, 'gross_profit_loss', 'Less: cost of sales', -$costOfSales, 'cost_of_sales');
+        $this->addFormulaSource($sources, 'gross_profit_loss', 'Less: raw materials and consumables', -$rawMaterialsConsumables, 'raw_materials_consumables');
         $this->addFormulaSource($sources, 'profit_loss_before_tax', 'Gross profit / loss', $buckets['gross_profit_loss'], 'gross_profit_loss');
-        $this->addFormulaSource($sources, 'profit_loss_before_tax', 'Less: administrative expenses', -$administrativeExpenses, 'administrative_expenses');
+        $this->addFormulaSource($sources, 'profit_loss_before_tax', 'Other income', $otherIncome, 'other_income');
+        $this->addFormulaSource($sources, 'profit_loss_before_tax', 'Less: staff costs', -$staffCosts, 'staff_costs');
+        $this->addFormulaSource($sources, 'profit_loss_before_tax', 'Less: depreciation and other amounts written off assets', -$depreciationWriteOffs, 'depreciation_write_offs');
+        $this->addFormulaSource($sources, 'profit_loss_before_tax', 'Less: other charges', -$otherCharges, 'other_charges');
         $this->addFormulaSource($sources, 'profit_loss', 'Turnover', $turnover, 'turnover');
         $this->addFormulaSource($sources, 'profit_loss', 'Other income', $otherIncome, 'other_income');
         $this->addFormulaSource($sources, 'profit_loss', 'Less: raw materials and consumables', -$rawMaterialsConsumables, 'raw_materials_consumables');
@@ -316,12 +335,15 @@ final class IxbrlAccountsMappingService
             'profit_loss_before_tax' => 0.0,
             'tax_on_profit' => 0.0,
             'profit_loss' => 0.0,
+            'called_up_share_capital_not_paid' => 0.0,
             'current_assets' => 0.0,
             'prepayments_accrued_income' => 0.0,
             'fixed_assets' => 0.0,
             'creditors_within_one_year' => 0.0,
             'creditors_after_more_than_one_year' => 0.0,
             'creditors_after_one_year' => 0.0,
+            'provisions_for_liabilities' => 0.0,
+            'accruals_deferred_income' => 0.0,
             'net_current_assets_liabilities' => 0.0,
             'total_assets_less_current_liabilities' => 0.0,
             'net_assets_liabilities' => 0.0,

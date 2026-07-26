@@ -3462,6 +3462,10 @@
   justify-content: flex-end;
 }
 
+.director-loan-per-party-position {
+  margin-top: 18px;
+}
+
 @-moz-document url-prefix() {
 /*  :root {
     --project-firefox-page-zoom: 0.9;

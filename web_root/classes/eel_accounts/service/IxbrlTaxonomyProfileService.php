@@ -18,7 +18,7 @@ namespace eel_accounts\Service;
 final class IxbrlTaxonomyProfileService
 {
     public const PROFILE = 'frc-2026-frs-105';
-    public const BASIS_VERSION = 'ixbrl-accounts-v2';
+    public const BASIS_VERSION = 'ixbrl-accounts-v3';
     public const SCHEMA_REF = 'https://xbrl.frc.org.uk/FRS-102/2026-01-01/FRS-102-2026-01-01.xsd';
 
     public const NAMESPACES = [
@@ -56,10 +56,10 @@ final class IxbrlTaxonomyProfileService
                 'bus:EntityContactTypeDimension' => 'bus:RegisteredOffice',
                 'countries:CountriesRegionsDimension' => 'countries:UnitedKingdom',
             ], false, 26),
-            $this->mapping('period_start', 'bus', 'StartDateForPeriodCoveredByReport', 'Period start', 'date', 'period_field', 'period_start', 'instant_start', null, null, null, false, 30),
+            $this->mapping('period_start', 'bus', 'StartDateForPeriodCoveredByReport', 'Period start', 'date', 'period_field', 'period_start', 'instant_end', null, null, null, false, 30),
             $this->mapping('period_end', 'bus', 'EndDateForPeriodCoveredByReport', 'Period end', 'date', 'period_field', 'period_end', 'instant_end', null, null, null, false, 40),
             $this->mapping('balance_sheet_date', 'bus', 'BalanceSheetDate', 'Balance sheet date', 'date', 'period_field', 'period_end', 'instant_end', null, null, null, false, 50),
-            $this->mapping('accounts_approval_date', 'core', 'DateAuthorisationFinancialStatementsForIssue', 'Accounts approval date', 'date', 'disclosure_field', 'accounts_approval_date', 'instant_approval', null, null, null, false, 60),
+            $this->mapping('accounts_approval_date', 'core', 'DateAuthorisationFinancialStatementsForIssue', 'Accounts approval date', 'date', 'disclosure_field', 'accounts_approval_date', 'instant_end', null, null, null, false, 60),
             $this->mapping('approving_director_name', 'bus', 'NameEntityOfficer', 'Director approving the financial statements', 'text', 'disclosure_field', 'approving_director_name', 'duration_director_1', null, null, [
                 'bus:EntityOfficersDimension' => 'bus:Director1',
             ], false, 70),
@@ -69,6 +69,9 @@ final class IxbrlTaxonomyProfileService
             // EntityTradingDefault is the taxonomy default and must not be
             // emitted as an explicit member in an instance context.
             $this->mapping('entity_trading_status', 'bus', 'EntityTradingStatus', 'Entity trading status', 'text', 'fixed_marker', 'entity_trading_status', 'duration_trading_status', null, null, null, false, 80),
+            $this->mapping('accounts_type', 'bus', 'AccountsType', 'Accounts type', 'text', 'fixed_marker', 'accounts_type', 'duration_accounts_type', null, null, [
+                'bus:AccountsTypeDimension' => 'bus:FullAccounts',
+            ], false, 82),
             $this->mapping('accounting_standards_applied', 'bus', 'AccountingStandardsApplied', 'Accounting standards applied', 'text', 'fixed_marker', 'accounting_standard', 'duration_accounting_standards', null, null, [
                 'bus:AccountingStandardsDimension' => 'bus:Micro-entities',
             ], false, 85),
@@ -79,15 +82,18 @@ final class IxbrlTaxonomyProfileService
             $this->mapping('turnover', 'core', 'TurnoverRevenue', 'Turnover', 'numeric', 'derived', 'turnover', 'duration', 'GBP', '2', null, true, 100),
             $this->mapping('other_income', 'core', 'OtherOperatingIncomeFormat2', 'Other income', 'numeric', 'derived', 'other_income', 'duration', 'GBP', '2', null, true, 110),
             $this->mapping('raw_materials_consumables', 'core', 'RawMaterialsConsumablesUsed', 'Raw materials and consumables', 'numeric', 'derived', 'raw_materials_consumables', 'duration', 'GBP', '2', null, true, 120),
+            $this->mapping('gross_profit_loss', 'core', 'GrossProfitLoss', 'Gross profit / loss', 'numeric', 'derived', 'gross_profit_loss', 'duration', 'GBP', '2', null, true, 125),
             $this->mapping('staff_costs', 'core', 'StaffCostsEmployeeBenefitsExpense', 'Staff costs', 'numeric', 'derived', 'staff_costs', 'duration', 'GBP', '2', null, true, 130),
             $this->mapping('depreciation_write_offs', 'core', 'DepreciationAmortisationImpairmentExpense', 'Depreciation and other amounts written off assets', 'numeric', 'derived', 'depreciation_write_offs', 'duration', 'GBP', '2', null, true, 140),
             $this->mapping('other_charges', 'core', 'OtherExternalCharges', 'Other charges', 'numeric', 'derived', 'other_charges', 'duration', 'GBP', '2', null, true, 145),
+            $this->mapping('operating_profit_loss', 'core', 'OperatingProfitLoss', 'Operating profit / loss', 'numeric', 'derived', 'profit_loss_before_tax', 'duration', 'GBP', '2', null, true, 147),
             $this->mapping('tax_on_profit', 'core', 'TaxTaxCreditOnProfitOrLossOnOrdinaryActivities', 'Tax on profit / loss', 'numeric', 'derived', 'tax_on_profit', 'duration', 'GBP', '2', null, true, 150),
             $this->mapping('profit_loss', 'core', 'ProfitLoss', 'Profit / loss for the financial year', 'numeric', 'derived', 'profit_loss', 'duration', 'GBP', '2', null, true, 160),
 
+            $this->mapping('called_up_share_capital_not_paid', 'core', 'CalledUpShareCapitalNotPaidNotExpressedAsCurrentAsset', 'Called-up share capital not paid', 'numeric', 'derived', 'called_up_share_capital_not_paid', 'instant_end', 'GBP', '2', null, true, 195),
             $this->mapping('fixed_assets', 'core', 'FixedAssets', 'Fixed assets', 'numeric', 'derived', 'fixed_assets', 'instant_end', 'GBP', '2', null, true, 200),
             $this->mapping('current_assets', 'core', 'CurrentAssets', 'Current assets', 'numeric', 'derived', 'current_assets', 'instant_end', 'GBP', '2', null, true, 210),
-            $this->mapping('prepayments_accrued_income', 'core', 'PrepaymentsAccruedIncome', 'Prepayments and accrued income', 'numeric', 'derived', 'prepayments_accrued_income', 'instant_end', 'GBP', '2', null, true, 215),
+            $this->mapping('prepayments_accrued_income', 'core', 'PrepaymentsAccruedIncomeNotExpressedWithinCurrentAssetSubtotal', 'Prepayments and accrued income', 'numeric', 'derived', 'prepayments_accrued_income', 'instant_end', 'GBP', '2', null, true, 215),
             $this->mapping('creditors_within_one_year', 'core', 'Creditors', 'Creditors within one year', 'numeric', 'derived', 'creditors_within_one_year', 'instant_end_creditors_within', 'GBP', '2', [
                 'core:MaturitiesOrExpirationPeriodsDimension' => 'core:WithinOneYear',
             ], true, 220),
@@ -96,6 +102,8 @@ final class IxbrlTaxonomyProfileService
             $this->mapping('creditors_after_one_year', 'core', 'Creditors', 'Creditors after more than one year', 'numeric', 'derived', 'creditors_after_more_than_one_year', 'instant_end_creditors_after', 'GBP', '2', [
                 'core:MaturitiesOrExpirationPeriodsDimension' => 'core:AfterOneYear',
             ], true, 250),
+            $this->mapping('provisions_for_liabilities', 'core', 'ProvisionsForLiabilitiesBalanceSheetSubtotal', 'Provisions for liabilities', 'numeric', 'derived', 'provisions_for_liabilities', 'instant_end', 'GBP', '2', null, true, 252),
+            $this->mapping('accruals_deferred_income', 'core', 'AccruedLiabilitiesNotExpressedWithinCreditorsSubtotal', 'Accruals and deferred income', 'numeric', 'derived', 'accruals_deferred_income', 'instant_end', 'GBP', '2', null, true, 254),
             $this->mapping('net_assets_liabilities', 'core', 'NetAssetsLiabilities', 'Net assets / liabilities', 'numeric', 'derived', 'net_assets_liabilities', 'instant_end', 'GBP', '2', null, true, 260),
             $this->mapping('equity', 'core', 'Equity', 'Equity', 'numeric', 'derived', 'equity_capital_reserves', 'instant_end', 'GBP', '2', null, true, 270),
 
@@ -111,6 +119,9 @@ final class IxbrlTaxonomyProfileService
             $this->mapping('no_capital_commitments', 'core', 'DescriptionCapitalCommitments', 'No capital commitments', 'text', 'absence_statement', 'has_financial_commitments_guarantees_or_contingencies', 'duration', null, null, null, false, 363),
             $this->mapping('no_financial_commitments', 'core', 'DescriptionFinancialCommitmentsOtherThanCapitalCommitments', 'No other financial commitments', 'text', 'absence_statement', 'has_financial_commitments_guarantees_or_contingencies', 'duration', null, null, null, false, 364),
             $this->mapping('no_contingent_liabilities', 'core', 'GeneralDescriptionContingentLiabilitiesIncludingFinancialEffectUncertaintiesPossibleReimbursement', 'No contingent liabilities', 'text', 'absence_statement', 'has_financial_commitments_guarantees_or_contingencies', 'duration', null, null, null, false, 365),
+            $this->mapping('director_advances_made', 'direp', 'AdvancesCreditsMadeInPeriodDirectors', 'Advances or credits made to directors during the period', 'numeric', 'director_loan_numeric', 'total_advances', 'duration', 'GBP', '2', null, true, 366),
+            $this->mapping('director_cash_repayments', 'direp', 'AdvancesCreditsRepaidInPeriodDirectors', 'Cash repayments of advances or credits by directors during the period', 'numeric', 'director_loan_numeric', 'total_cash_repayments', 'duration', 'GBP', '2', null, true, 367),
+            $this->mapping('director_closing_advance', 'direp', 'AdvancesCreditsDirectors', 'Closing advances or credits to directors', 'numeric', 'director_loan_numeric', 'closing_company_to_director_balance', 'instant_end', 'GBP', '2', null, true, 368),
             $this->mapping('production_software', 'bus', 'NameProductionSoftware', 'Production software', 'text', 'application_value', 'app_name', 'duration', null, null, null, false, 370),
             $this->mapping('production_software_version', 'bus', 'VersionProductionSoftware', 'Production software version', 'text', 'application_value', 'app_version', 'duration', null, null, null, false, 371),
         ];
@@ -146,12 +157,22 @@ final class IxbrlTaxonomyProfileService
         foreach ((array)($summary['disclosures'] ?? []) as $disclosure) {
             $name = trim((string)($disclosure['director_name'] ?? 'the director'));
             $advance = number_format((float)($disclosure['advances'] ?? 0), 2);
-            $repayment = number_format((float)($disclosure['repayments'] ?? 0), 2);
+            $cashRepayment = number_format((float)($disclosure['cash_repayments'] ?? 0), 2);
+            $setOff = number_format((float)($disclosure['amounts_legally_set_off'] ?? 0), 2);
+            $writtenOff = number_format((float)($disclosure['amounts_written_off'] ?? 0), 2);
+            $waived = number_format((float)($disclosure['amounts_waived'] ?? 0), 2);
             $closing = number_format((float)($disclosure['closing_company_to_director_balance'] ?? 0), 2);
             $paragraphs[] = 'The company advanced £' . $advance . ' to ' . $name
-                . ' during the period and £' . $repayment . ' was repaid or settled during the period.'
+                . ' during the period. Cash repayments were £' . $cashRepayment
+                . ', amounts legally set off were £' . $setOff
+                . ', amounts written off were £' . $writtenOff
+                . ', and amounts waived were £' . $waived . '.'
                 . ' The closing amount due from the director was £' . $closing . '.'
-                . ' The advance was ' . (string)($disclosure['main_conditions'] ?? 'interest-free and repayable on demand');
+                . ' The interest rate was ' . (string)($disclosure['interest_rate'] ?? '0%') . '.'
+                . ' The main terms were ' . rtrim(
+                    (string)($disclosure['main_conditions'] ?? 'interest-free and repayable on demand'),
+                    '.'
+                ) . '.';
         }
         return implode(' ', $paragraphs);
     }

@@ -1729,7 +1729,7 @@ CREATE TABLE `ixbrl_fact_mappings` (
   `local_name` varchar(255) DEFAULT NULL,
   `label` varchar(255) NOT NULL,
   `value_type` enum('numeric','text','date','boolean') NOT NULL,
-  `calculation_type` enum('nominal_subtype_sum','nominal_account_sum','manual','derived','company_field','period_field','disclosure_field','disclosure_statement','absence_statement','application_value','fixed_marker') NOT NULL,
+  `calculation_type` enum('nominal_subtype_sum','nominal_account_sum','manual','derived','company_field','period_field','disclosure_field','disclosure_statement','absence_statement','application_value','fixed_marker','director_loan_statement','director_loan_numeric') NOT NULL,
   `source_key` varchar(150) DEFAULT NULL,
   `sign_multiplier` decimal(8,2) NOT NULL DEFAULT 1.00,
   `period_type` enum('instant','duration') DEFAULT NULL,
@@ -1789,6 +1789,7 @@ CREATE TABLE `ixbrl_accounts_disclosures` (
   `has_director_advances_credits_or_guarantees` tinyint(1) DEFAULT NULL,
   `has_financial_commitments_guarantees_or_contingencies` tinyint(1) DEFAULT NULL,
   `accounts_approval_date` date DEFAULT NULL,
+  `approving_director_id` bigint(20) DEFAULT NULL,
   `approving_director_name` varchar(255) DEFAULT NULL,
   `prepared_under_small_companies_regime` tinyint(1) DEFAULT NULL,
   `audit_exempt_section_477` tinyint(1) DEFAULT NULL,
@@ -1803,6 +1804,7 @@ CREATE TABLE `ixbrl_accounts_disclosures` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_ixbrl_disclosures_company_period` (`company_id`,`accounting_period_id`),
   KEY `idx_ixbrl_disclosures_period` (`accounting_period_id`),
+  KEY `idx_ixbrl_disclosures_approving_director` (`approving_director_id`),
   CONSTRAINT `chk_ixbrl_disclosures_standard` CHECK (`accounting_standard` = 'FRS_105'),
   CONSTRAINT `chk_ixbrl_disclosures_entity_dormant` CHECK (`entity_dormant` is null or `entity_dormant` in (0,1)),
   CONSTRAINT `chk_ixbrl_disclosures_trading_status` CHECK (`entity_trading_status` is null or `entity_trading_status` in ('trading','never_traded','no_longer_trading')),
@@ -1817,7 +1819,8 @@ CREATE TABLE `ixbrl_accounts_disclosures` (
   CONSTRAINT `chk_ixbrl_disclosures_members_audit` CHECK (`members_have_not_required_audit` is null or `members_have_not_required_audit` in (0,1)),
   CONSTRAINT `chk_ixbrl_disclosures_ch_public_register` CHECK (`companies_house_revised_accounts_public_register_confirmed` is null or `companies_house_revised_accounts_public_register_confirmed` in (0,1)),
   CONSTRAINT `fk_ixbrl_disclosures_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_ixbrl_disclosures_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `fk_ixbrl_disclosures_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ixbrl_disclosures_approving_director` FOREIGN KEY (`approving_director_id`) REFERENCES `company_directors` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -1830,30 +1833,36 @@ INSERT INTO `ixbrl_fact_mappings` (`fact_key`,`taxonomy_concept`,`namespace_uri`
 ('registered_office_address_line_2','bus:AddressLine2','http://xbrl.frc.org.uk/cd/2026-01-01/business','AddressLine2','Registered office address line 2','text','company_field','registered_office_address_line_2',1,'duration',NULL,NULL,'duration_registered_office','{"bus:EntityContactTypeDimension":"bus:RegisteredOffice","countries:CountriesRegionsDimension":"countries:UnitedKingdom"}',0,1,24,1),
 ('registered_office_address_line_3','bus:AddressLine3','http://xbrl.frc.org.uk/cd/2026-01-01/business','AddressLine3','Registered office address line 3','text','company_field','registered_office_address_line_3',1,'duration',NULL,NULL,'duration_registered_office','{"bus:EntityContactTypeDimension":"bus:RegisteredOffice","countries:CountriesRegionsDimension":"countries:UnitedKingdom"}',0,1,25,1),
 ('registered_office_postal_code','bus:PostalCodeZip','http://xbrl.frc.org.uk/cd/2026-01-01/business','PostalCodeZip','Registered office postal code','text','company_field','registered_office_postal_code',1,'duration',NULL,NULL,'duration_registered_office','{"bus:EntityContactTypeDimension":"bus:RegisteredOffice","countries:CountriesRegionsDimension":"countries:UnitedKingdom"}',0,1,26,1),
-('period_start','bus:StartDateForPeriodCoveredByReport','http://xbrl.frc.org.uk/cd/2026-01-01/business','StartDateForPeriodCoveredByReport','Period start','date','period_field','period_start',1,'instant',NULL,NULL,'instant_start',NULL,0,1,30,1),
+('period_start','bus:StartDateForPeriodCoveredByReport','http://xbrl.frc.org.uk/cd/2026-01-01/business','StartDateForPeriodCoveredByReport','Period start','date','period_field','period_start',1,'instant',NULL,NULL,'instant_end',NULL,0,1,30,1),
 ('period_end','bus:EndDateForPeriodCoveredByReport','http://xbrl.frc.org.uk/cd/2026-01-01/business','EndDateForPeriodCoveredByReport','Period end','date','period_field','period_end',1,'instant',NULL,NULL,'instant_end',NULL,0,1,40,1),
 ('balance_sheet_date','bus:BalanceSheetDate','http://xbrl.frc.org.uk/cd/2026-01-01/business','BalanceSheetDate','Balance sheet date','date','period_field','period_end',1,'instant',NULL,NULL,'instant_end',NULL,0,1,50,1),
-('accounts_approval_date','core:DateAuthorisationFinancialStatementsForIssue','http://xbrl.frc.org.uk/fr/2026-01-01/core','DateAuthorisationFinancialStatementsForIssue','Accounts approval date','date','disclosure_field','accounts_approval_date',1,'instant',NULL,NULL,'instant_approval',NULL,0,1,60,1),
+('accounts_approval_date','core:DateAuthorisationFinancialStatementsForIssue','http://xbrl.frc.org.uk/fr/2026-01-01/core','DateAuthorisationFinancialStatementsForIssue','Accounts approval date','date','disclosure_field','accounts_approval_date',1,'instant',NULL,NULL,'instant_end',NULL,0,1,60,1),
 ('approving_director_name','bus:NameEntityOfficer','http://xbrl.frc.org.uk/cd/2026-01-01/business','NameEntityOfficer','Director approving the financial statements','text','disclosure_field','approving_director_name',1,'duration',NULL,NULL,'duration_director_1','{"bus:EntityOfficersDimension":"bus:Director1"}',0,1,70,1),
 ('director_signing_financial_statements','core:DirectorSigningFinancialStatements','http://xbrl.frc.org.uk/fr/2026-01-01/core','DirectorSigningFinancialStatements','Director signing financial statements','text','fixed_marker','approving_director_name',1,'duration',NULL,NULL,'duration_director_1','{"bus:EntityOfficersDimension":"bus:Director1"}',0,1,75,1),
 ('entity_trading_status','bus:EntityTradingStatus','http://xbrl.frc.org.uk/cd/2026-01-01/business','EntityTradingStatus','Entity trading status','text','fixed_marker','entity_trading_status',1,'duration',NULL,NULL,'duration_trading_status',NULL,0,1,80,1),
+('accounts_type','bus:AccountsType','http://xbrl.frc.org.uk/cd/2026-01-01/business','AccountsType','Accounts type','text','fixed_marker','accounts_type',1,'duration',NULL,NULL,'duration_accounts_type','{"bus:AccountsTypeDimension":"bus:FullAccounts"}',0,1,82,1),
 ('accounting_standards_applied','bus:AccountingStandardsApplied','http://xbrl.frc.org.uk/cd/2026-01-01/business','AccountingStandardsApplied','Accounting standards applied','text','fixed_marker','accounting_standard',1,'duration',NULL,NULL,'duration_accounting_standards','{"bus:AccountingStandardsDimension":"bus:Micro-entities"}',0,1,85,1),
 ('accounts_status','bus:AccountsStatusAuditedOrUnaudited','http://xbrl.frc.org.uk/cd/2026-01-01/business','AccountsStatusAuditedOrUnaudited','Accounts status audited or unaudited','text','fixed_marker','audit_exempt_section_477',1,'duration',NULL,NULL,'duration_accounts_status','{"bus:AccountsStatusDimension":"bus:AuditExempt-NoAccountantsReport"}',0,1,90,1),
 ('turnover','core:TurnoverRevenue','http://xbrl.frc.org.uk/fr/2026-01-01/core','TurnoverRevenue','Turnover','numeric','derived','turnover',1,'duration','GBP','2','duration',NULL,1,1,100,1),
 ('other_income','core:OtherOperatingIncomeFormat2','http://xbrl.frc.org.uk/fr/2026-01-01/core','OtherOperatingIncomeFormat2','Other income','numeric','derived','other_income',1,'duration','GBP','2','duration',NULL,1,1,110,1),
 ('raw_materials_consumables','core:RawMaterialsConsumablesUsed','http://xbrl.frc.org.uk/fr/2026-01-01/core','RawMaterialsConsumablesUsed','Raw materials and consumables','numeric','derived','raw_materials_consumables',1,'duration','GBP','2','duration',NULL,1,1,120,1),
+('gross_profit_loss','core:GrossProfitLoss','http://xbrl.frc.org.uk/fr/2026-01-01/core','GrossProfitLoss','Gross profit / loss','numeric','derived','gross_profit_loss',1,'duration','GBP','2','duration',NULL,1,1,125,1),
 ('staff_costs','core:StaffCostsEmployeeBenefitsExpense','http://xbrl.frc.org.uk/fr/2026-01-01/core','StaffCostsEmployeeBenefitsExpense','Staff costs','numeric','derived','staff_costs',1,'duration','GBP','2','duration',NULL,1,1,130,1),
 ('depreciation_write_offs','core:DepreciationAmortisationImpairmentExpense','http://xbrl.frc.org.uk/fr/2026-01-01/core','DepreciationAmortisationImpairmentExpense','Depreciation and other amounts written off assets','numeric','derived','depreciation_write_offs',1,'duration','GBP','2','duration',NULL,1,1,140,1),
 ('other_charges','core:OtherExternalCharges','http://xbrl.frc.org.uk/fr/2026-01-01/core','OtherExternalCharges','Other charges','numeric','derived','other_charges',1,'duration','GBP','2','duration',NULL,1,1,145,1),
+('operating_profit_loss','core:OperatingProfitLoss','http://xbrl.frc.org.uk/fr/2026-01-01/core','OperatingProfitLoss','Operating profit / loss','numeric','derived','profit_loss_before_tax',1,'duration','GBP','2','duration',NULL,1,1,147,1),
 ('tax_on_profit','core:TaxTaxCreditOnProfitOrLossOnOrdinaryActivities','http://xbrl.frc.org.uk/fr/2026-01-01/core','TaxTaxCreditOnProfitOrLossOnOrdinaryActivities','Tax on profit / loss','numeric','derived','tax_on_profit',1,'duration','GBP','2','duration',NULL,1,1,150,1),
 ('profit_loss','core:ProfitLoss','http://xbrl.frc.org.uk/fr/2026-01-01/core','ProfitLoss','Profit / loss for the financial year','numeric','derived','profit_loss',1,'duration','GBP','2','duration',NULL,1,1,160,1),
+('called_up_share_capital_not_paid','core:CalledUpShareCapitalNotPaidNotExpressedAsCurrentAsset','http://xbrl.frc.org.uk/fr/2026-01-01/core','CalledUpShareCapitalNotPaidNotExpressedAsCurrentAsset','Called-up share capital not paid','numeric','derived','called_up_share_capital_not_paid',1,'instant','GBP','2','instant_end',NULL,1,1,195,1),
 ('fixed_assets','core:FixedAssets','http://xbrl.frc.org.uk/fr/2026-01-01/core','FixedAssets','Fixed assets','numeric','derived','fixed_assets',1,'instant','GBP','2','instant_end',NULL,1,1,200,1),
 ('current_assets','core:CurrentAssets','http://xbrl.frc.org.uk/fr/2026-01-01/core','CurrentAssets','Current assets','numeric','derived','current_assets',1,'instant','GBP','2','instant_end',NULL,1,1,210,1),
-('prepayments_accrued_income','core:PrepaymentsAccruedIncome','http://xbrl.frc.org.uk/fr/2026-01-01/core','PrepaymentsAccruedIncome','Prepayments and accrued income','numeric','derived','prepayments_accrued_income',1,'instant','GBP','2','instant_end',NULL,1,1,215,1),
+('prepayments_accrued_income','core:PrepaymentsAccruedIncomeNotExpressedWithinCurrentAssetSubtotal','http://xbrl.frc.org.uk/fr/2026-01-01/core','PrepaymentsAccruedIncomeNotExpressedWithinCurrentAssetSubtotal','Prepayments and accrued income','numeric','derived','prepayments_accrued_income',1,'instant','GBP','2','instant_end',NULL,1,1,215,1),
 ('creditors_within_one_year','core:Creditors','http://xbrl.frc.org.uk/fr/2026-01-01/core','Creditors','Creditors within one year','numeric','derived','creditors_within_one_year',1,'instant','GBP','2','instant_end_creditors_within','{"core:MaturitiesOrExpirationPeriodsDimension":"core:WithinOneYear"}',1,1,220,1),
 ('net_current_assets_liabilities','core:NetCurrentAssetsLiabilities','http://xbrl.frc.org.uk/fr/2026-01-01/core','NetCurrentAssetsLiabilities','Net current assets / liabilities','numeric','derived','net_current_assets_liabilities',1,'instant','GBP','2','instant_end',NULL,1,1,230,1),
 ('total_assets_less_current_liabilities','core:TotalAssetsLessCurrentLiabilities','http://xbrl.frc.org.uk/fr/2026-01-01/core','TotalAssetsLessCurrentLiabilities','Total assets less current liabilities','numeric','derived','total_assets_less_current_liabilities',1,'instant','GBP','2','instant_end',NULL,1,1,240,1),
 ('creditors_after_one_year','core:Creditors','http://xbrl.frc.org.uk/fr/2026-01-01/core','Creditors','Creditors after more than one year','numeric','derived','creditors_after_more_than_one_year',1,'instant','GBP','2','instant_end_creditors_after','{"core:MaturitiesOrExpirationPeriodsDimension":"core:AfterOneYear"}',1,1,250,1),
+('provisions_for_liabilities','core:ProvisionsForLiabilitiesBalanceSheetSubtotal','http://xbrl.frc.org.uk/fr/2026-01-01/core','ProvisionsForLiabilitiesBalanceSheetSubtotal','Provisions for liabilities','numeric','derived','provisions_for_liabilities',1,'instant','GBP','2','instant_end',NULL,1,1,252,1),
+('accruals_deferred_income','core:AccruedLiabilitiesNotExpressedWithinCreditorsSubtotal','http://xbrl.frc.org.uk/fr/2026-01-01/core','AccruedLiabilitiesNotExpressedWithinCreditorsSubtotal','Accruals and deferred income','numeric','derived','accruals_deferred_income',1,'instant','GBP','2','instant_end',NULL,1,1,254,1),
 ('net_assets_liabilities','core:NetAssetsLiabilities','http://xbrl.frc.org.uk/fr/2026-01-01/core','NetAssetsLiabilities','Net assets / liabilities','numeric','derived','net_assets_liabilities',1,'instant','GBP','2','instant_end',NULL,1,1,260,1),
 ('equity','core:Equity','http://xbrl.frc.org.uk/fr/2026-01-01/core','Equity','Equity','numeric','derived','equity_capital_reserves',1,'instant','GBP','2','instant_end',NULL,1,1,270,1),
 ('average_number_employees','core:AverageNumberEmployeesDuringPeriod','http://xbrl.frc.org.uk/fr/2026-01-01/core','AverageNumberEmployeesDuringPeriod','Average number of employees','numeric','disclosure_field','average_number_employees',1,'duration','pure','0','duration',NULL,1,1,300,1),
@@ -1868,6 +1877,9 @@ INSERT INTO `ixbrl_fact_mappings` (`fact_key`,`taxonomy_concept`,`namespace_uri`
 ('no_capital_commitments','core:DescriptionCapitalCommitments','http://xbrl.frc.org.uk/fr/2026-01-01/core','DescriptionCapitalCommitments','No capital commitments','text','absence_statement','has_financial_commitments_guarantees_or_contingencies',1,'duration',NULL,NULL,'duration',NULL,0,1,363,1),
 ('no_financial_commitments','core:DescriptionFinancialCommitmentsOtherThanCapitalCommitments','http://xbrl.frc.org.uk/fr/2026-01-01/core','DescriptionFinancialCommitmentsOtherThanCapitalCommitments','No other financial commitments','text','absence_statement','has_financial_commitments_guarantees_or_contingencies',1,'duration',NULL,NULL,'duration',NULL,0,1,364,1),
 ('no_contingent_liabilities','core:GeneralDescriptionContingentLiabilitiesIncludingFinancialEffectUncertaintiesPossibleReimbursement','http://xbrl.frc.org.uk/fr/2026-01-01/core','GeneralDescriptionContingentLiabilitiesIncludingFinancialEffectUncertaintiesPossibleReimbursement','No contingent liabilities','text','absence_statement','has_financial_commitments_guarantees_or_contingencies',1,'duration',NULL,NULL,'duration',NULL,0,1,365,1),
+('director_advances_made','direp:AdvancesCreditsMadeInPeriodDirectors','http://xbrl.frc.org.uk/reports/2026-01-01/direp','AdvancesCreditsMadeInPeriodDirectors','Advances or credits made to directors during the period','numeric','director_loan_numeric','total_advances',1,'duration','GBP','2','duration',NULL,1,1,366,1),
+('director_cash_repayments','direp:AdvancesCreditsRepaidInPeriodDirectors','http://xbrl.frc.org.uk/reports/2026-01-01/direp','AdvancesCreditsRepaidInPeriodDirectors','Cash repayments of advances or credits by directors during the period','numeric','director_loan_numeric','total_cash_repayments',1,'duration','GBP','2','duration',NULL,1,1,367,1),
+('director_closing_advance','direp:AdvancesCreditsDirectors','http://xbrl.frc.org.uk/reports/2026-01-01/direp','AdvancesCreditsDirectors','Closing advances or credits to directors','numeric','director_loan_numeric','closing_company_to_director_balance',1,'instant','GBP','2','instant_end',NULL,1,1,368,1),
 ('production_software','bus:NameProductionSoftware','http://xbrl.frc.org.uk/cd/2026-01-01/business','NameProductionSoftware','Production software','text','application_value','app_name',1,'duration',NULL,NULL,'duration',NULL,0,1,370,1),
 ('production_software_version','bus:VersionProductionSoftware','http://xbrl.frc.org.uk/cd/2026-01-01/business','VersionProductionSoftware','Production software version','text','application_value','app_version',1,'duration',NULL,NULL,'duration',NULL,0,1,371,1);
 
@@ -3645,6 +3657,14 @@ CREATE TABLE `director_loan_reporting_presentations` (
   `accounting_period_id` int(11) NOT NULL,
   `liability_nominal_account_id` int(11) NOT NULL,
   `classification` varchar(40) NOT NULL,
+  `set_off_right_confirmed` tinyint(1) NOT NULL DEFAULT 0,
+  `set_off_net_settlement_intended` tinyint(1) NOT NULL DEFAULT 0,
+  `set_off_evidence` varchar(2000) NOT NULL DEFAULT '',
+  `deferment_right_confirmed` tinyint(1) NOT NULL DEFAULT 0,
+  `deferment_evidence` varchar(2000) NOT NULL DEFAULT '',
+  `annual_rate_percent` decimal(7,4) NOT NULL DEFAULT 0.0000,
+  `main_terms` varchar(1000) NOT NULL DEFAULT 'Unsecured.',
+  `repayment_conditions` varchar(1000) NOT NULL DEFAULT 'Repayable on demand.',
   `revision` int(10) unsigned NOT NULL DEFAULT 1,
   `created_by` varchar(100) NOT NULL,
   `updated_by` varchar(100) NOT NULL,
@@ -3675,6 +3695,8 @@ CREATE TABLE `director_loan_reporting_presentation_audit` (
   `new_liability_nominal_account_id` int(11) DEFAULT NULL,
   `old_classification` varchar(40) NOT NULL,
   `new_classification` varchar(40) NOT NULL,
+  `old_evidence_json` longtext DEFAULT NULL,
+  `new_evidence_json` longtext DEFAULT NULL,
   `old_revision` int(10) unsigned NOT NULL,
   `new_revision` int(10) unsigned NOT NULL,
   `changed_by` varchar(100) NOT NULL,
@@ -3950,6 +3972,12 @@ INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_23_006_companies_house_revised_disclosures.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_24_001_year_end_section_review_bundles.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_26_002_director_loan_statutory_evidence.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_26_003_director_loan_interest_rate_column.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_26_004_ixbrl_approving_director.sql');
 INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
 SELECT DISTINCT `role_id`, 'api_keys_editor'
 FROM `role_card_permissions`

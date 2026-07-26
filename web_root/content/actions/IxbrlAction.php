@@ -49,7 +49,7 @@ final class IxbrlAction implements ActionInterfaceFramework
                         'is_still_trading' => $request->input('is_still_trading', null),
                         'has_ever_traded' => $request->input('has_ever_traded', null),
                         'accounts_approval_date' => $request->input('accounts_approval_date', null),
-                        'approving_director_name' => $request->input('approving_director_name', null),
+                        'approving_director_id' => $request->input('approving_director_id', null),
                     ],
                     $this->actor($request)
                 );
@@ -209,7 +209,7 @@ final class IxbrlAction implements ActionInterfaceFramework
                 'has_director_advances_credits_or_guarantees' => $request->input('has_director_advances_credits_or_guarantees', null),
                 'has_financial_commitments_guarantees_or_contingencies' => $request->input('has_financial_commitments_guarantees_or_contingencies', null),
                 'accounts_approval_date' => $request->input('accounts_approval_date', null),
-                'approving_director_name' => $request->input('approving_director_name', null),
+                'approving_director_id' => $request->input('approving_director_id', null),
                 'prepared_under_small_companies_regime' => $request->input('prepared_under_small_companies_regime', null),
                 'audit_exempt_section_477' => $request->input('audit_exempt_section_477', null),
                 'directors_acknowledge_responsibilities' => $request->input('directors_acknowledge_responsibilities', null),

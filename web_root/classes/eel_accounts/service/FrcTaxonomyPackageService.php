@@ -8,6 +8,11 @@ final class FrcTaxonomyPackageService
 {
     public const SOURCE_URL = 'https://www.frc.org.uk/library/standards-codes-policy/accounting-and-reporting/frc-taxonomies/current-frc-taxonomy-suites/2026-frc-taxonomy-suite/';
 
+    public function __construct(
+        private readonly ?IxbrlTaxonomyCompatibilityService $compatibilityService = null
+    ) {
+    }
+
     public function fetchPackages(): array
     {
         if (!\InterfaceDB::tableExists('frc_taxonomy_packages')) { return []; }
@@ -19,8 +24,16 @@ final class FrcTaxonomyPackageService
         if (!\InterfaceDB::tableExists('frc_taxonomy_packages')) { return null; }
         $row = \InterfaceDB::fetchOne("SELECT * FROM frc_taxonomy_packages WHERE is_active = 1 AND package_state = 'verified' ORDER BY verified_at DESC, id DESC LIMIT 1");
         if (!is_array($row) || !is_file((string)($row['local_path'] ?? ''))) { return null; }
-        $hash = hash_file('sha256', (string)$row['local_path']);
-        return is_string($hash) && hash_equals((string)$row['sha256'], strtolower($hash)) ? $row : null;
+        $hash = @hash_file('sha256', (string)$row['local_path']);
+        if (!is_string($hash) || !hash_equals(strtolower((string)$row['sha256']), strtolower($hash))) {
+            return null;
+        }
+        $inspection = $this->compatibility()->inspectPackage((string)$row['local_path']);
+        if (empty($inspection['compatible'])) {
+            return null;
+        }
+        $row['compatibility'] = $inspection;
+        return $row;
     }
 
     public function refreshAndInstall(): array
@@ -43,14 +56,13 @@ final class FrcTaxonomyPackageService
         if ($temporary === false) { throw new \RuntimeException('Could not create a temporary FRC taxonomy download file.'); }
         try {
             $this->download($url, $temporary);
-            $entry = 'FRS-102/2026-01-01/FRS-102-2026-01-01.xsd';
-            $inventory = (new HmrcCtRimZipService())->inventory($temporary);
-            $hasEntry = in_array(
-                strtolower($entry),
-                array_map(static fn(array $file): string => strtolower((string)($file['archive_path'] ?? '')), $inventory),
-                true
-            );
-            if (!$hasEntry) { throw new \RuntimeException('The FRC taxonomy package does not contain the required FRS-102 2026 entry point.'); }
+            $inspection = $this->compatibility()->inspectPackage($temporary);
+            if (empty($inspection['compatible'])) {
+                throw new \RuntimeException(
+                    (string)(($inspection['errors'] ?? [])[0]
+                        ?? 'The FRC taxonomy package is incompatible with the configured accounts taxonomy profile.')
+                );
+            }
             $sha256 = hash_file('sha256', $temporary);
             if (!is_string($sha256) || $sha256 === '') { throw new \RuntimeException('The downloaded FRC taxonomy could not be fingerprinted.'); }
             $directory = rtrim(PROJECT_ROOT, '\\/') . DIRECTORY_SEPARATOR . 'third_party' . DIRECTORY_SEPARATOR . 'frc' . DIRECTORY_SEPARATOR . 'taxonomies';
@@ -85,5 +97,11 @@ final class FrcTaxonomyPackageService
         curl_setopt_array($handle, [CURLOPT_FILE => $file, CURLOPT_FOLLOWLOCATION => true, CURLOPT_TIMEOUT => 180, CURLOPT_CONNECTTIMEOUT => 15, CURLOPT_USERAGENT => 'EEL Accounts FRC taxonomy download']);
         curl_exec($handle); $status = (int)curl_getinfo($handle, CURLINFO_RESPONSE_CODE); $error = curl_error($handle); curl_close($handle); fclose($file);
         if ($status < 200 || $status >= 300 || $error !== '') { throw new \RuntimeException('The FRC taxonomy download failed' . ($error !== '' ? ': ' . $error : ' with HTTP status ' . $status) . '.'); }
+    }
+
+    private function compatibility(): IxbrlTaxonomyCompatibilityService
+    {
+        return $this->compatibilityService
+            ?? new IxbrlTaxonomyCompatibilityService();
     }
 }

@@ -61,6 +61,19 @@ final class IxbrlRevisedAccountsArtifactService
 
         $periodEnd = (string)$period['period_end'];
         $declarations = $this->declarations($periodEnd, $input);
+        try {
+            $supersededFacts = (new IxbrlSupersededFactsService())->facts(
+                $companyId,
+                (int)$input['original_document_id'],
+                $periodEnd
+            );
+        } catch (\Throwable $exception) {
+            return [
+                'success' => false,
+                'errors' => ['The original filing could not be used for superseded facts: ' . $exception->getMessage()],
+                'warnings' => [],
+            ];
+        }
         $basis = [
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
@@ -71,8 +84,8 @@ final class IxbrlRevisedAccountsArtifactService
             'period_start' => (string)$period['period_start'],
             'period_end' => $periodEnd,
             'declarations' => $declarations,
+            'superseded_facts' => $supersededFacts,
             'taxonomy_profile' => IxbrlTaxonomyProfileService::PROFILE,
-            'evidence_artifact_id' => $evidenceArtifactId,
         ];
         $basisHash = hash('sha256', $this->canonicalJson($basis));
 
@@ -80,7 +93,7 @@ final class IxbrlRevisedAccountsArtifactService
         if (!is_string($source) || $source === '') {
             return ['success' => false, 'errors' => ['The ordinary accounts artifact could not be read.'], 'warnings' => []];
         }
-        $transformed = $this->transform($source, $declarations, $evidenceArtifactId);
+        $transformed = $this->transform($source, $declarations, $evidenceArtifactId, $supersededFacts);
         if (empty($transformed['success'])) {
             return $transformed;
         }
@@ -141,12 +154,18 @@ final class IxbrlRevisedAccountsArtifactService
     }
 
     /** @return array{success: bool, errors: array, warnings: array, xhtml?: string} */
-    public function transform(string $sourceXhtml, array $declarations, string $evidenceArtifactId = ''): array
+    public function transform(
+        string $sourceXhtml,
+        array $declarations,
+        string $evidenceArtifactId = '',
+        array $supersededFacts = []
+    ): array
     {
         $previous = libxml_use_internal_errors(true);
         $document = new \DOMDocument('1.0', 'UTF-8');
         $document->preserveWhiteSpace = true;
-        $loaded = $document->loadXML($sourceXhtml, LIBXML_NONET);
+        $document->formatOutput = false;
+        $loaded = $document->loadXML($sourceXhtml, LIBXML_NONET | LIBXML_COMPACT);
         $xmlErrors = libxml_get_errors();
         libxml_clear_errors();
         libxml_use_internal_errors($previous);
@@ -158,13 +177,10 @@ final class IxbrlRevisedAccountsArtifactService
             ];
         }
 
-        // The Companies House schema does not permit either language attribute on
-        // the XHTML root. Remove legacy attributes while deriving the separate
-        // revised artifact, so a current ordinary filing artifact remains usable.
         $root = $document->documentElement;
         if ($root instanceof \DOMElement) {
             $root->removeAttribute('lang');
-            $root->removeAttributeNS('http://www.w3.org/XML/1998/namespace', 'lang');
+            $root->setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:lang', 'en');
         }
 
         $xpath = new \DOMXPath($document);
@@ -178,15 +194,12 @@ final class IxbrlRevisedAccountsArtifactService
         if (($xpath->query('//xbrli:context[@id="current_period_duration"]')->length ?? 0) !== 1) {
             return ['success' => false, 'errors' => ['The current-period duration context is missing or ambiguous.'], 'warnings' => []];
         }
-        if ($evidenceArtifactId !== '') {
-            $head = $xpath->query('/xhtml:html/xhtml:head')->item(0);
-            if (!$head instanceof \DOMElement) {
-                return ['success' => false, 'errors' => ['The accounts artifact has no XHTML head.'], 'warnings' => []];
-            }
-            $meta = $document->createElementNS(self::XHTML_NS, 'meta');
-            $meta->setAttribute('name', 'eel-evidence-artifact-id');
-            $meta->setAttribute('content', $evidenceArtifactId);
-            $head->appendChild($meta);
+        if (($xpath->query('//xbrli:context[@id="current_period_end"]')->length ?? 0) !== 1) {
+            return ['success' => false, 'errors' => ['The balance-sheet instant context is missing or ambiguous.'], 'warnings' => []];
+        }
+        if (($xpath->query('//ix:hidden')->length ?? 0) !== 1
+            || ($xpath->query('//ix:resources')->length ?? 0) !== 1) {
+            return ['success' => false, 'errors' => ['The Inline XBRL hidden or resources block is missing or ambiguous.'], 'warnings' => []];
         }
         foreach (self::REVISION_FACTS as $concept) {
             if (($xpath->query('//*[@name="bus:' . $concept . '"]')->length ?? 0) > 0) {
@@ -194,36 +207,84 @@ final class IxbrlRevisedAccountsArtifactService
             }
         }
 
+        $approvalDate = trim((string)($declarations['revision_approval_date'] ?? ''));
+        $ordinaryApprovalDate = $this->ordinaryApprovalDate($xpath);
+        if ($ordinaryApprovalDate === '' || $ordinaryApprovalDate !== $approvalDate) {
+            return [
+                'success' => false,
+                'errors' => [
+                    'The revision approval date must match the board approval and '
+                    . 'DateAuthorisationFinancialStatementsForIssue in the ordinary accounts artifact.',
+                ],
+                'warnings' => [],
+            ];
+        }
+
+        $titlePage = $xpath->query(
+            '//xhtml:div[contains(concat(" ", normalize-space(@class), " "), " titlepage ")]'
+        )->item(0);
+        if (!$titlePage instanceof \DOMElement) {
+            return ['success' => false, 'errors' => ['The ordinary accounts title page is missing.'], 'warnings' => []];
+        }
+        $coverHeading = $xpath->query('.//xhtml:h2', $titlePage)->item(0);
+        if ($coverHeading instanceof \DOMElement) {
+            $coverHeading->textContent = 'REVISED MICRO-ENTITY ACCOUNTS';
+        }
+        $headTitle = $xpath->query('/xhtml:html/xhtml:head/xhtml:title')->item(0);
+        if ($headTitle instanceof \DOMElement) {
+            $headTitle->textContent = 'Revised micro-entity accounts';
+        }
+        foreach ($xpath->query('//xhtml:h2 | //xhtml:div[contains(@class, "page-header-title")]') ?: [] as $heading) {
+            if ($heading instanceof \DOMElement
+                && str_contains($heading->textContent, 'Notes to the Micro-entity Accounts')) {
+                $heading->textContent = str_replace(
+                    'Notes to the Micro-entity Accounts',
+                    'Notes to the Revised Micro-entity Accounts',
+                    $heading->textContent
+                );
+            }
+        }
+
+        $hidden = $xpath->query('//ix:hidden')->item(0);
+        if (!$hidden instanceof \DOMElement) {
+            return ['success' => false, 'errors' => ['The Inline XBRL hidden block is missing.'], 'warnings' => []];
+        }
+        $revisionMarker = $document->createElementNS(self::IX_NS, 'ix:nonNumeric');
+        $revisionMarker->setAttribute('name', 'bus:ReportAnAmendedRevisedVersionPreviouslyFiledReportTruefalse');
+        $revisionMarker->setAttribute('contextRef', 'current_period_duration');
+        $revisionMarker->appendChild($document->createTextNode('true'));
+        $hidden->appendChild($revisionMarker);
+
+        $changedSupersededFacts = $this->changedSupersededFacts($xpath, $supersededFacts);
+        if ($changedSupersededFacts !== []) {
+            $contextResult = $this->appendSupersededContexts($document, $xpath, $changedSupersededFacts);
+            if ($contextResult !== '') {
+                return ['success' => false, 'errors' => [$contextResult], 'warnings' => []];
+            }
+            foreach ($changedSupersededFacts as $supersededFact) {
+                $this->appendSupersededFact($document, $hidden, $supersededFact);
+            }
+        }
+
         $section = $document->createElementNS(self::XHTML_NS, 'div');
         $section->setAttribute('id', 'revised-accounts-statements');
+        $section->setAttribute('class', 'accountspage pagebreak revision-page');
+        $this->appendRevisionPageHeader($document, $section, $xpath);
         $heading = $document->createElementNS(self::XHTML_NS, 'h2');
         $heading->appendChild($document->createTextNode('Revised accounts statements'));
         $section->appendChild($heading);
 
-        $this->appendFactParagraph(
-            $document,
-            $section,
-            'This report is an amended/revised version of a previously filed report: ',
-            'ReportAnAmendedRevisedVersionPreviouslyFiledReportTruefalse',
-            'true'
-        );
         $this->appendFactParagraph($document, $section, '', 'StatementThatRevisedReportReplacesPreviouslyFiledReportForPeriod', (string)$declarations['replaces_statement']);
         $this->appendFactParagraph($document, $section, '', 'StatementThatThisReportNowStatutoryAccountsForPeriod', (string)$declarations['statutory_accounts_statement']);
         $this->appendFactParagraph($document, $section, '', 'StatementThatThisReportHasBeenPreparedAsDatePreviouslyFiledReport', (string)$declarations['prepared_as_statement']);
-        $this->appendFactParagraph($document, $section, 'Original non-compliance: ', 'StatementRespectsInWhichPreviouslyFiledReportDidNotComplyWithCompaniesAct2006', (string)$declarations['non_compliance_explanation']);
-        $this->appendFactParagraph($document, $section, 'Significant amendments: ', 'StatementSignificantAmendmentsToPreviouslyFiledReport', (string)$declarations['significant_amendments']);
-        $this->appendFactParagraph($document, $section, 'Revision approved on: ', 'DateApprovalRevisionReport', (string)$declarations['revision_approval_date'], true);
+        $this->appendFactParagraph($document, $section, 'Respects in which the original accounts did not comply', 'StatementRespectsInWhichPreviouslyFiledReportDidNotComplyWithCompaniesAct2006', (string)$declarations['non_compliance_explanation']);
+        $this->appendFactParagraph($document, $section, 'Significant amendments made to remedy those defects', 'StatementSignificantAmendmentsToPreviouslyFiledReport', (string)$declarations['significant_amendments']);
+        $this->appendFactParagraph($document, $section, 'Revision approved on', 'DateApprovalRevisionReport', $approvalDate, true);
 
-        $firstHeading = $xpath->query('/xhtml:html/xhtml:body/xhtml:h1')->item(0);
-        if ($firstHeading instanceof \DOMNode && $firstHeading->nextSibling instanceof \DOMNode) {
-            $body->insertBefore($section, $firstHeading->nextSibling);
+        if ($titlePage->nextSibling instanceof \DOMNode) {
+            $body->insertBefore($section, $titlePage->nextSibling);
         } else {
             $body->appendChild($section);
-        }
-        if ($evidenceArtifactId !== '') {
-            $footer = $document->createElementNS(self::XHTML_NS, 'p');
-            $footer->appendChild($document->createTextNode('EEL filing evidence artifact: ' . $evidenceArtifactId));
-            $body->appendChild($footer);
         }
 
         $xhtml = $document->saveXML();
@@ -250,13 +311,222 @@ final class IxbrlRevisedAccountsArtifactService
             return ['success' => false, 'errors' => ['The revised XHTML is not well-formed XML.'], 'warnings' => []];
         }
         $checkXpath = new \DOMXPath($check);
+        $checkXpath->registerNamespace('ix', self::IX_NS);
+        $checkXpath->registerNamespace('xbrli', 'http://www.xbrl.org/2003/instance');
+        $checkXpath->registerNamespace('xbrldi', 'http://xbrl.org/2006/xbrldi');
         foreach (self::REVISION_FACTS as $concept) {
             if (($checkXpath->query('//*[@name="bus:' . $concept . '"]')->length ?? 0) !== 1) {
                 return ['success' => false, 'errors' => ['Required revised-report fact is missing or duplicated: bus:' . $concept . '.'], 'warnings' => []];
             }
         }
+        if (($checkXpath->query('//ix:header')->length ?? 0) !== 1
+            || ($checkXpath->query('//ix:resources')->length ?? 0) !== 1
+            || ($checkXpath->query('//ix:hidden')->length ?? 0) !== 1) {
+            return ['success' => false, 'errors' => ['The revised artifact duplicated Inline XBRL resources.'], 'warnings' => []];
+        }
+        if ($changedSupersededFacts !== []
+            && ($checkXpath->query('//xbrldi:explicitMember[@dimension="bus:OriginalRevisedDataDimension" and normalize-space(.)="bus:Superseded"]')->length ?? 0) < 1) {
+            return ['success' => false, 'errors' => ['The Superseded member was not emitted for original facts.'], 'warnings' => []];
+        }
+        if (($checkXpath->query('//text()[normalize-space(.)="true" and not(ancestor::ix:hidden)]')->length ?? 0) > 0
+            || str_contains($xhtml, 'EEL filing evidence artifact:')) {
+            return ['success' => false, 'errors' => ['Internal values are visible in the revised statutory accounts.'], 'warnings' => []];
+        }
 
-        return ['success' => true, 'errors' => [], 'warnings' => [], 'xhtml' => $xhtml];
+        return [
+            'success' => true,
+            'errors' => [],
+            'warnings' => [],
+            'xhtml' => $xhtml,
+            'superseded_fact_count' => count($changedSupersededFacts),
+        ];
+    }
+
+    private function ordinaryApprovalDate(\DOMXPath $xpath): string
+    {
+        $fact = $xpath->query(
+            '//*[@name="core:DateAuthorisationFinancialStatementsForIssue"]'
+        )->item(0);
+        if (!$fact instanceof \DOMElement) {
+            return '';
+        }
+        $value = trim($fact->textContent);
+        if ($this->validDate($value)) {
+            return $value;
+        }
+        $parsed = \DateTimeImmutable::createFromFormat('!j F Y', $value);
+
+        return $parsed instanceof \DateTimeImmutable ? $parsed->format('Y-m-d') : '';
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function changedSupersededFacts(\DOMXPath $xpath, array $supersededFacts): array
+    {
+        if ($supersededFacts === []) {
+            return [];
+        }
+        $currentValues = [];
+        foreach ($xpath->query('//ix:nonFraction[not(ancestor::ix:hidden)] | //ix:hidden/ix:nonFraction') ?: [] as $fact) {
+            if (!$fact instanceof \DOMElement) {
+                continue;
+            }
+            $name = $fact->getAttribute('name');
+            $context = $fact->getAttribute('contextRef');
+            if ($name === '' || $context === '' || str_contains($context, 'superseded')) {
+                continue;
+            }
+            $lexical = trim(str_replace(',', '', $fact->textContent));
+            $numeric = str_ends_with($fact->getAttribute('format'), 'zerodash') ? 0.0 : (float)$lexical;
+            if ($fact->getAttribute('sign') === '-') {
+                $numeric *= -1;
+            }
+            $currentValues[$name . '|' . $context] = round($numeric, 2);
+        }
+
+        $changed = [];
+        foreach ($supersededFacts as $fact) {
+            if (!is_array($fact)) {
+                continue;
+            }
+            $context = (string)($fact['context_ref'] ?? '');
+            $currentContext = match ($context) {
+                'current_period_end_superseded' => 'current_period_end',
+                'current_period_duration_superseded' => 'current_period_duration',
+                'current_period_end_superseded_creditors_within_one_year' =>
+                    'current_period_end_creditors_within_one_year',
+                'current_period_end_superseded_creditors_after_one_year' =>
+                    'current_period_end_creditors_after_one_year',
+                default => '',
+            };
+            $concept = (string)($fact['concept'] ?? '');
+            $currentKey = $concept . '|' . $currentContext;
+            if ($concept === '' || $currentContext === '' || !array_key_exists($currentKey, $currentValues)) {
+                continue;
+            }
+            if (abs((float)($fact['value'] ?? 0) - $currentValues[$currentKey]) < 0.005) {
+                continue;
+            }
+            $changed[] = $fact;
+        }
+
+        usort($changed, static fn(array $left, array $right): int =>
+            [(string)$left['context_ref'], (string)$left['concept']]
+            <=> [(string)$right['context_ref'], (string)$right['concept']]
+        );
+
+        return $changed;
+    }
+
+    /** Returns an error string, or an empty string on success. */
+    private function appendSupersededContexts(
+        \DOMDocument $document,
+        \DOMXPath $xpath,
+        array $facts
+    ): string {
+        $resources = $xpath->query('//ix:resources')->item(0);
+        if (!$resources instanceof \DOMElement) {
+            return 'The Inline XBRL resources block is missing.';
+        }
+        $contextSources = [
+            'current_period_end_superseded' => 'current_period_end',
+            'current_period_duration_superseded' => 'current_period_duration',
+            'current_period_end_superseded_creditors_within_one_year' =>
+                'current_period_end_creditors_within_one_year',
+            'current_period_end_superseded_creditors_after_one_year' =>
+                'current_period_end_creditors_after_one_year',
+        ];
+        $required = [];
+        foreach ($facts as $fact) {
+            $required[(string)($fact['context_ref'] ?? '')] = true;
+        }
+        $firstUnit = $xpath->query('./xbrli:unit', $resources)->item(0);
+        foreach (array_keys($required) as $contextId) {
+            $sourceId = $contextSources[$contextId] ?? '';
+            $source = $sourceId !== ''
+                ? $xpath->query('//xbrli:context[@id="' . $sourceId . '"]')->item(0)
+                : null;
+            if (!$source instanceof \DOMElement) {
+                return 'The source context required for superseded tagging is missing: ' . $sourceId . '.';
+            }
+            $clone = $source->cloneNode(true);
+            if (!$clone instanceof \DOMElement) {
+                return 'A superseded context could not be created.';
+            }
+            $clone->setAttribute('id', $contextId);
+            $entity = $xpath->query('./xbrli:entity', $clone)->item(0);
+            if (!$entity instanceof \DOMElement) {
+                return 'A superseded context has no entity.';
+            }
+            $segment = $xpath->query('./xbrli:segment', $entity)->item(0);
+            if (!$segment instanceof \DOMElement) {
+                $segment = $document->createElementNS(
+                    'http://www.xbrl.org/2003/instance',
+                    'xbrli:segment'
+                );
+                $entity->appendChild($segment);
+            }
+            $member = $document->createElementNS(
+                'http://xbrl.org/2006/xbrldi',
+                'xbrldi:explicitMember'
+            );
+            $member->setAttribute('dimension', 'bus:OriginalRevisedDataDimension');
+            $member->appendChild($document->createTextNode('bus:Superseded'));
+            $segment->appendChild($member);
+            if ($firstUnit instanceof \DOMNode) {
+                $resources->insertBefore($clone, $firstUnit);
+            } else {
+                $resources->appendChild($clone);
+            }
+        }
+
+        return '';
+    }
+
+    private function appendSupersededFact(
+        \DOMDocument $document,
+        \DOMElement $hidden,
+        array $source
+    ): void {
+        $value = round((float)($source['value'] ?? 0), 2);
+        $decimals = (string)($source['decimals'] ?? '2');
+        $precision = $decimals === '0' ? 0 : 2;
+        $fact = $document->createElementNS(self::IX_NS, 'ix:nonFraction');
+        $fact->setAttribute('name', (string)$source['concept']);
+        $fact->setAttribute('contextRef', (string)$source['context_ref']);
+        $fact->setAttribute('unitRef', (string)($source['unit_ref'] ?? 'GBP'));
+        $fact->setAttribute('decimals', $decimals);
+        $fact->setAttribute('format', 'ixt:numdotdecimal');
+        if ($value < 0) {
+            $fact->setAttribute('sign', '-');
+        }
+        $fact->appendChild($document->createTextNode(number_format(abs($value), $precision, '.', '')));
+        $hidden->appendChild($fact);
+    }
+
+    private function appendRevisionPageHeader(
+        \DOMDocument $document,
+        \DOMElement $section,
+        \DOMXPath $xpath
+    ): void {
+        $companyName = trim((string)$xpath->query(
+            '//*[@name="bus:EntityCurrentLegalOrRegisteredName"]'
+        )->item(0)?->textContent);
+        $companyNumber = trim((string)$xpath->query(
+            '//*[@name="bus:UKCompaniesHouseRegisteredNumber"]'
+        )->item(0)?->textContent);
+        $header = $document->createElementNS(self::XHTML_NS, 'div');
+        $header->setAttribute('class', 'page-header');
+        foreach ([
+            ['page-header-name', $companyName],
+            ['page-header-number', 'Registered number ' . $companyNumber],
+            ['page-header-title', 'Revised accounts statements'],
+        ] as [$class, $value]) {
+            $item = $document->createElementNS(self::XHTML_NS, 'div');
+            $item->setAttribute('class', $class);
+            $item->appendChild($document->createTextNode($value));
+            $header->appendChild($item);
+        }
+        $section->appendChild($header);
     }
 
     private function appendFactParagraph(
@@ -267,33 +537,43 @@ final class IxbrlRevisedAccountsArtifactService
         string $value,
         bool $date = false
     ): void {
-        $paragraph = $document->createElementNS(self::XHTML_NS, 'p');
+        $container = $document->createElementNS(self::XHTML_NS, 'div');
+        $container->setAttribute('class', 'revision-statement keepTogether');
         if ($label !== '') {
-            $paragraph->appendChild($document->createTextNode($label));
+            $heading = $document->createElementNS(self::XHTML_NS, 'h3');
+            $heading->appendChild($document->createTextNode($label));
+            $container->appendChild($heading);
         }
+        $paragraph = $document->createElementNS(self::XHTML_NS, 'p');
         $fact = $document->createElementNS(self::IX_NS, 'ix:nonNumeric');
         $fact->setAttribute('name', 'bus:' . $concept);
         $fact->setAttribute('contextRef', 'current_period_duration');
         if ($date) {
-            $fact->setAttribute('format', 'ixt:dateyearmonthday');
+            $fact->setAttribute('format', 'ixt:datedaymonthyearen');
+            $value = $this->displayDate($value);
         }
         $fact->appendChild($document->createTextNode($value));
         $paragraph->appendChild($fact);
-        $section->appendChild($paragraph);
+        $container->appendChild($paragraph);
+        $section->appendChild($container);
     }
 
     private function declarations(string $periodEnd, array $input): array
     {
         $displayEnd = $this->displayDate($periodEnd);
+        $approvalDate = trim((string)($input['revision_approval_date'] ?? ''));
+        $displayApprovalDate = $this->displayDate($approvalDate);
 
         return [
             'report_is_revised' => true,
             'replaces_statement' => 'These revised accounts replace the accounts previously delivered to the registrar for the period ended ' . $displayEnd . '.',
             'statutory_accounts_statement' => 'These revised accounts are now the statutory accounts for the period ended ' . $displayEnd . '.',
-            'prepared_as_statement' => 'These revised accounts have been prepared as at the date of the previously filed accounts.',
+            'prepared_as_statement' => 'These revised accounts have been prepared by reference to the date of the original annual accounts and have not been prepared as at '
+                . $displayApprovalDate
+                . ', the date of revision. Consequently, they do not deal with events occurring between the date of the original annual accounts and the date of revision.',
             'non_compliance_explanation' => trim((string)($input['non_compliance_explanation'] ?? $input['original_non_compliance_explanation'] ?? '')),
             'significant_amendments' => trim((string)($input['significant_amendments'] ?? '')),
-            'revision_approval_date' => trim((string)($input['revision_approval_date'] ?? '')),
+            'revision_approval_date' => $approvalDate,
         ];
     }
 
@@ -317,6 +597,8 @@ final class IxbrlRevisedAccountsArtifactService
             $errors[] = 'Describe the significant amendments made to the original accounts.';
         } elseif (mb_strlen($amendments) > 8000) {
             $errors[] = 'The significant-amendments description must not exceed 8,000 characters.';
+        } elseif (mb_strtolower($amendments) === mb_strtolower($nonCompliance)) {
+            $errors[] = 'The original non-compliance and significant-amendments disclosures must be distinct.';
         }
         $approvalDate = trim((string)($input['revision_approval_date'] ?? ''));
         if (!$this->validDate($approvalDate)) {

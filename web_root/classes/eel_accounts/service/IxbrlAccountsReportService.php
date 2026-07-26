@@ -13,7 +13,7 @@ namespace eel_accounts\Service;
 final class IxbrlAccountsReportService
 {
     /** Increment whenever the deterministic report-basis construction changes. */
-    public const BASIS_VERSION = 'ixbrl-accounts-report-v1';
+    public const BASIS_VERSION = 'ixbrl-accounts-report-v3';
 
     public function build(int $companyId, int $accountingPeriodId): array
     {
@@ -54,6 +54,19 @@ final class IxbrlAccountsReportService
         if ($presentationCurrency !== 'GBP') {
             throw new \DomainException(
                 'The current iXBRL filing profile supports presentation currency GBP only.'
+            );
+        }
+        $taxonomyCompatibility = (new IxbrlTaxonomyCompatibilityService())->assess(
+            'FRS_105',
+            (string)$period['period_start'],
+            (string)$period['period_end'],
+            null,
+            IxbrlTaxonomyProfileService::SCHEMA_REF
+        );
+        if (empty($taxonomyCompatibility['reporting_compatible'])) {
+            throw new \DomainException(
+                (string)(($taxonomyCompatibility['errors'] ?? [])[0]
+                    ?? 'The selected accounting period is not compatible with the configured accounts taxonomy.')
             );
         }
 
@@ -197,6 +210,13 @@ final class IxbrlAccountsReportService
                 'disclosures' => (array)$comparative['disclosures'],
             ] : null,
             'taxonomy_mappings' => $profile->mappings(),
+            'taxonomy_compatibility' => [
+                'policy_version' => IxbrlTaxonomyCompatibilityService::POLICY_VERSION,
+                'schema_ref' => (string)(($taxonomyCompatibility['policy'] ?? [])['schema_ref'] ?? ''),
+                'accounting_standard' => (string)(($taxonomyCompatibility['policy'] ?? [])['accounting_standard'] ?? ''),
+                'reporting_period_start_from' => (string)(($taxonomyCompatibility['policy'] ?? [])['reporting_period_start_from'] ?? ''),
+                'reporting_period_end_to' => ($taxonomyCompatibility['policy'] ?? [])['reporting_period_end_to'] ?? null,
+            ],
             'application_name' => trim((string)\AppConfigurationStore::get('app_name', 'EEL Accounts')),
             'application_version' => IxbrlTaxonomyProfileService::BASIS_VERSION,
         ];
@@ -211,6 +231,7 @@ final class IxbrlAccountsReportService
             'application_name' => $basis['application_name'],
             'application_version' => $basis['application_version'],
             'basis_version' => self::BASIS_VERSION,
+            'taxonomy_compatibility' => $taxonomyCompatibility,
             'micro_entity_eligibility' => $eligibility,
             'presentation_currency' => $presentationCurrency,
             'basis' => $basis,
@@ -265,7 +286,7 @@ final class IxbrlAccountsReportService
     {
         $keys = [
             'accounting_standard', 'average_number_employees', 'entity_dormant', 'entity_trading_status',
-            'accounts_approval_date', 'approving_director_name',
+            'accounts_approval_date', 'approving_director_id', 'approving_director_name',
             'prepared_under_small_companies_regime', 'audit_exempt_section_477',
             'directors_acknowledge_responsibilities', 'members_have_not_required_audit',
             'micro_entity_eligibility_confirmed', 'going_concern_basis_appropriate',

@@ -30,6 +30,7 @@ final class CompaniesHouseAccountsSubmissionService
         private readonly ?TransmissionArchiveService $archiveService = null,
         private readonly ?CompaniesHouseCompanyDataCredentialService $companyDataCredentialService = null,
         private readonly ?CompaniesHouseProtocolConversationService $conversationService = null,
+        private readonly ?IxbrlTaxonomyCompatibilityService $taxonomyCompatibilityService = null,
     ) {
     }
 
@@ -72,8 +73,15 @@ final class CompaniesHouseAccountsSubmissionService
         $liveApproved = AccountingConfigurationStore::companiesHouseAccountsLiveApproved();
         $testAccepted = $this->testAccepted((int)($eligibility['id'] ?? 0));
         $needsRevision = $this->comparisonNeedsRevision($companyId, $accountingPeriodId);
+        $taxonomyCompatibility = $this->taxonomyCompatibilityForPeriod(
+            (array)$selection['accounting_period'],
+            date('Y-m-d')
+        );
 
         $preparationBlockers = [];
+        foreach ((array)($taxonomyCompatibility['errors'] ?? []) as $compatibilityError) {
+            $preparationBlockers[] = 'Accounts taxonomy compatibility: ' . (string)$compatibilityError;
+        }
         if (!$locked) {
             $preparationBlockers[] = 'Lock Year End before preparing revised accounts.';
         }
@@ -171,6 +179,7 @@ final class CompaniesHouseAccountsSubmissionService
                 'test_accepted' => $testAccepted,
             ],
             'eligibility' => $eligibility,
+            'taxonomy_compatibility' => $taxonomyCompatibility,
             'revision_required' => $needsRevision,
             'readiness' => $readiness,
             'submission' => $submission,
@@ -554,7 +563,11 @@ final class CompaniesHouseAccountsSubmissionService
             return $this->failure((string)(($context['preparation_blockers'] ?? [])[0] ?? 'Revised accounts cannot be prepared yet.'));
         }
         $eligibility = (array)$context['eligibility'];
-        $input = $this->savedRevisionDeclarations($companyId, $accountingPeriodId, $context, $input);
+        try {
+            $input = $this->savedRevisionDeclarations($companyId, $accountingPeriodId, $context, $input);
+        } catch (\Throwable $exception) {
+            return $this->failure($exception->getMessage());
+        }
         $originalDocumentId = (int)($input['original_document_id'] ?? 0);
         if ($originalDocumentId <= 0 || $originalDocumentId !== (int)($eligibility['original_document_id'] ?? 0)) {
             return $this->failure('The revised accounts must use the exact original filing covered by the Companies House decision.');
@@ -604,8 +617,11 @@ final class CompaniesHouseAccountsSubmissionService
             'validator_name' => 'arelle',
             'validator_version' => (string)($validation['version'] ?? ''),
             'validation_status' => (string)($validation['status'] ?? 'passed'),
-            'identifier_embedded' => true,
-            'metadata' => ['base_run_id' => (int)($artifact['base_run_id'] ?? 0)],
+            'identifier_embedded' => false,
+            'metadata' => $this->revisedArtifactEvidenceMetadata(
+                (int)($artifact['base_run_id'] ?? 0),
+                $validation
+            ),
         ]);
 
         $mode = AccountingConfigurationStore::companiesHouseAccountsFilingMode();
@@ -780,6 +796,24 @@ final class CompaniesHouseAccountsSubmissionService
             (int)$submission['accounting_period_id']
         ))) {
             return $this->failure('Year End is no longer locked; the submission was not sent.');
+        }
+        $selection = $this->selection(
+            (int)$submission['company_id'],
+            (int)$submission['accounting_period_id']
+        );
+        if ($selection === null) {
+            return $this->failure('The prepared submission no longer has a valid accounting period.');
+        }
+        $taxonomyCompatibility = $this->taxonomyCompatibilityForPeriod(
+            (array)$selection['accounting_period'],
+            date('Y-m-d')
+        );
+        if (empty($taxonomyCompatibility['compatible'])) {
+            return $this->failure(
+                'Accounts taxonomy compatibility: '
+                . (string)(($taxonomyCompatibility['errors'] ?? [])[0]
+                    ?? 'The taxonomy is not compatible with the intended Companies House filing date.')
+            );
         }
 
         $readiness = $this->readiness((int)$submission['company_id'], (int)$submission['accounting_period_id']);
@@ -1910,28 +1944,391 @@ final class CompaniesHouseAccountsSubmissionService
     private function savedRevisionDeclarations(int $companyId, int $accountingPeriodId, array $context, array $input): array
     {
         $eligibility = (array)($context['eligibility'] ?? []);
-        $varianceExplanation = trim((string)($eligibility['variance_explanation'] ?? ''));
-        if ($varianceExplanation === '') {
-            $varianceExplanation = trim((string)($input['non_compliance_explanation'] ?? ''));
-        }
         $approval = (new IxbrlAccountsFilingApprovalService())->status($companyId, $accountingPeriodId);
         if ((string)($approval['state'] ?? '') !== 'current' || !is_array($approval['approval'] ?? null)) {
             throw new \RuntimeException('Approve the current accounts disclosure basis before preparing revised accounts.');
         }
-        $approvedAt = trim((string)(((array)$approval['approval'])['approved_at'] ?? ''));
-        $approvalDate = substr($approvedAt, 0, 10);
-        if (preg_match('/^\d{4}-\d{2}-\d{2}$/D', $approvalDate) !== 1) {
-            throw new \RuntimeException('The current disclosure approval has no usable approval date.');
+
+        $currentDisclosureStatus = (new IxbrlAccountsDisclosureService())->fetch(
+            $companyId,
+            $accountingPeriodId
+        );
+        $currentDisclosureDate = trim((string)(
+            ((array)($currentDisclosureStatus['disclosures'] ?? []))['accounts_approval_date'] ?? ''
+        ));
+        if ($currentDisclosureDate === '') {
+            throw new \RuntimeException(
+                'The current accounts approval disclosure is unavailable; approve the disclosure basis again.'
+            );
         }
+        $approvalDate = $this->authoritativeRevisionApprovalDate(
+            (array)$approval['approval'],
+            $input,
+            $currentDisclosureDate
+        );
+
+        $comparison = [];
+        try {
+            $comparison = (array)(new YearEndCompaniesHouseComparisonService())
+                ->fetchComparison($companyId, $accountingPeriodId);
+        } catch (\Throwable) {
+        }
+        $model = [];
+        try {
+            $model = (array)(new IxbrlAccountsReportService())
+                ->build($companyId, $accountingPeriodId);
+        } catch (\Throwable) {
+        }
+        $disclosures = $this->revisionDisclosureTexts(
+            $eligibility,
+            $input,
+            $comparison,
+            $model
+        );
 
         return array_replace($input, [
             'original_document_id' => (int)($eligibility['original_document_id'] ?? 0),
-            'non_compliance_explanation' => $varianceExplanation,
-            'original_non_compliance_explanation' => $varianceExplanation,
-            'significant_amendments' => $varianceExplanation,
+            'non_compliance_explanation' => $disclosures['non_compliance_explanation'],
+            'original_non_compliance_explanation' => $disclosures['non_compliance_explanation'],
+            'significant_amendments' => $disclosures['significant_amendments'],
             'revision_approval_date' => $approvalDate,
             'original_software_filing_confirmed' => true,
         ]);
+    }
+
+    private function authoritativeRevisionApprovalDate(
+        array $approval,
+        array $input,
+        string $currentDisclosureDate
+    ): string {
+        $basisJson = trim((string)($approval['basis_json'] ?? ''));
+        if ($basisJson === '') {
+            throw new \RuntimeException(
+                'The frozen filing-approval basis does not contain an accounts approval date.'
+            );
+        }
+        try {
+            $basis = json_decode($basisJson, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $exception) {
+            throw new \RuntimeException(
+                'The frozen filing-approval basis cannot be read: ' . $exception->getMessage()
+            );
+        }
+        $approvalDate = is_array($basis)
+            ? trim((string)($basis['disclosures']['values']['accounts_approval_date'] ?? ''))
+            : '';
+        if (!$this->validStatutoryDate($approvalDate)) {
+            throw new \RuntimeException(
+                'The frozen filing-approval basis does not contain a valid accounts approval date.'
+            );
+        }
+
+        $datesToCheck = [
+            'revision_approval_date' => 'supplied revision approval date',
+            'accounts_approval_date' => 'supplied accounts approval date',
+            'board_approval_date' => 'supplied board approval date',
+            'date_signed' => 'supplied signing date',
+        ];
+        foreach ($datesToCheck as $key => $label) {
+            $candidate = trim((string)($input[$key] ?? ''));
+            if ($candidate === '') {
+                continue;
+            }
+            if (!$this->validStatutoryDate($candidate)) {
+                throw new \RuntimeException('The ' . $label . ' is not a valid date.');
+            }
+            if ($candidate !== $approvalDate) {
+                throw new \RuntimeException(
+                    'The ' . $label . ' conflicts with the frozen accounts approval date. '
+                    . 'Approve one consistent statutory date before preparing revised accounts.'
+                );
+            }
+        }
+
+        $currentDisclosureDate = trim($currentDisclosureDate);
+        if (!$this->validStatutoryDate($currentDisclosureDate)) {
+            throw new \RuntimeException('The current accounts approval disclosure is not a valid date.');
+        }
+        if ($currentDisclosureDate !== $approvalDate) {
+            throw new \RuntimeException(
+                'The current accounts approval disclosure conflicts with the frozen filing-approval basis. '
+                . 'Approve the current disclosure basis again before preparing revised accounts.'
+            );
+        }
+
+        return $approvalDate;
+    }
+
+    /** @return array{non_compliance_explanation:string, significant_amendments:string} */
+    private function revisionDisclosureTexts(
+        array $eligibility,
+        array $input,
+        array $comparison,
+        array $model
+    ): array {
+        $nonCompliance = [];
+        $amendments = [];
+        $this->appendRevisionDisclosurePart(
+            $nonCompliance,
+            (string)($eligibility['variance_explanation'] ?? '')
+        );
+        $this->appendRevisionDisclosurePart(
+            $nonCompliance,
+            (string)($input['non_compliance_explanation']
+                ?? $input['original_non_compliance_explanation']
+                ?? '')
+        );
+        $suppliedAmendments = trim((string)($input['significant_amendments'] ?? ''));
+        if ($suppliedAmendments !== ''
+            && mb_strtolower($this->normaliseRevisionDisclosureText($suppliedAmendments))
+                !== mb_strtolower($this->normaliseRevisionDisclosureText(implode(' ', $nonCompliance)))) {
+            $this->appendRevisionDisclosurePart($amendments, $suppliedAmendments);
+        }
+
+        $changedMetrics = [];
+        foreach ((array)($comparison['rows'] ?? []) as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $appValue = $row['app_value'] ?? null;
+            $filedValue = $row['filed_value'] ?? null;
+            $variance = $row['variance'] ?? null;
+            $status = (string)($row['status'] ?? '');
+            $changed = in_array($status, ['warning', 'fail'], true)
+                || (is_numeric($variance) && abs((float)$variance) >= 0.005);
+            if (!$changed) {
+                continue;
+            }
+            $key = trim((string)($row['metric_key'] ?? ''));
+            $label = trim((string)($row['label'] ?? ''));
+            if ($key !== '') {
+                $changedMetrics[$key] = true;
+            }
+            if ($label === '' || !is_numeric($appValue) || !is_numeric($filedValue)) {
+                continue;
+            }
+
+            $this->appendRevisionDisclosurePart(
+                $nonCompliance,
+                'The original accounts reported ' . lcfirst($label) . ' of '
+                    . $this->revisionMoney($filedValue)
+                    . ', whereas the current accounting records support '
+                    . $this->revisionMoney($appValue) . '.'
+            );
+            $this->appendRevisionDisclosurePart(
+                $amendments,
+                $label . ' ' . $this->revisionRestatementVerb($label)
+                    . ' restated from ' . $this->revisionMoney($filedValue)
+                    . ' to ' . $this->revisionMoney($appValue) . '.'
+            );
+        }
+
+        $current = (array)($model['current'] ?? []);
+        $buckets = (array)($current['buckets'] ?? []);
+        $fixedAssetsChanged = isset($changedMetrics['fixed_assets']);
+        $prepaymentsApplicable = isset($changedMetrics['prepayments_accrued_income'])
+            || abs((float)($buckets['prepayments_accrued_income'] ?? 0)) >= 0.005;
+        $currentAssetsApplicable = isset($changedMetrics['current_assets'])
+            || $prepaymentsApplicable;
+        $creditorMaturityChanged = isset($changedMetrics['creditors_within_one_year'])
+            || isset($changedMetrics['creditors_after_more_than_one_year']);
+        $netAssetsChanged = isset($changedMetrics['net_assets_liabilities']);
+        $equityChanged = isset($changedMetrics['equity_capital_reserves']);
+        $depreciation = round((float)($buckets['depreciation_write_offs'] ?? 0), 2);
+
+        if ($fixedAssetsChanged && abs($depreciation) >= 0.005) {
+            $this->appendRevisionDisclosurePart(
+                $nonCompliance,
+                'The original fixed assets presentation did not reflect the depreciation charge supported by the accounting records.'
+            );
+            $this->appendRevisionDisclosurePart(
+                $amendments,
+                'Fixed assets were corrected to '
+                    . $this->revisionMoney($buckets['fixed_assets'] ?? 0)
+                    . ' after recognising depreciation of ' . $this->revisionMoney($depreciation) . '.'
+            );
+        }
+        if ($prepaymentsApplicable) {
+            $this->appendRevisionDisclosurePart(
+                $nonCompliance,
+                'The original current assets presentation did not separately identify prepayments outside the current-assets subtotal.'
+            );
+        }
+        if ($currentAssetsApplicable) {
+            $this->appendRevisionDisclosurePart(
+                $amendments,
+                'Current assets were corrected to '
+                    . $this->revisionMoney($buckets['current_assets'] ?? 0)
+                    . ', excluding prepayments of '
+                    . $this->revisionMoney($buckets['prepayments_accrued_income'] ?? 0)
+                    . ' that are now presented separately.'
+            );
+        }
+        if ($creditorMaturityChanged) {
+            $this->appendRevisionDisclosurePart(
+                $nonCompliance,
+                'The original accounts did not present creditors using the maturity classification supported by the current accounting evidence.'
+            );
+            $this->appendRevisionDisclosurePart(
+                $amendments,
+                'Creditor maturity was corrected to show '
+                    . $this->revisionMoney($buckets['creditors_within_one_year'] ?? 0)
+                    . ' due within one year and '
+                    . $this->revisionMoney(
+                        $buckets['creditors_after_more_than_one_year']
+                            ?? $buckets['creditors_after_one_year']
+                            ?? 0
+                    )
+                    . ' due after more than one year.'
+            );
+        }
+        if ($netAssetsChanged || $equityChanged) {
+            $this->appendRevisionDisclosurePart(
+                $nonCompliance,
+                'The resulting net assets and capital and reserves in the original accounts were incorrect.'
+            );
+            $this->appendRevisionDisclosurePart(
+                $amendments,
+                'Net assets were corrected to '
+                    . $this->revisionMoney($buckets['net_assets_liabilities'] ?? 0)
+                    . ', with capital and reserves corrected to '
+                    . $this->revisionMoney($buckets['equity_capital_reserves'] ?? 0) . '.'
+            );
+        }
+
+        $directorLoan = (array)($model['director_loan_disclosure'] ?? []);
+        $directorPresentation = (array)($current['director_loan_reporting_presentation'] ?? []);
+        $directorLoanApplicable = !empty($directorLoan['has_company_to_director_exposure'])
+            || (array)($directorLoan['disclosures'] ?? []) !== []
+            || !empty($directorPresentation['applicable'])
+            || $this->hasMaterialRevisionAmount($directorLoan, [
+                'total_advances',
+                'total_repayments',
+                'total_cash_repayments',
+                'total_amounts_legally_set_off',
+                'total_amounts_written_off',
+                'total_amounts_waived',
+            ]);
+        if ($directorLoanApplicable) {
+            $this->appendRevisionDisclosurePart(
+                $nonCompliance,
+                'The original accounts did not clearly distinguish director-loan movements and their effect on creditor maturity.'
+            );
+            $movementParts = [];
+            foreach ([
+                'total_advances' => 'advances',
+                'total_cash_repayments' => 'cash repayments',
+                'total_amounts_legally_set_off' => 'amounts legally set off',
+                'total_amounts_written_off' => 'amounts written off',
+                'total_amounts_waived' => 'amounts waived',
+            ] as $key => $label) {
+                if (array_key_exists($key, $directorLoan)
+                    && abs((float)$directorLoan[$key]) >= 0.005) {
+                    $movementParts[] = $label . ' of ' . $this->revisionMoney($directorLoan[$key]);
+                }
+            }
+            if ($movementParts === []
+                && abs((float)($directorLoan['total_repayments'] ?? 0)) >= 0.005) {
+                $movementParts[] = 'recorded settlement movements of '
+                    . $this->revisionMoney($directorLoan['total_repayments']);
+            }
+            $this->appendRevisionDisclosurePart(
+                $amendments,
+                'The director-loan disclosure was revised from the current subledger'
+                    . ($movementParts !== [] ? ', including ' . implode(', ', $movementParts) : '')
+                    . ', and the related creditor maturity presentation was updated from the approved accounting model.'
+            );
+        }
+
+        if ($nonCompliance === []) {
+            $this->appendRevisionDisclosurePart(
+                $nonCompliance,
+                'The originally filed accounts did not reflect the complete accounting records and consequently contained incorrect financial-statement classifications or balances.'
+            );
+        }
+        if ($amendments === []) {
+            $this->appendRevisionDisclosurePart(
+                $amendments,
+                'The revised accounts correct the affected classifications, disclosures and financial-statement balances so that they agree with the current accounting records.'
+            );
+        }
+
+        $nonComplianceText = $this->finaliseRevisionDisclosure($nonCompliance);
+        $amendmentsText = $this->finaliseRevisionDisclosure($amendments);
+        if (mb_strtolower($nonComplianceText) === mb_strtolower($amendmentsText)) {
+            $amendmentsText = $this->finaliseRevisionDisclosure([
+                $amendmentsText,
+                'The affected balances and disclosures were restated using the approved current accounting model.',
+            ]);
+        }
+
+        return [
+            'non_compliance_explanation' => $nonComplianceText,
+            'significant_amendments' => $amendmentsText,
+        ];
+    }
+
+    private function validStatutoryDate(string $date): bool
+    {
+        $parsed = \DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+
+        return $parsed instanceof \DateTimeImmutable && $parsed->format('Y-m-d') === $date;
+    }
+
+    private function hasMaterialRevisionAmount(array $values, array $keys): bool
+    {
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $values) && abs((float)$values[$key]) >= 0.005) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function appendRevisionDisclosurePart(array &$parts, string $text): void
+    {
+        $text = $this->normaliseRevisionDisclosureText($text);
+        if ($text === '') {
+            return;
+        }
+        if (preg_match('/[.!?]$/u', $text) !== 1) {
+            $text .= '.';
+        }
+        $normalised = mb_strtolower($text);
+        foreach ($parts as $existing) {
+            if (mb_strtolower((string)$existing) === $normalised) {
+                return;
+            }
+        }
+        $parts[] = $text;
+    }
+
+    private function normaliseRevisionDisclosureText(string $text): string
+    {
+        return trim((string)preg_replace('/\s+/u', ' ', $text));
+    }
+
+    private function finaliseRevisionDisclosure(array $parts): string
+    {
+        return mb_substr($this->normaliseRevisionDisclosureText(implode(' ', $parts)), 0, 7800);
+    }
+
+    private function revisionMoney(mixed $value): string
+    {
+        $amount = round((float)$value, 2);
+
+        return $amount < 0
+            ? '(£' . number_format(abs($amount), 2, '.', ',') . ')'
+            : '£' . number_format($amount, 2, '.', ',');
+    }
+
+    private function revisionRestatementVerb(string $label): string
+    {
+        return preg_match(
+            '/\b(?:assets|liabilities|reserves|creditors|prepayments|commitments)\b/i',
+            $label
+        ) === 1 ? 'were' : 'was';
     }
 
     private function readiness(int $companyId, int $accountingPeriodId): array
@@ -2204,6 +2601,18 @@ final class CompaniesHouseAccountsSubmissionService
         return $this->credentialService ?? new CompaniesHouseAccountsCredentialService();
     }
 
+    /** @return array<string, mixed> */
+    private function taxonomyCompatibilityForPeriod(array $period, string $filingDate): array
+    {
+        return ($this->taxonomyCompatibilityService ?? new IxbrlTaxonomyCompatibilityService())->assess(
+            'FRS_105',
+            trim((string)($period['period_start'] ?? '')),
+            trim((string)($period['period_end'] ?? '')),
+            $filingDate,
+            IxbrlTaxonomyProfileService::SCHEMA_REF
+        );
+    }
+
     private function companyDataCredentials(): CompaniesHouseCompanyDataCredentialService
     {
         return $this->companyDataCredentialService ?? new CompaniesHouseCompanyDataCredentialService();
@@ -2428,6 +2837,20 @@ final class CompaniesHouseAccountsSubmissionService
         ];
     }
 
+    /** @return array<string, mixed> */
+    private function revisedArtifactEvidenceMetadata(
+        int $baseRunId,
+        array $validation
+    ): array {
+        return [
+            'base_run_id' => $baseRunId,
+            // Preserve the complete Arelle result so warnings, the exact
+            // validated hash and immutable log provenance survive the prepare
+            // redirect and can be reviewed before submission.
+            'arelle_validation' => $validation,
+        ];
+    }
+
     private function emptyContext(string $message): array
     {
         return [
@@ -2445,6 +2868,7 @@ final class CompaniesHouseAccountsSubmissionService
                 'test_accepted' => false,
             ],
             'eligibility' => ['decision' => 'pending', 'detected_channel' => 'unknown', 'original_document_id' => 0, 'evidence' => []],
+            'taxonomy_compatibility' => null,
             'readiness' => ['ready_for_filing' => false, 'filing_errors' => [$message]],
             'submission' => null,
             'preflight' => null,

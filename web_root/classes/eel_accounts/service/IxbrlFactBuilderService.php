@@ -343,6 +343,10 @@ final class IxbrlFactBuilderService
                 && (int)$disclosures[$sourceKey] === 0
                     ? (new IxbrlTaxonomyProfileService())->absenceStatementText((string)$mapping['fact_key'])
                     : null,
+            'director_loan_numeric' => $this->directorLoanNumericValue(
+                $sourceKey,
+                $directorLoanDisclosure
+            ),
             'director_loan_statement' => !empty(($directorLoanDisclosure['has_company_to_director_exposure'] ?? false))
                 ? (new IxbrlTaxonomyProfileService())->directorLoanStatementText(
                     $directorLoanDisclosure
@@ -391,7 +395,9 @@ final class IxbrlFactBuilderService
             }
         }
         $contextRef = $this->contextRef($contextProfile, $comparative);
-        $sources = (array)($accountsMapping['sources'][$sourceKey] ?? []);
+        $sources = $calculationType === 'director_loan_numeric'
+            ? $this->directorLoanNumericSources($sourceKey, $directorLoanDisclosure)
+            : (array)($accountsMapping['sources'][$sourceKey] ?? []);
 
         return [
             'fact_key' => (string)$mapping['fact_key'],
@@ -419,6 +425,10 @@ final class IxbrlFactBuilderService
                 'source_rows' => $sources,
                 'disclosure_revision' => (int)($disclosures['revision'] ?? 0),
                 'director_loan_reporting_presentation' => (array)($accountsMapping['director_loan_reporting_presentation'] ?? []),
+                'director_loan_disclosure' => in_array($calculationType, [
+                    'director_loan_numeric',
+                    'director_loan_statement',
+                ], true) ? $directorLoanDisclosure : [],
             ],
         ];
     }
@@ -428,20 +438,91 @@ final class IxbrlFactBuilderService
         $prefix = $comparative ? 'comparative' : 'current';
         return match ($profile) {
             'duration' => $prefix . '_period_duration',
-            'instant_start' => $prefix . '_period_start',
+            // The 2026 report-start and report-end date concepts are instant
+            // facts. FRC/Companies House convention associates both, and the
+            // accounts-authorisation fact, with the balance-sheet instant.
+            'instant_start', 'instant_approval' => $prefix . '_period_end',
             'instant_end' => $prefix . '_period_end',
             'instant_end_creditors_within' => $prefix . '_period_end_creditors_within_one_year',
             'instant_end_creditors_after' => $prefix . '_period_end_creditors_after_one_year',
-            'instant_approval' => 'accounts_approval_date',
             'duration_director_1' => $prefix . '_period_duration_director_1',
             'duration_country_formation' => $prefix . '_period_duration_country_formation',
             'duration_legal_form' => $prefix . '_period_duration_legal_form',
             'duration_registered_office' => $prefix . '_period_duration_registered_office',
+            'duration_accounts_type' => $prefix . '_period_duration_accounts_type',
             'duration_accounting_standards' => $prefix . '_period_duration_accounting_standards',
             'duration_accounts_status' => $prefix . '_period_duration_accounts_status',
             'duration_trading_never' => $prefix . '_period_duration_entity_never_traded',
             'duration_trading_ceased' => $prefix . '_period_duration_entity_no_longer_trading',
             default => $prefix . '_period_duration',
         };
+    }
+
+    private function directorLoanNumericValue(string $sourceKey, array $summary): ?float
+    {
+        $disclosures = array_values(array_filter(
+            (array)($summary['disclosures'] ?? []),
+            static fn(mixed $row): bool => is_array($row)
+        ));
+        if ($disclosures === []) {
+            return null;
+        }
+
+        if ($sourceKey === 'total_advances') {
+            return round(
+                array_key_exists('total_advances', $summary)
+                    ? (float)$summary['total_advances']
+                    : array_sum(array_map(
+                        static fn(array $row): float => (float)($row['advances'] ?? 0),
+                        $disclosures
+                    )),
+                2
+            );
+        }
+
+        if ($sourceKey === 'total_cash_repayments') {
+            if (!array_key_exists('total_cash_repayments', $summary)) {
+                return null;
+            }
+            return round((float)$summary['total_cash_repayments'], 2);
+        }
+
+        if ($sourceKey === 'closing_company_to_director_balance') {
+            return round(array_sum(array_map(
+                static fn(array $row): float => (float)($row['closing_company_to_director_balance'] ?? 0),
+                $disclosures
+            )), 2);
+        }
+
+        return null;
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function directorLoanNumericSources(string $sourceKey, array $summary): array
+    {
+        $field = match ($sourceKey) {
+            'total_advances' => 'advances',
+            'total_cash_repayments' => 'cash_repayments',
+            'closing_company_to_director_balance' => 'closing_company_to_director_balance',
+            default => null,
+        };
+        if ($field === null) {
+            return [];
+        }
+
+        $sources = [];
+        foreach ((array)($summary['disclosures'] ?? []) as $disclosure) {
+            if (!is_array($disclosure) || !array_key_exists($field, $disclosure)) {
+                continue;
+            }
+            $sources[] = [
+                'source_type' => 'director_loan_disclosure',
+                'director_id' => $disclosure['director_id'] ?? null,
+                'director_name' => (string)($disclosure['director_name'] ?? ''),
+                'field' => $field,
+                'amount' => round((float)$disclosure[$field], 2),
+            ];
+        }
+        return $sources;
     }
 }

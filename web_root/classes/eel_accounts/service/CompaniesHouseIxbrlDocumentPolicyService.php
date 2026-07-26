@@ -9,34 +9,21 @@ declare(strict_types=1);
 
 namespace eel_accounts\Service;
 
-/** Enforces the literal XML declaration required by the Companies House Accounts TIS. */
+/** Enforces the deterministic XML envelope used by generated Companies House iXBRL. */
 final class CompaniesHouseIxbrlDocumentPolicyService
 {
-    public const XML_DECLARATION = '<?xml version="1.0"?>';
+    public const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>';
     public const DOCUMENT_PREFIX = self::XML_DECLARATION . "\n";
 
     public function canonicaliseGeneratedDocument(string $xml): string
     {
         $this->assertUtf8WithoutLeadingBytes($xml);
-
-        $declarations = [
-            self::XML_DECLARATION,
-            '<?xml version="1.0" encoding="UTF-8"?>',
-        ];
-        $matched = null;
-        foreach ($declarations as $declaration) {
-            if (str_starts_with($xml, $declaration)) {
-                $matched = $declaration;
-                break;
-            }
-        }
-        if ($matched === null) {
+        if (preg_match('/\A<\?xml\s+version=(["\'])1\.0\1(?:\s+encoding=(["\'])UTF-8\2)?(?:\s+standalone=(["\'])no\3)?\s*\?>/i', $xml, $match) !== 1) {
             throw new \InvalidArgumentException(
                 'Generated Companies House iXBRL has an unsupported XML declaration.'
             );
         }
-
-        $body = substr($xml, strlen($matched));
+        $body = substr($xml, strlen((string)$match[0]));
         if (str_starts_with($body, "\r\n")) {
             $body = substr($body, 2);
         } elseif (str_starts_with($body, "\n") || str_starts_with($body, "\r")) {
@@ -55,6 +42,11 @@ final class CompaniesHouseIxbrlDocumentPolicyService
             throw new \InvalidArgumentException(
                 'The Companies House accounts iXBRL must start with exactly '
                 . self::XML_DECLARATION . ' followed by a line feed; regenerate the artifact before filing.'
+            );
+        }
+        if (preg_match('/<!DOCTYPE|<!ENTITY/i', $xml) === 1) {
+            throw new \InvalidArgumentException(
+                'The Companies House accounts iXBRL must not contain a DOCTYPE or entity declaration.'
             );
         }
 

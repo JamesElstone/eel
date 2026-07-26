@@ -25,7 +25,26 @@ final class DirectorLoanAction implements ActionInterfaceFramework
                     $companyId,
                     $accountingPeriodId,
                     (string)$request->input('classification', ''),
-                    $this->actor($request)
+                    $this->actor($request),
+                    [
+                        'set_off_right_confirmed' => $this->checked(
+                            $request->input('set_off_right_confirmed', '')
+                        ),
+                        'set_off_net_settlement_intended' => $this->checked(
+                            $request->input('set_off_net_settlement_intended', '')
+                        ),
+                        'set_off_evidence' => (string)$request->input('set_off_evidence', ''),
+                        'deferment_right_confirmed' => $this->checked(
+                            $request->input('deferment_right_confirmed', '')
+                        ),
+                        'deferment_evidence' => (string)$request->input('deferment_evidence', ''),
+                        'interest_rate_percent' => (string)$request->input('interest_rate_percent', '0'),
+                        'main_terms' => (string)$request->input('main_terms', 'Unsecured.'),
+                        'repayment_conditions' => (string)$request->input(
+                            'repayment_conditions',
+                            'Repayable on demand.'
+                        ),
+                    ]
                 ),
             };
         } catch (Throwable $exception) {
@@ -39,7 +58,7 @@ final class DirectorLoanAction implements ActionInterfaceFramework
                 'type' => 'success',
                 'message' => match ($intent) {
                     default => !empty($result['changed'])
-                        ? 'Director Loan reporting presentation saved. Companies House and iXBRL figures will use the new repayment horizon.'
+                        ? 'Director Loan statutory presentation and supporting evidence saved.'
                         : 'No change was needed.',
                 },
             ];
@@ -53,6 +72,7 @@ final class DirectorLoanAction implements ActionInterfaceFramework
             $success,
             [
                 'director.loan.state',
+                'year.end.director.loan.offset',
                 'tax.s455',
                 'tax.workings',
                 'companies.house.snapshot',
@@ -86,6 +106,11 @@ final class DirectorLoanAction implements ActionInterfaceFramework
         }
 
         return 'web_app';
+    }
+
+    private function checked(mixed $value): bool
+    {
+        return in_array(strtolower(trim((string)$value)), ['1', 'true', 'yes', 'on'], true);
     }
 
 }

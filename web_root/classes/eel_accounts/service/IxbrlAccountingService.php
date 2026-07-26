@@ -105,7 +105,7 @@ final class IxbrlAccountingService
                 'sha256' => $hash,
                 'schema_identity' => IxbrlTaxonomyProfileService::SCHEMA_REF,
                 'validation_status' => 'passed',
-                'identifier_embedded' => true,
+                'identifier_embedded' => false,
                 'metadata' => ['ixbrl_generation_run_id' => (int)$run['id']],
             ]);
 
@@ -303,13 +303,18 @@ final class IxbrlAccountingService
 
         $hidden = '';
         foreach ([
-            'balance_sheet_date',
+            'period_start',
             'entity_dormant',
             'country_formation_or_incorporation',
             'legal_form_entity',
+            'registered_office_address_line_1',
+            'registered_office_address_line_2',
+            'registered_office_address_line_3',
+            'registered_office_postal_code',
             'entity_trading_status',
             'accounting_standards_applied',
             'accounts_status',
+            'accounts_type',
             'director_signing_financial_statements',
             'production_software',
             'production_software_version',
@@ -320,26 +325,19 @@ final class IxbrlAccountingService
             }
         }
 
-        $profitRows = [
-            'Turnover' => 'turnover',
-            'Other income' => 'other_income',
-            'Raw materials and consumables' => 'raw_materials_consumables',
-            'Staff costs' => 'staff_costs',
-            'Depreciation and other amounts written off assets' => 'depreciation_write_offs',
-            'Other charges' => 'other_charges',
-            'Tax on profit / loss' => 'tax_on_profit',
-            'Profit / loss for the financial year' => 'profit_loss',
-        ];
         $balanceRows = [
-            'Fixed assets' => 'fixed_assets',
-            'Current assets' => 'current_assets',
-            'Prepayments and accrued income' => 'prepayments_accrued_income',
-            'Creditors: amounts falling due within one year' => 'creditors_within_one_year',
-            'Net current assets / liabilities' => 'net_current_assets_liabilities',
-            'Total assets less current liabilities' => 'total_assets_less_current_liabilities',
-            'Creditors: amounts falling due after more than one year' => 'creditors_after_one_year',
-            'Net assets / liabilities' => 'net_assets_liabilities',
-            'Equity' => 'equity',
+            ['label' => 'Called up share capital not paid', 'key' => 'called_up_share_capital_not_paid'],
+            ['label' => 'Fixed assets', 'key' => 'fixed_assets'],
+            ['label' => 'Current assets', 'key' => 'current_assets'],
+            ['label' => 'Prepayments and accrued income', 'key' => 'prepayments_accrued_income'],
+            ['label' => 'Creditors: amounts falling due within one year', 'key' => 'creditors_within_one_year', 'brackets' => true],
+            ['label' => 'Net current assets / (liabilities)', 'key' => 'net_current_assets_liabilities', 'rule' => 'subtotal'],
+            ['label' => 'Total assets less current liabilities', 'key' => 'total_assets_less_current_liabilities', 'rule' => 'subtotal'],
+            ['label' => 'Creditors: amounts falling due after more than one year', 'key' => 'creditors_after_one_year', 'brackets' => true],
+            ['label' => 'Provisions for liabilities', 'key' => 'provisions_for_liabilities', 'brackets' => true],
+            ['label' => 'Accruals and deferred income', 'key' => 'accruals_deferred_income', 'brackets' => true],
+            ['label' => 'Total net assets / (liabilities)', 'key' => 'net_assets_liabilities', 'rule' => 'total'],
+            ['label' => 'Capital and reserves', 'key' => 'equity', 'rule' => 'total'],
         ];
 
         $statements = '';
@@ -350,48 +348,24 @@ final class IxbrlAccountingService
             }
         }
         $employees = $this->currentFact($indexed, 'average_number_employees');
-        if ($employees !== []) {
-            $comparativeEmployees = $this->comparativeFact($indexed, 'average_number_employees');
-            $statements .= '<p>Average number of employees: ' . $this->inlineFact($employees)
-                . ($comparativeEmployees !== []
-                    ? ' (comparative: ' . $this->inlineFact($comparativeEmployees) . ')'
-                    : '')
-                . '</p>' . "\n";
-        }
         $approvalDate = $this->currentFact($indexed, 'accounts_approval_date');
         $director = $this->currentFact($indexed, 'approving_director_name');
         if ($approvalDate !== [] && $director !== []) {
-            $statements .= '<p>Approved by the board and signed on its behalf by '
-                . $this->inlineFact($director) . ', director, on '
-                . $this->inlineFact($approvalDate) . '.</p>' . "\n";
+            $statements .= '<div class="approval keepTogether"><p>Approved by the board on '
+                . $this->inlineFact($approvalDate, ['natural_date' => true])
+                . ' and signed on its behalf by:</p>'
+                . '<p class="signature">' . $this->inlineFact($director) . '</p>'
+                . '<p>Director</p></div>' . "\n";
         }
 
-        $notes = '';
-        foreach ([
-            'no_material_off_balance_sheet_arrangements',
-            'no_director_advances_or_credits',
-            'no_director_guarantees',
-            'no_capital_commitments',
-            'no_financial_commitments',
-            'no_contingent_liabilities',
-        ] as $key) {
-            $fact = $this->currentFact($indexed, $key);
-            if ($fact !== []) {
-                $notes .= '<p>' . $this->inlineFact($fact) . '</p>' . "\n";
-            }
-        }
-        $registeredOffice = $this->inlineFact($this->currentFact($indexed, 'registered_office_address_line_1'))
-            . '<br/>' . $this->inlineFact($this->currentFact($indexed, 'registered_office_address_line_2'))
-            . '<br/>' . $this->inlineFact($this->currentFact($indexed, 'registered_office_address_line_3'))
-            . '<br/>' . $this->inlineFact($this->currentFact($indexed, 'registered_office_postal_code'));
+        $notes = $this->notes($indexed, $periodEnd);
 
         $namespaceAttributes = '';
         foreach (IxbrlTaxonomyProfileService::NAMESPACES as $prefix => $uri) {
             $namespaceAttributes .= ' xmlns:' . $prefix . '="' . $this->e($uri) . '"';
         }
 
-        $xhtml = '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
-            . '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">' . "\n"
+        $xhtml = CompaniesHouseIxbrlDocumentPolicyService::DOCUMENT_PREFIX
             . '<html xmlns="http://www.w3.org/1999/xhtml"'
             . ' xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"'
             . ' xmlns:ixt="http://www.xbrl.org/inlineXBRL/transformation/2015-02-26"'
@@ -401,118 +375,438 @@ final class IxbrlAccountingService
             . ' xmlns:xlink="http://www.w3.org/1999/xlink"'
             . ' xmlns:iso4217="http://www.xbrl.org/2003/iso4217"'
             . $namespaceAttributes
-            . '>' . "\n"
+            . ' xml:lang="en">' . "\n"
             . '<head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>'
-            . ($evidenceArtifactId !== '' ? '<meta name="eel-evidence-artifact-id" content="' . $this->e($evidenceArtifactId) . '"/>' : '')
-            . '<title>FRS 105 micro-entity accounts</title></head>' . "\n"
+            . '<title>Micro-entity accounts for ' . $this->e($this->factValue($companyName)) . '</title>'
+            . '<style type="text/css">' . "\n" . $this->stylesheet() . "\n" . '</style></head>' . "\n"
             . '<body>' . "\n"
-            . '<div style="display:none"><ix:header>' . "\n"
-            . ($hidden !== '' ? '<ix:hidden>' . "\n" . $hidden . '</ix:hidden>' . "\n" : '')
+            . '<div class="ixbrl-header" style="display:none"><ix:header>' . "\n"
+            . '<ix:hidden>' . "\n" . $hidden . '</ix:hidden>' . "\n"
             . '<ix:references><link:schemaRef xlink:type="simple" xlink:href="' . $this->e(IxbrlTaxonomyProfileService::SCHEMA_REF) . '"/></ix:references>' . "\n"
             . '<ix:resources>' . "\n"
-            . $this->contexts($companyNumber, $periodStart, $periodEnd, $comparativePeriod, $this->factValue($approvalDate))
+            . $this->contexts(
+                $companyNumber,
+                $periodStart,
+                $periodEnd,
+                $comparativePeriod,
+                array_values(array_unique(array_map(
+                    static fn(array $fact): string => (string)($fact['context_ref'] ?? ''),
+                    $facts
+                )))
+            )
             . '<xbrli:unit id="GBP"><xbrli:measure>iso4217:GBP</xbrli:measure></xbrli:unit>' . "\n"
             . '<xbrli:unit id="pure"><xbrli:measure>xbrli:pure</xbrli:measure></xbrli:unit>' . "\n"
             . '</ix:resources>' . "\n"
             . '</ix:header></div>' . "\n"
-            . '<h1>FRS 105 unaudited micro-entity accounts</h1>' . "\n"
-            . '<div><h2>' . $this->inlineFact($companyName) . '</h2>'
-            . '<p>Company number: ' . $this->inlineFact($this->currentFact($indexed, 'company_number')) . '</p>'
-            . '<p>Jurisdiction: England and Wales</p>'
-            . '<p>Legal form: Private limited company (Ltd)</p>'
-            . '<p>Registered office:<br/>' . $registeredOffice . '</p>'
-            . '<p>Period: ' . $this->inlineFact($this->currentFact($indexed, 'period_start'))
-            . ' to ' . $this->inlineFact($this->currentFact($indexed, 'period_end')) . '</p>'
-            . '<p>Figures are presented in pounds sterling (GBP) to two decimal places.</p></div>' . "\n"
-            . '<div><h2>Profit and loss account</h2>'
-            . $this->statementTable($indexed, $profitRows)
+            . '<div class="accountspage titlepage">'
+            . '<div class="cover-company-number">Registered company number: '
+            . $this->inlineFact($this->currentFact($indexed, 'company_number')) . '</div>'
+            . '<div class="cover-centre"><h1>' . $this->inlineFact($companyName) . '</h1>'
+            . '<h2>MICRO-ENTITY ACCOUNTS</h2>'
+            . '<p>For the period ended ' . $this->inlineFact(
+                $this->currentFact($indexed, 'period_end'),
+                ['natural_date' => true]
+            ) . '</p></div></div>' . "\n"
+            . '<div class="accountspage pagebreak statement-page">'
+            . $this->pageHeader($indexed, 'Profit and loss account', $periodEnd)
+            . '<h2>Profit and loss account</h2>'
+            . '<p class="period-subtitle">for the period ended ' . $this->naturalDate($periodEnd) . '</p>'
+            . $this->profitAndLossTable($indexed)
             . '</div>' . "\n"
-            . '<div><h2>Balance sheet</h2>'
-            . $this->statementTable($indexed, $balanceRows)
+            . '<div class="accountspage pagebreak statement-page">'
+            . $this->pageHeader($indexed, 'Balance sheet', $periodEnd)
+            . '<h2>Micro-entity Balance Sheet as at '
+            . $this->inlineFact($this->currentFact($indexed, 'balance_sheet_date'), ['natural_date' => true])
+            . '</h2>'
+            . '<div class="balance-sheet-block">'
+            . $this->statementTable($indexed, $balanceRows, $periodEnd)
+            . '<div class="statutory-statements keepTogether">' . $statements . '</div>'
+            . '</div>'
             . '</div>' . "\n"
-            . '<div><h2>Statutory statements and approval</h2>' . $statements . '</div>' . "\n"
-            . '<div><h2>Notes</h2>' . $notes . '</div>' . "\n"
-            . ($evidenceArtifactId !== '' ? '<div><p>EEL filing evidence artifact: <strong>' . $this->e($evidenceArtifactId) . '</strong></p></div>' . "\n" : '')
+            . '<div class="accountspage pagebreak notes-page">'
+            . $this->pageHeader($indexed, 'Notes to the Micro-entity Accounts', $periodEnd)
+            . '<h2>Notes to the Micro-entity Accounts</h2>'
+            . '<p class="period-subtitle">for the period ended ' . $this->naturalDate($periodEnd) . '</p>'
+            . $notes . '</div>' . "\n"
             . '</body></html>' . "\n";
 
         return (new CompaniesHouseIxbrlDocumentPolicyService())
             ->canonicaliseGeneratedDocument($xhtml);
     }
 
-    private function statementTable(array $indexed, array $rows): string
+    private function profitAndLossTable(array $indexed): string
+    {
+        $rows = [
+            ['label' => 'Turnover', 'key' => 'turnover'],
+            ['label' => 'Raw materials and consumables', 'key' => 'raw_materials_consumables', 'brackets' => true],
+            ['label' => 'Gross profit / (loss)', 'key' => 'gross_profit_loss', 'rule' => 'subtotal'],
+            ['label' => 'Other operating income', 'key' => 'other_income'],
+            ['label' => 'Staff costs', 'key' => 'staff_costs', 'brackets' => true],
+            ['label' => 'Depreciation and other amounts written off assets', 'key' => 'depreciation_write_offs', 'brackets' => true],
+            ['label' => 'Other charges', 'key' => 'other_charges', 'brackets' => true],
+            ['label' => 'Operating profit / (loss)', 'key' => 'operating_profit_loss', 'rule' => 'subtotal'],
+            ['label' => 'Tax on profit / (loss)', 'key' => 'tax_on_profit', 'brackets' => true],
+            ['label' => 'Profit / (loss) for the financial year', 'key' => 'profit_loss', 'rule' => 'total'],
+        ];
+
+        return $this->statementTable($indexed, $rows, $this->factValue($this->currentFact($indexed, 'period_end')));
+    }
+
+    private function statementTable(array $indexed, array $rows, string $periodEnd): string
     {
         $hasComparative = $this->hasComparative($indexed);
-        $html = '<table><thead><tr><th>Item</th><th>Current period</th>'
-            . ($hasComparative ? '<th>Comparative period</th>' : '')
+        $comparativePeriod = $hasComparative ? $this->comparativePeriodFromIndex($indexed) : null;
+        $html = '<table class="financial-table keepTogether"><colgroup><col class="description-column"/>'
+            . '<col class="amount-column"/>'
+            . ($hasComparative ? '<col class="amount-column"/>' : '')
+            . '</colgroup><thead><tr><th class="description" scope="col"></th>'
+            . '<th class="amount" scope="col">' . $this->e($this->yearOf($periodEnd)) . '<br/><span>£</span></th>'
+            . ($hasComparative
+                ? '<th class="amount" scope="col">'
+                    . $this->e($this->yearOf((string)($comparativePeriod['period_end'] ?? '')))
+                    . '<br/><span>£</span></th>'
+                : '')
             . '</tr></thead><tbody>' . "\n";
-        foreach ($rows as $label => $key) {
-            $current = $this->currentFact($indexed, $key);
-            if ($current === []) {
+        foreach ($rows as $row) {
+            $key = (string)($row['key'] ?? '');
+            $current = $key !== '' ? $this->currentFact($indexed, $key) : [];
+            $computed = $row['computed'] ?? null;
+            if ($current === [] && !is_callable($computed)) {
                 continue;
             }
-            $html .= '<tr><th>' . $this->e($label) . '</th><td>' . $this->inlineFact($current) . '</td>';
+            $classes = [];
+            if (($row['rule'] ?? '') === 'subtotal') {
+                $classes[] = 'subtotal';
+            } elseif (($row['rule'] ?? '') === 'total') {
+                $classes[] = 'final-total';
+            }
+            $classAttribute = $classes !== [] ? ' class="' . implode(' ', $classes) . '"' : '';
+            $html .= '<tr' . $classAttribute . '><th class="description" scope="row">'
+                . $this->e((string)$row['label']) . '</th><td class="amount">';
+            $html .= is_callable($computed)
+                ? $this->visibleAmount((float)$computed(false))
+                : $this->inlineFact($current, [
+                    'accounting' => true,
+                    'brackets' => !empty($row['brackets']),
+                    'zero_dash' => true,
+                ]);
+            $html .= '</td>';
             if ($hasComparative) {
-                $html .= '<td>' . $this->inlineFact($this->comparativeFact($indexed, $key)) . '</td>';
+                $comparative = $key !== '' ? $this->comparativeFact($indexed, $key) : [];
+                $html .= '<td class="amount">';
+                $html .= is_callable($computed)
+                    ? $this->visibleAmount((float)$computed(true))
+                    : $this->inlineFact($comparative, [
+                        'accounting' => true,
+                        'brackets' => !empty($row['brackets']),
+                        'zero_dash' => true,
+                    ]);
+                $html .= '</td>';
             }
             $html .= '</tr>' . "\n";
         }
+
         return $html . '</tbody></table>';
     }
 
-    private function contexts(string $companyNumber, string $start, string $end, ?array $comparative, string $approvalDate): string
+    private function notes(array $indexed, string $periodEnd): string
+    {
+        $notes = '';
+        $employees = $this->currentFact($indexed, 'average_number_employees');
+        if ($employees !== []) {
+            $comparative = $this->comparativeFact($indexed, 'average_number_employees');
+            $notes .= '<div class="note keepTogether"><h3><span class="note-number">1.</span> Employees</h3>'
+                . '<p>The average monthly number of employees during the period was '
+                . $this->inlineFact($employees)
+                . ($comparative !== [] ? ' (comparative period: ' . $this->inlineFact($comparative) . ')' : '')
+                . '.</p></div>' . "\n";
+        }
+
+        $directorNarrative = $this->currentFact($indexed, 'no_director_advances_or_credits');
+        if ($directorNarrative !== []) {
+            $notes .= '<div class="note keepTogether director-loan-note"><h3><span class="note-number">2.</span> '
+                . 'Advances and credits to directors</h3>'
+                . '<p>' . $this->inlineFact($directorNarrative) . '</p>'
+                . $this->directorLoanTable($indexed)
+                . '</div>' . "\n";
+        }
+
+        $noteDefinitions = [
+            ['number' => 3, 'title' => 'Off-balance-sheet arrangements', 'keys' => [
+                'no_material_off_balance_sheet_arrangements',
+            ]],
+            ['number' => 4, 'title' => 'Financial commitments', 'keys' => [
+                'no_capital_commitments',
+                'no_financial_commitments',
+            ]],
+            ['number' => 5, 'title' => 'Contingent liabilities', 'keys' => [
+                'no_contingent_liabilities',
+                'no_director_guarantees',
+            ]],
+        ];
+        foreach ($noteDefinitions as $definition) {
+            $paragraphs = '';
+            foreach ($definition['keys'] as $key) {
+                $fact = $this->currentFact($indexed, (string)$key);
+                if ($fact !== []) {
+                    $paragraphs .= '<p>' . $this->inlineFact($fact) . '</p>';
+                }
+            }
+            if ($paragraphs !== '') {
+                $notes .= '<div class="note keepTogether"><h3><span class="note-number">'
+                    . (int)$definition['number'] . '.</span> ' . $this->e((string)$definition['title'])
+                    . '</h3>' . $paragraphs . '</div>' . "\n";
+            }
+        }
+
+        return $notes;
+    }
+
+    private function directorLoanTable(array $indexed): string
+    {
+        $rows = [
+            ['label' => 'Advances or credits made during the period', 'key' => 'director_advances_made'],
+            ['label' => 'Cash repayments during the period', 'key' => 'director_cash_repayments', 'brackets' => true],
+            ['label' => 'Balance outstanding at the period end', 'key' => 'director_closing_advance'],
+        ];
+        $available = array_filter(
+            $rows,
+            fn(array $row): bool => $this->currentFact($indexed, (string)$row['key']) !== []
+        );
+        if ($available === []) {
+            return '';
+        }
+        $html = '<table class="note-table director-loan-table"><colgroup><col class="description-column"/>'
+            . '<col class="amount-column"/></colgroup><thead><tr><th class="description" scope="col"></th>'
+            . '<th class="amount" scope="col">£</th></tr></thead><tbody>';
+        foreach ($available as $row) {
+            $html .= '<tr><th class="description" scope="row">' . $this->e((string)$row['label'])
+                . '</th><td class="amount">'
+                . $this->inlineFact($this->currentFact($indexed, (string)$row['key']), [
+                    'accounting' => true,
+                    'brackets' => !empty($row['brackets']),
+                    'zero_dash' => true,
+                ])
+                . '</td></tr>';
+        }
+        $source = json_decode((string)($this->currentFact($indexed, 'no_director_advances_or_credits')['source_json'] ?? ''), true);
+        $summary = is_array($source)
+            ? (array)($source['director_loan_disclosure'] ?? $source['director_loan_summary'] ?? $source['summary'] ?? [])
+            : [];
+        foreach ([
+            ['label' => 'Amounts legally set off', 'key' => 'total_amounts_legally_set_off'],
+            ['label' => 'Amounts written off', 'key' => 'total_amounts_written_off'],
+            ['label' => 'Amounts waived', 'key' => 'total_amounts_waived'],
+        ] as $row) {
+            if (!array_key_exists($row['key'], $summary)) {
+                continue;
+            }
+            $html .= '<tr><th class="description" scope="row">' . $this->e($row['label'])
+                . '</th><td class="amount">' . $this->visibleAmount((float)$summary[$row['key']], true)
+                . '</td></tr>';
+        }
+        $html .= '</tbody></table>';
+        $disclosure = (array)($summary['disclosures'][0] ?? []);
+        $presentation = (array)($source['director_loan_reporting_presentation'] ?? []);
+        foreach ([
+            ['label' => 'Interest rate', 'value' => $disclosure['interest_rate'] ?? $presentation['interest_rate'] ?? ''],
+            ['label' => 'Main terms', 'value' => $disclosure['main_terms'] ?? $presentation['main_terms'] ?? ''],
+            ['label' => 'Repayment conditions', 'value' => $disclosure['repayment_conditions'] ?? $presentation['repayment_conditions'] ?? ''],
+        ] as $row) {
+            $value = trim((string)$row['value']);
+            if ($value === '') {
+                continue;
+            }
+            $html .= '<p class="loan-term"><strong>' . $this->e((string)$row['label'])
+                . ':</strong> ' . $this->e($value) . '</p>';
+        }
+
+        return $html;
+    }
+
+    private function pageHeader(array $indexed, string $title, string $periodEnd): string
+    {
+        return '<div class="page-header"><div class="page-header-name">'
+            . $this->e($this->factValue($this->currentFact($indexed, 'entity_name')))
+            . '</div><div class="page-header-number">Registered number '
+            . $this->e($this->factValue($this->currentFact($indexed, 'company_number')))
+            . '</div><div class="page-header-title">' . $this->e($title)
+            . ' · period ended ' . $this->e($this->naturalDate($periodEnd)) . '</div></div>';
+    }
+
+    private function stylesheet(): string
+    {
+        return <<<'CSS'
+@page { size: A4; margin: 0; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+    background: #e7e8ea;
+    color: #111;
+    font-family: "Times New Roman", Times, serif;
+    font-size: 10.5pt;
+    line-height: 1.28;
+}
+.ixbrl-header { display: none; }
+.accountspage {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 10mm auto;
+    padding: 18mm 18mm 20mm;
+    background: #fff;
+    box-shadow: 0 2mm 8mm rgba(0, 0, 0, .14);
+}
+.pagebreak { break-before: page; page-break-before: always; }
+.keepTogether, .financial-table, .note, .approval {
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+.titlepage { position: relative; }
+.cover-company-number { text-align: right; font-size: 9.5pt; }
+.cover-centre { margin-top: 82mm; text-align: center; }
+.cover-centre h1 { margin: 0 0 13mm; font-size: 17pt; font-weight: normal; text-transform: uppercase; }
+.cover-centre h2 { margin: 0 0 8mm; font-size: 15pt; letter-spacing: .06em; }
+.cover-centre p { font-size: 12pt; }
+.page-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin: 0 0 14mm;
+    padding-bottom: 3mm;
+    border-bottom: .25mm solid #222;
+    font-size: 9pt;
+}
+.page-header-name { grid-column: 1; font-weight: bold; text-transform: uppercase; }
+.page-header-number { grid-column: 2; text-align: right; }
+.page-header-title { grid-column: 1 / -1; padding-top: 1.8mm; color: #333; }
+h2 { margin: 0; font-size: 13.5pt; text-align: center; }
+.period-subtitle { margin: 1mm 0 8mm; text-align: center; }
+.financial-table, .note-table { width: 92%; margin: 0 auto; border-collapse: collapse; table-layout: fixed; }
+.financial-table .description-column, .note-table .description-column { width: auto; }
+.financial-table .amount-column { width: 29mm; }
+.note-table .amount-column { width: 34mm; }
+.financial-table th, .financial-table td, .note-table th, .note-table td {
+    padding: 1.6mm 1.5mm;
+    vertical-align: top;
+    font-weight: normal;
+}
+.financial-table th.description, .note-table th.description { text-align: left; }
+.financial-table th.amount, .financial-table td.amount,
+.note-table th.amount, .note-table td.amount {
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums lining-nums;
+}
+.note-table td.detail { text-align: left; white-space: normal; }
+.financial-table thead th { padding-bottom: 3mm; font-weight: normal; }
+.financial-table tr.subtotal td.amount { border-top: .25mm solid #111; }
+.financial-table tr.subtotal th { font-weight: bold; }
+.financial-table tr.final-total th { font-weight: bold; padding-top: 2.6mm; }
+.financial-table tr.final-total td.amount {
+    border-top: .25mm solid #111;
+    border-bottom: 0.7mm double #111;
+    padding-top: 2.6mm;
+}
+.statutory-statements { width: 92%; margin: 12mm auto 0; font-size: 9.5pt; }
+.statutory-statements p { margin: 0 0 3mm; }
+.approval { margin-top: 8mm; }
+.signature { width: 55mm; margin-top: 10mm !important; padding-top: 2mm; border-top: .25mm solid #111; }
+.note { width: 92%; margin: 0 auto 8mm; }
+.note h3 { margin: 0 0 2mm; font-size: 10.5pt; }
+.note-number { display: inline-block; width: 7mm; }
+.note p { margin: 0 0 2mm; }
+.note-table { margin-top: 3mm; }
+.loan-term { margin-top: 2mm !important; }
+.revision-page h2 { margin-bottom: 9mm; }
+.revision-statement { width: 92%; margin: 0 auto 7mm; }
+.revision-statement h3 { margin: 0 0 2mm; font-size: 10.5pt; }
+.revision-statement p { margin: 0; }
+@media print {
+    html, body { background: #fff; }
+    .accountspage {
+        width: 210mm;
+        min-height: 297mm;
+        margin: 0;
+        padding: 18mm 18mm 20mm;
+        box-shadow: none;
+    }
+}
+CSS;
+    }
+
+    private function contexts(
+        string $companyNumber,
+        string $start,
+        string $end,
+        ?array $comparative,
+        array $usedContextRefs
+    ): string
     {
         $companyNumber = $companyNumber !== '' ? $companyNumber : 'UNKNOWN';
         $start = $this->validDate($start, '1970-01-01');
         $end = $this->validDate($end, $start);
-        $contexts = $this->durationContext('current_period_duration', $companyNumber, $start, $end)
-            . $this->durationContext('current_period_duration_director_1', $companyNumber, $start, $end, [
+        $definitions = [
+            ['current_period_duration', 'duration', $start, $end, []],
+            ['current_period_duration_director_1', 'duration', $start, $end, [
                 'bus:EntityOfficersDimension' => 'bus:Director1',
-            ])
-            . $this->durationContext('current_period_duration_country_formation', $companyNumber, $start, $end, [
+            ]],
+            ['current_period_duration_accounts_type', 'duration', $start, $end, [
+                'bus:AccountsTypeDimension' => 'bus:FullAccounts',
+            ]],
+            ['current_period_duration_country_formation', 'duration', $start, $end, [
                 'countries:CountriesRegionsDimension' => 'countries:EnglandWales',
-            ])
-            . $this->durationContext('current_period_duration_legal_form', $companyNumber, $start, $end, [
+            ]],
+            ['current_period_duration_legal_form', 'duration', $start, $end, [
                 'bus:LegalFormEntityDimension' => 'bus:PrivateLimitedCompanyLtd',
-            ])
-            . $this->durationContext('current_period_duration_registered_office', $companyNumber, $start, $end, [
+            ]],
+            ['current_period_duration_registered_office', 'duration', $start, $end, [
                 'bus:EntityContactTypeDimension' => 'bus:RegisteredOffice',
                 'countries:CountriesRegionsDimension' => 'countries:UnitedKingdom',
-            ])
-            . $this->durationContext('current_period_duration_accounting_standards', $companyNumber, $start, $end, [
+            ]],
+            ['current_period_duration_accounting_standards', 'duration', $start, $end, [
                 'bus:AccountingStandardsDimension' => 'bus:Micro-entities',
-            ])
-            . $this->durationContext('current_period_duration_accounts_status', $companyNumber, $start, $end, [
+            ]],
+            ['current_period_duration_accounts_status', 'duration', $start, $end, [
                 'bus:AccountsStatusDimension' => 'bus:AuditExempt-NoAccountantsReport',
-            ])
-            . $this->durationContext('current_period_duration_entity_never_traded', $companyNumber, $start, $end, [
+            ]],
+            ['current_period_duration_entity_never_traded', 'duration', $start, $end, [
                 'bus:EntityTradingStatusDimension' => 'bus:EntityHasNeverTraded',
-            ])
-            . $this->durationContext('current_period_duration_entity_no_longer_trading', $companyNumber, $start, $end, [
+            ]],
+            ['current_period_duration_entity_no_longer_trading', 'duration', $start, $end, [
                 'bus:EntityTradingStatusDimension' => 'bus:EntityNoLongerTradingButTradedInPast',
-            ])
-            . $this->instantContext('current_period_start', $companyNumber, $start)
-            . $this->instantContext('current_period_end', $companyNumber, $end)
-            . $this->instantContext('current_period_end_creditors_within_one_year', $companyNumber, $end, [
+            ]],
+            ['current_period_end', 'instant', $end, '', []],
+            ['current_period_end_creditors_within_one_year', 'instant', $end, '', [
                 'core:MaturitiesOrExpirationPeriodsDimension' => 'core:WithinOneYear',
-            ])
-            . $this->instantContext('current_period_end_creditors_after_one_year', $companyNumber, $end, [
+            ]],
+            ['current_period_end_creditors_after_one_year', 'instant', $end, '', [
                 'core:MaturitiesOrExpirationPeriodsDimension' => 'core:AfterOneYear',
-            ]);
-        if ($approvalDate !== '') {
-            $contexts .= $this->instantContext('accounts_approval_date', $companyNumber, $this->validDate($approvalDate, $end));
-        }
+            ]],
+        ];
         if ($comparative !== null) {
             $comparativeStart = $this->validDate((string)($comparative['period_start'] ?? ''), $start);
             $comparativeEnd = $this->validDate((string)($comparative['period_end'] ?? ''), $start);
-            $contexts .= $this->durationContext('comparative_period_duration', $companyNumber, $comparativeStart, $comparativeEnd)
-                . $this->instantContext('comparative_period_end', $companyNumber, $comparativeEnd)
-                . $this->instantContext('comparative_period_end_creditors_within_one_year', $companyNumber, $comparativeEnd, [
+            $definitions[] = ['comparative_period_duration', 'duration', $comparativeStart, $comparativeEnd, []];
+            $definitions[] = ['comparative_period_end', 'instant', $comparativeEnd, '', []];
+            $definitions[] = ['comparative_period_end_creditors_within_one_year', 'instant', $comparativeEnd, '', [
                     'core:MaturitiesOrExpirationPeriodsDimension' => 'core:WithinOneYear',
-                ])
-                . $this->instantContext('comparative_period_end_creditors_after_one_year', $companyNumber, $comparativeEnd, [
+                ]];
+            $definitions[] = ['comparative_period_end_creditors_after_one_year', 'instant', $comparativeEnd, '', [
                     'core:MaturitiesOrExpirationPeriodsDimension' => 'core:AfterOneYear',
-                ]);
+                ]];
         }
+        $used = array_fill_keys(array_filter($usedContextRefs), true);
+        $contexts = '';
+        foreach ($definitions as [$id, $type, $firstDate, $secondDate, $dimensions]) {
+            if (!isset($used[$id])) {
+                continue;
+            }
+            $contexts .= $type === 'duration'
+                ? $this->durationContext($id, $companyNumber, $firstDate, $secondDate, $dimensions)
+                : $this->instantContext($id, $companyNumber, $firstDate, $dimensions);
+        }
+
         return $contexts;
     }
 
@@ -547,7 +841,7 @@ final class IxbrlAccountingService
         return $content;
     }
 
-    private function inlineFact(array $fact): string
+    private function inlineFact(array $fact, array $options = []): string
     {
         if ($fact === []) {
             return '';
@@ -560,14 +854,82 @@ final class IxbrlAccountingService
             $decimals = (string)($fact['decimals_value'] ?? '2');
             $precision = $decimals === '0' ? 0 : 2;
             $sign = $numeric < 0 ? ' sign="-"' : '';
-            return '<ix:nonFraction name="' . $name . '" contextRef="' . $context
+            $zeroDash = !empty($options['zero_dash']) && abs($numeric) < 0.0000001;
+            $format = $zeroDash ? 'ixt:zerodash' : 'ixt:numdotdecimal';
+            $lexical = $zeroDash ? '-' : number_format(abs($numeric), $precision, '.', ',');
+            $factHtml = '<ix:nonFraction name="' . $name . '" contextRef="' . $context
                 . '" unitRef="' . $this->e((string)($fact['unit_ref'] ?? 'GBP'))
-                . '" decimals="' . $this->e($decimals) . '" format="ixt:numdotdecimal"' . $sign . '>'
-                . number_format(abs($numeric), $precision, '.', '') . '</ix:nonFraction>';
+                . '" decimals="' . $this->e($decimals) . '" format="' . $format . '"' . $sign . '>'
+                . $lexical . '</ix:nonFraction>';
+            if (!empty($options['accounting']) && ($numeric < 0 || (!empty($options['brackets']) && !$zeroDash))) {
+                return '(' . $factHtml . ')';
+            }
+
+            return $factHtml;
         }
-        $format = $type === 'date' ? ' format="ixt:dateyearmonthday"' : '';
+        $naturalDate = $type === 'date' && !empty($options['natural_date']);
+        $format = $type === 'date'
+            ? ' format="' . ($naturalDate ? 'ixt:datedaymonthyearen' : 'ixt:dateyearmonthday') . '"'
+            : '';
+        $value = $this->factValue($fact);
+        if ($naturalDate) {
+            $value = $this->naturalDate($value);
+        }
         return '<ix:nonNumeric name="' . $name . '" contextRef="' . $context . '"' . $format . '>'
-            . $this->e($this->factValue($fact)) . '</ix:nonNumeric>';
+            . $this->e($value) . '</ix:nonNumeric>';
+    }
+
+    private function visibleAmount(float $amount, bool $brackets = false): string
+    {
+        if (abs($amount) < 0.0000001) {
+            return '–';
+        }
+        $formatted = number_format(abs($amount), 2, '.', ',');
+
+        return $amount < 0 || $brackets ? '(' . $formatted . ')' : $formatted;
+    }
+
+    private function numericFact(array $indexed, string $key, bool $comparative): float
+    {
+        $fact = $comparative
+            ? $this->comparativeFact($indexed, $key)
+            : $this->currentFact($indexed, $key);
+
+        return (float)($fact['numeric_value'] ?? 0);
+    }
+
+    private function comparativePeriodFromIndex(array $indexed): ?array
+    {
+        foreach ($indexed as $facts) {
+            foreach ((array)$facts as $context => $fact) {
+                if (!str_starts_with((string)$context, 'comparative_')) {
+                    continue;
+                }
+                $source = json_decode((string)($fact['source_json'] ?? ''), true);
+                if (is_array($source)) {
+                    return [
+                        'period_start' => (string)($source['period_start'] ?? ''),
+                        'period_end' => (string)($source['period_end'] ?? ''),
+                    ];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function yearOf(string $date): string
+    {
+        $parsed = \DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+
+        return $parsed instanceof \DateTimeImmutable ? $parsed->format('Y') : '';
+    }
+
+    private function naturalDate(string $date): string
+    {
+        $parsed = \DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+
+        return $parsed instanceof \DateTimeImmutable ? $parsed->format('j F Y') : $date;
     }
 
     private function indexFacts(array $facts): array
@@ -641,20 +1003,30 @@ final class IxbrlAccountingService
                 : $this->currentFact($indexed, $key);
             $amount = static fn(array $row): float => round((float)($row['numeric_value'] ?? 0), 2);
 
-            $profit = round(
+            $grossProfit = round(
                 $amount($fact('turnover'))
-                + $amount($fact('other_income'))
-                - $amount($fact('raw_materials_consumables'))
-                - $amount($fact('staff_costs'))
-                - $amount($fact('depreciation_write_offs'))
-                - $amount($fact('other_charges'))
-                - $amount($fact('tax_on_profit')),
+                - $amount($fact('raw_materials_consumables')),
                 2
             );
-            if (abs($profit - $amount($fact('profit_loss'))) >= 0.005) {
+            $operatingProfit = round(
+                $grossProfit
+                + $amount($fact('other_income'))
+                - $amount($fact('staff_costs'))
+                - $amount($fact('depreciation_write_offs'))
+                - $amount($fact('other_charges')),
+                2
+            );
+            $profit = round(
+                $operatingProfit - $amount($fact('tax_on_profit')),
+                2
+            );
+            if (abs($grossProfit - $amount($fact('gross_profit_loss'))) >= 0.005
+                || abs($operatingProfit - $amount($fact('operating_profit_loss'))) >= 0.005
+                || abs($profit - $amount($fact('profit_loss'))) >= 0.005) {
                 throw new \RuntimeException(
                     ($comparative ? 'Comparative' : 'Current')
-                    . ' micro profit-and-loss lines do not reconcile to profit or loss.'
+                    . ' micro profit-and-loss lines do not reconcile through gross profit, '
+                    . 'operating profit and profit or loss.'
                 );
             }
 
@@ -664,8 +1036,19 @@ final class IxbrlAccountingService
                 - $amount($fact('creditors_within_one_year')),
                 2
             );
-            $totalAssetsLessCurrent = round($amount($fact('fixed_assets')) + $netCurrent, 2);
-            $netAssets = round($totalAssetsLessCurrent - $amount($fact('creditors_after_one_year')), 2);
+            $totalAssetsLessCurrent = round(
+                $amount($fact('called_up_share_capital_not_paid'))
+                + $amount($fact('fixed_assets'))
+                + $netCurrent,
+                2
+            );
+            $netAssets = round(
+                $totalAssetsLessCurrent
+                - $amount($fact('creditors_after_one_year'))
+                - $amount($fact('provisions_for_liabilities'))
+                - $amount($fact('accruals_deferred_income')),
+                2
+            );
             if (abs($netCurrent - $amount($fact('net_current_assets_liabilities'))) >= 0.005
                 || abs($totalAssetsLessCurrent - $amount($fact('total_assets_less_current_liabilities'))) >= 0.005
                 || abs($netAssets - $amount($fact('net_assets_liabilities'))) >= 0.005
@@ -680,38 +1063,162 @@ final class IxbrlAccountingService
 
     private function validateInlineXbrl(string $xhtml): array
     {
+        $errors = [];
+        if (!str_starts_with($xhtml, CompaniesHouseIxbrlDocumentPolicyService::DOCUMENT_PREFIX)) {
+            $errors[] = 'The deterministic UTF-8 XML declaration is missing.';
+        }
+        if (preg_match('/<!DOCTYPE|<!ENTITY/i', $xhtml) === 1) {
+            $errors[] = 'DOCTYPE and entity declarations are not permitted.';
+        }
         $previous = libxml_use_internal_errors(true);
         $document = new \DOMDocument();
-        $loaded = $document->loadXML($xhtml, LIBXML_NONET);
+        $loaded = $document->loadXML($xhtml, LIBXML_NONET | LIBXML_COMPACT);
         libxml_clear_errors();
         libxml_use_internal_errors($previous);
         if (!$loaded) {
-            return ['Generated XHTML is not well-formed XML.'];
+            $errors[] = 'Generated XHTML is not well-formed XML.';
+
+            return array_values(array_unique($errors));
         }
 
-        $errors = [];
         $xpath = new \DOMXPath($document);
+        $xpath->registerNamespace('xhtml', 'http://www.w3.org/1999/xhtml');
         $xpath->registerNamespace('ix', 'http://www.xbrl.org/2013/inlineXBRL');
         $xpath->registerNamespace('xbrli', 'http://www.xbrl.org/2003/instance');
         $xpath->registerNamespace('xbrldi', 'http://xbrl.org/2006/xbrldi');
         $xpath->registerNamespace('link', 'http://www.xbrl.org/2003/linkbase');
         $xpath->registerNamespace('xlink', 'http://www.w3.org/1999/xlink');
+        $root = $document->documentElement;
+        if (!$root instanceof \DOMElement
+            || $root->namespaceURI !== 'http://www.w3.org/1999/xhtml'
+            || $root->localName !== 'html') {
+            $errors[] = 'The document root must be an XHTML html element.';
+        } elseif ($root->hasAttribute('lang')
+            || $root->getAttributeNS('http://www.w3.org/XML/1998/namespace', 'lang') !== 'en') {
+            $errors[] = 'The XHTML root must declare xml:lang as en without the schema-invalid HTML lang attribute.';
+        }
+        foreach (IxbrlTaxonomyProfileService::NAMESPACES as $prefix => $namespace) {
+            if (!$root instanceof \DOMElement
+                || $root->lookupNamespaceURI((string)$prefix) !== $namespace) {
+                $errors[] = 'The required ' . $prefix . ' taxonomy namespace is missing.';
+            }
+        }
         if (($xpath->query('//ix:header')->length ?? 0) !== 1) {
             $errors[] = 'Exactly one Inline XBRL header is required.';
         }
-        if (($xpath->query('//link:schemaRef[@xlink:href="' . IxbrlTaxonomyProfileService::SCHEMA_REF . '"]')->length ?? 0) < 1) {
-            $errors[] = 'The FRC 2026 FRS-102 taxonomy entry point is missing.';
+        if (($xpath->query('//ix:hidden')->length ?? 0) !== 1
+            || ($xpath->query('//ix:references')->length ?? 0) !== 1
+            || ($xpath->query('//ix:resources')->length ?? 0) !== 1) {
+            $errors[] = 'Exactly one Inline XBRL hidden, references and resources block is required.';
+        }
+        if (($xpath->query('//link:schemaRef')->length ?? 0) !== 1
+            || ($xpath->query('//link:schemaRef[@xlink:href="' . IxbrlTaxonomyProfileService::SCHEMA_REF . '"]')->length ?? 0) !== 1) {
+            $errors[] = 'Exactly one FRC 2026 FRS-102 taxonomy entry point is required.';
         }
         if (($xpath->query('//xbrli:unit[@id="GBP"]')->length ?? 0) < 1
             || ($xpath->query('//xbrli:unit[@id="pure"]')->length ?? 0) < 1) {
             $errors[] = 'Required GBP and pure units are missing.';
         }
-        if (($xpath->query('//xbrldi:explicitMember')->length ?? 0) < 3) {
-            $errors[] = 'Required creditor and director dimensions are missing.';
-        }
         if (($xpath->query('//ix:nonFraction | //ix:nonNumeric')->length ?? 0) < 1) {
             $errors[] = 'No Inline XBRL facts were generated.';
         }
+
+        $contextIds = [];
+        foreach ($xpath->query('//xbrli:context') ?: [] as $context) {
+            if (!$context instanceof \DOMElement) {
+                continue;
+            }
+            $id = $context->getAttribute('id');
+            if ($id === '' || isset($contextIds[$id])) {
+                $errors[] = 'Every context must have a unique non-empty id.';
+            }
+            $contextIds[$id] = true;
+        }
+        $unitIds = [];
+        foreach ($xpath->query('//xbrli:unit') ?: [] as $unit) {
+            if (!$unit instanceof \DOMElement) {
+                continue;
+            }
+            $id = $unit->getAttribute('id');
+            if ($id === '' || isset($unitIds[$id])) {
+                $errors[] = 'Every unit must have a unique non-empty id.';
+            }
+            $unitIds[$id] = true;
+        }
+
+        $duplicateFacts = [];
+        $referencedContexts = [];
+        $referencedUnits = [];
+        foreach ($xpath->query('//ix:nonFraction | //ix:nonNumeric') ?: [] as $fact) {
+            if (!$fact instanceof \DOMElement) {
+                continue;
+            }
+            $contextRef = $fact->getAttribute('contextRef');
+            if ($contextRef === '' || !isset($contextIds[$contextRef])) {
+                $errors[] = 'Fact contextRef does not resolve: ' . $contextRef . '.';
+            }
+            if ($contextRef !== '') {
+                $referencedContexts[$contextRef] = true;
+            }
+            $unitRef = $fact->getAttribute('unitRef');
+            if ($fact->localName === 'nonFraction') {
+                if ($unitRef === '' || !isset($unitIds[$unitRef])) {
+                    $errors[] = 'Numeric fact unitRef does not resolve: ' . $unitRef . '.';
+                }
+                if ($unitRef !== '') {
+                    $referencedUnits[$unitRef] = true;
+                }
+                if (!$fact->hasAttribute('decimals') || $fact->hasAttribute('precision')) {
+                    $errors[] = 'Numeric facts must use decimals and must not use precision.';
+                }
+                if ($fact->getAttribute('name') === 'core:AverageNumberEmployeesDuringPeriod') {
+                    if ($unitRef !== 'pure') {
+                        $errors[] = 'Employee counts must use the pure unit.';
+                    }
+                } elseif ($unitRef !== 'GBP') {
+                    $errors[] = 'Monetary facts must use the GBP unit.';
+                }
+            }
+            $key = implode('|', [
+                $fact->localName,
+                $fact->getAttribute('name'),
+                $contextRef,
+                $unitRef,
+                $fact->getAttribute('decimals'),
+                $fact->getAttribute('sign'),
+                trim($fact->textContent),
+            ]);
+            if (isset($duplicateFacts[$key])) {
+                $errors[] = 'An exact duplicate Inline XBRL fact was generated: '
+                    . $fact->getAttribute('name') . '.';
+            }
+            $duplicateFacts[$key] = true;
+        }
+        foreach (array_keys($contextIds) as $contextId) {
+            if (!isset($referencedContexts[$contextId])) {
+                $errors[] = 'Unused Inline XBRL context was generated: ' . $contextId . '.';
+            }
+        }
+        foreach (array_keys($unitIds) as $unitId) {
+            if (!isset($referencedUnits[$unitId])) {
+                $errors[] = 'Unused Inline XBRL unit was generated: ' . $unitId . '.';
+            }
+        }
+
+        $expectedCompanyNumber = '';
+        $companyFacts = $xpath->query('//*[@name="bus:UKCompaniesHouseRegisteredNumber"]');
+        if (($companyFacts->length ?? 0) === 1) {
+            $expectedCompanyNumber = trim((string)$companyFacts->item(0)?->textContent);
+        }
+        foreach ($xpath->query('//xbrli:context/xbrli:entity/xbrli:identifier') ?: [] as $identifier) {
+            if (!$identifier instanceof \DOMElement
+                || $identifier->getAttribute('scheme') !== 'http://www.companieshouse.gov.uk/'
+                || ($expectedCompanyNumber !== '' && trim($identifier->textContent) !== $expectedCompanyNumber)) {
+                $errors[] = 'Context company identifiers or schemes are inconsistent.';
+                break;
+            }
+        }
+
         foreach ([
             'bus:EntityCurrentLegalOrRegisteredName',
             'bus:UKCompaniesHouseRegisteredNumber',
@@ -729,6 +1236,7 @@ final class IxbrlAccountingService
             'bus:EntityTradingStatus',
             'bus:AccountingStandardsApplied',
             'bus:AccountsStatusAuditedOrUnaudited',
+            'bus:AccountsType',
             'bus:NameProductionSoftware',
             'bus:VersionProductionSoftware',
             'core:DateAuthorisationFinancialStatementsForIssue',
@@ -736,11 +1244,16 @@ final class IxbrlAccountingService
             'core:TurnoverRevenue',
             'core:OtherOperatingIncomeFormat2',
             'core:RawMaterialsConsumablesUsed',
+            'core:GrossProfitLoss',
             'core:StaffCostsEmployeeBenefitsExpense',
             'core:DepreciationAmortisationImpairmentExpense',
             'core:OtherExternalCharges',
+            'core:OperatingProfitLoss',
             'core:ProfitLoss',
-            'core:PrepaymentsAccruedIncome',
+            'core:CalledUpShareCapitalNotPaidNotExpressedAsCurrentAsset',
+            'core:PrepaymentsAccruedIncomeNotExpressedWithinCurrentAssetSubtotal',
+            'core:ProvisionsForLiabilitiesBalanceSheetSubtotal',
+            'core:AccruedLiabilitiesNotExpressedWithinCreditorsSubtotal',
             'core:NetAssetsLiabilities',
             'core:Equity',
             'core:AverageNumberEmployeesDuringPeriod',
@@ -760,13 +1273,327 @@ final class IxbrlAccountingService
                 $errors[] = 'Required filing fact is missing: ' . $requiredConcept . '.';
             }
         }
-        foreach ($xpath->query('//ix:nonFraction[starts-with(normalize-space(text()), "-")]') ?: [] as $_) {
+        foreach ($this->directorSigningValidationErrors($xpath) as $directorSigningError) {
+            $errors[] = $directorSigningError;
+        }
+        foreach ($this->categoricalMarkerValidationErrors($xpath) as $categoricalMarkerError) {
+            $errors[] = $categoricalMarkerError;
+        }
+        foreach ($this->contextDimensionValidationErrors($xpath) as $contextDimensionError) {
+            $errors[] = $contextDimensionError;
+        }
+        if (($xpath->query('//xbrldi:explicitMember[@dimension="bus:AccountsTypeDimension" and normalize-space(.)="bus:FullAccounts"]')->length ?? 0) !== 1) {
+            $errors[] = 'The Full Accounts type dimension is missing or duplicated.';
+        }
+        foreach ([
+            'bus:StartDateForPeriodCoveredByReport',
+            'bus:EndDateForPeriodCoveredByReport',
+            'bus:BalanceSheetDate',
+            'core:DateAuthorisationFinancialStatementsForIssue',
+        ] as $instantConcept) {
+            if (($xpath->query('//*[@name="' . $instantConcept . '" and @contextRef="current_period_end"]')->length ?? 0) !== 1) {
+                $errors[] = $instantConcept . ' must use the balance-sheet instant context.';
+            }
+        }
+        foreach ($xpath->query(
+            '//ix:nonFraction[starts-with(normalize-space(text()), "-") and not(@format="ixt:zerodash")]'
+        ) ?: [] as $_) {
             $errors[] = 'Negative transformed numbers must use the sign attribute and positive lexical content.';
             break;
+        }
+        foreach ($xpath->query('//ix:nonFraction[@sign="-" and not(ancestor::ix:hidden)]') ?: [] as $negativeFact) {
+            if (!$negativeFact instanceof \DOMElement) {
+                continue;
+            }
+            $parentText = trim((string)$negativeFact->parentNode?->textContent);
+            if (!str_starts_with($parentText, '(') && !str_starts_with($parentText, '-')) {
+                $errors[] = 'A negative fact is displayed as a positive amount: '
+                    . $negativeFact->getAttribute('name') . '.';
+            }
+        }
+        if (($xpath->query('//text()[normalize-space(.)="true" and not(ancestor::ix:hidden)]')->length ?? 0) > 0) {
+            $errors[] = 'A raw boolean true value is visible in the statutory accounts.';
+        }
+        if (str_contains($xhtml, 'EEL filing evidence artifact:')) {
+            $errors[] = 'An internal evidence-artifact identifier is visible in the statutory accounts.';
         }
         if (str_contains($xhtml, '<section') || str_contains($xhtml, '<meta charset=')) {
             $errors[] = 'HTML5-only markup is not allowed in the Inline XHTML profile.';
         }
+
+        return array_values(array_unique($errors));
+    }
+
+    /**
+     * Validate FRC fixed-item markers against the dimensions that carry their
+     * meaning.
+     *
+     * In the bundled FRC 2026 taxonomy, each concept below is declared as
+     * types:fixedItemType with periodType="duration". fixedItemType restricts
+     * xbrli:stringItemType to a fixed length of zero, so literal text,
+     * Boolean and enumeration lexical values are invalid here. The business
+     * meaning is supplied by the fact context. EntityTradingStatus is the
+     * exception only in how its dimension is represented: the taxonomy
+     * declares EntityTradingDefault ("Entity is trading") as the dimension
+     * default, which must be omitted from an instance context.
+     *
+     * @return list<string>
+     */
+    private function categoricalMarkerValidationErrors(\DOMXPath $xpath): array
+    {
+        $errors = [];
+        $dimensionProfiles = [
+            'bus:CountryFormationOrIncorporation' => [
+                'countries:CountriesRegionsDimension' => 'countries:EnglandWales',
+            ],
+            'bus:LegalFormEntity' => [
+                'bus:LegalFormEntityDimension' => 'bus:PrivateLimitedCompanyLtd',
+            ],
+            'bus:AccountingStandardsApplied' => [
+                'bus:AccountingStandardsDimension' => 'bus:Micro-entities',
+            ],
+            'bus:AccountsStatusAuditedOrUnaudited' => [
+                'bus:AccountsStatusDimension' => 'bus:AuditExempt-NoAccountantsReport',
+            ],
+            'bus:AccountsType' => [
+                'bus:AccountsTypeDimension' => 'bus:FullAccounts',
+            ],
+        ];
+
+        foreach ($dimensionProfiles as $concept => $expectedDimensions) {
+            $facts = $xpath->query('//ix:nonNumeric[@name="' . $concept . '"]');
+            $count = $facts instanceof \DOMNodeList ? $facts->length : 0;
+            if ($count !== 1) {
+                $errors[] = 'Exactly one ' . $concept . ' fixed-item marker fact is required.';
+                continue;
+            }
+            $fact = $facts->item(0);
+            if (!$fact instanceof \DOMElement) {
+                $errors[] = $concept . ' is malformed.';
+                continue;
+            }
+            if ($fact->textContent !== '') {
+                $errors[] = $concept . ' must be a zero-length taxonomy marker.';
+            }
+            $context = $this->contextForFact($xpath, $fact);
+            if (!$context instanceof \DOMElement) {
+                $errors[] = $concept . ' does not have a resolvable context.';
+                continue;
+            }
+            if (!$this->isDurationContext($xpath, $context)) {
+                $errors[] = $concept . ' must use a duration context.';
+            }
+            $actualDimensions = $this->explicitDimensions($xpath, $context);
+            if ($actualDimensions !== $expectedDimensions) {
+                $errors[] = $concept . ' must use the taxonomy dimension profile '
+                    . $this->dimensionProfileLabel($expectedDimensions) . '.';
+            }
+            if (($xpath->query('.//xbrldi:typedMember', $context)->length ?? 0) > 0) {
+                $errors[] = $concept . ' must not use a typed dimension.';
+            }
+        }
+
+        $tradingFacts = $xpath->query('//ix:nonNumeric[@name="bus:EntityTradingStatus"]');
+        $tradingCount = $tradingFacts instanceof \DOMNodeList ? $tradingFacts->length : 0;
+        if ($tradingCount !== 1) {
+            $errors[] = 'Exactly one bus:EntityTradingStatus fixed-item marker fact is required.';
+        } else {
+            $tradingFact = $tradingFacts->item(0);
+            if (!$tradingFact instanceof \DOMElement) {
+                $errors[] = 'bus:EntityTradingStatus is malformed.';
+            } else {
+                if ($tradingFact->textContent !== '') {
+                    $errors[] = 'bus:EntityTradingStatus must be a zero-length taxonomy marker.';
+                }
+                $context = $this->contextForFact($xpath, $tradingFact);
+                if (!$context instanceof \DOMElement) {
+                    $errors[] = 'bus:EntityTradingStatus does not have a resolvable context.';
+                } else {
+                    if (!$this->isDurationContext($xpath, $context)) {
+                        $errors[] = 'bus:EntityTradingStatus must use a duration context.';
+                    }
+                    $actualDimensions = $this->explicitDimensions($xpath, $context);
+                    $permittedProfiles = [
+                        [],
+                        [
+                            'bus:EntityTradingStatusDimension' => 'bus:EntityHasNeverTraded',
+                        ],
+                        [
+                            'bus:EntityTradingStatusDimension' => 'bus:EntityNoLongerTradingButTradedInPast',
+                        ],
+                    ];
+                    if (!in_array($actualDimensions, $permittedProfiles, true)) {
+                        $errors[] = 'bus:EntityTradingStatus must use the implicit trading default, '
+                            . 'bus:EntityHasNeverTraded or bus:EntityNoLongerTradingButTradedInPast.';
+                    }
+                    if (($xpath->query('.//xbrldi:typedMember', $context)->length ?? 0) > 0) {
+                        $errors[] = 'bus:EntityTradingStatus must not use a typed dimension.';
+                    }
+                }
+            }
+        }
+
+        if (($xpath->query(
+            '//xbrldi:explicitMember[@dimension="bus:EntityTradingStatusDimension"'
+            . ' and normalize-space(.)="bus:EntityTradingDefault"]'
+        )->length ?? 0) > 0) {
+            $errors[] = 'bus:EntityTradingDefault is a taxonomy default and must not be emitted explicitly.';
+        }
+
+        return $errors;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function contextDimensionValidationErrors(\DOMXPath $xpath): array
+    {
+        $errors = [];
+        foreach ($xpath->query('//xbrli:context') ?: [] as $context) {
+            if (!$context instanceof \DOMElement) {
+                continue;
+            }
+            $contextId = $context->getAttribute('id');
+            $seenDimensions = [];
+            foreach ($xpath->query(
+                './xbrli:entity/xbrli:segment/xbrldi:explicitMember'
+                . ' | ./xbrli:entity/xbrli:segment/xbrldi:typedMember',
+                $context
+            ) ?: [] as $member) {
+                if (!$member instanceof \DOMElement) {
+                    continue;
+                }
+                $dimension = trim($member->getAttribute('dimension'));
+                if ($dimension === '') {
+                    $errors[] = 'Context ' . $contextId . ' contains a dimension member without a dimension QName.';
+                    continue;
+                }
+                if (isset($seenDimensions[$dimension])) {
+                    $errors[] = 'Context ' . $contextId . ' contains duplicate dimension ' . $dimension . '.';
+                }
+                $seenDimensions[$dimension] = true;
+                if ($member->localName === 'explicitMember' && trim($member->textContent) === '') {
+                    $errors[] = 'Context ' . $contextId . ' contains an empty explicit member for '
+                        . $dimension . '.';
+                }
+            }
+        }
+
+        return $errors;
+    }
+
+    private function contextForFact(\DOMXPath $xpath, \DOMElement $fact): ?\DOMElement
+    {
+        $contextRef = $fact->getAttribute('contextRef');
+        if ($contextRef === '') {
+            return null;
+        }
+        foreach ($xpath->query('//xbrli:context') ?: [] as $context) {
+            if ($context instanceof \DOMElement && $context->getAttribute('id') === $contextRef) {
+                return $context;
+            }
+        }
+
+        return null;
+    }
+
+    private function isDurationContext(\DOMXPath $xpath, \DOMElement $context): bool
+    {
+        return ($xpath->query('./xbrli:period/xbrli:startDate', $context)->length ?? 0) === 1
+            && ($xpath->query('./xbrli:period/xbrli:endDate', $context)->length ?? 0) === 1
+            && ($xpath->query('./xbrli:period/xbrli:instant', $context)->length ?? 0) === 0;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function explicitDimensions(\DOMXPath $xpath, \DOMElement $context): array
+    {
+        $dimensions = [];
+        foreach ($xpath->query(
+            './xbrli:entity/xbrli:segment/xbrldi:explicitMember',
+            $context
+        ) ?: [] as $member) {
+            if (!$member instanceof \DOMElement) {
+                continue;
+            }
+            $dimensions[trim($member->getAttribute('dimension'))] = trim($member->textContent);
+        }
+        ksort($dimensions, SORT_STRING);
+
+        return $dimensions;
+    }
+
+    /**
+     * @param array<string, string> $dimensions
+     */
+    private function dimensionProfileLabel(array $dimensions): string
+    {
+        $parts = [];
+        foreach ($dimensions as $dimension => $member) {
+            $parts[] = $dimension . '=' . $member;
+        }
+
+        return implode(', ', $parts);
+    }
+
+    private function directorSigningValidationErrors(\DOMXPath $xpath): array
+    {
+        $errors = [];
+        $markerFacts = $xpath->query('//*[@name="core:DirectorSigningFinancialStatements"]');
+        $nameFacts = $xpath->query('//*[@name="bus:NameEntityOfficer"]');
+        $markerCount = $markerFacts instanceof \DOMNodeList ? $markerFacts->length : 0;
+        $nameCount = $nameFacts instanceof \DOMNodeList ? $nameFacts->length : 0;
+
+        if ($markerCount !== 1) {
+            $errors[] = 'Exactly one DirectorSigningFinancialStatements marker fact is required.';
+        }
+        if ($nameCount !== 1) {
+            $errors[] = 'Exactly one NameEntityOfficer fact is required for the approving director.';
+        }
+        if ($markerCount !== 1 || $nameCount !== 1) {
+            return $errors;
+        }
+
+        $marker = $markerFacts->item(0);
+        $name = $nameFacts->item(0);
+        if (!$marker instanceof \DOMElement || !$name instanceof \DOMElement) {
+            $errors[] = 'The approving-director signing facts are malformed.';
+
+            return $errors;
+        }
+        if ($marker->textContent !== '') {
+            $errors[] = 'DirectorSigningFinancialStatements must be a zero-length taxonomy marker.';
+        }
+        if (trim($name->textContent) === '') {
+            $errors[] = 'NameEntityOfficer must contain the approving director name.';
+        }
+
+        $markerContextRef = $marker->getAttribute('contextRef');
+        $nameContextRef = $name->getAttribute('contextRef');
+        if ($markerContextRef === '' || $markerContextRef !== $nameContextRef) {
+            $errors[] = 'DirectorSigningFinancialStatements and NameEntityOfficer must use the same director context.';
+        }
+
+        $directorContext = null;
+        foreach ($xpath->query('//xbrli:context') ?: [] as $context) {
+            if ($context instanceof \DOMElement && $context->getAttribute('id') === $markerContextRef) {
+                $directorContext = $context;
+                break;
+            }
+        }
+        $members = $directorContext instanceof \DOMElement
+            ? $xpath->query(
+                './/xbrldi:explicitMember[@dimension="bus:EntityOfficersDimension"]',
+                $directorContext
+            )
+            : false;
+        if (!$members instanceof \DOMNodeList
+            || $members->length !== 1
+            || trim((string)$members->item(0)?->textContent) !== 'bus:Director1') {
+            $errors[] = 'The approving-director context must identify bus:Director1 through bus:EntityOfficersDimension.';
+        }
+
         return $errors;
     }
 

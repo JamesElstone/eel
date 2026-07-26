@@ -52,6 +52,48 @@ final class HmrcCtRimZipService
         return array_values($inventory);
     }
 
+    /**
+     * Reads selected safely-normalised archive entries without extracting them.
+     *
+     * @param list<string> $entryPaths
+     * @return array<string, string>
+     */
+    public function readEntries(string $path, array $entryPaths): array
+    {
+        $wanted = [];
+        foreach ($entryPaths as $entryPath) {
+            $normalised = ltrim(str_replace('\\', '/', trim($entryPath)), '/');
+            if ($normalised !== '') {
+                $wanted[$normalised] = true;
+            }
+        }
+        if ($wanted === []) {
+            return [];
+        }
+
+        $content = $this->readArchive($path);
+        [$endRecord, $contentLength] = $this->endRecord($content);
+        $offset = (int)$endRecord['central_offset'];
+        $entries = [];
+        for ($index = 0; $index < (int)$endRecord['entries_total']; $index++) {
+            [$header, $entryName, $nextOffset] = $this->centralEntry($content, $offset, $contentLength);
+            $entries[] = [$header, $entryName];
+            $offset = $nextOffset;
+        }
+        $topLevelPrefix = $this->commonTopLevelPrefix($entries);
+        $result = [];
+        foreach ($entries as [$header, $archiveEntryName]) {
+            $entryName = $topLevelPrefix !== null
+                ? substr($archiveEntryName, strlen($topLevelPrefix))
+                : $archiveEntryName;
+            if (!isset($wanted[$entryName])) {
+                continue;
+            }
+            $result[$entryName] = $this->entryData($content, $contentLength, $header);
+        }
+        return $result;
+    }
+
     public function extract(string $path, string $directory): void
     {
         $content = $this->readArchive($path);

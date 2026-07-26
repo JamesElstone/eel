@@ -84,7 +84,7 @@ final class ArelleIxbrlValidator
         );
         $warnings = $this->matchingLines(
             $output,
-            '/(?:^|[\s\[])(?:warning|warn)(?=$|[\s:\]])/i'
+            '/(?:^|[\s\[])(?:warning|warn)(?=$|[\s:,\]])/i'
         );
 
         if (!empty($execution['timed_out'])) {

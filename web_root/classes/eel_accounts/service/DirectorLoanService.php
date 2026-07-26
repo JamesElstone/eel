@@ -11,6 +11,10 @@ namespace eel_accounts\Service;
 
 final class DirectorLoanService
 {
+    public const CASH_REPAYMENT_JOURNAL_TAG = 'director_loan_cash_repayment';
+    public const WRITE_OFF_JOURNAL_TAG = 'director_loan_write_off';
+    public const WAIVER_JOURNAL_TAG = 'director_loan_waiver';
+
     public function fetchPeriods(int $companyId): array
     {
         if ($companyId <= 0) {
@@ -66,6 +70,9 @@ final class DirectorLoanService
 
         $periodStart = (string)$period['period_start'];
         $periodEnd = (string)$period['period_end'];
+        $reportingPresentation = (new DirectorLoanReportingPresentationService())
+            ->resolveForReporting($companyId, $accountingPeriodId);
+        $setOffPermitted = !empty($reportingPresentation['set_off_permitted']);
         $rawLines = $this->rawLines(
             $companyId,
             $periodStart,
@@ -165,17 +172,22 @@ final class DirectorLoanService
         foreach ($groups as $key => $position) {
             $asset = round((float)$position['opening_asset'] + (float)$position['movement_asset'], 2);
             $liability = round((float)$position['opening_liability'] + (float)$position['movement_liability'], 2);
-            $desired = $key === 'unattributed'
+            $desired = $key === 'unattributed' || !$setOffPermitted
                 ? 0.0
                 : round(min(max(0.0, $asset), max(0.0, $liability)), 2);
             $netLiability = round($liability - $asset, 2);
+            $reportableAsset = round(max(0.0, $asset - $desired), 2);
+            $reportableLiability = round(max(0.0, $liability - $desired), 2);
             $position += [
                 'gross_asset' => $asset,
                 'gross_liability' => $liability,
                 'desired_reclassification' => $desired,
+                'set_off_permitted' => $setOffPermitted,
+                'reportable_asset' => $reportableAsset,
+                'reportable_liability' => $reportableLiability,
                 'net_closing_position' => $netLiability,
                 'net_position_label' => $this->balanceDirectionLabel($netLiability),
-                'potential_s455_exposure' => round(max(0.0, $asset - $liability), 2),
+                'potential_s455_exposure' => $reportableAsset,
                 'pending_reclassification' => round($desired - (float)$position['posted_reclassification'], 2),
             ];
             $perDirector[] = $position;
@@ -205,6 +217,8 @@ final class DirectorLoanService
         $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
         $assetReceivable = round(array_sum(array_column($perDirector, 'gross_asset')), 2);
         $liabilityPayable = round(array_sum(array_column($perDirector, 'gross_liability')), 2);
+        $reportableAssetReceivable = round(array_sum(array_column($perDirector, 'reportable_asset')), 2);
+        $reportableLiabilityPayable = round(array_sum(array_column($perDirector, 'reportable_liability')), 2);
         $desiredReclassification = round(array_sum(array_column($perDirector, 'desired_reclassification')), 2);
         $postedAmount = round(array_sum(array_column($perDirector, 'posted_reclassification')), 2);
         $pendingMagnitude = round(array_sum(array_map(
@@ -234,6 +248,11 @@ final class DirectorLoanService
             'has_activity' => $hasActivity,
             'asset_receivable' => $assetReceivable,
             'liability_payable' => $liabilityPayable,
+            'reportable_asset_receivable' => $reportableAssetReceivable,
+            'reportable_liability_payable' => $reportableLiabilityPayable,
+            'set_off_permitted' => $setOffPermitted,
+            'set_off_evidence' => (string)($reportingPresentation['set_off_evidence'] ?? ''),
+            'reporting_presentation' => $reportingPresentation,
             'desired_reclassification' => $desiredReclassification,
             'posted_reclassification' => $postedAmount,
             'pending_reclassification' => round($desiredReclassification - $postedAmount, 2),
@@ -288,40 +307,75 @@ final class DirectorLoanService
         $disclosures = [];
         foreach ((array)($statement['per_director'] ?? []) as $position) {
             $key = (string)($position['director_id'] ?? 'unattributed');
-            $running = round(
-                (float)($position['opening_liability'] ?? 0)
-                - (float)($position['opening_asset'] ?? 0),
-                2
-            );
-            $minimum = $running;
+            $runningAsset = round(max(0.0, (float)($position['opening_asset'] ?? 0)), 2);
+            $maximumAsset = $runningAsset;
             $advances = 0.0;
-            $repayments = 0.0;
+            $cashRepayments = 0.0;
+            $amountsWrittenOff = 0.0;
+            $amountsWaived = 0.0;
+            $unclassifiedReductions = 0.0;
             $directorFunding = 0.0;
 
             foreach ((array)($rowsByDirector[$key] ?? []) as $row) {
                 $signed = round((float)($row['signed_amount'] ?? 0), 2);
-                $before = $running;
-                $running = round($running + $signed, 2);
-                $minimum = min($minimum, $running);
+                if ((string)($row['nominal_role'] ?? '') === 'asset') {
+                    $normalAmount = round((float)($row['normal_amount'] ?? -$signed), 2);
+                    $runningAsset = round(max(0.0, $runningAsset + $normalAmount), 2);
+                    $maximumAsset = max($maximumAsset, $runningAsset);
+                    if ($normalAmount > 0.004) {
+                        $advances += $normalAmount;
+                        continue;
+                    }
+                    if ($normalAmount >= -0.004) {
+                        continue;
+                    }
 
-                if ($signed < 0) {
-                    $advances += $before < 0
-                        ? abs($signed)
-                        : max(0.0, -$running);
-                } elseif ($signed > 0) {
-                    $settlement = $before < 0
-                        ? min($signed, abs($before))
-                        : 0.0;
-                    $repayments += $settlement;
-                    $directorFunding += $signed - $settlement;
+                    $reduction = abs($normalAmount);
+                    $journalTag = (string)($row['journal_tag'] ?? '');
+                    if ($journalTag === self::WRITE_OFF_JOURNAL_TAG) {
+                        $amountsWrittenOff += $reduction;
+                    } elseif ($journalTag === self::WAIVER_JOURNAL_TAG) {
+                        $amountsWaived += $reduction;
+                    } elseif ($journalTag === self::CASH_REPAYMENT_JOURNAL_TAG
+                        || (string)($row['source_type'] ?? '') === 'bank_csv') {
+                        $cashRepayments += $reduction;
+                    } else {
+                        $unclassifiedReductions += $reduction;
+                    }
+                } elseif ((string)($row['nominal_role'] ?? '') === 'liability' && $signed > 0.004) {
+                    $directorFunding += $signed;
                 }
             }
 
-            $exposure = round(max(0.0, -$minimum), 2);
-            if ($exposure < 0.005) {
+            $exposure = round(max(0.0, $maximumAsset), 2);
+            $amountsLegallySetOff = !empty($position['set_off_permitted'])
+                ? round(max(0.0, (float)($position['desired_reclassification'] ?? 0)), 2)
+                : 0.0;
+            $closingReceivable = round(max(0.0, (float)($position['reportable_asset'] ?? 0)), 2);
+            $closingLiability = round(max(0.0, (float)($position['reportable_liability'] ?? 0)), 2);
+            $hasDisclosure = max(
+                $exposure,
+                $advances,
+                $cashRepayments,
+                $amountsLegallySetOff,
+                $amountsWrittenOff,
+                $amountsWaived,
+                $unclassifiedReductions,
+                $closingReceivable
+            ) >= 0.005;
+            if (!$hasDisclosure) {
                 continue;
             }
 
+            $presentation = (array)($statement['reporting_presentation'] ?? []);
+            $repaymentReductions = round(
+                $cashRepayments
+                + $amountsLegallySetOff
+                + $amountsWrittenOff
+                + $amountsWaived
+                + $unclassifiedReductions,
+                2
+            );
             $disclosures[] = [
                 'director_id' => $position['director_id'] ?? null,
                 'director_name' => (string)($position['director_name'] ?? 'Unattributed'),
@@ -332,12 +386,21 @@ final class DirectorLoanService
                 ),
                 'maximum_company_to_director_exposure' => $exposure,
                 'advances' => round($advances, 2),
-                'repayments' => round($repayments, 2),
+                'cash_repayments' => round($cashRepayments, 2),
+                'amounts_legally_set_off' => $amountsLegallySetOff,
+                'amounts_written_off' => round($amountsWrittenOff, 2),
+                'amounts_waived' => round($amountsWaived, 2),
+                'unclassified_reductions' => round($unclassifiedReductions, 2),
+                'repayments' => $repaymentReductions,
                 'director_funding' => round($directorFunding, 2),
-                'closing_company_to_director_balance' => round(max(0.0, -$running), 2),
-                'closing_company_liability' => round(max(0.0, $running), 2),
-                'interest_rate' => '0%',
-                'main_conditions' => 'Interest-free and repayable on demand.',
+                'closing_company_to_director_balance' => $closingReceivable,
+                'closing_company_liability' => $closingLiability,
+                'interest_rate_percent' => (float)($presentation['interest_rate_percent'] ?? 0),
+                'interest_rate' => (string)($presentation['interest_rate'] ?? '0%'),
+                'main_terms' => (string)($presentation['main_terms'] ?? 'Unsecured.'),
+                'repayment_conditions' => (string)($presentation['repayment_conditions'] ?? 'Repayable on demand.'),
+                'main_conditions' => (string)($presentation['main_conditions'] ?? 'Unsecured. Repayable on demand.'),
+                'set_off_permitted' => !empty($position['set_off_permitted']),
             ];
         }
 
@@ -347,8 +410,25 @@ final class DirectorLoanService
             'has_company_to_director_exposure' => $disclosures !== [],
             'disclosures' => $disclosures,
             'total_advances' => round(array_sum(array_column($disclosures, 'advances')), 2),
+            'total_cash_repayments' => round(array_sum(array_column($disclosures, 'cash_repayments')), 2),
+            'total_amounts_legally_set_off' => round(array_sum(array_column($disclosures, 'amounts_legally_set_off')), 2),
+            'total_amounts_written_off' => round(array_sum(array_column($disclosures, 'amounts_written_off')), 2),
+            'total_amounts_waived' => round(array_sum(array_column($disclosures, 'amounts_waived')), 2),
+            'total_unclassified_reductions' => round(array_sum(array_column($disclosures, 'unclassified_reductions')), 2),
             'total_repayments' => round(array_sum(array_column($disclosures, 'repayments')), 2),
             'total_director_funding' => round(array_sum(array_column($disclosures, 'director_funding')), 2),
+            'closing_company_to_director_balance' => round(
+                array_sum(array_column($disclosures, 'closing_company_to_director_balance')),
+                2
+            ),
+            'closing_company_liability' => round(
+                array_sum(array_column($disclosures, 'closing_company_liability')),
+                2
+            ),
+            'has_unclassified_reductions' => round(
+                array_sum(array_column($disclosures, 'unclassified_reductions')),
+                2
+            ) >= 0.005,
         ];
     }
 
@@ -557,6 +637,7 @@ final class DirectorLoanService
             'description' => $description,
             'source_type' => $sourceType,
             'source_ref' => (string)$line['source_ref'],
+            'journal_tag' => (string)($line['journal_tag'] ?? ''),
             'source_label' => $sourceLabel,
             'source_url' => $sourceUrl,
             'counterparty_name' => trim((string)($line['counterparty_name'] ?? '')),

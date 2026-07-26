@@ -71,7 +71,9 @@ $harness->check('GoldenTaxControlMatrix', 'raises s455 and lock-readiness review
             ->fetchTaxReviewSummary(GoldenAccountsFixture::GOLDEN_COMPANY_ID, 9114);
         $harness->assertTrue(!empty($review['available']));
         $harness->assertTrue(!empty($review['review_required']));
-        $harness->assertSame('800.00', goldenTaxControlMoney($review['exposure_amount'] ?? 0));
+        $harness->assertSame('2000.00', goldenTaxControlMoney($review['exposure_amount'] ?? 0));
+        $harness->assertSame('2000.00', goldenTaxControlMoney($review['gross_director_receivable'] ?? 0));
+        $harness->assertSame('1200.00', goldenTaxControlMoney($review['gross_director_payable'] ?? 0));
         $harness->assertSame(
             GoldenAccountsFixture::GOLDEN_PARTY_ID,
             (int)($review['director_flags'][0]['director_id'] ?? 0)

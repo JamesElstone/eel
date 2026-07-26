@@ -28,6 +28,14 @@ $harness->run(\eel_accounts\Service\DirectorLoanReportingPresentationService::cl
             foreach ([
                 'liability_nominal_account_id',
                 'classification',
+                'set_off_right_confirmed',
+                'set_off_net_settlement_intended',
+                'set_off_evidence',
+                'deferment_right_confirmed',
+                'deferment_evidence',
+                'annual_rate_percent',
+                'main_terms',
+                'repayment_conditions',
                 'revision',
                 'updated_by',
             ] as $column) {
@@ -44,6 +52,13 @@ $harness->run(\eel_accounts\Service\DirectorLoanReportingPresentationService::cl
             $harness->assertFalse(str_contains($migration, 'UPDATE director_loan_reporting_presentations'));
             $harness->assertFalse(str_contains($migration, 'UPDATE journals'));
             $harness->assertFalse(str_contains($migration, 'UPDATE accounting_periods'));
+            $evidenceMigration = (string)file_get_contents(
+                dirname(__DIR__, 2)
+                . DIRECTORY_SEPARATOR . 'db_schema'
+                . DIRECTORY_SEPARATOR . 'migrations'
+                . DIRECTORY_SEPARATOR . '2026_07_26_002_director_loan_statutory_evidence.sql'
+            );
+            $harness->assertFalse(str_contains($evidenceMigration, 'UPDATE director_loan_reporting_presentations'));
         }
     );
 
@@ -191,15 +206,56 @@ $harness->run(\eel_accounts\Service\DirectorLoanReportingPresentationService::cl
                     ['company_id' => $companyId, 'accounting_period_id' => $periodId]
                 ));
 
-                $saved = $service->save(
+                $unsupported = $service->save(
                     $companyId,
                     $periodId,
                     'after_more_than_one_year',
                     'test:user'
                 );
+                $harness->assertSame(false, (bool)($unsupported['success'] ?? true));
+                $harness->assertTrue(str_contains(
+                    implode(' ', (array)($unsupported['errors'] ?? [])),
+                    'unconditional right'
+                ));
+                $partialSetOff = $service->save(
+                    $companyId,
+                    $periodId,
+                    'within_one_year',
+                    'test:user',
+                    [
+                        'set_off_right_confirmed' => true,
+                        'set_off_evidence' => 'Only one condition was selected.',
+                    ]
+                );
+                $harness->assertSame(false, (bool)($partialSetOff['success'] ?? true));
+                $harness->assertTrue(str_contains(
+                    implode(' ', (array)($partialSetOff['errors'] ?? [])),
+                    'both a legally enforceable right'
+                ));
+
+                $evidence = [
+                    'set_off_right_confirmed' => true,
+                    'set_off_net_settlement_intended' => true,
+                    'set_off_evidence' => 'Executed agreement permits set-off and simultaneous settlement.',
+                    'deferment_right_confirmed' => true,
+                    'deferment_evidence' => 'Executed facility prevents demand before 1 January 2027.',
+                    'interest_rate_percent' => '3.2500',
+                    'main_terms' => 'Unsecured working-capital facility.',
+                    'repayment_conditions' => 'Repayable under the executed facility.',
+                ];
+                $saved = $service->save(
+                    $companyId,
+                    $periodId,
+                    'after_more_than_one_year',
+                    'test:user',
+                    $evidence
+                );
                 $harness->assertSame(true, (bool)($saved['success'] ?? false));
                 $harness->assertSame(true, (bool)($saved['changed'] ?? false));
                 $harness->assertSame('after_more_than_one_year', (string)($saved['classification'] ?? ''));
+                $harness->assertSame(true, (bool)($saved['classification_supported'] ?? false));
+                $harness->assertSame(true, (bool)($saved['set_off_permitted'] ?? false));
+                $harness->assertSame('3.25%', (string)($saved['interest_rate'] ?? ''));
                 $harness->assertSame(1, (int)($saved['revision'] ?? 0));
                 $harness->assertSame(true, (bool)($saved['is_locked'] ?? false));
                 $harness->assertSame(1, InterfaceDB::countWhere(
@@ -223,9 +279,13 @@ $harness->run(\eel_accounts\Service\DirectorLoanReportingPresentationService::cl
                 $harness->assertSame(1, (int)($firstAudit['new_revision'] ?? 0));
                 $harness->assertSame('test:user', (string)($firstAudit['changed_by'] ?? ''));
                 $harness->assertSame(
-                    'Director Loan statutory repayment presentation changed.',
+                    'Director Loan statutory presentation or evidence changed.',
                     (string)($firstAudit['reason'] ?? '')
                 );
+                $harness->assertTrue(str_contains(
+                    (string)($firstAudit['new_evidence_json'] ?? ''),
+                    'Executed agreement permits set-off'
+                ));
 
                 $settings->set(
                     'participator_loan_liability_nominal_id',
@@ -245,7 +305,8 @@ $harness->run(\eel_accounts\Service\DirectorLoanReportingPresentationService::cl
                     $companyId,
                     $periodId,
                     'after_more_than_one_year',
-                    'test:user'
+                    'test:user',
+                    $evidence
                 );
                 $harness->assertSame(true, (bool)($idempotent['success'] ?? false));
                 $harness->assertSame(false, (bool)($idempotent['changed'] ?? true));
@@ -255,7 +316,13 @@ $harness->run(\eel_accounts\Service\DirectorLoanReportingPresentationService::cl
                     ['company_id' => $companyId, 'accounting_period_id' => $periodId]
                 ));
 
-                $reverted = $service->save($companyId, $periodId, 'within_one_year', 'test:user');
+                $reverted = $service->save(
+                    $companyId,
+                    $periodId,
+                    'within_one_year',
+                    'test:user',
+                    $evidence
+                );
                 $harness->assertSame(true, (bool)($reverted['success'] ?? false));
                 $harness->assertSame(true, (bool)($reverted['changed'] ?? false));
                 $harness->assertSame(2, (int)($reverted['revision'] ?? 0));
@@ -280,10 +347,28 @@ $harness->run(\eel_accounts\Service\DirectorLoanReportingPresentationService::cl
                 $harness->assertSame(1, (int)($auditRows[1]['old_revision'] ?? 0));
                 $harness->assertSame(2, (int)($auditRows[1]['new_revision'] ?? 0));
 
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO director_loan_reporting_presentations (
+                        company_id, accounting_period_id, liability_nominal_account_id,
+                        classification, revision, created_by, updated_by
+                     ) VALUES (
+                        :company_id, :accounting_period_id, :nominal_account_id,
+                        :classification, 1, :created_by, :updated_by
+                     )',
+                    [
+                        'company_id' => $companyId,
+                        'accounting_period_id' => $otherPeriodId,
+                        'nominal_account_id' => $liabilityNominalId,
+                        'classification' => 'after_more_than_one_year',
+                        'created_by' => 'legacy:test',
+                        'updated_by' => 'legacy:test',
+                    ]
+                );
                 $otherPeriod = $service->fetchPresentation($companyId, $otherPeriodId);
+                $harness->assertSame('after_more_than_one_year', (string)($otherPeriod['requested_classification'] ?? ''));
                 $harness->assertSame('within_one_year', (string)($otherPeriod['classification'] ?? ''));
-                $harness->assertSame(0, (int)($otherPeriod['revision'] ?? -1));
-                $harness->assertSame(false, (bool)($otherPeriod['explicit'] ?? true));
+                $harness->assertSame(false, (bool)($otherPeriod['classification_supported'] ?? true));
+                $harness->assertSame(true, (bool)($otherPeriod['explicit'] ?? false));
 
                 $invalid = $service->save($companyId, $periodId, 'sometime_later', 'test:user');
                 $harness->assertSame(false, (bool)($invalid['success'] ?? true));

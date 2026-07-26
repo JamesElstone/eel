@@ -248,11 +248,114 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
         });
     });
 
-    $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'contains no legal evidence workflow', static function () use ($harness): void {
-        $source = (string)file_get_contents(APP_CLASSES . 'eel_accounts' . DIRECTORY_SEPARATOR . 'service' . DIRECTORY_SEPARATOR . 'DirectorLoanReconciliationService.php');
-        $harness->assertSame(false, str_contains($source, 'saveSetOffEvidence'));
-        $harness->assertSame(false, str_contains($source, 'SET_OFF_ACKNOWLEDGEMENT_CODE'));
-        $harness->assertSame(true, str_contains($source, 'director_loan_year_end_review'));
+    $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'does not propose a same-party set-off when either legal confirmation is absent', static function () use ($harness, $service): void {
+        directorLoanReclassificationWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            $cleared = (new \eel_accounts\Service\DirectorLoanReportingPresentationService())->save(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                \eel_accounts\Service\DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR,
+                'test',
+                []
+            );
+            $harness->assertSame(true, (bool)($cleared['success'] ?? false));
+            directorLoanReclassificationInsertLine(
+                $fixture,
+                (int)$fixture['asset_nominal_id'],
+                250.00,
+                0.00,
+                (int)$fixture['primary_party_id'],
+                'unsupported-asset'
+            );
+            directorLoanReclassificationInsertLine(
+                $fixture,
+                (int)$fixture['liability_nominal_id'],
+                0.00,
+                400.00,
+                (int)$fixture['primary_party_id'],
+                'unsupported-liability'
+            );
+
+            $context = $service->fetchContext(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id']
+            );
+            $harness->assertSame(false, (bool)($context['set_off_permitted'] ?? true));
+            $harness->assertSame('0.00', directorLoanReclassificationMoney($context['desired_reclassification_amount'] ?? 0));
+            $harness->assertCount(0, (array)($context['proposed_lines'] ?? []));
+            $harness->assertTrue(str_contains(
+                implode(' ', (array)($context['warnings'] ?? [])),
+                'remain gross'
+            ));
+        });
+    });
+
+    $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'reverses a prior automatic set-off when its legal confirmations are removed', static function () use ($harness, $service): void {
+        directorLoanReclassificationWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            directorLoanReclassificationInsertLine(
+                $fixture,
+                (int)$fixture['asset_nominal_id'],
+                253.00,
+                0.00,
+                (int)$fixture['primary_party_id'],
+                'legacy-auto-asset'
+            );
+            directorLoanReclassificationInsertLine(
+                $fixture,
+                (int)$fixture['liability_nominal_id'],
+                0.00,
+                1288.63,
+                (int)$fixture['primary_party_id'],
+                'legacy-auto-liability'
+            );
+            $service->saveYearEndReview(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                true,
+                'test'
+            );
+            $posted = $service->postOffset(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                'test'
+            );
+            $harness->assertSame(true, (bool)($posted['success'] ?? false));
+
+            $cleared = (new \eel_accounts\Service\DirectorLoanReportingPresentationService())->save(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                \eel_accounts\Service\DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR,
+                'test',
+                []
+            );
+            $harness->assertSame(true, (bool)($cleared['success'] ?? false));
+            $stale = $service->fetchContext(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id']
+            );
+            $harness->assertSame(true, (bool)($stale['requires_set_off_reversal'] ?? false));
+            $harness->assertSame('253.00', directorLoanReclassificationMoney($stale['unsupported_posted_set_off_amount'] ?? 0));
+            $harness->assertSame(true, (bool)($stale['can_post'] ?? false));
+            $harness->assertCount(2, (array)($stale['proposed_lines'] ?? []));
+
+            $reversed = $service->postOffset(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                'test'
+            );
+            $harness->assertSame(true, (bool)($reversed['success'] ?? false));
+            $after = $service->fetchContext(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id']
+            );
+            $harness->assertSame('0.00', directorLoanReclassificationMoney($after['posted_reclassification_amount'] ?? 0));
+            $harness->assertSame('0.00', directorLoanReclassificationMoney($after['pending_adjustment_amount'] ?? 0));
+            $harness->assertSame('253.00', directorLoanReclassificationMoney(
+                (($after['statement'] ?? [])['reportable_asset_receivable'] ?? 0)
+            ));
+            $harness->assertSame('1288.63', directorLoanReclassificationMoney(
+                (($after['statement'] ?? [])['reportable_liability_payable'] ?? 0)
+            ));
+        });
     });
 });
 
@@ -329,6 +432,29 @@ function directorLoanReclassificationWithFixture(GeneratedServiceClassTestHarnes
             'SELECT id FROM company_directors WHERE company_id = :company_id AND full_name = :name',
             ['company_id' => $companyId, 'name' => 'Other Director']
         );
+        $primaryPartyId = ParticipatorLoanTestFixture::createPartyForDirector(
+            $companyId,
+            $primaryDirectorId,
+            'Primary Director'
+        );
+        $otherPartyId = ParticipatorLoanTestFixture::createPartyForDirector(
+            $companyId,
+            $otherDirectorId,
+            'Other Director'
+        );
+        $presentation = (new \eel_accounts\Service\DirectorLoanReportingPresentationService())->save(
+            $companyId,
+            $periodId,
+            \eel_accounts\Service\DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR,
+            'test',
+            [
+                'set_off_right_confirmed' => true,
+                'set_off_net_settlement_intended' => true,
+                'set_off_evidence' => 'Executed agreement and documented simultaneous settlement intention.',
+            ]
+        );
+        $harness->assertSame(true, (bool)($presentation['success'] ?? false));
+
         $callback([
             'marker' => $marker,
             'company_id' => $companyId,
@@ -336,8 +462,8 @@ function directorLoanReclassificationWithFixture(GeneratedServiceClassTestHarnes
             'asset_nominal_id' => $assetNominalId,
             'liability_nominal_id' => $liabilityNominalId,
             'counter_nominal_id' => $counterNominalId,
-            'primary_party_id' => ParticipatorLoanTestFixture::createPartyForDirector($companyId, $primaryDirectorId, 'Primary Director'),
-            'other_party_id' => ParticipatorLoanTestFixture::createPartyForDirector($companyId, $otherDirectorId, 'Other Director'),
+            'primary_party_id' => $primaryPartyId,
+            'other_party_id' => $otherPartyId,
         ]);
     } finally {
         if (InterfaceDB::inTransaction()) {

@@ -80,6 +80,12 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
             'reporting intent' => 'name="intent" value="save_director_loan_reporting_presentation"',
             'within-year choice' => 'name="classification" value="within_one_year" checked required',
             'after-year choice' => 'name="classification" value="after_more_than_one_year" required',
+            'deferment confirmation' => 'name="deferment_right_confirmed" value="1"',
+            'set-off right confirmation' => 'name="set_off_right_confirmed" value="1"',
+            'net-settlement confirmation' => 'name="set_off_net_settlement_intended" value="1"',
+            'interest rate' => 'name="interest_rate_percent"',
+            'main terms' => 'name="main_terms"',
+            'repayment conditions' => 'name="repayment_conditions"',
             'locked reporting badge' => 'Period locked - reporting choice is read only',
             'disabled reporting save' => '<button class="button primary" type="submit" disabled>Save reporting presentation</button>',
         ] as $contract => $needle) {
@@ -88,6 +94,7 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
             }
         }
         $harness->assertTrue(str_contains($html, 'Participator Loan'));
+        $harness->assertTrue(str_contains($html, 'Balances are never netted merely because they relate to the same party.'));
         return;
 
         $harness->assertSame('Assign each posted Participator Loan control-account entry to the eligible party whose loan account it belongs to. Eligibility is checked on the transaction date.', $card->helper([]));

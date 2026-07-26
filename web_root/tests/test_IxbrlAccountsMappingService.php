@@ -148,7 +148,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'depreciation_write_offs' => 80.0,
                     'other_charges' => 220.0,
                     'cost_of_sales' => 275.0,
-                    'gross_profit_loss' => 965.0,
+                    'gross_profit_loss' => 975.0,
                     'administrative_expenses' => 330.0,
                     'expenses' => 605.0,
                     'profit_loss_before_tax' => 635.0,
@@ -160,6 +160,19 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $harness->assertSame(
                         number_format($amount, 2, '.', ''),
                         number_format(ixbrlMappingSourceTotal((array)($sources[$bucket] ?? [])), 2, '.', '')
+                    );
+                }
+                $closingBuckets = (array)(new \eel_accounts\Service\IxbrlBalanceSheetMetricsService())
+                    ->fetchClosingMetrics($companyId, $periodId)['buckets'];
+                foreach ([
+                    'called_up_share_capital_not_paid',
+                    'provisions_for_liabilities',
+                    'accruals_deferred_income',
+                ] as $bucket) {
+                    $harness->assertTrue(array_key_exists($bucket, $buckets));
+                    $harness->assertSame(
+                        number_format((float)($closingBuckets[$bucket] ?? 0), 2, '.', ''),
+                        number_format((float)$buckets[$bucket], 2, '.', '')
                     );
                 }
 
@@ -179,8 +192,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame(1, count(ixbrlMappingSourcesOfType($adminSources, 'pending_depreciation')));
                 $harness->assertSame('60.00', number_format(ixbrlMappingSourceTotal(ixbrlMappingSourcesOfType($adminSources, 'pending_depreciation')), 2, '.', ''));
                 $harness->assertSame(4, count(ixbrlMappingSourcesOfType((array)($sources['expenses'] ?? []), 'formula')));
-                $harness->assertSame(3, count(ixbrlMappingSourcesOfType((array)($sources['gross_profit_loss'] ?? []), 'formula')));
-                $harness->assertSame(2, count(ixbrlMappingSourcesOfType((array)($sources['profit_loss_before_tax'] ?? []), 'formula')));
+                $harness->assertSame(2, count(ixbrlMappingSourcesOfType((array)($sources['gross_profit_loss'] ?? []), 'formula')));
+                $harness->assertSame(5, count(ixbrlMappingSourcesOfType((array)($sources['profit_loss_before_tax'] ?? []), 'formula')));
                 $harness->assertSame(7, count(ixbrlMappingSourcesOfType((array)($sources['profit_loss'] ?? []), 'formula')));
                 $harness->assertSame(1, count(array_filter(
                     (array)($sources['staff_costs'] ?? []),

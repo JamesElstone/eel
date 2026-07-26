@@ -7,13 +7,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
     \eel_accounts\Service\CompaniesHouseIxbrlDocumentPolicyService::class,
     static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\CompaniesHouseIxbrlDocumentPolicyService $service): void {
         $harness->check($service::class, 'canonicalises the generated declaration without changing the document body', static function () use ($harness, $service): void {
-            $body = '<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head/><body><p>Accounts</p></body></html>';
+            $body = '<html xmlns="http://www.w3.org/1999/xhtml"><head/><body><p>Accounts</p></body></html>';
             $result = $service->canonicaliseGeneratedDocument(
                 '<?xml version="1.0" encoding="UTF-8"?>' . "\r\n" . $body
             );
 
-            $harness->assertSame('<?xml version="1.0"?>' . "\n" . $body, $result);
-            $harness->assertFalse(str_contains(strtok($result, "\n"), 'encoding='));
+            $harness->assertSame(
+                '<?xml version="1.0" encoding="UTF-8" standalone="no"?>' . "\n" . $body,
+                $result
+            );
         });
 
         $harness->check($service::class, 'rejects non-literal declarations and leading bytes at the submission boundary', static function () use ($harness, $service): void {
@@ -23,10 +25,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 ' <?xml version="1.0"?>' . "\n" . $body,
                 $body,
                 '<?xml version="1.0"?>' . $body,
+                '<?xml version="1.0"?>' . "\n" . $body,
                 '<?xml version="1.0" encoding="UTF-8"?>' . "\n" . $body,
                 '<?xml version="1.0" standalone="yes"?>' . "\n" . $body,
-                '<?xml version="1.0"?>' . "\n<html>",
-                '<?xml version="1.0"?>' . "\n<html>\xC3\x28</html>",
+                '<?xml version="1.0" encoding="UTF-8" standalone="no"?>' . $body,
+                '<?xml version="1.0" encoding="UTF-8" standalone="no"?>' . "\n<html>",
+                '<?xml version="1.0" encoding="UTF-8" standalone="no"?>' . "\n<html>\xC3\x28</html>",
+                '<?xml version="1.0" encoding="UTF-8" standalone="no"?>' . "\n"
+                    . '<!DOCTYPE html SYSTEM "https://example.invalid/remote.dtd"><html/>',
             ];
             foreach ($invalid as $xml) {
                 try {

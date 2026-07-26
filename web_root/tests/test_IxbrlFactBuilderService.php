@@ -58,27 +58,50 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 );
             }
 
-            $extractSeedRows = static function (string $sql): array {
-                if (preg_match('/INSERT INTO\\s+`?ixbrl_fact_mappings`?\\s*\\(/i', $sql, $match, PREG_OFFSET_CAPTURE) !== 1) {
-                    return [];
-                }
-                $start = (int)$match[0][1];
-                $end = strpos($sql, ';', $start);
-                $block = $end === false ? substr($sql, $start) : substr($sql, $start, $end - $start);
-                preg_match_all('/^\\s*(\\(\'[^\\r\\n]+\\))[,]?\\s*$/m', $block, $rows);
-                return array_values(array_map('trim', (array)($rows[1] ?? [])));
+            $quote = static fn(mixed $value): string => $value === null
+                ? 'NULL'
+                : "'" . str_replace("'", "''", (string)$value) . "'";
+            $seedRow = static function (array $mapping) use ($quote): string {
+                return '(' . implode(',', [
+                    $quote($mapping['fact_key']),
+                    $quote($mapping['taxonomy_concept']),
+                    $quote($mapping['namespace_uri']),
+                    $quote($mapping['local_name']),
+                    $quote($mapping['label']),
+                    $quote($mapping['value_type']),
+                    $quote($mapping['calculation_type']),
+                    $quote($mapping['source_key']),
+                    (string)(float)$mapping['sign_multiplier'],
+                    $quote($mapping['period_type']),
+                    $quote($mapping['unit_ref']),
+                    $quote($mapping['decimals_value']),
+                    $quote($mapping['context_profile']),
+                    $quote($mapping['dimensions_json']),
+                    (string)(int)$mapping['comparative_enabled'],
+                    (string)(int)$mapping['is_required'],
+                    (string)(int)$mapping['sort_order'],
+                    (string)(int)$mapping['is_active'],
+                ]) . ')';
             };
-            $migrationSql = (string)file_get_contents(
+            $correctionSql = (string)file_get_contents(
                 PROJECT_ROOT . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
-                . DIRECTORY_SEPARATOR . '2026_07_16_005_ixbrl_taxonomy_facts.sql'
+                . DIRECTORY_SEPARATOR . '2026_07_26_001_ixbrl_frs105_taxonomy_profile.sql'
             );
             $masterSql = (string)file_get_contents(
                 PROJECT_ROOT . 'db_schema' . DIRECTORY_SEPARATOR . 'eel_accounts.schema.sql'
             );
-            $migrationRows = $extractSeedRows($migrationSql);
-            $masterRows = $extractSeedRows($masterSql);
-            $harness->assertSame(count($runtime), count($migrationRows));
-            $harness->assertSame($migrationRows, $masterRows);
+            foreach ($runtime as $mapping) {
+                $harness->assertTrue(str_contains($masterSql, $seedRow($mapping)));
+            }
+            foreach ([
+                'director_loan_statement',
+                'director_loan_numeric',
+                'PrepaymentsAccruedIncomeNotExpressedWithinCurrentAssetSubtotal',
+                'AccountsTypeDimension',
+                'AdvancesCreditsRepaidInPeriodDirectors',
+            ] as $requiredCorrection) {
+                $harness->assertTrue(str_contains($correctionSql, $requiredCorrection));
+            }
         });
 
         $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'schema includes filing export validation metadata', static function () use ($harness, $service): void {
@@ -97,12 +120,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('core:Creditors', (string)$mappings['creditors_after_one_year']['taxonomy_concept']);
             $harness->assertSame('core:Equity', (string)$mappings['equity']['taxonomy_concept']);
             $harness->assertSame('core:RawMaterialsConsumablesUsed', (string)$mappings['raw_materials_consumables']['taxonomy_concept']);
-            $harness->assertSame('core:PrepaymentsAccruedIncome', (string)$mappings['prepayments_accrued_income']['taxonomy_concept']);
+            $harness->assertSame('core:GrossProfitLoss', (string)$mappings['gross_profit_loss']['taxonomy_concept']);
+            $harness->assertSame('core:OperatingProfitLoss', (string)$mappings['operating_profit_loss']['taxonomy_concept']);
+            $harness->assertSame('core:PrepaymentsAccruedIncomeNotExpressedWithinCurrentAssetSubtotal', (string)$mappings['prepayments_accrued_income']['taxonomy_concept']);
             $harness->assertSame('pure', (string)$mappings['average_number_employees']['unit_ref']);
             $harness->assertSame('0', (string)$mappings['average_number_employees']['decimals_value']);
             $harness->assertTrue(str_contains((string)$mappings['creditors_within_one_year']['dimensions_json'], 'WithinOneYear'));
             $harness->assertSame('core:DirectorSigningFinancialStatements', (string)$mappings['director_signing_financial_statements']['taxonomy_concept']);
             $harness->assertSame('fixed_marker', (string)$mappings['entity_trading_status']['calculation_type']);
+            $harness->assertTrue(str_contains((string)$mappings['accounts_type']['dimensions_json'], 'bus:FullAccounts'));
             $harness->assertTrue(str_contains((string)$mappings['accounting_standards_applied']['dimensions_json'], 'Micro-entities'));
             $harness->assertTrue(str_contains((string)$mappings['accounts_status']['dimensions_json'], 'AuditExempt-NoAccountantsReport'));
             $harness->assertTrue(str_contains((string)$mappings['country_formation_or_incorporation']['dimensions_json'], 'countries:EnglandWales'));
@@ -142,6 +168,146 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $harness->assertSame($expectedMember, (string)($dimensions['bus:EntityTradingStatusDimension'] ?? ''));
                 }
             }
+        });
+
+        $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'builds report dates accounts type and standard zero rows with the selected contexts', static function () use ($harness, $service): void {
+            $mappings = [];
+            foreach ((new \eel_accounts\Service\IxbrlTaxonomyProfileService())->mappings() as $mapping) {
+                $mappings[(string)$mapping['fact_key']] = $mapping;
+            }
+            $method = new ReflectionMethod(\eel_accounts\Service\IxbrlFactBuilderService::class, 'factFromMapping');
+            $method->setAccessible(true);
+            $report = [
+                'company' => [],
+                'accounting_period' => ['period_start' => '2025-01-01', 'period_end' => '2025-12-31'],
+                'disclosures' => ['accounts_approval_date' => '2026-01-31'],
+                'director_loan_disclosure' => ['disclosures' => []],
+                'current' => ['buckets' => [], 'sources' => []],
+            ];
+
+            $periodStart = $method->invoke($service, $mappings['period_start'], $report, false);
+            $periodEnd = $method->invoke($service, $mappings['period_end'], $report, false);
+            $approval = $method->invoke($service, $mappings['accounts_approval_date'], $report, false);
+            $accountsType = $method->invoke($service, $mappings['accounts_type'], $report, false);
+            $harness->assertSame('2025-01-01', (string)$periodStart['date_value']);
+            $harness->assertSame('2026-01-31', (string)$approval['date_value']);
+            foreach ([$periodStart, $periodEnd, $approval] as $fact) {
+                $harness->assertSame('current_period_end', (string)$fact['context_ref']);
+            }
+            $harness->assertSame('', (string)$accountsType['text_value']);
+            $harness->assertSame('current_period_duration_accounts_type', (string)$accountsType['context_ref']);
+            $harness->assertSame(
+                ['bus:AccountsTypeDimension' => 'bus:FullAccounts'],
+                json_decode((string)$accountsType['dimensions_json'], true)
+            );
+
+            foreach ([
+                'called_up_share_capital_not_paid',
+                'provisions_for_liabilities',
+                'accruals_deferred_income',
+            ] as $factKey) {
+                $fact = $method->invoke($service, $mappings[$factKey], $report, false);
+                $harness->assertSame(0.0, (float)$fact['numeric_value']);
+                $harness->assertSame('current_period_end', (string)$fact['context_ref']);
+                $harness->assertSame('GBP', (string)$fact['unit_ref']);
+                $harness->assertSame('2', (string)$fact['decimals_value']);
+            }
+        });
+
+        $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'builds the selected officer snapshot beside an empty director signing marker', static function () use ($harness, $service): void {
+            $mappings = [];
+            foreach ((new \eel_accounts\Service\IxbrlTaxonomyProfileService())->mappings() as $mapping) {
+                $mappings[(string)$mapping['fact_key']] = $mapping;
+            }
+            $method = new ReflectionMethod(\eel_accounts\Service\IxbrlFactBuilderService::class, 'factFromMapping');
+            $method->setAccessible(true);
+            $report = [
+                'company' => [],
+                'accounting_period' => ['period_start' => '2025-01-01', 'period_end' => '2025-12-31'],
+                'disclosures' => [
+                    'approving_director_name' => 'Selected Director Snapshot',
+                    'revision' => 4,
+                ],
+                'director_loan_disclosure' => ['disclosures' => []],
+                'current' => ['buckets' => [], 'sources' => []],
+            ];
+
+            $name = $method->invoke($service, $mappings['approving_director_name'], $report, false);
+            $marker = $method->invoke(
+                $service,
+                $mappings['director_signing_financial_statements'],
+                $report,
+                false
+            );
+            $harness->assertSame('Selected Director Snapshot', (string)$name['text_value']);
+            $harness->assertSame('', (string)$marker['text_value']);
+            $harness->assertSame(
+                'current_period_duration_director_1',
+                (string)$name['context_ref']
+            );
+            $harness->assertSame((string)$name['context_ref'], (string)$marker['context_ref']);
+            $harness->assertSame(
+                ['bus:EntityOfficersDimension' => 'bus:Director1'],
+                json_decode((string)$name['dimensions_json'], true)
+            );
+            $harness->assertSame(
+                json_decode((string)$name['dimensions_json'], true),
+                json_decode((string)$marker['dimensions_json'], true)
+            );
+            $harness->assertSame(4, (int)$name['source']['disclosure_revision']);
+        });
+
+        $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'builds only explicit director advances cash repayments and closing advance totals', static function () use ($harness, $service): void {
+            $mappings = [];
+            foreach ((new \eel_accounts\Service\IxbrlTaxonomyProfileService())->mappings() as $mapping) {
+                $mappings[(string)$mapping['fact_key']] = $mapping;
+            }
+            $method = new ReflectionMethod(\eel_accounts\Service\IxbrlFactBuilderService::class, 'factFromMapping');
+            $method->setAccessible(true);
+            $report = [
+                'company' => [],
+                'accounting_period' => ['period_start' => '2025-01-01', 'period_end' => '2025-12-31'],
+                'disclosures' => [],
+                'current' => ['buckets' => [], 'sources' => []],
+                'director_loan_disclosure' => [
+                    'has_company_to_director_exposure' => true,
+                    'total_advances' => 350.0,
+                    'total_repayments' => 140.0,
+                    'total_cash_repayments' => 90.0,
+                    'disclosures' => [
+                        [
+                            'director_id' => 1,
+                            'director_name' => 'Director One',
+                            'advances' => 200.0,
+                            'cash_repayments' => 50.0,
+                            'closing_company_to_director_balance' => 120.0,
+                        ],
+                        [
+                            'director_id' => 2,
+                            'director_name' => 'Director Two',
+                            'advances' => 150.0,
+                            'cash_repayments' => 40.0,
+                            'closing_company_to_director_balance' => 80.0,
+                        ],
+                    ],
+                ],
+            ];
+
+            $advances = $method->invoke($service, $mappings['director_advances_made'], $report, false);
+            $cashRepayments = $method->invoke($service, $mappings['director_cash_repayments'], $report, false);
+            $closing = $method->invoke($service, $mappings['director_closing_advance'], $report, false);
+            $harness->assertSame(350.0, (float)$advances['numeric_value']);
+            $harness->assertSame(90.0, (float)$cashRepayments['numeric_value']);
+            $harness->assertSame(200.0, (float)$closing['numeric_value']);
+            $harness->assertSame('current_period_duration', (string)$cashRepayments['context_ref']);
+            $harness->assertSame('current_period_end', (string)$closing['context_ref']);
+            $harness->assertCount(2, (array)$cashRepayments['source']['source_rows']);
+
+            unset($report['director_loan_disclosure']['total_cash_repayments']);
+            $harness->assertSame(
+                null,
+                $method->invoke($service, $mappings['director_cash_repayments'], $report, false)
+            );
         });
 
         $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'normalises the supported UK identity without duplicating the postcode', static function () use ($harness): void {
@@ -226,6 +392,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $companyId = (int)$fixture['company_id'];
                 $periodId = (int)$fixture['accounting_period_id'];
                 $presentationService = new \eel_accounts\Service\DirectorLoanReportingPresentationService();
+                $approvingDirector = ixbrl_test_ensure_approving_director(
+                    $companyId,
+                    '2026-01-31'
+                );
 
                 $savedDisclosures = (new \eel_accounts\Service\IxbrlAccountsDisclosureService())->save(
                     $companyId,
@@ -236,7 +406,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         'entity_dormant' => 0,
                         'is_still_trading' => 1,
                         'accounts_approval_date' => '2026-01-31',
-                        'approving_director_name' => 'Fixture Director',
+                        'approving_director_id' => (int)$approvingDirector['id'],
                         'prepared_under_small_companies_regime' => 1,
                         'audit_exempt_section_477' => 1,
                         'directors_acknowledge_responsibilities' => 1,

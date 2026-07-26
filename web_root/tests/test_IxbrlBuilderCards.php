@@ -178,6 +178,7 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
                     'average_number_employees' => 1,
                     'entity_trading_status' => 'trading',
                     'accounts_approval_date' => '2025-05-29',
+                    'approving_director_id' => 17,
                     'approving_director_name' => 'James Elstone',
                     'prepared_under_small_companies_regime' => 1,
                     'audit_exempt_section_477' => 1,
@@ -192,7 +193,12 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
                 'suggestion_sources' => [
                     'average_number_employees' => ['filing_date' => '2025-06-04'],
                 ],
-                'director_suggestions' => ['James Elstone'],
+                'director_suggestions' => [[
+                    'id' => 17,
+                    'full_name' => 'James Elstone',
+                    'appointed_on' => '2020-01-01',
+                    'resigned_on' => null,
+                ]],
                 'dormancy' => [
                     'calculated' => true,
                     'entity_dormant' => 0,
@@ -233,8 +239,18 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, 'name="is_still_trading" value="1" required checked'));
         $harness->assertTrue(str_contains($html, 'Has the company ever traded?'));
         $harness->assertFalse(str_contains($html, 'name="entity_trading_status"'));
-        $harness->assertTrue(str_contains($html, '<select class="select" id="ixbrl_approving_director_name" name="approving_director_name" required data-state-default="James Elstone">'));
-        $harness->assertTrue(str_contains($html, '<option value="James Elstone" selected>James Elstone</option>'));
+        $harness->assertTrue(str_contains($html, '<select class="select" id="ixbrl_approving_director_id" name="approving_director_id" required data-state-default="17">'));
+        $harness->assertTrue(str_contains($html, '<option value="17" selected>James Elstone</option>'));
+        $approvalDatePosition = strpos($html, 'id="ixbrl_accounts_approval_date"');
+        $approvingDirectorPosition = strpos($html, 'id="ixbrl_approving_director_id"');
+        $lastUpdatedPosition = strpos($html, '<th scope="row">Last updated on</th>');
+        $harness->assertTrue(
+            $approvalDatePosition !== false
+            && $approvingDirectorPosition !== false
+            && $lastUpdatedPosition !== false
+            && $approvalDatePosition < $approvingDirectorPosition
+            && $approvingDirectorPosition < $lastUpdatedPosition
+        );
         $harness->assertFalse(str_contains($html, '<datalist'));
         $harness->assertTrue(str_contains($html, 'Was the company dormant for this accounting period?'));
         $harness->assertTrue(str_contains($html, 'panel-soft ixbrl-dormancy-summary'));
@@ -249,10 +265,10 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, '<td>17/07/2026</td>'));
         $harness->assertTrue(str_contains($html, 'class="ixbrl-small-companies-detail"'));
         $harness->assertFalse(str_contains($html, 'name="prepared_under_small_companies_regime"'));
-        $harness->assertTrue(str_contains($html, 'value="James Elstone"'));
+        $harness->assertFalse(str_contains($html, 'value="James Elstone"'));
         $harness->assertTrue(str_contains($html, 'Required'));
         $harness->assertTrue(str_contains($html, 'Save Basic Information'));
-        $harness->assertTrue(str_contains($html, 'data-state-fields="ixbrl_average_number_employees,ixbrl_accounts_approval_date,ixbrl_approving_director_name"'));
+        $harness->assertTrue(str_contains($html, 'data-state-fields="ixbrl_average_number_employees,ixbrl_accounts_approval_date,ixbrl_approving_director_id"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_ixbrl_core_details"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_ixbrl_disclosure_field"'));
         $harness->assertTrue(str_contains($html, 'data-submit-on-change="true"'));
@@ -262,7 +278,8 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, '<h3 class="card-title">Account Period Basic Information</h3>'));
         $harness->assertTrue(str_contains($html, '<th scope="row">Last updated on</th><td>Not yet saved</td>'));
         $harness->assertTrue(str_contains($html, '<th scope="row">Last updated by</th><td>Not yet saved</td>'));
-        $harness->assertTrue(str_contains($html, '>Approving Director</label>'));
+        $harness->assertTrue(str_contains($html, '>Director signing and approving the accounts</label>'));
+        $harness->assertTrue(str_contains($html, 'The selected officer’s name is used as the approving and signing director'));
         $harness->assertTrue(str_contains($html, 'actions-row actions-row-nowrap ixbrl-core-details-actions'));
         $harness->assertTrue(str_contains($html, 'FRS 105 Notes'));
         $harness->assertTrue(str_contains($html, 'Companies House Revised Accounts'));

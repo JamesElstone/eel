@@ -65,6 +65,20 @@ require_once PROJECT_ROOT . 'third_party' . DIRECTORY_SEPARATOR . 'arelle' . DIR
             }
         });
 
+        $harness->check(ArelleIxbrlValidator::class, 'captures coded Arelle warnings followed by punctuation', static function () use ($harness): void {
+            $fixture = arelleValidatorFixture('bracketed_warning');
+            $validator = new ArelleIxbrlValidator($fixture['config'], $fixture['root']);
+            $result = $validator->validate($fixture['ixbrl']);
+
+            $harness->assertSame(true, $result['ok'] ?? false);
+            $harness->assertSame('passed', $result['status'] ?? '');
+            $harness->assertSame(1, count((array)($result['warnings'] ?? [])));
+            $harness->assertTrue(str_contains(
+                (string)($result['warnings'][0] ?? ''),
+                'ix11.8.1.2:headerDisplayNone'
+            ));
+        });
+
         $harness->check(ArelleIxbrlValidator::class, 'uses project-local package cache and offline flags', static function () use ($harness): void {
             $fixture = arelleValidatorFixture('success');
             $validator = new ArelleIxbrlValidator($fixture['config'], $fixture['root']);
@@ -115,6 +129,7 @@ function arelleValidatorFixture(string $mode = 'success'): array
         'bracketed_error' => "echo [ERROR] invalid fact\r\nexit /b 0\r\n",
         'bracketed_critical' => "echo [critical] validation aborted\r\nexit /b 0\r\n",
         'traceback' => "echo Traceback:\r\nexit /b 0\r\n",
+        'bracketed_warning' => "echo [ix11.8.1.2:headerDisplayNone] Warning, ix:header display recommendation\r\nexit /b 0\r\n",
         default => "echo validation passed\r\nexit /b 0\r\n",
     };
     file_put_contents($cmd, $body);

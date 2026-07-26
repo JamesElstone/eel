@@ -12,32 +12,95 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue((array)($result['errors'] ?? []) !== []);
         });
 
-        $harness->check($service::class, 'retains the literal Companies House declaration after revised-account DOM serialisation', static function () use ($harness, $service): void {
-            $source = '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
-                . '<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"'
+        $harness->check($service::class, 'creates a separate revised page and hidden superseded facts without weakening the XML envelope', static function () use ($harness, $service): void {
+            $source = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>' . "\n"
+                . '<html xmlns="http://www.w3.org/1999/xhtml"'
                 . ' xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"'
                 . ' xmlns:xbrli="http://www.xbrl.org/2003/instance"'
+                . ' xmlns:xbrldi="http://xbrl.org/2006/xbrldi"'
                 . ' xmlns:bus="http://xbrl.frc.org.uk/cd/2026-01-01/business"'
-                . ' xmlns:ixt="http://www.xbrl.org/inlineXBRL/transformation/2015-02-26" xml:lang="en">'
-                . '<head/><body><h1>Original accounts</h1><div style="display:none"><ix:header><ix:resources>'
-                . '<xbrli:context id="current_period_duration"/>'
-                . '</ix:resources></ix:header></div><p id="preserved">Preserved content</p></body></html>';
+                . ' xmlns:core="http://xbrl.frc.org.uk/fr/2026-01-01/core"'
+                . ' xmlns:ixt="http://www.xbrl.org/inlineXBRL/transformation/2015-02-26"'
+                . ' xmlns:iso4217="http://www.xbrl.org/2003/iso4217" lang="en" xml:lang="en">'
+                . '<head><title>Micro-entity accounts</title></head><body>'
+                . '<div class="ixbrl-header"><ix:header><ix:hidden></ix:hidden><ix:resources>'
+                . '<xbrli:context id="current_period_duration"><xbrli:entity><xbrli:identifier scheme="http://www.companieshouse.gov.uk/">01234567</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period></xbrli:context>'
+                . '<xbrli:context id="current_period_end"><xbrli:entity><xbrli:identifier scheme="http://www.companieshouse.gov.uk/">01234567</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>'
+                . '<xbrli:unit id="GBP"><xbrli:measure>iso4217:GBP</xbrli:measure></xbrli:unit>'
+                . '</ix:resources></ix:header></div>'
+                . '<div class="accountspage titlepage"><h1><ix:nonNumeric name="bus:EntityCurrentLegalOrRegisteredName" contextRef="current_period_duration">Example Limited</ix:nonNumeric></h1>'
+                . '<p><ix:nonNumeric name="bus:UKCompaniesHouseRegisteredNumber" contextRef="current_period_duration">01234567</ix:nonNumeric></p>'
+                . '<h2>MICRO-ENTITY ACCOUNTS</h2></div>'
+                . '<div class="accountspage pagebreak" id="preserved"><ix:nonNumeric name="core:DateAuthorisationFinancialStatementsForIssue" contextRef="current_period_end" format="ixt:datedaymonthyearen">21 July 2026</ix:nonNumeric>'
+                . '<ix:nonFraction name="core:FixedAssets" contextRef="current_period_end" unitRef="GBP" decimals="2" format="ixt:numdotdecimal">100.00</ix:nonFraction></div>'
+                . '</body></html>';
             $result = $service->transform($source, [
                 'replaces_statement' => 'These revised accounts replace the previously filed report.',
                 'statutory_accounts_statement' => 'These are now the statutory accounts.',
-                'prepared_as_statement' => 'Prepared as at the date of the previous report.',
+                'prepared_as_statement' => 'Prepared by reference to the original accounts, not the revision date, and excluding intervening events.',
                 'non_compliance_explanation' => 'The original report contained an error.',
                 'significant_amendments' => 'The comparative figures were corrected.',
                 'revision_approval_date' => '2026-07-21',
-            ]);
+            ], 'EEL-AR-NOT-VISIBLE', [[
+                'concept' => 'core:FixedAssets',
+                'context_ref' => 'current_period_end_superseded',
+                'value' => 0.0,
+                'unit_ref' => 'GBP',
+                'decimals' => '2',
+                'source_document_id' => 90,
+            ]]);
 
             $harness->assertSame(true, (bool)($result['success'] ?? false));
             $xhtml = (string)($result['xhtml'] ?? '');
-            $harness->assertTrue(str_starts_with($xhtml, '<?xml version="1.0"?>' . "\n"));
-            $harness->assertFalse(str_contains(strtok($xhtml, "\n"), 'encoding='));
+            $harness->assertTrue(str_starts_with(
+                $xhtml,
+                '<?xml version="1.0" encoding="UTF-8" standalone="no"?>' . "\n"
+            ));
+            $harness->assertFalse(str_contains($xhtml, '<!DOCTYPE'));
             $harness->assertTrue(str_contains($xhtml, 'id="preserved"'));
-            $harness->assertFalse(str_contains($xhtml, ' xml:lang="en"'));
+            $harness->assertFalse(str_contains($xhtml, ' lang="en"'));
+            $harness->assertTrue(str_contains($xhtml, ' xml:lang="en"'));
+            $harness->assertTrue(str_contains($xhtml, 'REVISED MICRO-ENTITY ACCOUNTS'));
+            $harness->assertTrue(str_contains($xhtml, 'class="accountspage pagebreak revision-page"'));
             $harness->assertTrue(str_contains($xhtml, 'ReportAnAmendedRevisedVersionPreviouslyFiledReportTruefalse'));
+            $harness->assertTrue(str_contains($xhtml, 'dimension="bus:OriginalRevisedDataDimension">bus:Superseded'));
+            $harness->assertTrue(str_contains($xhtml, 'name="core:FixedAssets" contextRef="current_period_end_superseded"'));
+            $harness->assertTrue(str_contains($xhtml, 'format="ixt:datedaymonthyearen">21 July 2026'));
+            $harness->assertFalse(str_contains($xhtml, 'EEL-AR-NOT-VISIBLE'));
+            $harness->assertSame(1, (int)($result['superseded_fact_count'] ?? 0));
+        });
+
+        $harness->check($service::class, 'fails rather than emit conflicting revision and board approval dates', static function () use ($harness, $service): void {
+            $source = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>' . "\n"
+                . '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:ix="http://www.xbrl.org/2013/inlineXBRL" xmlns:xbrli="http://www.xbrl.org/2003/instance" xmlns:core="http://xbrl.frc.org.uk/fr/2026-01-01/core" lang="en" xml:lang="en"><head><title>Accounts</title></head><body>'
+                . '<div><ix:header><ix:hidden></ix:hidden><ix:resources><xbrli:context id="current_period_duration"/><xbrli:context id="current_period_end"/></ix:resources></ix:header></div>'
+                . '<div class="accountspage titlepage"><h2>MICRO-ENTITY ACCOUNTS</h2></div>'
+                . '<p><ix:nonNumeric name="core:DateAuthorisationFinancialStatementsForIssue" contextRef="current_period_end">2026-07-20</ix:nonNumeric></p>'
+                . '</body></html>';
+            $result = $service->transform($source, [
+                'replaces_statement' => 'Replacement.',
+                'statutory_accounts_statement' => 'Statutory.',
+                'prepared_as_statement' => 'Date basis.',
+                'non_compliance_explanation' => 'Original error.',
+                'significant_amendments' => 'Corrections made.',
+                'revision_approval_date' => '2026-07-21',
+            ]);
+            $harness->assertFalse((bool)($result['success'] ?? true));
+            $harness->assertTrue(str_contains(implode(' ', (array)$result['errors']), 'must match'));
+        });
+
+        $harness->check($service::class, 'builds the complete statutory date-basis wording', static function () use ($harness, $service): void {
+            $method = new ReflectionMethod($service, 'declarations');
+            $method->setAccessible(true);
+            $declarations = (array)$method->invoke($service, '2025-12-31', [
+                'non_compliance_explanation' => 'The original omitted assets.',
+                'significant_amendments' => 'Assets and reserves were corrected.',
+                'revision_approval_date' => '2026-07-21',
+            ]);
+            $wording = (string)$declarations['prepared_as_statement'];
+            $harness->assertTrue(str_contains($wording, 'by reference to the date of the original annual accounts'));
+            $harness->assertTrue(str_contains($wording, 'have not been prepared as at 21 July 2026'));
+            $harness->assertTrue(str_contains($wording, 'do not deal with events occurring between'));
         });
     }
 );

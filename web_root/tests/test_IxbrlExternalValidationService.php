@@ -161,6 +161,10 @@ function ixbrlExternalValidationFixture(): array
     $settings->flush();
     ixbrl_test_assign_sales_nominal($companyId);
     ixbrl_test_assign_director_loan_nominals($companyId);
+    $approvingDirector = ixbrl_test_ensure_approving_director(
+        $companyId,
+        '2025-10-31'
+    );
     $savedDisclosures = (new \eel_accounts\Service\IxbrlAccountsDisclosureService())->save(
         $companyId,
         $periodId,
@@ -175,7 +179,7 @@ function ixbrlExternalValidationFixture(): array
             'has_director_advances_credits_or_guarantees' => 0,
             'has_financial_commitments_guarantees_or_contingencies' => 0,
             'accounts_approval_date' => '2025-10-31',
-            'approving_director_name' => 'Validation Director',
+            'approving_director_id' => (int)$approvingDirector['id'],
             'prepared_under_small_companies_regime' => 1,
             'audit_exempt_section_477' => 1,
             'directors_acknowledge_responsibilities' => 1,

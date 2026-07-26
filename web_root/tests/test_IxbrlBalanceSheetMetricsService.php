@@ -92,6 +92,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame(525.0, (float)($buckets['net_current_assets_liabilities'] ?? 0));
                 $harness->assertSame(525.0, (float)($buckets['total_assets_less_current_liabilities'] ?? 0));
                 $harness->assertSame(525.0, (float)($buckets['net_assets_liabilities'] ?? 0));
+                $harness->assertSame(0.0, (float)($buckets['called_up_share_capital_not_paid'] ?? -1));
+                $harness->assertSame(0.0, (float)($buckets['provisions_for_liabilities'] ?? -1));
+                $harness->assertSame(0.0, (float)($buckets['accruals_deferred_income'] ?? -1));
                 foreach ([
                     'current_assets',
                     'prepayments_accrued_income',
@@ -105,8 +108,110 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     );
                 }
                 $harness->assertSame(3, count((array)($sources['net_current_assets_liabilities'] ?? [])));
-                $harness->assertSame(4, count((array)($sources['total_assets_less_current_liabilities'] ?? [])));
-                $harness->assertSame(2, count((array)($sources['net_assets_liabilities'] ?? [])));
+                $harness->assertSame(5, count((array)($sources['total_assets_less_current_liabilities'] ?? [])));
+                $harness->assertSame(4, count((array)($sources['net_assets_liabilities'] ?? [])));
+            } finally {
+                if (InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
+                }
+            }
+        });
+
+        $harness->check(\eel_accounts\Service\IxbrlBalanceSheetMetricsService::class, 'keeps the separate Companies Act balance-sheet rows mathematically complete', static function () use ($harness, $service): void {
+            InterfaceDB::beginTransaction();
+            try {
+                $suffix = substr(hash('sha256', __FILE__ . ':standard-rows:' . microtime(true)), 0, 10);
+                $companyNumber = 'SR' . strtoupper(substr($suffix, 0, 8));
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO companies (company_name, company_number) VALUES (:company_name, :company_number)',
+                    ['company_name' => 'iXBRL Standard Rows Limited', 'company_number' => $companyNumber]
+                );
+                $companyId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM companies WHERE company_number = :company_number',
+                    ['company_number' => $companyNumber]
+                );
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+                     VALUES (:company_id, :label, :period_start, :period_end)',
+                    [
+                        'company_id' => $companyId,
+                        'label' => 'Standard Rows FY',
+                        'period_start' => '2026-01-01',
+                        'period_end' => '2026-12-31',
+                    ]
+                );
+                $periodId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM accounting_periods WHERE company_id = :company_id',
+                    ['company_id' => $companyId]
+                );
+                $calledUp = ixbrlBalanceSheetNominal(
+                    'SC' . $suffix,
+                    'Called-up share capital not paid',
+                    'asset',
+                    ixbrlBalanceSheetSubtype(
+                        'called_up_share_capital_not_paid',
+                        'Called-up Share Capital Not Paid',
+                        'asset'
+                    )
+                );
+                $bank = ixbrlBalanceSheetNominal(
+                    'SB' . $suffix,
+                    'Fixture Bank',
+                    'asset',
+                    ixbrlBalanceSheetSubtype('bank', 'Bank', 'asset')
+                );
+                $provision = ixbrlBalanceSheetNominal(
+                    'SP' . $suffix,
+                    'Fixture Provision',
+                    'liability',
+                    ixbrlBalanceSheetSubtype('provisions_for_liabilities', 'Provisions for Liabilities', 'liability')
+                );
+                $accrual = ixbrlBalanceSheetNominal(
+                    'SA' . $suffix,
+                    'Fixture Accrual',
+                    'liability',
+                    ixbrlBalanceSheetSubtype('accruals_deferred_income', 'Accruals and Deferred Income', 'liability')
+                );
+                $equity = ixbrlBalanceSheetNominal(
+                    'SE' . $suffix,
+                    'Fixture Equity',
+                    'equity',
+                    ixbrlBalanceSheetSubtype('capital_reserves', 'Capital and Reserves', 'equity')
+                );
+                $journalId = ixbrlBalanceSheetJournal(
+                    $companyId,
+                    $periodId,
+                    'fixture-standard-rows-' . $suffix,
+                    '2026-12-31'
+                );
+                ixbrlBalanceSheetLine($journalId, $calledUp, 25.0, 0.0);
+                ixbrlBalanceSheetLine($journalId, $bank, 100.0, 0.0);
+                ixbrlBalanceSheetLine($journalId, $provision, 0.0, 10.0);
+                ixbrlBalanceSheetLine($journalId, $accrual, 0.0, 5.0);
+                ixbrlBalanceSheetLine($journalId, $equity, 0.0, 110.0);
+
+                $metrics = $service->fetchClosingMetrics($companyId, $periodId);
+                $buckets = (array)$metrics['buckets'];
+                $sources = (array)$metrics['sources'];
+                $harness->assertSame(25.0, (float)$buckets['called_up_share_capital_not_paid']);
+                $harness->assertSame(100.0, (float)$buckets['current_assets']);
+                $harness->assertSame(10.0, (float)$buckets['provisions_for_liabilities']);
+                $harness->assertSame(5.0, (float)$buckets['accruals_deferred_income']);
+                $harness->assertSame(125.0, (float)$buckets['total_assets_less_current_liabilities']);
+                $harness->assertSame(110.0, (float)$buckets['net_assets_liabilities']);
+                $harness->assertSame(true, (bool)$metrics['is_balance_sheet_balanced']);
+                foreach ([
+                    'called_up_share_capital_not_paid',
+                    'provisions_for_liabilities',
+                    'accruals_deferred_income',
+                    'total_assets_less_current_liabilities',
+                    'net_assets_liabilities',
+                ] as $bucket) {
+                    $harness->assertSame(
+                        number_format((float)$buckets[$bucket], 2, '.', ''),
+                        number_format(ixbrlBalanceSourceTotal((array)$sources[$bucket]), 2, '.', '')
+                    );
+                }
             } finally {
                 if (InterfaceDB::inTransaction()) {
                     InterfaceDB::rollBack();
@@ -163,7 +268,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $companyId,
                     $periodId,
                     'after_more_than_one_year',
-                    'test'
+                    'test',
+                    [
+                        'deferment_right_confirmed' => true,
+                        'deferment_evidence' => 'Executed facility gave the company an unconditional right at the balance-sheet date to defer payment for at least twelve months.',
+                    ]
                 );
                 $harness->assertSame(true, (bool)($saved['success'] ?? false));
 

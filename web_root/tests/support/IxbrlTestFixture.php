@@ -115,6 +115,68 @@ function ixbrl_test_assign_director_loan_nominals(
     return ['asset' => $assetNominalId, 'liability' => $liabilityNominalId];
 }
 
+/** Return a director who was in office on the approval date, creating one only when needed. */
+function ixbrl_test_ensure_approving_director(int $companyId, string $approvalDate): array
+{
+    $director = InterfaceDB::fetchOne(
+        'SELECT id, full_name, appointed_on, resigned_on
+         FROM company_directors
+         WHERE company_id = :company_id
+           AND LOWER(TRIM(officer_role)) = :director_role
+           AND (appointed_on IS NULL OR appointed_on <= :approval_date_appointed)
+           AND (resigned_on IS NULL OR resigned_on >= :approval_date_resigned)
+         ORDER BY is_active DESC, id ASC
+         LIMIT 1',
+        [
+            'company_id' => $companyId,
+            'director_role' => 'director',
+            'approval_date_appointed' => $approvalDate,
+            'approval_date_resigned' => $approvalDate,
+        ]
+    );
+    if (is_array($director)) {
+        return $director;
+    }
+
+    $externalKey = 'ixbrl-approving-director-' . $companyId;
+    InterfaceDB::prepareExecute(
+        'INSERT INTO company_directors (
+            company_id, source, external_key, full_name, officer_role,
+            appointed_on, resigned_on, is_active
+         ) VALUES (
+            :company_id, :source, :external_key, :full_name, :officer_role,
+            :appointed_on, NULL, 1
+         )',
+        [
+            'company_id' => $companyId,
+            'source' => 'test-fixture',
+            'external_key' => $externalKey,
+            'full_name' => 'Test Director',
+            'officer_role' => 'director',
+            'appointed_on' => $approvalDate,
+        ]
+    );
+
+    $director = InterfaceDB::fetchOne(
+        'SELECT id, full_name, appointed_on, resigned_on
+         FROM company_directors
+         WHERE company_id = :company_id
+           AND source = :source
+           AND external_key = :external_key
+         LIMIT 1',
+        [
+            'company_id' => $companyId,
+            'source' => 'test-fixture',
+            'external_key' => $externalKey,
+        ]
+    );
+    if (!is_array($director)) {
+        throw new RuntimeException('The iXBRL approving-director fixture could not be created.');
+    }
+
+    return $director;
+}
+
 function ixbrl_test_complete_disclosures(int $companyId, int $accountingPeriodId, string $actor = 'test-fixture'): array
 {
     ixbrl_test_ensure_frs105_thresholds();
@@ -125,6 +187,10 @@ function ixbrl_test_complete_disclosures(int $companyId, int $accountingPeriodId
     if (!is_array($period)) {
         throw new RuntimeException('The accounting period is unavailable for the iXBRL disclosure fixture.');
     }
+    $approvingDirector = ixbrl_test_ensure_approving_director(
+        $companyId,
+        (string)$period['period_end']
+    );
     InterfaceDB::prepareExecute(
         'UPDATE companies SET
             company_status = COALESCE(NULLIF(company_status, \'\'), :company_status),
@@ -160,7 +226,7 @@ function ixbrl_test_complete_disclosures(int $companyId, int $accountingPeriodId
             'has_director_advances_credits_or_guarantees' => 0,
             'has_financial_commitments_guarantees_or_contingencies' => 0,
             'accounts_approval_date' => (string)$period['period_end'],
-            'approving_director_name' => 'Test Director',
+            'approving_director_id' => (int)$approvingDirector['id'],
             'prepared_under_small_companies_regime' => 1,
             'audit_exempt_section_477' => 1,
             'directors_acknowledge_responsibilities' => 1,

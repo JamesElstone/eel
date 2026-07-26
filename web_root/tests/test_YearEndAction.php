@@ -76,6 +76,7 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
     $harness->check('YearEndAction', 'posts confirmed director loan reclassification deltas and remains idempotent', static function () use ($harness, $instance): void {
         yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness, $instance): void {
             $instance = yearEndActionTestInstanceWithDirectorCount(1);
+            yearEndActionDirectorLoanTestConfirmSetOff($fixture);
             yearEndActionDirectorLoanTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 1000.00, 0.00, 'asset');
             yearEndActionDirectorLoanTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 1500.00, 'liability');
 
@@ -850,6 +851,26 @@ function yearEndActionDirectorLoanTestInsertLineJournal(array $fixture, int $nom
             'line_description' => 'Year end action DLO fixture',
         ]
     );
+}
+
+function yearEndActionDirectorLoanTestConfirmSetOff(array $fixture): void
+{
+    $result = (new \eel_accounts\Service\DirectorLoanReportingPresentationService())->save(
+        (int)$fixture['company_id'],
+        (int)$fixture['accounting_period_id'],
+        \eel_accounts\Service\DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR,
+        'test',
+        [
+            'set_off_right_confirmed' => true,
+            'set_off_net_settlement_intended' => true,
+            'set_off_evidence' => 'Test agreement establishes the enforceable right and simultaneous settlement intention.',
+        ]
+    );
+    if (empty($result['success'])) {
+        throw new RuntimeException(implode(' ', (array)($result['errors'] ?? [
+            'Unable to record the Director Loan set-off evidence fixture.',
+        ])));
+    }
 }
 
 function yearEndActionDirectorLoanTestRequest(int $companyId, int $accountingPeriodId, string $intent = 'post_director_loan_offset', array $postOverrides = []): RequestFramework

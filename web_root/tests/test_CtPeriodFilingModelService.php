@@ -827,13 +827,17 @@ function ctPeriodFilingModelFixture(
                 'basis_json' => $approvalJson,
             ]
         );
+        $approvingDirector = ixbrl_test_ensure_approving_director(
+            $companyId,
+            '2024-01-31'
+        );
         $savedDisclosures = (new \eel_accounts\Service\IxbrlAccountsDisclosureService())->save(
             $companyId,
             $accountingPeriodId,
             [
                 'accounting_standard' => 'FRS_105', 'average_number_employees' => 1,
                 'is_still_trading' => 1, 'accounts_approval_date' => '2024-01-31',
-                'approving_director_name' => 'Fixture Director',
+                'approving_director_id' => (int)$approvingDirector['id'],
                 'prepared_under_small_companies_regime' => 1, 'audit_exempt_section_477' => 1,
                 'directors_acknowledge_responsibilities' => 1, 'members_have_not_required_audit' => 1,
                 'micro_entity_eligibility_confirmed' => 1, 'going_concern_basis_appropriate' => 1,

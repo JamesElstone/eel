@@ -12,6 +12,40 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 (new GeneratedServiceClassTestHarness())->run(
     \eel_accounts\Service\FrcTaxonomyPackageService::class,
     static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\FrcTaxonomyPackageService $service): void {
+        $writePackage = static function (string $path): void {
+            $root = 'FRC-2026-Taxonomy-v1.0.0/';
+            $files = [
+                $root . 'META-INF/taxonomyPackage.xml' =>
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                . '<taxonomyPackage xmlns="http://xbrl.org/2016/taxonomy-package">'
+                . '<identifier>https://xbrl.frc.org.uk/fr/2026-01-01/v1-0-0</identifier>'
+                . '<version>1.0.0</version><entryPoints><entryPoint><name>FRS-102</name>'
+                . '<entryPointDocument href="' . \eel_accounts\Service\IxbrlTaxonomyProfileService::SCHEMA_REF . '"/>'
+                . '</entryPoint></entryPoints></taxonomyPackage>',
+                $root . 'FRS-102/2026-01-01/FRS-102-2026-01-01.xsd' =>
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                . '<schema xmlns="http://www.w3.org/2001/XMLSchema" '
+                . 'targetNamespace="http://xbrl.frc.org.uk/FRS-102/2026-01-01"/>',
+            ];
+            $local = '';
+            $central = '';
+            foreach ($files as $name => $content) {
+                $offset = strlen($local);
+                $size = strlen($content);
+                $crc = (int)hexdec(hash('crc32b', $content));
+                $nameLength = strlen($name);
+                $local .= pack('VvvvvvVVVvv', 0x04034b50, 20, 0, 0, 0, 33, $crc, $size, $size, $nameLength, 0)
+                    . $name . $content;
+                $central .= pack('VvvvvvvVVVvvvvvVV', 0x02014b50, 20, 20, 0, 0, 0, 33, $crc, $size, $size, $nameLength, 0, 0, 0, 0, 0, $offset)
+                    . $name;
+            }
+            $zip = $local . $central
+                . pack('VvvvvVVv', 0x06054b50, 0, 0, count($files), count($files), strlen($central), strlen($local), 0);
+            if (file_put_contents($path, $zip) === false) {
+                throw new RuntimeException('Could not create the taxonomy-package test fixture.');
+            }
+        };
+
         $harness->check(\eel_accounts\Service\FrcTaxonomyPackageService::class, 'returns safe empty values before the taxonomy table is installed', static function () use ($harness, $service): void {
             \InterfaceDB::execute('DROP TABLE IF EXISTS frc_taxonomy_packages');
 
@@ -19,7 +53,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(null, $service->activePackage());
         });
 
-        $harness->check(\eel_accounts\Service\FrcTaxonomyPackageService::class, 'returns only a verified active package with an intact archive', static function () use ($harness, $service): void {
+        $harness->check(\eel_accounts\Service\FrcTaxonomyPackageService::class, 'returns only a verified active package with an intact archive', static function () use ($harness, $service, $writePackage): void {
             \InterfaceDB::execute(
                 "CREATE TABLE IF NOT EXISTS frc_taxonomy_packages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,8 +75,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             if (!is_dir(dirname($archivePath))) {
                 mkdir(dirname($archivePath), 0775, true);
             }
-            file_put_contents($archivePath, 'verified FRC taxonomy fixture');
+            $writePackage($archivePath);
             $hash = hash_file('sha256', $archivePath);
+            $harness->assertTrue(is_string($hash));
+            $trustedFixtureService = new \eel_accounts\Service\FrcTaxonomyPackageService(
+                new \eel_accounts\Service\IxbrlTaxonomyCompatibilityService(
+                    [],
+                    (string)$hash
+                )
+            );
 
             try {
                 \InterfaceDB::prepareExecute(
@@ -57,9 +98,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ]
                 );
 
-                $packages = $service->fetchPackages();
+                $packages = $trustedFixtureService->fetchPackages();
                 $harness->assertTrue($packages !== []);
-                $active = $service->activePackage();
+                $active = $trustedFixtureService->activePackage();
                 $harness->assertSame('2099', (string)($active['taxonomy_version'] ?? ''));
                 $harness->assertSame(strtolower((string)$hash), (string)($active['sha256'] ?? ''));
 
@@ -67,7 +108,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     "UPDATE frc_taxonomy_packages SET sha256 = :sha256 WHERE taxonomy_version = '2099'",
                     ['sha256' => str_repeat('0', 64)]
                 );
-                $harness->assertSame(null, $service->activePackage());
+                $harness->assertSame(null, $trustedFixtureService->activePackage());
             } finally {
                 \InterfaceDB::execute("DELETE FROM frc_taxonomy_packages WHERE taxonomy_version = '2099'");
                 if (is_file($archivePath)) {

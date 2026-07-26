@@ -41,13 +41,18 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             ];
             $current = [
                 'company' => ['id' => 1],
-                'accounts_report' => ['basis_version' => 'ixbrl-accounts-report-v1', 'basis_hash' => 'new'],
+                'accounts_report' => ['basis_version' => 'ixbrl-accounts-report-v3', 'basis_hash' => 'new'],
             ];
             $errors = $method->invoke($service, ['basis_json' => json_encode($stored)], $current);
 
             $h->assertSame([
                 'The Accounts Report generation basis changed. Reload the PHP web runtime if this is a deployment, then approve the current filing basis again.',
             ], $errors);
+        });
+
+        $h->check($service::class, 'versions the filing contracts that freeze the selected approving director', static function () use ($h, $service): void {
+            $h->assertSame('accounts-filing-approval-v6', $service::BASIS_VERSION);
+            $h->assertSame('ct-period-filing-model-v10', $service::CT_BASIS_VERSION);
         });
     }
 );

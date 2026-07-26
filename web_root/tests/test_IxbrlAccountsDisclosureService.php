@@ -37,6 +37,22 @@ $harness->run(\eel_accounts\Service\IxbrlAccountsDisclosureService::class, stati
             $harness->assertTrue(str_contains($migration, 'has_financial_commitments_guarantees_or_contingencies TINYINT(1) NULL'));
             $harness->assertFalse(str_contains($migration, 'INSERT INTO ixbrl_accounts_disclosures'));
             $harness->assertFalse(str_contains($migration, 'UPDATE ixbrl_accounts_disclosures'));
+
+            $directorMigration = (string)file_get_contents(
+                dirname(__DIR__, 2)
+                . DIRECTORY_SEPARATOR . 'db_schema'
+                . DIRECTORY_SEPARATOR . 'migrations'
+                . DIRECTORY_SEPARATOR . '2026_07_26_004_ixbrl_approving_director.sql'
+            );
+            $harness->assertTrue(str_contains(
+                $directorMigration,
+                'ADD COLUMN IF NOT EXISTS approving_director_id BIGINT NULL'
+            ));
+            $harness->assertTrue(str_contains(
+                $directorMigration,
+                'REFERENCES company_directors (id)'
+            ));
+            $harness->assertTrue(str_contains($directorMigration, 'HAVING COUNT(*) = 1'));
         }
     );
 
@@ -49,7 +65,7 @@ $harness->run(\eel_accounts\Service\IxbrlAccountsDisclosureService::class, stati
             $unsupported = new ReflectionMethod($service, 'unsupportedProfileFields');
             $profileErrors = new ReflectionMethod($service, 'unsupportedProfileErrors');
 
-            $noAnswers = ixbrlDisclosureInput();
+            $noAnswers = ixbrlDisclosureInput(1);
             [$validated, $errors] = $validate->invoke($service, $noAnswers, $period);
             $harness->assertSame([], $errors);
             $harness->assertSame(0, (int)$validated['has_material_off_balance_sheet_arrangements']);
@@ -135,20 +151,27 @@ $harness->run(\eel_accounts\Service\IxbrlAccountsDisclosureService::class, stati
                 $fixture = ixbrlDisclosureFixture(false);
                 $companyId = (int)$fixture['company_id'];
                 $periodId = (int)$fixture['accounting_period_id'];
+                $directorId = (int)$fixture['director_id'];
 
                 $initial = $service->fetch($companyId, $periodId);
                 $harness->assertSame(false, (bool)($initial['complete'] ?? true));
                 $harness->assertSame(false, (bool)($initial['stored'] ?? true));
                 $harness->assertTrue(in_array('average_number_employees', (array)($initial['missing_fields'] ?? []), true));
 
-                $input = ixbrlDisclosureInput();
+                $input = ixbrlDisclosureInput($directorId);
+                $input['approving_director_name'] = 'Browser-tampered name';
                 $saved = $service->save($companyId, $periodId, $input, 'test:disclosures');
                 $harness->assertSame(true, (bool)($saved['success'] ?? false));
                 $harness->assertSame(true, (bool)($saved['changed'] ?? false));
                 $harness->assertSame(true, (bool)($saved['complete'] ?? false));
                 $harness->assertSame(1, (int)($saved['revision'] ?? 0));
-            $harness->assertSame(1, (int)($saved['disclosures']['entity_dormant'] ?? -1));
-            $harness->assertSame(0.0, (float)($saved['dormancy']['gross_sales'] ?? -1));
+                $harness->assertSame($directorId, (int)($saved['disclosures']['approving_director_id'] ?? 0));
+                $harness->assertSame('Test Director', (string)($saved['disclosures']['approving_director_name'] ?? ''));
+                $harness->assertSame($directorId, (int)($saved['director_suggestions'][0]['id'] ?? 0));
+                $harness->assertSame('Test Director', (string)($saved['director_suggestions'][0]['full_name'] ?? ''));
+                $harness->assertSame('2020-01-01', (string)($saved['director_suggestions'][0]['appointed_on'] ?? ''));
+                $harness->assertSame(1, (int)($saved['disclosures']['entity_dormant'] ?? -1));
+                $harness->assertSame(0.0, (float)($saved['dormancy']['gross_sales'] ?? -1));
 
                 $harness->assertSame(1, (int)InterfaceDB::fetchColumn(
                     'SELECT COUNT(*)
@@ -204,6 +227,115 @@ $harness->run(\eel_accounts\Service\IxbrlAccountsDisclosureService::class, stati
                 $harness->assertTrue(str_contains(
                     implode(' ', (array)($ineligible['profile_errors'] ?? [])),
                     'micro-entity eligibility'
+                ));
+            } finally {
+                if (InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
+                }
+            }
+        }
+    );
+
+    $harness->check(
+        \eel_accounts\Service\IxbrlAccountsDisclosureService::class,
+        'requires a company director who was in office on the approval date and fails closed after tenure corrections',
+        static function () use ($harness, $service): void {
+            if (!InterfaceDB::columnExists('ixbrl_accounts_disclosures', 'approving_director_id')) {
+                $harness->skip('The iXBRL approving-director migration has not been applied.');
+            }
+
+            InterfaceDB::beginTransaction();
+            try {
+                $fixture = ixbrlDisclosureFixture(false);
+                $otherFixture = ixbrlDisclosureFixture(false);
+                $companyId = (int)$fixture['company_id'];
+                $periodId = (int)$fixture['accounting_period_id'];
+                $directorId = (int)$fixture['director_id'];
+                $input = ixbrlDisclosureInput($directorId);
+
+                $input['approving_director_id'] = (int)$otherFixture['director_id'];
+                $otherCompany = $service->save($companyId, $periodId, $input, 'test:wrong-company');
+                $harness->assertSame(false, (bool)($otherCompany['success'] ?? true));
+                $harness->assertTrue(str_contains(
+                    implode(' ', (array)($otherCompany['errors'] ?? [])),
+                    'recorded for this company'
+                ));
+
+                InterfaceDB::prepareExecute(
+                    'UPDATE company_directors SET officer_role = :role WHERE id = :id',
+                    ['role' => 'secretary', 'id' => $directorId]
+                );
+                $input['approving_director_id'] = $directorId;
+                $wrongRole = $service->save($companyId, $periodId, $input, 'test:wrong-role');
+                $harness->assertSame(false, (bool)($wrongRole['success'] ?? true));
+                $harness->assertTrue(str_contains(
+                    implode(' ', (array)($wrongRole['errors'] ?? [])),
+                    'not recorded as a director'
+                ));
+
+                InterfaceDB::prepareExecute(
+                    'UPDATE company_directors
+                     SET officer_role = :role, appointed_on = :appointed_on
+                     WHERE id = :id',
+                    ['role' => 'director', 'appointed_on' => '2026-03-01', 'id' => $directorId]
+                );
+                $appointedLater = $service->save($companyId, $periodId, $input, 'test:appointed-later');
+                $harness->assertSame(false, (bool)($appointedLater['success'] ?? true));
+                $harness->assertTrue(str_contains(
+                    implode(' ', (array)($appointedLater['errors'] ?? [])),
+                    'appointment began on 2026-03-01'
+                ));
+
+                InterfaceDB::prepareExecute(
+                    'UPDATE company_directors
+                     SET appointed_on = :appointed_on, resigned_on = :resigned_on, is_active = 0
+                     WHERE id = :id',
+                    [
+                        'appointed_on' => '2020-01-01',
+                        'resigned_on' => '2026-02-27',
+                        'id' => $directorId,
+                    ]
+                );
+                $resignedEarlier = $service->save($companyId, $periodId, $input, 'test:resigned-earlier');
+                $harness->assertSame(false, (bool)($resignedEarlier['success'] ?? true));
+                $harness->assertTrue(str_contains(
+                    implode(' ', (array)($resignedEarlier['errors'] ?? [])),
+                    'appointment ended on 2026-02-27'
+                ));
+
+                InterfaceDB::prepareExecute(
+                    'UPDATE company_directors SET resigned_on = :resigned_on WHERE id = :id',
+                    ['resigned_on' => '2026-02-28', 'id' => $directorId]
+                );
+                $inOfficeOnApprovalDate = $service->save(
+                    $companyId,
+                    $periodId,
+                    $input,
+                    'test:in-office'
+                );
+                $harness->assertSame(true, (bool)($inOfficeOnApprovalDate['success'] ?? false));
+                $harness->assertSame($directorId, (int)(
+                    $inOfficeOnApprovalDate['disclosures']['approving_director_id'] ?? 0
+                ));
+
+                InterfaceDB::prepareExecute(
+                    'UPDATE company_directors SET resigned_on = :resigned_on WHERE id = :id',
+                    ['resigned_on' => '2026-02-27', 'id' => $directorId]
+                );
+                $invalidated = $service->fetch($companyId, $periodId);
+                $harness->assertSame(false, (bool)($invalidated['complete'] ?? true));
+                $harness->assertTrue(in_array(
+                    'approving_director_id',
+                    (array)($invalidated['missing_fields'] ?? []),
+                    true
+                ));
+                $harness->assertTrue(str_contains(
+                    implode(' ', (array)($invalidated['director_validation_errors'] ?? [])),
+                    'appointment ended on 2026-02-27'
+                ));
+                $harness->assertTrue(str_contains(
+                    implode(' ', (array)($invalidated['profile_errors'] ?? [])),
+                    'appointment ended on 2026-02-27'
                 ));
             } finally {
                 if (InterfaceDB::inTransaction()) {
@@ -304,7 +436,7 @@ $harness->run(\eel_accounts\Service\IxbrlAccountsDisclosureService::class, stati
                     ]
                 );
 
-                $input = ixbrlDisclosureInput();
+                $input = ixbrlDisclosureInput((int)$fixture['director_id']);
                 $input['entity_dormant'] = 1;
                 $input['is_still_trading'] = 0;
                 $input['has_ever_traded'] = 0;
@@ -360,7 +492,12 @@ $harness->run(\eel_accounts\Service\IxbrlAccountsDisclosureService::class, stati
                     ['company_id' => $companyId, 'accounting_period_id' => $periodId]
                 );
 
-                $result = $service->save($companyId, $periodId, ixbrlDisclosureInput(), 'test:unlocked');
+                $result = $service->save(
+                    $companyId,
+                    $periodId,
+                    ixbrlDisclosureInput((int)$fixture['director_id']),
+                    'test:unlocked'
+                );
                 $harness->assertSame(false, (bool)($result['success'] ?? true));
                 $harness->assertTrue(str_contains(implode(' ', (array)($result['errors'] ?? [])), 'Complete and lock Year End'));
                 $harness->assertSame(0, (int)InterfaceDB::fetchColumn(
@@ -405,7 +542,7 @@ $harness->run(\eel_accounts\Service\IxbrlAccountsDisclosureService::class, stati
             InterfaceDB::beginTransaction();
             try {
                 $fixture = ixbrlDisclosureFixture(false);
-                $invalid = ixbrlDisclosureInput();
+                $invalid = ixbrlDisclosureInput((int)$fixture['director_id']);
                 $invalid['accounts_approval_date'] = '2999-01-01';
                 unset($invalid['members_have_not_required_audit']);
                 unset($invalid['has_financial_commitments_guarantees_or_contingencies']);
@@ -432,7 +569,7 @@ $harness->run(\eel_accounts\Service\IxbrlAccountsDisclosureService::class, stati
     );
 });
 
-function ixbrlDisclosureInput(): array
+function ixbrlDisclosureInput(int $directorId): array
 {
     return [
         'accounting_standard' => 'FRS_105',
@@ -445,6 +582,7 @@ function ixbrlDisclosureInput(): array
         'has_director_advances_credits_or_guarantees' => 0,
         'has_financial_commitments_guarantees_or_contingencies' => 0,
         'accounts_approval_date' => '2026-02-28',
+        'approving_director_id' => $directorId,
         'approving_director_name' => 'Test Director',
         'prepared_under_small_companies_regime' => 1,
         'audit_exempt_section_477' => 1,
@@ -465,6 +603,34 @@ function ixbrlDisclosureFixture(bool $withFiledSuggestions): array
     $companyId = (int)InterfaceDB::fetchColumn(
         'SELECT id FROM companies WHERE company_number = :company_number',
         ['company_number' => $companyNumber]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO company_directors (
+            company_id, source, external_key, full_name, officer_role,
+            appointed_on, resigned_on, is_active
+         ) VALUES (
+            :company_id, :source, :external_key, :full_name, :officer_role,
+            :appointed_on, NULL, 1
+         )',
+        [
+            'company_id' => $companyId,
+            'source' => 'test',
+            'external_key' => 'ixbrl-disclosure-director-' . $marker,
+            'full_name' => 'Test Director',
+            'officer_role' => 'director',
+            'appointed_on' => '2020-01-01',
+        ]
+    );
+    $directorId = (int)InterfaceDB::fetchColumn(
+        'SELECT id
+         FROM company_directors
+         WHERE company_id = :company_id
+           AND external_key = :external_key
+         LIMIT 1',
+        [
+            'company_id' => $companyId,
+            'external_key' => 'ixbrl-disclosure-director-' . $marker,
+        ]
     );
     InterfaceDB::prepareExecute(
         'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
@@ -496,6 +662,7 @@ function ixbrlDisclosureFixture(bool $withFiledSuggestions): array
     return [
         'company_id' => $companyId,
         'accounting_period_id' => $periodId,
+        'director_id' => $directorId,
         'sales_nominal_id' => $salesNominalId,
         'bank_nominal_id' => $bankNominalId,
     ];

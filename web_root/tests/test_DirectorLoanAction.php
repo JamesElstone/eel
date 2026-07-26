@@ -93,6 +93,14 @@ $harness->run(DirectorLoanAction::class, static function (
                         'company_id' => (string)$companyId,
                         'accounting_period_id' => (string)$periodId,
                         'classification' => 'after_more_than_one_year',
+                        'deferment_right_confirmed' => '1',
+                        'deferment_evidence' => 'Executed agreement prevents demand before 1 January 2027.',
+                        'set_off_right_confirmed' => '1',
+                        'set_off_net_settlement_intended' => '1',
+                        'set_off_evidence' => 'Executed set-off agreement and documented simultaneous settlement intention.',
+                        'interest_rate_percent' => '2.5',
+                        'main_terms' => 'Unsecured facility.',
+                        'repayment_conditions' => 'Repayable under the executed agreement.',
                     ],
                     [
                         'REQUEST_METHOD' => 'POST',
@@ -109,6 +117,7 @@ $harness->run(DirectorLoanAction::class, static function (
             $harness->assertSame(true, $result->isSuccess());
             foreach ([
                 'director.loan.state',
+                'year.end.director.loan.offset',
                 'companies.house.snapshot',
                 'year.end.companies.house.comparison',
                 'ixbrl.readiness',
@@ -120,7 +129,7 @@ $harness->run(DirectorLoanAction::class, static function (
             }
             $harness->assertTrue(str_contains(
                 (string)($result->flashMessages()[0]['message'] ?? ''),
-                'Companies House and iXBRL'
+                'supporting evidence'
             ));
             $harness->assertSame(1, InterfaceDB::countWhere(
                 'director_loan_reporting_presentations',

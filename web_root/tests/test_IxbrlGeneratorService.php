@@ -6,6 +6,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $fact = $service->renderFact(['qname' => 'ct:Label', 'context_ref' => 'ct', 'value' => '<value>']);
         $h->assertTrue(str_contains($fact, '&lt;value&gt;'));
         $xhtml = $service->renderDocument(['namespaces' => ['ct' => 'urn:test'], 'schema_refs' => ['taxonomy.xsd'], 'contexts' => [['id' => 'ct', 'identifier' => '01234567', 'start_date' => '2025-01-01', 'end_date' => '2025-12-31', 'dimensions' => ['ct:Axis' => 'ct:Member']]], 'units' => [['id' => 'GBP', 'measure' => 'iso4217:GBP']], 'body' => $fact]);
+        $h->assertTrue(str_starts_with(
+            $xhtml,
+            '<?xml version="1.0" encoding="UTF-8" standalone="no"?>' . "\n"
+        ));
+        $h->assertFalse(str_contains($xhtml, ' lang="en"'));
+        $h->assertTrue(str_contains($xhtml, ' xml:lang="en"'));
+        $h->assertFalse(str_contains($xhtml, '<!DOCTYPE'));
         $h->assertSame([], $service->validateStructure($xhtml, ['taxonomy.xsd']));
     });
     $h->check($service::class, 'renders negative numeric facts with the Inline XBRL sign attribute', static function () use ($h, $service): void {

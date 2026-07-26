@@ -89,7 +89,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     (int)$fixture['company_id'],
                     (int)$fixture['accounting_period_id'],
                     'after_more_than_one_year',
-                    'test'
+                    'test',
+                    [
+                        'deferment_right_confirmed' => true,
+                        'deferment_evidence' => 'Executed facility gave the company an unconditional right at the balance-sheet date to defer payment for at least twelve months.',
+                    ]
                 );
                 $harness->assertSame(true, (bool)($saved['success'] ?? false));
 

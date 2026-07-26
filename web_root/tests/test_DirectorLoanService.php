@@ -44,6 +44,31 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
                 'Other director advance'
             );
 
+            $grossStatement = $service->fetchStatement(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id']
+            );
+            $grossDisclosure = $service->fetchDisclosureSummary(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id']
+            );
+            $harness->assertSame('0.00', directorLoanStatementMoney($grossStatement['desired_reclassification'] ?? 0));
+            $harness->assertSame('353.00', directorLoanStatementMoney($grossStatement['potential_s455_exposure'] ?? 0));
+            $harness->assertSame('0.00', directorLoanStatementMoney($grossDisclosure['total_amounts_legally_set_off'] ?? 0));
+            $harness->assertSame('353.00', directorLoanStatementMoney($grossDisclosure['closing_company_to_director_balance'] ?? 0));
+
+            $savedEvidence = (new \eel_accounts\Service\DirectorLoanReportingPresentationService())->save(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                \eel_accounts\Service\DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR,
+                'test',
+                [
+                    'set_off_right_confirmed' => true,
+                    'set_off_net_settlement_intended' => true,
+                    'set_off_evidence' => 'Executed agreement and documented simultaneous settlement intention.',
+                ]
+            );
+            $harness->assertSame(true, (bool)($savedEvidence['success'] ?? false));
             $statement = $service->fetchStatement((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
             $disclosure = $service->fetchDisclosureSummary((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
             $taxReview = $service->fetchTaxReviewSummary((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
@@ -61,11 +86,14 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
             $harness->assertSame(true, (bool)($statement['success'] ?? false));
             $harness->assertSame(true, (bool)($disclosure['has_company_to_director_exposure'] ?? false));
             $harness->assertSame('353.00', directorLoanStatementMoney($disclosure['total_advances'] ?? 0));
+            $harness->assertSame('0.00', directorLoanStatementMoney($disclosure['total_cash_repayments'] ?? 0));
+            $harness->assertSame('253.00', directorLoanStatementMoney($disclosure['total_amounts_legally_set_off'] ?? 0));
             $harness->assertSame('253.00', directorLoanStatementMoney($disclosure['total_repayments'] ?? 0));
-            $harness->assertSame('1035.63', directorLoanStatementMoney($disclosure['total_director_funding'] ?? 0));
+            $harness->assertSame('1288.63', directorLoanStatementMoney($disclosure['total_director_funding'] ?? 0));
             $statementText = (new \eel_accounts\Service\IxbrlTaxonomyProfileService())->directorLoanStatementText($disclosure);
             $harness->assertTrue(str_contains($statementText, 'advanced £253.00 to Primary Director'));
             $harness->assertTrue(str_contains($statementText, 'advanced £100.00 to Other Director'));
+            $harness->assertTrue(str_contains($statementText, 'amounts legally set off were £253.00'));
             $harness->assertSame('253.00', directorLoanStatementMoney($primaryDirector['gross_asset'] ?? 0));
             $harness->assertSame('1288.63', directorLoanStatementMoney($primaryDirector['gross_liability'] ?? 0));
             $harness->assertSame('253.00', directorLoanStatementMoney($primaryDirector['desired_reclassification'] ?? 0));
@@ -79,6 +107,53 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
             $harness->assertCount(1, $externalCounterpartyEntry);
             $harness->assertSame($primaryPartyId, (int)($externalCounterpartyEntry[0]['director_id'] ?? 0));
             $harness->assertSame(true, str_contains((string)($externalCounterpartyEntry[0]['source_url'] ?? ''), 'transaction_id='));
+        });
+    });
+
+    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'keeps cash repayments, write-offs and waivers as distinct disclosure outcomes', static function () use ($harness, $service): void {
+        directorLoanStatementWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            $partyId = (int)$fixture['primary_party_id'];
+            $assetNominalId = (int)$fixture['asset_nominal_id'];
+            directorLoanStatementInsertManualLine($fixture, $assetNominalId, 500.00, 0.00, $partyId, 'Advance made');
+            directorLoanStatementInsertManualLine(
+                $fixture,
+                $assetNominalId,
+                0.00,
+                100.00,
+                $partyId,
+                'Cash repayment',
+                \eel_accounts\Service\DirectorLoanService::CASH_REPAYMENT_JOURNAL_TAG
+            );
+            directorLoanStatementInsertManualLine(
+                $fixture,
+                $assetNominalId,
+                0.00,
+                25.00,
+                $partyId,
+                'Amount written off',
+                \eel_accounts\Service\DirectorLoanService::WRITE_OFF_JOURNAL_TAG
+            );
+            directorLoanStatementInsertManualLine(
+                $fixture,
+                $assetNominalId,
+                0.00,
+                10.00,
+                $partyId,
+                'Amount waived',
+                \eel_accounts\Service\DirectorLoanService::WAIVER_JOURNAL_TAG
+            );
+
+            $summary = $service->fetchDisclosureSummary(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id']
+            );
+            $harness->assertSame('500.00', directorLoanStatementMoney($summary['total_advances'] ?? 0));
+            $harness->assertSame('100.00', directorLoanStatementMoney($summary['total_cash_repayments'] ?? 0));
+            $harness->assertSame('0.00', directorLoanStatementMoney($summary['total_amounts_legally_set_off'] ?? 0));
+            $harness->assertSame('25.00', directorLoanStatementMoney($summary['total_amounts_written_off'] ?? 0));
+            $harness->assertSame('10.00', directorLoanStatementMoney($summary['total_amounts_waived'] ?? 0));
+            $harness->assertSame('365.00', directorLoanStatementMoney($summary['closing_company_to_director_balance'] ?? 0));
+            $harness->assertSame(false, (bool)($summary['has_unclassified_reductions'] ?? true));
         });
     });
 
@@ -229,7 +304,8 @@ function directorLoanStatementInsertManualLine(
     float $debit,
     float $credit,
     ?int $partyId,
-    string $description
+    string $description,
+    string $journalTag = ''
 ): int {
     $sourceRef = 'dla-manual:' . $fixture['marker'] . ':' . hash('sha256', $description . microtime(true));
     InterfaceDB::prepareExecute(
@@ -248,6 +324,26 @@ function directorLoanStatementInsertManualLine(
         'SELECT id FROM journals WHERE company_id = :company_id AND source_ref = :source_ref',
         ['company_id' => (int)$fixture['company_id'], 'source_ref' => $sourceRef]
     );
+    if ($journalTag !== '') {
+        InterfaceDB::prepareExecute(
+            'INSERT INTO journal_entry_metadata (
+                journal_id, company_id, accounting_period_id,
+                journal_tag, journal_key, entry_mode, notes
+             ) VALUES (
+                :journal_id, :company_id, :accounting_period_id,
+                :journal_tag, :journal_key, :entry_mode, :notes
+             )',
+            [
+                'journal_id' => $journalId,
+                'company_id' => (int)$fixture['company_id'],
+                'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                'journal_tag' => $journalTag,
+                'journal_key' => 'test:' . hash('sha256', $description),
+                'entry_mode' => 'manual',
+                'notes' => 'Director Loan statutory disclosure outcome fixture.',
+            ]
+        );
+    }
     InterfaceDB::prepareExecute(
         'INSERT INTO journal_lines (journal_id, nominal_account_id, party_id, debit, credit, line_description)
          VALUES (:journal_id, :nominal_id, :party_id, :debit, :credit, :description)',

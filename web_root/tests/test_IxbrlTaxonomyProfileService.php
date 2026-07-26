@@ -12,5 +12,98 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('The company made no advances or credits to directors.', $service->absenceStatementText('no_director_advances_or_credits'));
             $harness->assertSame('', $service->statementText('unknown'));
         });
+
+        $harness->check($service::class, 'uses the exact 2026 fixed facts and statutory balance-sheet concepts', static function () use ($harness, $service): void {
+            $mappings = [];
+            foreach ($service->mappings() as $mapping) {
+                $mappings[(string)$mapping['fact_key']] = $mapping;
+            }
+
+            $harness->assertSame('bus:AccountsType', (string)$mappings['accounts_type']['taxonomy_concept']);
+            $harness->assertSame(
+                ['bus:AccountsTypeDimension' => 'bus:FullAccounts'],
+                json_decode((string)$mappings['accounts_type']['dimensions_json'], true)
+            );
+            $harness->assertSame('duration', (string)$mappings['accounts_type']['period_type']);
+            $harness->assertSame('duration_accounts_type', (string)$mappings['accounts_type']['context_profile']);
+            $harness->assertSame(
+                'core:CalledUpShareCapitalNotPaidNotExpressedAsCurrentAsset',
+                (string)$mappings['called_up_share_capital_not_paid']['taxonomy_concept']
+            );
+            $harness->assertSame(
+                'core:PrepaymentsAccruedIncomeNotExpressedWithinCurrentAssetSubtotal',
+                (string)$mappings['prepayments_accrued_income']['taxonomy_concept']
+            );
+            $harness->assertSame(
+                'core:GrossProfitLoss',
+                (string)$mappings['gross_profit_loss']['taxonomy_concept']
+            );
+            $harness->assertSame(
+                'core:OperatingProfitLoss',
+                (string)$mappings['operating_profit_loss']['taxonomy_concept']
+            );
+            $harness->assertSame(
+                'profit_loss_before_tax',
+                (string)$mappings['operating_profit_loss']['source_key']
+            );
+            $harness->assertSame(
+                'core:ProvisionsForLiabilitiesBalanceSheetSubtotal',
+                (string)$mappings['provisions_for_liabilities']['taxonomy_concept']
+            );
+            $harness->assertSame(
+                'core:AccruedLiabilitiesNotExpressedWithinCreditorsSubtotal',
+                (string)$mappings['accruals_deferred_income']['taxonomy_concept']
+            );
+            foreach (['period_start', 'period_end', 'balance_sheet_date', 'accounts_approval_date'] as $factKey) {
+                $harness->assertSame('instant_end', (string)$mappings[$factKey]['context_profile']);
+            }
+        });
+
+        $harness->check($service::class, 'maps only taxonomy-backed director monetary totals', static function () use ($harness, $service): void {
+            $mappings = [];
+            foreach ($service->mappings() as $mapping) {
+                $mappings[(string)$mapping['fact_key']] = $mapping;
+            }
+
+            $harness->assertSame(
+                'direp:AdvancesCreditsMadeInPeriodDirectors',
+                (string)$mappings['director_advances_made']['taxonomy_concept']
+            );
+            $harness->assertSame(
+                'direp:AdvancesCreditsRepaidInPeriodDirectors',
+                (string)$mappings['director_cash_repayments']['taxonomy_concept']
+            );
+            $harness->assertSame(
+                'direp:AdvancesCreditsDirectors',
+                (string)$mappings['director_closing_advance']['taxonomy_concept']
+            );
+            $harness->assertSame('total_cash_repayments', (string)$mappings['director_cash_repayments']['source_key']);
+            foreach (['director_advances_made', 'director_cash_repayments', 'director_closing_advance'] as $factKey) {
+                $harness->assertSame('director_loan_numeric', (string)$mappings[$factKey]['calculation_type']);
+                $harness->assertSame('GBP', (string)$mappings[$factKey]['unit_ref']);
+                $harness->assertSame('2', (string)$mappings[$factKey]['decimals_value']);
+            }
+
+            $concepts = implode(' ', array_column($service->mappings(), 'taxonomy_concept'));
+            foreach (['SetOffDirectors', 'WrittenOffDirectors', 'WaivedDirectors'] as $inventedConcept) {
+                $harness->assertSame(false, str_contains($concepts, $inventedConcept));
+            }
+            $statement = $service->directorLoanStatementText([
+                'disclosures' => [[
+                    'director_name' => 'Fixture Director',
+                    'advances' => 120.0,
+                    'cash_repayments' => 20.0,
+                    'amounts_legally_set_off' => 10.0,
+                    'amounts_written_off' => 0.0,
+                    'amounts_waived' => 0.0,
+                    'closing_company_to_director_balance' => 90.0,
+                    'interest_rate' => '0%',
+                    'main_conditions' => 'Interest-free and repayable on demand.',
+                ]],
+            ]);
+            $harness->assertTrue(str_contains($statement, 'Cash repayments were £20.00'));
+            $harness->assertTrue(str_contains($statement, 'amounts legally set off were £10.00'));
+            $harness->assertSame(false, str_contains($statement, 'repaid or settled'));
+        });
     }
 );

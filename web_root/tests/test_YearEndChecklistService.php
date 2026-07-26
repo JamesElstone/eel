@@ -1394,6 +1394,23 @@ function yearEndChecklistServiceCreateDirectorLoanOffsetFixture(): array
         ]
     );
 
+    $presentation = (new \eel_accounts\Service\DirectorLoanReportingPresentationService())->save(
+        $companyId,
+        $accountingPeriodId,
+        \eel_accounts\Service\DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR,
+        'test',
+        [
+            'set_off_right_confirmed' => true,
+            'set_off_net_settlement_intended' => true,
+            'set_off_evidence' => 'Test agreement establishes the enforceable right and simultaneous settlement intention.',
+        ]
+    );
+    if (empty($presentation['success'])) {
+        throw new RuntimeException(implode(' ', (array)($presentation['errors'] ?? [
+            'Unable to record the Director Loan set-off evidence fixture.',
+        ])));
+    }
+
     yearEndChecklistServiceInsertDirectorLoanLineJournal($companyId, $accountingPeriodId, $assetNominalId, 1000.00, 0.00, 'asset', $marker);
     yearEndChecklistServiceInsertDirectorLoanLineJournal($companyId, $accountingPeriodId, $liabilityNominalId, 0.00, 1500.00, 'liability', $marker);
 

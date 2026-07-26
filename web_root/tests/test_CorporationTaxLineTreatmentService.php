@@ -84,6 +84,20 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'SELECT COUNT(*) FROM corporation_tax_line_treatment_decisions WHERE journal_line_id = :line_id',
                     ['line_id' => $lineId]
                 ));
+                $history = $service->fetchReview($companyId, $periodId)['items'][0]['decision_history'];
+                $h->assertSame(2, count($history));
+                $h->assertSame('capital', (string)$history[0]['tax_treatment']);
+                $h->assertSame('disallowable', (string)$history[1]['tax_treatment']);
+                $h->assertSame('current', (string)$history[0]['basis_status']);
+                $h->assertSame('historical', (string)$history[1]['basis_status']);
+
+                InterfaceDB::prepareExecute(
+                    'UPDATE journal_lines SET debit = :debit WHERE id = :line_id',
+                    ['debit' => 407.0, 'line_id' => $lineId]
+                );
+                $staleReview = $service->fetchReview($companyId, $periodId);
+                $h->assertSame('stale', (string)$staleReview['items'][0]['state']);
+                $h->assertSame('stale', (string)$staleReview['items'][0]['decision_history'][0]['basis_status']);
             } finally {
                 if (InterfaceDB::inTransaction()) {
                     InterfaceDB::rollBack();

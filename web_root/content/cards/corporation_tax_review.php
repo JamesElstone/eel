@@ -65,9 +65,33 @@ final class _corporation_tax_reviewCard extends CardBaseFramework
             $state = (string)($item['state'] ?? '') === 'resolved'
                 ? '<span class="badge success">' . HelperFramework::escape(ucfirst($treatment)) . '</span>'
                 : '<span class="badge danger">Review required</span>';
+            $history = (array)($item['decision_history'] ?? []);
+            $historyHtml = '';
+            if ($history !== []) {
+                $historyRows = '';
+                foreach ($history as $decision) {
+                    $basisStatus = (string)($decision['basis_status'] ?? 'historical');
+                    $status = match ($basisStatus) {
+                        'current' => '<span class="badge success">Current</span>',
+                        'stale' => '<span class="badge danger">Stale</span>',
+                        default => '<span class="badge">Historical</span>',
+                    };
+                    $rule = trim((string)($decision['rule_code'] ?? '') . ' ' . (string)($decision['rule_version'] ?? ''));
+                    $historyRows .= '<tr><td>' . HelperFramework::escape(ucfirst((string)($decision['tax_treatment'] ?? ''))) . '</td><td>'
+                        . HelperFramework::escape(HelperFramework::displayDateTime((string)($decision['decided_at'] ?? ''))) . '</td><td>'
+                        . HelperFramework::escape((string)($decision['decided_by'] ?? '')) . '</td><td>'
+                        . HelperFramework::escape($rule !== '' ? $rule : '—') . '</td><td>' . $status . '</td></tr>';
+                }
+                $count = count($history);
+                $historyHtml = '<details class="table-row-details"><summary>Decision history (' . $count . ')</summary><div class="table-scroll"><table><thead><tr><th>Treatment</th><th>Decided at</th><th>Decided by</th><th>Rule</th><th>Basis status</th></tr></thead><tbody>'
+                    . $historyRows . '</tbody></table></div></details>';
+            }
             $rows .= '<tr><td>' . HelperFramework::escape(HelperFramework::displayDate((string)$item['journal_date'])) . '</td><td><strong>'
                 . HelperFramework::escape((string)$item['description']) . '</strong><div class="helper">' . HelperFramework::escape(trim((string)$item['nominal_code'] . ' ' . (string)$item['nominal_name'])) . '</div></td><td class="numeric">'
                 . HelperFramework::escape($money->format($settings, $item['amount'] ?? 0)) . '</td><td>' . $state . '</td><td>' . $source . ' ' . $guidance . '</td><td>' . $form . '</td></tr>';
+            if ($historyHtml !== '') {
+                $rows .= '<tr><td colspan="6">' . $historyHtml . '</td></tr>';
+            }
         }
         return '<section class="settings-stack"><div class="summary-grid four"><div class="summary-card"><div class="summary-label">Requires treatment</div><div class="summary-value">'
             . (int)($review['unresolved_count'] ?? 0) . '</div></div><div class="summary-card"><div class="summary-label">Treatment saved</div><div class="summary-value">'

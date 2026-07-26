@@ -62,6 +62,7 @@ final class CorporationTaxLineTreatmentService
         );
         $ledgerLines = (new DatedTaxTreatmentLedgerService())->fetch($scope);
         $this->primeDecisions($ledgerLines);
+        $decisionHistories = $this->decisionHistories($ledgerLines);
         $items = [];
         foreach ($ledgerLines as $line) {
             $date = (string)($line['journal_date'] ?? '');
@@ -77,9 +78,18 @@ final class CorporationTaxLineTreatmentService
             }
             $rule = (array)($base['rule'] ?? []);
             $source = $this->source($line);
+            $lineId = (int)($line['journal_line_id'] ?? 0);
+            $history = $decisionHistories[$lineId] ?? [];
+            foreach ($history as $index => &$decision) {
+                $decision['is_latest'] = $index === 0;
+                $decision['basis_status'] = $index !== 0
+                    ? 'historical'
+                    : (!empty($resolved['decision_current']) ? 'current' : 'stale');
+            }
+            unset($decision);
             $items[] = [
                 'journal_id' => (int)($line['journal_id'] ?? 0),
-                'journal_line_id' => (int)($line['journal_line_id'] ?? 0),
+                'journal_line_id' => $lineId,
                 'journal_date' => $date,
                 'description' => trim((string)($line['line_description'] ?? '')) ?: (string)($line['journal_description'] ?? ''),
                 'nominal_code' => (string)($line['code'] ?? ''),
@@ -92,6 +102,7 @@ final class CorporationTaxLineTreatmentService
                 'guidance_url' => (string)($rule['source_url'] ?? ''),
                 'source_label' => $source['label'],
                 'source_url' => $source['url'],
+                'decision_history' => $history,
             ];
         }
 
@@ -241,6 +252,36 @@ final class CorporationTaxLineTreatmentService
                 $this->decisionCache[$id] = $row;
             }
         }
+    }
+
+    /** @param list<array<string,mixed>> $lines @return array<int,list<array<string,mixed>>> */
+    private function decisionHistories(array $lines): array
+    {
+        if (!\InterfaceDB::tableExists('corporation_tax_line_treatment_decisions')) {
+            return [];
+        }
+        $ids = array_values(array_unique(array_filter(array_map(
+            static fn(array $line): int => (int)($line['journal_line_id'] ?? 0),
+            $lines
+        ))));
+        if ($ids === []) {
+            return [];
+        }
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT id, journal_line_id, tax_treatment, basis_hash, rule_id, rule_code, rule_version, decided_by, decided_at
+             FROM corporation_tax_line_treatment_decisions
+             WHERE journal_line_id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')
+             ORDER BY journal_line_id ASC, id DESC',
+            $ids
+        );
+        $histories = [];
+        foreach ($rows as $row) {
+            $lineId = (int)($row['journal_line_id'] ?? 0);
+            if ($lineId > 0) {
+                $histories[$lineId][] = $row;
+            }
+        }
+        return $histories;
     }
 
     private function rules(): CorporationTaxTreatmentRuleService

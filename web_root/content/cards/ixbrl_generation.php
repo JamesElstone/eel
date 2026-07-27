@@ -156,8 +156,11 @@ final class _ixbrl_generationCard extends CardBaseFramework
         $readiness = (array)($context['ixbrl']['readiness'] ?? []);
         $arelleStatus = (array)($readiness['arelle_status'] ?? []);
         $revisedValidation = (array)($filing['revised_validation'] ?? []);
+        $artifactCurrent = !array_key_exists('state', $artifact)
+            ? trim((string)($artifact['filename'] ?? '')) !== ''
+            : (!empty($artifact['current']) || (string)$artifact['state'] === 'current');
         if ($submission === null || $artifact === []) {
-            $canPrepare = !empty($readiness['can_generate']) && $this->companiesHouseCanPrepare($filing);
+            $canPrepare = !empty($readiness['ready_for_filing']) && !empty($filing['can_prepare']);
             $blockers = array_values(array_unique(array_filter(array_map(
                 static fn(mixed $message): string => trim((string)$message),
                 (array)($filing['preparation_blockers'] ?? [])
@@ -181,6 +184,34 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . '<button class="button primary" type="submit" data-processing-text="Generating Companies House iXBRL…" data-processing-state="disabled"' . ($canPrepare ? '' : ' disabled') . '>Generate Companies House iXBRL</button>'
                 . '</form></section>';
         }
+        if (!$artifactCurrent) {
+            $reason = (string)(($artifact['errors'] ?? [])[0]
+                ?? 'This artifact does not belong to the current approved Accounting iXBRL run.');
+            $canPrepare = !empty($readiness['ready_for_filing']) && !empty($filing['can_prepare']);
+            return '<section class="panel-soft warn"><div class="status-head">'
+                . '<h3 class="card-title">Companies House Revised Accounting iXBRL</h3>'
+                . '<span class="badge warning">Rebuild required</span></div>'
+                . '<div class="helper ixbrl-rebuild-required-helper">'
+                . HelperFramework::escape($reason) . '</div>'
+                . '<div class="summary-grid">'
+                . $this->metric('Historical Generated At', (string)($submission['prepared_at'] ?? ''))
+                . $this->metric('Historical Base Run', (int)($artifact['base_run_id'] ?? 0) > 0
+                    ? ('#' . (int)$artifact['base_run_id'])
+                    : 'Unknown')
+                . $this->metric('Historical Arelle Validation', $this->validationLabel((string)($revisedValidation['status'] ?? 'not_run')))
+                . $this->metricHtml('Artifact', 'Historical — current download unavailable')
+                . '</div>'
+                . '<div class="helper">Generate and validate the current HMRC Accounting iXBRL, then generate a new Companies House artifact. The earlier file remains in iXBRL history.</div>'
+                . '<form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">'
+                . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+                . '<input type="hidden" name="card_action" value="CompaniesHouseAccounts">'
+                . '<input type="hidden" name="intent" value="prepare_revised_accounts">'
+                . '<input type="hidden" name="company_id" value="' . $companyId . '">'
+                . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
+                . '<button class="button primary" type="submit" data-processing-text="Generating Companies House iXBRL…" data-processing-state="disabled"'
+                . ($canPrepare ? '' : ' disabled') . '>Generate Companies House iXBRL</button>'
+                . '</form></section>';
+        }
 
         $lifecycle = strtolower(trim((string)($submission['lifecycle'] ?? 'prepared')));
         $artifactPath = trim((string)($artifact['path'] ?? ''));
@@ -199,7 +230,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             . '<input type="hidden" name="intent" value="prepare_revised_accounts">'
             . '<input type="hidden" name="company_id" value="' . $companyId . '">'
             . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
-            . '<button class="button primary" type="submit" data-processing-text="Generating Companies House iXBRL…" data-processing-state="disabled"' . (!empty($readiness['can_generate']) && $this->companiesHouseCanPrepare($filing) ? '' : ' disabled') . '>Generate Companies House iXBRL</button>'
+            . '<button class="button primary" type="submit" data-processing-text="Generating Companies House iXBRL…" data-processing-state="disabled"' . (!empty($readiness['ready_for_filing']) && !empty($filing['can_prepare']) ? '' : ' disabled') . '>Generate Companies House iXBRL</button>'
             . '</form>';
         $badge = match ($lifecycle) {
             'accepted' => 'success',
@@ -334,7 +365,11 @@ final class _ixbrl_generationCard extends CardBaseFramework
         }
 
         $artifact = (array)($filing['prepared_artifact'] ?? []);
-        return trim((string)($artifact['filename'] ?? '')) !== '' || $this->companiesHouseCanPrepare($filing);
+        $artifactCurrent = !array_key_exists('state', $artifact)
+            ? trim((string)($artifact['filename'] ?? '')) !== ''
+            : (!empty($artifact['current']) || (string)$artifact['state'] === 'current');
+        return ($artifactCurrent && trim((string)($artifact['filename'] ?? '')) !== '')
+            || $this->companiesHouseCanPrepare($filing);
     }
 
     private function companiesHouseCanPrepare(array $filing): bool

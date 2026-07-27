@@ -155,13 +155,19 @@ final class CompaniesHouseAccountsSubmissionService
             static fn(string $blocker): bool => !str_contains($blocker, 'already prepared')
         )), $submissionBlockers);
 
-        $preparedArtifact = $submission === null ? null : [
-            'path' => (string)($submission['revised_artifact_path'] ?? ''),
-            'filename' => basename((string)($submission['revised_artifact_path'] ?? '')),
-            'sha256' => (string)($submission['revised_artifact_sha256'] ?? ''),
-            'basis_hash' => (string)($submission['basis_hash'] ?? ''),
-        ];
-        $revisedValidation = $this->latestRevisedArtifactValidation($companyId, $accountingPeriodId);
+        $preparedArtifact = $submission === null
+            ? null
+            : $this->preparedArtifactState($submission);
+        if ($submission !== null && (string)($submission['lifecycle'] ?? '') === 'prepared'
+            && empty($preparedArtifact['current'])) {
+            $submissionBlockers[] = (string)(($preparedArtifact['errors'] ?? [])[0]
+                ?? 'The prepared Companies House artifact is not current.');
+        }
+        $revisedValidation = $this->latestRevisedArtifactValidation(
+            $companyId,
+            $accountingPeriodId,
+            $submission
+        );
 
         return [
             'company' => $selection['company'],
@@ -497,6 +503,11 @@ final class CompaniesHouseAccountsSubmissionService
         if ($submission === null || (string)$submission['lifecycle'] !== 'prepared') {
             return $this->failure('Only a prepared revised-accounts artifact can be preflighted.');
         }
+        $artifactState = $this->preparedArtifactState($submission);
+        if (empty($artifactState['current'])) {
+            return $this->failure((string)(($artifactState['errors'] ?? [])[0]
+                ?? 'The prepared revised-accounts artifact is not current.'));
+        }
         if (preg_match('/^[A-Za-z0-9]{6}$/D', $companyAuthCode) !== 1) {
             return $this->failure(
                 'The company authentication code must contain exactly 6 letters or numbers.'
@@ -769,6 +780,11 @@ final class CompaniesHouseAccountsSubmissionService
         }
         if ((string)$submission['lifecycle'] !== 'prepared') {
             return $this->failure('Only a prepared revised-accounts artifact can be submitted.');
+        }
+        $artifactState = $this->preparedArtifactState($submission);
+        if (empty($artifactState['current'])) {
+            return $this->failure((string)(($artifactState['errors'] ?? [])[0]
+                ?? 'The prepared revised-accounts artifact is not current.'));
         }
         if (preg_match('/^[A-Za-z0-9]{6}$/D', $companyAuthCode) !== 1) {
             return $this->failure(
@@ -2626,6 +2642,57 @@ final class CompaniesHouseAccountsSubmissionService
         return is_array($row) ? $this->normaliseSubmission($row) : null;
     }
 
+    /** @param array<string,mixed>|null $baseArtifact */
+    private function preparedArtifactState(array $submission, ?array $baseArtifact = null): array
+    {
+        $path = trim((string)($submission['revised_artifact_path'] ?? ''));
+        $expectedHash = strtolower(trim((string)($submission['revised_artifact_sha256'] ?? '')));
+        $baseRunId = (int)($submission['ixbrl_generation_run_id'] ?? 0);
+        $result = [
+            'path' => $path,
+            'filename' => $path !== '' ? basename($path) : '',
+            'sha256' => $expectedHash,
+            'basis_hash' => (string)($submission['basis_hash'] ?? ''),
+            'base_run_id' => $baseRunId,
+            'state' => 'stale',
+            'current' => false,
+            'errors' => [],
+        ];
+
+        $baseArtifact ??= (new IxbrlFilingArtifactService())->locate(
+            (int)($submission['company_id'] ?? 0),
+            (int)($submission['accounting_period_id'] ?? 0)
+        );
+        if (empty($baseArtifact['ok'])) {
+            $result['errors'] = [
+                'Generate and validate the current HMRC Accounting iXBRL before preparing revised accounts.',
+            ];
+            return $result;
+        }
+        if ($baseRunId <= 0 || $baseRunId !== (int)($baseArtifact['run_id'] ?? 0)) {
+            $result['errors'] = [
+                'This Companies House iXBRL belongs to an earlier Accounting iXBRL run and must be regenerated.',
+            ];
+            return $result;
+        }
+        if ($path === '' || !is_file($path)) {
+            $result['state'] = 'missing';
+            $result['errors'] = ['The prepared Companies House iXBRL artifact is missing.'];
+            return $result;
+        }
+        $actualHash = hash_file('sha256', $path);
+        if (!is_string($actualHash) || $expectedHash === ''
+            || !hash_equals($expectedHash, strtolower($actualHash))) {
+            $result['state'] = 'tampered';
+            $result['errors'] = ['The prepared Companies House iXBRL artifact has changed since validation.'];
+            return $result;
+        }
+
+        $result['state'] = 'current';
+        $result['current'] = true;
+        return $result;
+    }
+
     private function submission(int $submissionId): ?array
     {
         if ($submissionId <= 0 || !\InterfaceDB::tableExists(self::SUBMISSIONS_TABLE)) {
@@ -2961,11 +3028,29 @@ final class CompaniesHouseAccountsSubmissionService
     }
 
     /** @return array{status: string, version: string, validated_at: string, errors: list<mixed>, warnings: list<mixed>, log_path: string} */
-    private function latestRevisedArtifactValidation(int $companyId, int $accountingPeriodId): array
+    private function latestRevisedArtifactValidation(
+        int $companyId,
+        int $accountingPeriodId,
+        ?array $submission = null
+    ): array
     {
         if (!\InterfaceDB::tableExists('filing_evidence_artifacts')
             || !\InterfaceDB::tableExists('filing_evidence_bundles')) {
             return [];
+        }
+        if ($submission !== null && (int)($submission['evidence_bundle_id'] ?? 0) <= 0) {
+            return [];
+        }
+        $bundleCondition = (int)($submission['evidence_bundle_id'] ?? 0) > 0
+            ? ' AND a.bundle_id = :bundle_id'
+            : '';
+        $params = [
+            'company_id' => $companyId,
+            'period_id' => $accountingPeriodId,
+            'role' => 'companies_house_revised_accounts_ixbrl',
+        ];
+        if ($bundleCondition !== '') {
+            $params['bundle_id'] = (int)$submission['evidence_bundle_id'];
         }
         $row = \InterfaceDB::fetchOne(
             'SELECT a.validator_version, a.validation_status, a.completed_at, a.metadata_json
@@ -2974,13 +3059,10 @@ final class CompaniesHouseAccountsSubmissionService
              WHERE b.company_id = :company_id
                AND b.accounting_period_id = :period_id
                AND a.artifact_role = :role
+               ' . $bundleCondition . '
              ORDER BY a.id DESC
              LIMIT 1',
-            [
-                'company_id' => $companyId,
-                'period_id' => $accountingPeriodId,
-                'role' => 'companies_house_revised_accounts_ixbrl',
-            ]
+            $params
         );
         if (!is_array($row)) {
             return [];

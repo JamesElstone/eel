@@ -185,11 +185,16 @@ final class _ixbrl_readinessCard extends CardBaseFramework
         $artifact = (array)($companiesHouse['prepared_artifact'] ?? []);
         $preparationBlockers = array_map('strval', (array)($companiesHouse['preparation_blockers'] ?? []));
         $notRequired = array_filter($preparationBlockers, static fn(string $blocker): bool => str_contains($blocker, 'No Companies House comparison variance requires revised accounts')) !== [];
-        $companiesHouseStatus = !empty($artifact['filename'])
+        $artifactCurrent = !array_key_exists('state', $artifact)
+            ? !empty($artifact['filename'])
+            : (!empty($artifact['current']) || (string)$artifact['state'] === 'current');
+        $companiesHouseStatus = $artifactCurrent && !empty($artifact['filename'])
             ? [HelperFramework::labelFromKey((string)($submission['lifecycle'] ?? 'prepared'), '_'), 'info']
+            : (!empty($artifact['filename'])
+                ? ['Rebuild required', 'warning']
             : ($notRequired
                 ? ['Not required', 'muted']
-                : (!empty($companiesHouse['can_prepare']) ? ['Ready to prepare', 'warning'] : ['Not prepared', 'muted']));
+                : (!empty($companiesHouse['can_prepare']) ? ['Ready to prepare', 'warning'] : ['Not prepared', 'muted'])));
 
         return '<h4 class="card-title">Filing outputs</h4><div class="summary-grid">'
             . $this->outputCard('HMRC accounts iXBRL', '1 file', $accountsStatus, 'Accounts filing export for this accounting period.')

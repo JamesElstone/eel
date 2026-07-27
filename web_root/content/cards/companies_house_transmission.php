@@ -117,6 +117,15 @@ final class _companies_house_transmissionCard extends CardBaseFramework
             $html .= '<div class="notice warning">No revised Companies House artifact is prepared. Prepare it from the locked Year End Companies House comparison card.</div>';
         } else {
             $archive = (array)($submission['transmission_archive'] ?? []);
+            $artifactCurrent = !array_key_exists('state', $artifact)
+                ? !empty($artifact['filename'])
+                : (!empty($artifact['current']) || (string)$artifact['state'] === 'current');
+            if (!$artifactCurrent && $lifecycle === 'prepared') {
+                $html .= '<div class="notice warning">'
+                    . HelperFramework::escape((string)(($artifact['errors'] ?? [])[0]
+                        ?? 'This prepared artifact is historical and cannot be submitted for the current filing basis.'))
+                    . '</div>';
+            }
             $html .= '<div class="summary-grid">'
                 . $this->metric('Submission number', (string)($submission['submission_number'] ?? 'Allocated on send'))
                 . $this->metric('Artifact', (string)($artifact['filename'] ?? basename((string)($submission['revised_artifact_path'] ?? ''))))

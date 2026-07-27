@@ -412,7 +412,9 @@ final class IxbrlAction implements ActionInterfaceFramework
             ->fetchContext($companyId, $accountingPeriodId);
         $companiesHouseRequired = !empty($companiesHouse['revision_required']);
         $companiesHouseArtifact = (array)($companiesHouse['prepared_artifact'] ?? []);
-        $companiesHousePrepared = trim((string)($companiesHouseArtifact['filename'] ?? '')) !== '';
+        $companiesHousePrepared = (!empty($companiesHouseArtifact['current'])
+                || (string)($companiesHouseArtifact['state'] ?? '') === 'current')
+            && trim((string)($companiesHouseArtifact['filename'] ?? '')) !== '';
         if ($companiesHouseRequired
             && !$companiesHousePrepared
             && empty($companiesHouse['can_prepare'])
@@ -500,6 +502,14 @@ final class IxbrlAction implements ActionInterfaceFramework
             ];
         }
 
+        if ($companiesHouseRequired) {
+            $companiesHouse = (new \eel_accounts\Service\CompaniesHouseAccountsSubmissionService())
+                ->fetchContext($companyId, $accountingPeriodId);
+            $companiesHouseArtifact = (array)($companiesHouse['prepared_artifact'] ?? []);
+            $companiesHousePrepared = (!empty($companiesHouseArtifact['current'])
+                    || (string)($companiesHouseArtifact['state'] ?? '') === 'current')
+                && trim((string)($companiesHouseArtifact['filename'] ?? '')) !== '';
+        }
         if ($companiesHouseRequired && !$companiesHousePrepared) {
             $progress->report('Preparing the Companies House revised-accounts iXBRL…', 94);
             $companiesHouseResult = (new \eel_accounts\Service\CompaniesHouseAccountsSubmissionService())

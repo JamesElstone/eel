@@ -87,6 +87,54 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             $service::class,
+            'marks a prepared artifact current only for the matching filing-ready Accounting run and intact file',
+            static function () use ($harness, $service, $invokePrivate): void {
+                $path = tempnam(test_tmp_directory(), 'ch-current-artifact-');
+                if ($path === false) {
+                    $harness->skip('Could not create a temporary revised-accounts artifact.');
+                }
+                file_put_contents($path, '<html>current</html>');
+                try {
+                    $submission = [
+                        'company_id' => 49,
+                        'accounting_period_id' => 79,
+                        'ixbrl_generation_run_id' => 18,
+                        'revised_artifact_path' => $path,
+                        'revised_artifact_sha256' => hash_file('sha256', $path),
+                        'basis_hash' => str_repeat('b', 64),
+                    ];
+                    $current = $invokePrivate($service, 'preparedArtifactState', $submission, [
+                        'ok' => true,
+                        'run_id' => 18,
+                    ]);
+                    $harness->assertSame('current', (string)$current['state']);
+                    $harness->assertSame(true, (bool)$current['current']);
+
+                    $stale = $invokePrivate($service, 'preparedArtifactState', $submission, [
+                        'ok' => true,
+                        'run_id' => 19,
+                    ]);
+                    $harness->assertSame('stale', (string)$stale['state']);
+                    $harness->assertTrue(str_contains(
+                        implode(' ', (array)$stale['errors']),
+                        'earlier Accounting iXBRL run'
+                    ));
+
+                    file_put_contents($path, '<html>changed</html>');
+                    $tampered = $invokePrivate($service, 'preparedArtifactState', $submission, [
+                        'ok' => true,
+                        'run_id' => 18,
+                    ]);
+                    $harness->assertSame('tampered', (string)$tampered['state']);
+                    $harness->assertSame(false, (bool)$tampered['current']);
+                } finally {
+                    @unlink($path);
+                }
+            }
+        );
+
+        $harness->check(
+            $service::class,
             'uses the frozen disclosure basis as the authoritative revised-accounts approval date',
             static function () use ($harness, $service, $invokePrivate): void {
                 $approval = [

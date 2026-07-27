@@ -162,6 +162,13 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
     {
         $filing = $this->service()->fetchContext($companyId, $accountingPeriodId);
         $artifact = (array)($filing['prepared_artifact'] ?? []);
+        if (empty($artifact['current'])
+            && (string)($artifact['state'] ?? '') !== 'current') {
+            header('Content-Type: text/plain; charset=utf-8', true, 409);
+            echo (string)(($artifact['errors'] ?? [])[0]
+                ?? 'The prepared Companies House iXBRL artifact is not current.');
+            exit;
+        }
         $path = trim((string)($artifact['path'] ?? ''));
         if ($path === '' || !is_file($path)) {
             header('Content-Type: text/plain; charset=utf-8', true, 404);

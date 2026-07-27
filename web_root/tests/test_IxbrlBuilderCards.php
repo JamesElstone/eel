@@ -652,6 +652,57 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         $harness->assertTrue($buttonDisabled($genuineBlocker, 'Generate All Filing iXBRLs'));
         $harness->assertTrue($buttonDisabled($genuineBlocker, 'Generate Companies House iXBRL'));
     });
+    $harness->check(_ixbrl_generationCard::class, 'shows a previous-run Companies House artifact as historical and blocks current download', static function () use ($harness, $card): void {
+        $context = [
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'ixbrl' => [
+                'readiness' => [
+                    'can_generate' => true,
+                    'ready_for_filing' => false,
+                    'arelle_status' => ['installed' => true],
+                ],
+                'latest_run' => [
+                    'id' => 18,
+                    'status' => 'ready',
+                    'fact_count' => 57,
+                    'run_freshness' => ['state' => 'current'],
+                ],
+            ],
+            'services' => [
+                'companies_house_ixbrl' => [
+                    'submission' => [
+                        'id' => 14,
+                        'lifecycle' => 'prepared',
+                        'prepared_at' => '2026-07-27 11:19:11',
+                    ],
+                    'prepared_artifact' => [
+                        'filename' => 'revised-old.xhtml',
+                        'base_run_id' => 17,
+                        'state' => 'stale',
+                        'current' => false,
+                        'errors' => [
+                            'This Companies House iXBRL belongs to an earlier Accounting iXBRL run and must be regenerated.',
+                        ],
+                    ],
+                    'revised_validation' => ['status' => 'passed'],
+                    'can_prepare' => false,
+                    'revision_required' => true,
+                ],
+            ],
+        ];
+
+        $html = $card->render($context);
+        $harness->assertTrue(str_contains($html, 'Rebuild required'));
+        $harness->assertTrue(str_contains($html, 'earlier Accounting iXBRL run'));
+        $harness->assertTrue(str_contains($html, 'Historical Base Run'));
+        $harness->assertTrue(str_contains($html, '#17'));
+        $harness->assertTrue(str_contains($html, 'Historical — current download unavailable'));
+        $harness->assertFalse(str_contains($html, 'Download Companies House iXBRL'));
+        $harness->assertTrue(preg_match(
+            '/<button\b[^>]*\bdisabled\b[^>]*>Generate Companies House iXBRL<\/button>/',
+            $html
+        ) === 1);
+    });
     $harness->check(_ixbrl_generationCard::class, 'shows each CT period and gates computation download on fileable status', static function () use ($harness, $card): void {
         $context = [
             'company' => ['id' => 49, 'accounting_period_id' => 79],

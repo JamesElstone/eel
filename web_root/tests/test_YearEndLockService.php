@@ -40,6 +40,22 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         $harness->assertSame(true, (bool)($firstLock['success'] ?? false));
                         $harness->assertSame(1, yearEndLockPartyLoanSnapshotCount($fixture));
 
+                        $sectionReview = (new \eel_accounts\Service\YearEndSectionApprovalService())
+                            ->fetchReview($companyId, $periodId, 'director_loan_year_end_review');
+                        $harness->assertSame(true, (bool)($sectionReview['available'] ?? false));
+                        $harness->assertSame(1, (int)InterfaceDB::fetchColumn(
+                            'SELECT is_current
+                             FROM year_end_section_review_bundles
+                             WHERE company_id = :company_id
+                               AND accounting_period_id = :accounting_period_id
+                               AND check_code = :check_code',
+                            [
+                                'company_id' => $companyId,
+                                'accounting_period_id' => $periodId,
+                                'check_code' => 'director_loan_year_end_review',
+                            ]
+                        ));
+
                         $unlock = $lockService->unlockPeriod(
                             $companyId,
                             $periodId,
@@ -47,6 +63,21 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                             'Reopen party terms and recalculate the offset.'
                         );
                         $harness->assertSame(true, (bool)($unlock['success'] ?? false));
+                        $harness->assertTrue(
+                            (int)(($unlock['section_review_cache'] ?? [])['refreshed_count'] ?? 0) >= 1
+                        );
+                        $harness->assertSame(1, (int)InterfaceDB::fetchColumn(
+                            'SELECT is_current
+                             FROM year_end_section_review_bundles
+                             WHERE company_id = :company_id
+                               AND accounting_period_id = :accounting_period_id
+                               AND check_code = :check_code',
+                            [
+                                'company_id' => $companyId,
+                                'accounting_period_id' => $periodId,
+                                'check_code' => 'director_loan_year_end_review',
+                            ]
+                        ));
                         $harness->assertSame(
                             1,
                             (int)(($unlock['director_loan_offset_reversal'] ?? [])['reversed_party_count'] ?? 0)

@@ -445,6 +445,38 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             $harness->assertSame('current', (string)($taxCheck['acknowledgement_state'] ?? ''));
             $harness->assertSame(true, (bool)($taxCheck['acknowledgement_current'] ?? false));
 
+            InterfaceDB::prepareExecute(
+                'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+                 VALUES (:company_id, :label, :period_start, :period_end)',
+                [
+                    'company_id' => $companyId,
+                    'label' => 'Later revoke invalidation period',
+                    'period_start' => '2026-01-01',
+                    'period_end' => '2026-12-31',
+                ]
+            );
+            $laterPeriodId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label',
+                ['company_id' => $companyId, 'label' => 'Later revoke invalidation period']
+            );
+            InterfaceDB::prepareExecute(
+                'INSERT INTO year_end_section_review_bundles (
+                    company_id, accounting_period_id, check_code, contract_version,
+                    source_hash, bundle_json, is_current, generated_at
+                 ) VALUES (
+                    :company_id, :accounting_period_id, :check_code, :contract_version,
+                    :source_hash, :bundle_json, 1, CURRENT_TIMESTAMP
+                 )',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $laterPeriodId,
+                    'check_code' => 'tax_readiness_acknowledgement',
+                    'contract_version' => \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION,
+                    'source_hash' => str_repeat('a', 64),
+                    'bundle_json' => '{}',
+                ]
+            );
+
             $revoked = $instance->handle(
                 yearEndActionDirectorLoanTestRequest(
                     $companyId,
@@ -461,6 +493,15 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
                 [
                     'company_id' => $companyId,
                     'accounting_period_id' => $accountingPeriodId,
+                    'check_code' => 'tax_readiness_acknowledgement',
+                ]
+            ));
+            $harness->assertSame(0, (int)InterfaceDB::fetchColumn(
+                'SELECT is_current FROM year_end_section_review_bundles
+                 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id AND check_code = :check_code',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $laterPeriodId,
                     'check_code' => 'tax_readiness_acknowledgement',
                 ]
             ));

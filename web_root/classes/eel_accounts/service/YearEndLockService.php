@@ -253,7 +253,13 @@ final class YearEndLockService
         }
     }
 
-    public function unlockPeriod(int $companyId, int $accountingPeriodId, string $changedBy = 'web_app', ?string $notes = null): array
+    public function unlockPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        string $changedBy = 'web_app',
+        ?string $notes = null,
+        ?\Closure $progress = null
+    ): array
     {
         $this->assertYearEndSupported($companyId, 'unlock an accounting period');
         if (!$this->hasReviewTable()) {
@@ -321,7 +327,19 @@ final class YearEndLockService
                     ?? 'The Participator Loan terms snapshots could not be reopened.'));
             }
 
+            $progress?->__invoke('Invalidating affected Year End review caches…', 68);
+            $sectionApprovals = new YearEndSectionApprovalService();
+            $sectionApprovals->invalidateAllFromAccountingPeriod(
+                $companyId,
+                $accountingPeriodId,
+                'Accounting period unlocked; rebuild this and dependent later-period Year End reviews'
+            );
             \eel_accounts\Support\RequestCache::clear();
+            $sectionReviewCache = $sectionApprovals->refreshInvalidatedFromAccountingPeriod(
+                $companyId,
+                $accountingPeriodId,
+                $progress
+            );
             $review = $this->fetchReview($companyId, $accountingPeriodId);
             $this->writeAuditLog($companyId, $accountingPeriodId, 'unlock', $changedBy, $existing, $review, $notes);
             if ($ownsTransaction) {
@@ -333,6 +351,7 @@ final class YearEndLockService
                 'director_loan_offset_reversal' => $partyOffsetReversal,
                 'legacy_director_loan_repair' => $legacyRepair,
                 'participator_loan_snapshot_clear' => $snapshotClear,
+                'section_review_cache' => $sectionReviewCache,
                 'retained_earnings_close' => ['success' => true, 'deleted' => false, 'skipped' => true],
             ];
         } catch (\Throwable $exception) {

@@ -250,6 +250,12 @@ final class YearEndSectionApprovalService
         if (empty($result['success'])) {
             return $result;
         }
+        $this->invalidateSectionFromAccountingPeriod(
+            $companyId,
+            $accountingPeriodId,
+            $checkCode,
+            'Section approval revoked; rebuild this and dependent later-period reviews before reapproval'
+        );
 
         (new YearEndLockService())->writeAuditLog(
             $companyId,
@@ -284,6 +290,175 @@ final class YearEndSectionApprovalService
                 'reason' => trim($reason) !== '' ? trim($reason) : null,
             ]
         );
+    }
+
+    /**
+     * Reopening a signed section can change facts carried into later periods.
+     * Keep the acknowledgement rows intact, but force every affected review
+     * bundle to rebuild before it can be presented or approved again.
+     */
+    public function invalidateSectionFromAccountingPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        string $checkCode,
+        string $reason = ''
+    ): void {
+        $this->invalidateFromAccountingPeriod(
+            $companyId,
+            $accountingPeriodId,
+            $this->checkCode($checkCode),
+            $reason
+        );
+    }
+
+    /**
+     * Unlocking reopens several kinds of close evidence at once. Invalidate
+     * every cached section for this period and dependent later periods.
+     */
+    public function invalidateAllFromAccountingPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        string $reason = ''
+    ): void {
+        $this->invalidateFromAccountingPeriod($companyId, $accountingPeriodId, null, $reason);
+    }
+
+    /**
+     * Warm every existing invalidated bundle from this period onward. Failed
+     * rows remain invalidated so a later card read can safely retry them.
+     *
+     * @return array{success: bool, refreshed_count: int, failed_count: int, errors: list<string>}
+     */
+    public function refreshInvalidatedFromAccountingPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        ?\Closure $progress = null
+    ): array {
+        if (!$this->tableAvailable() || $companyId <= 0 || $accountingPeriodId <= 0) {
+            return ['success' => true, 'refreshed_count' => 0, 'failed_count' => 0, 'errors' => []];
+        }
+
+        $period = \InterfaceDB::fetchOne(
+            'SELECT period_start
+             FROM accounting_periods
+             WHERE id = :accounting_period_id AND company_id = :company_id
+             LIMIT 1',
+            ['accounting_period_id' => $accountingPeriodId, 'company_id' => $companyId]
+        );
+        if (!is_array($period) || trim((string)($period['period_start'] ?? '')) === '') {
+            return [
+                'success' => false,
+                'refreshed_count' => 0,
+                'failed_count' => 0,
+                'errors' => ['The accounting period could not be resolved while rebuilding Year End review caches.'],
+            ];
+        }
+
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT b.accounting_period_id, b.check_code
+             FROM year_end_section_review_bundles b
+             INNER JOIN accounting_periods ap ON ap.id = b.accounting_period_id
+             WHERE b.company_id = :bundle_company_id
+               AND ap.company_id = :period_company_id
+               AND b.is_current = 0
+               AND (
+                   ap.period_start > :period_start
+                   OR (ap.period_start = :current_period_start AND ap.id >= :current_period_id)
+               )
+             ORDER BY ap.period_start, ap.id, b.check_code',
+            [
+                'bundle_company_id' => $companyId,
+                'period_company_id' => $companyId,
+                'period_start' => (string)$period['period_start'],
+                'current_period_start' => (string)$period['period_start'],
+                'current_period_id' => $accountingPeriodId,
+            ]
+        );
+
+        $refreshed = 0;
+        $errors = [];
+        $total = count($rows);
+        foreach ($rows as $index => $row) {
+            $targetPeriodId = (int)($row['accounting_period_id'] ?? 0);
+            $checkCode = trim((string)($row['check_code'] ?? ''));
+            if ($targetPeriodId <= 0 || $checkCode === '') {
+                continue;
+            }
+            $progress?->__invoke(
+                'Rebuilding Year End review caches…',
+                $total > 0 ? 70 + (int)floor((($index + 1) / $total) * 14) : 84
+            );
+            try {
+                $bundle = $this->refreshBundle($companyId, $targetPeriodId, $checkCode);
+                if (empty($bundle['available'])) {
+                    $errors[] = 'AP ' . $targetPeriodId . ' / ' . $checkCode . ': '
+                        . (string)(($bundle['errors'] ?? [])[0] ?? 'The review bundle is unavailable.');
+                    continue;
+                }
+                $refreshed++;
+            } catch (\Throwable $exception) {
+                $errors[] = 'AP ' . $targetPeriodId . ' / ' . $checkCode . ': ' . $exception->getMessage();
+            }
+        }
+
+        return [
+            'success' => $errors === [],
+            'refreshed_count' => $refreshed,
+            'failed_count' => count($errors),
+            'errors' => $errors,
+        ];
+    }
+
+    private function invalidateFromAccountingPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        ?string $checkCode,
+        string $reason
+    ): void {
+        if (!$this->tableAvailable() || $companyId <= 0 || $accountingPeriodId <= 0) {
+            return;
+        }
+
+        $period = \InterfaceDB::fetchOne(
+            'SELECT period_start
+             FROM accounting_periods
+             WHERE id = :accounting_period_id AND company_id = :company_id
+             LIMIT 1',
+            ['accounting_period_id' => $accountingPeriodId, 'company_id' => $companyId]
+        );
+        if (!is_array($period) || trim((string)($period['period_start'] ?? '')) === '') {
+            if ($checkCode !== null) {
+                $this->invalidate($companyId, $accountingPeriodId, $checkCode, $reason);
+            }
+            return;
+        }
+
+        $params = [
+            'invalidated_at' => (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s'),
+            'reason' => trim($reason) !== '' ? trim($reason) : null,
+            'bundle_company_id' => $companyId,
+            'period_company_id' => $companyId,
+            'period_start' => (string)$period['period_start'],
+            'current_period_start' => (string)$period['period_start'],
+            'current_period_id' => $accountingPeriodId,
+        ];
+        $sql = 'UPDATE year_end_section_review_bundles
+                SET is_current = 0, invalidated_at = :invalidated_at, invalidated_reason = :reason
+                WHERE company_id = :bundle_company_id
+                  AND accounting_period_id IN (
+                      SELECT id
+                      FROM accounting_periods
+                      WHERE company_id = :period_company_id
+                        AND (
+                            period_start > :period_start
+                            OR (period_start = :current_period_start AND id >= :current_period_id)
+                        )
+                  )';
+        if ($checkCode !== null) {
+            $sql .= ' AND check_code = :check_code';
+            $params['check_code'] = $checkCode;
+        }
+        \InterfaceDB::execute($sql, $params);
     }
 
     public function refreshBundle(

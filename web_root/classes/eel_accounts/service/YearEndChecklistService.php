@@ -1146,12 +1146,17 @@ final class YearEndChecklistService
         try {
             $progress?->__invoke('Reopening the accounting period and filing evidence…', 30);
             $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
-            $result = $lock->unlockPeriod($companyId, $accountingPeriodId, $changedBy, $notes);
+            $result = $lock->unlockPeriod(
+                $companyId,
+                $accountingPeriodId,
+                $changedBy,
+                $notes,
+                $progress
+            );
             if (empty($result['success'])) {
                 return $this->rollbackUnlockTransaction($transaction, $result);
             }
 
-            $progress?->__invoke('Reversing Director Loan offsets and reopening terms…', 65);
             $progress?->__invoke('Preparing the reopened year-end checklist…', 85);
             $progress?->__invoke('Finalising the reopened accounting period…', 99);
             $this->commitLockTransaction($transaction);

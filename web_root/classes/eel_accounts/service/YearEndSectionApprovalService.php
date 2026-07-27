@@ -49,6 +49,13 @@ final class YearEndSectionApprovalService
             false,
             self::CONTRACT_VERSION
         );
+        if (empty($evaluation['current'])
+            && $checkCode === 'tax_readiness_acknowledgement'
+            && $this->storedTaxBasisMatches($acknowledgement, $basis)) {
+            $evaluation['state'] = 'current';
+            $evaluation['current'] = true;
+            $evaluation['representation_normalised'] = true;
+        }
 
         return [
             'available' => !empty($bundle['available']),
@@ -611,13 +618,89 @@ final class YearEndSectionApprovalService
 
     private function approvalBasis(array $bundle, array $answers): array
     {
-        return [
+        $basis = [
             'contract_version' => self::CONTRACT_VERSION,
             'check_code' => (string)($bundle['check_code'] ?? ''),
             'facts' => (array)($bundle['facts'] ?? []),
             'questions' => (array)($bundle['questions'] ?? []),
             'answers' => $answers,
         ];
+        if ((string)($basis['check_code'] ?? '') === 'tax_readiness_acknowledgement') {
+            $basis['facts'] = $this->normaliseTaxApprovalValue((array)$basis['facts']);
+        }
+        return $basis;
+    }
+
+    /**
+     * Older tax approvals can contain the same calculation with database-shaped
+     * decimals and pool rows in a different order. Preserve those signatures
+     * when their canonical calculation and filing-scope basis is unchanged.
+     */
+    private function storedTaxBasisMatches(?array $acknowledgement, array $currentBasis): bool
+    {
+        if (!is_array($acknowledgement)) {
+            return false;
+        }
+        $stored = json_decode((string)($acknowledgement['basis_json'] ?? ''), true);
+        if (!is_array($stored)
+            || (string)($stored['check_code'] ?? '') !== 'tax_readiness_acknowledgement') {
+            return false;
+        }
+        $storedHash = trim((string)($acknowledgement['basis_hash'] ?? ''));
+        if ($storedHash === ''
+            || !hash_equals($storedHash, (new YearEndAcknowledgementService())->hashBasis($stored))) {
+            return false;
+        }
+        $stored['facts'] = $this->normaliseTaxApprovalValue((array)($stored['facts'] ?? []));
+        $currentBasis['facts'] = $this->normaliseTaxApprovalValue((array)($currentBasis['facts'] ?? []));
+
+        return hash_equals($this->canonicalJson($stored), $this->canonicalJson($currentBasis));
+    }
+
+    private function normaliseTaxApprovalValue(mixed $value): mixed
+    {
+        if (is_int($value) || is_float($value)
+            || (is_string($value) && is_numeric($value))) {
+            $number = rtrim(rtrim(sprintf('%.10F', (float)$value), '0'), '.');
+            return $number === '' || $number === '-0' ? '0' : $number;
+        }
+        if (!is_array($value)) {
+            return $value;
+        }
+
+        foreach ($value as $key => $item) {
+            $value[$key] = $this->normaliseTaxApprovalValue($item);
+        }
+        if (!array_is_list($value)) {
+            ksort($value, SORT_STRING);
+            return $value;
+        }
+        if ($value === [] || !array_reduce(
+            $value,
+            static fn(bool $carry, mixed $item): bool => $carry && is_array($item),
+            true
+        )) {
+            return $value;
+        }
+
+        $identityKeys = ['sequence_no', 'ct_period_id', 'pool_type', 'asset_id'];
+        foreach ($identityKeys as $identityKey) {
+            if (!array_reduce(
+                $value,
+                static fn(bool $carry, array $item): bool => $carry && array_key_exists($identityKey, $item),
+                true
+            )) {
+                continue;
+            }
+            usort($value, function (array $left, array $right) use ($identityKey): int {
+                $comparison = strnatcmp((string)$left[$identityKey], (string)$right[$identityKey]);
+                return $comparison !== 0
+                    ? $comparison
+                    : strcmp($this->canonicalJson($left), $this->canonicalJson($right));
+            });
+            break;
+        }
+        return $value;
     }
 
     /** @param array<string,mixed> $bundle @param array<string,mixed> $submitted */

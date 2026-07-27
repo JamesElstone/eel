@@ -148,6 +148,72 @@ $harness->run(\eel_accounts\Service\YearEndSectionApprovalService::class, static
         $harness->assertSame(false, (bool)$method->invoke($service, $previous, $scopeChanged));
     });
 
+    $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'keeps a tax approval current across equivalent decimal shapes and pool ordering', static function () use ($harness, $service): void {
+        $normalise = new ReflectionMethod($service, 'normaliseTaxApprovalValue');
+        $stored = [
+            'freeze_manifest' => [
+                'periods' => [[
+                    'sequence_no' => 1,
+                    'accounting_profit' => '-118.66',
+                    'capital_allowance_breakdown' => [
+                        'rows' => [
+                            ['pool_type' => 'special_rate_pool', 'aia_claimed' => '0.000000'],
+                            ['pool_type' => 'main_pool', 'aia_claimed' => '628.840000'],
+                        ],
+                    ],
+                ]],
+                'totals' => ['taxable_profit' => '0.00', 's455_tax' => '0.00'],
+            ],
+        ];
+        $live = [
+            'freeze_manifest' => [
+                'periods' => [[
+                    'sequence_no' => '1',
+                    'accounting_profit' => '-118.660000',
+                    'capital_allowance_breakdown' => [
+                        'rows' => [
+                            ['pool_type' => 'main_pool', 'aia_claimed' => 628.84],
+                            ['pool_type' => 'special_rate_pool', 'aia_claimed' => 0],
+                        ],
+                    ],
+                ]],
+                'totals' => ['taxable_profit' => 0, 's455_tax' => '0.000000'],
+            ],
+        ];
+
+        $harness->assertSame(
+            $normalise->invoke($service, $stored),
+            $normalise->invoke($service, $live)
+        );
+        $live['freeze_manifest']['totals']['s455_tax'] = '25.00';
+        $harness->assertSame(
+            false,
+            $normalise->invoke($service, $stored) === $normalise->invoke($service, $live)
+        );
+    });
+
+    $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'accepts only intact legacy tax signatures after representation normalisation', static function () use ($harness, $service): void {
+        $matches = new ReflectionMethod($service, 'storedTaxBasisMatches');
+        $stored = [
+            'contract_version' => \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION,
+            'check_code' => 'tax_readiness_acknowledgement',
+            'facts' => ['freeze_manifest' => ['totals' => ['s455_tax' => '0.00']]],
+            'questions' => [],
+            'answers' => [],
+        ];
+        $current = $stored;
+        $current['facts']['freeze_manifest']['totals']['s455_tax'] = 0;
+        $acknowledgements = new \eel_accounts\Service\YearEndAcknowledgementService();
+        $acknowledgement = [
+            'basis_json' => json_encode($stored, JSON_UNESCAPED_SLASHES),
+            'basis_hash' => $acknowledgements->hashBasis($stored),
+        ];
+
+        $harness->assertSame(true, (bool)$matches->invoke($service, $acknowledgement, $current));
+        $acknowledgement['basis_json'] = str_replace('"0.00"', '"25.00"', (string)$acknowledgement['basis_json']);
+        $harness->assertSame(false, (bool)$matches->invoke($service, $acknowledgement, $current));
+    });
+
     $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'builds the P&L bundle directly from the prepared retained earnings context', static function () use ($harness, $service): void {
         $method = new ReflectionMethod($service, 'retainedEarningsBundle');
         $bundle = (array)$method->invoke($service, 12, 34, [

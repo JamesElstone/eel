@@ -21,6 +21,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                             'available' => true,
                             'ct_period_id' => 6,
                             'sequence_no' => 1,
+                            'display_sequence_no' => 3,
                             'period_start' => '2022-09-05',
                             'period_end' => '2023-09-04',
                             'close_status_calculated' => true,
@@ -42,10 +43,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
             $harness->assertTrue(str_contains($html, 'class="summary-grid four"'));
             $harness->assertTrue(
-                strpos($html, 'Tax Period 1') < strpos($html, 'Close-Company Status')
+                strpos($html, 'Tax Period 3') < strpos($html, 'Close-Company Status')
                 && strpos($html, 'Close-Company Status') < strpos($html, 'Evidence cutoff')
                 && strpos($html, 'Evidence cutoff') < strpos($html, 's455 exposure')
             );
+            $harness->assertTrue(!str_contains($html, 'Tax Period 1'));
             $harness->assertTrue(str_contains($html, '<table><tbody><tr><th scope="row">Participator Loan values outstanding at Year End</th>'));
             $harness->assertTrue(str_contains($html, '<th scope="row">Corporation Tax owing arising from Section 455 (Gross s455 Tax)</th>'));
             $harness->assertTrue(str_contains($html, '<th scope="row">Payments made after this Accounting Period before the above cut off date</th>'));

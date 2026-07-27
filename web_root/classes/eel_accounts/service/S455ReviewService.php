@@ -89,6 +89,12 @@ final class S455ReviewService
         if ($period === null) {
             return ['available' => false, 'close_status_calculated' => false, 'errors' => ['The selected CT period could not be found.']];
         }
+        $displaySequenceNo = (int)($period['display_sequence_no']
+            ?? (new CorporationTaxPeriodService())->displaySequenceNo(
+                $companyId,
+                $accountingPeriodId,
+                (int)$period['sequence_no']
+            ));
         $closeCompany = (new OwnershipPartyService())->closeCompanyStatus($companyId, (string)$period['period_end']);
         $closeCompanyStatus = (string)($closeCompany['status'] ?? 'unconfirmed');
         $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
@@ -304,6 +310,7 @@ final class S455ReviewService
             'available' => true,
             'errors' => array_values(array_unique($errors)),
             'sequence_no' => (int)$period['sequence_no'],
+            'display_sequence_no' => $displaySequenceNo,
             'gross_principal' => $grossPrincipal,
             'gross_tax' => $grossTax,
             'qualifying_repayments' => $qualifyingRepayments,

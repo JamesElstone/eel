@@ -45,7 +45,10 @@ final class _director_loan_s455Card extends CardBaseFramework
             if (empty($period['available'])) { continue; }
             $html .= '<section class="panel-soft settings-stack">'
                 . '<div class="summary-grid four">'
-                . $this->stat('Tax Period ' . (int)$period['sequence_no'], (string)$period['period_start'] . ' to ' . (string)$period['period_end'])
+                . $this->stat(
+                    'Tax Period ' . (int)($period['display_sequence_no'] ?? $period['sequence_no']),
+                    (string)$period['period_start'] . ' to ' . (string)$period['period_end']
+                )
                 . $this->stat('Close-Company Status', !empty($period['close_status_calculated']) ? 'Calculated' : 'Ownership data needed')
                 . $this->stat('Evidence cutoff', (string)$period['evidence_cutoff'])
                 . $this->stat(

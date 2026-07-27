@@ -884,12 +884,16 @@ $harness->run(IxbrlAction::class, static function (GeneratedServiceClassTestHarn
         $harness->assertTrue(str_contains((string)$cleanupAction, 'IxbrlUntransmittedHistoryCleanupService'));
     });
 
-    $harness->check(IxbrlAction::class, 'refreshes the Year End tax review after a filing-scope answer changes', static function () use ($harness): void {
+    $harness->check(IxbrlAction::class, 'avoids rebuilding the Year End tax review after each filing-scope answer', static function () use ($harness): void {
         $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content'
             . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'IxbrlAction.php');
 
         $scopeAction = strstr($source, "if (\$intent === 'save_ct_filing_scope_answer')");
         $harness->assertTrue(is_string($scopeAction));
-        $harness->assertTrue(str_contains((string)$scopeAction, "'year.end.state', 'year.end.checklist', 'year.end.tax.readiness'"));
+        $scopeAction = strstr((string)$scopeAction, "if (\$intent === 'approve_ixbrl_accounts_filing_basis')", true);
+        $harness->assertTrue(is_string($scopeAction));
+        $harness->assertTrue(str_contains((string)$scopeAction, "'corporation.tax.filing.scope'"));
+        $harness->assertSame(false, str_contains((string)$scopeAction, "'year.end.checklist'"));
+        $harness->assertSame(false, str_contains((string)$scopeAction, "'year.end.tax.readiness'"));
     });
 });

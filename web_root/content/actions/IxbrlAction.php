@@ -97,7 +97,13 @@ final class IxbrlAction implements ActionInterfaceFramework
                     !empty($result['success']),
                     (array)($result['errors'] ?? []),
                     !empty($result['success'])
-                        ? ['year.end.state', 'year.end.checklist', 'year.end.tax.readiness']
+                        // Scope answers do not alter the tax calculation or
+                        // checklist. The scope gate is synchronised from the
+                        // selected radios by project.js, while the server
+                        // rebuilds and validates the signed approval basis
+                        // when approval is submitted. Avoid rebuilding the
+                        // expensive tax-readiness card after every answer.
+                        ? ['corporation.tax.filing.scope']
                         : [],
                     !empty($result['success']) ? ['Corporation Tax filing scope updated. Approve the revised filing basis before generating or filing.'] : [],
                     []

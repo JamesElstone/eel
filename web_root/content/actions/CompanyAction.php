@@ -401,8 +401,17 @@ final class CompanyAction implements ActionInterfaceFramework
                 ];
             }
 
+            \eel_accounts\Support\RequestCache::clear();
             return ActionResultFramework::success(
-                ['page.context', SiteContextCoordinatorFramework::UI_INVALIDATION_FACT],
+                [
+                    'page.context',
+                    'year.end.companies.house.comparison',
+                    'year.end.checklist',
+                    'year.end.state',
+                    'companies.house.accounts.submission',
+                    'ixbrl.readiness',
+                    SiteContextCoordinatorFramework::UI_INVALIDATION_FACT,
+                ],
                 $flashMessages,
                 ['company_id' => $companyId],
                 ['company_id' => $companyId]

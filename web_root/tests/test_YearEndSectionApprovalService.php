@@ -127,13 +127,73 @@ $harness->run(\eel_accounts\Service\YearEndSectionApprovalService::class, static
         $expected = hash('sha256', (string)$canonicalJson->invoke($service, [
             'contract_version' => \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION,
             'check_code' => 'tax_readiness_acknowledgement',
-            'questions' => ['provider' => 'tax_filing_scope_v3_canonical_freeze'],
+            'questions' => ['provider' => 'tax_filing_scope_v4_direct_freeze'],
         ]));
 
         $harness->assertSame(
             $expected,
             (string)$definitionToken->invoke($service, 'tax_readiness_acknowledgement')
         );
+    });
+
+    $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'builds tax approval facts directly from the canonical freeze basis', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod($service, 'taxReadinessBundle');
+        $bundle = (array)$method->invoke(
+            $service,
+            12,
+            34,
+            [
+                'available' => true,
+                'freeze_status' => 'ready_for_approval',
+                'freeze_manifest_hash' => 'manifest-hash',
+                'freeze_manifest' => [
+                    'company_id' => 12,
+                    'accounting_period_id' => 34,
+                    'periods' => [['sequence_no' => 1, 'tax_payable' => '0.00']],
+                    'totals' => ['tax_payable' => '0.00'],
+                ],
+                'blocking_diagnostics' => [],
+                'blocking_diagnostic_count' => 0,
+                'estimated_corporation_tax' => '0.00',
+            ],
+            [
+                'available' => true,
+                'complete' => true,
+                'revision' => 1,
+                'basis_hash' => 'scope-hash',
+                'answers' => ['ct600b' => 'no'],
+                'unanswered_fields' => [],
+                'errors' => [],
+                'definitions' => [
+                    'ct600b' => ['question' => 'Does CT600B apply?'],
+                ],
+            ]
+        );
+
+        $harness->assertSame(true, (bool)($bundle['can_approve'] ?? false));
+        $harness->assertSame('ready_for_approval', (string)(($bundle['display'] ?? [])['freeze_status'] ?? ''));
+        $harness->assertSame(
+            '0.00',
+            (string)((($bundle['facts'] ?? [])['freeze_manifest']['totals'] ?? [])['tax_payable'] ?? '')
+        );
+        $harness->assertSame('scope-hash', (string)(($bundle['facts'] ?? [])['filing_scope_basis_hash'] ?? ''));
+        $harness->assertSame('no', (string)(($bundle['current_answers'] ?? [])['filing_scope.ct600b'] ?? ''));
+    });
+
+    $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'does not mark a ready tax bundle current without its freeze manifest', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod($service, 'validateBundleForPersistence');
+        $bundle = (array)$method->invoke($service, [
+            'available' => true,
+            'facts' => ['check_code' => 'tax_readiness_acknowledgement'],
+            'display' => ['freeze_status' => 'ready_for_approval'],
+            'can_approve' => true,
+            'errors' => [],
+            'approval_errors' => [],
+        ], 'tax_readiness_acknowledgement');
+
+        $harness->assertSame(false, (bool)($bundle['available'] ?? true));
+        $harness->assertSame(false, (bool)($bundle['can_approve'] ?? true));
+        $harness->assertSame(true, str_contains((string)(($bundle['errors'] ?? [])[0] ?? ''), 'freeze manifest'));
     });
 
     $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'accepts a refreshed tax approval bundle when only its scope gate changed', static function () use ($harness, $service): void {

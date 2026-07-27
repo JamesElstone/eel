@@ -540,6 +540,8 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                 ],
                 'services' => [
                     'companies_house_ixbrl' => [
+                        'filing_kind' => 'revised',
+                        'filing_required' => true,
                         'submission' => null,
                         'prepared_artifact' => [],
                         'revised_validation' => [
@@ -564,7 +566,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $harness->assertTrue(str_contains($draftHtml, 'Arelle Validation') && str_contains($draftHtml, 'Failed'));
             $harness->assertTrue(str_contains($draftHtml, '<h3 class="card-title">HMRC Accounting iXBRL</h3>'));
             $harness->assertTrue(str_contains($draftHtml, 'Generate the approved HMRC accounts iXBRL export and review its structural and Arelle validation results.'));
-            $harness->assertTrue(str_contains($draftHtml, 'Prepare the Companies House-specific revised accounts iXBRL from the approved filing basis.'));
+            $harness->assertTrue(str_contains($draftHtml, 'Prepare the Companies House-specific accounts iXBRL from the approved Revised filing basis.'));
             $harness->assertTrue(str_contains($draftHtml, '<h3>Internal errors</h3>'));
             $harness->assertTrue(str_contains($draftHtml, 'These are structural checks performed before external Arelle validation.'));
             $harness->assertFalse(str_contains($draftHtml, 'Arelle validation output'));
@@ -614,15 +616,20 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                     'submission' => null,
                     'prepared_artifact' => [],
                     'can_prepare' => true,
+                    'filing_required' => false,
                     'revision_required' => false,
                 ],
             ],
         ];
         $buttonDisabled = static function (string $html, string $label): bool {
-            return preg_match(
-                '/<button\b[^>]*\bdisabled\b[^>]*>' . preg_quote($label, '/') . '<\/button>/',
-                $html
-            ) === 1;
+            if (preg_match(
+                '/<button\b([^>]*)>' . preg_quote($label, '/') . '<\/button>/',
+                $html,
+                $matches
+            ) !== 1) {
+                return false;
+            }
+            return preg_match('/(?:^|\s)disabled(?:\s|$)/', trim((string)$matches[1])) === 1;
         };
 
         $blocked = $card->render($context);
@@ -632,20 +639,30 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         $harness->assertTrue($buttonDisabled($blocked, 'Generate Corporation Tax Period 6 iXBRL'));
 
         $context['ixbrl']['readiness']['can_generate'] = true;
+        $context['ixbrl']['readiness']['ready_for_filing'] = true;
         $ready = $card->render($context);
-        $harness->assertFalse($buttonDisabled($ready, 'Generate All Filing iXBRLs'));
-        $harness->assertFalse($buttonDisabled($ready, 'Generate Accounting iXBRL'));
-        $harness->assertFalse($buttonDisabled($ready, 'Generate Companies House iXBRL'));
-        $harness->assertFalse($buttonDisabled($ready, 'Generate Corporation Tax Period 6 iXBRL'));
+        foreach ([
+            'Generate All Filing iXBRLs',
+            'Generate Accounting iXBRL',
+            'Generate Companies House iXBRL',
+            'Generate Corporation Tax Period 6 iXBRL',
+        ] as $label) {
+            if ($buttonDisabled($ready, $label)) {
+                throw new RuntimeException('Expected the ready control to be enabled: ' . $label);
+            }
+        }
 
         $context['services']['companies_house_ixbrl']['can_prepare'] = false;
+        $context['services']['companies_house_ixbrl']['filing_required'] = true;
         $context['services']['companies_house_ixbrl']['revision_required'] = true;
         $context['services']['companies_house_ixbrl']['preparation_blockers'] = [
             'Generate the HMRC Accounting iXBRL; internal and Arelle validation run automatically.',
         ];
         $prerequisiteGeneratedByAction = $card->render($context);
-        $harness->assertFalse($buttonDisabled($prerequisiteGeneratedByAction, 'Generate All Filing iXBRLs'));
-        $harness->assertFalse($buttonDisabled($prerequisiteGeneratedByAction, 'Generate Companies House iXBRL'));
+        if ($buttonDisabled($prerequisiteGeneratedByAction, 'Generate All Filing iXBRLs')) {
+            throw new RuntimeException('The combined action should resolve the Accounting iXBRL prerequisite.');
+        }
+        $harness->assertTrue($buttonDisabled($prerequisiteGeneratedByAction, 'Generate Companies House iXBRL'));
 
         $context['services']['companies_house_ixbrl']['preparation_blockers'][] = 'Record Companies House written confirmation.';
         $genuineBlocker = $card->render($context);
@@ -853,7 +870,7 @@ $harness->run(IxbrlAction::class, static function (GeneratedServiceClassTestHarn
         $harness->assertTrue(str_contains($source, '$this->generatePreview('));
         $harness->assertTrue(str_contains($source, '$this->generateComputation('));
         $harness->assertTrue(str_contains($source, 'CompaniesHouseAccountsSubmissionService'));
-        $harness->assertTrue(str_contains($source, 'prepareRevision($companyId, $accountingPeriodId, [], $actor)'));
+        $harness->assertTrue(str_contains($source, 'prepareAccounts($companyId, $accountingPeriodId, [], $actor)'));
         $harness->assertTrue(str_contains($source, 'projectForAccountingPeriod($companyId, $accountingPeriodId)'));
         $harness->assertTrue(str_contains($source, '$services->actionProgress()'));
         $harness->assertTrue(str_contains($source, 'companiesHousePreparationResolvableByAccountsGeneration'));

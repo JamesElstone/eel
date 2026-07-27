@@ -17,7 +17,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         });
 
         $harness->check($service::class, 'declares an explicit report-basis version', static function () use ($harness, $service): void {
-            $harness->assertSame('ixbrl-accounts-report-v4', $service::BASIS_VERSION);
+            $harness->assertSame('ixbrl-accounts-report-v5', $service::BASIS_VERSION);
         });
 
         $harness->check($service::class, 'freezes the selected director id with the officer-name snapshot', static function () use ($harness, $service): void {

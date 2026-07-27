@@ -28,6 +28,10 @@ $harness->run(_year_end_companies_house_comparisonCard::class, static function (
         $harness->assertSame(false, str_contains($html, 'name="intent" value="save_variance_explanation"'));
         $harness->assertSame(true, strpos($html, 'Companies House Comparison') < strpos($html, 'Is this Company eligible to submit revised accounts'));
         $harness->assertSame(true, str_contains($html, 'data-year-end-approval-required-value="eligible"'));
+        $harness->assertSame(true, str_contains($html, 'Synchronise with Companies House'));
+        $harness->assertSame(true, str_contains($html, 'name="card_action" value="Company"'));
+        $harness->assertSame(true, str_contains($html, 'Filing classification'));
+        $harness->assertSame(true, str_contains($html, 'Revised'));
     });
 
     $harness->check(_year_end_companies_house_comparisonCard::class, 'shows approved gate answers from the acknowledgement basis', static function () use ($harness, $card): void {
@@ -56,6 +60,8 @@ $harness->run(_year_end_companies_house_comparisonCard::class, static function (
         $context['services']['sectionReview']['display']['comparison'] = [
             'available' => true,
             'has_exact_filing' => false,
+            'filing_kind' => 'original',
+            'filing_reason' => 'no_exact_period_filing_found',
             'comparison_scope' => 'no_exact_filing',
             'comparison_note' => 'No exact Companies House accounts filing is available.',
             'filing' => null,
@@ -69,6 +75,7 @@ $harness->run(_year_end_companies_house_comparisonCard::class, static function (
         $harness->assertSame(true, str_contains($html, 'Not Filed'));
         $harness->assertSame(true, str_contains($html, 'name="check_code" value="companies_house_no_filing_acknowledgement"'));
         $harness->assertSame(false, str_contains($html, 'Why do the Companies House figures need revising?'));
+        $harness->assertSame(true, str_contains($html, 'Original'));
     });
 });
 
@@ -104,6 +111,8 @@ function companiesHouseComparisonCardContext(): array
                     'comparison' => [
                         'available' => true,
                         'has_exact_filing' => true,
+                        'filing_kind' => 'revised',
+                        'filing_reason' => 'exact_period_filing_found',
                         'can_acknowledge' => true,
                         'comparison_note' => 'Comparison available.',
                         'filing' => ['filing_date' => '2026-02-14'],

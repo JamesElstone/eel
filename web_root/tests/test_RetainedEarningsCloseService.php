@@ -165,6 +165,9 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
         InterfaceDB::beginTransaction();
         try {
             retainedEarningsCloseRequireSchema($harness);
+            if (!InterfaceDB::tableExists('year_end_section_review_bundles')) {
+                $harness->skip('year_end_section_review_bundles table is not available.');
+            }
             StandardNominalTestFixture::ensureNominals(['1000', '1200', '2100', '3000', '4000', '5000']);
             $fixture = retainedEarningsCloseCreateLossFixture();
             InterfaceDB::prepareExecute(
@@ -183,16 +186,96 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
             );
 
             $service = new \eel_accounts\Service\RetainedEarningsCloseService();
+            $sectionApprovals = new \eel_accounts\Service\YearEndSectionApprovalService();
             $blocked = $service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
             $harness->assertSame('prior_period_unlocked', (string)(($blocked['prior_period_dependency'] ?? [])['status'] ?? ''));
             $harness->assertSame(false, (bool)($blocked['can_acknowledge'] ?? true));
             $harness->assertSame(false, (bool)($service->saveAcknowledgement((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], true, 'test')['success'] ?? true));
             $harness->assertSame(false, (bool)($service->postClose((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'test', true)['success'] ?? true));
 
-            (new \eel_accounts\Service\YearEndLockService())->lockPeriod((int)$fixture['company_id'], $priorPeriodId, 'test');
+            $blockedReview = $sectionApprovals->fetchReview(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                'retained_earnings_close_confirmation'
+            );
+            $blockedToken = (string)(($blockedReview['bundle'] ?? [])['source_token'] ?? '');
+            $harness->assertSame('prior_period_unlocked', (string)(($blockedReview['display']['prior_period_dependency'] ?? [])['status'] ?? ''));
+            $harness->assertSame(false, (bool)($blockedReview['can_approve'] ?? true));
+            $harness->assertSame(64, strlen($blockedToken));
+
+            $lockService = new \eel_accounts\Service\YearEndLockService();
+            $locked = $lockService->lockPeriod((int)$fixture['company_id'], $priorPeriodId, 'test');
+            $harness->assertSame(true, (bool)($locked['success'] ?? false));
             $ready = $service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
             $harness->assertSame('prior_period_locked', (string)(($ready['prior_period_dependency'] ?? [])['status'] ?? ''));
             $harness->assertSame(true, (bool)($ready['can_acknowledge'] ?? false));
+
+            $readyReview = $sectionApprovals->fetchReview(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                'retained_earnings_close_confirmation'
+            );
+            $readyToken = (string)(($readyReview['bundle'] ?? [])['source_token'] ?? '');
+            $harness->assertSame('prior_period_locked', (string)(($readyReview['display']['prior_period_dependency'] ?? [])['status'] ?? ''));
+            $harness->assertSame(true, (bool)($readyReview['can_approve'] ?? false));
+            $harness->assertSame(false, hash_equals($blockedToken, $readyToken));
+
+            $unlocked = $lockService->unlockPeriod(
+                (int)$fixture['company_id'],
+                $priorPeriodId,
+                'test',
+                'Verify the following-period P&L review cache is refreshed.'
+            );
+            $harness->assertSame(true, (bool)($unlocked['success'] ?? false));
+            $unlockedReview = $sectionApprovals->fetchReview(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                'retained_earnings_close_confirmation'
+            );
+            $unlockedToken = (string)(($unlockedReview['bundle'] ?? [])['source_token'] ?? '');
+            $harness->assertSame('prior_period_unlocked', (string)(($unlockedReview['display']['prior_period_dependency'] ?? [])['status'] ?? ''));
+            $harness->assertSame(false, (bool)($unlockedReview['can_approve'] ?? true));
+            $harness->assertSame(false, hash_equals($readyToken, $unlockedToken));
+
+            $relocked = $lockService->lockPeriod((int)$fixture['company_id'], $priorPeriodId, 'test');
+            $harness->assertSame(true, (bool)($relocked['success'] ?? false));
+            $relockedReview = $sectionApprovals->fetchReview(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                'retained_earnings_close_confirmation'
+            );
+            $harness->assertSame('prior_period_locked', (string)(($relockedReview['display']['prior_period_dependency'] ?? [])['status'] ?? ''));
+            $harness->assertSame(true, (bool)($relockedReview['can_approve'] ?? false));
+            $harness->assertSame(
+                false,
+                hash_equals($unlockedToken, (string)(($relockedReview['bundle'] ?? [])['source_token'] ?? ''))
+            );
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
+    $harness->check(\eel_accounts\Service\RetainedEarningsCloseService::class, 'keeps a first-period P&L review approval-ready without a prior lock', static function () use ($harness): void {
+        InterfaceDB::beginTransaction();
+        try {
+            retainedEarningsCloseRequireSchema($harness);
+            if (!InterfaceDB::tableExists('year_end_section_review_bundles')) {
+                $harness->skip('year_end_section_review_bundles table is not available.');
+            }
+            StandardNominalTestFixture::ensureNominals(['1000', '1200', '2100', '3000', '4000', '5000']);
+            $fixture = retainedEarningsCloseCreateLossFixture();
+
+            $review = (new \eel_accounts\Service\YearEndSectionApprovalService())->fetchReview(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                'retained_earnings_close_confirmation'
+            );
+
+            $harness->assertSame('first_period', (string)(($review['display']['prior_period_dependency'] ?? [])['status'] ?? ''));
+            $harness->assertSame(true, (bool)($review['can_approve'] ?? false));
+            $harness->assertSame(64, strlen((string)(($review['bundle'] ?? [])['source_token'] ?? '')));
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();

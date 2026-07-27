@@ -9,8 +9,6 @@ declare(strict_types=1);
 
 final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
 {
-    private const LIVE_CONFIRMATION_PHRASE = 'SUBMIT LIVE REVISED ACCOUNTS';
-
     /** @var list<string> */
     private const CHANGED_FACTS = [
         'companies.house.accounts.submission',
@@ -47,24 +45,36 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
 
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
-        $intent = trim((string)$request->input('intent', ''));
+        $intent = match (trim((string)$request->input('intent', ''))) {
+            'prepare_revised_accounts' => 'prepare_accounts',
+            'submit_revised_accounts' => 'submit_accounts',
+            'refresh_revised_accounts_status' => 'refresh_accounts_status',
+            'download_revised_accounts_ixbrl' => 'download_accounts_ixbrl',
+            'preflight_revised_accounts' => 'preflight_accounts',
+            'submit_preflighted_revised_accounts' => 'submit_preflighted_accounts',
+            'poll_revised_accounts_status' => 'poll_accounts_status',
+            'ack_revised_accounts_status' => 'ack_accounts_status',
+            'retrieve_revised_accounts_document' => 'retrieve_accounts_document',
+            'reconcile_revised_accounts_status' => 'reconcile_accounts_status',
+            default => trim((string)$request->input('intent', '')),
+        };
         $allowedIntents = [
             'record_gateway_eligibility',
             'save_variance_explanation',
-            'prepare_revised_accounts',
-            'submit_revised_accounts',
-            'refresh_revised_accounts_status',
-            'preflight_revised_accounts',
-            'submit_preflighted_revised_accounts',
-            'poll_revised_accounts_status',
-            'ack_revised_accounts_status',
-            'retrieve_revised_accounts_document',
-            'download_revised_accounts_ixbrl',
+            'prepare_accounts',
+            'submit_accounts',
+            'refresh_accounts_status',
+            'preflight_accounts',
+            'submit_preflighted_accounts',
+            'poll_accounts_status',
+            'ack_accounts_status',
+            'retrieve_accounts_document',
+            'download_accounts_ixbrl',
             'download_protocol_evidence',
-            'reconcile_revised_accounts_status',
+            'reconcile_accounts_status',
         ];
         if (!in_array($intent, $allowedIntents, true)) {
-            return $this->error('Unknown Companies House revised-accounts action.');
+            return $this->error('Unknown Companies House accounts action.');
         }
 
         $securityError = $this->securityError($request);
@@ -81,16 +91,16 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
 
         if (!in_array($intent, ['record_gateway_eligibility', 'save_variance_explanation'], true)
             && !$this->isLocked($companyId, $accountingPeriodId)) {
-            return $this->error('Complete and lock Year End before using Companies House revised-accounts filing.');
+            return $this->error('Complete and lock Year End before using Companies House accounts filing.');
         }
         $developerIntent = in_array($intent, [
-            'preflight_revised_accounts',
-            'submit_preflighted_revised_accounts',
-            'poll_revised_accounts_status',
-            'ack_revised_accounts_status',
-            'retrieve_revised_accounts_document',
+            'preflight_accounts',
+            'submit_preflighted_accounts',
+            'poll_accounts_status',
+            'ack_accounts_status',
+            'retrieve_accounts_document',
             'download_protocol_evidence',
-            'reconcile_revised_accounts_status',
+            'reconcile_accounts_status',
         ], true);
         if ($developerIntent && !(bool)AppConfigurationStore::get('developer_options', false)) {
             return $this->error('Developer options must be enabled for step-by-step Companies House exchanges.');
@@ -98,7 +108,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         if ($intent === 'download_protocol_evidence') {
             $this->downloadProtocolEvidence($request, $companyId, $accountingPeriodId);
         }
-        if ($intent === 'download_revised_accounts_ixbrl') {
+        if ($intent === 'download_accounts_ixbrl') {
             $this->downloadRevisedAccountsIxbrl($companyId, $accountingPeriodId);
         }
 
@@ -106,46 +116,46 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             $result = match ($intent) {
                 'record_gateway_eligibility' => $this->recordEligibility($request, $companyId, $accountingPeriodId),
                 'save_variance_explanation' => $this->saveVarianceExplanation($request, $companyId, $accountingPeriodId),
-                'prepare_revised_accounts' => $this->prepareRevision(
+                'prepare_accounts' => $this->prepareRevision(
                     $request,
                     $companyId,
                     $accountingPeriodId,
                     $services->actionProgress()
                 ),
-                'submit_revised_accounts' => $this->submitRevision($request, $companyId, $accountingPeriodId, $services->actionProgress()),
-                'refresh_revised_accounts_status' => $this->refreshStatus($request, $companyId, $accountingPeriodId),
-                'preflight_revised_accounts' => $this->preflightRevision(
+                'submit_accounts' => $this->submitRevision($request, $companyId, $accountingPeriodId, $services->actionProgress()),
+                'refresh_accounts_status' => $this->refreshStatus($request, $companyId, $accountingPeriodId),
+                'preflight_accounts' => $this->preflightRevision(
                     $request,
                     $companyId,
                     $accountingPeriodId,
                     $services->actionProgress()
                 ),
-                'submit_preflighted_revised_accounts' => $this->submitRevision(
+                'submit_preflighted_accounts' => $this->submitRevision(
                     $request,
                     $companyId,
                     $accountingPeriodId,
                     $services->actionProgress(),
                     true
                 ),
-                'poll_revised_accounts_status' => $this->protocolStatusAction(
+                'poll_accounts_status' => $this->protocolStatusAction(
                     $request,
                     $companyId,
                     $accountingPeriodId,
                     'pollStatus'
                 ),
-                'ack_revised_accounts_status' => $this->protocolStatusAction(
+                'ack_accounts_status' => $this->protocolStatusAction(
                     $request,
                     $companyId,
                     $accountingPeriodId,
                     'acknowledgeStatus'
                 ),
-                'retrieve_revised_accounts_document' => $this->protocolStatusAction(
+                'retrieve_accounts_document' => $this->protocolStatusAction(
                     $request,
                     $companyId,
                     $accountingPeriodId,
                     'retrieveDocument'
                 ),
-                'reconcile_revised_accounts_status' => $this->reconcileStatus(
+                'reconcile_accounts_status' => $this->reconcileStatus(
                     $request,
                     $companyId,
                     $accountingPeriodId
@@ -175,7 +185,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             exit;
         }
 
-        $filename = basename((string)($artifact['filename'] ?? 'companies-house-revised-accounts.xhtml'));
+        $filename = basename((string)($artifact['filename'] ?? 'companies-house-accounts.xhtml'));
         header('Content-Type: application/xhtml+xml; charset=utf-8');
         header('Content-Disposition: attachment; filename="' . str_replace('"', '', $filename) . '"');
         $size = filesize($path);
@@ -223,8 +233,8 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             return $prerequisite;
         }
 
-        $progress->report('Preparing the Companies House revised-accounts iXBRL…', 65);
-        return $this->service()->prepareRevision(
+        $progress->report('Preparing the Companies House accounts iXBRL…', 65);
+        return $this->service()->prepareAccounts(
             $companyId,
             $accountingPeriodId,
             [],
@@ -312,7 +322,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         $submissionId = (int)$request->input('submission_id', 0);
         $companyAuthCode = trim((string)$request->input('company_auth_code', ''));
         if ($submissionId <= 0) {
-            return ['success' => false, 'errors' => ['The prepared revised-accounts submission could not be identified.']];
+            return ['success' => false, 'errors' => ['The prepared accounts submission could not be identified.']];
         }
         if (preg_match('/^[A-Za-z0-9]{6}$/D', $companyAuthCode) !== 1) {
             return ['success' => false, 'errors' => ['The company authentication code must contain exactly 6 letters or numbers.']];
@@ -323,6 +333,11 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             return ['success' => false, 'errors' => ['The prepared submission does not belong to the selected company and accounting period.']];
         }
         $feature = (array)($context['feature'] ?? []);
+        $filingKind = strtolower(trim((string)(
+            ($context['submission'] ?? [])['filing_kind']
+            ?? ($context['submission'] ?? [])['filing_type']
+            ?? 'revised'
+        )));
         $mode = strtoupper(trim((string)($feature['mode'] ?? 'DISABLED')));
         if (empty($feature['enabled']) || !in_array($mode, ['TEST', 'LIVE'], true)) {
             return ['success' => false, 'errors' => ['Companies House accounts filing is disabled.']];
@@ -332,9 +347,10 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
                 return ['success' => false, 'errors' => ['Companies House LIVE accounts filing has not been approved.']];
             }
             if ((string)$request->input('authority_confirmed', '') !== '1') {
-                return ['success' => false, 'errors' => ['Confirm that you are authorised to file these revised statutory accounts.']];
+                return ['success' => false, 'errors' => ['Confirm that you are authorised to file these statutory accounts.']];
             }
-            if (trim((string)$request->input('live_confirmation_phrase', '')) !== self::LIVE_CONFIRMATION_PHRASE) {
+            $confirmationPhrase = 'SUBMIT LIVE ' . strtoupper($filingKind) . ' ACCOUNTS';
+            if (trim((string)$request->input('live_confirmation_phrase', '')) !== $confirmationPhrase) {
                 return ['success' => false, 'errors' => ['Type the exact LIVE submission confirmation phrase before filing.']];
             }
         }
@@ -344,7 +360,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             return ['success' => false, 'errors' => ['A successful developer CompanyData preflight is required.']];
         }
 
-        return $this->service()->submitRevision(
+        return $this->service()->submitAccounts(
             $submissionId,
             $companyAuthCode,
             $this->actor($request),
@@ -468,7 +484,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         $success = !empty($result['success']);
         $messages = $this->normaliseMessages($result[$success ? 'messages' : 'errors'] ?? []);
         if ($messages === []) {
-            $messages = [$success ? $this->successMessage($intent) : 'The Companies House revised-accounts action failed.'];
+            $messages = [$success ? $this->successMessage($intent) : 'The Companies House accounts action failed.'];
         }
 
         $flash = [];
@@ -495,10 +511,10 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         return match ($intent) {
             'record_gateway_eligibility' => 'Companies House filing eligibility recorded.',
             'save_variance_explanation' => 'Companies House variance explanation saved.',
-            'prepare_revised_accounts' => 'Revised accounts prepared for review.',
-            'submit_revised_accounts' => 'Revised accounts sent to Companies House.',
-            'refresh_revised_accounts_status' => 'Companies House submission status refreshed.',
-            default => 'Companies House revised-accounts filing updated.',
+            'prepare_accounts' => 'Companies House accounts prepared for review.',
+            'submit_accounts' => 'Accounts sent to Companies House.',
+            'refresh_accounts_status' => 'Companies House submission status refreshed.',
+            default => 'Companies House accounts filing updated.',
         };
     }
 
@@ -527,7 +543,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
                 return 'Sign in before using Companies House filing actions.';
             }
             if ((new CardAccessFramework())->roleIdForUser($userId) !== RoleAssignmentService::ADMIN_ROLE_ID) {
-                return 'Only administrators can use Companies House revised-accounts filing.';
+                return 'Only administrators can use Companies House accounts filing.';
             }
         } catch (Throwable) {
             return 'Companies House filing authorisation could not be verified.';
@@ -539,7 +555,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
     private function contextError(int $companyId, int $accountingPeriodId): ?string
     {
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
-            return 'Select a company and accounting period before using Companies House revised-accounts filing.';
+            return 'Select a company and accounting period before using Companies House accounts filing.';
         }
 
         if ($this->contextResolver !== null) {

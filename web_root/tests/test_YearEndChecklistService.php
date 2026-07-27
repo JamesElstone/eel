@@ -13,6 +13,31 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static function (GeneratedServiceClassTestHarness $harness): void {
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'current Original classification approval passes both Companies House discovery checks', static function () use ($harness): void {
+        $service = new \eel_accounts\Service\YearEndChecklistService();
+        $apply = new ReflectionMethod($service, 'applyCompaniesHouseClassificationApprovalState');
+        $apply->setAccessible(true);
+        $sections = $apply->invoke($service, [
+            'companies_house_comparison' => [
+                ['check_code' => 'latest_filed_accounts_found', 'status' => 'warning', 'metric_value' => ''],
+                ['check_code' => 'period_match_or_nearest_comparison', 'status' => 'warning', 'metric_value' => ''],
+                [
+                    'check_code' => 'companies_house_no_filing_acknowledgement',
+                    'status' => 'pass',
+                    'acknowledgement_current' => true,
+                ],
+            ],
+        ]);
+
+        $harness->assertSame('pass', (string)$sections['companies_house_comparison'][0]['status']);
+        $harness->assertSame('Original', (string)$sections['companies_house_comparison'][0]['metric_value']);
+        $harness->assertSame('pass', (string)$sections['companies_house_comparison'][1]['status']);
+        $harness->assertTrue(str_contains(
+            (string)$sections['companies_house_comparison'][1]['detail_text'],
+            'Original filing status has been approved'
+        ));
+    });
+
     $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'derives lock readiness exclusively from visible blocking checks', static function () use ($harness): void {
         $service = new \eel_accounts\Service\YearEndChecklistService();
         $mark = new ReflectionMethod($service, 'applyLockBlockingMetadata');

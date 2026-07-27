@@ -67,7 +67,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
 
         return '<section class="settings-stack" id="year-end-companies-house-comparison">
             ' . $lockNotice . '
-            ' . $this->renderComparisonPanel($comparison, $companySettings) . '
+            ' . $this->renderComparisonPanel($comparison, $companySettings, $companyId, $accountingPeriodId) . '
             ' . $this->renderAcknowledgementPanel($companyId, $accountingPeriodId, $comparison, $acknowledgement, $access, $mismatchCount, $sectionReview) . '
         </section>';
     }
@@ -141,7 +141,12 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             </form>';
     }
 
-    private function renderComparisonPanel(array $comparison, array $companySettings): string
+    private function renderComparisonPanel(
+        array $comparison,
+        array $companySettings,
+        int $companyId,
+        int $accountingPeriodId
+    ): string
     {
         if (empty($comparison['available'])) {
             return $this->panel('Companies House Comparison', $this->renderErrors((array)($comparison['errors'] ?? ['No Companies House comparison is available.'])));
@@ -177,8 +182,28 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             $rowsHtml = '<tr><td colspan="5">No Companies House comparison rows were found for this accounting period.</td></tr>';
         }
 
+        $filingKind = strtolower(trim((string)($comparison['filing_kind'] ?? '')));
+        $filingKindLabel = in_array($filingKind, ['original', 'revised'], true)
+            ? ucfirst($filingKind)
+            : 'Unavailable';
+        $syncForm = '<form method="post" action="?page=companies_house" data-ajax="true">'
+            . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+            . '<input type="hidden" name="card_action" value="Company">'
+            . '<input type="hidden" name="intent" value="refresh_company">'
+            . '<input type="hidden" name="company_id" value="' . $companyId . '">'
+            . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
+            . '<button class="button primary" type="submit" data-processing-text="Synchronising with Companies House…" data-processing-state="disabled">Synchronise with Companies House</button>'
+            . '</form>';
+
         return '<section class="panel-soft" id="companies-house-comparison">
-            <div class="status-head"><h3 class="card-title">Companies House Comparison</h3></div>
+            <div class="status-head"><h3 class="card-title">Companies House Comparison</h3>' . $syncForm . '</div>
+            <div class="summary-grid">'
+                . $this->metric('Filing classification', $filingKindLabel)
+                . $this->metric(
+                    'Classification basis',
+                    $filingKind === 'revised' ? 'Exact-period filing found' : 'No exact-period filing found'
+                )
+            . '</div>
             <div class="helper">' . HelperFramework::escape((string)($comparison['comparison_note'] ?? '')) . '</div>
             ' . $warningsHtml . '
             <div class="helper">Stored filing date: ' . HelperFramework::escape((string)($comparison['filing']['filing_date'] ?? '-')) . '</div>
@@ -200,10 +225,6 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         int $mismatchCount,
         array $sectionReview
     ): string {
-        if (!empty($comparison['has_exact_filing']) && $mismatchCount <= 0) {
-            return $this->panel('Approval', '<div class="helper">No Companies House mismatch approval is needed for this accounting period.</div>');
-        }
-
         $isAcknowledged = !empty($sectionReview['acknowledgement_current']);
         $disabled = empty($comparison['can_acknowledge']);
         $disabledReason = $disabled

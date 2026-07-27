@@ -193,6 +193,11 @@ function ixbrlExternalValidationFixture(): array
             . implode(' ', array_map('strval', (array)($savedDisclosures['errors'] ?? [])))
         );
     }
+    ixbrl_test_approve_companies_house_classification(
+        $companyId,
+        $periodId,
+        'external-validation-fixture'
+    );
     $basisHash = (string)(new \eel_accounts\Service\IxbrlAccountsReportService())
         ->build($companyId, $periodId)['basis_hash'];
 

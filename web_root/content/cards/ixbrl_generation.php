@@ -15,7 +15,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
 
     public function helper(array $context): string
     {
-        return 'Generates the HMRC accounts and computation iXBRLs. A separate Companies House revised artifact is shown when it has been prepared from the locked Year End workflow.';
+        return 'Generates the HMRC accounts and computation iXBRLs. The required Companies House original or revised artifact is shown when prepared from the locked Year End workflow.';
     }
 
     public function services(): array
@@ -81,7 +81,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 <div class="status-head">
                     <div>
                         <h3 class="card-title">Complete Filing Set</h3>
-                        <div class="helper ixbrl-complete-filing-set-helper">Generate and validate the HMRC accounts iXBRL, every Corporation Tax iXBRL, and the Companies House revised-accounts iXBRL when revision is required.</div>
+                        <div class="helper ixbrl-complete-filing-set-helper">Generate and validate the Accounting iXBRL, every Corporation Tax iXBRL, and the required Companies House original or revised accounts iXBRL.</div>
                     </div>
                 </div>
                 ' . ($developerOptions ? '<div class="actions-row ixbrl-developer-cleanup-action"><form method="post" action="?page=disclosures" data-ajax="true">'
@@ -100,7 +100,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                     <button class="button primary" type="submit"' . ($canGenerateAll ? '' : ' disabled') . '>Generate All Filing iXBRLs</button>
                 </form>
-                ' . ($canGenerateAll ? '' : '<div class="helper">Approve a generation-ready accounts basis, resolve every CT-period computation blocker, and prepare the Companies House revised-accounts prerequisites when required.</div>') . '
+                ' . ($canGenerateAll ? '' : '<div class="helper">Approve a generation-ready accounts basis, resolve every CT-period computation blocker, and complete the Companies House filing prerequisites when required.</div>') . '
             </section>
             <section class="panel-soft">
                 <div class="status-head">
@@ -150,6 +150,10 @@ final class _ixbrl_generationCard extends CardBaseFramework
     private function companiesHouseArtifact(array $context, int $companyId, int $accountingPeriodId): string
     {
         $filing = (array)(($context['services'] ?? [])['companies_house_ixbrl'] ?? []);
+        $filingKind = strtolower(trim((string)($filing['filing_kind'] ?? '')));
+        $filingLabel = in_array($filingKind, ['original', 'revised'], true)
+            ? ucfirst($filingKind)
+            : 'Unclassified';
         $submission = is_array($filing['submission'] ?? null) ? $filing['submission'] : null;
         $artifact = (array)($filing['prepared_artifact'] ?? []);
         $baseRun = (array)($context['ixbrl']['latest_run'] ?? []);
@@ -170,15 +174,16 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 $blockersHtml .= '<div class="helper ixbrl-companies-house-prepare-blocker">' . HelperFramework::escape($blocker) . '</div>';
             }
             return '<section class="panel-soft"><div class="status-head">'
-                . '<h3 class="card-title">Companies House Revised Accounting iXBRL</h3>'
+                . '<h3 class="card-title">Companies House ' . HelperFramework::escape($filingLabel) . ' Accounting iXBRL</h3>'
                 . '<span class="badge muted">Not prepared</span></div>'
-                . '<div class="helper ixbrl-complete-filing-set-helper">Prepare the Companies House-specific revised accounts iXBRL from the approved filing basis. This does not transmit it.</div>'
+                . '<div class="helper ixbrl-complete-filing-set-helper">Prepare the Companies House-specific accounts iXBRL from the approved '
+                . HelperFramework::escape($filingLabel) . ' filing basis. This does not transmit it.</div>'
                 . $this->arelleOutput($revisedValidation)
                 . $blockersHtml
                 . '<form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">'
                 . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
                 . '<input type="hidden" name="card_action" value="CompaniesHouseAccounts">'
-                . '<input type="hidden" name="intent" value="prepare_revised_accounts">'
+                . '<input type="hidden" name="intent" value="prepare_accounts">'
                 . '<input type="hidden" name="company_id" value="' . $companyId . '">'
                 . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
                 . '<button class="button primary" type="submit" data-processing-text="Generating Companies House iXBRL…" data-processing-state="disabled"' . ($canPrepare ? '' : ' disabled') . '>Generate Companies House iXBRL</button>'
@@ -189,7 +194,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 ?? 'This artifact does not belong to the current approved Accounting iXBRL run.');
             $canPrepare = !empty($readiness['ready_for_filing']) && !empty($filing['can_prepare']);
             return '<section class="panel-soft warn"><div class="status-head">'
-                . '<h3 class="card-title">Companies House Revised Accounting iXBRL</h3>'
+                . '<h3 class="card-title">Companies House ' . HelperFramework::escape($filingLabel) . ' Accounting iXBRL</h3>'
                 . '<span class="badge warning">Rebuild required</span></div>'
                 . '<div class="helper ixbrl-rebuild-required-helper">'
                 . HelperFramework::escape($reason) . '</div>'
@@ -205,7 +210,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . '<form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">'
                 . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
                 . '<input type="hidden" name="card_action" value="CompaniesHouseAccounts">'
-                . '<input type="hidden" name="intent" value="prepare_revised_accounts">'
+                . '<input type="hidden" name="intent" value="prepare_accounts">'
                 . '<input type="hidden" name="company_id" value="' . $companyId . '">'
                 . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
                 . '<button class="button primary" type="submit" data-processing-text="Generating Companies House iXBRL…" data-processing-state="disabled"'
@@ -219,7 +224,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
         $artifactDownload = '<form method="post" action="?page=disclosures">'
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="CompaniesHouseAccounts">'
-            . '<input type="hidden" name="intent" value="download_revised_accounts_ixbrl">'
+            . '<input type="hidden" name="intent" value="download_accounts_ixbrl">'
             . '<input type="hidden" name="company_id" value="' . $companyId . '">'
             . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
             . '<button class="button compact primary" type="submit"' . ($artifactExists ? '' : ' disabled') . '>Download Companies House iXBRL</button>'
@@ -227,7 +232,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
         $regenerate = '<form method="post" action="?page=disclosures" data-ajax="true">'
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="CompaniesHouseAccounts">'
-            . '<input type="hidden" name="intent" value="prepare_revised_accounts">'
+            . '<input type="hidden" name="intent" value="prepare_accounts">'
             . '<input type="hidden" name="company_id" value="' . $companyId . '">'
             . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
             . '<button class="button primary" type="submit" data-processing-text="Generating Companies House iXBRL…" data-processing-state="disabled"' . (!empty($readiness['ready_for_filing']) && !empty($filing['can_prepare']) ? '' : ' disabled') . '>Generate Companies House iXBRL</button>'
@@ -239,10 +244,11 @@ final class _ixbrl_generationCard extends CardBaseFramework
             default => 'info',
         };
         return '<section class="panel-soft"><div class="status-head">'
-            . '<h3 class="card-title">Companies House Revised Accounting iXBRL</h3>'
+            . '<h3 class="card-title">Companies House ' . HelperFramework::escape($filingLabel) . ' Accounting iXBRL</h3>'
             . '<span class="badge ' . $badge . '">'
             . HelperFramework::escape(HelperFramework::labelFromKey($lifecycle, '_')) . '</span></div>'
-            . '<div class="helper ixbrl-complete-filing-set-helper">This is the prepared Companies House revised-accounts iXBRL artifact. It has not been transmitted by this page.</div>'
+            . '<div class="helper ixbrl-complete-filing-set-helper">This is the prepared Companies House '
+            . HelperFramework::escape($filingLabel) . '-accounts iXBRL artifact. It has not been transmitted by this page.</div>'
             . '<div class="summary-grid">'
             . $this->metric('Generated At', (string)($submission['prepared_at'] ?? ''))
             . $this->metric('Facts', (string)(int)($artifact['fact_count'] ?? $revisedValidation['fact_count'] ?? 0))
@@ -360,7 +366,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
     private function companiesHouseArtifactReady(array $context): bool
     {
         $filing = (array)(($context['services'] ?? [])['companies_house_ixbrl'] ?? []);
-        if (empty($filing['revision_required'])) {
+        if (empty($filing['filing_required'])) {
             return true;
         }
 

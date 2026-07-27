@@ -62,6 +62,8 @@ final class YearEndCompaniesHouseComparisonService
         $nearest = $this->findNearestSummary($summaries, (string)$accountingPeriod['period_end']);
         $exact = $this->findExactSummary($summaries, (string)$accountingPeriod['period_end']);
         $hasExactFiling = $exact !== null;
+        $filingKind = $hasExactFiling ? 'revised' : 'original';
+        $filingReason = $hasExactFiling ? 'exact_period_filing_found' : 'no_exact_period_filing_found';
         $facts = $hasExactFiling ? $this->fetchMetricFacts((int)$exact['id']) : [];
         $rows = $this->buildRows($appMetrics, $facts, $threshold, $hasExactFiling);
         $comparableCount = count(array_filter($rows, static fn(array $row): bool => $row['variance'] !== null));
@@ -83,6 +85,8 @@ final class YearEndCompaniesHouseComparisonService
         return [
             'available' => true,
             'has_exact_filing' => $hasExactFiling,
+            'filing_kind' => $filingKind,
+            'filing_reason' => $filingReason,
             'threshold' => $threshold,
             'comparison_scope' => $comparisonScope,
             'comparison_note' => $comparisonNote,
@@ -101,6 +105,16 @@ final class YearEndCompaniesHouseComparisonService
                 'period_end' => (string)($exact['period_end'] ?? ''),
                 'parse_status' => (string)($exact['parse_status'] ?? ''),
             ] : null,
+            'filing_evidence' => [
+                'filing_kind' => $filingKind,
+                'reason' => $filingReason,
+                'document_row_id' => $hasExactFiling ? (int)($exact['id'] ?? 0) : null,
+                'filing_date' => $hasExactFiling ? (string)($exact['filing_date'] ?? '') : null,
+                'period_start' => $hasExactFiling ? (string)($exact['period_start'] ?? '') : null,
+                'period_end' => $hasExactFiling
+                    ? (string)($exact['period_end'] ?? '')
+                    : (string)$accountingPeriod['period_end'],
+            ],
             'nearest_filing' => $nearest,
             'rows' => $rows,
         ];

@@ -1069,7 +1069,8 @@ final class IxbrlAccountsDisclosureService
                 return false;
             }
             foreach ((array)($comparison['rows'] ?? []) as $row) {
-                if (is_array($row) && (string)($row['status'] ?? '') === 'fail') {
+                if (is_array($row)
+                    && in_array((string)($row['status'] ?? ''), ['warning', 'fail'], true)) {
                     return true;
                 }
             }

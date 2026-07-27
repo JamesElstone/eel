@@ -397,15 +397,15 @@ DROP TABLE IF EXISTS `companies_house_accounts_submissions`;
 CREATE TABLE `companies_house_accounts_submissions` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `evidence_bundle_id` bigint(20) DEFAULT NULL,
-  `eligibility_id` bigint(20) NOT NULL,
+  `eligibility_id` bigint(20) DEFAULT NULL,
   `company_id` int(11) NOT NULL,
   `accounting_period_id` int(11) NOT NULL,
   `original_document_id` bigint(20) DEFAULT NULL,
-  `original_transaction_id` varchar(128) NOT NULL,
-  `original_document_external_id` varchar(255) NOT NULL,
+  `original_transaction_id` varchar(128) DEFAULT NULL,
+  `original_document_external_id` varchar(255) DEFAULT NULL,
   `ixbrl_generation_run_id` bigint(20) DEFAULT NULL,
   `environment` enum('TEST','LIVE') NOT NULL,
-  `filing_type` enum('revised') NOT NULL DEFAULT 'revised',
+  `filing_type` enum('original','revised') NOT NULL DEFAULT 'revised',
   `lifecycle` enum('prepared','submitting','transport_unknown','pending','parked','accepted','rejected','internal_failure','failed') NOT NULL DEFAULT 'prepared',
   `raw_gateway_status` varchar(64) DEFAULT NULL,
   `submission_number` varchar(6) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
@@ -413,14 +413,17 @@ CREATE TABLE `companies_house_accounts_submissions` (
   `preflight_id` bigint(20) DEFAULT NULL,
   `pending_status_cycle_id` bigint(20) DEFAULT NULL,
   `gateway_submission_reference` varchar(255) DEFAULT NULL,
-  `revised_artifact_path` varchar(1000) NOT NULL,
-  `revised_artifact_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `artifact_path` varchar(1000) DEFAULT NULL,
+  `artifact_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `revised_artifact_path` varchar(1000) DEFAULT NULL,
+  `revised_artifact_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
   `schema_snapshot_id` bigint(20) DEFAULT NULL,
   `schema_manifest_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
   `schema_validated_at` datetime DEFAULT NULL,
   `basis_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `idempotency_key` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  `revision_declarations_json` longtext NOT NULL,
+  `filing_metadata_json` longtext DEFAULT NULL,
+  `revision_declarations_json` longtext DEFAULT NULL,
   `gateway_status_summary` text DEFAULT NULL,
   `rejection_code` varchar(100) DEFAULT NULL,
   `rejection_description` text DEFAULT NULL,
@@ -3990,6 +3993,8 @@ INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_26_006_participator_loan_party_terms.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_27_001_arelle_logs_directory.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_27_002_companies_house_original_accounts.sql');
 INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
 SELECT DISTINCT `role_id`, 'api_keys_editor'
 FROM `role_card_permissions`

@@ -237,5 +237,107 @@ function ixbrl_test_complete_disclosures(int $companyId, int $accountingPeriodId
     if (empty($result['success']) || empty($result['complete'])) {
         throw new RuntimeException(implode(' ', (array)($result['errors'] ?? $result['profile_errors'] ?? $result['missing_labels'] ?? ['Unable to complete iXBRL disclosures.'])));
     }
+    ixbrl_test_approve_companies_house_classification(
+        $companyId,
+        $accountingPeriodId,
+        $actor
+    );
     return $result;
+}
+
+/**
+ * Sign the canonical Companies House classification used by deterministic
+ * report-building fixtures. Production users perform this approval before
+ * Year End is locked; fixtures may already be locked, so preserve that state.
+ */
+function ixbrl_test_approve_companies_house_classification(
+    int $companyId,
+    int $accountingPeriodId,
+    string $actor = 'test-fixture'
+): array {
+    $approvals = new \eel_accounts\Service\YearEndSectionApprovalService();
+    $current = $approvals->fetchCompaniesHouseReview($companyId, $accountingPeriodId);
+    if (!empty($current['acknowledgement_current'])) {
+        return $current;
+    }
+
+    $wasLocked = (int)InterfaceDB::fetchColumn(
+        'SELECT COALESCE(is_locked, 0)
+         FROM year_end_reviews
+         WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id
+         LIMIT 1',
+        ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+    ) === 1;
+    if ($wasLocked) {
+        InterfaceDB::prepareExecute(
+            'UPDATE year_end_reviews SET is_locked = 0
+             WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+        );
+    }
+
+    try {
+        $review = $approvals->fetchCompaniesHouseReview($companyId, $accountingPeriodId);
+        $result = $approvals->approve(
+            $companyId,
+            $accountingPeriodId,
+            (string)($review['check_code'] ?? ''),
+            [],
+            $actor,
+            'Approved by deterministic iXBRL test fixture.'
+        );
+        if (empty($result['success']) && !empty($result['requires_review'])) {
+            $review = $approvals->fetchCompaniesHouseReview($companyId, $accountingPeriodId);
+            $result = $approvals->approve(
+                $companyId,
+                $accountingPeriodId,
+                (string)($review['check_code'] ?? ''),
+                [],
+                $actor,
+                'Approved by deterministic iXBRL test fixture.'
+            );
+        }
+        if (empty($result['success'])) {
+            throw new RuntimeException(
+                'Could not approve the Companies House filing classification: '
+                . implode(' ', array_map('strval', (array)($result['errors'] ?? [])))
+            );
+        }
+    } finally {
+        if ($wasLocked) {
+            InterfaceDB::prepareExecute(
+                'UPDATE year_end_reviews SET is_locked = 1
+                 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            );
+        }
+    }
+
+    $final = $approvals->fetchCompaniesHouseReview($companyId, $accountingPeriodId);
+    if (empty($final['acknowledgement_current'])) {
+        $bundle = (array)($final['bundle'] ?? []);
+        $basis = [
+            'contract_version' => \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION,
+            'check_code' => (string)($bundle['check_code'] ?? $final['check_code'] ?? ''),
+            'facts' => (array)($bundle['facts'] ?? []),
+            'questions' => (array)($bundle['questions'] ?? []),
+            'answers' => [],
+        ];
+        $saved = (new \eel_accounts\Service\YearEndAcknowledgementService())->save(
+            $companyId,
+            $accountingPeriodId,
+            (string)$basis['check_code'],
+            $basis,
+            $actor,
+            'Approved by deterministic iXBRL test fixture.',
+            true,
+            \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION
+        );
+        if (empty($saved['success'])) {
+            throw new RuntimeException('Could not freeze the locked Companies House classification fixture.');
+        }
+        $final = $approvals->fetchCompaniesHouseReview($companyId, $accountingPeriodId);
+    }
+
+    return $final;
 }

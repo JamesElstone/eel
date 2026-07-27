@@ -40,6 +40,10 @@ $protocolMigration = (string)file_get_contents(
     $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
     . DIRECTORY_SEPARATOR . '2026_07_23_004_companies_house_protocol_conversation.sql'
 );
+$originalAccountsMigration = (string)file_get_contents(
+    $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
+    . DIRECTORY_SEPARATOR . '2026_07_27_002_companies_house_original_accounts.sql'
+);
 
 $harness->check(
     'Companies House accounts filing schema',
@@ -68,6 +72,9 @@ $harness->check(
             'raw_gateway_status',
             'submission_number',
             'presenter_fingerprint',
+            'artifact_path',
+            'artifact_sha256',
+            'filing_metadata_json',
             'revised_artifact_path',
             'revised_artifact_sha256',
             'basis_hash',
@@ -93,6 +100,31 @@ $harness->check(
             'manifest_sha256',
         ] as $column) {
             $harness->assertTrue(InterfaceDB::columnExists('transmission_archives', $column));
+        }
+    }
+);
+
+$harness->check(
+    'Companies House accounts filing schema',
+    'original and revised filings share generic artifact persistence while legacy revised history remains readable',
+    static function () use ($harness, $originalAccountsMigration, $masterSchema): void {
+        foreach ([$originalAccountsMigration, $masterSchema] as $schema) {
+            $normalizedSchema = preg_replace('/\s+/', '', strtolower($schema)) ?? '';
+            foreach ([
+                "enum('original','revised')",
+                'artifact_path',
+                'artifact_sha256',
+                'filing_metadata_json',
+            ] as $token) {
+                $harness->assertTrue(str_contains($normalizedSchema, strtolower($token)));
+            }
+        }
+        foreach ([
+            'revised_artifact_path',
+            'revised_artifact_sha256',
+            'revision_declarations_json',
+        ] as $legacyToken) {
+            $harness->assertTrue(str_contains($masterSchema, $legacyToken));
         }
     }
 );

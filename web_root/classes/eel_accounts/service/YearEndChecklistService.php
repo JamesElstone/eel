@@ -1831,7 +1831,7 @@ final class YearEndChecklistService
         $comparisonFailures = 0;
         if (!empty($chComparison['available'])) {
             foreach ((array)($chComparison['rows'] ?? []) as $row) {
-                if (($row['status'] ?? '') === 'fail') {
+                if (in_array((string)($row['status'] ?? ''), ['warning', 'fail'], true)) {
                     $comparisonFailures++;
                 }
             }
@@ -1867,14 +1867,14 @@ final class YearEndChecklistService
             $hasExactCompaniesHouseFiling ? 'Accounts comparison metrics' : 'No exact accounts filing',
             'warning',
             $hasExactCompaniesHouseFiling
-                ? (empty($chComparison['reliable_closing_balance']) ? 'fail' : ($comparisonFailures > 0 ? 'warning' : 'pass'))
+                ? (empty($chComparison['reliable_closing_balance']) ? 'fail' : 'warning')
                 : (!empty($chComparison['available']) ? 'warning' : 'not_applicable'),
             $hasExactCompaniesHouseFiling
                 ? (empty($chComparison['reliable_closing_balance'])
                     ? (string)(($chComparison['warnings'] ?? [])[0] ?? 'Complete and lock the prior accounting period before approving the comparison.')
                     : ($comparisonFailures > 0
                     ? 'Stored Companies House filing values differ from the reviewed app figures. Acknowledge here only when this is a known filing error to be corrected before HMRC submission.'
-                    : 'App-computed balance sheet values match the stored filed accounts.'))
+                    : 'App-computed balance sheet values match the stored filed accounts. Approve the Revised filing classification before completing Year End.'))
                 : 'No exact Companies House accounts filing is available for this accounting period. Confirm this position before completing Year End.',
             $hasExactCompaniesHouseFiling ? (string)$comparisonFailures : '',
             '?page=companies_house&show_card=year_end_companies_house_comparison#companies-house-mismatch-acknowledgement',
@@ -2702,6 +2702,46 @@ final class YearEndChecklistService
                 $sections[$sectionKey][$index] = $check;
             }
         }
+        return $this->applyCompaniesHouseClassificationApprovalState($sections);
+    }
+
+    private function applyCompaniesHouseClassificationApprovalState(array $sections): array
+    {
+        $checks = (array)($sections['companies_house_comparison'] ?? []);
+        $classification = null;
+        foreach ($checks as $check) {
+            $check = (array)$check;
+            if (!in_array((string)($check['check_code'] ?? ''), [
+                'companies_house_mismatch_acknowledgement',
+                'companies_house_no_filing_acknowledgement',
+            ], true) || empty($check['acknowledgement_current'])) {
+                continue;
+            }
+            $classification = (string)$check['check_code'] === 'companies_house_no_filing_acknowledgement'
+                ? 'Original'
+                : 'Revised';
+            break;
+        }
+        if ($classification === null) {
+            return $sections;
+        }
+
+        foreach ($checks as $index => $check) {
+            $check = (array)$check;
+            if (!in_array((string)($check['check_code'] ?? ''), [
+                'latest_filed_accounts_found',
+                'period_match_or_nearest_comparison',
+            ], true)) {
+                continue;
+            }
+            $check['status'] = 'pass';
+            $check['metric_value'] = $classification;
+            $check['detail_text'] = $classification === 'Original'
+                ? 'No exact-period filing was found; Original filing status has been approved for this accounting period.'
+                : 'An exact-period filing was found; Revised filing status has been approved for this accounting period.';
+            $checks[$index] = $check;
+        }
+        $sections['companies_house_comparison'] = $checks;
         return $sections;
     }
 

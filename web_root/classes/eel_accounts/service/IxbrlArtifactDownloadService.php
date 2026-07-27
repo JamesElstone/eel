@@ -28,18 +28,19 @@ final class IxbrlArtifactDownloadService
     {
         $accounts = $this->accounts($companyId, $accountingPeriodId);
         if (empty($accounts['ok'])) {
-            return $this->failure('stale', 'Generate and validate the current HMRC Accounting iXBRL before downloading revised accounts.');
+            return $this->failure('stale', 'Generate and validate the current Accounting iXBRL before downloading Companies House accounts.');
         }
         $row = \InterfaceDB::fetchOne(
-            'SELECT id, lifecycle, ixbrl_generation_run_id, revised_artifact_path,
-                    revised_artifact_sha256
+            'SELECT id, lifecycle, ixbrl_generation_run_id, filing_type,
+                    artifact_path, artifact_sha256,
+                    revised_artifact_path, revised_artifact_sha256
              FROM companies_house_accounts_submissions
              WHERE company_id = :company_id AND accounting_period_id = :period_id
              ORDER BY id DESC LIMIT 1',
             ['company_id' => $companyId, 'period_id' => $accountingPeriodId]
         );
         if (!is_array($row)) {
-            return $this->failure('missing', 'No Companies House revised-accounts artifact is prepared.');
+            return $this->failure('missing', 'No Companies House accounts artifact is prepared.');
         }
         $error = $this->companiesHouseRowError($row, (int)($accounts['run_id'] ?? 0));
         if ($error !== null) {
@@ -47,10 +48,10 @@ final class IxbrlArtifactDownloadService
         }
         return $this->verifiedFile(
             $row,
-            'revised_artifact_path',
+            !empty($row['artifact_path']) ? 'artifact_path' : 'revised_artifact_path',
             '',
-            'revised_artifact_sha256',
-            'revised_artifact_sha256',
+            !empty($row['artifact_sha256']) ? 'artifact_sha256' : 'revised_artifact_sha256',
+            !empty($row['artifact_sha256']) ? 'artifact_sha256' : 'revised_artifact_sha256',
             (int)$accounts['run_id']
         );
     }

@@ -11,11 +11,11 @@ final class _companies_house_transmissionCard extends CardBaseFramework
 {
     public function key(): string { return 'companies_house_transmission'; }
 
-    public function title(): string { return 'Companies House revised-accounts transmission'; }
+    public function title(): string { return 'Companies House accounts transmission'; }
 
     public function helper(array $context): string
     {
-        return 'Send only the immutable revised-account artifact prepared from the locked Year End workflow. Submission numbers are allocated when Send is pressed, never during preparation.';
+        return 'Send only the immutable original or revised accounts artifact prepared from the locked Year End workflow. Submission numbers are allocated when Send is pressed, never during preparation.';
     }
 
     public function services(): array
@@ -58,7 +58,7 @@ final class _companies_house_transmissionCard extends CardBaseFramework
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
-            return '<div class="notice warning">Select a company and accounting period before transmitting revised accounts.</div>';
+            return '<div class="notice warning">Select a company and accounting period before transmitting accounts.</div>';
         }
 
         $model = (array)(($context['services'] ?? [])['companies_house_transmission_context'] ?? []);
@@ -70,6 +70,7 @@ final class _companies_house_transmissionCard extends CardBaseFramework
         $feature = (array)($model['feature'] ?? []);
         $sequence = (array)($model['sequence'] ?? []);
         $submission = is_array($model['submission'] ?? null) ? $model['submission'] : null;
+        $filingKind = strtolower(trim((string)($submission['filing_kind'] ?? $model['filing_kind'] ?? '')));
         $artifact = (array)($model['prepared_artifact'] ?? []);
         $preflight = is_array($model['preflight'] ?? null) ? (array)$model['preflight'] : null;
         $statusCycle = is_array($model['status_cycle'] ?? null) ? (array)$model['status_cycle'] : null;
@@ -114,7 +115,7 @@ final class _companies_house_transmissionCard extends CardBaseFramework
             . '<span class="badge ' . $this->badge($lifecycle) . '">'
             . HelperFramework::escape(HelperFramework::labelFromKey($lifecycle, '_')) . '</span></div>';
         if ($submission === null) {
-            $html .= '<div class="notice warning">No revised Companies House artifact is prepared. Prepare it from the locked Year End Companies House comparison card.</div>';
+            $html .= '<div class="notice warning">No Companies House accounts artifact is prepared. Generate it from the approved filing basis.</div>';
         } else {
             $archive = (array)($submission['transmission_archive'] ?? []);
             $artifactCurrent = !array_key_exists('state', $artifact)
@@ -128,8 +129,9 @@ final class _companies_house_transmissionCard extends CardBaseFramework
             }
             $html .= '<div class="summary-grid">'
                 . $this->metric('Submission number', (string)($submission['submission_number'] ?? 'Allocated on send'))
-                . $this->metric('Artifact', (string)($artifact['filename'] ?? basename((string)($submission['revised_artifact_path'] ?? ''))))
-                . $this->metric('Artifact SHA-256', (string)($artifact['sha256'] ?? $submission['revised_artifact_sha256'] ?? ''))
+                . $this->metric('Filing classification', ucfirst($filingKind))
+                . $this->metric('Artifact', (string)($artifact['filename'] ?? basename((string)($submission['artifact_path'] ?? $submission['revised_artifact_path'] ?? ''))))
+                . $this->metric('Artifact SHA-256', (string)($artifact['sha256'] ?? $submission['artifact_sha256'] ?? $submission['revised_artifact_sha256'] ?? ''))
                 . $this->metric('Private archive', $archive !== [] ? 'Captured and hashed' : 'Created on send')
                 . $this->metric(
                     'CompanyData preflight',
@@ -155,7 +157,8 @@ final class _companies_house_transmissionCard extends CardBaseFramework
                     $companyId,
                     $accountingPeriodId,
                     (int)$submission['id'],
-                    strtoupper((string)($feature['mode'] ?? 'TEST'))
+                    strtoupper((string)($feature['mode'] ?? 'TEST')),
+                    $filingKind
                 );
                 if ($developerOptions) {
                     $html .= $this->developerPreparedControls(
@@ -164,7 +167,8 @@ final class _companies_house_transmissionCard extends CardBaseFramework
                         (int)$submission['id'],
                         strtoupper((string)($feature['mode'] ?? 'TEST')),
                         $preflight,
-                        !empty($feature['developer_binding_configured'])
+                        !empty($feature['developer_binding_configured']),
+                        $filingKind
                     );
                 }
             } elseif (in_array($lifecycle, ['submitting', 'transport_unknown', 'pending', 'parked'], true)) {
@@ -196,7 +200,7 @@ final class _companies_house_transmissionCard extends CardBaseFramework
                         $companyId,
                         $accountingPeriodId,
                         (int)$submission['id'],
-                        'retrieve_revised_accounts_document',
+                        'retrieve_accounts_document',
                         'Get filed document'
                     );
                 }
@@ -216,26 +220,35 @@ final class _companies_house_transmissionCard extends CardBaseFramework
         return $html;
     }
 
-    private function submitForm(int $companyId, int $accountingPeriodId, int $submissionId, string $mode): string
+    private function submitForm(
+        int $companyId,
+        int $accountingPeriodId,
+        int $submissionId,
+        string $mode,
+        string $filingKind
+    ): string
     {
+        $filingKind = in_array($filingKind, ['original', 'revised'], true) ? $filingKind : 'accounts';
+        $filingLabel = ucfirst($filingKind);
+        $confirmationPhrase = 'SUBMIT LIVE ' . strtoupper($filingKind) . ' ACCOUNTS';
         $live = $mode === 'LIVE'
             ? '<label class="checkbox-row"><input type="checkbox" name="authority_confirmed" value="1" required> '
-                . '<span>I am authorised to file these revised statutory accounts.</span></label>'
-                . '<label>Type <strong>SUBMIT LIVE REVISED ACCOUNTS</strong> to confirm'
+                . '<span>I am authorised to file these statutory accounts.</span></label>'
+                . '<label>Type <strong>' . HelperFramework::escape($confirmationPhrase) . '</strong> to confirm'
                 . '<input type="text" name="live_confirmation_phrase" required autocomplete="off"></label>'
             : '';
 
         return '<form method="post" action="?page=transmit" data-ajax="true" class="settings-stack">'
-            . $this->hidden($companyId, $accountingPeriodId, 'submit_revised_accounts')
+            . $this->hidden($companyId, $accountingPeriodId, 'submit_accounts')
             . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
             . '<label>Company authentication code'
             . '<input type="password" name="company_auth_code" minlength="6" maxlength="6" '
             . 'pattern="[A-Za-z0-9]{6}" required autocomplete="off"></label>'
             . $live
             . '<button class="button danger" type="submit" data-chicken-check="true" '
-            . 'data-chicken-title="Send revised accounts" '
-            . 'data-chicken-message="Send this immutable revised-accounts package to Companies House '
-            . HelperFramework::escape($mode) . '?" data-chicken-confirm-text="Send revised accounts">Send / continue '
+            . 'data-chicken-title="Send ' . HelperFramework::escape($filingLabel) . ' accounts" '
+            . 'data-chicken-message="Send this immutable ' . HelperFramework::escape($filingKind) . '-accounts package to Companies House '
+            . HelperFramework::escape($mode) . '?" data-chicken-confirm-text="Send accounts">Send / continue '
             . HelperFramework::escape($mode) . ' filing</button></form>';
     }
 
@@ -247,7 +260,7 @@ final class _companies_house_transmissionCard extends CardBaseFramework
     ): string
     {
         return '<form method="post" action="?page=transmit" data-ajax="true" class="actions-row">'
-            . $this->hidden($companyId, $accountingPeriodId, 'refresh_revised_accounts_status')
+            . $this->hidden($companyId, $accountingPeriodId, 'refresh_accounts_status')
             . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
             . '<button class="button" type="submit">' . HelperFramework::escape($label) . '</button></form>';
     }
@@ -258,7 +271,8 @@ final class _companies_house_transmissionCard extends CardBaseFramework
         int $submissionId,
         string $mode,
         ?array $preflight,
-        bool $bindingConfigured
+        bool $bindingConfigured,
+        string $filingKind
     ): string {
         $html = '<section class="panel-soft"><h4 class="card-title">Developer step controls</h4>'
             . '<div class="helper">Each button performs one XML send/receive pair and then pauses.</div>';
@@ -272,22 +286,24 @@ final class _companies_house_transmissionCard extends CardBaseFramework
             && $this->utcTimestamp((string)($preflight['binding_expires_at'] ?? '')) >= time();
         if (!$verified) {
             $html .= '<form method="post" action="?page=transmit" data-ajax="true" class="settings-stack">'
-                . $this->hidden($companyId, $accountingPeriodId, 'preflight_revised_accounts')
+                . $this->hidden($companyId, $accountingPeriodId, 'preflight_accounts')
                 . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
                 . '<label>Company authentication code'
                 . '<input type="password" name="company_auth_code" minlength="6" maxlength="6" '
                 . 'pattern="[A-Za-z0-9]{6}" required autocomplete="off"></label>'
                 . '<button class="button" type="submit">Send CompanyData preflight</button></form>';
         } else {
+            $filingKind = in_array($filingKind, ['original', 'revised'], true) ? $filingKind : 'accounts';
+            $confirmationPhrase = 'SUBMIT LIVE ' . strtoupper($filingKind) . ' ACCOUNTS';
             $live = $mode === 'LIVE'
                 ? '<label class="checkbox-row"><input type="checkbox" name="authority_confirmed" value="1" required> '
-                    . '<span>I am authorised to file these revised statutory accounts.</span></label>'
-                    . '<label>Type <strong>SUBMIT LIVE REVISED ACCOUNTS</strong> to confirm'
+                    . '<span>I am authorised to file these statutory accounts.</span></label>'
+                    . '<label>Type <strong>' . HelperFramework::escape($confirmationPhrase) . '</strong> to confirm'
                     . '<input type="text" name="live_confirmation_phrase" required autocomplete="off"></label>'
                 : '';
             $html .= '<div class="notice success">CompanyData preflight verified. Re-enter the same code to submit Accounts.</div>'
                 . '<form method="post" action="?page=transmit" data-ajax="true" class="settings-stack">'
-                . $this->hidden($companyId, $accountingPeriodId, 'submit_preflighted_revised_accounts')
+                . $this->hidden($companyId, $accountingPeriodId, 'submit_preflighted_accounts')
                 . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
                 . '<input type="hidden" name="preflight_id" value="' . (int)$preflight['id'] . '">'
                 . '<label>Company authentication code'
@@ -315,14 +331,14 @@ final class _companies_house_transmissionCard extends CardBaseFramework
                 $companyId,
                 $accountingPeriodId,
                 $submissionId,
-                'ack_revised_accounts_status',
+                'ack_accounts_status',
                 $state === 'failed' ? 'Retry StatusAck' : 'Send StatusAck'
             );
         } elseif ($state === 'transport_unknown') {
             $html .= '<div class="notice danger">The status or StatusAck exchange has an uncertain transport result. '
                 . 'Further polling is blocked pending confirmation from Companies House.</div>'
                 . '<form method="post" action="?page=transmit" data-ajax="true" class="settings-stack">'
-                . $this->hidden($companyId, $accountingPeriodId, 'reconcile_revised_accounts_status')
+                . $this->hidden($companyId, $accountingPeriodId, 'reconcile_accounts_status')
                 . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
                 . '<input type="hidden" name="resolution" value="'
                 . (trim((string)($statusCycle['result_json'] ?? '')) !== ''
@@ -338,7 +354,7 @@ final class _companies_house_transmissionCard extends CardBaseFramework
                 $companyId,
                 $accountingPeriodId,
                 $submissionId,
-                'poll_revised_accounts_status',
+                'poll_accounts_status',
                 'Get submission status'
             );
         }

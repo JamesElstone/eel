@@ -66,8 +66,8 @@ final class CompaniesHouseComparisonReviewService
         $isLocked = !empty($access['is_locked']);
 
         $mismatchCount = $this->mismatchCount($comparison);
-        $requiresAcknowledgement = !$hasExactFiling || $mismatchCount > 0;
-        $requiresEligibility = $hasExactFiling && $requiresAcknowledgement;
+        $requiresAcknowledgement = true;
+        $requiresEligibility = $hasExactFiling && $mismatchCount > 0;
         $requiresVarianceExplanation = $hasExactFiling && $mismatchCount > 0;
         $varianceExplanationRecorded = trim((string)($eligibility['variance_explanation'] ?? '')) !== '';
         $acknowledgementBlockedReason = '';
@@ -101,7 +101,7 @@ final class CompaniesHouseComparisonReviewService
     {
         $count = 0;
         foreach ((array)($comparison['rows'] ?? []) as $row) {
-            if (is_array($row) && (string)($row['status'] ?? '') === 'fail') {
+            if (is_array($row) && in_array((string)($row['status'] ?? ''), ['warning', 'fail'], true)) {
                 $count++;
             }
         }

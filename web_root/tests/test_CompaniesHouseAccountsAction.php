@@ -92,7 +92,7 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
         $harness->assertSame('The filed figures used the earlier P&L and tax treatment basis.', (string)($service->calls[0]['variance_explanation'] ?? ''));
     });
 
-    $harness->check(CompaniesHouseAccountsAction::class, 'prepares revised accounts from saved declarations', static function () use ($harness): void {
+    $harness->check(CompaniesHouseAccountsAction::class, 'routes the legacy revised preparation intent through generic accounts preparation', static function () use ($harness): void {
         $service = new CompaniesHouseAccountsActionFakeService();
         $action = companiesHouseAccountsTestAction($service);
         $prepared = $action->handle(companiesHouseAccountsActionRequest([
@@ -100,14 +100,14 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
         ]), createTestPageServiceFramework());
 
         $harness->assertSame(true, $prepared->isSuccess());
-        $harness->assertSame('prepareRevision', (string)($service->calls[0]['method'] ?? ''));
+        $harness->assertSame('prepareAccounts', (string)($service->calls[0]['method'] ?? ''));
         $harness->assertSame([], (array)($service->calls[0]['input'] ?? ['not-empty']));
     });
 
     $harness->check(CompaniesHouseAccountsAction::class, 'keeps TEST submission separate from LIVE confirmation', static function () use ($harness): void {
         $service = new CompaniesHouseAccountsActionFakeService();
         $service->context['feature'] = ['mode' => 'TEST', 'enabled' => true, 'live_approved' => false];
-        $service->context['submission'] = ['id' => 77];
+        $service->context['submission'] = ['id' => 77, 'filing_kind' => 'revised'];
         $action = companiesHouseAccountsTestAction($service);
         $invalidCode = $action->handle(companiesHouseAccountsActionRequest([
             'intent' => 'submit_revised_accounts',
@@ -132,7 +132,7 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
         ]), createTestPageServiceFramework());
 
         $harness->assertSame(true, $result->isSuccess());
-        $submitCalls = array_values(array_filter($service->calls, static fn(array $call): bool => ($call['method'] ?? '') === 'submitRevision'));
+        $submitCalls = array_values(array_filter($service->calls, static fn(array $call): bool => ($call['method'] ?? '') === 'submitAccounts'));
         $harness->assertCount(1, $submitCalls);
         $harness->assertSame('ABC123', (string)($submitCalls[0]['company_auth_code'] ?? ''));
         $harness->assertSame(false, str_contains(companiesHouseAccountsActionFlash($result), 'ABC123'));
@@ -141,7 +141,7 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
     $harness->check(CompaniesHouseAccountsAction::class, 'requires authority and the exact phrase for LIVE submission', static function () use ($harness): void {
         $service = new CompaniesHouseAccountsActionFakeService();
         $service->context['feature'] = ['mode' => 'LIVE', 'enabled' => true, 'live_approved' => true];
-        $service->context['submission'] = ['id' => 78];
+        $service->context['submission'] = ['id' => 78, 'filing_kind' => 'revised'];
         $action = companiesHouseAccountsTestAction($service);
         $base = [
             'intent' => 'submit_revised_accounts',
@@ -165,7 +165,7 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
             'live_confirmation_phrase' => 'SUBMIT LIVE REVISED ACCOUNTS',
         ])), createTestPageServiceFramework());
         $harness->assertSame(true, $submitted->isSuccess());
-        $submitCalls = array_values(array_filter($service->calls, static fn(array $call): bool => ($call['method'] ?? '') === 'submitRevision'));
+        $submitCalls = array_values(array_filter($service->calls, static fn(array $call): bool => ($call['method'] ?? '') === 'submitAccounts'));
         $harness->assertCount(1, $submitCalls);
     });
 
@@ -245,9 +245,9 @@ final class CompaniesHouseAccountsActionFakeService
         return ['success' => true, 'messages' => ['Eligibility recorded.']];
     }
 
-    public function prepareRevision(int $companyId, int $accountingPeriodId, array $input, string $actor): array
+    public function prepareAccounts(int $companyId, int $accountingPeriodId, array $input, string $actor): array
     {
-        $this->calls[] = compact('companyId', 'accountingPeriodId', 'input', 'actor') + ['method' => 'prepareRevision'];
+        $this->calls[] = compact('companyId', 'accountingPeriodId', 'input', 'actor') + ['method' => 'prepareAccounts'];
 
         return ['success' => true, 'messages' => ['Revision prepared.']];
     }
@@ -275,7 +275,7 @@ final class CompaniesHouseAccountsActionFakeService
         return $this->context;
     }
 
-    public function submitRevision(
+    public function submitAccounts(
         int $submissionId,
         string $companyAuthCode,
         string $actor,
@@ -284,7 +284,7 @@ final class CompaniesHouseAccountsActionFakeService
     ): array
     {
         $this->calls[] = compact('submissionId', 'companyAuthCode', 'actor', 'verifiedPreflightId') + [
-            'method' => 'submitRevision',
+            'method' => 'submitAccounts',
             'submission_id' => $submissionId,
             'company_auth_code' => $companyAuthCode,
         ];

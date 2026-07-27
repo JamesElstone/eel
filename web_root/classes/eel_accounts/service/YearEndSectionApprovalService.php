@@ -470,6 +470,7 @@ final class YearEndSectionApprovalService
     {
         $checkCode = $this->checkCode($checkCode);
         $bundle = $this->buildBundle($companyId, $accountingPeriodId, $checkCode, $preparedRetainedEarningsContext);
+        $bundle = $this->validateBundleForPersistence($bundle, $checkCode);
         $bundle['source_token'] = $this->sourceToken($companyId, $accountingPeriodId, $checkCode);
         $bundle['definition_token'] = $this->definitionToken($checkCode);
         if (!$this->tableAvailable()) {
@@ -616,28 +617,28 @@ final class YearEndSectionApprovalService
      * canonical bundle reads those saved answers again at submit time rather
      * than trusting hidden browser fields.
      */
-    private function taxReadinessBundle(int $companyId, int $accountingPeriodId): array
+    private function taxReadinessBundle(
+        int $companyId,
+        int $accountingPeriodId,
+        ?array $preparedTaxReadiness = null,
+        ?array $preparedScope = null
+    ): array
     {
-        // This bundle is also used while the checklist evaluates the V2
-        // acknowledgement. Avoid re-entering that evaluation here; the tax
-        // facts themselves remain identical.
-        $checklist = (new YearEndChecklistService())->fetchChecklist(
-            $companyId,
-            $accountingPeriodId,
-            false
-        ) ?? [];
-        $check = [];
-        foreach ((array)($checklist['checks_flat'] ?? []) as $candidate) {
-            if ((string)($candidate['check_code'] ?? '') === 'tax_readiness_acknowledgement') {
-                $check = (array)$candidate;
-                break;
-            }
+        // Read the underlying tax calculation directly from the checklist
+        // context, but never use the checklist's acknowledgement check as an
+        // input. That check describes this bundle's approval state and would
+        // create a circular dependency when an earlier approval becomes stale.
+        if ($preparedTaxReadiness === null) {
+            $taxReadiness = $this->taxReadinessContext($companyId, $accountingPeriodId);
+        } else {
+            $taxReadiness = $preparedTaxReadiness;
         }
-        if ($check === []) {
+        if (empty($taxReadiness['available'])) {
             return ['available' => false, 'errors' => ['The Corporation Tax Year End review is unavailable.'], 'check_code' => 'tax_readiness_acknowledgement'];
         }
 
-        $scope = (new CorporationTaxFilingScopeService())->fetch($companyId, $accountingPeriodId);
+        $scope = $preparedScope
+            ?? (new CorporationTaxFilingScopeService())->fetch($companyId, $accountingPeriodId);
         if (empty($scope['available'])) {
             return ['available' => false, 'errors' => (array)($scope['errors'] ?? ['The Corporation Tax filing-scope review is unavailable.']), 'check_code' => 'tax_readiness_acknowledgement'];
         }
@@ -659,10 +660,30 @@ final class YearEndSectionApprovalService
             $currentAnswers[$questionId] = (string)(($scope['answers'] ?? [])[$key] ?? '');
         }
 
-        $facts = (array)($check['basis_data'] ?? $check);
+        $freezeService = new YearEndTaxFreezeService();
+        $freezeBasis = $freezeService->approvalBasis($taxReadiness);
+        $facts = is_array($freezeBasis)
+            ? $freezeBasis
+            : [
+                'check_code' => 'tax_readiness_acknowledgement',
+                'freeze_status' => (string)($taxReadiness['freeze_status'] ?? 'blocked'),
+                'blocking_diagnostic_codes' => array_values(array_map(
+                    static fn(array $diagnostic): string => (string)($diagnostic['code'] ?? ''),
+                    (array)($taxReadiness['blocking_diagnostics'] ?? [])
+                )),
+            ];
         $facts['filing_scope_revision'] = (int)($scope['revision'] ?? 0);
         $facts['filing_scope_basis_hash'] = (string)($scope['basis_hash'] ?? '');
-        $bundle = $this->bundle('tax_readiness_acknowledgement', $facts, $questions, $facts);
+        $display = [
+            'freeze_status' => (string)($taxReadiness['freeze_status'] ?? ''),
+            'freeze_manifest_hash' => (string)($taxReadiness['freeze_manifest_hash'] ?? ''),
+            'blocking_diagnostics' => (array)($taxReadiness['blocking_diagnostics'] ?? []),
+            'blocking_diagnostic_count' => (int)($taxReadiness['blocking_diagnostic_count'] ?? 0),
+            'estimated_corporation_tax' => $taxReadiness['estimated_corporation_tax'] ?? 0,
+            'filing_scope_revision' => (int)($scope['revision'] ?? 0),
+            'filing_scope_basis_hash' => (string)($scope['basis_hash'] ?? ''),
+        ];
+        $bundle = $this->bundle('tax_readiness_acknowledgement', $facts, $questions, $display);
         $bundle['answer_source'] = 'persisted_filing_scope';
         $bundle['current_answers'] = $currentAnswers;
         $bundle['scope_gate'] = true;
@@ -674,9 +695,12 @@ final class YearEndSectionApprovalService
         } elseif (!empty($scope['errors'])) {
             $bundle['can_approve'] = false;
             $bundle['approval_errors'] = (array)$scope['errors'];
-        } elseif ((string)($check['status'] ?? '') === 'fail') {
+        } elseif (!is_array($freezeBasis)) {
             $bundle['can_approve'] = false;
-            $bundle['approval_errors'] = ['Resolve the blocking Year End tax checks before approving this section.'];
+            $bundle['approval_errors'] = [
+                (string)(($taxReadiness['blocking_diagnostics'][0] ?? [])['message']
+                    ?? 'Resolve the blocking Year End tax checks before approving this section.'),
+            ];
         }
 
         return $bundle;
@@ -750,8 +774,8 @@ final class YearEndSectionApprovalService
             return ['available' => false, 'errors' => ['The Companies House filing position changed. Refresh this section before approving it.'], 'check_code' => $checkCode];
         }
 
-        $questions = $hasExactFiling
-            ? $this->companiesHouseQuestions((int)($display['mismatch_count'] ?? 0) > 0)
+        $questions = $hasExactFiling && (int)($display['mismatch_count'] ?? 0) > 0
+            ? $this->companiesHouseQuestions(true)
             : [];
         $bundle = $this->bundle($checkCode, $comparison, $questions, $display);
         if (empty($comparison['reliable_closing_balance'])) {
@@ -774,6 +798,28 @@ final class YearEndSectionApprovalService
             'can_approve' => true,
             'approval_errors' => [],
         ];
+    }
+
+    /**
+     * A ready tax review must always carry the canonical freeze manifest it
+     * will sign. Persisting a current bundle without that basis would leave
+     * the approval UI blocked by its own malformed cache.
+     */
+    private function validateBundleForPersistence(array $bundle, string $checkCode): array
+    {
+        if ($checkCode !== 'tax_readiness_acknowledgement'
+            || empty($bundle['available'])
+            || (string)(($bundle['display'] ?? [])['freeze_status'] ?? '') !== 'ready_for_approval'
+            || is_array(($bundle['facts'] ?? [])['freeze_manifest'] ?? null)) {
+            return $bundle;
+        }
+
+        $message = 'The Corporation Tax basis is ready but its canonical freeze manifest is unavailable. The review cache was not marked current.';
+        $bundle['available'] = false;
+        $bundle['errors'] = [$message];
+        $bundle['can_approve'] = false;
+        $bundle['approval_errors'] = [$message];
+        return $bundle;
     }
 
     /** @return list<array<string, mixed>> */
@@ -1101,7 +1147,20 @@ final class YearEndSectionApprovalService
                 $tokens[$table] = $token;
             }
         }
+        if ($checkCode === 'retained_earnings_close_confirmation') {
+            $tokens['prior_period_lock'] = $this->priorPeriodLockToken($companyId, $accountingPeriodId);
+        }
         if ($checkCode === 'tax_readiness_acknowledgement') {
+            $taxReadiness = $this->taxReadinessContext($companyId, $accountingPeriodId);
+            $tokens['tax_freeze'] = [
+                'available' => !empty($taxReadiness['available']),
+                'freeze_status' => (string)($taxReadiness['freeze_status'] ?? ''),
+                'freeze_manifest_hash' => (string)($taxReadiness['freeze_manifest_hash'] ?? ''),
+                'blocking_diagnostic_codes' => array_values(array_map(
+                    static fn(array $diagnostic): string => (string)($diagnostic['code'] ?? ''),
+                    (array)($taxReadiness['blocking_diagnostics'] ?? [])
+                )),
+            ];
             $scope = (new CorporationTaxFilingScopeService())->fetch($companyId, $accountingPeriodId);
             $tokens['corporation_tax_filing_scope'] = [
                 'available' => !empty($scope['available']),
@@ -1110,6 +1169,86 @@ final class YearEndSectionApprovalService
             ];
         }
         return $tokens === [] ? '' : hash('sha256', $this->canonicalJson($tokens));
+    }
+
+    /** @return array<string,mixed> */
+    private function taxReadinessContext(int $companyId, int $accountingPeriodId): array
+    {
+        $context = \eel_accounts\Support\RequestCache::remember(
+            'year-end-section.tax-readiness',
+            $companyId . ':' . $accountingPeriodId,
+            static function () use ($companyId, $accountingPeriodId): array {
+                $checklist = (new YearEndChecklistService())->fetchChecklist(
+                    $companyId,
+                    $accountingPeriodId,
+                    false
+                ) ?? [];
+                return (array)($checklist['tax_readiness'] ?? []);
+            }
+        );
+
+        return is_array($context) ? $context : [];
+    }
+
+    /**
+     * The P&L close depends on the immediately preceding accounting period
+     * being locked. Carry that cross-period state in the source token so a
+     * cached review cannot remain current after the prior period is locked,
+     * unlocked, or locked again.
+     *
+     * @return array<string,mixed>
+     */
+    private function priorPeriodLockToken(int $companyId, int $accountingPeriodId): array
+    {
+        $currentPeriod = \InterfaceDB::fetchOne(
+            'SELECT id, period_start
+             FROM accounting_periods
+             WHERE id = :accounting_period_id
+               AND company_id = :company_id
+             LIMIT 1',
+            ['accounting_period_id' => $accountingPeriodId, 'company_id' => $companyId]
+        );
+        if (!is_array($currentPeriod) || trim((string)($currentPeriod['period_start'] ?? '')) === '') {
+            return [
+                'status' => 'current_period_unavailable',
+                'current_accounting_period_id' => $accountingPeriodId,
+            ];
+        }
+
+        $periodStart = (string)$currentPeriod['period_start'];
+        $priorPeriod = \InterfaceDB::fetchOne(
+            'SELECT id, period_start, period_end
+             FROM accounting_periods
+             WHERE company_id = :company_id
+               AND period_end < :period_start
+             ORDER BY period_end DESC, id DESC
+             LIMIT 1',
+            ['company_id' => $companyId, 'period_start' => $periodStart]
+        );
+        if (!is_array($priorPeriod)) {
+            return [
+                'status' => 'first_period',
+                'current_accounting_period_id' => (int)$currentPeriod['id'],
+                'current_period_start' => $periodStart,
+                'prior_accounting_period' => null,
+            ];
+        }
+
+        $review = (new YearEndLockService())->fetchReview($companyId, (int)$priorPeriod['id']);
+        $isLocked = !empty($review['is_locked']);
+
+        return [
+            'status' => $isLocked ? 'prior_period_locked' : 'prior_period_unlocked',
+            'current_accounting_period_id' => (int)$currentPeriod['id'],
+            'current_period_start' => $periodStart,
+            'prior_accounting_period' => [
+                'id' => (int)$priorPeriod['id'],
+                'period_start' => (string)$priorPeriod['period_start'],
+                'period_end' => (string)$priorPeriod['period_end'],
+            ],
+            'is_locked' => $isLocked,
+            'locked_at' => $isLocked ? (string)($review['locked_at'] ?? '') : '',
+        ];
     }
 
     private function sectionTableToken(string $table, int $companyId, int $accountingPeriodId, ?string $periodColumn): ?array
@@ -1169,11 +1308,11 @@ final class YearEndSectionApprovalService
             // Version the canonical freeze-manifest representation as well as
             // the filing-scope questions. Cached pre-canonical bundles must be
             // refreshed before their approval form is shown.
-            'tax_readiness_acknowledgement' => ['provider' => 'tax_filing_scope_v3_canonical_freeze'],
+            'tax_readiness_acknowledgement' => ['provider' => 'tax_filing_scope_v4_direct_freeze'],
             'companies_house_mismatch_acknowledgement' => $this->companiesHouseQuestions(true),
             // Version the direct display provider so checklist-era cached
             // bundles are rebuilt with the P&L card's required display model.
-            'retained_earnings_close_confirmation' => ['provider' => 'retained_earnings_direct_v1'],
+            'retained_earnings_close_confirmation' => ['provider' => 'retained_earnings_direct_v2'],
             default => [],
         };
         return hash('sha256', $this->canonicalJson([

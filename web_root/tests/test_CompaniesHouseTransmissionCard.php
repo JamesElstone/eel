@@ -53,6 +53,7 @@ $harness->run(_companies_house_transmissionCard::class, static function (
                         'submission' => [
                             'id' => 712,
                             'lifecycle' => 'prepared',
+                            'filing_kind' => 'original',
                             'submission_number' => null,
                             'revised_artifact_path' => 'private/revised-accounts.xhtml',
                             'revised_artifact_sha256' => str_repeat('a', 64),
@@ -73,7 +74,8 @@ $harness->run(_companies_house_transmissionCard::class, static function (
             $harness->assertTrue(str_contains($html, '000001'));
             $harness->assertTrue(str_contains($html, 'Allocated on send'));
             $harness->assertTrue(str_contains($html, 'action="?page=transmit"'));
-            $harness->assertTrue(str_contains($html, 'value="submit_revised_accounts"'));
+            $harness->assertTrue(str_contains($html, 'value="submit_accounts"'));
+            $harness->assertTrue(str_contains($html, 'Original'));
             $harness->assertFalse(str_contains($html, $secret));
         }
     );
@@ -100,6 +102,7 @@ $harness->run(_companies_house_transmissionCard::class, static function (
                             'submission' => [
                                 'id' => 712,
                                 'lifecycle' => 'prepared',
+                                'filing_kind' => 'revised',
                                 'submission_number' => null,
                                 'revised_artifact_path' => 'private/revised-accounts.xhtml',
                                 'revised_artifact_sha256' => str_repeat('a', 64),

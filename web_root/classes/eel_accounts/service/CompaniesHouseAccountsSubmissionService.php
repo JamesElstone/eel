@@ -31,6 +31,7 @@ final class CompaniesHouseAccountsSubmissionService
         private readonly ?CompaniesHouseCompanyDataCredentialService $companyDataCredentialService = null,
         private readonly ?CompaniesHouseProtocolConversationService $conversationService = null,
         private readonly ?IxbrlTaxonomyCompatibilityService $taxonomyCompatibilityService = null,
+        private readonly ?IxbrlOriginalAccountsArtifactService $originalArtifactService = null,
     ) {
     }
 
@@ -43,10 +44,16 @@ final class CompaniesHouseAccountsSubmissionService
 
         $locked = ($this->lockService ?? new YearEndLockService())
             ->isLocked($companyId, $accountingPeriodId);
+        $filingClassification = $this->filingClassification($companyId, $accountingPeriodId);
+        $filingKind = (string)($filingClassification['filing_kind'] ?? '');
+        $classificationApproved = !empty($filingClassification['approved']);
+        $correctionRequired = !empty($filingClassification['correction_required']);
+        $filingRequired = $filingKind === 'original'
+            || ($filingKind === 'revised' && $correctionRequired);
         $original = $this->exactOriginalDocument($selection);
         $eligibility = $this->eligibility($selection, $original);
         $readiness = $this->readiness($companyId, $accountingPeriodId);
-        $submission = $this->latestSubmission($companyId, $accountingPeriodId);
+        $submission = $this->latestSubmission($companyId, $accountingPeriodId, $filingKind);
         $mode = AccountingConfigurationStore::companiesHouseAccountsFilingMode();
         $featureEnabled = in_array($mode, ['TEST', 'LIVE'], true);
         $credentialsConfigured = $featureEnabled && $this->credentialsConfigured($mode);
@@ -71,28 +78,32 @@ final class CompaniesHouseAccountsSubmissionService
             }
         }
         $liveApproved = AccountingConfigurationStore::companiesHouseAccountsLiveApproved();
-        $testAccepted = $this->testAccepted((int)($eligibility['id'] ?? 0));
-        $needsRevision = $this->comparisonNeedsRevision($companyId, $accountingPeriodId);
+        $testAccepted = $this->testAccepted($companyId, $accountingPeriodId, $filingKind);
+        $needsRevision = $filingKind === 'revised' && $correctionRequired;
         $taxonomyCompatibility = $this->taxonomyCompatibilityForPeriod(
             (array)$selection['accounting_period'],
             date('Y-m-d')
         );
 
         $preparationBlockers = [];
+        if (!$classificationApproved || !in_array($filingKind, ['original', 'revised'], true)) {
+            $preparationBlockers[] = 'Approve the current Companies House Original/Revised filing classification.';
+        }
+        if ($filingKind === 'revised' && !$correctionRequired) {
+            $preparationBlockers[] = 'An exact-period filing already exists and no reportable difference requires a duplicate filing.';
+        }
         foreach ((array)($taxonomyCompatibility['errors'] ?? []) as $compatibilityError) {
             $preparationBlockers[] = 'Accounts taxonomy compatibility: ' . (string)$compatibilityError;
         }
         if (!$locked) {
-            $preparationBlockers[] = 'Lock Year End before preparing revised accounts.';
+            $preparationBlockers[] = 'Lock Year End before preparing Companies House accounts.';
         }
-        if ($original === null) {
+        if ($filingKind === 'revised' && $original === null) {
             $preparationBlockers[] = 'An exact-period original Companies House accounts filing is required.';
-        } elseif (!$needsRevision) {
-            $preparationBlockers[] = 'No Companies House comparison variance requires revised accounts for this accounting period.';
         }
-        if ((string)($eligibility['decision'] ?? 'pending') === 'pending') {
+        if ($needsRevision && (string)($eligibility['decision'] ?? 'pending') === 'pending') {
             $preparationBlockers[] = 'Record Companies House written confirmation that this original filing is eligible for electronic revision.';
-        } elseif ((string)($eligibility['decision'] ?? '') === 'ineligible') {
+        } elseif ($needsRevision && (string)($eligibility['decision'] ?? '') === 'ineligible') {
             $preparationBlockers[] = 'Companies House has marked this original filing as ineligible for software amendment; use the paper route.';
         }
         if ($needsRevision
@@ -112,14 +123,14 @@ final class CompaniesHouseAccountsSubmissionService
         $lifecycle = (string)($submission['lifecycle'] ?? '');
         if (in_array($lifecycle, ['submitting', 'transport_unknown', 'pending', 'parked', 'accepted'], true)) {
             $preparationBlockers[] = match ($lifecycle) {
-                'accepted' => 'Companies House has already accepted revised accounts for this filing basis.',
-                default => 'A revised-accounts submission is already active and must be resolved before preparing another.',
+                'accepted' => 'Companies House has already accepted accounts for this filing basis.',
+                default => 'A Companies House accounts submission is already active and must be resolved before preparing another.',
             };
         }
 
         $submissionBlockers = [];
         if ($lifecycle !== 'prepared') {
-            $submissionBlockers[] = 'Prepare and validate revised accounts before submission.';
+            $submissionBlockers[] = 'Prepare and validate the Companies House accounts artifact before submission.';
         }
         if (!$featureEnabled) {
             $submissionBlockers[] = 'Companies House accounts filing is disabled until TEST credentials are issued.';
@@ -133,10 +144,11 @@ final class CompaniesHouseAccountsSubmissionService
             $submissionBlockers[] = 'Run the Companies House protocol-conversation migration before filing.';
         }
         if ($mode === 'LIVE' && !$liveApproved) {
-            $submissionBlockers[] = 'LIVE revised-accounts filing has not been explicitly approved in server configuration.';
+            $submissionBlockers[] = 'LIVE Companies House accounts filing has not been explicitly approved in server configuration.';
         }
         if ($mode === 'LIVE' && !$testAccepted) {
-            $submissionBlockers[] = 'A Companies House TEST revised-accounts submission must be accepted before LIVE filing.';
+            $submissionBlockers[] = 'A Companies House TEST ' . ($filingKind !== '' ? $filingKind . '-accounts' : 'accounts')
+                . ' submission must be accepted before LIVE filing.';
         }
         $inFlightSubmissionId = (int)($sequence['in_flight_submission_id'] ?? 0);
         if ($inFlightSubmissionId > 0 && $inFlightSubmissionId !== (int)($submission['id'] ?? 0)) {
@@ -185,6 +197,10 @@ final class CompaniesHouseAccountsSubmissionService
                 'test_accepted' => $testAccepted,
             ],
             'eligibility' => $eligibility,
+            'filing_classification' => $filingClassification,
+            'filing_kind' => $filingKind,
+            'filing_required' => $filingRequired,
+            'correction_required' => $correctionRequired,
             'taxonomy_compatibility' => $taxonomyCompatibility,
             'revision_required' => $needsRevision,
             'readiness' => $readiness,
@@ -243,7 +259,7 @@ final class CompaniesHouseAccountsSubmissionService
     /** @return array{editable: bool, message: string, lifecycle: string} */
     public function revisionMetadataEditability(int $companyId, int $accountingPeriodId): array
     {
-        $submission = $this->latestSubmission($companyId, $accountingPeriodId);
+        $submission = $this->latestSubmission($companyId, $accountingPeriodId, 'revised');
         $lifecycle = strtolower(trim((string)($submission['lifecycle'] ?? '')));
         if (in_array($lifecycle, ['prepared', 'submitting', 'transport_unknown', 'pending', 'parked', 'accepted'], true)) {
             return [
@@ -684,14 +700,16 @@ final class CompaniesHouseAccountsSubmissionService
                     evidence_bundle_id, eligibility_id, company_id, accounting_period_id, original_document_id,
                     original_transaction_id, original_document_external_id,
                     ixbrl_generation_run_id, environment, filing_type, lifecycle,
-                    submission_number, revised_artifact_path, revised_artifact_sha256,
-                    basis_hash, idempotency_key, revision_declarations_json,
+                    submission_number, artifact_path, artifact_sha256,
+                    revised_artifact_path, revised_artifact_sha256,
+                    basis_hash, idempotency_key, filing_metadata_json, revision_declarations_json,
                     prepared_by, prepared_at, status_updated_at, created_at, updated_at
                  ) VALUES (
                     :evidence_bundle_id, :eligibility_id, :company_id, :accounting_period_id, :original_document_id,
                     :transaction_id, :external_id, :run_id, :environment, :filing_type,
                     :lifecycle, :submission_number, :artifact_path, :artifact_sha256,
-                    :basis_hash, :idempotency_key, :declarations, :prepared_by,
+                    :artifact_path, :artifact_sha256,
+                    :basis_hash, :idempotency_key, :filing_metadata, :declarations, :prepared_by,
                     :prepared_at, :status_updated_at, :created_at, :updated_at
                  )',
                 [
@@ -710,7 +728,11 @@ final class CompaniesHouseAccountsSubmissionService
                     'artifact_path' => (string)$artifact['path'],
                     'artifact_sha256' => (string)$artifact['sha256'],
                     'basis_hash' => (string)$artifact['basis_hash'],
-            'idempotency_key' => $idempotencyKey,
+                    'idempotency_key' => $idempotencyKey,
+                    'filing_metadata' => \eel_accounts\Support\PersistentJson::encode([
+                        'filing_kind' => 'revised',
+                        'declarations' => (array)$artifact['declarations'],
+                    ], JSON_UNESCAPED_SLASHES),
                     'declarations' => \eel_accounts\Support\PersistentJson::encode(
                         (array)$artifact['declarations'],
                         JSON_UNESCAPED_SLASHES
@@ -767,6 +789,215 @@ final class CompaniesHouseAccountsSubmissionService
         ];
     }
 
+    public function prepareAccounts(
+        int $companyId,
+        int $accountingPeriodId,
+        array $input,
+        string $actor,
+        mixed $progress = null
+    ): array {
+        $classification = $this->filingClassification($companyId, $accountingPeriodId);
+        return (string)($classification['filing_kind'] ?? '') === 'original'
+            ? $this->prepareOriginal($companyId, $accountingPeriodId, $actor, $progress)
+            : $this->prepareRevision($companyId, $accountingPeriodId, $input, $actor, $progress);
+    }
+
+    private function prepareOriginal(
+        int $companyId,
+        int $accountingPeriodId,
+        string $actor,
+        mixed $progress = null
+    ): array {
+        $this->reportProgress($progress, 'Checking Companies House original iXBRL preparation requirements…', 0);
+        if (!\InterfaceDB::tableExists(self::SUBMISSIONS_TABLE)) {
+            return $this->failure('The Companies House accounts-filing migration has not been applied.');
+        }
+        $context = $this->fetchContext($companyId, $accountingPeriodId);
+        if ((string)($context['filing_kind'] ?? '') !== 'original') {
+            return $this->failure('The approved Companies House filing classification is not Original.');
+        }
+        if (empty($context['can_prepare'])) {
+            return $this->failure((string)(($context['preparation_blockers'] ?? [])[0]
+                ?? 'Original accounts cannot be prepared yet.'));
+        }
+
+        try {
+            $accountsApprovalDate = $this->accountsApprovalDateFromCurrentFilingApproval(
+                $companyId,
+                $accountingPeriodId
+            );
+            $classification = (array)$context['filing_classification'];
+            $classification['accounts_approval_date'] = $accountsApprovalDate;
+            $actor = $this->actor($actor);
+            $evidenceService = new FilingEvidenceService();
+            $this->reportProgress($progress, 'Preparing the filing-evidence bundle…', 15);
+            $evidenceBundle = $evidenceService->ensureCurrentBundle($companyId, $accountingPeriodId, $actor);
+            $evidenceArtifact = $evidenceService->reserveArtifact(
+                $companyId,
+                $accountingPeriodId,
+                'companies_house_original_accounts_ixbrl',
+                null,
+                ['filing_kind' => 'original']
+            );
+            $this->reportProgress($progress, 'Freezing and validating the original Companies House iXBRL…', 40);
+            $artifact = ($this->originalArtifactService ?? new IxbrlOriginalAccountsArtifactService())
+                ->prepare(
+                    $companyId,
+                    $accountingPeriodId,
+                    $classification,
+                    (string)$evidenceArtifact['display_id']
+                );
+        } catch (\Throwable $exception) {
+            return $this->failure($exception->getMessage());
+        }
+        if (empty($artifact['success'])) {
+            if (isset($evidenceService, $evidenceArtifact)) {
+                $evidenceService->failArtifact(
+                    (int)$evidenceArtifact['id'],
+                    (string)(($artifact['errors'] ?? [])[0] ?? 'Original accounts preparation failed.'),
+                    ['arelle_validation' => (array)($artifact['validation'] ?? [])]
+                );
+            }
+            return $artifact;
+        }
+
+        $validation = (array)($artifact['validation'] ?? []);
+        $evidenceService->completeArtifact((int)$evidenceArtifact['id'], [
+            'status' => 'validated',
+            'filename' => (string)$artifact['filename'],
+            'path' => (string)$artifact['path'],
+            'sha256' => (string)$artifact['sha256'],
+            'schema_identity' => IxbrlTaxonomyProfileService::SCHEMA_REF,
+            'validator_name' => 'arelle',
+            'validator_version' => (string)($validation['version'] ?? ''),
+            'validation_status' => (string)($validation['status'] ?? 'passed'),
+            'identifier_embedded' => false,
+            'metadata' => [
+                'filing_kind' => 'original',
+                'base_run_id' => (int)($artifact['base_run_id'] ?? 0),
+                'fact_count' => (int)($artifact['fact_count'] ?? 0),
+                'classification_approval_hash' => (string)$classification['approval_basis_hash'],
+                'arelle_validation' => $validation,
+            ],
+        ]);
+
+        $mode = AccountingConfigurationStore::companiesHouseAccountsFilingMode();
+        $environment = $mode === 'LIVE' ? 'LIVE' : 'TEST';
+        $metadata = [
+            'filing_kind' => 'original',
+            'accounts_approval_date' => $accountsApprovalDate,
+            'classification' => $classification,
+        ];
+        $idempotencyKey = hash('sha256', $this->canonicalJson([
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'filing_kind' => 'original',
+            'environment' => $environment,
+            'basis_hash' => (string)$artifact['basis_hash'],
+            'artifact_sha256' => (string)$artifact['sha256'],
+        ]));
+        $existing = \InterfaceDB::fetchOne(
+            'SELECT * FROM ' . self::SUBMISSIONS_TABLE . '
+             WHERE environment = :environment AND idempotency_key = :idempotency_key
+             LIMIT 1',
+            ['environment' => $environment, 'idempotency_key' => $idempotencyKey]
+        );
+        if (is_array($existing)) {
+            return [
+                'success' => true,
+                'errors' => [],
+                'warnings' => [],
+                'messages' => ['The same original-accounts artifact is already prepared.'],
+                'submission' => $this->normaliseSubmission($existing),
+                'changed' => false,
+            ];
+        }
+
+        $now = gmdate('Y-m-d H:i:s');
+        \InterfaceDB::prepareExecute(
+            'INSERT INTO ' . self::SUBMISSIONS_TABLE . ' (
+                evidence_bundle_id, eligibility_id, company_id, accounting_period_id,
+                original_document_id, original_transaction_id, original_document_external_id,
+                ixbrl_generation_run_id, environment, filing_type, lifecycle,
+                submission_number, artifact_path, artifact_sha256,
+                revised_artifact_path, revised_artifact_sha256,
+                basis_hash, idempotency_key, filing_metadata_json, revision_declarations_json,
+                prepared_by, prepared_at, status_updated_at, created_at, updated_at
+             ) VALUES (
+                :evidence_bundle_id, NULL, :company_id, :accounting_period_id,
+                NULL, NULL, NULL, :run_id, :environment, :filing_type, :lifecycle,
+                NULL, :artifact_path, :artifact_sha256, :legacy_path, :legacy_sha256,
+                :basis_hash, :idempotency_key, :filing_metadata, :legacy_metadata,
+                :prepared_by, :prepared_at, :status_updated_at, :created_at, :updated_at
+             )',
+            [
+                'evidence_bundle_id' => (int)$evidenceBundle['id'],
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'run_id' => (int)($artifact['base_run_id'] ?? 0) ?: null,
+                'environment' => $environment,
+                'filing_type' => 'original',
+                'lifecycle' => 'prepared',
+                'artifact_path' => (string)$artifact['path'],
+                'artifact_sha256' => (string)$artifact['sha256'],
+                'legacy_path' => null,
+                'legacy_sha256' => null,
+                'basis_hash' => (string)$artifact['basis_hash'],
+                'idempotency_key' => $idempotencyKey,
+                'filing_metadata' => \eel_accounts\Support\PersistentJson::encode($metadata, JSON_UNESCAPED_SLASHES),
+                'legacy_metadata' => null,
+                'prepared_by' => $actor,
+                'prepared_at' => $now,
+                'status_updated_at' => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]
+        );
+        $row = \InterfaceDB::fetchOne(
+            'SELECT * FROM ' . self::SUBMISSIONS_TABLE . '
+             WHERE environment = :environment AND idempotency_key = :idempotency_key LIMIT 1',
+            ['environment' => $environment, 'idempotency_key' => $idempotencyKey]
+        );
+        if (!is_array($row)) {
+            return $this->failure('The prepared original submission could not be reloaded.');
+        }
+        $this->recordEvent(
+            (int)$row['id'],
+            'prepared',
+            'success',
+            'prepared',
+            null,
+            'Original Companies House accounts prepared and validated.',
+            $actor
+        );
+
+        return [
+            'success' => true,
+            'errors' => [],
+            'warnings' => (array)($artifact['warnings'] ?? []),
+            'messages' => ['Original Companies House accounts prepared and validated.'],
+            'submission' => $this->normaliseSubmission($row),
+            'changed' => true,
+        ];
+    }
+
+    public function submitAccounts(
+        int $submissionId,
+        string $companyAuthCode,
+        string $actor,
+        mixed $progress = null,
+        ?int $verifiedPreflightId = null
+    ): array {
+        return $this->submitRevision(
+            $submissionId,
+            $companyAuthCode,
+            $actor,
+            $progress,
+            $verifiedPreflightId
+        );
+    }
+
+    /** Legacy revised-accounts entry point retained for compatibility. */
     public function submitRevision(
         int $submissionId,
         string $companyAuthCode,
@@ -777,15 +1008,15 @@ final class CompaniesHouseAccountsSubmissionService
     {
         $submission = $this->submission($submissionId);
         if ($submission === null) {
-            return $this->failure('The revised-accounts submission was not found.');
+            return $this->failure('The Companies House accounts submission was not found.');
         }
         if ((string)$submission['lifecycle'] !== 'prepared') {
-            return $this->failure('Only a prepared revised-accounts artifact can be submitted.');
+            return $this->failure('Only a prepared Companies House accounts artifact can be submitted.');
         }
         $artifactState = $this->preparedArtifactState($submission);
         if (empty($artifactState['current'])) {
             return $this->failure((string)(($artifactState['errors'] ?? [])[0]
-                ?? 'The prepared revised-accounts artifact is not current.'));
+                ?? 'The prepared Companies House accounts artifact is not current.'));
         }
         if (preg_match('/^[A-Za-z0-9]{6}$/D', $companyAuthCode) !== 1) {
             return $this->failure(
@@ -802,10 +1033,15 @@ final class CompaniesHouseAccountsSubmissionService
         if ($mode === 'LIVE' && !AccountingConfigurationStore::companiesHouseAccountsLiveApproved()) {
             return $this->failure('LIVE Companies House accounts filing has not been explicitly approved.');
         }
-        if ($mode === 'LIVE' && !$this->testAccepted((int)$submission['eligibility_id'])) {
-            return $this->failure('An accepted TEST revised-accounts submission is required before LIVE filing.');
+        $filingKind = (string)($submission['filing_type'] ?? 'revised');
+        if ($mode === 'LIVE' && !$this->testAccepted(
+            (int)$submission['company_id'],
+            (int)$submission['accounting_period_id'],
+            $filingKind
+        )) {
+            return $this->failure('An accepted TEST ' . $filingKind . '-accounts submission is required before LIVE filing.');
         }
-        if ((string)($submission['eligibility_decision'] ?? '') !== 'eligible') {
+        if ($filingKind === 'revised' && (string)($submission['eligibility_decision'] ?? '') !== 'eligible') {
             return $this->failure('The original filing is not recorded as eligible for electronic revision.');
         }
         if (!(($this->lockService ?? new YearEndLockService())->isLocked(
@@ -837,15 +1073,18 @@ final class CompaniesHouseAccountsSubmissionService
         if (empty($readiness['ready_for_filing'])) {
             return $this->failure((string)(($readiness['filing_errors'] ?? [])[0] ?? 'The iXBRL filing basis is no longer current.'));
         }
-        $artifactPath = (string)$submission['revised_artifact_path'];
+        $artifactPath = (string)($submission['artifact_path'] ?? $submission['revised_artifact_path'] ?? '');
+        $expectedArtifactHash = (string)($submission['artifact_sha256']
+            ?? $submission['revised_artifact_sha256']
+            ?? '');
         $artifactHash = is_file($artifactPath) ? hash_file('sha256', $artifactPath) : false;
         if (!is_string($artifactHash)
-            || !hash_equals(strtolower((string)$submission['revised_artifact_sha256']), strtolower($artifactHash))) {
-            return $this->failure('The revised-accounts artifact has changed or is missing; it was not sent.');
+            || !hash_equals(strtolower($expectedArtifactHash), strtolower($artifactHash))) {
+            return $this->failure('The Companies House accounts artifact has changed or is missing; it was not sent.');
         }
         $accountsXml = file_get_contents($artifactPath);
         if (!is_string($accountsXml) || $accountsXml === '') {
-            return $this->failure('The revised-accounts artifact could not be read.');
+            return $this->failure('The Companies House accounts artifact could not be read.');
         }
 
         $actor = $this->actor($actor);
@@ -927,9 +1166,16 @@ final class CompaniesHouseAccountsSubmissionService
             return $this->failure($message);
         }
 
-        $declarations = json_decode((string)$submission['revision_declarations_json'], true);
-        $dateSigned = is_array($declarations)
-            ? trim((string)($declarations['revision_approval_date'] ?? ''))
+        $metadata = json_decode((string)($submission['filing_metadata_json']
+            ?? $submission['revision_declarations_json']
+            ?? ''), true);
+        $dateSigned = is_array($metadata)
+            ? trim((string)(
+                $filingKind === 'original'
+                    ? ($metadata['accounts_approval_date'] ?? '')
+                    : ($metadata['revision_approval_date']
+                        ?? (($metadata['declarations'] ?? [])['revision_approval_date'] ?? ''))
+            ))
             : '';
         $payload = [
             'company_number' => trim((string)$submission['company_number']),
@@ -1201,7 +1447,7 @@ final class CompaniesHouseAccountsSubmissionService
     {
         $submission = $this->submission($submissionId);
         if ($submission === null) {
-            return $this->failure('The revised-accounts submission was not found.');
+            return $this->failure('The Companies House accounts submission was not found.');
         }
         if (!in_array((string)$submission['lifecycle'], ['submitting', 'transport_unknown', 'pending', 'parked'], true)) {
             return $this->failure('This submission does not have a refreshable Companies House status.');
@@ -1948,7 +2194,7 @@ final class CompaniesHouseAccountsSubmissionService
                 return false;
             }
             foreach ((array)($comparison['rows'] ?? []) as $row) {
-                if (is_array($row) && (string)($row['status'] ?? '') === 'fail') {
+                if (is_array($row) && in_array((string)($row['status'] ?? ''), ['warning', 'fail'], true)) {
                     return true;
                 }
             }
@@ -1956,6 +2202,76 @@ final class CompaniesHouseAccountsSubmissionService
         }
 
         return false;
+    }
+
+    private function filingClassification(int $companyId, int $accountingPeriodId): array
+    {
+        try {
+            $review = (new YearEndSectionApprovalService())->fetchCompaniesHouseReview(
+                $companyId,
+                $accountingPeriodId
+            );
+            $comparison = (array)(($review['display'] ?? [])['comparison'] ?? []);
+            $kind = strtolower(trim((string)($comparison['filing_kind'] ?? '')));
+            if (empty($review['available']) || !in_array($kind, ['original', 'revised'], true)) {
+                return [
+                    'available' => false,
+                    'approved' => false,
+                    'filing_kind' => '',
+                    'correction_required' => false,
+                    'errors' => (array)($review['errors'] ?? ['Companies House filing classification is unavailable.']),
+                ];
+            }
+            $acknowledgement = (array)($review['acknowledgement'] ?? []);
+            return [
+                'available' => true,
+                'approved' => !empty($review['acknowledgement_current']),
+                'filing_kind' => $kind,
+                'filing_reason' => (string)($comparison['filing_reason'] ?? ''),
+                'filing_evidence' => (array)($comparison['filing_evidence'] ?? []),
+                'correction_required' => (int)(($review['display'] ?? [])['mismatch_count'] ?? 0) > 0,
+                'check_code' => (string)($review['check_code'] ?? ''),
+                'approval_basis_version' => (string)($acknowledgement['basis_version'] ?? ''),
+                'approval_basis_hash' => (string)($acknowledgement['basis_hash'] ?? ''),
+                'approved_at' => (string)($review['acknowledged_at'] ?? ''),
+                'approved_by' => (string)($review['acknowledged_by'] ?? ''),
+                'errors' => [],
+            ];
+        } catch (\Throwable $exception) {
+            return [
+                'available' => false,
+                'approved' => false,
+                'filing_kind' => '',
+                'correction_required' => false,
+                'errors' => [$exception->getMessage()],
+            ];
+        }
+    }
+
+    private function accountsApprovalDateFromCurrentFilingApproval(
+        int $companyId,
+        int $accountingPeriodId
+    ): string {
+        $status = (new IxbrlAccountsFilingApprovalService())->status($companyId, $accountingPeriodId);
+        $approval = is_array($status['approval'] ?? null) ? (array)$status['approval'] : null;
+        if ((string)($status['state'] ?? '') !== 'current' || $approval === null) {
+            throw new \RuntimeException('Approve the current Accounting iXBRL filing basis before preparing original accounts.');
+        }
+        $basis = json_decode((string)($approval['basis_json'] ?? ''), true);
+        $date = trim((string)(
+            (($basis['disclosures'] ?? [])['values'] ?? [])['accounts_approval_date']
+            ?? ($basis['disclosures'] ?? [])['accounts_approval_date']
+            ?? ''
+        ));
+        $parsed = \DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+        $errors = \DateTimeImmutable::getLastErrors();
+        if (!$parsed instanceof \DateTimeImmutable
+            || ($errors !== false && (($errors['warning_count'] ?? 0) > 0 || ($errors['error_count'] ?? 0) > 0))
+            || $parsed->format('Y-m-d') !== $date) {
+            throw new \RuntimeException('The frozen filing basis does not contain a valid accounts approval date.');
+        }
+
+        return $date;
     }
 
     private function savedRevisionDeclarations(int $companyId, int $accountingPeriodId, array $context, array $input): array
@@ -2553,7 +2869,7 @@ final class CompaniesHouseAccountsSubmissionService
                     return $error;
                 }
             }
-            return 'Resolve the accounts iXBRL generation requirements before preparing revised accounts.';
+            return 'Resolve the accounts iXBRL generation requirements before preparing Companies House accounts.';
         }
 
         if (empty($readiness['can_validate'])) {
@@ -2573,7 +2889,7 @@ final class CompaniesHouseAccountsSubmissionService
                         return $error;
                     }
                 }
-                return 'The generated HMRC Accounting iXBRL must pass Arelle validation before revised accounts can be prepared.';
+                return 'The generated HMRC Accounting iXBRL must pass Arelle validation before Companies House accounts can be prepared.';
             }
             if (empty($checks['ixbrl_validated_artifact_current']['complete'])) {
                 return 'The generated, Arelle-validated, and current-file SHA-256 values must match so the file Arelle checked is the unchanged file used for filing.';
@@ -2628,16 +2944,29 @@ final class CompaniesHouseAccountsSubmissionService
         return $invalidated;
     }
 
-    private function latestSubmission(int $companyId, int $accountingPeriodId): ?array
+    private function latestSubmission(
+        int $companyId,
+        int $accountingPeriodId,
+        string $filingKind = ''
+    ): ?array
     {
         if (!\InterfaceDB::tableExists(self::SUBMISSIONS_TABLE)) {
             return null;
         }
+        $filingKind = strtolower(trim($filingKind));
+        $filingFilter = in_array($filingKind, ['original', 'revised'], true)
+            ? ' AND filing_type = :filing_type'
+            : '';
+        $params = ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId];
+        if ($filingFilter !== '') {
+            $params['filing_type'] = $filingKind;
+        }
         $row = \InterfaceDB::fetchOne(
             'SELECT * FROM ' . self::SUBMISSIONS_TABLE . '
              WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id
+             ' . $filingFilter . '
              ORDER BY id DESC LIMIT 1',
-            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            $params
         );
 
         return is_array($row) ? $this->normaliseSubmission($row) : null;
@@ -2646,8 +2975,10 @@ final class CompaniesHouseAccountsSubmissionService
     /** @param array<string,mixed>|null $baseArtifact */
     private function preparedArtifactState(array $submission, ?array $baseArtifact = null): array
     {
-        $path = trim((string)($submission['revised_artifact_path'] ?? ''));
-        $expectedHash = strtolower(trim((string)($submission['revised_artifact_sha256'] ?? '')));
+        $path = trim((string)($submission['artifact_path'] ?? $submission['revised_artifact_path'] ?? ''));
+        $expectedHash = strtolower(trim((string)(
+            $submission['artifact_sha256'] ?? $submission['revised_artifact_sha256'] ?? ''
+        )));
         $baseRunId = (int)($submission['ixbrl_generation_run_id'] ?? 0);
         $result = [
             'path' => $path,
@@ -2681,7 +3012,7 @@ final class CompaniesHouseAccountsSubmissionService
         );
         if (empty($baseArtifact['ok'])) {
             $result['errors'] = [
-                'Generate and validate the current HMRC Accounting iXBRL before preparing revised accounts.',
+                'Generate and validate the current HMRC Accounting iXBRL before preparing Companies House accounts.',
             ];
             return $result;
         }
@@ -2720,7 +3051,7 @@ final class CompaniesHouseAccountsSubmissionService
             'SELECT s.*, e.decision AS eligibility_decision,
                     c.company_name, c.company_number
              FROM ' . self::SUBMISSIONS_TABLE . ' s
-             INNER JOIN ' . self::ELIGIBILITY_TABLE . ' e ON e.id = s.eligibility_id
+             LEFT JOIN ' . self::ELIGIBILITY_TABLE . ' e ON e.id = s.eligibility_id
              INNER JOIN companies c ON c.id = s.company_id
              WHERE s.id = :id LIMIT 1',
             ['id' => $submissionId]
@@ -2733,7 +3064,13 @@ final class CompaniesHouseAccountsSubmissionService
     {
         $declarations = json_decode((string)($row['revision_declarations_json'] ?? ''), true);
         $row['revision_declarations'] = is_array($declarations) ? $declarations : [];
+        $metadata = json_decode((string)($row['filing_metadata_json'] ?? ''), true);
+        $row['filing_metadata'] = is_array($metadata) ? $metadata : $row['revision_declarations'];
+        $row['artifact_path'] = (string)($row['artifact_path'] ?? $row['revised_artifact_path'] ?? '');
+        $row['artifact_sha256'] = (string)($row['artifact_sha256'] ?? $row['revised_artifact_sha256'] ?? '');
+        $row['filing_kind'] = (string)($row['filing_type'] ?? 'revised');
         unset($row['revision_declarations_json']);
+        unset($row['filing_metadata_json']);
         $number = trim((string)($row['submission_number'] ?? ''));
         if ($number !== '' && isset($row['company_id'], $row['environment'])) {
             try {
@@ -2753,16 +3090,26 @@ final class CompaniesHouseAccountsSubmissionService
         return $row;
     }
 
-    private function testAccepted(int $eligibilityId): bool
+    private function testAccepted(int $companyId, int $accountingPeriodId, string $filingKind): bool
     {
-        return $eligibilityId > 0
+        return $companyId > 0
+            && $accountingPeriodId > 0
+            && in_array($filingKind, ['original', 'revised'], true)
             && \InterfaceDB::tableExists(self::SUBMISSIONS_TABLE)
             && (int)\InterfaceDB::fetchColumn(
                 'SELECT COUNT(*) FROM ' . self::SUBMISSIONS_TABLE . '
-                 WHERE eligibility_id = :eligibility_id
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                   AND filing_type = :filing_type
                    AND environment = :environment
                    AND lifecycle = :lifecycle',
-                ['eligibility_id' => $eligibilityId, 'environment' => 'TEST', 'lifecycle' => 'accepted']
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'filing_type' => $filingKind,
+                    'environment' => 'TEST',
+                    'lifecycle' => 'accepted',
+                ]
             ) > 0;
     }
 
@@ -3137,6 +3484,17 @@ final class CompaniesHouseAccountsSubmissionService
                 'test_accepted' => false,
             ],
             'eligibility' => ['decision' => 'pending', 'detected_channel' => 'unknown', 'original_document_id' => 0, 'evidence' => []],
+            'filing_classification' => [
+                'available' => false,
+                'approved' => false,
+                'filing_kind' => '',
+                'correction_required' => false,
+                'errors' => [$message],
+            ],
+            'filing_kind' => '',
+            'filing_required' => false,
+            'correction_required' => false,
+            'revision_required' => false,
             'taxonomy_compatibility' => null,
             'readiness' => ['ready_for_filing' => false, 'filing_errors' => [$message]],
             'submission' => null,

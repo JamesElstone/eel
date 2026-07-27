@@ -13,7 +13,7 @@ namespace eel_accounts\Service;
 final class IxbrlAccountsReportService
 {
     /** Increment whenever the deterministic report-basis construction changes. */
-    public const BASIS_VERSION = 'ixbrl-accounts-report-v4';
+    public const BASIS_VERSION = 'ixbrl-accounts-report-v5';
 
     public function build(int $companyId, int $accountingPeriodId): array
     {
@@ -198,6 +198,7 @@ final class IxbrlAccountsReportService
 
         $profile = new IxbrlTaxonomyProfileService();
         $yearEnd = $this->yearEndState($companyId, $accountingPeriodId);
+        $companiesHouseFiling = $this->companiesHouseFilingClassification($companyId, $accountingPeriodId);
         $basis = [
             'basis_version' => IxbrlTaxonomyProfileService::BASIS_VERSION,
             'taxonomy_profile' => IxbrlTaxonomyProfileService::PROFILE,
@@ -220,6 +221,7 @@ final class IxbrlAccountsReportService
                 'period_end' => (string)$period['period_end'],
             ],
             'year_end' => $yearEnd,
+            'companies_house_filing' => $companiesHouseFiling,
             'disclosures' => $this->disclosureBasis($disclosures),
             'director_loan_disclosure' => $directorLoanDisclosure,
             'director_loan_year_end_approval' => $directorLoanApproval,
@@ -263,11 +265,42 @@ final class IxbrlAccountsReportService
             'taxonomy_compatibility' => $taxonomyCompatibility,
             'micro_entity_eligibility' => $eligibility,
             'presentation_currency' => $presentationCurrency,
+            'companies_house_filing' => $companiesHouseFiling,
             'basis' => $basis,
             'basis_hash' => hash('sha256', $this->canonicalJson($basis)),
         ];
             }
         );
+    }
+
+    private function companiesHouseFilingClassification(int $companyId, int $accountingPeriodId): array
+    {
+        $review = (new YearEndSectionApprovalService())->fetchCompaniesHouseReview(
+            $companyId,
+            $accountingPeriodId
+        );
+        $comparison = (array)(($review['display'] ?? [])['comparison'] ?? []);
+        $filingKind = strtolower(trim((string)($comparison['filing_kind'] ?? '')));
+        if (empty($review['available'])
+            || empty($review['acknowledgement_current'])
+            || !in_array($filingKind, ['original', 'revised'], true)) {
+            throw new \DomainException(
+                'Approve the current Companies House Original/Revised filing classification before building iXBRL facts.'
+            );
+        }
+
+        $acknowledgement = (array)($review['acknowledgement'] ?? []);
+        return [
+            'filing_kind' => $filingKind,
+            'filing_reason' => (string)($comparison['filing_reason'] ?? ''),
+            'filing_evidence' => (array)($comparison['filing_evidence'] ?? []),
+            'correction_required' => (int)(($review['display'] ?? [])['mismatch_count'] ?? 0) > 0,
+            'check_code' => (string)($review['check_code'] ?? ''),
+            'approval_basis_version' => (string)($acknowledgement['basis_version'] ?? ''),
+            'approval_basis_hash' => (string)($acknowledgement['basis_hash'] ?? ''),
+            'approved_at' => (string)($review['acknowledged_at'] ?? ''),
+            'approved_by' => (string)($review['acknowledged_by'] ?? ''),
+        ];
     }
 
     private function priorLockedPeriod(int $companyId, string $periodStart): ?array

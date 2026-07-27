@@ -1,7 +1,7 @@
 /secure/*
 !/secure/README.md
-/file_logs/*
-!/file_logs/README.md
+/logs/*
+!/logs/README.md
 /files/*
 !/files/README.md
 /output/

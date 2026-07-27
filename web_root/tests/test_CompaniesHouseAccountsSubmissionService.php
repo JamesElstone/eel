@@ -60,7 +60,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'validated_sha256' => str_repeat('a', 64),
                     'errors' => [],
                     'warnings' => ['A reviewable taxonomy warning.'],
-                    'log_path' => 'file_logs/arelle/example.log',
+                    'log_path' => 'logs/arelle/example.log',
                 ];
                 $metadata = $invokePrivate(
                     $service,
@@ -81,7 +81,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     (array)$metadata['arelle_validation']['warnings']
                 );
                 $harness->assertSame(
-                    'file_logs/arelle/example.log',
+                    'logs/arelle/example.log',
                     (string)$metadata['arelle_validation']['log_path']
                 );
             }

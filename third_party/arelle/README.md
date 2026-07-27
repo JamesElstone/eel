@@ -38,7 +38,7 @@ third_party\arelle\bin\validate_ixbrl.bat outbound\ixbrl\accounts_ixbrl_1_1_1.xh
 ```
 
 The script uses managed ZIPs in `third_party/frc/taxonomies`; install one from
-Tax Artifacts first. Logs are written to `file_logs/arelle/`.
+Tax Artifacts first. Logs are written to `logs/arelle/`.
 
 ## Licence Boundary
 

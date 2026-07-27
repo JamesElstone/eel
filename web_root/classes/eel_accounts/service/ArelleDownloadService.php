@@ -45,7 +45,7 @@ final class ArelleDownloadService
         $this->mustRun([$command, '--validate', '--validationExitCode', '--file', $sample], 'The Arelle iXBRL smoke test failed.', $progress);
         $current = (array)\AppConfigurationStore::get('arelle', []);
         $current['enabled'] = true; $current['arelle_cmd'] = $command; $current['timeout_seconds'] = max(30, (int)($current['timeout_seconds'] ?? 180));
-        $current['logs_path'] = rtrim(PROJECT_ROOT, '\\/') . DIRECTORY_SEPARATOR . 'file_logs' . DIRECTORY_SEPARATOR . 'arelle';
+        $current['logs_path'] = rtrim(PROJECT_ROOT, '\\/') . DIRECTORY_SEPARATOR . 'logs' . DIRECTORY_SEPARATOR . 'arelle';
         $current['cache_path'] = $runtime . DIRECTORY_SEPARATOR . 'cache'; $current['offline'] = true; $current['flags'] = ['--validate', '--validationExitCode'];
         \AppConfigurationStore::set('arelle', $current);
         return ['version' => $version, 'command' => $command];

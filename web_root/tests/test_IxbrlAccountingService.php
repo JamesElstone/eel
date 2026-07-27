@@ -68,6 +68,72 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertFalse(str_contains($xhtml, ' lang="en"'));
             $harness->assertTrue(str_contains($xhtml, ' xml:lang="en"'));
 
+            $document = new DOMDocument();
+            $harness->assertTrue($document->loadXML($xhtml, LIBXML_NONET));
+            $xpath = new DOMXPath($document);
+            $xpath->registerNamespace('xhtml', 'http://www.w3.org/1999/xhtml');
+            $style = (string)$xpath->query('/xhtml:html/xhtml:head/xhtml:style')->item(0)?->textContent;
+            $printStart = strpos($style, '@media print {');
+            $harness->assertTrue($printStart !== false);
+            $printCss = substr($style, (int)$printStart);
+            $harness->assertTrue(str_contains($style, 'size: A4 portrait;'));
+            $harness->assertTrue(str_contains($style, 'margin: 12mm 14mm 14mm;'));
+            $harness->assertFalse(preg_match(
+                '/\.accountspage\s*\{[^}]*\bwidth\s*:\s*210mm/is',
+                $printCss
+            ) === 1);
+            $harness->assertFalse(preg_match(
+                '/\.accountspage\s*\{[^}]*\bmin-height\s*:\s*297mm/is',
+                $printCss
+            ) === 1);
+            $harness->assertTrue(preg_match(
+                '/\.accountspage\s*\{[^}]*\bwidth\s*:\s*auto/is',
+                $printCss
+            ) === 1);
+            $harness->assertTrue(preg_match(
+                '/\.accountspage\s*\{[^}]*\bmin-height\s*:\s*0/is',
+                $printCss
+            ) === 1);
+            $harness->assertTrue(preg_match(
+                '/\.accountspage\s*\{[^}]*\bpadding\s*:\s*0/is',
+                $printCss
+            ) === 1);
+            $harness->assertSame(1, substr_count($printCss, 'break-before: page;'));
+            $harness->assertSame(1, substr_count($printCss, 'page-break-before: always;'));
+            $harness->assertFalse(str_contains($printCss, 'break-after:'));
+            $harness->assertFalse(str_contains($printCss, 'page-break-after:'));
+            $harness->assertTrue(str_contains(
+                $printCss,
+                '.accountspage + .accountspage'
+            ));
+            $harness->assertTrue(str_contains(
+                $printCss,
+                '.financial-table, .note-table,'
+            ));
+            $harness->assertTrue(str_contains($printCss, 'max-width: 100%;'));
+            $harness->assertTrue(str_contains($printCss, 'overflow: visible;'));
+
+            $pages = $xpath->query(
+                '//xhtml:body/xhtml:div[contains(concat(" ", normalize-space(@class), " "), " accountspage ")]'
+            );
+            $harness->assertSame(4, $pages->length);
+            $seenPages = [];
+            foreach ($pages as $index => $page) {
+                $harness->assertTrue($page instanceof DOMElement);
+                $visible = preg_replace('/\s+/u', ' ', trim($page->textContent)) ?? '';
+                $harness->assertTrue($visible !== '');
+                $canonical = $page->C14N(true, false);
+                $harness->assertTrue(is_string($canonical) && $canonical !== '');
+                $harness->assertFalse(isset($seenPages[$canonical]));
+                $seenPages[$canonical] = true;
+                if ($index === 0) {
+                    $harness->assertFalse(str_contains(
+                        ' ' . $page->getAttribute('class') . ' ',
+                        ' pagebreak '
+                    ));
+                }
+            }
+
             $validator = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'validateInlineXbrl');
             $validator->setAccessible(true);
             $harness->assertSame([], $validator->invoke($service, $xhtml));

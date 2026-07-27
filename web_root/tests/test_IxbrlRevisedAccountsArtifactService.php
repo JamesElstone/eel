@@ -2,6 +2,8 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ixbrl'
+    . DIRECTORY_SEPARATOR . 'IxbrlFactSnapshot.php';
 
 (new GeneratedServiceClassTestHarness())->run(
     \eel_accounts\Service\IxbrlRevisedAccountsArtifactService::class,
@@ -34,21 +36,28 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 . '<div class="accountspage pagebreak" id="preserved"><ix:nonNumeric name="core:DateAuthorisationFinancialStatementsForIssue" contextRef="current_period_end" format="ixt:datedaymonthyearen">21 July 2026</ix:nonNumeric>'
                 . '<ix:nonFraction name="core:FixedAssets" contextRef="current_period_end" unitRef="GBP" decimals="2" format="ixt:numdotdecimal">100.00</ix:nonFraction></div>'
                 . '</body></html>';
-            $result = $service->transform($source, [
+            $oldDeclarations = [
                 'replaces_statement' => 'These revised accounts replace the previously filed report.',
                 'statutory_accounts_statement' => 'These are now the statutory accounts.',
                 'prepared_as_statement' => 'Prepared by reference to the original accounts, not the revision date, and excluding intervening events.',
                 'non_compliance_explanation' => 'The original report contained an error.',
                 'significant_amendments' => 'The comparative figures were corrected.',
                 'revision_approval_date' => '2026-07-21',
-            ], 'EEL-AR-NOT-VISIBLE', [[
+            ];
+            $superseded = [[
                 'concept' => 'core:FixedAssets',
                 'context_ref' => 'current_period_end_superseded',
                 'value' => 0.0,
                 'unit_ref' => 'GBP',
                 'decimals' => '2',
                 'source_document_id' => 90,
-            ]]);
+            ]];
+            $result = $service->transform(
+                $source,
+                $oldDeclarations,
+                'EEL-AR-NOT-VISIBLE',
+                $superseded
+            );
 
             $harness->assertSame(true, (bool)($result['success'] ?? false));
             $xhtml = (string)($result['xhtml'] ?? '');
@@ -68,6 +77,68 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(str_contains($xhtml, 'format="ixt:datedaymonthyearen">21 July 2026'));
             $harness->assertFalse(str_contains($xhtml, 'EEL-AR-NOT-VISIBLE'));
             $harness->assertSame(1, (int)($result['superseded_fact_count'] ?? 0));
+
+            $enhancedDeclarations = $oldDeclarations;
+            $enhancedDeclarations['non_compliance_explanation'] =
+                'Creditors falling due within one year were originally reported as £64.00.';
+            $enhancedDeclarations['significant_amendments'] =
+                'Creditors falling due within one year have been revised from £64.00 to £1,314.63. '
+                . 'The revised balance includes a net participator-loan liability of £1,035.63 '
+                . 'which was repayable on demand at the balance-sheet date and has therefore been '
+                . 'classified as falling due within one year. Creditors falling due after more '
+                . 'than one year are £0.00. This correction affects the classification and '
+                . 'presentation of liabilities but does not change the company’s total net assets.';
+            $enhanced = $service->transform(
+                $source,
+                $enhancedDeclarations,
+                '',
+                $superseded
+            );
+            $harness->assertTrue((bool)($enhanced['success'] ?? false));
+            $enhancedXhtml = (string)($enhanced['xhtml'] ?? '');
+            $document = new DOMDocument();
+            $harness->assertTrue($document->loadXML($enhancedXhtml, LIBXML_NONET));
+            $xpath = new DOMXPath($document);
+            $xpath->registerNamespace('xhtml', 'http://www.w3.org/1999/xhtml');
+            $xpath->registerNamespace('ix', 'http://www.xbrl.org/2013/inlineXBRL');
+            $amendments = $xpath->query(
+                '//ix:nonNumeric[@name="bus:StatementSignificantAmendmentsToPreviouslyFiledReport"]'
+            );
+            $harness->assertSame(1, $amendments->length);
+            $amendment = $amendments->item(0);
+            $harness->assertTrue($amendment instanceof DOMElement);
+            $harness->assertSame('current_period_duration', $amendment->getAttribute('contextRef'));
+            $harness->assertTrue(str_contains($amendment->textContent, '£1,314.63'));
+            $harness->assertTrue(str_contains($amendment->textContent, 'repayable on demand'));
+            $harness->assertSame(
+                0,
+                $xpath->query(
+                    '//ix:hidden//ix:nonNumeric[@name="bus:StatementSignificantAmendmentsToPreviouslyFiledReport"]'
+                )->length
+            );
+            $harness->assertSame(
+                1,
+                $xpath->query(
+                    '//xhtml:div[@id="revised-accounts-statements"]'
+                    . '//ix:nonNumeric[@name="bus:StatementSignificantAmendmentsToPreviouslyFiledReport"]'
+                )->length
+            );
+
+            $comparison = (new \eel_accounts\Tests\Support\Ixbrl\IxbrlFactSnapshot())->compare(
+                $xhtml,
+                $enhancedXhtml,
+                [
+                    '{http://xbrl.frc.org.uk/cd/2026-01-01/business}'
+                        . 'StatementRespectsInWhichPreviouslyFiledReportDidNotComplyWithCompaniesAct2006',
+                    '{http://xbrl.frc.org.uk/cd/2026-01-01/business}'
+                        . 'StatementSignificantAmendmentsToPreviouslyFiledReport',
+                ]
+            );
+            $harness->assertTrue((bool)$comparison['passed']);
+            $harness->assertTrue((bool)$comparison['facts_unchanged_except_allowlist']);
+            $harness->assertTrue((bool)$comparison['contexts_unchanged']);
+            $harness->assertTrue((bool)$comparison['units_unchanged']);
+            $harness->assertTrue((bool)$comparison['other_visible_text_unchanged']);
         });
 
         $harness->check($service::class, 'fails rather than emit conflicting revision and board approval dates', static function () use ($harness, $service): void {

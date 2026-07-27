@@ -236,18 +236,18 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         [
                             'metric_key' => 'creditors_within_one_year',
                             'label' => 'Creditors due within one year',
-                            'app_value' => 279.0,
+                            'app_value' => 1314.63,
                             'filed_value' => 64.0,
-                            'variance' => 215.0,
+                            'variance' => 1250.63,
                             'status' => 'fail',
                         ],
                         [
                             'metric_key' => 'creditors_after_more_than_one_year',
                             'label' => 'Creditors due after more than one year',
-                            'app_value' => 1035.63,
+                            'app_value' => 0.0,
                             'filed_value' => 0.0,
-                            'variance' => 1035.63,
-                            'status' => 'fail',
+                            'variance' => 0.0,
+                            'status' => 'pass',
                         ],
                         [
                             'metric_key' => 'net_assets_liabilities',
@@ -274,20 +274,30 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                             'depreciation_write_offs' => 197.41,
                             'current_assets' => 1115.54,
                             'prepayments_accrued_income' => 140.55,
-                            'creditors_within_one_year' => 279.0,
-                            'creditors_after_more_than_one_year' => 1035.63,
+                            'creditors_within_one_year' => 1314.63,
+                            'creditors_after_more_than_one_year' => 0.0,
                             'net_assets_liabilities' => 372.89,
                             'equity_capital_reserves' => 372.89,
                         ],
                         'director_loan_reporting_presentation' => [
                             'applicable' => true,
+                            'classification' => 'within_one_year',
+                            'within_one_year' => 1035.63,
+                            'after_more_than_one_year' => 0.0,
+                            'party_facts' => [[
+                                'reportable_liability' => 1035.63,
+                                'repayable_on_demand' => true,
+                                'terms' => ['repayable_on_demand' => true],
+                            ]],
                         ],
                     ],
                     'director_loan_disclosure' => [
                         'has_company_to_director_exposure' => true,
                         'total_advances' => 253.0,
-                        'total_cash_repayments' => 50.0,
-                        'total_amounts_legally_set_off' => 203.0,
+                        'total_cash_repayments' => 0.0,
+                        'total_amounts_legally_set_off' => 253.0,
+                        'total_director_funding' => 1288.63,
+                        'closing_company_liability' => 1035.63,
                         'total_amounts_written_off' => 0.0,
                         'total_amounts_waived' => 0.0,
                         'disclosures' => [
@@ -305,7 +315,19 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         'significant_amendments' => $genericExplanation,
                     ],
                     $comparison,
-                    $model
+                    $model,
+                    [
+                        [
+                            'concept' => 'core:Creditors',
+                            'context_ref' => 'current_period_end_superseded_creditors_within_one_year',
+                            'value' => 64.0,
+                        ],
+                        [
+                            'concept' => 'core:Creditors',
+                            'context_ref' => 'current_period_end_superseded_creditors_after_one_year',
+                            'value' => 0.0,
+                        ],
+                    ]
                 );
 
                 $nonCompliance = (string)($texts['non_compliance_explanation'] ?? '');
@@ -321,16 +343,42 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'depreciation',
                     'current assets',
                     'prepayments',
-                    'creditor maturity',
-                    'director-loan',
+                    'creditors falling due within one year',
+                    'participator-loan',
+                    'repayable on demand',
                     'net assets',
                     'capital and reserves',
                 ] as $expectedPhrase) {
-                    $harness->assertTrue(str_contains($amendmentsLower, $expectedPhrase));
+                    if (!str_contains($amendmentsLower, $expectedPhrase)) {
+                        throw new RuntimeException(
+                            'The amendments disclosure is missing: ' . $expectedPhrase . '.'
+                        );
+                    }
                 }
                 $harness->assertTrue(str_contains($amendments, '£431.43'));
+                $harness->assertTrue(str_contains($amendments, '£64.00'));
+                $harness->assertTrue(str_contains($amendments, '£1,314.63'));
+                $harness->assertTrue(str_contains($amendments, '£279.00'));
                 $harness->assertTrue(str_contains($amendments, '£1,035.63'));
-                $harness->assertTrue(str_contains($amendments, '£203.00'));
+                $harness->assertTrue(str_contains($amendments, '£1,288.63'));
+                $harness->assertTrue(str_contains($amendments, '£253.00'));
+                $harness->assertTrue(str_contains($amendments, '£0.00'));
+                $harness->assertTrue(str_contains(
+                    $amendmentsLower,
+                    'does not change the company’s total net assets'
+                ));
+                $harness->assertTrue(str_contains(
+                    $nonCompliance,
+                    'originally reported as £64.00'
+                ));
+                $harness->assertFalse(str_contains(
+                    $amendments,
+                    'revised from £279.00'
+                ));
+                $harness->assertFalse(str_contains(
+                    $amendments,
+                    '£1,035.63 due after more than one year'
+                ));
                 $harness->assertSame(
                     '(£58.54)',
                     $invokePrivate($service, 'revisionMoney', -58.54)

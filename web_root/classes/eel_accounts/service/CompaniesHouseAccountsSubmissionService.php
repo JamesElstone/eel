@@ -1979,11 +1979,25 @@ final class CompaniesHouseAccountsSubmissionService
                 ->build($companyId, $accountingPeriodId);
         } catch (\Throwable) {
         }
+        $supersededFacts = [];
+        $originalDocumentId = (int)($eligibility['original_document_id'] ?? 0);
+        $periodEnd = trim((string)($model['accounting_period']['period_end'] ?? ''));
+        if ($originalDocumentId > 0 && $this->validStatutoryDate($periodEnd)) {
+            try {
+                $supersededFacts = (new IxbrlSupersededFactsService())->facts(
+                    $companyId,
+                    $originalDocumentId,
+                    $periodEnd
+                );
+            } catch (\Throwable) {
+            }
+        }
         $disclosures = $this->revisionDisclosureTexts(
             $eligibility,
             $input,
             $comparison,
-            $model
+            $model,
+            $supersededFacts
         );
 
         return array_replace($input, [
@@ -2064,7 +2078,8 @@ final class CompaniesHouseAccountsSubmissionService
         array $eligibility,
         array $input,
         array $comparison,
-        array $model
+        array $model,
+        array $supersededFacts = []
     ): array {
         $nonCompliance = [];
         $amendments = [];
@@ -2085,6 +2100,16 @@ final class CompaniesHouseAccountsSubmissionService
             $this->appendRevisionDisclosurePart($amendments, $suppliedAmendments);
         }
 
+        $current = (array)($model['current'] ?? []);
+        $buckets = (array)($current['buckets'] ?? []);
+        $directorLoan = (array)($model['director_loan_disclosure'] ?? []);
+        $directorPresentation = (array)($current['director_loan_reporting_presentation'] ?? []);
+        $creditorCorrection = $this->creditorRevisionDisclosureData(
+            $supersededFacts,
+            $buckets,
+            $directorLoan,
+            $directorPresentation
+        );
         $changedMetrics = [];
         foreach ((array)($comparison['rows'] ?? []) as $row) {
             if (!is_array($row)) {
@@ -2103,6 +2128,14 @@ final class CompaniesHouseAccountsSubmissionService
             $label = trim((string)($row['label'] ?? ''));
             if ($key !== '') {
                 $changedMetrics[$key] = true;
+            }
+            if ($creditorCorrection !== []
+                && in_array($key, [
+                    'creditors_within_one_year',
+                    'creditors_after_more_than_one_year',
+                    'creditors_after_one_year',
+                ], true)) {
+                continue;
             }
             if ($label === '' || !is_numeric($appValue) || !is_numeric($filedValue)) {
                 continue;
@@ -2123,15 +2156,15 @@ final class CompaniesHouseAccountsSubmissionService
             );
         }
 
-        $current = (array)($model['current'] ?? []);
-        $buckets = (array)($current['buckets'] ?? []);
         $fixedAssetsChanged = isset($changedMetrics['fixed_assets']);
         $prepaymentsApplicable = isset($changedMetrics['prepayments_accrued_income'])
             || abs((float)($buckets['prepayments_accrued_income'] ?? 0)) >= 0.005;
         $currentAssetsApplicable = isset($changedMetrics['current_assets'])
             || $prepaymentsApplicable;
         $creditorMaturityChanged = isset($changedMetrics['creditors_within_one_year'])
-            || isset($changedMetrics['creditors_after_more_than_one_year']);
+            || isset($changedMetrics['creditors_after_more_than_one_year'])
+            || isset($changedMetrics['creditors_after_one_year'])
+            || $creditorCorrection !== [];
         $netAssetsChanged = isset($changedMetrics['net_assets_liabilities']);
         $equityChanged = isset($changedMetrics['equity_capital_reserves']);
         $depreciation = round((float)($buckets['depreciation_write_offs'] ?? 0), 2);
@@ -2165,22 +2198,53 @@ final class CompaniesHouseAccountsSubmissionService
             );
         }
         if ($creditorMaturityChanged) {
-            $this->appendRevisionDisclosurePart(
-                $nonCompliance,
-                'The original accounts did not present creditors using the maturity classification supported by the current accounting evidence.'
-            );
-            $this->appendRevisionDisclosurePart(
-                $amendments,
-                'Creditor maturity was corrected to show '
-                    . $this->revisionMoney($buckets['creditors_within_one_year'] ?? 0)
-                    . ' due within one year and '
-                    . $this->revisionMoney(
-                        $buckets['creditors_after_more_than_one_year']
-                            ?? $buckets['creditors_after_one_year']
-                            ?? 0
-                    )
-                    . ' due after more than one year.'
-            );
+            if ($creditorCorrection !== []) {
+                $this->appendRevisionDisclosurePart(
+                    $nonCompliance,
+                    'Creditors falling due within one year were originally reported as '
+                        . $this->revisionMoney($creditorCorrection['original_within_one_year'])
+                        . '; the original liability presentation did not reflect the on-demand maturity '
+                        . 'of the net participator-loan liability.'
+                );
+                $this->appendRevisionDisclosurePart(
+                    $amendments,
+                    'Creditors falling due within one year have been revised from '
+                        . $this->revisionMoney($creditorCorrection['original_within_one_year'])
+                        . ' to ' . $this->revisionMoney($creditorCorrection['current_within_one_year'])
+                        . '. The revised balance comprises other current creditors of '
+                        . $this->revisionMoney($creditorCorrection['other_current_creditors'])
+                        . ' and a net participator-loan liability of '
+                        . $this->revisionMoney($creditorCorrection['net_participator_liability'])
+                        . '. The net participator-loan liability is calculated as the gross '
+                        . 'participator-loan liability of '
+                        . $this->revisionMoney($creditorCorrection['gross_participator_liability'])
+                        . ' less a legally offset loan asset of '
+                        . $this->revisionMoney($creditorCorrection['legally_offset_loan_asset'])
+                        . '. That liability was repayable on demand at the balance-sheet date and '
+                        . 'has therefore been classified as falling due within one year. '
+                        . 'Creditors falling due after more than one year are '
+                        . $this->revisionMoney($creditorCorrection['current_after_one_year'])
+                        . '. The maturity-classification correction changes the classification '
+                        . 'and presentation of liabilities but does not change the company’s total net assets.'
+                );
+            } else {
+                $this->appendRevisionDisclosurePart(
+                    $nonCompliance,
+                    'The original accounts did not present creditors using the maturity classification supported by the current accounting evidence.'
+                );
+                $this->appendRevisionDisclosurePart(
+                    $amendments,
+                    'Creditor maturity was corrected to show '
+                        . $this->revisionMoney($buckets['creditors_within_one_year'] ?? 0)
+                        . ' due within one year and '
+                        . $this->revisionMoney(
+                            $buckets['creditors_after_more_than_one_year']
+                                ?? $buckets['creditors_after_one_year']
+                                ?? 0
+                        )
+                        . ' due after more than one year.'
+                );
+            }
         }
         if ($netAssetsChanged || $equityChanged) {
             $this->appendRevisionDisclosurePart(
@@ -2196,8 +2260,6 @@ final class CompaniesHouseAccountsSubmissionService
             );
         }
 
-        $directorLoan = (array)($model['director_loan_disclosure'] ?? []);
-        $directorPresentation = (array)($current['director_loan_reporting_presentation'] ?? []);
         $directorLoanApplicable = !empty($directorLoan['has_company_to_director_exposure'])
             || (array)($directorLoan['disclosures'] ?? []) !== []
             || !empty($directorPresentation['applicable'])
@@ -2209,7 +2271,7 @@ final class CompaniesHouseAccountsSubmissionService
                 'total_amounts_written_off',
                 'total_amounts_waived',
             ]);
-        if ($directorLoanApplicable) {
+        if ($directorLoanApplicable && $creditorCorrection === []) {
             $this->appendRevisionDisclosurePart(
                 $nonCompliance,
                 'The original accounts did not clearly distinguish director-loan movements and their effect on creditor maturity.'
@@ -2266,6 +2328,110 @@ final class CompaniesHouseAccountsSubmissionService
             'non_compliance_explanation' => $nonComplianceText,
             'significant_amendments' => $amendmentsText,
         ];
+    }
+
+    /**
+     * @return array{
+     *   original_within_one_year:float,
+     *   current_within_one_year:float,
+     *   current_after_one_year:float,
+     *   other_current_creditors:float,
+     *   net_participator_liability:float,
+     *   gross_participator_liability:float,
+     *   legally_offset_loan_asset:float
+     * }|array{}
+     */
+    private function creditorRevisionDisclosureData(
+        array $supersededFacts,
+        array $buckets,
+        array $directorLoan,
+        array $directorPresentation
+    ): array {
+        $originalWithin = $this->supersededFactValue(
+            $supersededFacts,
+            'core:Creditors',
+            'current_period_end_superseded_creditors_within_one_year'
+        );
+        $originalAfter = $this->supersededFactValue(
+            $supersededFacts,
+            'core:Creditors',
+            'current_period_end_superseded_creditors_after_one_year'
+        );
+        if ($originalWithin === null
+            || $originalAfter === null
+            || !array_key_exists('creditors_within_one_year', $buckets)
+            || (!array_key_exists('creditors_after_more_than_one_year', $buckets)
+                && !array_key_exists('creditors_after_one_year', $buckets))
+            || (string)($directorPresentation['classification'] ?? '') !== 'within_one_year') {
+            return [];
+        }
+
+        $currentWithin = round((float)$buckets['creditors_within_one_year'], 2);
+        $currentAfter = round((float)(
+            $buckets['creditors_after_more_than_one_year']
+                ?? $buckets['creditors_after_one_year']
+                ?? 0
+        ), 2);
+        $netLiability = round((float)(
+            $directorLoan['closing_company_liability']
+                ?? $directorPresentation['within_one_year']
+                ?? 0
+        ), 2);
+        $grossLiability = round((float)($directorLoan['total_director_funding'] ?? 0), 2);
+        $legallyOffsetAsset = round((float)($directorLoan['total_amounts_legally_set_off'] ?? 0), 2);
+        $otherCurrentCreditors = round($currentWithin - $netLiability, 2);
+        $liabilityParties = array_values(array_filter(
+            (array)($directorPresentation['party_facts'] ?? []),
+            static fn(mixed $party): bool => is_array($party)
+                && round((float)($party['reportable_liability'] ?? 0), 2) > 0
+        ));
+        $allRepayableOnDemand = $liabilityParties !== [];
+        foreach ($liabilityParties as $party) {
+            $terms = (array)($party['terms'] ?? []);
+            if (empty($party['repayable_on_demand'])
+                && empty($terms['repayable_on_demand'])) {
+                $allRepayableOnDemand = false;
+                break;
+            }
+        }
+
+        if (!$allRepayableOnDemand
+            || $netLiability <= 0
+            || $grossLiability <= 0
+            || $legallyOffsetAsset < 0
+            || $otherCurrentCreditors < 0
+            || abs(round($grossLiability - $legallyOffsetAsset - $netLiability, 2)) >= 0.005
+            || (abs($originalWithin - $currentWithin) < 0.005
+                && abs($originalAfter - $currentAfter) < 0.005)) {
+            return [];
+        }
+
+        return [
+            'original_within_one_year' => round($originalWithin, 2),
+            'current_within_one_year' => $currentWithin,
+            'current_after_one_year' => $currentAfter,
+            'other_current_creditors' => $otherCurrentCreditors,
+            'net_participator_liability' => $netLiability,
+            'gross_participator_liability' => $grossLiability,
+            'legally_offset_loan_asset' => $legallyOffsetAsset,
+        ];
+    }
+
+    private function supersededFactValue(
+        array $facts,
+        string $concept,
+        string $contextRef
+    ): ?float {
+        foreach ($facts as $fact) {
+            if (is_array($fact)
+                && (string)($fact['concept'] ?? '') === $concept
+                && (string)($fact['context_ref'] ?? '') === $contextRef
+                && is_numeric($fact['value'] ?? null)) {
+                return round((float)$fact['value'], 2);
+            }
+        }
+
+        return null;
     }
 
     private function validStatutoryDate(string $date): bool

@@ -637,7 +637,10 @@ final class IxbrlAccountingService
     private function stylesheet(): string
     {
         return <<<'CSS'
-@page { size: A4; margin: 0; }
+@page {
+    size: A4 portrait;
+    margin: 12mm 14mm 14mm;
+}
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
@@ -655,11 +658,6 @@ body {
     padding: 18mm 18mm 20mm;
     background: #fff;
     box-shadow: 0 2mm 8mm rgba(0, 0, 0, .14);
-}
-.pagebreak { break-before: page; page-break-before: always; }
-.keepTogether, .financial-table, .note, .approval {
-    break-inside: avoid;
-    page-break-inside: avoid;
 }
 .titlepage { position: relative; }
 .cover-company-number { text-align: right; font-size: 9.5pt; }
@@ -723,13 +721,41 @@ h2 { margin: 0; font-size: 13.5pt; text-align: center; }
 .revision-statement h3 { margin: 0 0 2mm; font-size: 10.5pt; }
 .revision-statement p { margin: 0; }
 @media print {
-    html, body { background: #fff; }
-    .accountspage {
-        width: 210mm;
-        min-height: 297mm;
+    html, body {
+        width: auto;
         margin: 0;
-        padding: 18mm 18mm 20mm;
+        padding: 0;
+        background: #fff;
+    }
+    .accountspage {
+        width: auto;
+        max-width: none;
+        min-height: 0;
+        margin: 0;
+        padding: 0;
+        background: #fff;
         box-shadow: none;
+        overflow: visible;
+    }
+    .accountspage + .accountspage {
+        break-before: page;
+        page-break-before: always;
+    }
+    .keepTogether, .financial-table, .note, .approval {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+    .financial-table, .note-table,
+    .statutory-statements, .note, .revision-statement {
+        max-width: 100%;
+    }
+    .financial-table .description,
+    .note-table .description {
+        overflow-wrap: anywhere;
+    }
+    .financial-table .amount,
+    .note-table .amount {
+        overflow: visible;
     }
 }
 CSS;

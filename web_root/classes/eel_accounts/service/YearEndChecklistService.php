@@ -1893,6 +1893,7 @@ final class YearEndChecklistService
                 $accountingPeriodId
             );
         }
+        $sections = $this->applyRetainedEarningsMovementApprovalState($sections);
 
         $sections = $this->applyLockBlockingMetadata($sections);
         $blockingChecks = $this->blockingChecks($sections);
@@ -2701,6 +2702,39 @@ final class YearEndChecklistService
                 $sections[$sectionKey][$index] = $check;
             }
         }
+        return $sections;
+    }
+
+    private function applyRetainedEarningsMovementApprovalState(array $sections): array
+    {
+        $profitAndLossApproved = false;
+        foreach ($sections as $checks) {
+            foreach ((array)$checks as $check) {
+                if ((string)($check['check_code'] ?? '') === 'retained_earnings_close_confirmation'
+                    && !empty($check['acknowledgement_current'])) {
+                    $profitAndLossApproved = true;
+                    break 2;
+                }
+            }
+        }
+
+        if (!$profitAndLossApproved) {
+            return $sections;
+        }
+
+        foreach ($sections as $sectionKey => $checks) {
+            foreach ((array)$checks as $index => $check) {
+                if ((string)($check['check_code'] ?? '') !== 'retained_earnings_movement'
+                    || (string)($check['status'] ?? '') !== 'warning') {
+                    continue;
+                }
+
+                $check['status'] = 'pass';
+                $check['detail_text'] = 'Current profit/loss has been approved and will be carried into retained earnings when the period is locked.';
+                $sections[$sectionKey][$index] = $check;
+            }
+        }
+
         return $sections;
     }
 

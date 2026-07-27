@@ -46,6 +46,36 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
         $harness->assertSame('visible_failure', (string)$blocking[0]['check_code']);
     });
 
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'current Profit and Loss approval clears the pending retained earnings movement warning', static function () use ($harness): void {
+        $service = new \eel_accounts\Service\YearEndChecklistService();
+        $apply = new ReflectionMethod($service, 'applyRetainedEarningsMovementApprovalState');
+        $apply->setAccessible(true);
+
+        $sections = $apply->invoke($service, [
+            'year_end_accounts_review' => [
+                [
+                    'check_code' => 'retained_earnings_movement',
+                    'status' => 'warning',
+                    'detail_text' => 'Current profit/loss has not yet been carried into retained earnings for this period.',
+                    'metric_value' => '£ 216.59',
+                ],
+                [
+                    'check_code' => 'retained_earnings_close_confirmation',
+                    'status' => 'pass',
+                    'acknowledgement_current' => true,
+                ],
+            ],
+        ]);
+
+        $movement = (array)$sections['year_end_accounts_review'][0];
+        $harness->assertSame('pass', (string)$movement['status']);
+        $harness->assertSame(
+            'Current profit/loss has been approved and will be carried into retained earnings when the period is locked.',
+            (string)$movement['detail_text']
+        );
+        $harness->assertSame('£ 216.59', (string)$movement['metric_value']);
+    });
+
     $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'preflight reports the visible blocker instead of relying on overall warning status', static function () use ($harness): void {
         $service = new \eel_accounts\Service\YearEndChecklistService();
         $preflight = new ReflectionMethod($service, 'preflightLockPeriod');

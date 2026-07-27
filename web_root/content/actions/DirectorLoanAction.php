@@ -25,6 +25,7 @@ final class DirectorLoanAction implements ActionInterfaceFramework
                 $accountingPeriodId,
                 'change Participator Loan party terms'
             );
+            $repaymentBasis = $this->repaymentBasis($request);
             $result = match ($intent) {
                 'save_participator_loan_party_terms' => (new \eel_accounts\Service\ParticipatorLoanPartyTermsService())->save(
                     $companyId,
@@ -32,9 +33,7 @@ final class DirectorLoanAction implements ActionInterfaceFramework
                     [
                         'interest_rate_percent' => (string)$request->input('interest_rate_percent', '0'),
                         'security_type' => (string)$request->input('security_type', 'unsecured'),
-                        'repayable_on_demand' => $this->checked($request->input('repayable_on_demand', '')),
-                        'repayment_timing' => (string)$request->input('repayment_timing', 'within_12_months'),
-                        'deferment_right_confirmed' => $this->checked($request->input('deferment_right_confirmed', '')),
+                        'repayment_basis' => $repaymentBasis,
                         'set_off_right_confirmed' => $this->checked($request->input('set_off_right_confirmed', '')),
                         'settlement_intention' => (string)$request->input('settlement_intention', 'independently'),
                     ],
@@ -103,6 +102,15 @@ final class DirectorLoanAction implements ActionInterfaceFramework
         }
 
         return 'web_app';
+    }
+
+    private function repaymentBasis(RequestFramework $request): string
+    {
+        $basis = trim((string)$request->input('repayment_basis', ''));
+        if (!in_array($basis, ['on_demand', 'within_12_months', 'after_12_months'], true)) {
+            throw new \InvalidArgumentException('Select a valid repayment basis.');
+        }
+        return $basis;
     }
 
     private function checked(mixed $value): bool

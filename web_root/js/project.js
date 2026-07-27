@@ -1051,9 +1051,7 @@
                 };
                 setValue('interest_rate_percent', String(option.dataset.interestRatePercent || '0.0000'));
                 setValue('security_type', String(option.dataset.securityType || 'unsecured'));
-                setChecked('repayable_on_demand', String(option.dataset.repayableOnDemand || '0'));
-                setValue('repayment_timing', String(option.dataset.repaymentTiming || 'within_12_months'));
-                setChecked('deferment_right_confirmed', String(option.dataset.defermentRightConfirmed || '0'));
+                setValue('repayment_basis', String(option.dataset.repaymentBasis || ''));
                 setChecked('set_off_right_confirmed', String(option.dataset.setOffRightConfirmed || '0'));
                 setValue('settlement_intention', String(option.dataset.settlementIntention || 'independently'));
                 const title = form.querySelector('[data-participator-loan-terms-title]');

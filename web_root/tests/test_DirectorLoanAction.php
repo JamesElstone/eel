@@ -86,35 +86,79 @@ $harness->run(DirectorLoanAction::class, static function (
                 ['company_id' => $companyId, 'legal_name' => 'Action Participator']
             );
 
-            $result = $action->handle(
-                new RequestFramework(
-                    [],
-                    [
-                        'card_action' => 'DirectorLoan',
-                        'intent' => 'save_participator_loan_party_terms',
-                        'company_id' => (string)$companyId,
-                        'accounting_period_id' => (string)$periodId,
-                        'party_id' => (string)$partyId,
-                        'interest_rate_percent' => '2.5',
-                        'security_type' => 'secured',
-                        'repayable_on_demand' => '0',
-                        'repayment_timing' => 'after_12_months',
-                        'deferment_right_confirmed' => '1',
-                        'set_off_right_confirmed' => '1',
-                        'settlement_intention' => 'simultaneous',
-                    ],
-                    [
-                        'REQUEST_METHOD' => 'POST',
-                        'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest',
-                        'HTTP_ACCEPT' => 'application/json',
-                    ],
-                    [],
-                    [],
-                    null
-                ),
-                createTestPageServiceFramework()
-            );
+            $baseInput = [
+                'card_action' => 'DirectorLoan',
+                'intent' => 'save_participator_loan_party_terms',
+                'company_id' => (string)$companyId,
+                'accounting_period_id' => (string)$periodId,
+                'party_id' => (string)$partyId,
+                'interest_rate_percent' => '2.5',
+                'security_type' => 'secured',
+                'set_off_right_confirmed' => '1',
+                'settlement_intention' => 'simultaneous',
+            ];
+            foreach ([null, 'not_a_basis'] as $invalidBasis) {
+                $invalidInput = $baseInput;
+                if ($invalidBasis !== null) {
+                    $invalidInput['repayment_basis'] = $invalidBasis;
+                }
+                $invalidBasisResult = $action->handle(
+                    new RequestFramework(
+                        [],
+                        $invalidInput,
+                        ['REQUEST_METHOD' => 'POST'],
+                        [],
+                        [],
+                        null
+                    ),
+                    createTestPageServiceFramework()
+                );
+                $harness->assertSame(false, $invalidBasisResult->isSuccess());
+                $harness->assertTrue(str_contains(
+                    strtolower((string)($invalidBasisResult->flashMessages()[0]['message'] ?? '')),
+                    'repayment basis'
+                ));
+            }
+            $harness->assertSame(0, InterfaceDB::countWhere(
+                'participator_loan_party_terms',
+                ['company_id' => $companyId, 'party_id' => $partyId]
+            ));
 
+            $repaymentMappings = [
+                'on_demand' => [1, 'within_12_months', 0],
+                'within_12_months' => [0, 'within_12_months', 0],
+                'after_12_months' => [0, 'after_12_months', 1],
+            ];
+            $result = null;
+            foreach ($repaymentMappings as $basis => $expected) {
+                $result = $action->handle(
+                    new RequestFramework(
+                        [],
+                        $baseInput + ['repayment_basis' => $basis],
+                        [
+                            'REQUEST_METHOD' => 'POST',
+                            'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest',
+                            'HTTP_ACCEPT' => 'application/json',
+                        ],
+                        [],
+                        [],
+                        null
+                    ),
+                    createTestPageServiceFramework()
+                );
+                $harness->assertSame(true, $result->isSuccess());
+                $stored = InterfaceDB::fetchOne(
+                    'SELECT repayable_on_demand, repayment_timing, deferment_right_confirmed
+                     FROM participator_loan_party_terms
+                     WHERE company_id = :company_id AND party_id = :party_id',
+                    ['company_id' => $companyId, 'party_id' => $partyId]
+                );
+                $harness->assertSame((int)$expected[0], (int)($stored['repayable_on_demand'] ?? -1));
+                $harness->assertSame((string)$expected[1], (string)($stored['repayment_timing'] ?? ''));
+                $harness->assertSame((int)$expected[2], (int)($stored['deferment_right_confirmed'] ?? -1));
+            }
+
+            $harness->assertTrue($result instanceof ActionResultFramework);
             $harness->assertSame(true, $result->isSuccess());
             foreach ([
                 'director.loan.state',
@@ -166,6 +210,7 @@ $harness->run(DirectorLoanAction::class, static function (
                         'accounting_period_id' => (string)$periodId,
                         'party_id' => (string)$partyId,
                         'interest_rate_percent' => '9.5',
+                        'repayment_basis' => 'on_demand',
                     ],
                     ['REQUEST_METHOD' => 'POST'],
                     [],
@@ -191,6 +236,7 @@ $harness->run(DirectorLoanAction::class, static function (
                         'company_id' => (string)$companyId,
                         'accounting_period_id' => (string)$periodId,
                         'party_id' => '0',
+                        'repayment_basis' => 'within_12_months',
                     ],
                     ['REQUEST_METHOD' => 'POST'],
                     [],

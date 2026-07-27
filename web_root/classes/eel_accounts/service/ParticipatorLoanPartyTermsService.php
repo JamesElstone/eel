@@ -119,7 +119,11 @@ final class ParticipatorLoanPartyTermsService
         if ($this->party($companyId, $partyId) === null) {
             return $this->error('The selected participator loan party does not belong to this company.');
         }
-        $terms = $this->normalise($input);
+        $repaymentValues = $this->repaymentValuesForSave($input);
+        if ($repaymentValues === null) {
+            return $this->error('Select one valid repayment basis.');
+        }
+        $terms = $this->normalise(array_replace($input, $repaymentValues));
         if ($terms === null) {
             return $this->error('Enter valid participator loan terms.');
         }
@@ -445,6 +449,92 @@ final class ParticipatorLoanPartyTermsService
             'set_off_right_confirmed' => !empty($values['set_off_right_confirmed']) ? 1 : 0,
             'settlement_intention' => $settlement,
         ];
+    }
+
+    /**
+     * Resolve new writes to one of the three representable repayment states.
+     *
+     * Stored live terms and immutable snapshots deliberately continue through
+     * normalise() alone so historical contradictory evidence remains readable.
+     */
+    private function repaymentValuesForSave(array $values): ?array
+    {
+        $mappings = [
+            'on_demand' => [
+                'repayable_on_demand' => 1,
+                'repayment_timing' => 'within_12_months',
+                'deferment_right_confirmed' => 0,
+            ],
+            'within_12_months' => [
+                'repayable_on_demand' => 0,
+                'repayment_timing' => 'within_12_months',
+                'deferment_right_confirmed' => 0,
+            ],
+            'after_12_months' => [
+                'repayable_on_demand' => 0,
+                'repayment_timing' => 'after_12_months',
+                'deferment_right_confirmed' => 1,
+            ],
+        ];
+
+        if (array_key_exists('repayment_basis', $values)) {
+            $basis = trim((string)$values['repayment_basis']);
+            $mapped = $mappings[$basis] ?? null;
+            if ($mapped === null) {
+                return null;
+            }
+            foreach ($mapped as $key => $expected) {
+                if (!array_key_exists($key, $values)) {
+                    continue;
+                }
+                $actual = $key === 'repayment_timing'
+                    ? trim((string)$values[$key])
+                    : $this->normaliseFlag($values[$key]);
+                if ($actual !== $expected) {
+                    return null;
+                }
+            }
+            return $mapped;
+        }
+
+        foreach (['repayable_on_demand', 'repayment_timing', 'deferment_right_confirmed'] as $key) {
+            if (!array_key_exists($key, $values)) {
+                return null;
+            }
+        }
+        $onDemand = $this->normaliseFlag($values['repayable_on_demand']);
+        $deferment = $this->normaliseFlag($values['deferment_right_confirmed']);
+        $timing = trim((string)$values['repayment_timing']);
+        if ($onDemand === null || $deferment === null) {
+            return null;
+        }
+
+        foreach ($mappings as $mapped) {
+            if ($mapped['repayable_on_demand'] === $onDemand
+                && $mapped['repayment_timing'] === $timing
+                && $mapped['deferment_right_confirmed'] === $deferment) {
+                return $mapped;
+            }
+        }
+        return null;
+    }
+
+    private function normaliseFlag(mixed $value): ?int
+    {
+        if (is_bool($value)) {
+            return $value ? 1 : 0;
+        }
+        if (is_int($value) || is_float($value)) {
+            return in_array($value, [0, 0.0, 1, 1.0], true) ? (int)$value : null;
+        }
+        if (is_string($value)) {
+            return match (strtolower(trim($value))) {
+                '1', 'true', 'yes', 'on' => 1,
+                '0', 'false', 'no', 'off' => 0,
+                default => null,
+            };
+        }
+        return null;
     }
 
     private function withoutMeta(array $values): array

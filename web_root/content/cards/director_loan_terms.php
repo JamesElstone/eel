@@ -34,15 +34,14 @@ final class _director_loan_termsCard extends CardBaseFramework
         $checked=static fn(string $key): string => !empty($terms[$key])?' checked':'';
         $option=static fn(string $key,string $value): string => (string)($terms[$key]??'')===$value?' selected':'';
         $hasSavedTerms = !empty($entry['explicit']);
+        $repaymentBasis = $hasSavedTerms ? $this->repaymentBasis($terms) : '';
         return '<form id="participator-loan-terms-' . $partyId . '" method="post" data-ajax="true" class="panel-soft settings-stack">'.HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             .'<input type="hidden" name="card_action" value="DirectorLoan"><input type="hidden" name="intent" value="save_participator_loan_party_terms"><input type="hidden" name="company_id" value="'.$companyId.'"><input type="hidden" name="accounting_period_id" value="'.$periodId.'"><input type="hidden" name="party_id" value="'.$partyId.'">'
             .'<div class="status-head"><div><h3 class="card-title">'.($hasSavedTerms ? 'Edit terms' : 'Add terms').'</h3><div class="helper">'.HelperFramework::escape((string)($party['legal_name']??'Participator')).'</div></div>'.($locked?'<span class="badge warning">Locked snapshot</span>':'').'</div>'
             .'<div class="participator-loan-terms-fields"><label><span class="helper">Interest rate (%)</span><input class="input" type="number" name="interest_rate_percent" data-no-submit-on-change="true" min="0" max="100" step="0.0001" value="'.HelperFramework::escape(number_format((float)($terms['interest_rate_percent']??0),4,'.','')).'"'.$disabled.'></label>'
             .'<label><span class="helper">Security</span><select class="select" name="security_type" data-no-submit-on-change="true"'.$disabled.'><option value="unsecured"'.$option('security_type','unsecured').'>Unsecured</option><option value="secured"'.$option('security_type','secured').'>Secured</option></select></label>'
-            .'<label><span class="helper">When is the amount repayable?</span><select class="select" name="repayment_timing" data-no-submit-on-change="true"'.$disabled.'><option value="within_12_months"'.$option('repayment_timing','within_12_months').'>Within 12 months</option><option value="after_12_months"'.$option('repayment_timing','after_12_months').'>After 12 months</option></select></label>'
+            .'<label><span class="helper">When can the director require repayment?</span><select class="select" name="repayment_basis" data-no-submit-on-change="true" required'.$disabled.'>'.$this->repaymentBasisOptions($repaymentBasis).'</select><span class="helper">Applies to the entire party balance at the accounting-period end.</span></label>'
             .'<label><span class="helper">Settlement intention</span><select class="select" name="settlement_intention" data-no-submit-on-change="true"'.$disabled.'><option value="independently"'.$option('settlement_intention','independently').'>Independently</option><option value="net"'.$option('settlement_intention','net').'>Net</option><option value="simultaneous"'.$option('settlement_intention','simultaneous').'>Simultaneous</option></select></label></div>'
-            .'<label class="checkbox-row"><input type="checkbox" name="repayable_on_demand" value="1"'.$checked('repayable_on_demand').$disabled.'><span>Repayable on demand</span></label>'
-            .'<label class="checkbox-row"><input type="checkbox" name="deferment_right_confirmed" value="1"'.$checked('deferment_right_confirmed').$disabled.'><span>The company can defer repayment for at least 12 months.</span></label>'
             .'<label class="checkbox-row"><input type="checkbox" name="set_off_right_confirmed" value="1"'.$checked('set_off_right_confirmed').$disabled.'><span>A legally enforceable right of set-off exists.</span></label>'
             .($locked?'':'<div><button class="button primary" type="submit">Save terms</button></div>').'</form>';
     }
@@ -52,12 +51,11 @@ final class _director_loan_termsCard extends CardBaseFramework
         foreach ($entries as $entry) {
             $party = (array)($entry['party'] ?? []);
             $terms = (array)($entry['terms'] ?? []);
+            $repaymentBasis = !empty($entry['explicit']) ? $this->repaymentBasis($terms) : '';
             $options .= '<option value="' . (int)($party['id'] ?? 0) . '"'
                 . ' data-interest-rate-percent="' . HelperFramework::escape(number_format((float)($terms['interest_rate_percent'] ?? 0), 4, '.', '')) . '"'
                 . ' data-security-type="' . HelperFramework::escape((string)($terms['security_type'] ?? 'unsecured')) . '"'
-                . ' data-repayable-on-demand="' . (!empty($terms['repayable_on_demand']) ? '1' : '0') . '"'
-                . ' data-repayment-timing="' . HelperFramework::escape((string)($terms['repayment_timing'] ?? 'within_12_months')) . '"'
-                . ' data-deferment-right-confirmed="' . (!empty($terms['deferment_right_confirmed']) ? '1' : '0') . '"'
+                . ' data-repayment-basis="' . HelperFramework::escape($repaymentBasis) . '"'
                 . ' data-set-off-right-confirmed="' . (!empty($terms['set_off_right_confirmed']) ? '1' : '0') . '"'
                 . ' data-settlement-intention="' . HelperFramework::escape((string)($terms['settlement_intention'] ?? 'independently')) . '"'
                 . ' data-explicit="' . (!empty($entry['explicit']) ? '1' : '0') . '">'
@@ -69,10 +67,8 @@ final class _director_loan_termsCard extends CardBaseFramework
             . '<h3 class="card-title" data-participator-loan-terms-title>Add terms</h3><label class="participator-loan-terms-entity-field"><span class="helper">Entity</span><select class="select" name="party_id" data-participator-loan-terms-entity data-no-submit-on-change="true" required>' . $options . '</select></label>'
             . '<div class="participator-loan-terms-fields"><label><span class="helper">Interest rate (%)</span><input class="input" type="number" name="interest_rate_percent" data-no-submit-on-change="true" min="0" max="100" step="0.0001" value="0.0000"></label>'
             . '<label><span class="helper">Security</span><select class="select" name="security_type" data-no-submit-on-change="true"><option value="unsecured">Unsecured</option><option value="secured">Secured</option></select></label>'
-            . '<label><span class="helper">When is the amount repayable?</span><select class="select" name="repayment_timing" data-no-submit-on-change="true"><option value="within_12_months">Within 12 months</option><option value="after_12_months">After 12 months</option></select></label>'
+            . '<label><span class="helper">When can the director require repayment?</span><select class="select" name="repayment_basis" data-no-submit-on-change="true" required>' . $this->repaymentBasisOptions('') . '</select><span class="helper">Applies to the entire party balance at the accounting-period end.</span></label>'
             . '<label><span class="helper">Settlement intention</span><select class="select" name="settlement_intention" data-no-submit-on-change="true"><option value="independently">Independently</option><option value="net">Net</option><option value="simultaneous">Simultaneous</option></select></label></div>'
-            . '<label class="checkbox-row"><input type="checkbox" name="repayable_on_demand" value="1" checked><span>Repayable on demand</span></label>'
-            . '<label class="checkbox-row"><input type="checkbox" name="deferment_right_confirmed" value="1"><span>The company can defer repayment for at least 12 months.</span></label>'
             . '<label class="checkbox-row"><input type="checkbox" name="set_off_right_confirmed" value="1"><span>A legally enforceable right of set-off exists.</span></label>'
             . '<div><button class="button primary" type="submit">Save terms</button></div></form>';
     }
@@ -80,7 +76,7 @@ final class _director_loan_termsCard extends CardBaseFramework
 
     private function termsTable(array $entries): TableFramework
     {
-        $rows = array_map(static function (array $entry): array {
+        $rows = array_map(function (array $entry): array {
             $party = (array)($entry['party'] ?? []);
             $terms = (array)($entry['terms'] ?? []);
             return [
@@ -88,9 +84,9 @@ final class _director_loan_termsCard extends CardBaseFramework
                 'entity_type' => HelperFramework::labelFromKey((string)($party['party_type'] ?? ''), '_'),
                 'interest_rate' => number_format((float)($terms['interest_rate_percent'] ?? 0), 4, '.', '') . '%',
                 'security' => HelperFramework::labelFromKey((string)($terms['security_type'] ?? 'unsecured'), '_'),
-                'on_demand' => !empty($terms['repayable_on_demand']) ? 'Yes' : 'No',
-                'repayment_timing' => (string)($terms['repayment_timing'] ?? '') === 'after_12_months' ? 'After 12 months' : 'Within 12 months',
-                'deferral' => !empty($terms['deferment_right_confirmed']) ? 'Yes' : 'No',
+                'repayment_basis' => !empty($entry['explicit'])
+                    ? $this->repaymentBasisLabel($this->repaymentBasis($terms))
+                    : 'Not selected',
                 'set_off' => !empty($terms['set_off_right_confirmed']) ? 'Yes' : 'No',
                 'settlement' => HelperFramework::labelFromKey((string)($terms['settlement_intention'] ?? 'independently'), '_'),
                 'party_id' => (int)($party['id'] ?? 0),
@@ -105,9 +101,7 @@ final class _director_loan_termsCard extends CardBaseFramework
             ->textColumn('entity_type', 'Type')
             ->textColumn('interest_rate', 'Interest rate')
             ->textColumn('security', 'Security')
-            ->textColumn('on_demand', 'On demand')
-            ->textColumn('repayment_timing', 'Repayment')
-            ->textColumn('deferral', 'Deferral 12+ months')
+            ->textColumn('repayment_basis', 'Repayment basis')
             ->textColumn('set_off', 'Legal set-off')
             ->textColumn('settlement', 'Settlement')
             ->column(
@@ -118,5 +112,37 @@ final class _director_loan_termsCard extends CardBaseFramework
                 exportable: false,
                 cellClass: 'cell-fit'
             );
+    }
+
+    private function repaymentBasis(array $terms): string
+    {
+        if (!empty($terms['repayable_on_demand'])) {
+            return 'on_demand';
+        }
+        if (
+            (string)($terms['repayment_timing'] ?? '') === 'after_12_months'
+            && !empty($terms['deferment_right_confirmed'])
+        ) {
+            return 'after_12_months';
+        }
+        return 'within_12_months';
+    }
+
+    private function repaymentBasisLabel(string $repaymentBasis): string
+    {
+        return match ($repaymentBasis) {
+            'on_demand' => 'On demand',
+            'after_12_months' => 'After more than 12 months',
+            default => 'Within 12 months',
+        };
+    }
+
+    private function repaymentBasisOptions(string $selected): string
+    {
+        $option = static fn(string $value): string => $selected === $value ? ' selected' : '';
+        return '<option value=""' . $option('') . '>Select repayment basis…</option>'
+            . '<option value="on_demand"' . $option('on_demand') . '>On demand</option>'
+            . '<option value="within_12_months"' . $option('within_12_months') . '>Within 12 months</option>'
+            . '<option value="after_12_months"' . $option('after_12_months') . '>After more than 12 months — company has an unconditional right to defer</option>';
     }
 }

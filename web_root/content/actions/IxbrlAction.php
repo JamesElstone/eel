@@ -145,10 +145,11 @@ final class IxbrlAction implements ActionInterfaceFramework
                     'errors' => (array)($cleanup['errors'] ?? []),
                     'messages' => [
                         (int)($cleanup['deleted_count'] ?? 0) . ' missing iXBRL run record(s) removed; '
+                        . (int)($cleanup['deleted_draft_count'] ?? 0) . ' unsent Companies House draft(s) removed; '
                         . (int)($cleanup['present_count'] ?? 0) . ' artifact-backed run(s) retained.',
                     ],
                     'warnings' => !empty($cleanup['skipped_count'])
-                        ? [(int)$cleanup['skipped_count'] . ' missing-file run(s) retained because they are referenced by Companies House submissions.']
+                        ? [(int)$cleanup['skipped_count'] . ' missing-file run(s) retained because they are referenced by transmitted or in-flight Companies House filings.']
                         : [],
                 ];
             } elseif (in_array($intent, ['generate_computation_ixbrl', 'validate_computation_ixbrl'], true)) {

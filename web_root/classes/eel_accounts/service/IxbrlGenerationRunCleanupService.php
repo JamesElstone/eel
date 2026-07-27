@@ -9,10 +9,10 @@ declare(strict_types=1);
 
 namespace eel_accounts\Service;
 
-/** Removes missing-file accounts iXBRL runs while preserving Companies House submission linkage. */
+/** Removes missing-file accounts iXBRL runs and unsent Companies House drafts that depend on them. */
 final class IxbrlGenerationRunCleanupService
 {
-    /** @return array{success: bool, deleted_count: int, present_count: int, skipped_count: int, skipped_run_ids: list<int>, errors: list<string>} */
+    /** @return array{success: bool, deleted_count: int, deleted_draft_count: int, present_count: int, skipped_count: int, skipped_run_ids: list<int>, errors: list<string>} */
     public function removeMissingArtifacts(int $companyId, int $accountingPeriodId): array
     {
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
@@ -24,7 +24,12 @@ final class IxbrlGenerationRunCleanupService
 
         $submissionTableExists = \InterfaceDB::tableExists('companies_house_accounts_submissions');
         $referenceSql = $submissionTableExists
-            ? 'EXISTS (SELECT 1 FROM companies_house_accounts_submissions submission WHERE submission.ixbrl_generation_run_id = run.id)'
+            ? "EXISTS (
+                   SELECT 1
+                   FROM companies_house_accounts_submissions submission
+                   WHERE submission.ixbrl_generation_run_id = run.id
+                     AND (submission.lifecycle <> 'prepared' OR submission.submitted_at IS NOT NULL)
+               )"
             : '0';
         $runs = \InterfaceDB::fetchAll(
             'SELECT run.id, run.generated_path, ' . $referenceSql . ' AS companies_house_referenced
@@ -52,9 +57,19 @@ final class IxbrlGenerationRunCleanupService
             $missing[] = (int)$run['id'];
         }
 
+        $deletedDraftCount = 0;
         if ($missing !== []) {
-            \InterfaceDB::transaction(static function () use ($missing): void {
+            \InterfaceDB::transaction(static function () use ($missing, $submissionTableExists, &$deletedDraftCount): void {
                 foreach ($missing as $runId) {
+                    if ($submissionTableExists) {
+                        $deletedDraftCount += \InterfaceDB::execute(
+                            "DELETE FROM companies_house_accounts_submissions
+                             WHERE ixbrl_generation_run_id = :id
+                               AND lifecycle = 'prepared'
+                               AND submitted_at IS NULL",
+                            ['id' => $runId]
+                        );
+                    }
                     \InterfaceDB::prepareExecute(
                         'DELETE FROM ixbrl_generation_runs WHERE id = :id',
                         ['id' => $runId]
@@ -66,6 +81,7 @@ final class IxbrlGenerationRunCleanupService
         return [
             'success' => true,
             'deleted_count' => count($missing),
+            'deleted_draft_count' => $deletedDraftCount,
             'present_count' => $presentCount,
             'skipped_count' => count($skippedRunIds),
             'skipped_run_ids' => $skippedRunIds,
@@ -73,12 +89,13 @@ final class IxbrlGenerationRunCleanupService
         ];
     }
 
-    /** @return array{success: false, deleted_count: 0, present_count: 0, skipped_count: 0, skipped_run_ids: list<int>, errors: list<string>} */
+    /** @return array{success: false, deleted_count: 0, deleted_draft_count: 0, present_count: 0, skipped_count: 0, skipped_run_ids: list<int>, errors: list<string>} */
     private function failure(string $error): array
     {
         return [
             'success' => false,
             'deleted_count' => 0,
+            'deleted_draft_count' => 0,
             'present_count' => 0,
             'skipped_count' => 0,
             'skipped_run_ids' => [],

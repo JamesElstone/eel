@@ -90,7 +90,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     . '<input type="hidden" name="intent" value="sync_missing_ixbrl_runs">'
                     . '<input type="hidden" name="company_id" value="' . $companyId . '">'
                     . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
-                    . '<button class="button danger" type="submit" title="Developer only" data-chicken-check="true" data-chicken-title="Synchronise missing iXBRL runs" data-chicken-message="Remove database records for accounts iXBRL artifacts that no longer exist on disk?<br><br>This permanently removes missing-file run history and dependent facts. Companies House-referenced runs are retained. No files are deleted." data-chicken-confirm-text="Synchronise" data-chicken-button-class="button danger">Synchronise missing iXBRL runs</button>'
+                    . '<button class="button danger" type="submit" title="Developer only" data-chicken-check="true" data-chicken-title="Synchronise missing iXBRL runs" data-chicken-message="Remove database records for accounts iXBRL artifacts that no longer exist on disk?<br><br>This permanently removes missing-file run history, dependent facts, and unsent Companies House drafts. Runs used by transmitted or in-flight Companies House filings are retained. No files are deleted." data-chicken-confirm-text="Synchronise" data-chicken-button-class="button danger">Synchronise missing iXBRL runs</button>'
                     . '</form></div>' : '') . '
                 <form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">
                     ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '

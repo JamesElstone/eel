@@ -12,7 +12,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 (new GeneratedServiceClassTestHarness())->run(
     \eel_accounts\Service\IxbrlGenerationRunCleanupService::class,
     static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\IxbrlGenerationRunCleanupService $service): void {
-        $harness->check(\eel_accounts\Service\IxbrlGenerationRunCleanupService::class, 'removes only missing unreferenced artifacts', static function () use ($harness, $service): void {
+        $harness->check(\eel_accounts\Service\IxbrlGenerationRunCleanupService::class, 'removes missing runs and unsent drafts but retains transmitted filings', static function () use ($harness, $service): void {
             InterfaceDB::beginTransaction();
             $presentPath = tempnam(test_tmp_directory(), 'ixbrl-cleanup-');
             if ($presentPath === false) {
@@ -43,15 +43,77 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 };
                 $presentRunId = $insertRun($presentPath);
                 $missingRunId = $insertRun($missingPath);
+                $draftRunId = $insertRun($missingPath . '-draft');
+                $submittedRunId = $insertRun($missingPath . '-submitted');
+                InterfaceDB::prepareExecute(
+                    "INSERT INTO companies_house_accounts_eligibility (
+                        company_id, accounting_period_id, original_transaction_id,
+                        original_document_external_id, original_filing_channel,
+                        decision, evidence_text, decided_by, decided_at
+                     ) VALUES (
+                        :company_id, :period_id, :transaction_id,
+                        :external_id, 'test', 'eligible', 'test', 'test', NOW()
+                     )",
+                    [
+                        'company_id' => $companyId,
+                        'period_id' => $periodId,
+                        'transaction_id' => 'cleanup-' . $token,
+                        'external_id' => 'cleanup-' . $token,
+                    ]
+                );
+                $eligibilityId = (int)InterfaceDB::fetchColumn('SELECT MAX(id) FROM companies_house_accounts_eligibility');
+                $insertSubmission = static function (int $runId, string $lifecycle, ?string $submittedAt) use ($companyId, $periodId, $eligibilityId, $token): int {
+                    $identity = hash('sha256', $token . '-' . $runId . '-' . $lifecycle);
+                    InterfaceDB::prepareExecute(
+                        'INSERT INTO companies_house_accounts_submissions (
+                            eligibility_id, company_id, accounting_period_id,
+                            original_transaction_id, original_document_external_id,
+                            ixbrl_generation_run_id, environment, lifecycle,
+                            revised_artifact_path, revised_artifact_sha256,
+                            basis_hash, idempotency_key, revision_declarations_json,
+                            prepared_by, submitted_by, submitted_at
+                         ) VALUES (
+                            :eligibility_id, :company_id, :period_id,
+                            :transaction_id, :external_id,
+                            :run_id, \'TEST\', :lifecycle,
+                            :artifact_path, :sha256,
+                            :basis_hash, :idempotency_key, \'{}\',
+                            \'test\', :submitted_by, :submitted_at
+                         )',
+                        [
+                            'eligibility_id' => $eligibilityId,
+                            'company_id' => $companyId,
+                            'period_id' => $periodId,
+                            'transaction_id' => 'cleanup-' . $token,
+                            'external_id' => 'cleanup-' . $token,
+                            'run_id' => $runId,
+                            'lifecycle' => $lifecycle,
+                            'artifact_path' => 'missing-' . $identity . '.xhtml',
+                            'sha256' => $identity,
+                            'basis_hash' => $identity,
+                            'idempotency_key' => $identity,
+                            'submitted_by' => $submittedAt === null ? null : 'test',
+                            'submitted_at' => $submittedAt,
+                        ]
+                    );
+                    return (int)InterfaceDB::fetchColumn('SELECT MAX(id) FROM companies_house_accounts_submissions');
+                };
+                $draftSubmissionId = $insertSubmission($draftRunId, 'prepared', null);
+                $submittedSubmissionId = $insertSubmission($submittedRunId, 'pending', '2026-01-01 00:00:00');
                 $result = $service->removeMissingArtifacts($companyId, $periodId);
 
                 $harness->assertSame(true, (bool)$result['success']);
-                $harness->assertSame(1, (int)$result['deleted_count']);
+                $harness->assertSame(2, (int)$result['deleted_count']);
+                $harness->assertSame(1, (int)$result['deleted_draft_count']);
                 $harness->assertSame(1, (int)$result['present_count']);
-                $harness->assertSame(0, (int)$result['skipped_count']);
-                $harness->assertSame([], $result['skipped_run_ids']);
+                $harness->assertSame(1, (int)$result['skipped_count']);
+                $harness->assertSame([$submittedRunId], $result['skipped_run_ids']);
                 $harness->assertSame(1, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM ixbrl_generation_runs WHERE id = :id', ['id' => $presentRunId]));
                 $harness->assertSame(0, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM ixbrl_generation_runs WHERE id = :id', ['id' => $missingRunId]));
+                $harness->assertSame(0, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM ixbrl_generation_runs WHERE id = :id', ['id' => $draftRunId]));
+                $harness->assertSame(0, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM companies_house_accounts_submissions WHERE id = :id', ['id' => $draftSubmissionId]));
+                $harness->assertSame(1, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM ixbrl_generation_runs WHERE id = :id', ['id' => $submittedRunId]));
+                $harness->assertSame(1, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM companies_house_accounts_submissions WHERE id = :id', ['id' => $submittedSubmissionId]));
             } finally {
                 @unlink($presentPath);
                 InterfaceDB::rollBack();

@@ -58,7 +58,7 @@ final class _director_loan_ct600aCard extends CardBaseFramework
             $errors = (array)($ct['blocking_errors'] ?? []);
             $complete = !array_key_exists('complete', $ct) ? $errors === [] : !empty($ct['complete']);
             $html .= '<section class="panel-soft settings-stack"><div class="status-head"><h3 class="card-title">CT period '
-                . (int)$ct['sequence_no'] . ' — ' . HelperFramework::escape((string)$ct['period_start']) . ' to '
+                . (int)($ct['display_sequence_no'] ?? $ct['sequence_no']) . ' — ' . HelperFramework::escape((string)$ct['period_start']) . ' to '
                 . HelperFramework::escape((string)$ct['period_end']) . '</h3>'
                 . ($complete ? '<span class="badge success">Ready</span>' : '')
                 . '<span class="badge info">CT600A required: ' . (!empty($ct['required']) ? 'Yes' : 'No') . '</span></div>';

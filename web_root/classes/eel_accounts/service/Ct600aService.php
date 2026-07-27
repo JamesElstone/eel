@@ -291,6 +291,9 @@ final class Ct600aService
         $result = $model + [
             'available' => true,
             'sequence_no' => (int)$period['sequence_no'],
+            'display_sequence_no' => (int)($s455['display_sequence_no']
+                ?? $period['display_sequence_no']
+                ?? $period['sequence_no']),
             'ct_period_id' => $ctPeriodId,
             'period_start' => (string)$period['period_start'],
             'period_end' => (string)$period['period_end'],

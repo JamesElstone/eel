@@ -39,6 +39,27 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             }
         });
 
+        $h->check($service::class, 'seals a V2 Year End tax approval against the canonical computation manifest', static function () use ($h, $service): void {
+            $fixture = ctPeriodFilingModelFixture(1, [], [], [], true, false, false, true);
+            $acknowledgement = (new \eel_accounts\Service\YearEndAcknowledgementService())->fetch(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                'tax_readiness_acknowledgement'
+            );
+            $model = $service->build(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                (int)$fixture['ct_period_ids'][0]
+            );
+
+            $h->assertSame(
+                \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION,
+                (string)($acknowledgement['basis_version'] ?? '')
+            );
+            $h->assertSame(true, (bool)($model['available'] ?? false));
+            $h->assertSame((string)$fixture['manifest_hash'], (string)($model['seal']['freeze_manifest_hash'] ?? ''));
+        });
+
         $h->check($service::class, 'derives and freezes two independently fileable CT periods for a long accounting period', static function () use ($h, $service): void {
             $fixture = ctPeriodFilingModelFixture(2, [], [], [], true, true, true);
             $periods = (new \eel_accounts\Service\CorporationTaxPeriodService())
@@ -530,7 +551,8 @@ function ctPeriodFilingModelFixture(
     array $summaryOverrides = [],
     bool $approve = true,
     bool $deriveLongPeriod = false,
-    bool $withParticipatorLoans = false
+    bool $withParticipatorLoans = false,
+    bool $useV2TaxApproval = false
 ): array {
     foreach ([
         'companies',
@@ -691,7 +713,7 @@ function ctPeriodFilingModelFixture(
     ];
     $acknowledgements = new \eel_accounts\Service\YearEndAcknowledgementService();
     $manifestHash = $acknowledgements->hashBasis($manifest);
-    $approvalBasis = [
+    $legacyApprovalBasis = [
         'check_code' => 'tax_readiness_acknowledgement',
         'filing_identity' => [
             'company' => ['id' => $companyId, 'name' => 'Approved Filing Fixture', 'number' => '12345678'],
@@ -710,6 +732,15 @@ function ctPeriodFilingModelFixture(
         'freeze_manifest' => $manifest,
         'supported_return_profile' => ctPeriodFilingModelSupportedReturnProfile(),
     ];
+    $approvalBasis = $useV2TaxApproval
+        ? [
+            'contract_version' => \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION,
+            'check_code' => 'tax_readiness_acknowledgement',
+            'facts' => ['freeze_manifest' => $manifest],
+            'questions' => [],
+            'answers' => [],
+        ]
+        : $legacyApprovalBasis;
     $approvalJson = json_encode($acknowledgements->normalizedBasis($approvalBasis), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
     $approvalHash = $acknowledgements->hashBasis($approvalBasis);
 
@@ -861,7 +892,9 @@ function ctPeriodFilingModelFixture(
                 'check_code' => 'tax_readiness_acknowledgement',
                 'acknowledged_at' => '2026-07-19 11:59:00',
                 'acknowledged_by' => 'test',
-                'basis_version' => \eel_accounts\Service\YearEndAcknowledgementService::BASIS_VERSION,
+                'basis_version' => $useV2TaxApproval
+                    ? \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION
+                    : \eel_accounts\Service\YearEndAcknowledgementService::BASIS_VERSION,
                 'basis_hash' => $approvalHash,
                 'basis_json' => $approvalJson,
             ]

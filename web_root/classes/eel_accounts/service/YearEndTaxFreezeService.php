@@ -61,7 +61,9 @@ final class YearEndTaxFreezeService
                 $blockingDiagnostics
             )),
         ];
-        $manifestHash = (new YearEndAcknowledgementService())->hashBasis($manifest);
+        $acknowledgements = new YearEndAcknowledgementService();
+        $manifest = $acknowledgements->normalizedBasis($this->canonicalManifest($manifest));
+        $manifestHash = $acknowledgements->hashBasis($manifest);
 
         return [
             'freeze_status' => $blockingDiagnostics === [] ? 'ready_for_approval' : 'blocked',
@@ -85,6 +87,64 @@ final class YearEndTaxFreezeService
             'check_code' => 'tax_readiness_acknowledgement',
             'freeze_manifest' => $manifest,
         ];
+    }
+
+    /**
+     * Canonical representation shared by live tax readiness, V2 approval,
+     * persisted close evidence and the immutable calculation seal.
+     *
+     * @return array<string, mixed>
+     */
+    public function canonicalManifest(array $manifest): array
+    {
+        $canonical = $this->canonicalApprovalValue($manifest);
+        return is_array($canonical) ? $canonical : [];
+    }
+
+    public function canonicalApprovalValue(mixed $value): mixed
+    {
+        if (is_int($value) || is_float($value)
+            || (is_string($value) && is_numeric($value))) {
+            $number = rtrim(rtrim(sprintf('%.10F', (float)$value), '0'), '.');
+            return $number === '' || $number === '-0' ? '0' : $number;
+        }
+        if (!is_array($value)) {
+            return $value;
+        }
+
+        foreach ($value as $key => $item) {
+            $value[$key] = $this->canonicalApprovalValue($item);
+        }
+        if (!array_is_list($value)) {
+            ksort($value, SORT_STRING);
+            return $value;
+        }
+        if ($value === [] || !array_reduce(
+            $value,
+            static fn(bool $carry, mixed $item): bool => $carry && is_array($item),
+            true
+        )) {
+            return $value;
+        }
+
+        $identityKeys = ['sequence_no', 'ct_period_id', 'pool_type', 'asset_id'];
+        foreach ($identityKeys as $identityKey) {
+            if (!array_reduce(
+                $value,
+                static fn(bool $carry, array $item): bool => $carry && array_key_exists($identityKey, $item),
+                true
+            )) {
+                continue;
+            }
+            usort($value, function (array $left, array $right) use ($identityKey): int {
+                $comparison = strnatcmp((string)$left[$identityKey], (string)$right[$identityKey]);
+                return $comparison !== 0
+                    ? $comparison
+                    : strcmp($this->canonicalJson($left), $this->canonicalJson($right));
+            });
+            break;
+        }
+        return $value;
     }
 
     private function periodBasis(array $period): array
@@ -262,5 +322,11 @@ final class YearEndTaxFreezeService
             return trim($value);
         }
         return $value;
+    }
+
+    private function canonicalJson(mixed $value): string
+    {
+        $json = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
+        return is_string($json) ? $json : '';
     }
 }

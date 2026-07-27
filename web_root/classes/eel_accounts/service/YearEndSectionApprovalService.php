@@ -219,6 +219,12 @@ final class YearEndSectionApprovalService
         if (empty($result['success'])) {
             return $result;
         }
+        $this->invalidate(
+            $companyId,
+            $accountingPeriodId,
+            $checkCode,
+            'Section approval revoked; rebuild the review before reapproval'
+        );
 
         (new YearEndLockService())->writeAuditLog(
             $companyId,
@@ -664,48 +670,7 @@ final class YearEndSectionApprovalService
 
     private function normaliseTaxApprovalValue(mixed $value): mixed
     {
-        if (is_int($value) || is_float($value)
-            || (is_string($value) && is_numeric($value))) {
-            $number = rtrim(rtrim(sprintf('%.10F', (float)$value), '0'), '.');
-            return $number === '' || $number === '-0' ? '0' : $number;
-        }
-        if (!is_array($value)) {
-            return $value;
-        }
-
-        foreach ($value as $key => $item) {
-            $value[$key] = $this->normaliseTaxApprovalValue($item);
-        }
-        if (!array_is_list($value)) {
-            ksort($value, SORT_STRING);
-            return $value;
-        }
-        if ($value === [] || !array_reduce(
-            $value,
-            static fn(bool $carry, mixed $item): bool => $carry && is_array($item),
-            true
-        )) {
-            return $value;
-        }
-
-        $identityKeys = ['sequence_no', 'ct_period_id', 'pool_type', 'asset_id'];
-        foreach ($identityKeys as $identityKey) {
-            if (!array_reduce(
-                $value,
-                static fn(bool $carry, array $item): bool => $carry && array_key_exists($identityKey, $item),
-                true
-            )) {
-                continue;
-            }
-            usort($value, function (array $left, array $right) use ($identityKey): int {
-                $comparison = strnatcmp((string)$left[$identityKey], (string)$right[$identityKey]);
-                return $comparison !== 0
-                    ? $comparison
-                    : strcmp($this->canonicalJson($left), $this->canonicalJson($right));
-            });
-            break;
-        }
-        return $value;
+        return (new YearEndTaxFreezeService())->canonicalApprovalValue($value);
     }
 
     /** @param array<string,mixed> $bundle @param array<string,mixed> $submitted */
@@ -1026,7 +991,10 @@ final class YearEndSectionApprovalService
             'director_loan_year_end_review' => (new Ct600aService())->reviewQuestions(),
             // Scope answers are persisted by the filing-scope table and signed
             // by the tax V2 provider, rather than submitted in the approval form.
-            'tax_readiness_acknowledgement' => ['provider' => 'tax_filing_scope_v2'],
+            // Version the canonical freeze-manifest representation as well as
+            // the filing-scope questions. Cached pre-canonical bundles must be
+            // refreshed before their approval form is shown.
+            'tax_readiness_acknowledgement' => ['provider' => 'tax_filing_scope_v3_canonical_freeze'],
             'companies_house_mismatch_acknowledgement' => $this->companiesHouseQuestions(true),
             // Version the direct display provider so checklist-era cached
             // bundles are rebuilt with the P&L card's required display model.

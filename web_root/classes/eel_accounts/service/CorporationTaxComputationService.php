@@ -411,11 +411,14 @@ final class CorporationTaxComputationService
      * @param null|list<array<string, mixed>> $preparedSummaries Summaries from
      *        the final in-transaction tax revalidation. Supplying them avoids
      *        rebuilding the same CT and CT600A models immediately afterward.
+     * @param null|string $expectedFreezeManifestHash Canonical hash returned by
+     *        the final approved-basis revalidation.
      */
     public function persistSummariesForYearEndLock(
         int $companyId,
         int $accountingPeriodId,
-        ?array $preparedSummaries = null
+        ?array $preparedSummaries = null,
+        ?string $expectedFreezeManifestHash = null
     ): array
     {
         $scope = $this->vatSupportScope($companyId);
@@ -560,6 +563,22 @@ final class CorporationTaxComputationService
             array_values(array_map('strval', $errors)),
             count($periods)
         );
+        $expectedFreezeManifestHash = trim((string)$expectedFreezeManifestHash);
+        $generatedFreezeManifestHash = trim((string)($freeze['freeze_manifest_hash'] ?? ''));
+        if ($expectedFreezeManifestHash !== ''
+            && ($generatedFreezeManifestHash === ''
+                || !hash_equals($expectedFreezeManifestHash, $generatedFreezeManifestHash))) {
+            $errors[] = 'The persisted Corporation Tax evidence does not match the final approved Year End tax basis'
+                . ' (expected ' . substr($expectedFreezeManifestHash, 0, 12)
+                . ', generated ' . ($generatedFreezeManifestHash !== '' ? substr($generatedFreezeManifestHash, 0, 12) : 'missing')
+                . ').';
+            return [
+                'success' => false,
+                'errors' => array_values(array_unique($errors)),
+                'summaries' => $summaries,
+                'freeze_manifest_hash' => $generatedFreezeManifestHash,
+            ];
+        }
         foreach ($summaries as &$summary) {
             $summary['year_end_freeze_basis_version'] = YearEndTaxFreezeService::BASIS_VERSION;
             $summary['year_end_freeze_manifest_hash'] = (string)($freeze['freeze_manifest_hash'] ?? '');
@@ -661,20 +680,43 @@ final class CorporationTaxComputationService
                 continue;
             }
             $approvalBasis = json_decode((string)($run['approval_basis_json'] ?? ''), true);
+            $acknowledgements = new YearEndAcknowledgementService();
+            $approvalBasisHash = trim((string)($run['approval_basis_hash'] ?? ''));
+            $approvalBasisVersion = trim((string)($run['approval_basis_version'] ?? ''));
+            if (!is_array($approvalBasis)
+                || $approvalBasisHash === ''
+                || !hash_equals($approvalBasisHash, $acknowledgements->hashBasis($approvalBasis))) {
+                $errors[] = 'CT period ' . $ctPeriodId . ': The approved Year End tax-basis signature is invalid.';
+                continue;
+            }
+            $isV2Approval = hash_equals(YearEndSectionApprovalService::CONTRACT_VERSION, $approvalBasisVersion);
+            $isLegacyApproval = hash_equals(YearEndAcknowledgementService::BASIS_VERSION, $approvalBasisVersion);
+            if (!$isV2Approval && !$isLegacyApproval) {
+                $errors[] = 'CT period ' . $ctPeriodId . ': The approved Year End tax-basis version is unsupported.';
+                continue;
+            }
             // Tax approval is now a V2 section bundle. Its calculation facts
             // live under `facts`; retain the flat lookup for historical seals.
-            $approvalFacts = is_array($approvalBasis) && is_array($approvalBasis['facts'] ?? null)
+            $approvalFacts = $isV2Approval && is_array($approvalBasis['facts'] ?? null)
                 ? (array)$approvalBasis['facts']
-                : (is_array($approvalBasis) ? $approvalBasis : []);
+                : ($isLegacyApproval ? $approvalBasis : []);
             $freezeManifest = is_array($approvalFacts['freeze_manifest'] ?? null)
                 ? (array)$approvalFacts['freeze_manifest']
                 : [];
+            $freezeManifest = $freezeManifest !== []
+                ? (new YearEndTaxFreezeService())->canonicalManifest($freezeManifest)
+                : [];
             $freezeManifestHash = $freezeManifest !== []
-                ? (new YearEndAcknowledgementService())->hashBasis($freezeManifest)
+                ? $acknowledgements->hashBasis($freezeManifest)
                 : '';
+            $persistedFreezeManifestHash = trim((string)($summary['year_end_freeze_manifest_hash'] ?? ''));
             if ($freezeManifestHash === ''
-                || !hash_equals($freezeManifestHash, (string)($summary['year_end_freeze_manifest_hash'] ?? ''))) {
-                $errors[] = 'CT period ' . $ctPeriodId . ': The computation is not bound to the approved Year End tax basis.';
+                || !hash_equals($freezeManifestHash, $persistedFreezeManifestHash)) {
+                $errors[] = 'CT period ' . $ctPeriodId
+                    . ': The computation is not bound to the approved Year End tax basis'
+                    . ' (approved ' . ($freezeManifestHash !== '' ? substr($freezeManifestHash, 0, 12) : 'missing')
+                    . ', persisted ' . ($persistedFreezeManifestHash !== '' ? substr($persistedFreezeManifestHash, 0, 12) : 'missing')
+                    . ').';
                 continue;
             }
             $sealBasis = [

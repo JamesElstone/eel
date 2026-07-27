@@ -54,6 +54,48 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue((string)($initial['freeze_manifest_hash'] ?? '') !== (string)($changed['freeze_manifest_hash'] ?? ''));
         });
 
+        $harness->check(\eel_accounts\Service\YearEndTaxFreezeService::class, 'canonicalizes transient and database-shaped numeric evidence identically', static function () use ($harness, $service): void {
+            $transient = yearEndTaxFreezePeriods();
+            $transient[0]['accounting_allocation_basis'] = [
+                'method' => 'inclusive_day_apportionment',
+                'ct_period_days' => 365,
+                'accounting_period_days' => 391,
+                'time_apportioned' => true,
+            ];
+            $transient[0]['capital_allowance_breakdown'] = [
+                'rows' => [
+                    ['pool_type' => 'main_pool', 'aia_claimed' => 628.84, 'opening_wdv' => 0.0],
+                    ['pool_type' => 'special_rate_pool', 'aia_claimed' => 0, 'opening_wdv' => 0],
+                ],
+                'asset_calculations' => [
+                    ['asset_id' => 101, 'allowance_amount' => 628.84],
+                    ['asset_id' => 99, 'allowance_amount' => 0.0],
+                ],
+            ];
+
+            $database = $transient;
+            $database[0]['ct_period_id'] = '6';
+            $database[0]['accounting_profit'] = '-118.660000';
+            $database[0]['accounting_allocation_basis']['ct_period_days'] = '365';
+            $database[0]['accounting_allocation_basis']['accounting_period_days'] = '391.000000';
+            $database[0]['capital_allowance_breakdown']['rows'] = array_reverse(
+                $database[0]['capital_allowance_breakdown']['rows']
+            );
+            $database[0]['capital_allowance_breakdown']['rows'][0]['aia_claimed'] = '0.000000';
+            $database[0]['capital_allowance_breakdown']['rows'][1]['aia_claimed'] = '628.840000';
+            $database[0]['capital_allowance_breakdown']['asset_calculations'] = array_reverse(
+                $database[0]['capital_allowance_breakdown']['asset_calculations']
+            );
+            $database[0]['capital_allowance_breakdown']['asset_calculations'][0]['allowance_amount'] = '0.000000';
+            $database[0]['capital_allowance_breakdown']['asset_calculations'][1]['allowance_amount'] = '628.840000';
+
+            $left = $service->build(49, 79, $transient, [], 2);
+            $right = $service->build(49, 79, $database, [], 2);
+
+            $harness->assertSame($left['freeze_manifest'], $right['freeze_manifest']);
+            $harness->assertSame($left['freeze_manifest_hash'], $right['freeze_manifest_hash']);
+        });
+
         $harness->check(\eel_accounts\Service\YearEndTaxFreezeService::class, 'excludes filing-scope gates from the deterministic calculation hash', static function () use ($harness, $service): void {
             $scope = [
                 'available' => true,

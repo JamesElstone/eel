@@ -444,6 +444,48 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             }
             $harness->assertSame('current', (string)($taxCheck['acknowledgement_state'] ?? ''));
             $harness->assertSame(true, (bool)($taxCheck['acknowledgement_current'] ?? false));
+
+            $revoked = $instance->handle(
+                yearEndActionDirectorLoanTestRequest(
+                    $companyId,
+                    $accountingPeriodId,
+                    'revoke_section_review',
+                    ['check_code' => 'tax_readiness_acknowledgement']
+                ),
+                createTestPageServiceFramework()
+            );
+            $harness->assertSame(true, $revoked->isSuccess());
+            $harness->assertSame(0, (int)InterfaceDB::fetchColumn(
+                'SELECT is_current FROM year_end_section_review_bundles
+                 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id AND check_code = :check_code',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'check_code' => 'tax_readiness_acknowledgement',
+                ]
+            ));
+            $harness->assertSame(0, (int)InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM year_end_review_acknowledgements
+                 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id AND check_code = :check_code',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'check_code' => 'tax_readiness_acknowledgement',
+                ]
+            ));
+
+            $reviewAfterRevoke = (new \eel_accounts\Service\YearEndSectionApprovalService())
+                ->fetchReview($companyId, $accountingPeriodId, 'tax_readiness_acknowledgement');
+            $harness->assertSame('absent', (string)($reviewAfterRevoke['acknowledgement_state'] ?? ''));
+            $harness->assertSame(1, (int)InterfaceDB::fetchColumn(
+                'SELECT is_current FROM year_end_section_review_bundles
+                 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id AND check_code = :check_code',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'check_code' => 'tax_readiness_acknowledgement',
+                ]
+            ));
         });
     });
 

@@ -488,7 +488,8 @@ final class YearEndChecklistService
             $taxPersistenceResult = $taxComputationService->persistSummariesForYearEndLock(
                 $companyId,
                 $accountingPeriodId,
-                (array)(($finalTaxFreeze['tax_readiness'] ?? [])['periods'] ?? [])
+                (array)(($finalTaxFreeze['tax_readiness'] ?? [])['periods'] ?? []),
+                (string)($finalTaxFreeze['freeze_manifest_hash'] ?? '')
             );
             if (empty($taxPersistenceResult['success'])) {
                 return $this->rollbackLockTransaction($transaction, [

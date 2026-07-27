@@ -262,11 +262,24 @@ $harness->check('GoldenYearEndLifecycle', 'previews the split-period CT provisio
         }
         $finalReadiness = (new \eel_accounts\Service\YearEndTaxReadinessService())
             ->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
+        $rejectedEvidence = (new \eel_accounts\Service\CorporationTaxComputationService())
+            ->persistSummariesForYearEndLock(
+                $companyId,
+                $accountingPeriodId,
+                (array)($finalReadiness['periods'] ?? []),
+                str_repeat('0', 64)
+            );
+        $harness->assertSame(false, (bool)($rejectedEvidence['success'] ?? true));
+        $harness->assertTrue(str_contains(
+            implode(' ', array_map('strval', (array)($rejectedEvidence['errors'] ?? []))),
+            'does not match the final approved Year End tax basis'
+        ));
         $finalEvidence = (new \eel_accounts\Service\CorporationTaxComputationService())
             ->persistSummariesForYearEndLock(
                 $companyId,
                 $accountingPeriodId,
-                (array)($finalReadiness['periods'] ?? [])
+                (array)($finalReadiness['periods'] ?? []),
+                (string)($finalReadiness['freeze_manifest_hash'] ?? '')
             );
         if (empty($finalEvidence['success'])) {
             throw new RuntimeException('Final split-period CT evidence failed: '

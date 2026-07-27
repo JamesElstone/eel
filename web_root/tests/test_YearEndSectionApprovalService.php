@@ -121,6 +121,21 @@ $harness->run(\eel_accounts\Service\YearEndSectionApprovalService::class, static
         $harness->assertSame('no', (string)$answers['filing_scope.ct600b']);
     });
 
+    $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'versions canonical tax review bundles independently from pre-canonical caches', static function () use ($harness, $service): void {
+        $definitionToken = new ReflectionMethod($service, 'definitionToken');
+        $canonicalJson = new ReflectionMethod($service, 'canonicalJson');
+        $expected = hash('sha256', (string)$canonicalJson->invoke($service, [
+            'contract_version' => \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION,
+            'check_code' => 'tax_readiness_acknowledgement',
+            'questions' => ['provider' => 'tax_filing_scope_v3_canonical_freeze'],
+        ]));
+
+        $harness->assertSame(
+            $expected,
+            (string)$definitionToken->invoke($service, 'tax_readiness_acknowledgement')
+        );
+    });
+
     $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'accepts a refreshed tax approval bundle when only its scope gate changed', static function () use ($harness, $service): void {
         $method = new ReflectionMethod($service, 'taxBundleChangedOnlyByScope');
         $previous = [

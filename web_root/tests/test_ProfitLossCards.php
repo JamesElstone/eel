@@ -33,6 +33,7 @@ $harness->run(_pl_tradingCard::class, static function (GeneratedServiceClassTest
         $harness->assertTrue(str_contains($html, 'Sales by day'));
         $harness->assertTrue(str_contains($html, '&#163;1,250.50 sales on 15 January 2025'));
         $harness->assertTrue(str_contains($html, '<strong>Total sales:</strong> &#163;1,750.50'));
+        $harness->assertSame(false, str_contains($html, 'calendar-heatmap-year-select'));
     });
 });
 

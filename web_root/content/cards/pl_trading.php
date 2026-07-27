@@ -49,6 +49,7 @@ final class _pl_tradingCard extends CardBaseFramework
             'end_date' => (string)($heatmap['period_end'] ?? ''),
             'value_label' => 'sales',
             'input_name' => 'trading_sales_date',
+            'range_control' => ['type' => 'date', 'options' => []],
             'legend' => true,
         ]);
 

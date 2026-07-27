@@ -329,17 +329,29 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
 
     private function bridgeRows(array $companySettings, array $period): array
     {
-        return [
+        $rows = [
             ['Accounting profit or loss', $this->money($companySettings, $period['accounting_profit'] ?? 0)],
             ['Add back disallowable expenses', $this->money($companySettings, $period['disallowable_add_backs'] ?? 0)],
             ['Add back depreciation', $this->money($companySettings, $period['depreciation_add_back'] ?? 0)],
             ['Add back capital expenditure', $this->money($companySettings, $period['capital_add_backs'] ?? 0)],
+        ];
+        $roundingAdjustment = round((float)(
+            $period['accounting_allocation_basis']['apportionment_rounding_adjustment'] ?? 0
+        ), 2);
+        if (abs($roundingAdjustment) >= 0.005) {
+            $rows[] = [
+                'Apportionment rounding adjustment',
+                $this->money($companySettings, $roundingAdjustment),
+            ];
+        }
+
+        return array_merge($rows, [
             ['Deduct capital allowances', $this->money($companySettings, 0 - (float)($period['capital_allowances'] ?? 0))],
             ['Taxable result before losses', $this->money($companySettings, $period['taxable_before_losses'] ?? 0)],
             ['Less losses used', $this->money($companySettings, 0 - (float)($period['losses_used'] ?? $period['loss_utilised'] ?? 0))],
             ['Taxable profit after losses', $this->money($companySettings, $period['taxable_profit'] ?? 0)],
             ['Ordinary Corporation Tax [CT600 box 475]', $this->money($companySettings, $period['ordinary_corporation_tax'] ?? 0)],
-        ];
+        ]);
     }
 
     private function rateBandsHtml(array $companySettings, array $period): string

@@ -121,6 +121,10 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
                     'loss_created' => 0,
                     'loss_utilised' => 0,
                     'losses_carried_forward' => 20,
+                    'accounting_allocation_basis' => [
+                        'allocation_method' => 'adjusted_result_first',
+                        'apportionment_rounding_adjustment' => 0.01,
+                    ],
                     'ct_rate_bands' => [
                         [
                             'financial_year' => 'FY2023',
@@ -151,6 +155,10 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
                     'loss_created' => 0,
                     'loss_utilised' => 20,
                     'losses_carried_forward' => 25.67,
+                    'accounting_allocation_basis' => [
+                        'allocation_method' => 'adjusted_result_first',
+                        'apportionment_rounding_adjustment' => -0.01,
+                    ],
                     'ct_rate_bands' => [],
                     'warnings' => ['A later filing warning must not be displayed at Year End.'],
                     'hard_gate_diagnostics' => [[
@@ -190,6 +198,7 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(true, str_contains($html, 'Taxable Profit Bridge'));
         $harness->assertSame(true, str_contains($html, 'Accounting profit or loss'));
         $harness->assertSame(true, str_contains($html, 'Add back capital expenditure'));
+        $harness->assertSame(2, substr_count($html, 'Apportionment rounding adjustment'));
         $harness->assertSame(true, str_contains($html, 'Deduct capital allowances'));
         $harness->assertSame(true, str_contains($html, 'Loss Movement'));
         $harness->assertSame(true, str_contains($html, 'Rate Bands'));
@@ -260,6 +269,7 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(false, str_contains($html, 'Open Tax Workflow'));
         $harness->assertSame(true, str_contains($html, 'Overall Tax Position'));
         $harness->assertSame(true, str_contains($html, 'CT Period 1: 01/10/2025 to 30/09/2026'));
+        $harness->assertSame(false, str_contains($html, 'Apportionment rounding adjustment'));
         $harness->assertSame(true, str_contains($html, 'summary-grid four'));
         $harness->assertSame(false, str_contains($html, 'Post / Update CT Provisions'));
     });

@@ -63,6 +63,101 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(-101, array_sum($negative));
         });
 
+        $harness->check(\eel_accounts\Service\CorporationTaxComputationService::class, 'apportions the adjusted result before reconciling naturally rounded component disclosures', static function () use ($harness, $service): void {
+            $allocate = new ReflectionMethod($service, 'allocateAccountingComponentsByInclusiveDays');
+            $allocate->setAccessible(true);
+            $result = $allocate->invoke(
+                $service,
+                [
+                    'accounting_profit' => -12711,
+                    'disallowable_add_backs' => 0,
+                    'capital_add_backs' => 0,
+                    'depreciation_add_back' => 19741,
+                ],
+                [1 => 365, 2 => 26],
+                391
+            );
+
+            $harness->assertSame(-11866, (int)$result[1]['accounting_profit']);
+            $harness->assertSame(-845, (int)$result[2]['accounting_profit']);
+            $harness->assertSame(18428, (int)$result[1]['depreciation_add_back']);
+            $harness->assertSame(1313, (int)$result[2]['depreciation_add_back']);
+            $harness->assertSame(6562, (int)$result[1]['component_subtotal']);
+            $harness->assertSame(468, (int)$result[2]['component_subtotal']);
+            $harness->assertSame(6563, (int)$result[1]['adjusted_result_before_capital_allowances']);
+            $harness->assertSame(467, (int)$result[2]['adjusted_result_before_capital_allowances']);
+            $harness->assertSame(1, (int)$result[1]['apportionment_rounding_adjustment']);
+            $harness->assertSame(-1, (int)$result[2]['apportionment_rounding_adjustment']);
+            $harness->assertSame(
+                0,
+                array_sum(array_column($result, 'apportionment_rounding_adjustment'))
+            );
+            $harness->assertSame(
+                -12711,
+                array_sum(array_column($result, 'accounting_profit'))
+            );
+            $harness->assertSame(
+                19741,
+                array_sum(array_column($result, 'depreciation_add_back'))
+            );
+
+            $taxable = new ReflectionMethod($service, 'taxableBeforeLossesForCtPeriod');
+            $taxable->setAccessible(true);
+            $harness->assertSame(
+                -563.21,
+                $taxable->invoke(
+                    $service,
+                    [
+                        'pnl' => [
+                            'profit_before_tax' => -118.66,
+                            'disallowable_add_backs' => 0.0,
+                            'capital_add_backs' => 0.0,
+                        ],
+                        'adjusted_result_before_capital_allowances' => 65.63,
+                    ],
+                    [
+                        'depreciation_add_back' => 184.28,
+                        'capital_allowances' => 628.84,
+                    ]
+                )
+            );
+
+            $losses = new ReflectionMethod($service, 'dividendCapacityLossCalculation');
+            $losses->setAccessible(true);
+            $firstLossPosition = $losses->invoke($service, -563.21, ['brought_forward' => 0.0]);
+            $harness->assertSame('563.21', number_format((float)$firstLossPosition['loss_created'], 2, '.', ''));
+            $harness->assertSame('563.21', number_format((float)$firstLossPosition['losses_carried_forward'], 2, '.', ''));
+
+            $secondLossPosition = $losses->invoke(
+                $service,
+                4.67,
+                ['brought_forward' => (float)$firstLossPosition['losses_carried_forward']]
+            );
+            $harness->assertSame('563.21', number_format((float)$secondLossPosition['losses_brought_forward'], 2, '.', ''));
+            $harness->assertSame('4.67', number_format((float)$secondLossPosition['losses_used'], 2, '.', ''));
+            $harness->assertSame('558.54', number_format((float)$secondLossPosition['losses_carried_forward'], 2, '.', ''));
+            $harness->assertSame('0.00', number_format((float)$secondLossPosition['taxable_profit'], 2, '.', ''));
+        });
+
+        $harness->check(\eel_accounts\Service\CorporationTaxComputationService::class, 'produces no reconciliation adjustment when natural components equal the adjusted-result allocation', static function () use ($harness, $service): void {
+            $allocate = new ReflectionMethod($service, 'allocateAccountingComponentsByInclusiveDays');
+            $allocate->setAccessible(true);
+            $result = $allocate->invoke(
+                $service,
+                [
+                    'accounting_profit' => 73000,
+                    'disallowable_add_backs' => 0,
+                    'capital_add_backs' => 0,
+                    'depreciation_add_back' => 0,
+                ],
+                [1 => 365, 2 => 26],
+                391
+            );
+
+            $harness->assertSame(false, array_key_exists('apportionment_rounding_adjustment', $result[1]));
+            $harness->assertSame(false, array_key_exists('apportionment_rounding_adjustment', $result[2]));
+        });
+
         $harness->check(\eel_accounts\Service\CorporationTaxComputationService::class, 'counts leap-day boundaries inclusively for CT allocation', static function () use ($harness, $service): void {
             $inclusiveDays = new ReflectionMethod($service, 'inclusiveDays');
             $inclusiveDays->setAccessible(true);

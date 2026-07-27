@@ -265,7 +265,7 @@ final class CorporationTaxComputationService
         $accountingAllocation = $this->ctPeriodAccountingAllocation($companyId, $accountingPeriodId, $ctPeriod);
         $pnl = (array)$accountingAllocation['pnl'];
         $assetAdjustments = $this->fetchAssetAdjustmentsForCtPeriod($companyId, $accountingPeriodId, $ctPeriod);
-        $taxableBeforeLosses = $this->taxableBeforeLosses($pnl, $assetAdjustments);
+        $taxableBeforeLosses = $this->taxableBeforeLossesForCtPeriod($accountingAllocation, $assetAdjustments);
 
         $losses = $this->ctPeriodLossPosition($companyId, $ctPeriodId);
         $lossUsed = min(max(0.0, $taxableBeforeLosses), (float)$losses['brought_forward']);
@@ -343,6 +343,9 @@ final class CorporationTaxComputationService
             'prepayment_preview_reliable' => $this->prepaymentPreviewReliable($pnl),
             'prepayment_preview_warnings' => $this->prepaymentPreviewDetails($pnl),
             'asset_adjustment_warning' => (string)($assetAdjustments['warning'] ?? ''),
+            'apportionment_rounding_adjustment' => (float)(
+                $accountingAllocation['basis']['apportionment_rounding_adjustment'] ?? 0
+            ),
             'computation_hash' => $computationHash,
         ];
 
@@ -1124,7 +1127,12 @@ final class CorporationTaxComputationService
      * their existing CT-period-specific paths.
      *
      * @param array<string, mixed> $ctPeriod
-     * @return array{pnl: array<string, mixed>, depreciation_add_back: float, basis: array<string, mixed>}
+     * @return array{
+     *   pnl: array<string, mixed>,
+     *   depreciation_add_back: float,
+     *   adjusted_result_before_capital_allowances?: float,
+     *   basis: array<string, mixed>
+     * }
      */
     private function ctPeriodAccountingAllocation(int $companyId, int $accountingPeriodId, array $ctPeriod): array
     {
@@ -1171,6 +1179,11 @@ final class CorporationTaxComputationService
                 ],
             ];
         }
+        $allocationMethod = $this->splitPeriodAllocationMethod(
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriods
+        );
 
         $metrics = $this->resolvedMetricsService();
         $accountingPeriod = $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
@@ -1208,49 +1221,186 @@ final class CorporationTaxComputationService
         $capitalAddBackPence = (int)round((float)($fullPnl['capital_add_backs'] ?? 0) * 100, 0, PHP_ROUND_HALF_UP);
         $depreciationPence = (int)round((float)($fullAssetAdjustments['depreciation_add_back'] ?? 0) * 100, 0, PHP_ROUND_HALF_UP);
 
-        $profitAllocations = $this->allocatePenceByInclusiveDays($profitPence, $periodDays, $accountingDays);
-        $disallowableAllocations = $this->allocatePenceByInclusiveDays($disallowablePence, $periodDays, $accountingDays);
-        $capitalAddBackAllocations = $this->allocatePenceByInclusiveDays($capitalAddBackPence, $periodDays, $accountingDays);
-        $depreciationAllocations = $this->allocatePenceByInclusiveDays($depreciationPence, $periodDays, $accountingDays);
+        $componentAllocations = $this->allocateAccountingComponentsByInclusiveDays(
+            [
+                'accounting_profit' => $profitPence,
+                'disallowable_add_backs' => $disallowablePence,
+                'capital_add_backs' => $capitalAddBackPence,
+                'depreciation_add_back' => $depreciationPence,
+            ],
+            $periodDays,
+            $accountingDays
+        );
+        $selectedAllocation = (array)($componentAllocations[$ctPeriodId] ?? []);
         $selectedDays = (int)($periodDays[$ctPeriodId] ?? 0);
         $pnl = $fullPnl;
-        $pnl['profit_before_tax'] = round((int)$profitAllocations[$ctPeriodId] / 100, 2);
-        $pnl['disallowable_add_backs'] = round((int)$disallowableAllocations[$ctPeriodId] / 100, 2);
-        $pnl['capital_add_backs'] = round((int)$capitalAddBackAllocations[$ctPeriodId] / 100, 2);
+        $pnl['profit_before_tax'] = round((int)($selectedAllocation['accounting_profit'] ?? 0) / 100, 2);
+        $pnl['disallowable_add_backs'] = round((int)($selectedAllocation['disallowable_add_backs'] ?? 0) / 100, 2);
+        $pnl['capital_add_backs'] = round((int)($selectedAllocation['capital_add_backs'] ?? 0) / 100, 2);
+        $adjustedResult = round(
+            (int)($selectedAllocation['adjusted_result_before_capital_allowances'] ?? 0) / 100,
+            2
+        );
+        $componentSubtotal = round((int)($selectedAllocation['component_subtotal'] ?? 0) / 100, 2);
+        $roundingAdjustmentPence = (int)($selectedAllocation['apportionment_rounding_adjustment'] ?? 0);
+        if ($allocationMethod === 'component_first_legacy_locked_set') {
+            $adjustedResult = $componentSubtotal;
+            $roundingAdjustmentPence = 0;
+        }
+
+        $basis = [
+            'method' => 'whole_accounting_period_inclusive_days',
+            'allocation_method' => $allocationMethod,
+            'rounding_method' => $allocationMethod === 'adjusted_result_first'
+                ? 'half_up_with_final_period_residual'
+                : 'component_pence_half_up_with_final_period_residual',
+            'time_apportioned' => true,
+            'guidance' => 'HMRC CTM01405',
+            'accounting_period_start' => $accountingStart,
+            'accounting_period_end' => $accountingEnd,
+            'accounting_period_days' => $accountingDays,
+            'ct_period_start' => $periodStart,
+            'ct_period_end' => $periodEnd,
+            'ct_period_days' => $selectedDays,
+            'ct_period_sequence_no' => (int)($ctPeriod['sequence_no'] ?? ($selectedIndex + 1)),
+            'ct_period_count' => count($ctPeriods),
+            'coverage_days' => array_sum($periodDays),
+            'coverage_complete' => array_sum($periodDays) === $accountingDays,
+            'rounding' => 'pennies_half_up_final_ct_period_residual',
+            'final_period_residual' => $selectedIndex === count($ctPeriods) - 1,
+            'whole_period_values' => [
+                'accounting_profit' => round($profitPence / 100, 2),
+                'disallowable_add_backs' => round($disallowablePence / 100, 2),
+                'capital_add_backs' => round($capitalAddBackPence / 100, 2),
+                'depreciation_add_back' => round($depreciationPence / 100, 2),
+                'adjusted_result_before_capital_allowances' => round(
+                    ($profitPence + $disallowablePence + $capitalAddBackPence + $depreciationPence) / 100,
+                    2
+                ),
+            ],
+            'allocated_values' => [
+                'accounting_profit' => round((int)($selectedAllocation['accounting_profit'] ?? 0) / 100, 2),
+                'disallowable_add_backs' => round((int)($selectedAllocation['disallowable_add_backs'] ?? 0) / 100, 2),
+                'capital_add_backs' => round((int)($selectedAllocation['capital_add_backs'] ?? 0) / 100, 2),
+                'depreciation_add_back' => round((int)($selectedAllocation['depreciation_add_back'] ?? 0) / 100, 2),
+                'component_subtotal' => $componentSubtotal,
+                'adjusted_result_before_capital_allowances' => $adjustedResult,
+            ],
+        ];
+        if ($roundingAdjustmentPence !== 0) {
+            $basis['apportionment_rounding_adjustment'] = round($roundingAdjustmentPence / 100, 2);
+        }
 
         return $this->ctPeriodAccountingAllocationCache[$cacheKey] = [
             'pnl' => $pnl,
-            'depreciation_add_back' => round((int)$depreciationAllocations[$ctPeriodId] / 100, 2),
-            'basis' => [
-                'method' => 'whole_accounting_period_inclusive_days',
-                'time_apportioned' => true,
-                'guidance' => 'HMRC CTM01405',
-                'accounting_period_start' => $accountingStart,
-                'accounting_period_end' => $accountingEnd,
-                'accounting_period_days' => $accountingDays,
-                'ct_period_start' => $periodStart,
-                'ct_period_end' => $periodEnd,
-                'ct_period_days' => $selectedDays,
-                'ct_period_sequence_no' => (int)($ctPeriod['sequence_no'] ?? ($selectedIndex + 1)),
-                'ct_period_count' => count($ctPeriods),
-                'coverage_days' => array_sum($periodDays),
-                'coverage_complete' => array_sum($periodDays) === $accountingDays,
-                'rounding' => 'pennies_half_up_final_ct_period_residual',
-                'final_period_residual' => $selectedIndex === count($ctPeriods) - 1,
-                'whole_period_values' => [
-                    'accounting_profit' => round($profitPence / 100, 2),
-                    'disallowable_add_backs' => round($disallowablePence / 100, 2),
-                    'capital_add_backs' => round($capitalAddBackPence / 100, 2),
-                    'depreciation_add_back' => round($depreciationPence / 100, 2),
-                ],
-                'allocated_values' => [
-                    'accounting_profit' => round((int)$profitAllocations[$ctPeriodId] / 100, 2),
-                    'disallowable_add_backs' => round((int)$disallowableAllocations[$ctPeriodId] / 100, 2),
-                    'capital_add_backs' => round((int)$capitalAddBackAllocations[$ctPeriodId] / 100, 2),
-                    'depreciation_add_back' => round((int)$depreciationAllocations[$ctPeriodId] / 100, 2),
-                ],
-            ],
+            'depreciation_add_back' => round((int)($selectedAllocation['depreciation_add_back'] ?? 0) / 100, 2),
+            'adjusted_result_before_capital_allowances' => $adjustedResult,
+            'basis' => $basis,
         ];
+    }
+
+    /**
+     * Keep a partially immutable split accounting period on the allocation
+     * method already evidenced by its submitted or accepted CT period.
+     *
+     * @param list<array<string, mixed>> $ctPeriods
+     */
+    private function splitPeriodAllocationMethod(
+        int $companyId,
+        int $accountingPeriodId,
+        array $ctPeriods
+    ): string {
+        $lockedMethods = [];
+        foreach ($ctPeriods as $period) {
+            if (!in_array((string)($period['status'] ?? ''), self::FINAL_CT_STATUSES, true)) {
+                continue;
+            }
+            $ctPeriodId = (int)($period['id'] ?? 0);
+            $stored = $ctPeriodId > 0
+                ? $this->storedLockedSummaryForCtPeriodId($companyId, $ctPeriodId)
+                : null;
+            if (!is_array($stored) || empty($stored['available'])) {
+                throw new \RuntimeException(
+                    'A final CT period in this split accounting period has no usable persisted allocation basis.'
+                );
+            }
+            if ((int)($stored['accounting_period_id'] ?? $accountingPeriodId) !== $accountingPeriodId) {
+                throw new \RuntimeException(
+                    'The persisted CT allocation basis does not belong to the selected accounting period.'
+                );
+            }
+            $storedMethod = (string)(
+                $stored['accounting_allocation_basis']['allocation_method'] ?? ''
+            );
+            $lockedMethods[] = $storedMethod === 'adjusted_result_first'
+                ? 'adjusted_result_first'
+                : 'component_first_legacy_locked_set';
+        }
+
+        $lockedMethods = array_values(array_unique($lockedMethods));
+        if (count($lockedMethods) > 1) {
+            throw new \RuntimeException(
+                'The immutable CT periods in this accounting period use inconsistent allocation methods.'
+            );
+        }
+
+        return (string)($lockedMethods[0] ?? 'adjusted_result_first');
+    }
+
+    /**
+     * @param array<string, int> $wholePeriodPence
+     * @param array<int, int> $periodDays
+     * @return array<int, array<string, int>>
+     */
+    private function allocateAccountingComponentsByInclusiveDays(
+        array $wholePeriodPence,
+        array $periodDays,
+        int $totalDays
+    ): array {
+        $componentKeys = [
+            'accounting_profit',
+            'disallowable_add_backs',
+            'capital_add_backs',
+            'depreciation_add_back',
+        ];
+        $componentAllocations = [];
+        foreach ($componentKeys as $componentKey) {
+            $componentAllocations[$componentKey] = $this->allocatePenceByInclusiveDays(
+                (int)($wholePeriodPence[$componentKey] ?? 0),
+                $periodDays,
+                $totalDays
+            );
+        }
+
+        $adjustedResultPence = array_sum(array_map(
+            static fn(string $componentKey): int => (int)($wholePeriodPence[$componentKey] ?? 0),
+            $componentKeys
+        ));
+        $adjustedAllocations = $this->allocatePenceByInclusiveDays(
+            $adjustedResultPence,
+            $periodDays,
+            $totalDays
+        );
+
+        $result = [];
+        foreach (array_keys($periodDays) as $periodId) {
+            $periodId = (int)$periodId;
+            $componentSubtotal = 0;
+            foreach ($componentKeys as $componentKey) {
+                $amount = (int)($componentAllocations[$componentKey][$periodId] ?? 0);
+                $result[$periodId][$componentKey] = $amount;
+                $componentSubtotal += $amount;
+            }
+            $authoritativeAdjustedResult = (int)($adjustedAllocations[$periodId] ?? 0);
+            $result[$periodId]['component_subtotal'] = $componentSubtotal;
+            $result[$periodId]['adjusted_result_before_capital_allowances'] = $authoritativeAdjustedResult;
+            $roundingAdjustment = $authoritativeAdjustedResult - $componentSubtotal;
+            if ($roundingAdjustment !== 0) {
+                $result[$periodId]['apportionment_rounding_adjustment'] = $roundingAdjustment;
+            }
+        }
+
+        return $result;
     }
 
     /**
@@ -1295,6 +1445,26 @@ final class CorporationTaxComputationService
             + (float)($assetAdjustments['depreciation_add_back'] ?? 0)
             - (float)($assetAdjustments['capital_allowances'] ?? 0),
             2
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $accountingAllocation
+     * @param array<string, mixed> $assetAdjustments
+     */
+    private function taxableBeforeLossesForCtPeriod(array $accountingAllocation, array $assetAdjustments): float
+    {
+        if (array_key_exists('adjusted_result_before_capital_allowances', $accountingAllocation)) {
+            return round(
+                (float)$accountingAllocation['adjusted_result_before_capital_allowances']
+                - (float)($assetAdjustments['capital_allowances'] ?? 0),
+                2
+            );
+        }
+
+        return $this->taxableBeforeLosses(
+            (array)($accountingAllocation['pnl'] ?? []),
+            $assetAdjustments
         );
     }
 
@@ -1594,9 +1764,11 @@ final class CorporationTaxComputationService
 
                 $lossBroughtForward = round(array_sum(array_column($lossPool, 'amount_remaining')), 2);
                 $accountingAllocation = $this->ctPeriodAccountingAllocation($companyId, $accountingPeriodId, $ctPeriod);
-                $pnl = (array)$accountingAllocation['pnl'];
                 $assetAdjustments = $this->fetchAssetAdjustmentsForCtPeriod($companyId, $accountingPeriodId, $ctPeriod);
-                $taxableBeforeLosses = $this->taxableBeforeLosses($pnl, $assetAdjustments);
+                $taxableBeforeLosses = $this->taxableBeforeLossesForCtPeriod(
+                    $accountingAllocation,
+                    $assetAdjustments
+                );
 
                 $lossUsed = 0.0;
                 if ($taxableBeforeLosses > 0) {
@@ -1742,6 +1914,23 @@ final class CorporationTaxComputationService
             $warnings,
             $this->prepaymentPreviewWarnings($current)
         )));
+        $steps = [
+            ['label' => 'Accounting profit or loss', 'amount' => round((float)$current['accounting_profit'], 2)],
+            ['label' => 'Add back disallowable expenses', 'amount' => round((float)$current['disallowable_add_backs'], 2)],
+            ['label' => 'Add back capital expenditure', 'amount' => round((float)($current['capital_add_backs'] ?? 0), 2)],
+            ['label' => 'Add back depreciation', 'amount' => round((float)$current['depreciation_add_back'], 2)],
+        ];
+        $roundingAdjustment = round((float)($current['apportionment_rounding_adjustment'] ?? 0), 2);
+        if (abs($roundingAdjustment) >= 0.005) {
+            $steps[] = ['label' => 'Apportionment rounding adjustment', 'amount' => $roundingAdjustment];
+        }
+        $steps = array_merge($steps, [
+            ['label' => 'Deduct capital allowances', 'amount' => round(0 - (float)$current['capital_allowances'], 2)],
+            ['label' => 'Taxable result before losses', 'amount' => round((float)$current['taxable_before_losses'], 2)],
+            ['label' => 'Less losses brought forward utilised', 'amount' => round(0 - (float)$current['loss_utilised'], 2)],
+            ['label' => 'Taxable profit after losses', 'amount' => round((float)$current['taxable_profit'], 2)],
+            ['label' => 'Corporation tax on profits', 'amount' => round((float)($current['ordinary_corporation_tax'] ?? $current['estimated_corporation_tax']), 2)],
+        ]);
 
         return [
             'available' => true,
@@ -1773,17 +1962,7 @@ final class CorporationTaxComputationService
             'calculation_status' => 'estimate',
             'confidence_status' => $warnings === [] ? 'ready_for_review' : 'review_required',
             'confidence_label' => $warnings === [] ? 'Ready for review' : 'Review required',
-            'steps' => [
-                ['label' => 'Accounting profit or loss', 'amount' => round((float)$current['accounting_profit'], 2)],
-                ['label' => 'Add back disallowable expenses', 'amount' => round((float)$current['disallowable_add_backs'], 2)],
-                ['label' => 'Add back capital expenditure', 'amount' => round((float)($current['capital_add_backs'] ?? 0), 2)],
-                ['label' => 'Add back depreciation', 'amount' => round((float)$current['depreciation_add_back'], 2)],
-                ['label' => 'Deduct capital allowances', 'amount' => round(0 - (float)$current['capital_allowances'], 2)],
-                ['label' => 'Taxable result before losses', 'amount' => round((float)$current['taxable_before_losses'], 2)],
-                ['label' => 'Less losses brought forward utilised', 'amount' => round(0 - (float)$current['loss_utilised'], 2)],
-                ['label' => 'Taxable profit after losses', 'amount' => round((float)$current['taxable_profit'], 2)],
-                ['label' => 'Corporation tax on profits', 'amount' => round((float)($current['ordinary_corporation_tax'] ?? $current['estimated_corporation_tax']), 2)],
-            ],
+            'steps' => $steps,
             'schedule' => array_values(array_map(
                 static fn(array $row): array => [
                     'accounting_period_id' => (int)$row['accounting_period_id'],

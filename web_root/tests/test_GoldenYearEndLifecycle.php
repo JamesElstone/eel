@@ -486,6 +486,7 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         $ctDisallowableAddBacks = 0.0;
         $ctDepreciationAddBack = 0.0;
         $ctAllocationBasis = [];
+        $ctAllocationAdjustments = [];
         $ctPeriods = (new \eel_accounts\Service\CorporationTaxPeriodService())->fetchForAccountingPeriod($companyId, $periodId);
         foreach ($ctPeriods as $ctPeriod) {
             $summary = (new \eel_accounts\Service\CorporationTaxComputationService())->fetchSummaryForCtPeriodId($companyId, (int)$ctPeriod['id']);
@@ -496,6 +497,9 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
             $ctDisallowableAddBacks += (float)($summary['disallowable_add_backs'] ?? 0);
             $ctDepreciationAddBack += (float)($summary['depreciation_add_back'] ?? 0);
             $ctAllocationBasis[] = (array)($summary['accounting_allocation_basis'] ?? []);
+            $ctAllocationAdjustments[] = (float)(
+                $summary['accounting_allocation_basis']['apportionment_rounding_adjustment'] ?? 0
+            );
         }
         $hmrcFacts = GoldenLedgerSpecification::hmrcTaxFacts()[$periodId];
         $harness->assertSame(number_format((float)$hmrcFacts['accounting_profit'], 2, '.', ''), number_format($ctAccountingProfit, 2, '.', ''));
@@ -507,6 +511,29 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
             $harness->assertSame('whole_accounting_period_inclusive_days', (string)($ctAllocationBasis[0]['method'] ?? ''));
             $harness->assertSame(391, (int)($ctAllocationBasis[0]['accounting_period_days'] ?? 0));
             $harness->assertTrue(!empty($ctAllocationBasis[1]['final_period_residual']));
+            foreach ($ctAllocationBasis as $basis) {
+                $harness->assertSame('adjusted_result_first', (string)($basis['allocation_method'] ?? ''));
+                $harness->assertSame(
+                    'half_up_with_final_period_residual',
+                    (string)($basis['rounding_method'] ?? '')
+                );
+                $harness->assertTrue(array_key_exists(
+                    'adjusted_result_before_capital_allowances',
+                    (array)($basis['whole_period_values'] ?? [])
+                ));
+                $harness->assertTrue(array_key_exists(
+                    'component_subtotal',
+                    (array)($basis['allocated_values'] ?? [])
+                ));
+                $harness->assertTrue(array_key_exists(
+                    'adjusted_result_before_capital_allowances',
+                    (array)($basis['allocated_values'] ?? [])
+                ));
+            }
+            $harness->assertSame(
+                '0.00',
+                number_format(array_sum($ctAllocationAdjustments), 2, '.', '')
+            );
         }
         $harness->assertSame(number_format((float)$expected['capital_allowances'], 2, '.', ''), number_format($ctCapitalAllowances, 2, '.', ''));
         $harness->assertSame(number_format((float)$expected['taxable_profit'], 2, '.', ''), number_format($ctTaxableProfit, 2, '.', ''));

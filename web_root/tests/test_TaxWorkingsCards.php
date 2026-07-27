@@ -134,6 +134,24 @@ foreach ($cardClasses as $className) {
                 $harness->assertTrue(str_contains($html, 'https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm01405'));
                 $harness->assertSame(false, str_contains($html, 'Estimated corporation tax'));
             });
+
+            $harness->check($className, 'shows a non-zero apportionment rounding adjustment and omits a zero adjustment', static function () use ($harness, $card): void {
+                $context = taxWorkingsCardsContext();
+                $context['services']['taxWorkings']['bridge'][] = [
+                    'label' => 'Apportionment rounding adjustment',
+                    'amount' => 0.01,
+                ];
+                $html = $card->render($context);
+                $harness->assertTrue(str_contains($html, 'Apportionment rounding adjustment'));
+                $harness->assertTrue(str_contains($html, '$ 0.01'));
+
+                $context['services']['taxWorkings']['bridge'] = array_values(array_filter(
+                    $context['services']['taxWorkings']['bridge'],
+                    static fn(array $step): bool => (string)($step['label'] ?? '') !== 'Apportionment rounding adjustment'
+                ));
+                $html = $card->render($context);
+                $harness->assertSame(false, str_contains($html, 'Apportionment rounding adjustment'));
+            });
         }
 
         if ($className === _tax_disallowable_add_backsCard::class) {

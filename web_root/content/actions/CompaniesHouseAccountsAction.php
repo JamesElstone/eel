@@ -160,10 +160,9 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
 
     private function downloadRevisedAccountsIxbrl(int $companyId, int $accountingPeriodId): never
     {
-        $filing = $this->service()->fetchContext($companyId, $accountingPeriodId);
-        $artifact = (array)($filing['prepared_artifact'] ?? []);
-        if (empty($artifact['current'])
-            && (string)($artifact['state'] ?? '') !== 'current') {
+        $artifact = (new \eel_accounts\Service\IxbrlArtifactDownloadService())
+            ->companiesHouse($companyId, $accountingPeriodId);
+        if (empty($artifact['ok']) || (string)($artifact['state'] ?? '') !== 'ready') {
             header('Content-Type: text/plain; charset=utf-8', true, 409);
             echo (string)(($artifact['errors'] ?? [])[0]
                 ?? 'The prepared Companies House iXBRL artifact is not current.');

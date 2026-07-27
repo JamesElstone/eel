@@ -339,8 +339,8 @@ final class IxbrlAction implements ActionInterfaceFramework
             exit;
         }
 
-        $artifact = (new \eel_accounts\Service\HmrcSubmissionPackageService())
-            ->locateAccountsIxbrl($companyId, $accountingPeriodId);
+        $artifact = (new \eel_accounts\Service\IxbrlArtifactDownloadService())
+            ->accounts($companyId, $accountingPeriodId);
         if (empty($artifact['ok']) || (string)($artifact['state'] ?? '') !== 'ready') {
             header('Content-Type: text/plain; charset=utf-8', true, 409);
             echo (string)(($artifact['errors'] ?? [])[0] ?? 'The filing-ready iXBRL artifact is not available.');
@@ -574,8 +574,8 @@ final class IxbrlAction implements ActionInterfaceFramework
             echo 'The submitted computation does not match the authenticated accounting context.';
             exit;
         }
-        $artifact = (new \eel_accounts\Service\HmrcSubmissionPackageService())
-            ->locateComputationsIxbrlForCtPeriod($companyId, $ctPeriodId);
+        $artifact = (new \eel_accounts\Service\IxbrlArtifactDownloadService())
+            ->computation($companyId, $accountingPeriodId, $ctPeriodId);
         if (empty($artifact['ok']) || (string)($artifact['state'] ?? '') !== 'ready') {
             header('Content-Type: text/plain; charset=utf-8', true, 409);
             echo (string)(($artifact['errors'] ?? [])[0] ?? 'The filing-ready computations iXBRL artifact is unavailable.');

@@ -175,6 +175,10 @@ $harness->check('GoldenYearEndLifecycle', 'previews the split-period CT provisio
         $acceptedRunId = (int)($acceptedPeriod['latest_computation_run_id'] ?? 0);
         $harness->assertTrue($acceptedCtPeriodId > 0);
         $harness->assertTrue($acceptedRunId > 0);
+        InterfaceDB::execute(
+            'UPDATE corporation_tax_periods SET status = :status WHERE id = :id',
+            ['status' => 'accepted', 'id' => $acceptedCtPeriodId]
+        );
         $harness->assertSame(
             2,
             (int)InterfaceDB::fetchColumn(
@@ -262,6 +266,14 @@ $harness->check('GoldenYearEndLifecycle', 'previews the split-period CT provisio
             throw new RuntimeException('Final split-period CT evidence failed: '
                 . implode(' ', array_map('strval', (array)($finalEvidence['errors'] ?? []))));
         }
+        $acceptedSummary = json_decode((string)InterfaceDB::fetchColumn(
+            'SELECT summary_json FROM corporation_tax_computation_runs WHERE id = :id',
+            ['id' => $acceptedRunId]
+        ), true);
+        $harness->assertSame(
+            (string)($finalEvidence['freeze_manifest_hash'] ?? ''),
+            (string)($acceptedSummary['year_end_freeze_manifest_hash'] ?? '')
+        );
         $statutoryProvision = round(
             (float)($postingBasis['estimated_corporation_tax'] ?? 0),
             2

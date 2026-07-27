@@ -457,7 +457,7 @@ final class CorporationTaxComputationService
             ];
         $periods = (array)($activePeriods['periods'] ?? []);
         $summaries = [];
-        $newRunIds = [];
+        $persistedRunIds = [];
         $errors = (array)($activePeriods['errors'] ?? []);
         $preparedByCtPeriod = [];
         foreach ($preparedSummaries ?? [] as $preparedSummary) {
@@ -483,6 +483,9 @@ final class CorporationTaxComputationService
                     continue;
                 }
                 $summaries[] = $summary;
+                if ((int)($summary['computation_run_id'] ?? 0) > 0) {
+                    $persistedRunIds[$ctPeriodId] = (int)$summary['computation_run_id'];
+                }
                 continue;
             }
             if ($preparedSummaries !== null) {
@@ -506,7 +509,7 @@ final class CorporationTaxComputationService
             }
             $summaries[] = $summary;
             if ((int)($summary['computation_run_id'] ?? 0) > 0) {
-                $newRunIds[(int)$summary['ct_period_id']] = (int)$summary['computation_run_id'];
+                $persistedRunIds[(int)$summary['ct_period_id']] = (int)$summary['computation_run_id'];
             }
         }
 
@@ -552,7 +555,7 @@ final class CorporationTaxComputationService
                 }
                 continue;
             }
-            $runId = (int)($newRunIds[(int)($summary['ct_period_id'] ?? 0)] ?? 0);
+            $runId = (int)($persistedRunIds[(int)($summary['ct_period_id'] ?? 0)] ?? 0);
             if ($runId > 0) {
                 $this->updatePersistedHardGateDiagnostics($runId, $summary);
             }

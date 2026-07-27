@@ -287,6 +287,7 @@ $harness->check('GoldenYearEndLifecycle', 'keeps a following-period profit estim
     $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
     $ap79 = 9111;
     $ap80 = 9112;
+    goldenYearEndSavePartyLoanTerms($companyId);
 
     InterfaceDB::beginTransaction();
     try {
@@ -377,6 +378,7 @@ $harness->check('GoldenYearEndLifecycle', 'keeps a following-period profit estim
 $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves reporting semantics when completed periods are locked', static function () use ($harness): void {
     $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
     $periods = [9111, 9112, 9113];
+    goldenYearEndSavePartyLoanTerms($companyId);
     foreach ($periods as $periodId) {
         $sync = (new \eel_accounts\Service\CorporationTaxPeriodService())
             ->syncForAccountingPeriod($companyId, $periodId);
@@ -545,6 +547,7 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
                 throw new RuntimeException('AP ' . $periodId . ' CT persistence failed: ' . implode(' ', (array)($taxPersistence['errors'] ?? [])));
             }
             $harness->assertTrue(!empty($taxPersistence['success']));
+            goldenYearEndApproveDirectorLoanReview($companyId, $periodId, 'golden_year_end_test');
             $approvedFreezeManifestHash = (new \eel_accounts\Service\YearEndAcknowledgementService())
                 ->hashBasis((array)($approvalBasis['freeze_manifest'] ?? []));
             foreach ((array)($taxPersistence['summaries'] ?? []) as $persistedSummary) {
@@ -624,6 +627,29 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
     }
 });
 
+function goldenYearEndSavePartyLoanTerms(int $companyId): void
+{
+    $saved = (new \eel_accounts\Service\ParticipatorLoanPartyTermsService())->save(
+        $companyId,
+        GoldenAccountsFixture::GOLDEN_PARTY_ID,
+        [
+            'interest_rate_percent' => 0,
+            'security_type' => 'unsecured',
+            'repayable_on_demand' => 1,
+            'repayment_timing' => 'within_12_months',
+            'deferment_right_confirmed' => 0,
+            'set_off_right_confirmed' => 0,
+            'settlement_intention' => 'independently',
+        ],
+        'golden_year_end_test'
+    );
+    if (empty($saved['success'])) {
+        throw new RuntimeException(
+            'Golden Participator Loan terms failed: ' . implode(' ', (array)($saved['errors'] ?? []))
+        );
+    }
+}
+
 function goldenClosePeriodForFollowingPeriodControl(
     GeneratedServiceClassTestHarness $harness,
     int $companyId,
@@ -689,9 +715,35 @@ function goldenClosePeriodForFollowingPeriodControl(
         throw new RuntimeException('Following-period CT persistence failed: ' . implode(' ', (array)($taxPersistence['errors'] ?? [])));
     }
 
+    goldenYearEndApproveDirectorLoanReview(
+        $companyId,
+        $accountingPeriodId,
+        'golden_following_period_control'
+    );
     $lock = (new \eel_accounts\Service\YearEndLockService())
         ->lockPeriod($companyId, $accountingPeriodId, 'golden_following_period_control');
     $harness->assertTrue(!empty($lock['success']));
+}
+
+function goldenYearEndApproveDirectorLoanReview(
+    int $companyId,
+    int $accountingPeriodId,
+    string $actor
+): void {
+    $statement = (new \eel_accounts\Service\DirectorLoanService())
+        ->fetchStatement($companyId, $accountingPeriodId);
+    if (empty($statement['success']) || empty($statement['has_activity'])) {
+        return;
+    }
+
+    $approval = (new \eel_accounts\Service\DirectorLoanReconciliationService())
+        ->saveYearEndReview($companyId, $accountingPeriodId, true, $actor);
+    if (empty($approval['success'])) {
+        throw new RuntimeException(
+            'AP ' . $accountingPeriodId . ' Director Loan Year End approval failed: '
+            . implode(' ', (array)($approval['errors'] ?? []))
+        );
+    }
 }
 
 function goldenSaveReserveReviewForClose(int $companyId, int $accountingPeriodId): void

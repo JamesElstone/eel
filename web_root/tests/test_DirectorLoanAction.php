@@ -38,7 +38,7 @@ $harness->run(DirectorLoanAction::class, static function (
         $harness->assertSame([], $result->flashMessages());
     });
 
-    $harness->check(DirectorLoanAction::class, 'saves reporting metadata on a locked period and refreshes statutory reports', static function () use ($harness, $action): void {
+    $harness->check(DirectorLoanAction::class, 'saves party terms for an open period and refreshes statutory reports', static function () use ($harness, $action): void {
         InterfaceDB::beginTransaction();
         try {
             StandardNominalTestFixture::ensureNominals(['2100']);
@@ -72,16 +72,18 @@ $harness->run(DirectorLoanAction::class, static function (
                 ['company_id' => $companyId, 'label' => 'Locked Action AP']
             );
             InterfaceDB::prepareExecute(
-                'INSERT INTO year_end_reviews (
-                    company_id, accounting_period_id, is_locked, locked_at, locked_by
-                 ) VALUES (
-                    :company_id, :accounting_period_id, 1, CURRENT_TIMESTAMP, :locked_by
-                 )',
+                'INSERT INTO company_parties (company_id, party_type, legal_name)
+                 VALUES (:company_id, :party_type, :legal_name)',
                 [
                     'company_id' => $companyId,
-                    'accounting_period_id' => $periodId,
-                    'locked_by' => 'test',
+                    'party_type' => 'individual',
+                    'legal_name' => 'Action Participator',
                 ]
+            );
+            $partyId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM company_parties
+                 WHERE company_id = :company_id AND legal_name = :legal_name',
+                ['company_id' => $companyId, 'legal_name' => 'Action Participator']
             );
 
             $result = $action->handle(
@@ -89,18 +91,17 @@ $harness->run(DirectorLoanAction::class, static function (
                     [],
                     [
                         'card_action' => 'DirectorLoan',
-                        'intent' => 'save_director_loan_reporting_presentation',
+                        'intent' => 'save_participator_loan_party_terms',
                         'company_id' => (string)$companyId,
                         'accounting_period_id' => (string)$periodId,
-                        'classification' => 'after_more_than_one_year',
-                        'deferment_right_confirmed' => '1',
-                        'deferment_evidence' => 'Executed agreement prevents demand before 1 January 2027.',
-                        'set_off_right_confirmed' => '1',
-                        'set_off_net_settlement_intended' => '1',
-                        'set_off_evidence' => 'Executed set-off agreement and documented simultaneous settlement intention.',
+                        'party_id' => (string)$partyId,
                         'interest_rate_percent' => '2.5',
-                        'main_terms' => 'Unsecured facility.',
-                        'repayment_conditions' => 'Repayable under the executed agreement.',
+                        'security_type' => 'secured',
+                        'repayable_on_demand' => '0',
+                        'repayment_timing' => 'after_12_months',
+                        'deferment_right_confirmed' => '1',
+                        'set_off_right_confirmed' => '1',
+                        'settlement_intention' => 'simultaneous',
                     ],
                     [
                         'REQUEST_METHOD' => 'POST',
@@ -120,6 +121,7 @@ $harness->run(DirectorLoanAction::class, static function (
                 'year.end.director.loan.offset',
                 'companies.house.snapshot',
                 'year.end.companies.house.comparison',
+                'year.end.state',
                 'ixbrl.readiness',
                 'ixbrl.accounts.mapping',
                 'ixbrl.facts.preview',
@@ -129,29 +131,66 @@ $harness->run(DirectorLoanAction::class, static function (
             }
             $harness->assertTrue(str_contains(
                 (string)($result->flashMessages()[0]['message'] ?? ''),
-                'supporting evidence'
+                'party terms saved'
             ));
             $harness->assertSame(1, InterfaceDB::countWhere(
-                'director_loan_reporting_presentations',
-                ['company_id' => $companyId, 'accounting_period_id' => $periodId]
+                'participator_loan_party_terms',
+                ['company_id' => $companyId, 'party_id' => $partyId]
             ));
-            $harness->assertSame(1, (int)InterfaceDB::fetchColumn(
-                'SELECT is_locked
-                 FROM year_end_reviews
-                 WHERE company_id = :company_id
-                   AND accounting_period_id = :accounting_period_id',
-                ['company_id' => $companyId, 'accounting_period_id' => $periodId]
+            $harness->assertSame('simultaneous', (string)InterfaceDB::fetchColumn(
+                'SELECT settlement_intention
+                 FROM participator_loan_party_terms
+                 WHERE company_id = :company_id AND party_id = :party_id',
+                ['company_id' => $companyId, 'party_id' => $partyId]
             ));
+            InterfaceDB::prepareExecute(
+                'INSERT INTO year_end_reviews (
+                    company_id, accounting_period_id, is_locked, locked_at, locked_by
+                 ) VALUES (
+                    :company_id, :accounting_period_id, 1, CURRENT_TIMESTAMP, :locked_by
+                 )',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $periodId,
+                    'locked_by' => 'test',
+                ]
+            );
+            \eel_accounts\Support\RequestCache::clear();
+            $locked = $action->handle(
+                new RequestFramework(
+                    [],
+                    [
+                        'card_action' => 'DirectorLoan',
+                        'intent' => 'save_participator_loan_party_terms',
+                        'company_id' => (string)$companyId,
+                        'accounting_period_id' => (string)$periodId,
+                        'party_id' => (string)$partyId,
+                        'interest_rate_percent' => '9.5',
+                    ],
+                    ['REQUEST_METHOD' => 'POST'],
+                    [],
+                    [],
+                    null
+                ),
+                createTestPageServiceFramework()
+            );
+            $harness->assertSame(false, $locked->isSuccess());
+            $lockedTerms = (new \eel_accounts\Service\ParticipatorLoanPartyTermsService())
+                ->fetchTerms($companyId, $partyId);
+            $harness->assertSame(
+                '2.5000',
+                number_format((float)($lockedTerms['terms']['interest_rate_percent'] ?? -1), 4, '.', '')
+            );
 
             $invalid = $action->handle(
                 new RequestFramework(
                     [],
                     [
                         'card_action' => 'DirectorLoan',
-                        'intent' => 'save_director_loan_reporting_presentation',
+                        'intent' => 'save_participator_loan_party_terms',
                         'company_id' => (string)$companyId,
                         'accounting_period_id' => (string)$periodId,
-                        'classification' => 'invalid',
+                        'party_id' => '0',
                     ],
                     ['REQUEST_METHOD' => 'POST'],
                     [],

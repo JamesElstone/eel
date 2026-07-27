@@ -202,6 +202,7 @@ function goldenCt600aCompleteFilingInputs(int $companyId, int $accountingPeriodI
 
 function goldenCt600aFreezeAndApprove(GeneratedServiceClassTestHarness $harness, int $companyId, int $accountingPeriodId): void
 {
+    goldenCt600aSavePartyLoanTerms($companyId);
     InterfaceDB::beginTransaction();
     try {
         $readiness = (new \eel_accounts\Service\YearEndTaxReadinessService())
@@ -222,6 +223,8 @@ function goldenCt600aFreezeAndApprove(GeneratedServiceClassTestHarness $harness,
         $taxPersistence = (new \eel_accounts\Service\CorporationTaxComputationService())
             ->persistSummariesForYearEndLock($companyId, $accountingPeriodId);
         goldenCt600aRequireSuccess($taxPersistence);
+        goldenCt600aRequireSuccess((new \eel_accounts\Service\DirectorLoanReconciliationService())
+            ->saveYearEndReview($companyId, $accountingPeriodId, true, 'golden_ct600a'));
         $approvedFreezeManifestHash = (new \eel_accounts\Service\YearEndAcknowledgementService())
             ->hashBasis((array)($basis['freeze_manifest'] ?? []));
         foreach ((array)($taxPersistence['summaries'] ?? []) as $persistedSummary) {
@@ -248,6 +251,24 @@ function goldenCt600aFreezeAndApprove(GeneratedServiceClassTestHarness $harness,
     if ((int)($approval['approval_id'] ?? 0) <= 0) {
         throw new RuntimeException('The golden CT600A filing basis could not be approved.');
     }
+}
+
+function goldenCt600aSavePartyLoanTerms(int $companyId): void
+{
+    goldenCt600aRequireSuccess((new \eel_accounts\Service\ParticipatorLoanPartyTermsService())->save(
+        $companyId,
+        GoldenAccountsFixture::CT600A_PARTY_ID,
+        [
+            'interest_rate_percent' => 0,
+            'security_type' => 'unsecured',
+            'repayable_on_demand' => 1,
+            'repayment_timing' => 'within_12_months',
+            'deferment_right_confirmed' => 0,
+            'set_off_right_confirmed' => 0,
+            'settlement_intention' => 'independently',
+        ],
+        'golden_ct600a'
+    ));
 }
 
 function goldenCt600aPostLateRepayment(): void

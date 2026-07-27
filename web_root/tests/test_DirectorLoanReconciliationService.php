@@ -106,6 +106,56 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
         });
     });
 
+    $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'evaluates set-off independently for each party', static function () use ($harness, $service): void {
+        directorLoanReclassificationWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            $grossTerms = directorLoanReclassificationSavePartyTerms(
+                (int)$fixture['company_id'],
+                (int)$fixture['other_party_id'],
+                false
+            );
+            $harness->assertSame(true, (bool)($grossTerms['success'] ?? false));
+
+            directorLoanReclassificationInsertLine($fixture, (int)$fixture['asset_nominal_id'], 300.00, 0.00, (int)$fixture['primary_party_id'], 'primary-mixed-asset');
+            directorLoanReclassificationInsertLine($fixture, (int)$fixture['liability_nominal_id'], 0.00, 500.00, (int)$fixture['primary_party_id'], 'primary-mixed-liability');
+            directorLoanReclassificationInsertLine($fixture, (int)$fixture['asset_nominal_id'], 200.00, 0.00, (int)$fixture['other_party_id'], 'other-mixed-asset');
+            directorLoanReclassificationInsertLine($fixture, (int)$fixture['liability_nominal_id'], 0.00, 400.00, (int)$fixture['other_party_id'], 'other-mixed-liability');
+
+            $context = $service->fetchContext(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id']
+            );
+            $facts = [];
+            foreach ((array)($context['party_facts'] ?? []) as $fact) {
+                $facts[(int)($fact['party_id'] ?? 0)] = (array)$fact;
+            }
+
+            $harness->assertSame('300.00', directorLoanReclassificationMoney($context['desired_reclassification_amount'] ?? 0));
+            $harness->assertSame('300.00', directorLoanReclassificationMoney(
+                $facts[(int)$fixture['primary_party_id']]['desired_reclassification'] ?? 0
+            ));
+            $harness->assertSame(true, (bool)(
+                $facts[(int)$fixture['primary_party_id']]['set_off_permitted'] ?? false
+            ));
+            $harness->assertSame('0.00', directorLoanReclassificationMoney(
+                $facts[(int)$fixture['other_party_id']]['desired_reclassification'] ?? 0
+            ));
+            $harness->assertSame(false, (bool)(
+                $facts[(int)$fixture['other_party_id']]['set_off_permitted'] ?? true
+            ));
+            $harness->assertSame('200.00', directorLoanReclassificationMoney(
+                $facts[(int)$fixture['other_party_id']]['reportable_asset'] ?? 0
+            ));
+            $harness->assertSame('400.00', directorLoanReclassificationMoney(
+                $facts[(int)$fixture['other_party_id']]['reportable_liability'] ?? 0
+            ));
+
+            $warnings = implode(' ', (array)($context['warnings'] ?? []));
+            $harness->assertTrue(str_contains($warnings, 'Other Director:'));
+            $harness->assertTrue(str_contains($warnings, 'remain gross'));
+            $harness->assertSame(false, str_contains($warnings, 'Primary Director:'));
+        });
+    });
+
     $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'repairs the combined legacy unattributed offset once and preserves its source journal', static function () use ($harness, $service): void {
         directorLoanReclassificationWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
             $legacy = (new \eel_accounts\Service\ManualJournalService())->saveTaggedJournal(
@@ -195,6 +245,117 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
         });
     });
 
+    $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'keeps an approved basis current when live party terms become lock snapshots', static function () use ($harness, $service): void {
+        directorLoanReclassificationWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            directorLoanReclassificationInsertLine($fixture, (int)$fixture['asset_nominal_id'], 253.00, 0.00, (int)$fixture['primary_party_id'], 'snapshot-basis-asset');
+            directorLoanReclassificationInsertLine($fixture, (int)$fixture['liability_nominal_id'], 0.00, 1288.63, (int)$fixture['primary_party_id'], 'snapshot-basis-liability');
+
+            $approved = $service->saveYearEndReview(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                true,
+                'test'
+            );
+            $harness->assertSame([], (array)($approved['errors'] ?? []));
+            $harness->assertSame(true, (bool)($approved['success'] ?? false));
+            $posted = $service->postOffset(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                'test'
+            );
+            $harness->assertSame(true, (bool)($posted['success'] ?? false));
+
+            $sectionService = new \eel_accounts\Service\YearEndSectionApprovalService();
+            $before = $service->fetchContext(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id']
+            );
+            $beforeSection = $sectionService->fetchReview(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                \eel_accounts\Service\DirectorLoanReconciliationService::YEAR_END_ACKNOWLEDGEMENT_CODE
+            );
+            $beforeFact = (array)(($before['party_facts'] ?? [])[0] ?? []);
+            $harness->assertSame('live', (string)($beforeFact['terms_source'] ?? ''));
+            $harness->assertSame(false, (bool)($beforeFact['terms_snapshot'] ?? true));
+            $harness->assertSame(true, (bool)($before['acknowledgement_current'] ?? false));
+            $harness->assertSame(true, (bool)($beforeSection['acknowledgement_current'] ?? false));
+
+            $snapshotted = (new \eel_accounts\Service\ParticipatorLoanPartyTermsService())->snapshotPeriod(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                'test'
+            );
+            $harness->assertSame(true, (bool)($snapshotted['success'] ?? false));
+            directorLoanReclassificationSetLocked($fixture);
+
+            $after = $service->fetchContext(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id']
+            );
+            $afterSection = $sectionService->fetchReview(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                \eel_accounts\Service\DirectorLoanReconciliationService::YEAR_END_ACKNOWLEDGEMENT_CODE
+            );
+            $afterFact = (array)(($after['party_facts'] ?? [])[0] ?? []);
+            $harness->assertSame('locked_snapshot', (string)($afterFact['terms_source'] ?? ''));
+            $harness->assertSame(true, (bool)($afterFact['terms_snapshot'] ?? false));
+            $harness->assertSame((int)($beforeFact['terms_revision'] ?? 0), (int)($afterFact['terms_revision'] ?? -1));
+            $harness->assertSame(true, (bool)($after['acknowledgement_current'] ?? false));
+            $harness->assertSame(true, (bool)($afterSection['acknowledgement_current'] ?? false));
+        });
+    });
+
+    $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'makes an open-period approval stale when live party terms change', static function () use ($harness, $service): void {
+        directorLoanReclassificationWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            directorLoanReclassificationInsertLine($fixture, (int)$fixture['liability_nominal_id'], 0.00, 250.00, (int)$fixture['primary_party_id'], 'terms-stale-liability');
+            $approved = $service->saveYearEndReview(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                true,
+                'test'
+            );
+            $harness->assertSame([], (array)($approved['errors'] ?? []));
+            $harness->assertSame(true, (bool)($approved['success'] ?? false));
+            $before = $service->fetchContext(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id']
+            );
+            $harness->assertSame(true, (bool)($before['acknowledgement_current'] ?? false));
+
+            $changed = (new \eel_accounts\Service\ParticipatorLoanPartyTermsService())->save(
+                (int)$fixture['company_id'],
+                (int)$fixture['primary_party_id'],
+                [
+                    'interest_rate_percent' => 3.5,
+                    'security_type' => 'unsecured',
+                    'repayable_on_demand' => true,
+                    'repayment_timing' => 'within_12_months',
+                    'deferment_right_confirmed' => false,
+                    'set_off_right_confirmed' => true,
+                    'settlement_intention' => 'simultaneous',
+                ],
+                'test'
+            );
+            $harness->assertSame(true, (bool)($changed['success'] ?? false));
+            $harness->assertSame(true, (bool)($changed['changed'] ?? false));
+
+            $after = $service->fetchContext(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id']
+            );
+            $section = (new \eel_accounts\Service\YearEndSectionApprovalService())->fetchReview(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                \eel_accounts\Service\DirectorLoanReconciliationService::YEAR_END_ACKNOWLEDGEMENT_CODE
+            );
+            $harness->assertSame(false, (bool)($after['acknowledgement_current'] ?? true));
+            $harness->assertSame('stale', (string)($after['acknowledgement_state'] ?? ''));
+            $harness->assertSame(false, (bool)($section['acknowledgement_current'] ?? true));
+        });
+    });
+
     $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'reverses only the reduction in a previously posted cumulative reclassification', static function () use ($harness, $service): void {
         directorLoanReclassificationWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
             $assetLineId = directorLoanReclassificationInsertLine($fixture, (int)$fixture['asset_nominal_id'], 253.00, 0.00, (int)$fixture['primary_party_id'], 'asset');
@@ -250,12 +411,10 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
 
     $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'does not propose a same-party set-off when either legal confirmation is absent', static function () use ($harness, $service): void {
         directorLoanReclassificationWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
-            $cleared = (new \eel_accounts\Service\DirectorLoanReportingPresentationService())->save(
+            $cleared = directorLoanReclassificationSavePartyTerms(
                 (int)$fixture['company_id'],
-                (int)$fixture['accounting_period_id'],
-                \eel_accounts\Service\DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR,
-                'test',
-                []
+                (int)$fixture['primary_party_id'],
+                false
             );
             $harness->assertSame(true, (bool)($cleared['success'] ?? false));
             directorLoanReclassificationInsertLine(
@@ -320,12 +479,10 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
             );
             $harness->assertSame(true, (bool)($posted['success'] ?? false));
 
-            $cleared = (new \eel_accounts\Service\DirectorLoanReportingPresentationService())->save(
+            $cleared = directorLoanReclassificationSavePartyTerms(
                 (int)$fixture['company_id'],
-                (int)$fixture['accounting_period_id'],
-                \eel_accounts\Service\DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR,
-                'test',
-                []
+                (int)$fixture['primary_party_id'],
+                false
             );
             $harness->assertSame(true, (bool)($cleared['success'] ?? false));
             $stale = $service->fetchContext(
@@ -361,12 +518,22 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
 
 function directorLoanReclassificationWithFixture(GeneratedServiceClassTestHarness $harness, callable $callback): void
 {
-    foreach (['company_directors', 'company_parties', 'company_party_roles', 'journal_entry_metadata', 'year_end_review_acknowledgements'] as $table) {
+    foreach ([
+        'company_directors',
+        'company_parties',
+        'company_party_roles',
+        'journal_entry_metadata',
+        'year_end_review_acknowledgements',
+        'year_end_reviews',
+        'year_end_section_review_bundles',
+        'participator_loan_party_terms',
+        'participator_loan_party_terms_audit',
+        'participator_loan_party_term_snapshots',
+    ] as $table) {
         if (!InterfaceDB::tableExists($table)) {
             $harness->skip($table . ' schema is not available.');
         }
     }
-
     InterfaceDB::beginTransaction();
     try {
         StandardNominalTestFixture::ensureNominals(['1000', '1200', '2100']);
@@ -442,18 +609,10 @@ function directorLoanReclassificationWithFixture(GeneratedServiceClassTestHarnes
             $otherDirectorId,
             'Other Director'
         );
-        $presentation = (new \eel_accounts\Service\DirectorLoanReportingPresentationService())->save(
-            $companyId,
-            $periodId,
-            \eel_accounts\Service\DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR,
-            'test',
-            [
-                'set_off_right_confirmed' => true,
-                'set_off_net_settlement_intended' => true,
-                'set_off_evidence' => 'Executed agreement and documented simultaneous settlement intention.',
-            ]
-        );
-        $harness->assertSame(true, (bool)($presentation['success'] ?? false));
+        foreach ([$primaryPartyId, $otherPartyId] as $partyId) {
+            $terms = directorLoanReclassificationSavePartyTerms($companyId, $partyId, true);
+            $harness->assertSame(true, (bool)($terms['success'] ?? false));
+        }
 
         $callback([
             'marker' => $marker,
@@ -538,4 +697,57 @@ function directorLoanReclassificationInsertLine(
 function directorLoanReclassificationMoney(mixed $amount): string
 {
     return number_format(round((float)$amount, 2), 2, '.', '');
+}
+
+function directorLoanReclassificationSavePartyTerms(
+    int $companyId,
+    int $partyId,
+    bool $setOffPermitted
+): array {
+    return (new \eel_accounts\Service\ParticipatorLoanPartyTermsService())->save(
+        $companyId,
+        $partyId,
+        [
+            'interest_rate_percent' => 0,
+            'security_type' => 'unsecured',
+            'repayable_on_demand' => true,
+            'repayment_timing' => 'within_12_months',
+            'deferment_right_confirmed' => false,
+            'set_off_right_confirmed' => $setOffPermitted,
+            'settlement_intention' => $setOffPermitted ? 'simultaneous' : 'independently',
+        ],
+        'test'
+    );
+}
+
+function directorLoanReclassificationSetLocked(array $fixture): void
+{
+    $params = [
+        'company_id' => (int)$fixture['company_id'],
+        'accounting_period_id' => (int)$fixture['accounting_period_id'],
+        'locked_by' => 'test',
+    ];
+    if ((int)\InterfaceDB::fetchColumn(
+        'SELECT COUNT(*)
+         FROM year_end_reviews
+         WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+        $params
+    ) > 0) {
+        \InterfaceDB::prepareExecute(
+            'UPDATE year_end_reviews
+             SET is_locked = 1, locked_at = CURRENT_TIMESTAMP, locked_by = :locked_by
+             WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+            $params
+        );
+    } else {
+        \InterfaceDB::prepareExecute(
+            'INSERT INTO year_end_reviews (
+                company_id, accounting_period_id, is_locked, locked_at, locked_by
+             ) VALUES (
+                :company_id, :accounting_period_id, 1, CURRENT_TIMESTAMP, :locked_by
+             )',
+            $params
+        );
+    }
+    \eel_accounts\Support\RequestCache::clear();
 }

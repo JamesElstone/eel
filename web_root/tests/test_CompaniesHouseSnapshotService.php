@@ -85,15 +85,19 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame(750.0, $before['creditors_within_one_year']);
                 $harness->assertSame(1250.0, $before['creditors_after_more_than_one_year']);
 
-                $saved = (new \eel_accounts\Service\DirectorLoanReportingPresentationService())->save(
+                $saved = (new \eel_accounts\Service\ParticipatorLoanPartyTermsService())->save(
                     (int)$fixture['company_id'],
-                    (int)$fixture['accounting_period_id'],
-                    'after_more_than_one_year',
-                    'test',
+                    (int)$fixture['party_id'],
                     [
-                        'deferment_right_confirmed' => true,
-                        'deferment_evidence' => 'Executed facility gave the company an unconditional right at the balance-sheet date to defer payment for at least twelve months.',
-                    ]
+                        'interest_rate_percent' => 0,
+                        'security_type' => 'unsecured',
+                        'repayable_on_demand' => 0,
+                        'repayment_timing' => 'after_12_months',
+                        'deferment_right_confirmed' => 1,
+                        'set_off_right_confirmed' => 0,
+                        'settlement_intention' => 'independently',
+                    ],
+                    'test'
                 );
                 $harness->assertSame(true, (bool)($saved['success'] ?? false));
 
@@ -147,6 +151,7 @@ function companiesHouseSnapshotTestWithFixture(GeneratedServiceClassTestHarness 
             'accounting_period_id' => $accountingPeriodId,
             'fixed_asset_nominal_id' => companiesHouseSnapshotTestNominal($marker, 'fixed_asset', 'asset', 'fixed_asset'),
             'bank_nominal_id' => companiesHouseSnapshotTestNominal($marker, 'bank', 'asset', 'bank'),
+            'participator_loan_asset_nominal_id' => companiesHouseSnapshotTestNominal($marker, 'director_loan_asset', 'asset', 'director_loan_asset'),
             'participator_loan_liability_nominal_id' => companiesHouseSnapshotTestNominal($marker, 'director_loan_liability', 'liability', 'director_loan_liability'),
             'long_term_director_loan_nominal_id' => companiesHouseSnapshotTestNominal($marker, 'director_loan_long_term_liability', 'liability', 'director_loan_long_term_liability'),
             'equity_nominal_id' => companiesHouseSnapshotTestNominal($marker, 'capital_reserves', 'equity', 'capital_reserves'),
@@ -155,11 +160,43 @@ function companiesHouseSnapshotTestWithFixture(GeneratedServiceClassTestHarness 
         ];
         $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
         $settings->set(
+            'participator_loan_asset_nominal_id',
+            (int)$fixture['participator_loan_asset_nominal_id'],
+            'int'
+        );
+        $settings->set(
             'participator_loan_liability_nominal_id',
             (int)$fixture['participator_loan_liability_nominal_id'],
             'int'
         );
         $settings->flush();
+        InterfaceDB::prepareExecute(
+            'INSERT INTO company_parties (company_id, party_type, legal_name)
+             VALUES (:company_id, :party_type, :legal_name)',
+            [
+                'company_id' => $companyId,
+                'party_type' => 'individual',
+                'legal_name' => 'Snapshot Fixture Participator',
+            ]
+        );
+        $fixture['party_id'] = (int)InterfaceDB::fetchColumn(
+            'SELECT id FROM company_parties
+             WHERE company_id = :company_id AND legal_name = :legal_name',
+            ['company_id' => $companyId, 'legal_name' => 'Snapshot Fixture Participator']
+        );
+        InterfaceDB::prepareExecute(
+            'INSERT INTO company_party_roles (
+                company_id, party_id, role_type, effective_from
+             ) VALUES (
+                :company_id, :party_id, :role_type, :effective_from
+             )',
+            [
+                'company_id' => $companyId,
+                'party_id' => (int)$fixture['party_id'],
+                'role_type' => 'participator',
+                'effective_from' => '2025-01-01',
+            ]
+        );
 
         $callback($fixture);
     } finally {
@@ -231,11 +268,17 @@ function companiesHouseSnapshotTestInsertJournal(array $fixture, array $lines): 
 
     foreach ($lines as $line) {
         InterfaceDB::prepareExecute(
-            'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit, line_description)
-             VALUES (:journal_id, :nominal_account_id, :debit, :credit, :line_description)',
+            'INSERT INTO journal_lines (
+                journal_id, nominal_account_id, party_id, debit, credit, line_description
+             ) VALUES (
+                :journal_id, :nominal_account_id, :party_id, :debit, :credit, :line_description
+             )',
             [
                 'journal_id' => $journalId,
                 'nominal_account_id' => (int)$line[0],
+                'party_id' => (int)$line[0] === (int)$fixture['participator_loan_liability_nominal_id']
+                    ? (int)$fixture['party_id']
+                    : null,
                 'debit' => number_format((float)$line[1], 2, '.', ''),
                 'credit' => number_format((float)$line[2], 2, '.', ''),
                 'line_description' => 'Companies House snapshot fixture',

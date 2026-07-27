@@ -326,6 +326,9 @@ final class IxbrlFactBuilderService
         $directorLoanDisclosure = $comparative
             ? (array)($report['comparative']['director_loan_disclosure'] ?? [])
             : (array)($report['director_loan_disclosure'] ?? []);
+        $directorLoanYearEndApproval = $comparative
+            ? (array)($report['comparative']['director_loan_year_end_approval'] ?? [])
+            : (array)($report['director_loan_year_end_approval'] ?? []);
 
         $value = match ($calculationType) {
             'company_field' => $company[$sourceKey] ?? '',
@@ -429,6 +432,16 @@ final class IxbrlFactBuilderService
                     'director_loan_numeric',
                     'director_loan_statement',
                 ], true) ? $directorLoanDisclosure : [],
+                'director_loan_year_end_approval' => (
+                    in_array($calculationType, [
+                        'director_loan_numeric',
+                        'director_loan_statement',
+                    ], true)
+                    || in_array($sourceKey, [
+                        'creditors_within_one_year',
+                        'creditors_after_more_than_one_year',
+                    ], true)
+                ) ? $directorLoanYearEndApproval : [],
             ],
         ];
     }
@@ -460,17 +473,23 @@ final class IxbrlFactBuilderService
 
     private function directorLoanNumericValue(string $sourceKey, array $summary): ?float
     {
-        $disclosures = array_values(array_filter(
+        $allDisclosures = array_values(array_filter(
             (array)($summary['disclosures'] ?? []),
             static fn(mixed $row): bool => is_array($row)
         ));
+        $disclosures = $this->directorLoanDisclosureRows($summary);
         if ($disclosures === []) {
             return null;
         }
+        $hasExplicitDirectorScope = (bool)array_filter(
+            $allDisclosures,
+            static fn(array $row): bool => array_key_exists('is_director', $row)
+                || array_key_exists('linked_director_id', $row)
+        );
 
         if ($sourceKey === 'total_advances') {
             return round(
-                array_key_exists('total_advances', $summary)
+                array_key_exists('total_advances', $summary) && !$hasExplicitDirectorScope
                     ? (float)$summary['total_advances']
                     : array_sum(array_map(
                         static fn(array $row): float => (float)($row['advances'] ?? 0),
@@ -484,7 +503,15 @@ final class IxbrlFactBuilderService
             if (!array_key_exists('total_cash_repayments', $summary)) {
                 return null;
             }
-            return round((float)$summary['total_cash_repayments'], 2);
+            return round(
+                !$hasExplicitDirectorScope
+                    ? (float)$summary['total_cash_repayments']
+                    : array_sum(array_map(
+                        static fn(array $row): float => (float)($row['cash_repayments'] ?? 0),
+                        $disclosures
+                    )),
+                2
+            );
         }
 
         if ($sourceKey === 'closing_company_to_director_balance') {
@@ -510,19 +537,57 @@ final class IxbrlFactBuilderService
             return [];
         }
 
-        $sources = [];
-        foreach ((array)($summary['disclosures'] ?? []) as $disclosure) {
-            if (!is_array($disclosure) || !array_key_exists($field, $disclosure)) {
+        $partyFacts = [];
+        foreach ((array)($summary['party_facts'] ?? []) as $partyFact) {
+            if (!is_array($partyFact)) {
                 continue;
             }
+            $partyId = (int)($partyFact['party_id'] ?? 0);
+            if ($partyId > 0) {
+                $partyFacts[$partyId] = $partyFact;
+            }
+        }
+
+        $sources = [];
+        foreach ($this->directorLoanDisclosureRows($summary) as $disclosure) {
+            if (!array_key_exists($field, $disclosure)) {
+                continue;
+            }
+            $partyId = (int)($disclosure['party_id'] ?? 0);
             $sources[] = [
                 'source_type' => 'director_loan_disclosure',
+                'party_id' => $partyId > 0 ? $partyId : null,
                 'director_id' => $disclosure['director_id'] ?? null,
+                'linked_director_id' => $disclosure['linked_director_id']
+                    ?? $disclosure['director_id']
+                    ?? null,
                 'director_name' => (string)($disclosure['director_name'] ?? ''),
                 'field' => $field,
                 'amount' => round((float)$disclosure[$field], 2),
+                'party_fact' => $partyId > 0 ? (array)($partyFacts[$partyId] ?? []) : [],
             ];
         }
         return $sources;
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function directorLoanDisclosureRows(array $summary): array
+    {
+        return array_values(array_filter(
+            (array)($summary['disclosures'] ?? []),
+            static function (mixed $row): bool {
+                if (!is_array($row)) {
+                    return false;
+                }
+                if (array_key_exists('is_director', $row) && empty($row['is_director'])) {
+                    return false;
+                }
+                if (array_key_exists('linked_director_id', $row)
+                    && (int)($row['linked_director_id'] ?? 0) <= 0) {
+                    return false;
+                }
+                return true;
+            }
+        ));
     }
 }

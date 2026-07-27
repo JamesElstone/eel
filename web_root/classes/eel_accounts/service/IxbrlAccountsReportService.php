@@ -13,7 +13,7 @@ namespace eel_accounts\Service;
 final class IxbrlAccountsReportService
 {
     /** Increment whenever the deterministic report-basis construction changes. */
-    public const BASIS_VERSION = 'ixbrl-accounts-report-v3';
+    public const BASIS_VERSION = 'ixbrl-accounts-report-v4';
 
     public function build(int $companyId, int $accountingPeriodId): array
     {
@@ -86,6 +86,14 @@ final class IxbrlAccountsReportService
                 'The Director Loan Statement could not be read before building iXBRL facts.'
             );
         }
+        $directorLoanApproval = $this->directorLoanYearEndApproval($companyId, $accountingPeriodId);
+        $this->assertDirectorLoanApproval(
+            $directorLoanDisclosure,
+            $directorLoanApproval,
+            'selected accounting period'
+        );
+        $directorLoanDisclosure = $this->directorOnlyDisclosure($companyId, $directorLoanDisclosure);
+        $directorLoanDisclosure['party_facts'] = $this->directorPartyFacts($directorLoanApproval);
         foreach ([
             'prepared_under_small_companies_regime',
             'audit_exempt_section_477',
@@ -154,6 +162,22 @@ final class IxbrlAccountsReportService
                     'The comparative Director Loan Statement could not be read before building iXBRL facts.'
                 );
             }
+            $comparativeDirectorLoanApproval = $this->directorLoanYearEndApproval(
+                $companyId,
+                (int)$comparativePeriod['id']
+            );
+            $this->assertDirectorLoanApproval(
+                $comparativeDirectorLoanDisclosure,
+                $comparativeDirectorLoanApproval,
+                'comparative accounting period'
+            );
+            $comparativeDirectorLoanDisclosure = $this->directorOnlyDisclosure(
+                $companyId,
+                $comparativeDirectorLoanDisclosure
+            );
+            $comparativeDirectorLoanDisclosure['party_facts'] = $this->directorPartyFacts(
+                $comparativeDirectorLoanApproval
+            );
             $comparativeEmployees = $comparativeDisclosures['average_number_employees'] ?? null;
             if ($comparativeEmployees === null || $comparativeEmployees === '' || !is_numeric($comparativeEmployees)) {
                 throw new \DomainException(
@@ -168,6 +192,7 @@ final class IxbrlAccountsReportService
                     'revision' => (int)($comparativeDisclosures['revision'] ?? 0),
                 ],
                 'director_loan_disclosure' => $comparativeDirectorLoanDisclosure,
+                'director_loan_year_end_approval' => $comparativeDirectorLoanApproval,
             ];
         }
 
@@ -197,6 +222,7 @@ final class IxbrlAccountsReportService
             'year_end' => $yearEnd,
             'disclosures' => $this->disclosureBasis($disclosures),
             'director_loan_disclosure' => $directorLoanDisclosure,
+            'director_loan_year_end_approval' => $directorLoanApproval,
             'current_mapping' => $this->mappingBasis($current),
             'micro_entity_eligibility' => $eligibility,
             'presentation_currency' => $presentationCurrency,
@@ -208,6 +234,8 @@ final class IxbrlAccountsReportService
                 ],
                 'mapping' => $this->mappingBasis((array)$comparative['mapping']),
                 'disclosures' => (array)$comparative['disclosures'],
+                'director_loan_disclosure' => (array)$comparative['director_loan_disclosure'],
+                'director_loan_year_end_approval' => (array)$comparative['director_loan_year_end_approval'],
             ] : null,
             'taxonomy_mappings' => $profile->mappings(),
             'taxonomy_compatibility' => [
@@ -226,6 +254,7 @@ final class IxbrlAccountsReportService
             'accounting_period' => $period,
             'disclosures' => $disclosures,
             'director_loan_disclosure' => $directorLoanDisclosure,
+            'director_loan_year_end_approval' => $directorLoanApproval,
             'current' => $current,
             'comparative' => $comparative,
             'application_name' => $basis['application_name'],
@@ -306,6 +335,167 @@ final class IxbrlAccountsReportService
             'reliable_closing_balance' => !empty($mapping['reliable_closing_balance']),
             'director_loan_reporting_presentation' => (array)($mapping['director_loan_reporting_presentation'] ?? []),
         ];
+    }
+
+    /**
+     * Freeze the exact Director Loan Year End approval which authorised the
+     * locked reporting position. The acknowledgement hash is deliberately in
+     * the report basis so a replacement approval makes existing facts stale.
+     *
+     * @return array<string, mixed>
+     */
+    private function directorLoanYearEndApproval(int $companyId, int $accountingPeriodId): array
+    {
+        $acknowledgement = (new YearEndAcknowledgementService())->fetch(
+            $companyId,
+            $accountingPeriodId,
+            DirectorLoanReconciliationService::YEAR_END_ACKNOWLEDGEMENT_CODE
+        );
+        if (!is_array($acknowledgement)) {
+            return [
+                'available' => false,
+                'check_code' => DirectorLoanReconciliationService::YEAR_END_ACKNOWLEDGEMENT_CODE,
+                'basis_version' => '',
+                'basis_hash' => '',
+                'party_facts' => [],
+            ];
+        }
+
+        $basis = json_decode((string)($acknowledgement['basis_json'] ?? ''), true);
+        $facts = is_array($basis) ? (array)($basis['facts'] ?? []) : [];
+        $partyFacts = (array)($facts['party_facts'] ?? $facts['director_facts'] ?? []);
+
+        return [
+            'available' => true,
+            'check_code' => DirectorLoanReconciliationService::YEAR_END_ACKNOWLEDGEMENT_CODE,
+            'basis_version' => (string)($acknowledgement['basis_version'] ?? ''),
+            'basis_hash' => (string)($acknowledgement['basis_hash'] ?? ''),
+            'acknowledged_at' => (string)($acknowledgement['acknowledged_at'] ?? ''),
+            'party_facts' => array_values(array_filter(
+                $partyFacts,
+                static fn(mixed $row): bool => is_array($row)
+            )),
+        ];
+    }
+
+    private function assertDirectorLoanApproval(array $disclosure, array $approval, string $periodLabel): void
+    {
+        if (empty($disclosure['has_activity'])) {
+            return;
+        }
+
+        $hash = trim((string)($approval['basis_hash'] ?? ''));
+        if (empty($approval['available'])
+            || preg_match('/^[a-f0-9]{64}$/i', $hash) !== 1
+            || (string)($approval['basis_version'] ?? '') !== YearEndSectionApprovalService::CONTRACT_VERSION) {
+            throw new \DomainException(
+                'Approve the Director Loan Year End review for the ' . $periodLabel
+                . ' before building iXBRL facts.'
+            );
+        }
+    }
+
+    /**
+     * The Companies House directors-reporting taxonomy is narrower than the
+     * participator-loan subledger. Only parties linked to a company director
+     * may contribute to direp:* narrative and numeric facts.
+     *
+     * @return array<string, mixed>
+     */
+    private function directorOnlyDisclosure(int $companyId, array $summary): array
+    {
+        $links = [];
+        if ($companyId > 0 && \InterfaceDB::tableExists('company_parties')) {
+            foreach (\InterfaceDB::fetchAll(
+                'SELECT p.id AS party_id,
+                        p.linked_director_id,
+                        p.legal_name,
+                        cd.full_name AS director_name
+                 FROM company_parties p
+                 LEFT JOIN company_directors cd
+                   ON cd.id = p.linked_director_id
+                  AND cd.company_id = p.company_id
+                 WHERE p.company_id = :company_id
+                   AND p.linked_director_id IS NOT NULL',
+                ['company_id' => $companyId]
+            ) as $row) {
+                $partyId = (int)($row['party_id'] ?? 0);
+                $directorId = (int)($row['linked_director_id'] ?? 0);
+                if ($partyId <= 0 || $directorId <= 0) {
+                    continue;
+                }
+                $links[$partyId] = [
+                    'linked_director_id' => $directorId,
+                    'director_name' => trim((string)($row['director_name'] ?? '')) !== ''
+                        ? trim((string)$row['director_name'])
+                        : trim((string)($row['legal_name'] ?? '')),
+                ];
+            }
+        }
+
+        return $this->filterDirectorLoanDisclosure($summary, $links);
+    }
+
+    /**
+     * @param array<int, array{linked_director_id: int, director_name?: string}> $links
+     * @return array<string, mixed>
+     */
+    private function filterDirectorLoanDisclosure(array $summary, array $links): array
+    {
+        $directorDisclosures = [];
+        foreach ((array)($summary['disclosures'] ?? []) as $disclosure) {
+            if (!is_array($disclosure)) {
+                continue;
+            }
+            $partyId = (int)($disclosure['party_id'] ?? $disclosure['director_id'] ?? 0);
+            $link = $links[$partyId] ?? null;
+            if (!is_array($link) || (int)($link['linked_director_id'] ?? 0) <= 0) {
+                continue;
+            }
+            $directorDisclosures[] = array_merge($disclosure, [
+                'party_id' => $partyId,
+                'director_id' => (int)$link['linked_director_id'],
+                'linked_director_id' => (int)$link['linked_director_id'],
+                'is_director' => true,
+                'director_name' => trim((string)($link['director_name'] ?? '')) !== ''
+                    ? trim((string)$link['director_name'])
+                    : (string)($disclosure['director_name'] ?? ''),
+            ]);
+        }
+
+        $summary['disclosures'] = $directorDisclosures;
+        $summary['has_company_to_director_exposure'] = $directorDisclosures !== [];
+        $summary['director_party_count'] = count($directorDisclosures);
+        foreach ([
+            'total_advances' => 'advances',
+            'total_cash_repayments' => 'cash_repayments',
+            'total_amounts_legally_set_off' => 'amounts_legally_set_off',
+            'total_amounts_written_off' => 'amounts_written_off',
+            'total_amounts_waived' => 'amounts_waived',
+            'total_unclassified_reductions' => 'unclassified_reductions',
+            'total_repayments' => 'repayments',
+            'total_director_funding' => 'director_funding',
+            'closing_company_to_director_balance' => 'closing_company_to_director_balance',
+            'closing_company_liability' => 'closing_company_liability',
+        ] as $totalKey => $rowKey) {
+            $summary[$totalKey] = round(array_sum(array_map(
+                static fn(array $row): float => (float)($row[$rowKey] ?? 0),
+                $directorDisclosures
+            )), 2);
+        }
+        $summary['has_unclassified_reductions'] = (float)$summary['total_unclassified_reductions'] >= 0.005;
+
+        return $summary;
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function directorPartyFacts(array $approval): array
+    {
+        return array_values(array_filter(
+            (array)($approval['party_facts'] ?? []),
+            static fn(mixed $row): bool => is_array($row)
+                && (!empty($row['is_director']) || (int)($row['linked_director_id'] ?? 0) > 0)
+        ));
     }
 
     private function canonicalJson(mixed $value): string

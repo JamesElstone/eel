@@ -3645,73 +3645,81 @@ CREATE TABLE `participator_loan_attribution_audit` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Table structure for table `director_loan_reporting_presentations`
+-- Table structure for table `participator_loan_party_terms`
 --
 
-DROP TABLE IF EXISTS `director_loan_reporting_presentations`;
+DROP TABLE IF EXISTS `participator_loan_party_terms`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `director_loan_reporting_presentations` (
+CREATE TABLE `participator_loan_party_terms` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
-  `accounting_period_id` int(11) NOT NULL,
-  `liability_nominal_account_id` int(11) NOT NULL,
-  `classification` varchar(40) NOT NULL,
-  `set_off_right_confirmed` tinyint(1) NOT NULL DEFAULT 0,
-  `set_off_net_settlement_intended` tinyint(1) NOT NULL DEFAULT 0,
-  `set_off_evidence` varchar(2000) NOT NULL DEFAULT '',
+  `party_id` bigint(20) NOT NULL,
+  `interest_rate_percent` decimal(7,4) NOT NULL DEFAULT 0.0000,
+  `security_type` enum('secured','unsecured') NOT NULL DEFAULT 'unsecured',
+  `repayable_on_demand` tinyint(1) NOT NULL DEFAULT 1,
+  `repayment_timing` enum('within_12_months','after_12_months') NOT NULL DEFAULT 'within_12_months',
   `deferment_right_confirmed` tinyint(1) NOT NULL DEFAULT 0,
-  `deferment_evidence` varchar(2000) NOT NULL DEFAULT '',
-  `annual_rate_percent` decimal(7,4) NOT NULL DEFAULT 0.0000,
-  `main_terms` varchar(1000) NOT NULL DEFAULT 'Unsecured.',
-  `repayment_conditions` varchar(1000) NOT NULL DEFAULT 'Repayable on demand.',
+  `set_off_right_confirmed` tinyint(1) NOT NULL DEFAULT 0,
+  `settlement_intention` enum('net','simultaneous','independently') NOT NULL DEFAULT 'independently',
   `revision` int(10) unsigned NOT NULL DEFAULT 1,
   `created_by` varchar(100) NOT NULL,
   `updated_by` varchar(100) NOT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uniq_dla_reporting_presentation_company_period` (`company_id`,`accounting_period_id`),
-  KEY `idx_dla_reporting_presentation_nominal` (`liability_nominal_account_id`),
-  CONSTRAINT `chk_dla_reporting_presentation_classification` CHECK (`classification` in ('within_one_year','after_more_than_one_year')),
-  CONSTRAINT `fk_dla_reporting_presentation_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_dla_reporting_presentation_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_dla_reporting_presentation_nominal` FOREIGN KEY (`liability_nominal_account_id`) REFERENCES `nominal_accounts` (`id`) ON UPDATE CASCADE
+  UNIQUE KEY `uq_participator_loan_party_terms` (`company_id`,`party_id`),
+  CONSTRAINT `fk_participator_loan_party_terms_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_participator_loan_party_terms_party` FOREIGN KEY (`party_id`) REFERENCES `company_parties` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Table structure for table `director_loan_reporting_presentation_audit`
+-- Table structure for table `participator_loan_party_terms_audit`
 --
 
-DROP TABLE IF EXISTS `director_loan_reporting_presentation_audit`;
+DROP TABLE IF EXISTS `participator_loan_party_terms_audit`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `director_loan_reporting_presentation_audit` (
+CREATE TABLE `participator_loan_party_terms_audit` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
-  `accounting_period_id` int(11) NOT NULL,
-  `old_liability_nominal_account_id` int(11) DEFAULT NULL,
-  `new_liability_nominal_account_id` int(11) DEFAULT NULL,
-  `old_classification` varchar(40) NOT NULL,
-  `new_classification` varchar(40) NOT NULL,
-  `old_evidence_json` longtext DEFAULT NULL,
-  `new_evidence_json` longtext DEFAULT NULL,
+  `party_id` bigint(20) NOT NULL,
+  `old_terms_json` longtext DEFAULT NULL,
+  `new_terms_json` longtext NOT NULL,
   `old_revision` int(10) unsigned NOT NULL,
   `new_revision` int(10) unsigned NOT NULL,
   `changed_by` varchar(100) NOT NULL,
-  `reason` varchar(255) NOT NULL,
   `changed_at` datetime NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
-  KEY `idx_dla_reporting_presentation_audit_scope` (`company_id`,`accounting_period_id`,`changed_at`),
-  KEY `idx_dla_reporting_presentation_audit_old_nominal` (`old_liability_nominal_account_id`),
-  KEY `idx_dla_reporting_presentation_audit_new_nominal` (`new_liability_nominal_account_id`),
-  CONSTRAINT `chk_dla_reporting_presentation_audit_old_classification` CHECK (`old_classification` in ('within_one_year','after_more_than_one_year')),
-  CONSTRAINT `chk_dla_reporting_presentation_audit_new_classification` CHECK (`new_classification` in ('within_one_year','after_more_than_one_year')),
-  CONSTRAINT `fk_dla_reporting_presentation_audit_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_dla_reporting_presentation_audit_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_dla_reporting_presentation_audit_old_nominal` FOREIGN KEY (`old_liability_nominal_account_id`) REFERENCES `nominal_accounts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT `fk_dla_reporting_presentation_audit_new_nominal` FOREIGN KEY (`new_liability_nominal_account_id`) REFERENCES `nominal_accounts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+  KEY `idx_participator_loan_party_terms_audit` (`company_id`,`party_id`,`changed_at`),
+  CONSTRAINT `fk_participator_loan_party_terms_audit_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_participator_loan_party_terms_audit_party` FOREIGN KEY (`party_id`) REFERENCES `company_parties` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `participator_loan_party_term_snapshots`
+--
+
+DROP TABLE IF EXISTS `participator_loan_party_term_snapshots`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `participator_loan_party_term_snapshots` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `party_id` bigint(20) NOT NULL,
+  `liability_nominal_account_id` int(11) DEFAULT NULL,
+  `terms_json` longtext NOT NULL,
+  `created_by` varchar(100) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_participator_loan_party_term_snapshot` (`company_id`,`accounting_period_id`,`party_id`),
+  CONSTRAINT `fk_participator_loan_party_term_snapshots_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_participator_loan_party_term_snapshots_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_participator_loan_party_term_snapshots_party` FOREIGN KEY (`party_id`) REFERENCES `company_parties` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_participator_loan_party_term_snapshots_nominal` FOREIGN KEY (`liability_nominal_account_id`) REFERENCES `nominal_accounts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -3978,6 +3986,8 @@ INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_26_003_director_loan_interest_rate_column.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_26_004_ixbrl_approving_director.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_26_006_participator_loan_party_terms.sql');
 INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
 SELECT DISTINCT `role_id`, 'api_keys_editor'
 FROM `role_card_permissions`

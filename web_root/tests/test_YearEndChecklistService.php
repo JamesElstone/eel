@@ -1377,7 +1377,7 @@ function yearEndChecklistServiceCreateDirectorLoanOffsetFixture(): array
         'SELECT id FROM company_directors WHERE company_id = :company_id ORDER BY id LIMIT 1',
         ['company_id' => $companyId]
     );
-    ParticipatorLoanTestFixture::createPartyForDirector($companyId, $directorId, 'Primary Director');
+    $partyId = ParticipatorLoanTestFixture::createPartyForDirector($companyId, $directorId, 'Primary Director');
     $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
     $settings->set('participator_loan_asset_nominal_id', $assetNominalId, 'int');
     $settings->set('participator_loan_liability_nominal_id', $liabilityNominalId, 'int');
@@ -1394,16 +1394,19 @@ function yearEndChecklistServiceCreateDirectorLoanOffsetFixture(): array
         ]
     );
 
-    $presentation = (new \eel_accounts\Service\DirectorLoanReportingPresentationService())->save(
+    $presentation = (new \eel_accounts\Service\ParticipatorLoanPartyTermsService())->save(
         $companyId,
-        $accountingPeriodId,
-        \eel_accounts\Service\DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR,
-        'test',
+        $partyId,
         [
+            'interest_rate_percent' => 0,
+            'security_type' => 'unsecured',
+            'repayable_on_demand' => true,
+            'repayment_timing' => 'within_12_months',
+            'deferment_right_confirmed' => false,
             'set_off_right_confirmed' => true,
-            'set_off_net_settlement_intended' => true,
-            'set_off_evidence' => 'Test agreement establishes the enforceable right and simultaneous settlement intention.',
-        ]
+            'settlement_intention' => 'simultaneous',
+        ],
+        'test'
     );
     if (empty($presentation['success'])) {
         throw new RuntimeException(implode(' ', (array)($presentation['errors'] ?? [

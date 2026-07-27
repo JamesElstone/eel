@@ -112,14 +112,60 @@ final class IxbrlBalanceSheetMetricsService
             ? (new DirectorLoanService())->fetchStatement($companyId, $accountingPeriodId)
             : [];
         $directorLoanLiabilityNominalId = (int)($directorLoanStatement['liability_nominal']['id'] ?? 0);
+        $directorLoanPositions = (array)($directorLoanStatement['party_facts'] ?? []);
+        foreach ((array)($directorLoanStatement['per_director'] ?? []) as $position) {
+            if (is_array($position) && (int)($position['party_id'] ?? $position['director_id'] ?? 0) <= 0) {
+                $directorLoanPositions[] = $position;
+            }
+        }
+        $directorLoanPartyFacts = $this->directorLoanPartyPresentationFacts(
+            $directorLoanPositions,
+            $directorLoanLiabilityNominalId
+        );
         $directorLoanWithinOneYear = 0.0;
         $directorLoanAfterOneYear = 0.0;
-        foreach ((array)($directorLoanStatement['per_director'] ?? []) as $position) {
-            $amount = (float)($position['reportable_liability'] ?? 0);
-            if ((string)($position['classification'] ?? '') === DirectorLoanReportingPresentationService::AFTER_MORE_THAN_ONE_YEAR) $directorLoanAfterOneYear += $amount;
-            else $directorLoanWithinOneYear += $amount;
+        foreach ($directorLoanPartyFacts as $partyFact) {
+            $amount = (float)($partyFact['reportable_liability'] ?? 0);
+            if ((string)($partyFact['maturity_classification'] ?? '') === DirectorLoanReportingPresentationService::AFTER_MORE_THAN_ONE_YEAR) {
+                $directorLoanAfterOneYear += $amount;
+            } else {
+                $directorLoanWithinOneYear += $amount;
+            }
         }
-        $directorLoanPresentation = ['within_one_year' => round($directorLoanWithinOneYear, 2), 'after_more_than_one_year' => round($directorLoanAfterOneYear, 2)];
+        $relevantDirectorLoanPartyFacts = array_values(array_filter(
+            $directorLoanPartyFacts,
+            static fn(array $row): bool => !empty($row['applicable'])
+        ));
+        $directorLoanClassification = $directorLoanAfterOneYear >= 0.005
+            && $directorLoanWithinOneYear < 0.005
+                ? DirectorLoanReportingPresentationService::AFTER_MORE_THAN_ONE_YEAR
+                : DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR;
+        $directorLoanPresentation = [
+            'applicable' => !empty($directorLoanStatement['has_activity'])
+                || $relevantDirectorLoanPartyFacts !== [],
+            'explicit' => $relevantDirectorLoanPartyFacts !== []
+                && array_reduce(
+                    $relevantDirectorLoanPartyFacts,
+                    static fn(bool $carry, array $row): bool => $carry && !empty($row['terms_saved']),
+                    true
+                ),
+            'classification' => $directorLoanClassification,
+            'classification_label' => $directorLoanClassification === DirectorLoanReportingPresentationService::AFTER_MORE_THAN_ONE_YEAR
+                ? 'Due after more than one year'
+                : 'Due within one year',
+            'within_one_year' => round($directorLoanWithinOneYear, 2),
+            'after_more_than_one_year' => round($directorLoanAfterOneYear, 2),
+            'party_count' => count(array_filter(
+                $relevantDirectorLoanPartyFacts,
+                static fn(array $row): bool => (int)($row['party_id'] ?? 0) > 0
+            )),
+            'unattributed_applicable' => (bool)array_filter(
+                $relevantDirectorLoanPartyFacts,
+                static fn(array $row): bool => (int)($row['party_id'] ?? 0) <= 0
+            ),
+            'party_facts' => $relevantDirectorLoanPartyFacts,
+            'liability_nominal' => (array)($directorLoanStatement['liability_nominal'] ?? []),
+        ];
 
         foreach ($rows as $row) {
             $nominalAccountId = (int)($row['nominal_account_id'] ?? 0);
@@ -156,15 +202,48 @@ final class IxbrlBalanceSheetMetricsService
                 } elseif ($this->isAccrualsDeferredIncomeSubtype($subtype)) {
                     $bucket = 'accruals_deferred_income';
                 } else {
-                    $isPresentedDirectorLoanLiability = $directorLoanLiabilityNominalId > 0
+                    $isPresentedDirectorLoanLiability = !empty($directorLoanStatement['success'])
+                        && $directorLoanLiabilityNominalId > 0
                         && $nominalAccountId === $directorLoanLiabilityNominalId;
                     if ($isPresentedDirectorLoanLiability) {
                         $within = (float)($directorLoanPresentation['within_one_year'] ?? 0);
                         $after = (float)($directorLoanPresentation['after_more_than_one_year'] ?? 0);
                         $buckets['creditors_within_one_year'] += $within;
                         $buckets['creditors_after_more_than_one_year'] += $after;
-                        $this->addSource($sources, 'creditors_within_one_year', $label, $within);
-                        $this->addSource($sources, 'creditors_after_more_than_one_year', $label, $after);
+                        $liabilitySourceCount = 0;
+                        foreach ($relevantDirectorLoanPartyFacts as $partyFact) {
+                            $partyAmount = round((float)($partyFact['reportable_liability'] ?? 0), 2);
+                            if (abs($partyAmount) < 0.005) {
+                                continue;
+                            }
+                            $partyBucket = (string)($partyFact['maturity_classification'] ?? '')
+                                === DirectorLoanReportingPresentationService::AFTER_MORE_THAN_ONE_YEAR
+                                    ? 'creditors_after_more_than_one_year'
+                                    : 'creditors_within_one_year';
+                            $partyName = trim((string)($partyFact['party_name'] ?? ''));
+                            $this->addSource(
+                                $sources,
+                                $partyBucket,
+                                $label . ($partyName !== '' ? ' — ' . $partyName : ''),
+                                $partyAmount,
+                                [
+                                    'source_type' => 'participator_loan_party',
+                                    'party_id' => $partyFact['party_id'] ?? null,
+                                    'linked_director_id' => $partyFact['linked_director_id'] ?? null,
+                                    'terms_source' => (string)($partyFact['terms_source'] ?? ''),
+                                    'terms_revision' => (int)($partyFact['terms_revision'] ?? 0),
+                                    'terms_snapshot' => !empty($partyFact['terms_snapshot']),
+                                    'maturity_classification' => (string)($partyFact['maturity_classification'] ?? ''),
+                                    'set_off_permitted' => !empty($partyFact['set_off_permitted']),
+                                    'party_fact' => $partyFact,
+                                ]
+                            );
+                            $liabilitySourceCount++;
+                        }
+                        if ($liabilitySourceCount === 0) {
+                            $this->addSource($sources, 'creditors_within_one_year', $label, $within);
+                            $this->addSource($sources, 'creditors_after_more_than_one_year', $label, $after);
+                        }
                         continue;
                     }
                     $bucket = $this->isLongTermLiabilitySubtype($subtype)
@@ -299,6 +378,100 @@ final class IxbrlBalanceSheetMetricsService
 
         return (new \eel_accounts\Repository\AccountingPeriodRepository())
             ->fetchAccountingPeriod($companyId, $accountingPeriodId);
+    }
+
+    /**
+     * Normalise both the canonical party_facts model and its per_director
+     * compatibility alias into deterministic filing provenance.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function directorLoanPartyPresentationFacts(array $positions, int $defaultLiabilityNominalId): array
+    {
+        $facts = [];
+        foreach ($positions as $position) {
+            if (!is_array($position)) {
+                continue;
+            }
+            $terms = (array)($position['terms'] ?? $position['party_terms'] ?? []);
+            $partyId = (int)($position['party_id'] ?? $position['director_id'] ?? 0);
+            $grossAsset = round((float)($position['gross_asset'] ?? 0), 2);
+            $grossLiability = round((float)($position['gross_liability'] ?? 0), 2);
+            $hasPeriodMovement = array_key_exists('has_period_movement', $position)
+                ? !empty($position['has_period_movement'])
+                : abs((float)($position['movement_asset'] ?? 0)) >= 0.005
+                    || abs((float)($position['movement_liability'] ?? 0)) >= 0.005;
+            $hasClosingPosition = array_key_exists('has_closing_position', $position)
+                ? !empty($position['has_closing_position'])
+                : abs($grossAsset) >= 0.005 || abs($grossLiability) >= 0.005;
+            $termsSource = (string)($position['terms_source'] ?? $terms['terms_source'] ?? '');
+            $maturity = (string)($position['maturity_classification']
+                ?? $position['classification']
+                ?? DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR);
+            if (!in_array($maturity, [
+                DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR,
+                DirectorLoanReportingPresentationService::AFTER_MORE_THAN_ONE_YEAR,
+            ], true)) {
+                $maturity = DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR;
+            }
+
+            $normalisedTerms = [
+                'interest_rate_percent' => (float)($position['interest_rate_percent'] ?? $terms['interest_rate_percent'] ?? 0),
+                'security_type' => (string)($position['security_type'] ?? $terms['security_type'] ?? 'unsecured'),
+                'repayable_on_demand' => !empty($position['repayable_on_demand'] ?? $terms['repayable_on_demand'] ?? false),
+                'repayment_timing' => (string)($position['repayment_timing'] ?? $terms['repayment_timing'] ?? 'within_12_months'),
+                'deferment_right_confirmed' => !empty($position['deferment_right_confirmed'] ?? $terms['deferment_right_confirmed'] ?? false),
+                'set_off_right_confirmed' => !empty($position['set_off_right_confirmed'] ?? $terms['set_off_right_confirmed'] ?? false),
+                'settlement_intention' => (string)($position['settlement_intention'] ?? $terms['settlement_intention'] ?? 'independently'),
+            ];
+            $facts[] = [
+                'party_id' => $partyId > 0 ? $partyId : null,
+                'party_name' => (string)($position['party_name'] ?? $position['director_name'] ?? 'Unattributed'),
+                'linked_director_id' => (int)($position['linked_director_id'] ?? 0) ?: null,
+                'is_director' => !empty($position['is_director'])
+                    || (int)($position['linked_director_id'] ?? 0) > 0,
+                'has_period_movement' => $hasPeriodMovement,
+                'has_closing_position' => $hasClosingPosition,
+                'applicable' => $hasPeriodMovement || $hasClosingPosition,
+                'terms_saved' => array_key_exists('terms_saved', $position)
+                    ? !empty($position['terms_saved'])
+                    : !empty($terms['explicit']) || in_array($termsSource, ['live', 'locked_snapshot'], true),
+                'terms_source' => $termsSource,
+                'terms_revision' => (int)($position['terms_revision'] ?? $terms['revision'] ?? 0),
+                'terms_snapshot' => array_key_exists('terms_snapshot', $position)
+                    ? !empty($position['terms_snapshot'])
+                    : $termsSource === 'locked_snapshot',
+                'liability_nominal_account_id' => (int)($position['liability_nominal_account_id']
+                    ?? $terms['liability_nominal_account_id']
+                    ?? $defaultLiabilityNominalId),
+                'terms' => $normalisedTerms,
+                'maturity_classification' => $maturity,
+                'gross_asset' => $grossAsset,
+                'gross_liability' => $grossLiability,
+                'reportable_asset' => round((float)($position['reportable_asset'] ?? 0), 2),
+                'reportable_liability' => round((float)($position['reportable_liability'] ?? 0), 2),
+                'desired_reclassification' => round((float)($position['desired_reclassification'] ?? 0), 2),
+                'posted_reclassification' => round((float)($position['posted_reclassification'] ?? 0), 2),
+                'pending_reclassification' => round((float)($position['pending_reclassification'] ?? 0), 2),
+                'set_off_permitted' => !empty($position['set_off_permitted']),
+                'set_off_conclusion' => (string)($position['set_off_conclusion'] ?? ''),
+                'unsupported_posted_set_off_amount' => round(
+                    (float)($position['unsupported_posted_set_off_amount'] ?? 0),
+                    2
+                ),
+                'potential_s455_exposure' => round((float)($position['potential_s455_exposure'] ?? 0), 2),
+            ] + $normalisedTerms;
+        }
+
+        usort($facts, static fn(array $left, array $right): int => [
+            (int)($left['party_id'] ?? 0),
+            (string)($left['party_name'] ?? ''),
+        ] <=> [
+            (int)($right['party_id'] ?? 0),
+            (string)($right['party_name'] ?? ''),
+        ]);
+
+        return $facts;
     }
 
     private function applyPendingClosePreviewAdjustments(

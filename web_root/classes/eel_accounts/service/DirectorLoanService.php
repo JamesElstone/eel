@@ -50,8 +50,17 @@ final class DirectorLoanService
         }
 
         $controls = (new DirectorLoanAttributionService())->controlNominalIds($companyId);
+        $partyTermsService = new ParticipatorLoanPartyTermsService();
+        try {
+            $snapshottedLiabilityNominalId = $partyTermsService
+                ->periodLiabilityNominalAccountId($companyId, $accountingPeriodId);
+        } catch (\Throwable $exception) {
+            return $this->error($exception->getMessage());
+        }
         $assetNominal = $this->nominal((int)$controls['asset']);
-        $liabilityNominal = $this->nominal((int)$controls['liability']);
+        $liabilityNominal = $this->nominal(
+            $snapshottedLiabilityNominalId ?? (int)$controls['liability']
+        );
         $errors = [];
         $missingControlNominals = $assetNominal === null || $liabilityNominal === null;
         if ($missingControlNominals) {
@@ -70,7 +79,6 @@ final class DirectorLoanService
 
         $periodStart = (string)$period['period_start'];
         $periodEnd = (string)$period['period_end'];
-        $partyTermsService = new ParticipatorLoanPartyTermsService();
         $rawLines = $this->rawLines(
             $companyId,
             $periodStart,
@@ -91,6 +99,9 @@ final class DirectorLoanService
                 'id' => (int)$party['id'],
                 'company_id' => (int)$party['company_id'],
                 'full_name' => (string)$party['legal_name'] . ((int)($party['linked_director_id'] ?? 0) > 0 ? ' (Director)' : ''),
+                'party_name' => (string)$party['legal_name'],
+                'party_type' => (string)($party['party_type'] ?? ''),
+                'linked_director_id' => (int)($party['linked_director_id'] ?? 0),
                 'is_active' => 1,
                 'appointed_on' => '',
                 'resigned_on' => '',
@@ -135,6 +146,10 @@ final class DirectorLoanService
                 (float)$groups[$key][$bucket . '_' . $role] + $normalAmount,
                 2
             );
+            if (!$isOpening) {
+                $groups[$key]['period_movement_count'] =
+                    (int)($groups[$key]['period_movement_count'] ?? 0) + 1;
+            }
 
             $entry = $this->entryRow($line, $director);
             $entry['normal_amount'] = $normalAmount;
@@ -171,9 +186,20 @@ final class DirectorLoanService
             $asset = round((float)$position['opening_asset'] + (float)$position['movement_asset'], 2);
             $liability = round((float)$position['opening_liability'] + (float)$position['movement_liability'], 2);
             $partyId = (int)($position['director_id'] ?? 0);
-            $partyTerms = $partyId > 0
-                ? $partyTermsService->resolved($companyId, $accountingPeriodId, $partyId)
-                : [];
+            try {
+                $partyTerms = $partyId > 0
+                    ? $partyTermsService->resolved($companyId, $accountingPeriodId, $partyId)
+                    : [];
+            } catch (\Throwable $exception) {
+                return [
+                    'success' => false,
+                    'available' => false,
+                    'errors' => [$exception->getMessage()],
+                    'accounting_period' => $period,
+                    'asset_nominal' => $assetNominal,
+                    'liability_nominal' => $liabilityNominal,
+                ];
+            }
             $setOffPermitted = !empty($partyTerms['set_off_right_confirmed'])
                 && in_array((string)($partyTerms['settlement_intention'] ?? ''), ['net', 'simultaneous'], true);
             $desired = $key === 'unattributed' || !$setOffPermitted
@@ -182,23 +208,46 @@ final class DirectorLoanService
             $netLiability = round($liability - $asset, 2);
             $reportableAsset = round(max(0.0, $asset - $desired), 2);
             $reportableLiability = round(max(0.0, $liability - $desired), 2);
+            $hasPeriodMovement = (int)($position['period_movement_count'] ?? 0) > 0;
+            $hasClosingPosition = abs($asset) >= 0.005 || abs($liability) >= 0.005;
+            $classification = (string)($partyTerms['repayment_timing'] ?? 'within_12_months') === 'after_12_months'
+                && !empty($partyTerms['deferment_right_confirmed'])
+                && empty($partyTerms['repayable_on_demand'])
+                ? DirectorLoanReportingPresentationService::AFTER_MORE_THAN_ONE_YEAR
+                : DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR;
+            $resolvedLiabilityNominalId = (int)($partyTerms['liability_nominal_account_id'] ?? 0);
+            if ($resolvedLiabilityNominalId <= 0) {
+                $resolvedLiabilityNominalId = (int)$liabilityNominal['id'];
+            }
             $position += [
+                'party_id' => $partyId > 0 ? $partyId : null,
+                'party_name' => (string)($position['party_name'] ?? $position['director_name'] ?? 'Unattributed'),
+                'linked_director_id' => (int)($position['linked_director_id'] ?? 0),
+                'is_director' => (int)($position['linked_director_id'] ?? 0) > 0,
+                'has_period_movement' => $hasPeriodMovement,
+                'has_closing_position' => $hasClosingPosition,
                 'gross_asset' => $asset,
                 'gross_liability' => $liability,
                 'desired_reclassification' => $desired,
                 'set_off_permitted' => $setOffPermitted,
+                'set_off_conclusion' => $this->setOffConclusion($partyTerms, $setOffPermitted),
                 'party_terms' => $partyTerms,
-                'classification' => (string)($partyTerms['repayment_timing'] ?? 'within_12_months') === 'after_12_months'
-                    && !empty($partyTerms['deferment_right_confirmed'])
-                    && empty($partyTerms['repayable_on_demand'])
-                    ? DirectorLoanReportingPresentationService::AFTER_MORE_THAN_ONE_YEAR
-                    : DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR,
+                'terms_saved' => !empty($partyTerms['explicit']),
+                'terms_source' => (string)($partyTerms['terms_source'] ?? ($partyId > 0 ? 'default' : 'unattributed')),
+                'terms_revision' => max(0, (int)($partyTerms['revision'] ?? 0)),
+                'terms_snapshot' => (string)($partyTerms['terms_source'] ?? '') === 'locked_snapshot',
+                'liability_nominal_account_id' => $resolvedLiabilityNominalId,
+                'classification' => $classification,
+                'maturity_classification' => $classification,
                 'reportable_asset' => $reportableAsset,
                 'reportable_liability' => $reportableLiability,
                 'net_closing_position' => $netLiability,
                 'net_position_label' => $this->balanceDirectionLabel($netLiability),
                 'potential_s455_exposure' => $reportableAsset,
                 'pending_reclassification' => round($desired - (float)$position['posted_reclassification'], 2),
+                'unsupported_posted_set_off_amount' => !$setOffPermitted
+                    ? round(max(0.0, (float)$position['posted_reclassification']), 2)
+                    : 0.0,
             ];
             $perDirector[] = $position;
         }
@@ -239,6 +288,16 @@ final class DirectorLoanService
         $hasActivity = $periodMovementCount > 0
             || abs($assetReceivable) >= 0.005
             || abs($liabilityPayable) >= 0.005;
+        $partyFacts = array_values(array_filter(
+            $perDirector,
+            static fn(array $position): bool => (int)($position['party_id'] ?? 0) > 0
+        ));
+        $missingTermsCount = count(array_filter(
+            $partyFacts,
+            static fn(array $position): bool =>
+                (!empty($position['has_period_movement']) || !empty($position['has_closing_position']))
+                && empty($position['terms_saved'])
+        ));
 
         $result = [
             'success' => true,
@@ -248,6 +307,7 @@ final class DirectorLoanService
             'liability_nominal' => $liabilityNominal,
             'directors' => $directors,
             'per_director' => $perDirector,
+            'party_facts' => $partyFacts,
             'statement_rows' => $statementRows,
             'attribution_entries' => $attributionEntries,
             'unattributed_entries' => $unattributed,
@@ -260,6 +320,25 @@ final class DirectorLoanService
             'liability_payable' => $liabilityPayable,
             'reportable_asset_receivable' => $reportableAssetReceivable,
             'reportable_liability_payable' => $reportableLiabilityPayable,
+            'liability_within_one_year' => round(array_sum(array_map(
+                static fn(array $position): float =>
+                    (string)($position['maturity_classification'] ?? '') === DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR
+                        ? (float)($position['reportable_liability'] ?? 0)
+                        : 0.0,
+                $partyFacts
+            )), 2),
+            'liability_after_one_year' => round(array_sum(array_map(
+                static fn(array $position): float =>
+                    (string)($position['maturity_classification'] ?? '') === DirectorLoanReportingPresentationService::AFTER_MORE_THAN_ONE_YEAR
+                        ? (float)($position['reportable_liability'] ?? 0)
+                        : 0.0,
+                $partyFacts
+            )), 2),
+            'missing_terms_count' => $missingTermsCount,
+            'unsupported_posted_set_off_amount' => round(array_sum(array_column(
+                $partyFacts,
+                'unsupported_posted_set_off_amount'
+            )), 2),
             'set_off_permitted' => !empty(array_filter($perDirector, static fn(array $position): bool => !empty($position['set_off_permitted']))),
             'set_off_evidence' => '',
             'reporting_presentation' => [],
@@ -420,6 +499,12 @@ final class DirectorLoanService
         return [
             'success' => true,
             'available' => true,
+            'has_activity' => !empty($statement['has_activity']),
+            'relevant_party_count' => count(array_filter(
+                (array)($statement['party_facts'] ?? []),
+                static fn(array $party): bool =>
+                    !empty($party['has_period_movement']) || !empty($party['has_closing_position'])
+            )),
             'has_company_to_director_exposure' => $disclosures !== [],
             'disclosures' => $disclosures,
             'total_advances' => round(array_sum(array_column($disclosures, 'advances')), 2),
@@ -656,6 +741,11 @@ final class DirectorLoanService
             'counterparty_name' => trim((string)($line['counterparty_name'] ?? '')),
             'director_id' => $director !== null ? (int)$director['id'] : null,
             'director_name' => $director !== null ? (string)$director['full_name'] : 'Unattributed',
+            'party_id' => $director !== null ? (int)$director['id'] : null,
+            'party_name' => $director !== null
+                ? (string)($director['party_name'] ?? $director['full_name'])
+                : 'Unattributed',
+            'linked_director_id' => $director !== null ? (int)($director['linked_director_id'] ?? 0) : 0,
             'nominal_account_id' => (int)$line['nominal_account_id'],
             'debit' => round((float)$line['debit'], 2),
             'credit' => round((float)$line['credit'], 2),
@@ -668,6 +758,13 @@ final class DirectorLoanService
         return [
             'director_id' => $director !== null ? (int)$director['id'] : null,
             'director_name' => $director !== null ? (string)$director['full_name'] : 'Unattributed',
+            'party_id' => $director !== null ? (int)$director['id'] : null,
+            'party_name' => $director !== null
+                ? (string)($director['party_name'] ?? $director['full_name'])
+                : 'Unattributed',
+            'party_type' => $director !== null ? (string)($director['party_type'] ?? '') : '',
+            'linked_director_id' => $director !== null ? (int)($director['linked_director_id'] ?? 0) : 0,
+            'is_director' => $director !== null && (int)($director['linked_director_id'] ?? 0) > 0,
             'is_active' => $director !== null ? (int)$director['is_active'] : null,
             'appointed_on' => $director !== null ? (string)($director['appointed_on'] ?? '') : '',
             'resigned_on' => $director !== null ? (string)($director['resigned_on'] ?? '') : '',
@@ -675,8 +772,26 @@ final class DirectorLoanService
             'opening_liability' => 0.0,
             'movement_asset' => 0.0,
             'movement_liability' => 0.0,
+            'period_movement_count' => 0,
             'posted_reclassification' => 0.0,
         ];
+    }
+
+    private function setOffConclusion(array $terms, bool $permitted): string
+    {
+        if ($permitted) {
+            return 'permitted';
+        }
+        if (empty($terms['explicit'])) {
+            return 'terms_required';
+        }
+        if (empty($terms['set_off_right_confirmed'])) {
+            return 'gross_no_legal_right';
+        }
+        if ((string)($terms['settlement_intention'] ?? '') === 'independently') {
+            return 'gross_independent_settlement';
+        }
+        return 'gross_set_off_not_supported';
     }
 
     private function accountingPeriod(int $companyId, int $accountingPeriodId): ?array

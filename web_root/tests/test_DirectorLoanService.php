@@ -57,16 +57,19 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
             $harness->assertSame('0.00', directorLoanStatementMoney($grossDisclosure['total_amounts_legally_set_off'] ?? 0));
             $harness->assertSame('353.00', directorLoanStatementMoney($grossDisclosure['closing_company_to_director_balance'] ?? 0));
 
-            $savedEvidence = (new \eel_accounts\Service\DirectorLoanReportingPresentationService())->save(
+            $savedEvidence = (new \eel_accounts\Service\ParticipatorLoanPartyTermsService())->save(
                 (int)$fixture['company_id'],
-                (int)$fixture['accounting_period_id'],
-                \eel_accounts\Service\DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR,
-                'test',
+                $primaryPartyId,
                 [
+                    'interest_rate_percent' => 0,
+                    'security_type' => 'unsecured',
+                    'repayable_on_demand' => true,
+                    'repayment_timing' => 'within_12_months',
+                    'deferment_right_confirmed' => false,
                     'set_off_right_confirmed' => true,
-                    'set_off_net_settlement_intended' => true,
-                    'set_off_evidence' => 'Executed agreement and documented simultaneous settlement intention.',
-                ]
+                    'settlement_intention' => 'simultaneous',
+                ],
+                'test'
             );
             $harness->assertSame(true, (bool)($savedEvidence['success'] ?? false));
             $statement = $service->fetchStatement((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);

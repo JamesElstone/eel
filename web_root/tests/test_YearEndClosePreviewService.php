@@ -551,16 +551,23 @@ function yearEndClosePreviewCreateFixture(): array
 
 function yearEndClosePreviewApproveDirectorLoan(int $companyId, int $accountingPeriodId, string $actor): array
 {
-    $presentation = (new \eel_accounts\Service\DirectorLoanReportingPresentationService())->save(
+    $partyId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM company_parties WHERE company_id = :company_id ORDER BY id LIMIT 1',
+        ['company_id' => $companyId]
+    );
+    $presentation = (new \eel_accounts\Service\ParticipatorLoanPartyTermsService())->save(
         $companyId,
-        $accountingPeriodId,
-        \eel_accounts\Service\DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR,
-        $actor,
+        $partyId,
         [
+            'interest_rate_percent' => 0,
+            'security_type' => 'unsecured',
+            'repayable_on_demand' => true,
+            'repayment_timing' => 'within_12_months',
+            'deferment_right_confirmed' => false,
             'set_off_right_confirmed' => true,
-            'set_off_net_settlement_intended' => true,
-            'set_off_evidence' => 'Test agreement establishes the enforceable right and simultaneous settlement intention.',
-        ]
+            'settlement_intention' => 'simultaneous',
+        ],
+        $actor
     );
     if (empty($presentation['success'])) {
         return $presentation;

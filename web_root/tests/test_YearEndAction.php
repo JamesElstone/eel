@@ -855,16 +855,19 @@ function yearEndActionDirectorLoanTestInsertLineJournal(array $fixture, int $nom
 
 function yearEndActionDirectorLoanTestConfirmSetOff(array $fixture): void
 {
-    $result = (new \eel_accounts\Service\DirectorLoanReportingPresentationService())->save(
+    $result = (new \eel_accounts\Service\ParticipatorLoanPartyTermsService())->save(
         (int)$fixture['company_id'],
-        (int)$fixture['accounting_period_id'],
-        \eel_accounts\Service\DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR,
-        'test',
+        (int)$fixture['party_id'],
         [
+            'interest_rate_percent' => 0,
+            'security_type' => 'unsecured',
+            'repayable_on_demand' => true,
+            'repayment_timing' => 'within_12_months',
+            'deferment_right_confirmed' => false,
             'set_off_right_confirmed' => true,
-            'set_off_net_settlement_intended' => true,
-            'set_off_evidence' => 'Test agreement establishes the enforceable right and simultaneous settlement intention.',
-        ]
+            'settlement_intention' => 'simultaneous',
+        ],
+        'test'
     );
     if (empty($result['success'])) {
         throw new RuntimeException(implode(' ', (array)($result['errors'] ?? [

@@ -20,6 +20,11 @@ final class DirectorLoanAction implements ActionInterfaceFramework
         $accountingPeriodId = (int)$request->input('accounting_period_id', 0);
 
         try {
+            (new \eel_accounts\Service\YearEndLockService())->assertUnlocked(
+                $companyId,
+                $accountingPeriodId,
+                'change Participator Loan party terms'
+            );
             $result = match ($intent) {
                 'save_participator_loan_party_terms' => (new \eel_accounts\Service\ParticipatorLoanPartyTermsService())->save(
                     $companyId,
@@ -54,7 +59,7 @@ final class DirectorLoanAction implements ActionInterfaceFramework
                 },
             ];
         } else {
-            foreach ((array)($result['errors'] ?? ['Director Loan reporting presentation could not be saved.']) as $error) {
+            foreach ((array)($result['errors'] ?? ['Participator Loan party terms could not be saved.']) as $error) {
                 $messages[] = ['type' => 'error', 'message' => (string)$error];
             }
         }
@@ -68,6 +73,7 @@ final class DirectorLoanAction implements ActionInterfaceFramework
                 'tax.workings',
                 'companies.house.snapshot',
                 'year.end.companies.house.comparison',
+                'year.end.state',
                 'year.end.checklist',
                 'ixbrl.readiness',
                 'ixbrl.accounts.mapping',

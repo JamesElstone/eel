@@ -260,45 +260,88 @@ final class YearEndLockService
             return ['success' => false, 'errors' => ['Run the Year End review migration before unlocking periods.']];
         }
         $this->assertCanUnlock($companyId, $accountingPeriodId);
-
-        $this->ensureReviewRow($companyId, $accountingPeriodId);
-        $existing = $this->fetchReview($companyId, $accountingPeriodId);
-        $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
-
-        \InterfaceDB::execute(
-            'UPDATE year_end_reviews
-             SET is_locked = 0, locked_at = NULL, locked_by = NULL, updated_at = :updated_at
-             WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
-            ['updated_at' => $now, 'company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
-        );
-        \eel_accounts\Support\RequestCache::clear();
-        if (\InterfaceDB::tableExists('corporation_tax_computation_runs')) {
-            try {
-                \InterfaceDB::execute(
-                    'UPDATE corporation_tax_computation_runs SET ixbrl_status = :status
-                     WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id
-                       AND generated_path IS NOT NULL',
-                    ['status' => 'stale', 'company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
-                );
-            } catch (\Throwable) {
-                // Deployments apply the CT iXBRL migration independently; runtime freshness still fails closed.
-            }
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
         }
-        (new FilingEvidenceService())->reopenForAccountingPeriod(
-            $companyId,
-            $accountingPeriodId,
-            $changedBy,
-            $notes
-        );
+        try {
+            $this->ensureReviewRow($companyId, $accountingPeriodId);
+            $existing = $this->fetchReview($companyId, $accountingPeriodId);
+            $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
 
-        $review = $this->fetchReview($companyId, $accountingPeriodId);
-        $this->writeAuditLog($companyId, $accountingPeriodId, 'unlock', $changedBy, $existing, $review, $notes);
+            \InterfaceDB::execute(
+                'UPDATE year_end_reviews
+                 SET is_locked = 0, locked_at = NULL, locked_by = NULL, updated_at = :updated_at
+                 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+                ['updated_at' => $now, 'company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            );
+            \eel_accounts\Support\RequestCache::clear();
+            if (\InterfaceDB::tableExists('corporation_tax_computation_runs')) {
+                try {
+                    \InterfaceDB::execute(
+                        'UPDATE corporation_tax_computation_runs SET ixbrl_status = :status
+                         WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id
+                           AND generated_path IS NOT NULL',
+                        ['status' => 'stale', 'company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+                    );
+                } catch (\Throwable) {
+                    // Deployments apply the CT iXBRL migration independently; runtime freshness still fails closed.
+                }
+            }
+            (new FilingEvidenceService())->reopenForAccountingPeriod(
+                $companyId,
+                $accountingPeriodId,
+                $changedBy,
+                $notes
+            );
 
-        return [
-            'success' => true,
-            'review' => $review,
-            'retained_earnings_close' => ['success' => true, 'deleted' => false, 'skipped' => true],
-        ];
+            $offsetService = new DirectorLoanReconciliationService();
+            $partyOffsetReversal = $offsetService->reverseOffsetForUnlock(
+                $companyId,
+                $accountingPeriodId,
+                $changedBy
+            );
+            if (empty($partyOffsetReversal['success'])) {
+                throw new \RuntimeException((string)(($partyOffsetReversal['errors'] ?? [])[0]
+                    ?? 'The party-specific Director Loan offsets could not be reversed.'));
+            }
+            $legacyRepair = $offsetService->repairLegacyOffset(
+                $companyId,
+                $accountingPeriodId,
+                $changedBy
+            );
+            if (empty($legacyRepair['success'])) {
+                throw new \RuntimeException((string)(($legacyRepair['errors'] ?? [])[0]
+                    ?? 'The legacy Director Loan offset could not be repaired.'));
+            }
+            $snapshotClear = (new ParticipatorLoanPartyTermsService())
+                ->clearPeriodSnapshots($companyId, $accountingPeriodId);
+            if (empty($snapshotClear['success'])) {
+                throw new \RuntimeException((string)(($snapshotClear['errors'] ?? [])[0]
+                    ?? 'The Participator Loan terms snapshots could not be reopened.'));
+            }
+
+            \eel_accounts\Support\RequestCache::clear();
+            $review = $this->fetchReview($companyId, $accountingPeriodId);
+            $this->writeAuditLog($companyId, $accountingPeriodId, 'unlock', $changedBy, $existing, $review, $notes);
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+            return [
+                'success' => true,
+                'review' => $review,
+                'director_loan_offset_reversal' => $partyOffsetReversal,
+                'legacy_director_loan_repair' => $legacyRepair,
+                'participator_loan_snapshot_clear' => $snapshotClear,
+                'retained_earnings_close' => ['success' => true, 'deleted' => false, 'skipped' => true],
+            ];
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+            \eel_accounts\Support\RequestCache::clear();
+            return ['success' => false, 'errors' => [$exception->getMessage()]];
+        }
     }
 
     public function writeAuditLog(

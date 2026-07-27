@@ -40,6 +40,54 @@ $harness->run(_year_end_loan_confirmationCard::class, static function (Generated
         $harness->assertSame(false, str_contains($html, 'save_ct600a_review'));
     });
 
+    $harness->check(_year_end_loan_confirmationCard::class, 'renders stable per-party tax statuses', static function () use ($harness, $card): void {
+        $context = yearEndDirectorLoanReviewCardContext();
+        $context['services']['sectionReview']['display']['party_facts'] = [
+            [
+                'party_id' => 101,
+                'party_name' => 'Terms Missing',
+                'gross_asset' => 100,
+                'gross_liability' => 0,
+                'potential_s455_exposure' => 100,
+                'terms_saved' => false,
+            ],
+            [
+                'party_id' => 102,
+                'party_name' => 'Evidence Pending',
+                'gross_asset' => 200,
+                'gross_liability' => 0,
+                'potential_s455_exposure' => 200,
+                'terms_saved' => true,
+                'tax_status_code' => 'review_required',
+            ],
+            [
+                'party_id' => 103,
+                'party_name' => 'Exposure Reviewed',
+                'gross_asset' => 300,
+                'gross_liability' => 0,
+                'potential_s455_exposure' => 300,
+                'terms_saved' => true,
+                'tax_status_code' => 'reviewed_exposure',
+            ],
+            [
+                'party_id' => 104,
+                'party_name' => 'No Exposure',
+                'gross_asset' => 0,
+                'gross_liability' => 100,
+                'potential_s455_exposure' => 0,
+                'terms_saved' => true,
+                'tax_status_code' => 'no_exposure',
+            ],
+        ];
+        $context['services']['sectionReview']['display']['tax_review'] = ['party_flags' => []];
+
+        $html = $card->render($context);
+        $harness->assertTrue(str_contains($html, 'Terms required'));
+        $harness->assertTrue(str_contains($html, 'Review required'));
+        $harness->assertTrue(str_contains($html, 'Reviewed — exposure recorded'));
+        $harness->assertTrue(str_contains($html, 'No exposure flagged'));
+    });
+
     $harness->check(_year_end_loan_confirmationCard::class, 'passes automatically when no director loan activity exists and retains legacy repair controls', static function () use ($harness, $card): void {
         $context = yearEndDirectorLoanReviewCardContext();
         $context['services']['sectionReview']['display']['has_activity'] = false;

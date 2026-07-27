@@ -138,9 +138,10 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
             ' . $warnings . '
             <section class="settings-stack">
                 ' . $this->positionsTable(
-                    (array)($review['per_director'] ?? []),
+                    (array)($review['party_facts'] ?? $review['per_director'] ?? []),
                     (array)($review['tax_review'] ?? []),
-                    $settings
+                    $settings,
+                    $review
                 ) . '
                 ' . $this->proposedLines(
                     (array)($review['proposed_lines'] ?? []),
@@ -199,38 +200,47 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
             . ($selected === $value ? ' checked' : '') . ' required> ' . $label . '</label>';
     }
 
-    private function positionsTable(array $positions, array $taxReview, array $settings): string
+    private function positionsTable(array $positions, array $taxReview, array $settings, array $review): string
     {
         $visiblePositions = array_values(array_filter(
             $positions,
             fn(mixed $position): bool => !$this->isZeroUnattributedPosition((array)$position)
         ));
-        $flagsByDirector = [];
+        $flagsByParty = [];
         foreach ((array)($taxReview['director_flags'] ?? []) as $flag) {
             $flag = (array)$flag;
-            $flagsByDirector[(string)($flag['director_name'] ?? '')] = $flag;
+            $flagsByParty[$this->partyKey($flag)] = $flag;
         }
-        if ($visiblePositions === [] && $flagsByDirector === []) {
+        foreach ((array)($taxReview['party_flags'] ?? []) as $flag) {
+            $flag = (array)$flag;
+            $flagsByParty[$this->partyKey($flag)] = $flag;
+        }
+        if ($visiblePositions === [] && $flagsByParty === []) {
             return '<div class="helper">No per-director balances.</div>';
         }
 
-        $positionsByDirector = [];
+        $positionsByParty = [];
         foreach ($visiblePositions as $position) {
             $position = (array)$position;
-            $positionsByDirector[(string)($position['director_name'] ?? 'Unattributed')] = $position;
+            $positionsByParty[$this->partyKey($position)] = $position;
         }
 
         $rows = '';
-        foreach (array_unique(array_merge(array_keys($positionsByDirector), array_keys($flagsByDirector))) as $directorName) {
-            $position = (array)($positionsByDirector[$directorName] ?? []);
-            $flag = (array)($flagsByDirector[$directorName] ?? []);
+        foreach (array_unique(array_merge(array_keys($positionsByParty), array_keys($flagsByParty))) as $partyKey) {
+            $position = (array)($positionsByParty[$partyKey] ?? []);
+            $flag = (array)($flagsByParty[$partyKey] ?? []);
+            $partyName = trim((string)($position['party_name']
+                ?? $position['director_name']
+                ?? $flag['party_name']
+                ?? $flag['director_name']
+                ?? ''));
             $rows .= '<tr>
-                <td>' . HelperFramework::escape($directorName !== '' ? $directorName : 'Unattributed') . '</td>
+                <td>' . HelperFramework::escape($partyName !== '' ? $partyName : 'Unattributed') . '</td>
                 <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['gross_asset'] ?? 0)) . '</td>
                 <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['gross_liability'] ?? 0)) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['desired_reclassification'] ?? 0)) . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['desired_reclassification'] ?? $position['desired_set_off'] ?? 0)) . '</td>
                 <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['net_closing_position'] ?? 0)) . '</td>
-                <td>' . ($flag === [] ? '' : (!empty($flag['review_required']) ? '<span class="badge warning">Review required</span>' : '<span class="badge success">No exposure flagged</span>')) . '</td>
+                <td>' . $this->taxFlagBadge($position, $flag, $taxReview, $review) . '</td>
                 <td class="numeric">' . HelperFramework::escape($this->money($settings, $flag['potential_s455_exposure'] ?? ($position['potential_s455_exposure'] ?? 0))) . '</td>
             </tr>';
         }
@@ -238,6 +248,91 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
             <thead><tr><th>Participator</th><th>Gross asset</th><th>Gross liability</th><th>Reclassification</th><th>Net closing</th><th>Tax flag</th><th>Gross asset principal</th></tr></thead>
             <tbody>' . $rows . '</tbody>
         </table></div>';
+    }
+
+    private function partyKey(array $row): string
+    {
+        $partyId = (int)($row['party_id'] ?? $row['director_id'] ?? 0);
+        if ($partyId > 0) {
+            return 'party:' . $partyId;
+        }
+        return 'name:' . strtolower(trim((string)($row['party_name'] ?? $row['director_name'] ?? 'Unattributed')));
+    }
+
+    private function taxFlagBadge(array $position, array $flag, array $taxReview, array $review): string
+    {
+        $status = $this->explicitTaxStatus($position, $flag);
+        $exposure = round((float)($flag['potential_s455_exposure']
+            ?? $position['potential_s455_exposure']
+            ?? 0), 2);
+
+        if ($status === '') {
+            $termsSaved = $this->explicitBoolean(
+                [$position, $flag],
+                ['terms_saved', 'has_saved_terms', 'terms_explicit', 'party_terms_explicit']
+            );
+            if ($termsSaved === false) {
+                $status = 'terms_required';
+            } elseif ($exposure < 0.005) {
+                $status = 'no_exposure';
+            } else {
+                $reviewCurrent = $this->explicitBoolean(
+                    [$position, $flag, $taxReview, $review],
+                    [
+                        'tax_review_current',
+                        'review_current',
+                        'tax_evidence_current',
+                        'ct600a_review_current',
+                    ]
+                );
+                if ($reviewCurrent === true
+                    || (array_key_exists('review_required', $flag) && empty($flag['review_required']))) {
+                    $status = 'reviewed_exposure';
+                } else {
+                    $status = 'review_required';
+                }
+            }
+        }
+
+        return match ($status) {
+            'terms_required' => '<span class="badge warning">Terms required</span>',
+            'review_required' => '<span class="badge warning">Review required</span>',
+            'reviewed_exposure' => '<span class="badge success">Reviewed — exposure recorded</span>',
+            default => '<span class="badge success">No exposure flagged</span>',
+        };
+    }
+
+    private function explicitTaxStatus(array ...$sources): string
+    {
+        foreach ($sources as $source) {
+            foreach (['tax_status_code', 'tax_review_status', 'tax_status', 'status'] as $key) {
+                $value = strtolower(trim((string)($source[$key] ?? '')));
+                $normalised = match ($value) {
+                    'terms_required', 'missing_terms' => 'terms_required',
+                    'review_required', 'incomplete', 'invalid', 'stale' => 'review_required',
+                    'reviewed_exposure', 'reviewed_exposure_recorded', 'exposure_reviewed' => 'reviewed_exposure',
+                    'no_exposure', 'no_exposure_flagged', 'no_director_receivable' => 'no_exposure',
+                    default => '',
+                };
+                if ($normalised !== '') {
+                    return $normalised;
+                }
+            }
+        }
+        return '';
+    }
+
+    /** @param list<array<string,mixed>> $sources */
+    private function explicitBoolean(array $sources, array $keys): ?bool
+    {
+        foreach ($sources as $source) {
+            foreach ($keys as $key) {
+                if (array_key_exists($key, $source)) {
+                    return !empty($source[$key]);
+                }
+            }
+        }
+        return null;
     }
 
     private function legacyRepairAction(int $companyId, int $accountingPeriodId): string
@@ -262,7 +357,7 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
 
     private function isZeroUnattributedPosition(array $position): bool
     {
-        if (trim((string)($position['director_name'] ?? 'Unattributed')) !== 'Unattributed') {
+        if (trim((string)($position['party_name'] ?? $position['director_name'] ?? 'Unattributed')) !== 'Unattributed') {
             return false;
         }
 

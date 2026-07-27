@@ -505,16 +505,6 @@ final class YearEndChecklistService
                 ]);
             }
 
-            $progress?->__invoke('Freezing participator loan terms…', 91);
-            $partyTermsSnapshot = (new \eel_accounts\Service\ParticipatorLoanPartyTermsService())
-                ->snapshotPeriod($companyId, $accountingPeriodId, $lockedBy);
-            if (empty($partyTermsSnapshot['success'])) {
-                return $this->rollbackLockTransaction($transaction, [
-                    'success' => false,
-                    'status' => 422,
-                    'errors' => (array)($partyTermsSnapshot['errors'] ?? ['Participator loan terms could not be frozen before locking this period.']),
-                ]);
-            }
             $progress?->__invoke('Locking the accounting period…', 92);
             $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
             $result = $lock->lockPeriod($companyId, $accountingPeriodId, $lockedBy);
@@ -1160,20 +1150,12 @@ final class YearEndChecklistService
                 return $this->rollbackUnlockTransaction($transaction, $result);
             }
 
-            $progress?->__invoke('Checking the legacy Director Loan offset…', 65);
-            $legacyRepair = (new \eel_accounts\Service\DirectorLoanReconciliationService())
-                ->repairLegacyOffset($companyId, $accountingPeriodId, $changedBy);
-            if (empty($legacyRepair['success'])) {
-                return $this->rollbackUnlockTransaction($transaction, $legacyRepair);
-            }
-
+            $progress?->__invoke('Reversing Director Loan offsets and reopening terms…', 65);
             $progress?->__invoke('Preparing the reopened year-end checklist…', 85);
             $progress?->__invoke('Finalising the reopened accounting period…', 99);
             $this->commitLockTransaction($transaction);
 
-            return $result + [
-                'legacy_director_loan_repair' => $legacyRepair,
-            ];
+            return $result;
         } catch (\Throwable $exception) {
             return $this->rollbackUnlockTransaction($transaction, ['success' => false, 'errors' => [$exception->getMessage()]]);
         }

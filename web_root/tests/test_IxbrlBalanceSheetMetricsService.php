@@ -28,6 +28,43 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('prior_period_unlocked', (string)(($metrics['prior_period_dependency'] ?? [])['status'] ?? ''));
         });
 
+        $harness->check(\eel_accounts\Service\IxbrlBalanceSheetMetricsService::class, 'normalises party terms into per-party balance-sheet provenance', static function () use ($harness, $service): void {
+            $method = new ReflectionMethod($service, 'directorLoanPartyPresentationFacts');
+            $method->setAccessible(true);
+            $facts = (array)$method->invoke($service, [[
+                'party_id' => 42,
+                'party_name' => 'Fixture Participator',
+                'linked_director_id' => null,
+                'has_period_movement' => true,
+                'has_closing_position' => true,
+                'terms_saved' => true,
+                'terms_source' => 'locked_snapshot',
+                'terms_revision' => 5,
+                'maturity_classification' => 'after_more_than_one_year',
+                'gross_liability' => 750.0,
+                'reportable_liability' => 500.0,
+                'set_off_permitted' => true,
+                'party_terms' => [
+                    'interest_rate_percent' => 3.5,
+                    'security_type' => 'secured',
+                    'repayable_on_demand' => 0,
+                    'repayment_timing' => 'after_12_months',
+                    'deferment_right_confirmed' => 1,
+                    'set_off_right_confirmed' => 1,
+                    'settlement_intention' => 'net',
+                ],
+            ]], 91);
+
+            $harness->assertCount(1, $facts);
+            $harness->assertSame(42, (int)$facts[0]['party_id']);
+            $harness->assertSame(false, (bool)$facts[0]['is_director']);
+            $harness->assertSame(true, (bool)$facts[0]['terms_snapshot']);
+            $harness->assertSame(91, (int)$facts[0]['liability_nominal_account_id']);
+            $harness->assertSame('after_more_than_one_year', (string)$facts[0]['maturity_classification']);
+            $harness->assertSame(500.0, (float)$facts[0]['reportable_liability']);
+            $harness->assertSame('secured', (string)$facts[0]['terms']['security_type']);
+        });
+
         $harness->check(\eel_accounts\Service\IxbrlBalanceSheetMetricsService::class, 'splits prepayments from current assets without changing balance-sheet subtotals', static function () use ($harness, $service): void {
             InterfaceDB::beginTransaction();
             try {
@@ -264,15 +301,19 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame(0.0, $defaultBuckets['creditors_after_more_than_one_year'] ?? null);
                 $harness->assertSame(372.89, $defaultBuckets['net_assets_liabilities'] ?? null);
 
-                $saved = (new \eel_accounts\Service\DirectorLoanReportingPresentationService())->save(
+                $saved = (new \eel_accounts\Service\ParticipatorLoanPartyTermsService())->save(
                     $companyId,
-                    $periodId,
-                    'after_more_than_one_year',
-                    'test',
+                    (int)$fixture['party_id'],
                     [
-                        'deferment_right_confirmed' => true,
-                        'deferment_evidence' => 'Executed facility gave the company an unconditional right at the balance-sheet date to defer payment for at least twelve months.',
-                    ]
+                        'interest_rate_percent' => 0,
+                        'security_type' => 'unsecured',
+                        'repayable_on_demand' => 0,
+                        'repayment_timing' => 'after_12_months',
+                        'deferment_right_confirmed' => 1,
+                        'set_off_right_confirmed' => 0,
+                        'settlement_intention' => 'independently',
+                    ],
+                    'test'
                 );
                 $harness->assertSame(true, (bool)($saved['success'] ?? false));
 
@@ -298,6 +339,19 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'after_more_than_one_year',
                     (string)(($metrics['director_loan_reporting_presentation'] ?? [])['classification'] ?? '')
                 );
+                $presentation = (array)($metrics['director_loan_reporting_presentation'] ?? []);
+                $harness->assertSame(true, (bool)($presentation['applicable'] ?? false));
+                $harness->assertSame(1, (int)($presentation['party_count'] ?? 0));
+                $harness->assertSame(
+                    (int)$fixture['party_id'],
+                    (int)(($presentation['party_facts'] ?? [])[0]['party_id'] ?? 0)
+                );
+                $afterSources = (array)(($metrics['sources'] ?? [])['creditors_after_more_than_one_year'] ?? []);
+                $harness->assertSame(
+                    'participator_loan_party',
+                    (string)($afterSources[0]['source_type'] ?? '')
+                );
+                $harness->assertSame(1, (int)($afterSources[0]['terms_revision'] ?? 0));
             } finally {
                 if (InterfaceDB::inTransaction()) {
                     InterfaceDB::rollBack();
@@ -478,6 +532,33 @@ function ixbrlDirectorLoanPresentationFixture(): array
     $settings->set('participator_loan_asset_nominal_id', $directorLoanAsset, 'int');
     $settings->set('participator_loan_liability_nominal_id', $directorLoanLiability, 'int');
     $settings->flush();
+    InterfaceDB::prepareExecute(
+        'INSERT INTO company_parties (company_id, party_type, legal_name)
+         VALUES (:company_id, :party_type, :legal_name)',
+        [
+            'company_id' => $companyId,
+            'party_type' => 'individual',
+            'legal_name' => 'iXBRL Fixture Participator',
+        ]
+    );
+    $partyId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM company_parties
+         WHERE company_id = :company_id AND legal_name = :legal_name',
+        ['company_id' => $companyId, 'legal_name' => 'iXBRL Fixture Participator']
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO company_party_roles (
+            company_id, party_id, role_type, effective_from
+         ) VALUES (
+            :company_id, :party_id, :role_type, :effective_from
+         )',
+        [
+            'company_id' => $companyId,
+            'party_id' => $partyId,
+            'role_type' => 'participator',
+            'effective_from' => '2022-09-05',
+        ]
+    );
 
     $journalId = ixbrlBalanceSheetJournal(
         $companyId,
@@ -491,10 +572,23 @@ function ixbrlDirectorLoanPresentationFixture(): array
     ixbrlBalanceSheetLine($journalId, $otherCreditor, 0.0, 279.0);
     ixbrlBalanceSheetLine($journalId, $directorLoanLiability, 0.0, 1288.63);
     ixbrlBalanceSheetLine($journalId, $equity, 0.0, 372.89);
+    InterfaceDB::prepareExecute(
+        'UPDATE journal_lines
+         SET party_id = :party_id
+         WHERE journal_id = :journal_id
+           AND nominal_account_id IN (:asset_nominal_id, :liability_nominal_id)',
+        [
+            'party_id' => $partyId,
+            'journal_id' => $journalId,
+            'asset_nominal_id' => $directorLoanAsset,
+            'liability_nominal_id' => $directorLoanLiability,
+        ]
+    );
 
     return [
         'company_id' => $companyId,
         'accounting_period_id' => $periodId,
+        'party_id' => $partyId,
         'participator_loan_asset_nominal_id' => $directorLoanAsset,
         'participator_loan_liability_nominal_id' => $directorLoanLiability,
     ];

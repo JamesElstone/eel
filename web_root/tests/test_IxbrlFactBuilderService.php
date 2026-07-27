@@ -271,25 +271,48 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 'current' => ['buckets' => [], 'sources' => []],
                 'director_loan_disclosure' => [
                     'has_company_to_director_exposure' => true,
-                    'total_advances' => 350.0,
+                    'total_advances' => 1349.0,
                     'total_repayments' => 140.0,
-                    'total_cash_repayments' => 90.0,
+                    'total_cash_repayments' => 1089.0,
+                    'party_facts' => [
+                        ['party_id' => 10, 'linked_director_id' => 1, 'terms_source' => 'locked_snapshot', 'terms_revision' => 4],
+                        ['party_id' => 20, 'linked_director_id' => 2, 'terms_source' => 'locked_snapshot', 'terms_revision' => 2],
+                    ],
                     'disclosures' => [
                         [
+                            'party_id' => 10,
                             'director_id' => 1,
+                            'linked_director_id' => 1,
+                            'is_director' => true,
                             'director_name' => 'Director One',
                             'advances' => 200.0,
                             'cash_repayments' => 50.0,
                             'closing_company_to_director_balance' => 120.0,
                         ],
                         [
+                            'party_id' => 20,
                             'director_id' => 2,
+                            'linked_director_id' => 2,
+                            'is_director' => true,
                             'director_name' => 'Director Two',
                             'advances' => 150.0,
                             'cash_repayments' => 40.0,
                             'closing_company_to_director_balance' => 80.0,
                         ],
+                        [
+                            'party_id' => 30,
+                            'linked_director_id' => null,
+                            'is_director' => false,
+                            'director_name' => 'Shareholder only',
+                            'advances' => 999.0,
+                            'cash_repayments' => 999.0,
+                            'closing_company_to_director_balance' => 999.0,
+                        ],
                     ],
+                ],
+                'director_loan_year_end_approval' => [
+                    'basis_version' => 'year_end_section_v2',
+                    'basis_hash' => str_repeat('a', 64),
                 ],
             ];
 
@@ -302,6 +325,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('current_period_duration', (string)$cashRepayments['context_ref']);
             $harness->assertSame('current_period_end', (string)$closing['context_ref']);
             $harness->assertCount(2, (array)$cashRepayments['source']['source_rows']);
+            $harness->assertSame(10, (int)$cashRepayments['source']['source_rows'][0]['party_id']);
+            $harness->assertSame(
+                4,
+                (int)$cashRepayments['source']['source_rows'][0]['party_fact']['terms_revision']
+            );
+            $harness->assertSame(
+                str_repeat('a', 64),
+                (string)$cashRepayments['source']['director_loan_year_end_approval']['basis_hash']
+            );
 
             unset($report['director_loan_disclosure']['total_cash_repayments']);
             $harness->assertSame(
@@ -391,7 +423,6 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $fixture = ixbrlFactBuilderDirectorLoanFixture();
                 $companyId = (int)$fixture['company_id'];
                 $periodId = (int)$fixture['accounting_period_id'];
-                $presentationService = new \eel_accounts\Service\DirectorLoanReportingPresentationService();
                 $approvingDirector = ixbrl_test_ensure_approving_director(
                     $companyId,
                     '2026-01-31'
@@ -427,72 +458,6 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 } catch (RuntimeException $exception) {
                     $harness->assertTrue(str_contains($exception->getMessage(), 'Approve the current disclosures'));
                 }
-                return;
-
-                $defaultRunId = $service->buildFacts($companyId, $periodId);
-                $defaultWithin = ixbrlFactBuilderFact($defaultRunId, 'creditors_within_one_year');
-                $defaultAfter = ixbrlFactBuilderFact($defaultRunId, 'creditors_after_one_year');
-                $defaultSource = json_decode((string)($defaultWithin['source_json'] ?? ''), true);
-                $defaultProvenance = (array)($defaultSource['director_loan_reporting_presentation'] ?? []);
-
-                $harness->assertSame(500.0, (float)($defaultWithin['numeric_value'] ?? 0));
-                $harness->assertSame(0.0, (float)($defaultAfter['numeric_value'] ?? -1));
-                $harness->assertSame('within_one_year', (string)($defaultProvenance['classification'] ?? ''));
-                $harness->assertSame(0, (int)($defaultProvenance['revision'] ?? -1));
-                $harness->assertSame('current', (string)($service->getRunFreshness($defaultRunId)['state'] ?? ''));
-                $harness->assertSame('core:Creditors', (string)($defaultWithin['taxonomy_concept'] ?? ''));
-                $harness->assertTrue(str_contains((string)($defaultWithin['dimensions_json'] ?? ''), 'WithinOneYear'));
-
-                $saved = $presentationService->save(
-                    $companyId,
-                    $periodId,
-                    'after_more_than_one_year',
-                    'test'
-                );
-                $harness->assertSame(true, (bool)($saved['success'] ?? false));
-                $defaultFreshness = $service->getRunFreshness($defaultRunId);
-                $harness->assertSame('stale', (string)($defaultFreshness['state'] ?? ''));
-                $staleReadiness = (new \eel_accounts\Service\IxbrlReadinessService())
-                    ->getReadiness($companyId, $periodId);
-                $harness->assertSame(false, (bool)($staleReadiness['facts_current'] ?? true));
-                $harness->assertSame(false, (bool)($staleReadiness['can_generate'] ?? true));
-                $harness->assertSame('ready', (string)InterfaceDB::fetchColumn(
-                    'SELECT status FROM ixbrl_generation_runs WHERE id = :id',
-                    ['id' => $defaultRunId]
-                ));
-
-                $longTermRunId = $service->buildFacts($companyId, $periodId);
-                $longTermWithin = ixbrlFactBuilderFact($longTermRunId, 'creditors_within_one_year');
-                $longTermAfter = ixbrlFactBuilderFact($longTermRunId, 'creditors_after_one_year');
-                $longTermSource = json_decode((string)($longTermAfter['source_json'] ?? ''), true);
-                $longTermProvenance = (array)($longTermSource['director_loan_reporting_presentation'] ?? []);
-
-                $harness->assertTrue($longTermRunId > $defaultRunId);
-                $harness->assertSame(0.0, (float)($longTermWithin['numeric_value'] ?? -1));
-                $harness->assertSame(500.0, (float)($longTermAfter['numeric_value'] ?? 0));
-                $harness->assertSame('after_more_than_one_year', (string)($longTermProvenance['classification'] ?? ''));
-                $harness->assertSame(1, (int)($longTermProvenance['revision'] ?? 0));
-                $harness->assertSame('current', (string)($service->getRunFreshness($longTermRunId)['state'] ?? ''));
-                $currentReadiness = (new \eel_accounts\Service\IxbrlReadinessService())
-                    ->getReadiness($companyId, $periodId);
-                $harness->assertSame(true, (bool)($currentReadiness['facts_current'] ?? false));
-
-                $idempotent = $presentationService->save(
-                    $companyId,
-                    $periodId,
-                    'after_more_than_one_year',
-                    'test'
-                );
-                $harness->assertSame(false, (bool)($idempotent['changed'] ?? true));
-                $harness->assertSame('current', (string)($service->getRunFreshness($longTermRunId)['state'] ?? ''));
-
-                $reverted = $presentationService->save($companyId, $periodId, 'within_one_year', 'test');
-                $harness->assertSame(2, (int)($reverted['revision'] ?? 0));
-                $harness->assertSame('stale', (string)($service->getRunFreshness($longTermRunId)['state'] ?? ''));
-                $harness->assertSame(
-                    500.0,
-                    (float)(ixbrlFactBuilderFact($defaultRunId, 'creditors_within_one_year')['numeric_value'] ?? 0)
-                );
             } finally {
                 if (InterfaceDB::inTransaction()) {
                     InterfaceDB::rollBack();

@@ -87,6 +87,30 @@ $harness->run(\eel_accounts\Service\YearEndSectionApprovalService::class, static
         $harness->assertSame(64, strlen($token));
     });
 
+    $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'does not stale a Director Loan bundle when only the S455 evaluation clock changes', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod($service, 'bundleSourceHash');
+        $bundle = [
+            'check_code' => 'director_loan_year_end_review',
+            'facts' => ['party_facts' => [['party_id' => 7, 'terms_revision' => 2]]],
+            'display' => [
+                's455' => [
+                    'periods' => [[
+                        'evidence_cutoff' => '2026-07-26 23:59:59',
+                        'basis' => ['evidence_cutoff' => '2026-07-26 23:59:59', 'exposure' => '125.00'],
+                    ]],
+                ],
+            ],
+        ];
+        $before = (string)$method->invoke($service, $bundle);
+        $bundle['display']['s455']['periods'][0]['evidence_cutoff'] = '2026-07-27 00:00:00';
+        $bundle['display']['s455']['periods'][0]['basis']['evidence_cutoff'] = '2026-07-27 00:00:00';
+        $after = (string)$method->invoke($service, $bundle);
+
+        $harness->assertSame($before, $after);
+        $bundle['facts']['party_facts'][0]['terms_revision'] = 3;
+        $harness->assertSame(false, hash_equals($before, (string)$method->invoke($service, $bundle)));
+    });
+
     $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'uses the persisted filing-scope answers instead of browser-submitted duplicates', static function () use ($harness, $service): void {
         $method = new ReflectionMethod($service, 'approvalAnswers');
         $answers = (array)$method->invoke($service, [

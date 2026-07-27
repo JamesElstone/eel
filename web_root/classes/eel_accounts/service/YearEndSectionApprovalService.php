@@ -290,7 +290,7 @@ final class YearEndSectionApprovalService
             'accounting_period_id' => $accountingPeriodId,
             'check_code' => $checkCode,
             'contract_version' => self::CONTRACT_VERSION,
-            'source_hash' => hash('sha256', $json),
+            'source_hash' => $this->bundleSourceHash($bundle),
             'bundle_json' => $json,
             'is_current' => !empty($bundle['available']) ? 1 : 0,
             'generated_at' => $now,
@@ -400,17 +400,20 @@ final class YearEndSectionApprovalService
                 'required_value' => 'no',
             ];
         }
-        $facts = [
-            'accounting_period_id' => $accountingPeriodId,
-            'entry_count' => (int)(($display['confirmation_basis']['facts']['entry_count'] ?? 0)),
-            'entry_facts' => (array)(($display['confirmation_basis']['facts']['entry_facts'] ?? [])),
-            'director_facts' => (array)(($display['confirmation_basis']['facts']['director_facts'] ?? [])),
-            'unattributed_count' => (int)($display['unattributed_count'] ?? 0),
-            'invalid_director_count' => (int)($display['invalid_director_count'] ?? 0),
-            'legacy_unresolved_reclassification_net_amount' => (string)($display['legacy_unresolved_reclassification_net_amount'] ?? '0.00'),
-            'potential_s455_exposure_amount' => (string)($display['potential_s455_exposure'] ?? '0.00'),
-            'desired_reclassification_amount' => (string)($display['desired_reclassification_amount'] ?? '0.00'),
-        ];
+        $facts = (array)(($display['confirmation_basis'] ?? [])['facts'] ?? []);
+        // These values are derived from the answers signed by this same
+        // section. Keeping them inside its basis makes any bundle refresh
+        // (including the automatic offset journal and lock snapshot) appear
+        // to invalidate its own approval.
+        unset(
+            $facts['ct600a_review_current'],
+            $facts['ct600a_review_basis_hash'],
+            $facts['ct600a_ready']
+        );
+        $facts['accounting_period_id'] = $accountingPeriodId;
+        $facts['party_facts'] = (array)($facts['party_facts'] ?? $display['party_facts'] ?? []);
+        // Keep the historical alias available to cached checklist consumers.
+        $facts['director_facts'] = (array)($facts['director_facts'] ?? $facts['party_facts']);
         return $this->bundle('director_loan_year_end_review', $facts, $questions, $display);
     }
 
@@ -725,10 +728,37 @@ final class YearEndSectionApprovalService
         $liveBundle = $this->buildBundle($companyId, $accountingPeriodId, $checkCode);
         $liveBundle['source_token'] = $this->sourceToken($companyId, $accountingPeriodId, $checkCode);
         $liveBundle['definition_token'] = $this->definitionToken($checkCode);
-        $liveHash = hash('sha256', $this->canonicalJson($liveBundle));
+        $liveHash = $this->bundleSourceHash($liveBundle);
 
         return trim((string)($cached['source_hash'] ?? '')) !== ''
             && hash_equals((string)$cached['source_hash'], $liveHash);
+    }
+
+    /**
+     * S455's evidence cutoff records when the read model was evaluated, not a
+     * change to the underlying evidence. Its own basis hash deliberately
+     * excludes this value; do the same for the surrounding Year End bundle so
+     * an approval cannot become stale merely by crossing a clock second.
+     */
+    private function bundleSourceHash(array $bundle): string
+    {
+        if ((string)($bundle['check_code'] ?? '') === 'director_loan_year_end_review') {
+            $bundle = $this->withoutEvidenceCutoff($bundle);
+        }
+
+        return hash('sha256', $this->canonicalJson($bundle));
+    }
+
+    private function withoutEvidenceCutoff(array $value): array
+    {
+        unset($value['evidence_cutoff']);
+        foreach ($value as $key => $item) {
+            if (is_array($item)) {
+                $value[$key] = $this->withoutEvidenceCutoff($item);
+            }
+        }
+
+        return $value;
     }
 
     private function sourceToken(int $companyId, int $accountingPeriodId, string $checkCode): string
@@ -764,6 +794,20 @@ final class YearEndSectionApprovalService
             if ($token !== null) {
                 $tokens[$table] = $token;
             }
+        }
+        foreach (['participator_loan_party_terms', 'participator_loan_party_terms_audit'] as $table) {
+            $token = $this->companyTableToken($table, $companyId);
+            if ($token !== null) {
+                $tokens[$table] = $token;
+            }
+        }
+        $snapshotToken = $this->companyPeriodTableToken(
+            'participator_loan_party_term_snapshots',
+            $companyId,
+            $accountingPeriodId
+        );
+        if ($snapshotToken !== null) {
+            $tokens['participator_loan_party_term_snapshots'] = $snapshotToken;
         }
         $ct600aToken = $this->companyPeriodTableToken('corporation_tax_ct600a_events', $companyId, $accountingPeriodId);
         if ($ct600aToken !== null) {

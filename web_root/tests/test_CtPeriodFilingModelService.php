@@ -153,6 +153,44 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $h->assertSame('stale', (string)($freshness['state'] ?? ''));
         });
 
+        $h->check($service::class, 'makes generated facts stale when the frozen Director Loan party-terms approval changes', static function () use ($h): void {
+            $fixture = ctPeriodFilingModelFixture(2, [], [], [], true, true, true);
+            $runId = (int)($fixture['filing_approval']['fact_run_id'] ?? 0);
+            $factBuilder = new \eel_accounts\Service\IxbrlFactBuilderService();
+            $h->assertSame('current', (string)($factBuilder->getRunFreshness($runId)['state'] ?? ''));
+
+            $acknowledgements = new \eel_accounts\Service\YearEndAcknowledgementService();
+            $acknowledgement = $acknowledgements->fetch(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                \eel_accounts\Service\DirectorLoanReconciliationService::YEAR_END_ACKNOWLEDGEMENT_CODE
+            );
+            $basis = json_decode((string)($acknowledgement['basis_json'] ?? ''), true);
+            $h->assertSame(true, is_array($basis));
+            $partyFacts = (array)(($basis['facts'] ?? [])['party_facts'] ?? []);
+            $h->assertSame(1, count($partyFacts));
+            $partyFacts[0]['terms_revision'] = (int)($partyFacts[0]['terms_revision'] ?? 0) + 1;
+            $partyFacts[0]['resolved_terms']['interest_rate_percent'] = 3.5;
+            $partyFacts[0]['terms_snapshot_basis']['revision'] = $partyFacts[0]['terms_revision'];
+            $partyFacts[0]['terms_snapshot_basis']['resolved_terms'] = $partyFacts[0]['resolved_terms'];
+            $basis['facts']['party_facts'] = $partyFacts;
+            $basis['facts']['director_facts'] = $partyFacts;
+            $replacement = $acknowledgements->save(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                \eel_accounts\Service\DirectorLoanReconciliationService::YEAR_END_ACKNOWLEDGEMENT_CODE,
+                $basis,
+                'test',
+                '',
+                true,
+                \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION
+            );
+            $h->assertSame(true, (bool)($replacement['success'] ?? false));
+            \eel_accounts\Support\RequestCache::clear();
+
+            $h->assertSame('stale', (string)($factBuilder->getRunFreshness($runId)['state'] ?? ''));
+        });
+
         $h->check($service::class, 'invalidates approval on unlock and requires a new approval after relock', static function () use ($h): void {
             $fixture = ctPeriodFilingModelFixture();
             $approvalService = new \eel_accounts\Service\IxbrlAccountsFilingApprovalService();
@@ -562,6 +600,7 @@ function ctPeriodFilingModelFixture(
             'Long Period Participator',
             $accountingStart
         );
+        ctPeriodFilingModelSavePartyLoanTerms($companyId, $partyId);
         ctPeriodFilingModelBankLoanTransaction(
             $companyId,
             $accountingPeriodId,
@@ -875,15 +914,39 @@ function ctPeriodFilingModelFixture(
         if (empty($savedReview['success'])) {
             throw new RuntimeException('CT600A review failed: ' . implode(' ', (array)($savedReview['errors'] ?? [])));
         }
-        \InterfaceDB::execute(
-            'UPDATE year_end_reviews
-             SET is_locked = 1, locked_at = :locked_at, locked_by = :locked_by
-             WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
-            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'locked_at' => '2026-07-19 12:00:00', 'locked_by' => 'test']
-        );
-
+        if ($withParticipatorLoans) {
+            $directorLoanApproval = (new \eel_accounts\Service\DirectorLoanReconciliationService())
+                ->saveYearEndReview($companyId, $accountingPeriodId, true, 'test');
+            if (empty($directorLoanApproval['success'])) {
+                throw new RuntimeException(
+                    'CT filing Director Loan Year End approval failed: '
+                    . implode(' ', (array)($directorLoanApproval['errors'] ?? []))
+                );
+            }
+        }
         \InterfaceDB::beginTransaction();
         try {
+            if ($withParticipatorLoans) {
+                $snapshot = (new \eel_accounts\Service\ParticipatorLoanPartyTermsService())
+                    ->snapshotPeriod($companyId, $accountingPeriodId, 'test');
+                if (empty($snapshot['success'])) {
+                    throw new RuntimeException(
+                        'CT filing Participator Loan terms snapshot failed: '
+                        . implode(' ', (array)($snapshot['errors'] ?? []))
+                    );
+                }
+            }
+            \InterfaceDB::execute(
+                'UPDATE year_end_reviews
+                 SET is_locked = 1, locked_at = :locked_at, locked_by = :locked_by
+                 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'locked_at' => '2026-07-19 12:00:00',
+                    'locked_by' => 'test',
+                ]
+            );
             $seal = (new \eel_accounts\Service\CorporationTaxComputationService())
                 ->sealSummariesForYearEndLock($companyId, $accountingPeriodId);
             if (empty($seal['success'])) {
@@ -910,6 +973,29 @@ function ctPeriodFilingModelFixture(
         'manifest_hash' => $manifestHash,
         'filing_approval' => $filingApproval ?? null,
     ];
+}
+
+function ctPeriodFilingModelSavePartyLoanTerms(int $companyId, int $partyId): void
+{
+    $saved = (new \eel_accounts\Service\ParticipatorLoanPartyTermsService())->save(
+        $companyId,
+        $partyId,
+        [
+            'interest_rate_percent' => 0,
+            'security_type' => 'unsecured',
+            'repayable_on_demand' => 1,
+            'repayment_timing' => 'within_12_months',
+            'deferment_right_confirmed' => 0,
+            'set_off_right_confirmed' => 0,
+            'settlement_intention' => 'independently',
+        ],
+        'test'
+    );
+    if (empty($saved['success'])) {
+        throw new RuntimeException(
+            'CT filing Participator Loan terms failed: ' . implode(' ', (array)($saved['errors'] ?? []))
+        );
+    }
 }
 
 function ctPeriodFilingModelBankLoanTransaction(

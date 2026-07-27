@@ -105,13 +105,14 @@ final class YearEndAction implements ActionInterfaceFramework
                     $this->truthy($request->input('director_loan_year_end_review', '0')),
                     $actor
                 ),
-                'approve_section_review' => (new \eel_accounts\Service\YearEndSectionApprovalService())->approve(
+                'approve_section_review' => $this->approveSectionReviewWithProgress(
                     $companyId,
                     $accountingPeriodId,
                     (string)$request->input('check_code', ''),
                     (array)$request->input('approval_answers', []),
                     $actor,
-                    (string)$request->input('approval_note', '')
+                    (string)$request->input('approval_note', ''),
+                    $services->actionProgress()
                 ),
                 'revoke_section_review' => (new \eel_accounts\Service\YearEndSectionApprovalService())->revoke(
                     $companyId,
@@ -248,6 +249,44 @@ final class YearEndAction implements ActionInterfaceFramework
                 $progress->report($message, $percent);
             }
         );
+    }
+
+    private function approveSectionReviewWithProgress(
+        int $companyId,
+        int $accountingPeriodId,
+        string $checkCode,
+        array $answers,
+        string $actor,
+        string $note,
+        ActionProgressFramework $progress
+    ): array {
+        $isTaxReadiness = trim($checkCode) === 'tax_readiness_acknowledgement';
+        if ($isTaxReadiness) {
+            @set_time_limit(0);
+            $progress->report('Preparing the Corporation Tax Year End approval…', 0);
+        }
+        $result = (new \eel_accounts\Service\YearEndSectionApprovalService())->approve(
+            $companyId,
+            $accountingPeriodId,
+            $checkCode,
+            $answers,
+            $actor,
+            $note,
+            $isTaxReadiness
+                ? static function (string $message, int $percent) use ($progress): void {
+                    $progress->report($message, $percent);
+                }
+                : null
+        );
+        if ($isTaxReadiness) {
+            $progress->report(
+                !empty($result['success'])
+                    ? 'Corporation Tax Year End approval complete.'
+                    : 'Corporation Tax Year End approval needs attention.',
+                100
+            );
+        }
+        return $result;
     }
 
     private function result(bool $success, array $errors = [], string $successMessage = '', ?array $changedFacts = null): ActionResultFramework

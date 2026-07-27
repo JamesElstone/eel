@@ -55,6 +55,24 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
         $harness->assertSame(true, $unlockFinalProgress !== false && $unlockCommit !== false && $unlockFinalProgress < $unlockCommit);
     });
 
+    $harness->check(YearEndAction::class, 'streams standard action progress while approving Corporation Tax for Year End', static function () use ($harness): void {
+        $action = (string)file_get_contents(
+            dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content' . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'YearEndAction.php'
+        );
+        $service = (string)file_get_contents(
+            dirname(__DIR__) . DIRECTORY_SEPARATOR . 'classes' . DIRECTORY_SEPARATOR . 'eel_accounts' . DIRECTORY_SEPARATOR . 'service' . DIRECTORY_SEPARATOR . 'YearEndSectionApprovalService.php'
+        );
+
+        $harness->assertSame(true, str_contains($action, "'approve_section_review' => " . '$this->approveSectionReviewWithProgress'));
+        $harness->assertSame(true, str_contains($action, 'private function approveSectionReviewWithProgress'));
+        $harness->assertSame(true, str_contains($action, "'Preparing the Corporation Tax Year End approval…', 0"));
+        $harness->assertSame(true, str_contains($action, "'Corporation Tax Year End approval complete.'"));
+        $harness->assertSame(true, str_contains($service, "'Rebuilding the current Corporation Tax approval basis…', 15"));
+        $harness->assertSame(true, str_contains($service, "'Validating the Corporation Tax approval basis…', 70"));
+        $harness->assertSame(true, str_contains($service, "'Recording the Corporation Tax Year End approval…', 85"));
+        $harness->assertSame(true, str_contains($service, "'Finalising the Corporation Tax Year End approval…', 95"));
+    });
+
     $harness->check(YearEndAction::class, 'narrows P&L section approval invalidation to the affected Year End facts', static function () use ($harness, $instance): void {
         $method = new ReflectionMethod($instance, 'changedFacts');
         $facts = (array)$method->invoke($instance, 'approve_section_review', 'retained_earnings_close_confirmation');

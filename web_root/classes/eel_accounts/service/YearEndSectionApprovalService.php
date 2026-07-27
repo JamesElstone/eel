@@ -103,11 +103,13 @@ final class YearEndSectionApprovalService
         string $checkCode,
         array $answers,
         string $actor,
-        string $note = ''
+        string $note = '',
+        ?\Closure $progress = null
     ): array {
         $checkCode = $this->checkCode($checkCode);
         (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'approve this Year End section');
 
+        $progress?->__invoke('Rebuilding the current Corporation Tax approval basis…', 15);
         $cached = $this->cachedBundle($companyId, $accountingPeriodId, $checkCode);
         if (!$this->tableAvailable()) {
             // Compatibility for installations that are mid-migration. Normal
@@ -141,6 +143,7 @@ final class YearEndSectionApprovalService
         } else {
             $bundle = $this->decodeBundle($cached);
         }
+        $progress?->__invoke('Validating the Corporation Tax approval basis…', 70);
         if (empty($bundle['available'])) {
             return ['success' => false, 'errors' => (array)($bundle['errors'] ?? ['The current section review is unavailable.'])];
         }
@@ -202,6 +205,7 @@ final class YearEndSectionApprovalService
         $acknowledgements = new YearEndAcknowledgementService();
         $existing = $acknowledgements->fetch($companyId, $accountingPeriodId, $checkCode);
         $basis = $this->approvalBasis($bundle, (array)$validation['answers']);
+        $progress?->__invoke('Recording the Corporation Tax Year End approval…', 85);
         $result = $acknowledgements->save(
             $companyId,
             $accountingPeriodId,
@@ -225,6 +229,7 @@ final class YearEndSectionApprovalService
             (array)($result['acknowledgement'] ?? []),
             trim($note) !== '' ? trim($note) : null
         );
+        $progress?->__invoke('Finalising the Corporation Tax Year End approval…', 95);
 
         return $result;
     }

@@ -3492,6 +3492,10 @@
   max-width: none;
 }
 
+.long-action-progress-overlay {
+  width: min(800px, calc(100vw - 40px));
+}
+
 @-moz-document url-prefix() {
 /*  :root {
     --project-firefox-page-zoom: 0.9;

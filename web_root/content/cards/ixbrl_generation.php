@@ -202,7 +202,6 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . $this->metric('Historical Arelle Validation', $this->validationLabel((string)($revisedValidation['status'] ?? 'not_run')))
                 . $this->metricHtml('Artifact', 'Historical — current download unavailable')
                 . '</div>'
-                . '<div class="helper">Generate and validate the current HMRC Accounting iXBRL, then generate a new Companies House artifact. The earlier file remains in iXBRL history.</div>'
                 . '<form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">'
                 . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
                 . '<input type="hidden" name="card_action" value="CompaniesHouseAccounts">'

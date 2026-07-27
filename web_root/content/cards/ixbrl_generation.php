@@ -90,7 +90,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     . '<input type="hidden" name="intent" value="sync_missing_ixbrl_runs">'
                     . '<input type="hidden" name="company_id" value="' . $companyId . '">'
                     . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
-                    . '<button class="button danger" type="submit" title="Developer only" data-chicken-check="true" data-chicken-title="Synchronise missing iXBRL runs" data-chicken-message="Remove database records for accounts iXBRL artifacts that no longer exist on disk?<br><br>This permanently removes missing-file run history, dependent facts, and unsent Companies House drafts. Runs used by transmitted or in-flight Companies House filings are retained. No files are deleted." data-chicken-confirm-text="Synchronise" data-chicken-button-class="button danger">Synchronise missing iXBRL runs</button>'
+                    . '<button class="button danger" type="submit" title="Developer only" data-chicken-check="true" data-chicken-title="Synchronise missing iXBRL runs" data-chicken-message="Synchronise accounts iXBRL artifacts that no longer exist on disk?<br><br>Approved fact snapshots are retained and returned to generation-ready state. Empty run records and unsent Companies House drafts are removed. Runs used by transmitted or in-flight Companies House filings are retained. No files are deleted." data-chicken-confirm-text="Synchronise" data-chicken-button-class="button danger">Synchronise missing iXBRL runs</button>'
                     . '</form></div>' : '') . '
                 <form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">
                     ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
@@ -157,7 +157,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
         $arelleStatus = (array)($readiness['arelle_status'] ?? []);
         $revisedValidation = (array)($filing['revised_validation'] ?? []);
         if ($submission === null || $artifact === []) {
-            $canPrepare = !empty($filing['can_prepare']);
+            $canPrepare = !empty($readiness['can_generate']) && $this->companiesHouseCanPrepare($filing);
             $blockers = array_values(array_unique(array_filter(array_map(
                 static fn(mixed $message): string => trim((string)$message),
                 (array)($filing['preparation_blockers'] ?? [])
@@ -199,7 +199,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             . '<input type="hidden" name="intent" value="prepare_revised_accounts">'
             . '<input type="hidden" name="company_id" value="' . $companyId . '">'
             . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
-            . '<button class="button primary" type="submit" data-processing-text="Generating Companies House iXBRL…" data-processing-state="disabled"' . (!empty($filing['can_prepare']) ? '' : ' disabled') . '>Generate Companies House iXBRL</button>'
+            . '<button class="button primary" type="submit" data-processing-text="Generating Companies House iXBRL…" data-processing-state="disabled"' . (!empty($readiness['can_generate']) && $this->companiesHouseCanPrepare($filing) ? '' : ' disabled') . '>Generate Companies House iXBRL</button>'
             . '</form>';
         $badge = match ($lifecycle) {
             'accepted' => 'success',
@@ -246,6 +246,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
     private function computationPeriods(array $context, int $companyId, int $accountingPeriodId): string
     {
         $periods = (array)($context['ixbrl']['computation_periods'] ?? []);
+        $accountsGenerationReady = !empty($context['ixbrl']['readiness']['can_generate']);
         $html = '';
         if ($periods === []) {
             return $html . '<div class="notice warning">No CT periods are available for computations generation.</div>';
@@ -259,7 +260,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             $ctPeriodLabel = 'Corporation Tax Period ' . $ctPeriodNumber;
             $start = (string)($period['period_start'] ?? '');
             $end = (string)($period['period_end'] ?? '');
-            $ready = !empty($status['ready']);
+            $ready = $accountsGenerationReady && !empty($status['ready']);
             $fresh = !empty($status['fresh']);
             $fileable = !empty($status['fileable']);
             $artifactPath = trim((string)($run['generated_path'] ?? ''));
@@ -333,7 +334,25 @@ final class _ixbrl_generationCard extends CardBaseFramework
         }
 
         $artifact = (array)($filing['prepared_artifact'] ?? []);
-        return trim((string)($artifact['filename'] ?? '')) !== '' || !empty($filing['can_prepare']);
+        return trim((string)($artifact['filename'] ?? '')) !== '' || $this->companiesHouseCanPrepare($filing);
+    }
+
+    private function companiesHouseCanPrepare(array $filing): bool
+    {
+        if (!empty($filing['can_prepare'])) {
+            return true;
+        }
+
+        $resolvable = [
+            'Generate the HMRC Accounting iXBRL; internal and Arelle validation run automatically.',
+            'Generate the current HMRC Accounting iXBRL export.',
+        ];
+        $blockers = array_values(array_filter(array_map(
+            static fn(mixed $blocker): string => trim((string)$blocker),
+            (array)($filing['preparation_blockers'] ?? [])
+        ), static fn(string $blocker): bool => $blocker !== ''));
+
+        return $blockers !== [] && array_values(array_diff($blockers, $resolvable)) === [];
     }
 
     private function metric(string $label, string $value): string

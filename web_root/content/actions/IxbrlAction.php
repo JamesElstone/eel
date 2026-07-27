@@ -126,6 +126,48 @@ final class IxbrlAction implements ActionInterfaceFramework
                     []
                 );
             }
+            if ($intent === 'rebuild_ixbrl_facts_from_current_approval') {
+                if (!(bool)AppConfigurationStore::get('developer_options', false)) {
+                    return $this->result(
+                        false,
+                        ['Developer options must be enabled to rebuild the approved iXBRL fact snapshot.'],
+                        $changedFacts
+                    );
+                }
+                $runId = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
+                    ->rebuildFactsFromCurrentApproval($companyId, $accountingPeriodId);
+                return $this->result(
+                    true,
+                    [],
+                    $changedFacts,
+                    ['Approved iXBRL fact snapshot rebuilt as run #' . $runId . '.'],
+                    []
+                );
+            }
+            if ($intent === 'cleanup_untransmitted_ixbrl_history') {
+                if (!(bool)AppConfigurationStore::get('developer_options', false)) {
+                    return $this->result(
+                        false,
+                        ['Developer options must be enabled to clean untransmitted iXBRL history.'],
+                        $changedFacts
+                    );
+                }
+                $cleanup = (new \eel_accounts\Service\IxbrlUntransmittedHistoryCleanupService())
+                    ->clean($companyId, $accountingPeriodId);
+                return $this->result(
+                    true,
+                    [],
+                    $changedFacts,
+                    [
+                        (int)$cleanup['deleted_bundles'] . ' historical evidence bundle(s), '
+                        . (int)$cleanup['deleted_approvals'] . ' historical approval(s), '
+                        . (int)$cleanup['deleted_runs'] . ' obsolete run(s), '
+                        . ((int)$cleanup['deleted_companies_house_drafts'] + (int)$cleanup['deleted_hmrc_drafts'])
+                        . ' unsent submission draft(s) removed.',
+                    ],
+                    []
+                );
+            }
 
             if ($intent === 'generate_all_filing_ixbrl') {
                 $result = $this->generateAllFilingIxbrl(
@@ -144,7 +186,8 @@ final class IxbrlAction implements ActionInterfaceFramework
                     'success' => !empty($cleanup['success']),
                     'errors' => (array)($cleanup['errors'] ?? []),
                     'messages' => [
-                        (int)($cleanup['deleted_count'] ?? 0) . ' missing iXBRL run record(s) removed; '
+                        (int)($cleanup['deleted_count'] ?? 0) . ' empty missing-file run record(s) removed; '
+                        . (int)($cleanup['reset_count'] ?? 0) . ' approved fact snapshot(s) retained for regeneration; '
                         . (int)($cleanup['deleted_draft_count'] ?? 0) . ' unsent Companies House draft(s) removed; '
                         . (int)($cleanup['present_count'] ?? 0) . ' artifact-backed run(s) retained.',
                     ],
@@ -370,7 +413,10 @@ final class IxbrlAction implements ActionInterfaceFramework
         $companiesHouseRequired = !empty($companiesHouse['revision_required']);
         $companiesHouseArtifact = (array)($companiesHouse['prepared_artifact'] ?? []);
         $companiesHousePrepared = trim((string)($companiesHouseArtifact['filename'] ?? '')) !== '';
-        if ($companiesHouseRequired && !$companiesHousePrepared && empty($companiesHouse['can_prepare'])) {
+        if ($companiesHouseRequired
+            && !$companiesHousePrepared
+            && empty($companiesHouse['can_prepare'])
+            && !$this->companiesHousePreparationResolvableByAccountsGeneration($companiesHouse)) {
             return [
                 'success' => false,
                 'errors' => (array)($companiesHouse['preparation_blockers'] ?? ['The Companies House revised-accounts iXBRL is not ready to prepare.']),
@@ -407,6 +453,7 @@ final class IxbrlAction implements ActionInterfaceFramework
         if (empty($accounts['success'])) {
             return $accounts;
         }
+        \eel_accounts\Support\RequestCache::clear();
 
         $warnings = (array)($accounts['warnings'] ?? []);
         $messages = [$warnings === []
@@ -482,6 +529,20 @@ final class IxbrlAction implements ActionInterfaceFramework
             'messages' => $messages,
             'warnings' => array_values(array_unique($warnings)),
         ];
+    }
+
+    private function companiesHousePreparationResolvableByAccountsGeneration(array $context): bool
+    {
+        $resolvable = [
+            'Generate the HMRC Accounting iXBRL; internal and Arelle validation run automatically.',
+            'Generate the current HMRC Accounting iXBRL export.',
+        ];
+        $blockers = array_values(array_filter(array_map(
+            static fn(mixed $blocker): string => trim((string)$blocker),
+            (array)($context['preparation_blockers'] ?? [])
+        ), static fn(string $blocker): bool => $blocker !== ''));
+
+        return $blockers !== [] && array_values(array_diff($blockers, $resolvable)) === [];
     }
 
     private function validateComputation(int $companyId, int $accountingPeriodId, int $ctPeriodId): array

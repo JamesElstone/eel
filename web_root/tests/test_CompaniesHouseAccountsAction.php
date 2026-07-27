@@ -326,7 +326,11 @@ function companiesHouseAccountsTestAction(
         static fn(RequestFramework $request): ?string => $securityError,
         static fn(): array => $context,
         static fn(int $companyId, int $accountingPeriodId): bool => $locked,
-        static fn(RequestFramework $request): string => 'user:test-admin'
+        static fn(RequestFramework $request): string => 'user:test-admin',
+        static fn(int $companyId, int $accountingPeriodId, ActionProgressFramework $progress): array => [
+            'success' => true,
+            'errors' => [],
+        ]
     );
 }
 

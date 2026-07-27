@@ -9,10 +9,10 @@ declare(strict_types=1);
 
 namespace eel_accounts\Service;
 
-/** Removes missing-file accounts iXBRL runs and unsent Companies House drafts that depend on them. */
+/** Synchronises missing accounts artifacts without deleting approved fact snapshots. */
 final class IxbrlGenerationRunCleanupService
 {
-    /** @return array{success: bool, deleted_count: int, deleted_draft_count: int, present_count: int, skipped_count: int, skipped_run_ids: list<int>, errors: list<string>} */
+    /** @return array{success: bool, deleted_count: int, reset_count: int, deleted_draft_count: int, present_count: int, skipped_count: int, skipped_run_ids: list<int>, errors: list<string>} */
     public function removeMissingArtifacts(int $companyId, int $accountingPeriodId): array
     {
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
@@ -32,16 +32,20 @@ final class IxbrlGenerationRunCleanupService
                )"
             : '0';
         $runs = \InterfaceDB::fetchAll(
-            'SELECT run.id, run.generated_path, ' . $referenceSql . ' AS companies_house_referenced
+            'SELECT run.id, run.generated_path, COUNT(fact.id) AS fact_count,
+                    ' . $referenceSql . ' AS companies_house_referenced
              FROM ixbrl_generation_runs run
+             LEFT JOIN ixbrl_generation_facts fact ON fact.run_id = run.id
              WHERE run.company_id = :company_id
                AND run.accounting_period_id = :accounting_period_id
                AND run.generated_path IS NOT NULL
-               AND LENGTH(TRIM(run.generated_path)) > 0',
+               AND LENGTH(TRIM(run.generated_path)) > 0
+             GROUP BY run.id, run.generated_path',
             ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
         );
 
-        $missing = [];
+        $deletable = [];
+        $resettable = [];
         $presentCount = 0;
         $skippedRunIds = [];
         foreach ($runs as $run) {
@@ -54,13 +58,18 @@ final class IxbrlGenerationRunCleanupService
                 $skippedRunIds[] = (int)$run['id'];
                 continue;
             }
-            $missing[] = (int)$run['id'];
+            if ((int)($run['fact_count'] ?? 0) > 0) {
+                $resettable[] = (int)$run['id'];
+            } else {
+                $deletable[] = (int)$run['id'];
+            }
         }
 
         $deletedDraftCount = 0;
-        if ($missing !== []) {
-            \InterfaceDB::transaction(static function () use ($missing, $submissionTableExists, &$deletedDraftCount): void {
-                foreach ($missing as $runId) {
+        $synchronised = array_merge($deletable, $resettable);
+        if ($synchronised !== []) {
+            \InterfaceDB::transaction(static function () use ($synchronised, $deletable, $resettable, $submissionTableExists, &$deletedDraftCount): void {
+                foreach ($synchronised as $runId) {
                     if ($submissionTableExists) {
                         $deletedDraftCount += \InterfaceDB::execute(
                             "DELETE FROM companies_house_accounts_submissions
@@ -70,6 +79,27 @@ final class IxbrlGenerationRunCleanupService
                             ['id' => $runId]
                         );
                     }
+                }
+                foreach ($resettable as $runId) {
+                    \InterfaceDB::prepareExecute(
+                        "UPDATE ixbrl_generation_runs
+                         SET status = 'ready', export_type = 'preview',
+                             generated_filename = NULL, generated_path = NULL,
+                             output_sha256 = NULL, generated_at = NULL,
+                             validation_status = 'not_validated', validation_errors_json = NULL,
+                             external_validator = NULL, external_validator_version = NULL,
+                             external_validation_status = 'not_configured',
+                             external_validation_errors_json = NULL,
+                             external_validation_warnings_json = NULL,
+                             external_validation_log_path = NULL,
+                             external_validated_at = NULL, external_validated_sha256 = NULL,
+                             external_taxonomy_package_id = NULL, external_taxonomy_sha256 = NULL,
+                             error_message = NULL
+                         WHERE id = :id",
+                        ['id' => $runId]
+                    );
+                }
+                foreach ($deletable as $runId) {
                     \InterfaceDB::prepareExecute(
                         'DELETE FROM ixbrl_generation_runs WHERE id = :id',
                         ['id' => $runId]
@@ -80,7 +110,8 @@ final class IxbrlGenerationRunCleanupService
 
         return [
             'success' => true,
-            'deleted_count' => count($missing),
+            'deleted_count' => count($deletable),
+            'reset_count' => count($resettable),
             'deleted_draft_count' => $deletedDraftCount,
             'present_count' => $presentCount,
             'skipped_count' => count($skippedRunIds),
@@ -89,12 +120,13 @@ final class IxbrlGenerationRunCleanupService
         ];
     }
 
-    /** @return array{success: false, deleted_count: 0, deleted_draft_count: 0, present_count: 0, skipped_count: 0, skipped_run_ids: list<int>, errors: list<string>} */
+    /** @return array{success: false, deleted_count: 0, reset_count: 0, deleted_draft_count: 0, present_count: 0, skipped_count: 0, skipped_run_ids: list<int>, errors: list<string>} */
     private function failure(string $error): array
     {
         return [
             'success' => false,
             'deleted_count' => 0,
+            'reset_count' => 0,
             'deleted_draft_count' => 0,
             'present_count' => 0,
             'skipped_count' => 0,

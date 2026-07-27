@@ -19,12 +19,14 @@ $harness->run(_disclosures::class, static function (GeneratedServiceClassTestHar
             'ixbrl_accounts_mapping',
             'ixbrl_facts_preview',
             'ixbrl_generation',
+            'ixbrl_history',
         ], $page->cards());
 
         $layoutCards = [];
         $overviewTab = [];
         $disclosuresTab = [];
         $mappingTab = [];
+        $historyTab = [];
         foreach ($page->cardLayout() as $tab) {
             $cards = (array)($tab['cards'] ?? []);
             $layoutCards = array_merge($layoutCards, $cards);
@@ -38,11 +40,15 @@ $harness->run(_disclosures::class, static function (GeneratedServiceClassTestHar
                 case 'Accounts Mapping':
                     $mappingTab = $cards;
                     break;
+                case 'History':
+                    $historyTab = $cards;
+                    break;
             }
         }
 
         $harness->assertFalse(in_array('ixbrl_trial_balance', $layoutCards, true));
         $harness->assertSame(['ixbrl_readiness'], $overviewTab);
+        $harness->assertSame(['ixbrl_history'], $historyTab);
         $harness->assertSame(['ixbrl_accounts_disclosures'], $disclosuresTab);
         $harness->assertSame(['ixbrl_accounts_mapping'], $mappingTab);
     });
@@ -477,6 +483,26 @@ $harness->run(_ixbrl_facts_previewCard::class, static function (GeneratedService
         $harness->assertFalse(str_contains($html, 'Build / Refresh Facts'));
         $harness->assertFalse(str_contains($html, 'name="intent" value="build_ixbrl_facts"'));
     });
+    $harness->check(_ixbrl_facts_previewCard::class, 'shows the approved-fact rebuild control only with developer options', static function () use ($harness, $card): void {
+        $context = [
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'ixbrl' => ['readiness' => [], 'facts' => []],
+        ];
+        $developerOptions = (bool)AppConfigurationStore::get('developer_options', false);
+        try {
+            AppConfigurationStore::set('developer_options', false);
+            $harness->assertFalse(str_contains($card->render($context), 'rebuild_ixbrl_facts_from_current_approval'));
+
+            AppConfigurationStore::set('developer_options', true);
+            $html = $card->render($context);
+            $harness->assertTrue(str_contains($html, 'name="intent" value="rebuild_ixbrl_facts_from_current_approval"'));
+            $harness->assertTrue(str_contains($html, '>Rebuild Approved Fact Snapshot</button>'));
+            $harness->assertTrue(str_contains($html, 'class="button danger"'));
+            $harness->assertTrue(str_contains($html, 'data-chicken-title="Rebuild approved fact snapshot"'));
+        } finally {
+            AppConfigurationStore::set('developer_options', $developerOptions);
+        }
+    });
 });
 
 $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceClassTestHarness $harness, _ixbrl_generationCard $card): void {
@@ -572,6 +598,60 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             @unlink($path);
         }
     });
+    $harness->check(_ixbrl_generationCard::class, 'applies accounts generation readiness to every generation control', static function () use ($harness, $card): void {
+        $context = [
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'ixbrl' => [
+                'readiness' => ['can_generate' => false],
+                'latest_run' => [],
+                'computation_periods' => [[
+                    'ct_period' => ['id' => 6, 'period_start' => '2025-01-01', 'period_end' => '2025-12-31'],
+                    'status' => ['ready' => true],
+                ]],
+            ],
+            'services' => [
+                'companies_house_ixbrl' => [
+                    'submission' => null,
+                    'prepared_artifact' => [],
+                    'can_prepare' => true,
+                    'revision_required' => false,
+                ],
+            ],
+        ];
+        $buttonDisabled = static function (string $html, string $label): bool {
+            return preg_match(
+                '/<button\b[^>]*\bdisabled\b[^>]*>' . preg_quote($label, '/') . '<\/button>/',
+                $html
+            ) === 1;
+        };
+
+        $blocked = $card->render($context);
+        $harness->assertTrue($buttonDisabled($blocked, 'Generate All Filing iXBRLs'));
+        $harness->assertTrue($buttonDisabled($blocked, 'Generate Accounting iXBRL'));
+        $harness->assertTrue($buttonDisabled($blocked, 'Generate Companies House iXBRL'));
+        $harness->assertTrue($buttonDisabled($blocked, 'Generate Corporation Tax Period 6 iXBRL'));
+
+        $context['ixbrl']['readiness']['can_generate'] = true;
+        $ready = $card->render($context);
+        $harness->assertFalse($buttonDisabled($ready, 'Generate All Filing iXBRLs'));
+        $harness->assertFalse($buttonDisabled($ready, 'Generate Accounting iXBRL'));
+        $harness->assertFalse($buttonDisabled($ready, 'Generate Companies House iXBRL'));
+        $harness->assertFalse($buttonDisabled($ready, 'Generate Corporation Tax Period 6 iXBRL'));
+
+        $context['services']['companies_house_ixbrl']['can_prepare'] = false;
+        $context['services']['companies_house_ixbrl']['revision_required'] = true;
+        $context['services']['companies_house_ixbrl']['preparation_blockers'] = [
+            'Generate the HMRC Accounting iXBRL; internal and Arelle validation run automatically.',
+        ];
+        $prerequisiteGeneratedByAction = $card->render($context);
+        $harness->assertFalse($buttonDisabled($prerequisiteGeneratedByAction, 'Generate All Filing iXBRLs'));
+        $harness->assertFalse($buttonDisabled($prerequisiteGeneratedByAction, 'Generate Companies House iXBRL'));
+
+        $context['services']['companies_house_ixbrl']['preparation_blockers'][] = 'Record Companies House written confirmation.';
+        $genuineBlocker = $card->render($context);
+        $harness->assertTrue($buttonDisabled($genuineBlocker, 'Generate All Filing iXBRLs'));
+        $harness->assertTrue($buttonDisabled($genuineBlocker, 'Generate Companies House iXBRL'));
+    });
     $harness->check(_ixbrl_generationCard::class, 'shows each CT period and gates computation download on fileable status', static function () use ($harness, $card): void {
         $context = [
             'company' => ['id' => 49, 'accounting_period_id' => 79],
@@ -659,6 +739,58 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
     });
 });
 
+$harness->run(_ixbrl_historyCard::class, static function (GeneratedServiceClassTestHarness $harness, _ixbrl_historyCard $card): void {
+    $harness->check(_ixbrl_historyCard::class, 'shows historical run, approval, fact and artifact state', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'services' => [
+                'ixbrl_history' => [[
+                    'id' => 21,
+                    'filing_approval_id' => 12,
+                    'evidence_bundle_id' => 15,
+                    'approved_at' => '2026-07-27 01:27:05',
+                    'fact_count' => 57,
+                    'status' => 'generated',
+                    'generated_filename' => 'accounts.xhtml',
+                    'generated_path' => 'missing-accounts.xhtml',
+                    'artifact_exists' => false,
+                    'validation_status' => 'passed',
+                    'external_validation_status' => 'passed',
+                    'companies_house_count' => 2,
+                    'companies_house_filed_count' => 0,
+                    'created_at' => '2026-07-27 01:28:00',
+                    'generated_at' => '2026-07-27 01:29:00',
+                ]],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, '#21'));
+        $harness->assertTrue(str_contains($html, '#12 · Evidence #15'));
+        $harness->assertTrue(str_contains($html, '>57</td>'));
+        $harness->assertTrue(str_contains($html, 'Missing'));
+        $harness->assertTrue(str_contains($html, '2 record(s); 0 filed/in-flight'));
+        $harness->assertTrue(str_contains($html, '<span class="badge info">Latest</span>'));
+    });
+    $harness->check(_ixbrl_historyCard::class, 'shows untransmitted-history cleanup only with developer options', static function () use ($harness, $card): void {
+        $context = [
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'services' => ['ixbrl_history' => []],
+        ];
+        $developerOptions = (bool)AppConfigurationStore::get('developer_options', false);
+        try {
+            AppConfigurationStore::set('developer_options', false);
+            $harness->assertFalse(str_contains($card->render($context), 'cleanup_untransmitted_ixbrl_history'));
+
+            AppConfigurationStore::set('developer_options', true);
+            $html = $card->render($context);
+            $harness->assertTrue(str_contains($html, 'name="intent" value="cleanup_untransmitted_ixbrl_history"'));
+            $harness->assertTrue(str_contains($html, '>Clean Untransmitted History</button>'));
+            $harness->assertTrue(str_contains($html, 'data-chicken-title="Clean untransmitted iXBRL history"'));
+        } finally {
+            AppConfigurationStore::set('developer_options', $developerOptions);
+        }
+    });
+});
+
 $harness->run(IxbrlAction::class, static function (GeneratedServiceClassTestHarness $harness, IxbrlAction $action): void {
     $harness->check(IxbrlAction::class, 'delegates combined filing generation to the existing accounts and per-period generators', static function () use ($harness): void {
         $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content'
@@ -670,6 +802,8 @@ $harness->run(IxbrlAction::class, static function (GeneratedServiceClassTestHarn
         $harness->assertTrue(str_contains($source, 'prepareRevision($companyId, $accountingPeriodId, [], $actor)'));
         $harness->assertTrue(str_contains($source, 'projectForAccountingPeriod($companyId, $accountingPeriodId)'));
         $harness->assertTrue(str_contains($source, '$services->actionProgress()'));
+        $harness->assertTrue(str_contains($source, 'companiesHousePreparationResolvableByAccountsGeneration'));
+        $harness->assertTrue(str_contains($source, 'RequestCache::clear()'));
     });
 
     $harness->check(IxbrlAction::class, 'guards missing-artifact cleanup behind developer options', static function () use ($harness): void {
@@ -678,6 +812,22 @@ $harness->run(IxbrlAction::class, static function (GeneratedServiceClassTestHarn
         $harness->assertTrue(str_contains($source, '$intent === \'sync_missing_ixbrl_runs\''));
         $harness->assertTrue(str_contains($source, 'developer_options'));
         $harness->assertTrue(str_contains($source, 'IxbrlGenerationRunCleanupService'));
+    });
+    $harness->check(IxbrlAction::class, 'guards approved-fact recovery behind developer options', static function () use ($harness): void {
+        $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content'
+            . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'IxbrlAction.php');
+        $rebuildAction = strstr($source, "if (\$intent === 'rebuild_ixbrl_facts_from_current_approval')");
+        $harness->assertTrue(is_string($rebuildAction));
+        $harness->assertTrue(str_contains((string)$rebuildAction, 'developer_options'));
+        $harness->assertTrue(str_contains((string)$rebuildAction, 'rebuildFactsFromCurrentApproval'));
+    });
+    $harness->check(IxbrlAction::class, 'guards untransmitted-history cleanup behind developer options', static function () use ($harness): void {
+        $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content'
+            . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'IxbrlAction.php');
+        $cleanupAction = strstr($source, "if (\$intent === 'cleanup_untransmitted_ixbrl_history')");
+        $harness->assertTrue(is_string($cleanupAction));
+        $harness->assertTrue(str_contains((string)$cleanupAction, 'developer_options'));
+        $harness->assertTrue(str_contains((string)$cleanupAction, 'IxbrlUntransmittedHistoryCleanupService'));
     });
 
     $harness->check(IxbrlAction::class, 'refreshes the Year End tax review after a filing-scope answer changes', static function () use ($harness): void {

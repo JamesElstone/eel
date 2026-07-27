@@ -26,6 +26,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
     private ?Closure $contextResolver;
     private ?Closure $lockChecker;
     private ?Closure $actorResolver;
+    private ?Closure $accountingPrerequisite;
 
     public function __construct(
         private ?object $submissionService = null,
@@ -33,11 +34,15 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         ?callable $contextResolver = null,
         ?callable $lockChecker = null,
         ?callable $actorResolver = null,
+        ?callable $accountingPrerequisite = null,
     ) {
         $this->securityCheck = $securityCheck !== null ? Closure::fromCallable($securityCheck) : null;
         $this->contextResolver = $contextResolver !== null ? Closure::fromCallable($contextResolver) : null;
         $this->lockChecker = $lockChecker !== null ? Closure::fromCallable($lockChecker) : null;
         $this->actorResolver = $actorResolver !== null ? Closure::fromCallable($actorResolver) : null;
+        $this->accountingPrerequisite = $accountingPrerequisite !== null
+            ? Closure::fromCallable($accountingPrerequisite)
+            : null;
     }
 
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
@@ -205,6 +210,14 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         ActionProgressFramework $progress
     ): array {
         @set_time_limit(0);
+        $prerequisite = $this->accountingPrerequisite !== null
+            ? ($this->accountingPrerequisite)($companyId, $accountingPeriodId, $progress)
+            : $this->ensureAccountingIxbrlReady($companyId, $accountingPeriodId, $progress);
+        if (empty($prerequisite['success'])) {
+            return $prerequisite;
+        }
+
+        $progress->report('Preparing the Companies House revised-accounts iXBRL…', 65);
         return $this->service()->prepareRevision(
             $companyId,
             $accountingPeriodId,
@@ -212,6 +225,60 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             $this->actor($request),
             $progress
         );
+    }
+
+    private function ensureAccountingIxbrlReady(
+        int $companyId,
+        int $accountingPeriodId,
+        ActionProgressFramework $progress
+    ): array {
+        $readiness = (new \eel_accounts\Service\IxbrlReadinessService())
+            ->getReadiness($companyId, $accountingPeriodId);
+        if (empty($readiness['can_generate'])) {
+            return [
+                'success' => false,
+                'errors' => (array)($readiness['generation_errors'] ?? [
+                    'The Accounting iXBRL prerequisites are incomplete.',
+                ]),
+            ];
+        }
+        if (empty($readiness['ready_for_filing'])) {
+            if (empty($readiness['can_validate'])) {
+                $progress->report('Generating the prerequisite Accounting iXBRL…', 5);
+                $generated = (new \eel_accounts\Service\IxbrlAccountingService())
+                    ->generateFilingExport($companyId, $accountingPeriodId);
+                if (empty($generated['success'])) {
+                    return $generated;
+                }
+                \eel_accounts\Support\RequestCache::clear();
+            }
+
+            $progress->report('Running Arelle validation for the Accounting iXBRL…', 40);
+            $external = (new \eel_accounts\Service\IxbrlExternalValidationService())
+                ->validateLatestRun($companyId, $accountingPeriodId);
+            if ((string)($external['status'] ?? '') !== 'passed') {
+                return [
+                    'success' => false,
+                    'errors' => (array)($external['errors'] ?? [
+                        'The prerequisite Accounting iXBRL did not pass Arelle validation.',
+                    ]),
+                ];
+            }
+
+            \eel_accounts\Support\RequestCache::clear();
+            $readiness = (new \eel_accounts\Service\IxbrlReadinessService())
+                ->getReadiness($companyId, $accountingPeriodId);
+            if (empty($readiness['ready_for_filing'])) {
+                return [
+                    'success' => false,
+                    'errors' => (array)($readiness['filing_errors'] ?? [
+                        'The prerequisite Accounting iXBRL is not filing-ready.',
+                    ]),
+                ];
+            }
+        }
+
+        return ['success' => true, 'errors' => []];
     }
 
     private function saveVarianceExplanation(

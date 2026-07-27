@@ -37,6 +37,7 @@ final class _disclosures extends PageContextFramework
             'ixbrl_accounts_mapping',
             'ixbrl_facts_preview',
             'ixbrl_generation',
+            'ixbrl_history',
         ];
     }
 
@@ -62,6 +63,10 @@ final class _disclosures extends PageContextFramework
             [
                 'tab' => 'Generation',
                 'cards' => ['ixbrl_generation'],
+            ],
+            [
+                'tab' => 'History',
+                'cards' => ['ixbrl_history'],
             ],
         ];
     }

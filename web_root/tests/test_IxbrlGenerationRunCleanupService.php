@@ -44,7 +44,18 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $presentRunId = $insertRun($presentPath);
                 $missingRunId = $insertRun($missingPath);
                 $draftRunId = $insertRun($missingPath . '-draft');
+                $factRunId = $insertRun($missingPath . '-facts');
                 $submittedRunId = $insertRun($missingPath . '-submitted');
+                InterfaceDB::prepareExecute(
+                    "INSERT INTO ixbrl_generation_facts (
+                        run_id, fact_key, taxonomy_concept, label, value_type,
+                        text_value, context_ref
+                     ) VALUES (
+                        :run_id, 'test_fact', 'test:Fact', 'Test fact', 'text',
+                        'approved value', 'current'
+                     )",
+                    ['run_id' => $factRunId]
+                );
                 InterfaceDB::prepareExecute(
                     "INSERT INTO companies_house_accounts_eligibility (
                         company_id, accounting_period_id, original_transaction_id,
@@ -104,6 +115,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
                 $harness->assertSame(true, (bool)$result['success']);
                 $harness->assertSame(2, (int)$result['deleted_count']);
+                $harness->assertSame(1, (int)$result['reset_count']);
                 $harness->assertSame(1, (int)$result['deleted_draft_count']);
                 $harness->assertSame(1, (int)$result['present_count']);
                 $harness->assertSame(1, (int)$result['skipped_count']);
@@ -112,6 +124,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame(0, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM ixbrl_generation_runs WHERE id = :id', ['id' => $missingRunId]));
                 $harness->assertSame(0, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM ixbrl_generation_runs WHERE id = :id', ['id' => $draftRunId]));
                 $harness->assertSame(0, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM companies_house_accounts_submissions WHERE id = :id', ['id' => $draftSubmissionId]));
+                $harness->assertSame(1, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM ixbrl_generation_runs WHERE id = :id', ['id' => $factRunId]));
+                $harness->assertSame(1, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM ixbrl_generation_facts WHERE run_id = :id', ['id' => $factRunId]));
+                $resetRun = InterfaceDB::fetchOne('SELECT status, generated_path FROM ixbrl_generation_runs WHERE id = :id', ['id' => $factRunId]);
+                $harness->assertSame('ready', (string)($resetRun['status'] ?? ''));
+                $harness->assertSame('', (string)($resetRun['generated_path'] ?? ''));
                 $harness->assertSame(1, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM ixbrl_generation_runs WHERE id = :id', ['id' => $submittedRunId]));
                 $harness->assertSame(1, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM companies_house_accounts_submissions WHERE id = :id', ['id' => $submittedSubmissionId]));
             } finally {

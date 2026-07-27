@@ -260,12 +260,22 @@ $harness->check('GoldenYearEndLifecycle', 'previews the split-period CT provisio
             throw new RuntimeException('Split-period posting basis was unavailable: '
                 . implode(' ', array_map('strval', (array)($postingBasis['errors'] ?? []))));
         }
+        $finalReadiness = (new \eel_accounts\Service\YearEndTaxReadinessService())
+            ->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
         $finalEvidence = (new \eel_accounts\Service\CorporationTaxComputationService())
-            ->persistSummariesForYearEndLock($companyId, $accountingPeriodId);
+            ->persistSummariesForYearEndLock(
+                $companyId,
+                $accountingPeriodId,
+                (array)($finalReadiness['periods'] ?? [])
+            );
         if (empty($finalEvidence['success'])) {
             throw new RuntimeException('Final split-period CT evidence failed: '
                 . implode(' ', array_map('strval', (array)($finalEvidence['errors'] ?? []))));
         }
+        $harness->assertSame(
+            (string)($finalReadiness['freeze_manifest_hash'] ?? ''),
+            (string)($finalEvidence['freeze_manifest_hash'] ?? '')
+        );
         $acceptedSummary = json_decode((string)InterfaceDB::fetchColumn(
             'SELECT summary_json FROM corporation_tax_computation_runs WHERE id = :id',
             ['id' => $acceptedRunId]

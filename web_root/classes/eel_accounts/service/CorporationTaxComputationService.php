@@ -475,12 +475,25 @@ final class CorporationTaxComputationService
                 continue;
             }
             if (in_array((string)($period['status'] ?? ''), self::FINAL_CT_STATUSES, true)) {
-                $summary = $this->storedLockedSummaryForCtPeriodId($companyId, $ctPeriodId);
-                if (!is_array($summary) || empty($summary['available'])) {
-                    foreach ((array)($summary['errors'] ?? ['The submitted CT period has no usable persisted computation snapshot.']) as $error) {
+                $storedSummary = $this->storedLockedSummaryForCtPeriodId($companyId, $ctPeriodId);
+                if (!is_array($storedSummary) || empty($storedSummary['available'])) {
+                    foreach ((array)($storedSummary['errors'] ?? ['The submitted CT period has no usable persisted computation snapshot.']) as $error) {
                         $errors[] = (string)($period['display_label'] ?? ('CT Period ' . (int)($period['sequence_no'] ?? 0))) . ': ' . (string)$error;
                     }
                     continue;
+                }
+                $summary = $storedSummary;
+                if ($preparedSummaries !== null) {
+                    $preparedSummary = (array)($preparedByCtPeriod[$ctPeriodId] ?? []);
+                    if ($preparedSummary === []
+                        || empty($preparedSummary['available'])
+                        || (int)($preparedSummary['accounting_period_id'] ?? 0) !== $accountingPeriodId) {
+                        $errors[] = (string)($period['display_label'] ?? ('CT Period ' . (int)($period['sequence_no'] ?? 0)))
+                            . ': The final validated Corporation Tax summary was not available for persistence.';
+                        continue;
+                    }
+                    $summary = $preparedSummary;
+                    $summary['computation_run_id'] = (int)($storedSummary['computation_run_id'] ?? 0);
                 }
                 $summaries[] = $summary;
                 if ((int)($summary['computation_run_id'] ?? 0) > 0) {

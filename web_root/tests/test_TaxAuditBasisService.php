@@ -59,4 +59,57 @@ $harness->run(\eel_accounts\Service\TaxAuditBasisService::class, static function
         }
         $harness->assertSame(true, $thrown);
     });
+
+    $harness->check(\eel_accounts\Service\TaxAuditBasisService::class, 'does not count AIA again when the asset is disposed in the same period', static function () use ($harness, $service): void {
+        $aia = [
+            'asset_id' => 15,
+            'asset_code' => 'FA-15',
+            'description' => 'DeWalt diamond drill',
+            'purchase_date' => '2024-08-02',
+            'cost' => 67.39,
+            'pool_type' => 'main_pool',
+            'allowance_type' => 'aia',
+            'addition_amount' => 67.39,
+            'allowance_amount' => 67.39,
+            'disposal_value' => 0.00,
+        ];
+        $disposal = array_replace($aia, [
+            'allowance_type' => 'aia, disposal_value',
+            'disposal_date' => '2024-08-08',
+            'disposal_proceeds' => 0.00,
+        ]);
+        $method = new ReflectionMethod($service::class, 'capitalAllowanceRows');
+        $method->setAccessible(true);
+        $rows = (array)$method->invoke($service, [
+            'aia_allocation' => [$aia],
+            'disposals_balancing' => [$disposal],
+        ]);
+
+        $harness->assertSame(2, count($rows));
+        $harness->assertSame(
+            ['aia_allocation', 'disposal_balancing'],
+            array_map(
+                static fn(array $row): string => (string)($row['metadata']['audit_component'] ?? ''),
+                $rows
+            )
+        );
+        $harness->assertSame(
+            ['67.39', '0.00'],
+            array_map(
+                static fn(array $row): string => number_format((float)($row['tax_adjustment_amount'] ?? 0), 2, '.', ''),
+                $rows
+            )
+        );
+        $harness->assertSame(
+            '67.39',
+            number_format(array_sum(array_column($rows, 'tax_adjustment_amount')), 2, '.', '')
+        );
+        $harness->assertSame(
+            [],
+            array_values(array_filter(
+                $rows,
+                static fn(array $row): bool => (string)($row['source_type'] ?? '') === 'calculation_reconciliation'
+            ))
+        );
+    });
 });

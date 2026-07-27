@@ -592,6 +592,23 @@ final class IxbrlTaxComputationService
                     $matches[$index] = $auditRow;
                 }
             }
+            $componentMatches = array_filter(
+                $matches,
+                static fn(array $auditRow): bool =>
+                    (string)(($auditRow['metadata'] ?? [])['audit_component'] ?? '') === 'aia_allocation'
+            );
+            if ($componentMatches !== []) {
+                $matches = $componentMatches;
+            } else {
+                $typedMatches = array_filter(
+                    $matches,
+                    static fn(array $auditRow): bool =>
+                        strtolower(trim((string)(($auditRow['metadata'] ?? [])['allowance_type'] ?? ''))) === 'aia'
+                );
+                if ($typedMatches !== []) {
+                    $matches = $typedMatches;
+                }
+            }
             if ($assetId <= 0 || count($matches) !== 1) {
                 throw new \RuntimeException('A frozen AIA calculation row cannot be reconciled uniquely to approved audit evidence.');
             }

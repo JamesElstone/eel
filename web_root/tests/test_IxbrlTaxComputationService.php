@@ -229,7 +229,7 @@ function ixbrlTaxComputationMappings(array $model): array
             'tax_adjustment_amount' => 94.99,
             'metadata' => [
                 'asset_id' => 1, 'description' => 'ElectricFix, Wall Chaser', 'purchase_date' => '2022-10-05',
-                'addition_amount' => 94.99, 'allowance_amount' => 94.99,
+                'allowance_type' => 'aia', 'addition_amount' => 94.99, 'allowance_amount' => 94.99,
             ],
         ];
         $model['audit']['capital_allowances']['rows'] = [$auditRow];
@@ -239,6 +239,18 @@ function ixbrlTaxComputationMappings(array $model): array
         $h->assertTrue(str_contains($html, 'ElectricFix, Wall Chaser'));
         $h->assertTrue(str_contains($html, '5 October 2022'));
         $h->assertFalse(str_contains($html, '>1<'));
+        $model['audit']['capital_allowances']['rows'][] = array_replace_recursive($auditRow, [
+            'source_date' => '2022-10-06',
+            'tax_adjustment_amount' => 0.00,
+            'metadata' => [
+                'description' => 'Disposal evidence that must not supply the AIA schedule',
+                'allowance_type' => 'aia, disposal_value',
+                'audit_component' => 'disposal_balancing',
+            ],
+        ]);
+        $html = (string)$method->invoke($service, new \eel_accounts\Service\IxbrlGeneratorService(), $model);
+        $h->assertTrue(str_contains($html, 'ElectricFix, Wall Chaser'));
+        $h->assertFalse(str_contains($html, 'Disposal evidence that must not supply the AIA schedule'));
         $model['audit']['capital_allowances']['rows'][] = $auditRow;
         try {
             $method->invoke($service, new \eel_accounts\Service\IxbrlGeneratorService(), $model);

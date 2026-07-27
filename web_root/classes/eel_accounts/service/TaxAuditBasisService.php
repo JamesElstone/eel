@@ -15,8 +15,8 @@ namespace eel_accounts\Service;
  */
 final class TaxAuditBasisService
 {
-    public const BASIS_VERSION = 'ct-audit-v2';
-    public const TRACE_VERSION = 'ct-calculation-trace-v2';
+    public const BASIS_VERSION = 'ct-audit-v3';
+    public const TRACE_VERSION = 'ct-calculation-trace-v3';
 
     private const AREAS = [
         'accounting_profit' => 'Accounting Profit or Loss',
@@ -584,24 +584,59 @@ final class TaxAuditBasisService
     /** @return list<array<string, mixed>> */
     private function capitalAllowanceRows(array $workings): array
     {
-        $source = array_merge(
-            (array)($workings['aia_allocation'] ?? []),
-            (array)($workings['disposals_balancing'] ?? [])
-        );
         $rows = [];
         $seen = [];
-        foreach ($source as $index => $row) {
-            if (!is_array($row)) {
-                continue;
+        $evidencedAllowancesByAsset = [];
+        foreach ([
+            'aia_allocation' => (array)($workings['aia_allocation'] ?? []),
+            'disposal_balancing' => (array)($workings['disposals_balancing'] ?? []),
+        ] as $component => $source) {
+            foreach ($source as $index => $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $assetId = (int)($row['asset_id'] ?? 0);
+                $allowanceAmount = round((float)($row['allowance_amount'] ?? 0), 2);
+                $key = implode(':', [
+                    $component,
+                    $assetId,
+                    (string)($row['pool_type'] ?? ''),
+                    (string)($row['allowance_type'] ?? ''),
+                    $allowanceAmount,
+                ]);
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+
+                $metadata = $row;
+                $metadata['audit_component'] = $component;
+                $taxAdjustment = $allowanceAmount;
+                if ($component === 'aia_allocation') {
+                    $evidencedAllowancesByAsset[$assetId] = round(
+                        (float)($evidencedAllowancesByAsset[$assetId] ?? 0) + $allowanceAmount,
+                        2
+                    );
+                } else {
+                    $overlap = min(
+                        max(0.0, (float)($evidencedAllowancesByAsset[$assetId] ?? 0)),
+                        max(0.0, $allowanceAmount)
+                    );
+                    $taxAdjustment = round($allowanceAmount - $overlap, 2);
+                    $metadata['overlapping_allowance_amount'] = round($overlap, 2);
+                    $metadata['incremental_allowance_amount'] = $taxAdjustment;
+                }
+
+                $rows[] = $this->auditRow(
+                    'asset',
+                    $assetId > 0 ? $assetId : $index + 1,
+                    (string)($row['purchase_date'] ?? ''),
+                    trim((string)($row['asset_code'] ?? '') . ' ' . (string)($row['description'] ?? 'Capital allowance')),
+                    $row['addition_amount'] ?? $row['cost'] ?? 0,
+                    $taxAdjustment,
+                    $metadata
+                );
             }
-            $key = implode(':', [(int)($row['asset_id'] ?? 0), (string)($row['pool_type'] ?? ''), (string)($row['allowance_type'] ?? ''), (float)($row['allowance_amount'] ?? 0)]);
-            if (isset($seen[$key])) {
-                continue;
-            }
-            $seen[$key] = true;
-            $rows[] = $this->auditRow('asset', (int)($row['asset_id'] ?? $index + 1), (string)($row['purchase_date'] ?? ''),
-                trim((string)($row['asset_code'] ?? '') . ' ' . (string)($row['description'] ?? 'Capital allowance')),
-                $row['addition_amount'] ?? $row['cost'] ?? 0, $row['allowance_amount'] ?? 0, $row);
         }
         return $rows;
     }

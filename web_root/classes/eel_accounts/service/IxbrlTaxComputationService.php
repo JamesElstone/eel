@@ -14,6 +14,31 @@ final class IxbrlTaxComputationService
         'losses' => 40,
         'tax_liability' => 50,
     ];
+    private const PRESENTATION_LABELS = [
+        'identity.company_name' => 'Company name',
+        'identity.company_number' => 'Company number',
+        'filing_identity.utr' => 'Unique Taxpayer Reference',
+        'ct_period.start_date' => 'Period start',
+        'ct_period.end_date' => 'Period end',
+        'computation.summary.accounting_profit' => 'Profit or loss per accounts',
+        'computation.summary.disallowable_add_backs' => 'Disallowable expenses added back',
+        'computation.summary.capital_add_backs' => 'Capital expenditure added back',
+        'computation.summary.depreciation_add_back' => 'Depreciation added back',
+        'computation.summary.capital_allowances' => 'Capital allowances',
+        'computation.summary.taxable_before_losses' => 'Trading profit or loss for the period',
+        'computation.summary.losses_brought_forward' => 'Loss brought forward',
+        'computation.summary.losses_used' => 'Losses used in this period',
+        'computation.summary.losses_carried_forward' => 'Loss carried forward',
+        'computation.summary.taxable_profit' => 'Taxable total profits',
+        'computation.summary.ordinary_corporation_tax' => 'Corporation Tax chargeable',
+        'computation.summary.s455_tax' => 'Tax on loans to participators',
+        'computation.summary.estimated_corporation_tax' => 'Net Corporation Tax payable',
+        'return_position.ct600a_a80' => 'Tax on loans to participators',
+        'return_position.tax_payable' => 'Net Corporation Tax payable',
+    ];
+    private const SUPPORTED_PROFILE_LABELS = [
+        'ordinary-uk-trading-frs105' => 'FRS 105 micro-entity',
+    ];
     private const LEGACY_TRADE_CONCEPTS = [
         'ProfitLossPerAccounts',
         'AdjustmentsMiscellaneousExpensesPerAccounts',
@@ -309,7 +334,7 @@ final class IxbrlTaxComputationService
         $run = (array)$model['run'];
         $report = $this->buildReportModel($model, $mappings);
         $contexts = [];
-        $sections = [];
+        $facts = [];
         $namespaces = [];
         foreach ((array)$report['mappings'] as $mapping) {
             if (!array_key_exists('source_value', $mapping)) {
@@ -351,78 +376,285 @@ final class IxbrlTaxComputationService
             if ($numeric && $value !== null) {
                 $value = (float)$value * (float)$mapping['sign_multiplier'];
             }
-            $section = (string)$mapping['presentation_section'];
-            $sections[$section][] = '<tr><th scope="row">' . $generator->escape((string)$mapping['presentation_label']) . '</th><td>'
-                . $generator->renderFact([
-                    'qname' => $concept,
-                    'context_ref' => $contextId,
-                    'value' => $value === '' ? null : $value,
-                    'numeric' => $numeric,
-                    'unit_ref' => ($mapping['unit_ref'] ?? null) ?: 'GBP',
-                    'decimals' => ($mapping['decimals_value'] ?? null) ?: ($numeric ? '2' : '0'),
-                ]) . '</td></tr>';
+            $canonicalKey = (string)$mapping['canonical_key'];
+            if (isset($facts[$canonicalKey])) {
+                throw new \RuntimeException('A supported computation fact is mapped more than once: ' . $canonicalKey . '.');
+            }
+            $fact = [
+                'qname' => $concept,
+                'context_ref' => $contextId,
+                'value' => $value === '' ? null : $value,
+                'numeric' => $numeric,
+                'unit_ref' => ($mapping['unit_ref'] ?? null) ?: 'GBP',
+                'decimals' => ($mapping['decimals_value'] ?? null) ?: ($numeric ? '2' : '0'),
+            ];
+            $valueType = (string)$mapping['value_type'];
+            if ($value !== null && $value !== '') {
+                if ($numeric) {
+                    $fact['format'] = 'ixt:numdotdecimal';
+                    $fact['display_value'] = number_format(
+                        abs((float)$value),
+                        max(0, (int)$fact['decimals']),
+                        '.',
+                        ','
+                    );
+                } elseif ($valueType === 'date') {
+                    $fact['format'] = 'ixt:datedaymonthyearen';
+                    $fact['display_value'] = $this->longDate((string)$value);
+                }
+            }
+            $facts[$canonicalKey] = [
+                'canonical_key' => $canonicalKey,
+                'label' => $this->presentationLabel($canonicalKey),
+                'value' => $value,
+                'numeric' => $numeric,
+                'html' => $generator->renderFact($fact),
+            ];
         }
-        if ($sections === []) {
+        if ($facts === []) {
             throw new \RuntimeException('The active profile produced no Inline XBRL facts.');
         }
-        $body = '<div class="ct-report"><h1>' . $generator->escape((string)$report['title']) . '</h1><p>CT period ' . $generator->escape((string)$report['period_start']) . ' to ' . $generator->escape((string)$report['period_end']) . '</p>';
-        foreach ($sections as $section => $rows) {
-            $body .= '<div class="ct-section"><h2>' . $generator->escape(ucwords(str_replace('_', ' ', $section))) . '</h2><table><tbody>' . implode('', $rows) . '</tbody></table></div>';
-        }
-        $body .= $this->renderSupportingSchedules($generator, $model);
-        if ($evidenceArtifactId !== '') {
-            $body .= '<div class="ct-section"><p>EEL filing evidence artifact: <strong>'
-                . $generator->escape($evidenceArtifactId) . '</strong></p></div>';
-        }
-        $body .= '</div>';
+        $body = $this->renderReportBody($generator, $model, $report, $facts);
         if (!str_starts_with($schemaRef, 'http://www.hmrc.gov.uk/')) {
             throw new \RuntimeException('The verified HMRC computation-taxonomy schema reference is invalid.');
         }
         return ['schema_ref' => $schemaRef, 'xhtml' => $generator->renderDocument([
-            'title' => 'Corporation Tax computation',
-            'namespaces' => $namespaces,
+            'title' => (string)$report['document_title'],
+            'namespaces' => ['ixt' => 'http://www.xbrl.org/inlineXBRL/transformation/2015-02-26'] + $namespaces,
             'schema_refs' => [$schemaRef],
             'contexts' => array_values($contexts),
             'units' => [['id' => 'GBP', 'measure' => 'iso4217:GBP']],
             'metadata' => $evidenceArtifactId !== '' ? ['eel-evidence-artifact-id' => $evidenceArtifactId] : [],
+            'stylesheet' => $this->stylesheet(),
             'body' => $body,
         ])];
+    }
+
+    private function renderReportBody(
+        IxbrlGeneratorService $generator,
+        array $filing,
+        array $report,
+        array $facts
+    ): string {
+        $model = (array)$filing['model'];
+        $summary = (array)$model['computation']['summary'];
+        $identity = (array)$model['identity'];
+        $accountingPeriod = (array)$model['accounting_period'];
+        $allocation = (array)($summary['accounting_allocation_basis'] ?? []);
+        $html = '<div class="ct-report"><div class="ct-header keep-together">'
+            . '<h1>' . $generator->escape((string)$identity['company_name']) . '</h1>'
+            . '<p class="report-title">Corporation Tax computation for the period ended '
+            . $generator->escape((string)$report['period_end_display']) . '</p>'
+            . '<p class="report-subtitle">For the period ' . $generator->escape((string)$report['period_start_display'])
+            . ' to ' . $generator->escape((string)$report['period_end_display']) . '</p></div>';
+
+        $html .= '<div class="ct-section identity-section keep-together"><h2>Company and period details</h2>'
+            . '<table class="identity-table"><tbody>'
+            . $this->textRow($generator, 'Company', $this->factHtml($facts, 'identity.company_name'))
+            . $this->textRow($generator, 'Company number', $generator->escape((string)$identity['company_number']))
+            . $this->textRow($generator, 'Unique Taxpayer Reference', $this->factHtml($facts, 'filing_identity.utr'))
+            . $this->textRow($generator, 'Accounting framework', $generator->escape((string)$report['framework_label']))
+            . $this->textRow(
+                $generator,
+                'CT period',
+                $this->factHtml($facts, 'ct_period.start_date') . ' to ' . $this->factHtml($facts, 'ct_period.end_date')
+            )
+            . '</tbody></table></div>';
+
+        if (!empty($allocation['time_apportioned'])) {
+            $accountingDays = (int)($allocation['accounting_period_days'] ?? 0);
+            $ctDays = (int)($allocation['ct_period_days'] ?? 0);
+            if ($accountingDays <= 0 || $ctDays <= 0 || $ctDays > $accountingDays) {
+                throw new \RuntimeException('The frozen accounting-period apportionment has invalid inclusive day counts.');
+            }
+            $html .= '<div class="ct-section apportionment-section keep-together"><h2>Accounting-period apportionment</h2>'
+                . '<p>The statutory accounting period from '
+                . $generator->escape($this->longDate((string)$accountingPeriod['start_date'])) . ' to '
+                . $generator->escape($this->longDate((string)$accountingPeriod['end_date'])) . ' spans '
+                . $accountingDays . ' days and is divided into '
+                . (int)($allocation['ct_period_count'] ?? 1) . ' Corporation Tax accounting periods. '
+                . 'This computation covers ' . $ctDays . ' of those ' . $accountingDays . ' days.</p>'
+                . '<table><tbody>'
+                . $this->textRow($generator, 'Apportionment fraction', $ctDays . ' / ' . $accountingDays . ' days')
+                . '</tbody></table></div>';
+        }
+
+        $capitalAllowances = $this->money($summary, 'capital_allowances');
+        $taxableBeforeLosses = $this->money($summary, 'taxable_before_losses');
+        $adjusted = $taxableBeforeLosses + $capitalAllowances;
+        $allocatedValues = (array)($allocation['allocated_values'] ?? []);
+        if (isset($allocatedValues['adjusted_result_before_capital_allowances'])
+            && is_numeric($allocatedValues['adjusted_result_before_capital_allowances'])) {
+            $adjusted = round((float)$allocatedValues['adjusted_result_before_capital_allowances'], 2);
+        }
+        if (abs($adjusted - round($taxableBeforeLosses + $capitalAllowances, 2)) > 0.009) {
+            throw new \RuntimeException('The frozen adjusted result does not reconcile to capital allowances and the trading result.');
+        }
+        $tradingRows = $this->factMoneyRow($generator, $facts, 'computation.summary.accounting_profit')
+            . $this->factMoneyRow($generator, $facts, 'computation.summary.disallowable_add_backs')
+            . $this->factMoneyRow($generator, $facts, 'computation.summary.capital_add_backs')
+            . $this->factMoneyRow($generator, $facts, 'computation.summary.depreciation_add_back');
+        $roundingAdjustment = round((float)($allocation['apportionment_rounding_adjustment'] ?? 0), 2);
+        if (abs($roundingAdjustment) >= 0.005) {
+            $tradingRows .= $this->moneyRow(
+                $generator,
+                'Apportionment rounding adjustment',
+                $roundingAdjustment
+            );
+        }
+        $tradingRows .= $this->moneyRow(
+            $generator,
+            'Adjusted profit or loss before capital allowances',
+            $adjusted,
+            false,
+            'subtotal'
+        )
+            . $this->factMoneyRow(
+                $generator,
+                $facts,
+                'computation.summary.capital_allowances',
+                true
+            )
+            . $this->factMoneyRow(
+                $generator,
+                $facts,
+                'computation.summary.taxable_before_losses',
+                false,
+                'final-total'
+            );
+        $html .= '<div class="ct-section trading-section"><h2>Trading profit or loss computation</h2>'
+            . '<table class="financial-table"><thead><tr><th scope="col">Trading computation</th>'
+            . '<th scope="col" class="amount">£</th></tr></thead><tbody>' . $tradingRows . '</tbody></table></div>';
+
+        $html .= $this->renderAiaSchedule($generator, $model);
+
+        $lossBroughtForward = $this->money($summary, 'losses_brought_forward');
+        $lossArising = $this->money($summary, 'loss_created_in_period');
+        $lossesUsed = $this->money($summary, 'losses_used');
+        $lossCarriedForward = $this->money($summary, 'losses_carried_forward');
+        if (abs(round($lossBroughtForward + $lossArising - $lossesUsed, 2) - $lossCarriedForward) > 0.009) {
+            throw new \RuntimeException('The frozen trading-loss movement does not reconcile.');
+        }
+        $lossRows = $this->factMoneyRow($generator, $facts, 'computation.summary.losses_brought_forward')
+            . $this->moneyRow($generator, 'Loss arising in this period', $lossArising)
+            . $this->factMoneyRow($generator, $facts, 'computation.summary.losses_used', true)
+            . $this->moneyRow($generator, 'Loss carried forward', $lossCarriedForward, false, 'final-total');
+        $html .= '<div class="ct-section loss-section keep-together"><h2>Trading losses</h2>'
+            . '<table class="financial-table"><thead><tr><th scope="col">Loss movement</th>'
+            . '<th scope="col" class="amount">£</th></tr></thead><tbody>' . $lossRows . '</tbody></table></div>';
+
+        $participatorKey = isset($facts['return_position.ct600a_a80'])
+            ? 'return_position.ct600a_a80'
+            : 'computation.summary.s455_tax';
+        $payableKey = isset($facts['return_position.tax_payable'])
+            ? 'return_position.tax_payable'
+            : 'computation.summary.estimated_corporation_tax';
+        $taxRows = $this->factMoneyRow($generator, $facts, 'computation.summary.taxable_profit')
+            . $this->factMoneyRow($generator, $facts, 'computation.summary.ordinary_corporation_tax')
+            . $this->factMoneyRow($generator, $facts, $participatorKey)
+            . $this->factMoneyRow($generator, $facts, $payableKey, false, 'final-total');
+        $html .= '<div class="ct-section liability-section keep-together"><h2>Tax liability</h2>'
+            . '<table class="financial-table"><thead><tr><th scope="col">Tax liability</th>'
+            . '<th scope="col" class="amount">£</th></tr></thead><tbody>' . $taxRows . '</tbody></table></div>'
+            . $this->renderSupportingSchedules($generator, $filing)
+            . '</div>';
+        return $html;
+    }
+
+    private function renderAiaSchedule(IxbrlGeneratorService $generator, array $model): string
+    {
+        $summary = (array)$model['computation']['summary'];
+        $breakdown = (array)($summary['capital_allowance_breakdown'] ?? []);
+        $calculations = array_values(array_filter(
+            (array)($breakdown['asset_calculations'] ?? []),
+            static fn(mixed $row): bool => is_array($row)
+                && (string)($row['allowance_type'] ?? '') === 'aia'
+                && (float)($row['allowance_amount'] ?? 0) >= 0.005
+        ));
+        $expected = round((float)($model['filing_decisions']['aia_claimed_in_trade'] ?? 0), 2);
+        if ($calculations === []) {
+            if ($expected >= 0.005) {
+                throw new \RuntimeException('The frozen AIA claim has no asset-level calculation rows.');
+            }
+            return '';
+        }
+        $auditRows = array_values((array)($model['audit']['capital_allowances']['rows'] ?? []));
+        $usedAuditRows = [];
+        $rows = '';
+        $expenditureTotal = 0.0;
+        $claimTotal = 0.0;
+        foreach ($calculations as $calculation) {
+            $assetId = (int)($calculation['asset_id'] ?? 0);
+            $matches = [];
+            foreach ($auditRows as $index => $auditRow) {
+                if (is_array($auditRow)
+                    && (int)(($auditRow['metadata'] ?? [])['asset_id'] ?? 0) === $assetId) {
+                    $matches[$index] = $auditRow;
+                }
+            }
+            if ($assetId <= 0 || count($matches) !== 1) {
+                throw new \RuntimeException('A frozen AIA calculation row cannot be reconciled uniquely to approved audit evidence.');
+            }
+            $auditIndex = (int)array_key_first($matches);
+            if (isset($usedAuditRows[$auditIndex])) {
+                throw new \RuntimeException('A frozen AIA audit row is linked to more than one calculation row.');
+            }
+            $usedAuditRows[$auditIndex] = true;
+            $audit = (array)$matches[$auditIndex];
+            $metadata = (array)($audit['metadata'] ?? []);
+            $description = trim((string)($metadata['description'] ?? ''));
+            $purchaseDate = trim((string)($metadata['purchase_date'] ?? $audit['source_date'] ?? ''));
+            $addition = round((float)($calculation['addition_amount'] ?? 0), 2);
+            $claim = round((float)($calculation['allowance_amount'] ?? 0), 2);
+            if ($description === '' || $purchaseDate === '') {
+                throw new \RuntimeException('A frozen AIA audit row has no approved description or qualifying expenditure date.');
+            }
+            $this->longDate($purchaseDate);
+            foreach ([
+                [(float)($metadata['addition_amount'] ?? -1), $addition],
+                [(float)($metadata['allowance_amount'] ?? -1), $claim],
+                [(float)($audit['tax_adjustment_amount'] ?? -1), $claim],
+            ] as [$frozenAmount, $calculationAmount]) {
+                if (abs(round((float)$frozenAmount, 2) - $calculationAmount) > 0.009) {
+                    throw new \RuntimeException('A frozen AIA calculation amount does not agree to approved audit evidence.');
+                }
+            }
+            $expenditureTotal += $addition;
+            $claimTotal += $claim;
+            $rows .= '<tr><td>' . $generator->escape($description) . '</td><td>'
+                . $generator->escape($this->longDate($purchaseDate)) . '</td><td class="amount">'
+                . $generator->escape(number_format($addition, 2, '.', ',')) . '</td><td class="amount">'
+                . $generator->escape(number_format($claim, 2, '.', ',')) . '</td></tr>';
+        }
+        $claimTotal = round($claimTotal, 2);
+        if (abs($claimTotal - $expected) > 0.009) {
+            throw new \RuntimeException('The asset-level AIA schedule does not reconcile to the frozen CT600 AIA claim.');
+        }
+        return '<div class="ct-section aia-section"><h2>Annual Investment Allowance schedule</h2>'
+            . '<table class="financial-table aia-table"><thead><tr><th scope="col">Asset description</th>'
+            . '<th scope="col">Qualifying expenditure date</th><th scope="col" class="amount">Expenditure (£)</th>'
+            . '<th scope="col" class="amount">AIA claimed (£)</th></tr></thead><tbody>' . $rows
+            . '<tr class="final-total"><th scope="row" colspan="2">Total</th><td class="amount">'
+            . $generator->escape(number_format(round($expenditureTotal, 2), 2, '.', ','))
+            . '</td><td class="amount">' . $generator->escape(number_format($claimTotal, 2, '.', ','))
+            . '</td></tr></tbody></table></div>';
     }
 
     private function renderSupportingSchedules(IxbrlGeneratorService $generator, array $filing): string
     {
         $model = (array)($filing['model'] ?? []);
-        $summary = (array)($model['computation']['summary'] ?? []);
-        $breakdown = (array)($summary['capital_allowance_breakdown'] ?? []);
-        $assets = array_values(array_filter((array)($breakdown['asset_calculations'] ?? []), static fn(mixed $row): bool =>
-            is_array($row) && (string)($row['allowance_type'] ?? '') === 'aia' && (float)($row['allowance_amount'] ?? 0) >= 0.005
-        ));
         $html = '';
-        if ($assets !== []) {
-            $total = round(array_sum(array_map(static fn(array $row): float => (float)($row['allowance_amount'] ?? 0), $assets)), 2);
-            $expected = round((float)($model['filing_decisions']['aia_claimed_in_trade'] ?? 0), 2);
-            if (abs($total - $expected) > 0.009) {
-                throw new \RuntimeException('The asset-level AIA schedule does not reconcile to the frozen CT600 AIA claim.');
-            }
-            $rows = '';
-            foreach ($assets as $asset) {
-                $rows .= '<tr><td>' . $generator->escape((string)($asset['asset_code'] ?? $asset['asset_id'] ?? '')) . '</td>'
-                    . '<td>' . $generator->escape((string)($asset['description'] ?? 'Plant and machinery')) . '</td>'
-                    . '<td>' . $generator->escape((string)($asset['purchase_date'] ?? '')) . '</td>'
-                    . '<td>' . $generator->escape(number_format((float)($asset['addition_amount'] ?? 0), 2, '.', ',')) . '</td>'
-                    . '<td>' . $generator->escape(number_format((float)($asset['allowance_amount'] ?? 0), 2, '.', ',')) . '</td></tr>';
-            }
-            $html .= '<div class="ct-section"><h2>Annual Investment Allowance schedule</h2><table><thead><tr><th>Asset</th><th>Description</th><th>Acquired</th><th>Qualifying expenditure (£)</th><th>AIA claimed (£)</th></tr></thead><tbody>'
-                . $rows . '<tr><th colspan="4">Total AIA claimed</th><td>' . $generator->escape(number_format($total, 2, '.', ',')) . '</td></tr></tbody></table></div>';
-        }
         $ct600a = (array)($model['ct600a'] ?? []);
         if (!empty($ct600a['required'])) {
-            $html .= '<div class="ct-section"><h2>CT600A loans and arrangements schedule</h2>';
+            $html .= '<div class="ct-section ct600a-section"><h2>CT600A loans and arrangements schedule</h2>';
             $html .= $this->supportingTable($generator, 'Part 1 — loans and benefits', (array)($ct600a['part1']['rows'] ?? []), 'amount');
             $html .= $this->supportingTable($generator, 'Part 2 — relief within nine months', (array)($ct600a['part2']['rows'] ?? []), null);
             $html .= $this->supportingTable($generator, 'Part 3 — relief due now', (array)($ct600a['part3']['rows'] ?? []), null);
-            $html .= '<table><tbody><tr><th>A75 total outstanding</th><td>' . $generator->escape(number_format((float)($ct600a['total_loans_outstanding'] ?? 0), 2, '.', ','))
-                . '</td></tr><tr><th>A80 tax payable</th><td>' . $generator->escape(number_format((float)($ct600a['tax_payable'] ?? 0), 2, '.', ',')) . '</td></tr></tbody></table></div>';
+            $html .= '<table class="financial-table"><tbody><tr><th scope="row">A75 total outstanding</th><td class="amount">'
+                . $generator->escape(number_format((float)($ct600a['total_loans_outstanding'] ?? 0), 2, '.', ','))
+                . '</td></tr><tr class="final-total"><th scope="row">A80 tax payable</th><td class="amount">'
+                . $generator->escape(number_format((float)($ct600a['tax_payable'] ?? 0), 2, '.', ','))
+                . '</td></tr></tbody></table></div>';
         }
         return $html;
     }
@@ -434,11 +666,138 @@ final class IxbrlTaxComputationService
         foreach ($rows as $row) {
             $amount = $amountKey !== null ? (float)($row[$amountKey] ?? 0)
                 : (float)($row['amount_repaid'] ?? 0) + (float)($row['amount_released_or_written_off'] ?? 0);
+            $date = trim((string)($row['date'] ?? ''));
+            $displayDate = $date !== '' ? $this->longDate($date) : '';
             $body .= '<tr><td>' . $generator->escape((string)($row['name'] ?? 'Participator')) . '</td><td>'
-                . $generator->escape((string)($row['date'] ?? '')) . '</td><td>'
+                . $generator->escape($displayDate) . '</td><td class="amount">'
                 . $generator->escape(number_format($amount, 2, '.', ',')) . '</td></tr>';
         }
-        return '<h3>' . $generator->escape($title) . '</h3><table><thead><tr><th>Participator or associate</th><th>Date</th><th>Amount (£)</th></tr></thead><tbody>' . $body . '</tbody></table>';
+        return '<div class="keep-together"><h3>' . $generator->escape($title)
+            . '</h3><table class="financial-table"><thead><tr><th scope="col">Participator or associate</th>'
+            . '<th scope="col">Date</th><th scope="col" class="amount">Amount (£)</th></tr></thead><tbody>'
+            . $body . '</tbody></table></div>';
+    }
+
+    private function presentationLabel(string $canonicalKey): string
+    {
+        $label = self::PRESENTATION_LABELS[$canonicalKey] ?? '';
+        if ($label === '') {
+            throw new \RuntimeException(
+                'The supported computation fact has no recognised human-readable label: ' . $canonicalKey . '.'
+            );
+        }
+        return $label;
+    }
+
+    private function factHtml(array $facts, string $canonicalKey): string
+    {
+        if (!isset($facts[$canonicalKey])) {
+            throw new \RuntimeException('The computation report is missing required fact ' . $canonicalKey . '.');
+        }
+        return (string)$facts[$canonicalKey]['html'];
+    }
+
+    private function factMoneyRow(
+        IxbrlGeneratorService $generator,
+        array $facts,
+        string $canonicalKey,
+        bool $deduction = false,
+        string $class = ''
+    ): string {
+        if (!isset($facts[$canonicalKey]) || empty($facts[$canonicalKey]['numeric'])) {
+            throw new \RuntimeException('The computation report is missing required monetary fact ' . $canonicalKey . '.');
+        }
+        $fact = (array)$facts[$canonicalKey];
+        $value = (float)$fact['value'];
+        $display = (string)$fact['html'];
+        if ($value < -0.004 || ($deduction && $value > 0.004)) {
+            $display = '<span class="accounting-negative">(' . $display . ')</span>';
+        }
+        return '<tr' . ($class !== '' ? ' class="' . $generator->escape($class) . '"' : '') . '><th scope="row">'
+            . $generator->escape((string)$fact['label']) . '</th><td class="amount">' . $display . '</td></tr>';
+    }
+
+    private function moneyRow(
+        IxbrlGeneratorService $generator,
+        string $label,
+        float $value,
+        bool $deduction = false,
+        string $class = ''
+    ): string {
+        $negative = $value < -0.004 || ($deduction && $value > 0.004);
+        $display = $generator->escape(number_format(abs($value), 2, '.', ','));
+        if ($negative) {
+            $display = '<span class="accounting-negative">(' . $display . ')</span>';
+        }
+        return '<tr' . ($class !== '' ? ' class="' . $generator->escape($class) . '"' : '') . '><th scope="row">'
+            . $generator->escape($label) . '</th><td class="amount">' . $display . '</td></tr>';
+    }
+
+    private function textRow(IxbrlGeneratorService $generator, string $label, string $html): string
+    {
+        return '<tr><th scope="row">' . $generator->escape($label) . '</th><td>' . $html . '</td></tr>';
+    }
+
+    private function money(array $summary, string $key): float
+    {
+        if (!array_key_exists($key, $summary) || !is_numeric($summary[$key])) {
+            throw new \RuntimeException('The frozen computation report is missing monetary value ' . $key . '.');
+        }
+        return round((float)$summary[$key], 2);
+    }
+
+    private function longDate(string $value): string
+    {
+        $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+        $errors = \DateTimeImmutable::getLastErrors();
+        if (!$date instanceof \DateTimeImmutable
+            || ($errors !== false && ((int)$errors['warning_count'] > 0 || (int)$errors['error_count'] > 0))
+            || $date->format('Y-m-d') !== $value) {
+            throw new \RuntimeException('The frozen computation report contains an invalid canonical date.');
+        }
+        return $date->format('j F Y');
+    }
+
+    private function stylesheet(): string
+    {
+        return <<<'CSS'
+@page { size: A4 portrait; margin: 18mm 16mm 18mm 16mm; }
+html { font-family: Arial, Helvetica, sans-serif; color: #20252b; background: #fff; font-size: 10pt; line-height: 1.35; }
+body { margin: 0; padding: 0; }
+.ct-report { width: 100%; max-width: 178mm; margin: 0 auto; }
+.ct-header { margin: 0 0 8mm; padding: 0 0 5mm; border-bottom: 2px solid #273444; }
+h1 { margin: 0 0 2mm; font-size: 17pt; line-height: 1.15; letter-spacing: .01em; }
+.report-title { margin: 0; font-size: 13pt; font-weight: 700; }
+.report-subtitle { margin: 1.5mm 0 0; color: #4c5661; }
+.ct-section { margin: 0 0 7mm; break-inside: avoid; page-break-inside: avoid; }
+h2, h3 { break-after: avoid; page-break-after: avoid; }
+h2 { margin: 0 0 2.5mm; font-size: 11.5pt; color: #273444; }
+h3 { margin: 3mm 0 2mm; font-size: 10.5pt; }
+p { margin: 0 0 3mm; }
+table { width: 100%; border-collapse: collapse; table-layout: fixed; break-inside: avoid; page-break-inside: avoid; }
+thead { display: table-header-group; }
+tr { break-inside: avoid; page-break-inside: avoid; }
+th, td { padding: 1.8mm 2mm; vertical-align: top; overflow-wrap: break-word; word-wrap: break-word; }
+th { text-align: left; font-weight: 600; }
+thead th { border-bottom: 1px solid #7b858f; color: #39434d; }
+.identity-table th { width: 34%; color: #4c5661; }
+.financial-table th:first-child { width: auto; }
+.financial-table .amount { width: 31mm; }
+.amount { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums lining-nums; }
+.subtotal th, .subtotal td { border-top: 1px solid #68727c; font-weight: 700; }
+.final-total th, .final-total td { border-top: 3px double #273444; border-bottom: 1px solid #273444; font-weight: 700; }
+.aia-table th:nth-child(2), .aia-table td:nth-child(2) { width: 35mm; }
+.aia-table th:nth-child(3), .aia-table td:nth-child(3),
+.aia-table th:nth-child(4), .aia-table td:nth-child(4) { width: 27mm; }
+.accounting-negative { white-space: nowrap; }
+.keep-together { break-inside: avoid; page-break-inside: avoid; }
+@media print {
+  html, body { width: 210mm; min-height: 297mm; }
+  .ct-report { max-width: none; }
+  .ct-section, table, tr, .keep-together { break-inside: avoid; page-break-inside: avoid; }
+  h1, h2, h3 { break-after: avoid; page-break-after: avoid; }
+}
+CSS;
     }
 
     private function contextProfile(array $mapping): string
@@ -498,11 +857,42 @@ final class IxbrlTaxComputationService
         if (empty($model['available']) && !isset($model['model']['identity'], $model['run'])) {
             throw new \RuntimeException('A verified frozen CT-period filing model is required for the computation report.');
         }
+        $frozen = (array)($model['model'] ?? []);
+        $identity = (array)($frozen['identity'] ?? []);
+        foreach (['company_name', 'company_number'] as $key) {
+            if (trim((string)($identity[$key] ?? '')) === '') {
+                throw new \RuntimeException('The computation report requires its frozen company identity.');
+            }
+        }
+        if (trim((string)($frozen['filing_identity']['utr'] ?? '')) === '') {
+            throw new \RuntimeException('The computation report requires its frozen Unique Taxpayer Reference.');
+        }
         $run = (array)($model['run'] ?? []);
         $start = trim((string)($run['period_start'] ?? ''));
         $end = trim((string)($run['period_end'] ?? ''));
         if ($start === '' || $end === '') {
             throw new \RuntimeException('The computation report requires its CT-period start and end dates.');
+        }
+        $startDisplay = $this->longDate($start);
+        $endDisplay = $this->longDate($end);
+        $accountingPeriod = (array)($frozen['accounting_period'] ?? []);
+        $this->longDate((string)($accountingPeriod['start_date'] ?? ''));
+        $this->longDate((string)($accountingPeriod['end_date'] ?? ''));
+        $profileCode = trim((string)($frozen['supported_return_profile']['profile_code'] ?? ''));
+        $frameworkLabel = self::SUPPORTED_PROFILE_LABELS[$profileCode] ?? '';
+        if ($frameworkLabel === ''
+            || empty($frozen['supported_return_profile']['supported'])
+            || empty($frozen['supported_return_profile']['ordinary_trading_company_confirmed'])) {
+            throw new \RuntimeException('The frozen supported-return profile has no recognised accounting-framework label.');
+        }
+        $summary = (array)($frozen['computation']['summary'] ?? []);
+        foreach ([
+            'accounting_profit', 'disallowable_add_backs', 'capital_add_backs',
+            'depreciation_add_back', 'capital_allowances', 'taxable_before_losses',
+            'loss_created_in_period', 'losses_brought_forward', 'losses_used',
+            'losses_carried_forward', 'taxable_profit', 'ordinary_corporation_tax',
+        ] as $key) {
+            $this->money($summary, $key);
         }
         $included = array_values(array_filter($mappings, static fn(array $mapping): bool => array_key_exists('source_value', $mapping)));
         usort($included, fn(array $a, array $b): int => [self::SECTION_ORDER[(string)$a['presentation_section']] ?? 999, (int)$a['sort_order'], (int)$a['id']] <=> [self::SECTION_ORDER[(string)$b['presentation_section']] ?? 999, (int)$b['sort_order'], (int)$b['id']]);
@@ -511,17 +901,25 @@ final class IxbrlTaxComputationService
         }
         $sections = [];
         foreach ($included as $mapping) {
+            $canonicalKey = (string)$mapping['canonical_key'];
+            $label = $this->presentationLabel($canonicalKey);
             $section = (string)$mapping['presentation_section'];
             $sections[$section][] = [
-                'canonical_key' => (string)$mapping['canonical_key'],
-                'label' => (string)$mapping['presentation_label'],
+                'canonical_key' => $canonicalKey,
+                'label' => $label,
                 'value' => $mapping['source_value'],
             ];
         }
+        $companyName = trim((string)$identity['company_name']);
+        $reportTitle = 'Corporation Tax computation for the period ended ' . $endDisplay;
         return [
-            'title' => 'Corporation Tax computation',
+            'title' => $reportTitle,
+            'document_title' => $companyName . ': ' . $reportTitle,
             'period_start' => $start,
             'period_end' => $end,
+            'period_start_display' => $startDisplay,
+            'period_end_display' => $endDisplay,
+            'framework_label' => $frameworkLabel,
             'sections' => $sections,
             'mappings' => $included,
         ];

@@ -24,6 +24,38 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $h->assertTrue(!str_contains($positive, ' sign="-"'));
         $h->assertTrue(!str_contains($zero, ' sign="-"'));
     });
+    $h->check($service::class, 'supports safe styles and transformed human-readable values', static function () use ($h, $service): void {
+        $amount = $service->renderFact([
+            'qname' => 'ct:Amount', 'context_ref' => 'ct', 'value' => -1234.5,
+            'numeric' => true, 'unit_ref' => 'GBP', 'decimals' => '2',
+            'format' => 'ixt:numdotdecimal', 'display_value' => '1,234.50',
+        ]);
+        $date = $service->renderFact([
+            'qname' => 'ct:PeriodEnd', 'context_ref' => 'ct', 'value' => '2025-12-31',
+            'format' => 'ixt:datedaymonthyearen', 'display_value' => '31 December 2025',
+        ]);
+        $xhtml = $service->renderDocument([
+            'namespaces' => ['ct' => 'urn:test', 'ixt' => 'http://www.xbrl.org/inlineXBRL/transformation/2015-02-26'],
+            'contexts' => [['id' => 'ct', 'identifier' => '01234567', 'start_date' => '2025-01-01', 'end_date' => '2025-12-31']],
+            'units' => [['id' => 'GBP', 'measure' => 'iso4217:GBP']],
+            'stylesheet' => '@page { size: A4 portrait; } .amount { text-align: right; }',
+            'body' => '<p>' . $amount . '</p><p>' . $date . '</p>',
+        ]);
+        $h->assertTrue(str_contains($amount, 'format="ixt:numdotdecimal"'));
+        $h->assertTrue(str_contains($amount, ' sign="-"'));
+        $h->assertTrue(str_contains($amount, '>1,234.50</ix:nonFraction>'));
+        $h->assertTrue(str_contains($date, 'format="ixt:datedaymonthyearen"'));
+        $h->assertTrue(str_contains($date, '>31 December 2025</ix:nonNumeric>'));
+        $h->assertTrue(str_contains($xhtml, '<style type="text/css">'));
+        $h->assertTrue(str_contains($xhtml, '@page { size: A4 portrait; }'));
+        $h->assertSame([], $service->validateStructure($xhtml));
+        try {
+            $service->renderDocument(['stylesheet' => '</style><script>alert(1)</script>']);
+            $h->assertTrue(false);
+        } catch (InvalidArgumentException $exception) {
+            $h->assertTrue(str_contains($exception->getMessage(), 'cannot contain markup'));
+        }
+    });
     $h->check($service::class, 'renders explicit and typed dimensions in an entity segment', static function () use ($h, $service): void {
         $xhtml = $service->renderDocument([
             'namespaces' => ['ct' => 'urn:test'],

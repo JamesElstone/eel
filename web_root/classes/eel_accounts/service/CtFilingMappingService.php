@@ -211,7 +211,7 @@ final class CtFilingMappingService
         $profileId = (int)$profile['id'];
         if ((string)$profile['status'] === 'draft') {
             $sourceRows = \InterfaceDB::fetchAll(
-                'SELECT canonical_key, value_type, source_section, is_required
+                'SELECT canonical_key, source_label, value_type, source_section, is_required
                  FROM ct_filing_canonical_sources WHERE target_scope IN (:both, :target)',
                 ['both' => 'both', 'target' => $targetType]
             );
@@ -242,7 +242,7 @@ final class CtFilingMappingService
                         'unit_ref' => (string)$source['value_type'] === 'numeric' ? 'GBP' : null,
                         'decimals_value' => (string)$source['value_type'] === 'numeric' ? '2' : null,
                         'presentation_section' => (string)$source['source_section'],
-                        'presentation_label' => (string)$source['canonical_key'],
+                        'presentation_label' => (string)$source['source_label'],
                     ];
                 }
                 $this->saveMapping($targetType, $profileId, $input, $actor);

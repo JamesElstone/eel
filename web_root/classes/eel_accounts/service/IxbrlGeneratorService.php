@@ -52,9 +52,16 @@ final class IxbrlGeneratorService
             }
             $metadata .= '<meta name="' . $this->escape((string)$name) . '" content="' . $this->escape((string)$content) . '"/>';
         }
+        $stylesheet = trim((string)($document['stylesheet'] ?? ''));
+        if ($stylesheet !== '' && str_contains(strtolower($stylesheet), '</style')) {
+            throw new \InvalidArgumentException('Inline XBRL stylesheets cannot contain markup.');
+        }
+        $style = $stylesheet !== ''
+            ? '<style type="text/css">' . $this->escape($stylesheet) . '</style>'
+            : '';
         return CompaniesHouseIxbrlDocumentPolicyService::DOCUMENT_PREFIX
             . '<html xmlns="http://www.w3.org/1999/xhtml"' . $namespaceAttributes . ' xml:lang="en"><head><title>' . $title . '</title>'
-            . '<meta http-equiv="Content-Type" content="application/xhtml+xml; charset=UTF-8"/>' . $metadata . '</head><body>'
+            . '<meta http-equiv="Content-Type" content="application/xhtml+xml; charset=UTF-8"/>' . $metadata . $style . '</head><body>'
             . '<div style="display:none"><ix:header><ix:references>' . $references . '</ix:references><ix:resources>'
             . $resources . '</ix:resources></ix:header></div>' . (string)($document['body'] ?? '') . '</body></html>';
     }
@@ -68,21 +75,38 @@ final class IxbrlGeneratorService
         }
         $numeric = !empty($fact['numeric']);
         $attributes = ' name="' . $this->escape($name) . '" contextRef="' . $this->escape($context) . '"';
+        $format = trim((string)($fact['format'] ?? ''));
+        if ($format !== '' && !$this->validQName($format)) {
+            throw new \InvalidArgumentException('Inline XBRL fact formats must be QNames.');
+        }
+        if ($format !== '') {
+            $attributes .= ' format="' . $this->escape($format) . '"';
+        }
         if (($fact['value'] ?? null) === null) {
             return '<ix:' . ($numeric ? 'nonFraction' : 'nonNumeric') . $attributes . ' xsi:nil="true"/>';
+        }
+        $hasDisplayValue = array_key_exists('display_value', $fact);
+        if ($hasDisplayValue && $format === '') {
+            throw new \InvalidArgumentException('A transformed Inline XBRL display value requires a format.');
         }
         if ($numeric) {
             $decimals = (string)($fact['decimals'] ?? '2');
             $attributes .= ' unitRef="' . $this->escape((string)($fact['unit_ref'] ?? 'GBP')) . '" decimals="' . $this->escape($decimals) . '"';
             $precision = max(0, (int)$decimals);
             $value = (float)$fact['value'];
-            $rendered = number_format(abs($value), $precision, '.', '');
-            if ($value < 0.0 && (float)$rendered !== 0.0) {
+            $rendered = $hasDisplayValue
+                ? trim((string)$fact['display_value'])
+                : number_format(abs($value), $precision, '.', '');
+            if ($rendered === '') {
+                throw new \InvalidArgumentException('A transformed numeric display value cannot be empty.');
+            }
+            if ($value < 0.0 && abs($value) > 0.0) {
                 $attributes .= ' sign="-"';
             }
-            return '<ix:nonFraction' . $attributes . '>' . $rendered . '</ix:nonFraction>';
+            return '<ix:nonFraction' . $attributes . '>' . $this->escape($rendered) . '</ix:nonFraction>';
         }
-        return '<ix:nonNumeric' . $attributes . '>' . $this->escape((string)$fact['value']) . '</ix:nonNumeric>';
+        $rendered = $hasDisplayValue ? (string)$fact['display_value'] : (string)$fact['value'];
+        return '<ix:nonNumeric' . $attributes . '>' . $this->escape($rendered) . '</ix:nonNumeric>';
     }
 
     public function validateStructure(string $xhtml, array $requiredSchemaRefs = []): array

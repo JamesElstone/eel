@@ -113,28 +113,15 @@ final class IxbrlGeneratorService
         return $errors;
     }
 
-    public function storeArtifact(int $companyId, string $companyNumber, string $periodStart, string $periodEnd, string $type, int $runId, string $xhtml): array
-    {
-        $directory = rtrim((new FileCheckService())->getIxbrlDirectory($companyId), '\\/');
-        if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
-            throw new \RuntimeException('Could not create the company iXBRL directory.');
-        }
-        $filename = $this->artifactFilename($companyNumber, $periodStart, $periodEnd, $type, $runId);
-        $path = $directory . DIRECTORY_SEPARATOR . $filename;
-        if (file_put_contents($path, $xhtml, LOCK_EX) === false) {
-            throw new \RuntimeException('Could not write generated iXBRL export file.');
-        }
-        return ['directory' => $directory, 'filename' => $filename, 'path' => $path, 'sha256' => (string)hash_file('sha256', $path)];
-    }
-
     /** Store a content-addressed artifact without ever replacing an existing file. */
     public function storeImmutableArtifact(
         int $companyId,
         string $companyNumber,
+        int $accountingPeriodId,
+        int $runId,
+        string $destination,
         string $periodStart,
         string $periodEnd,
-        string $type,
-        int $runId,
         string $xhtml
     ): array {
         $directory = rtrim((new FileCheckService())->getIxbrlDirectory($companyId), '\\/');
@@ -142,8 +129,15 @@ final class IxbrlGeneratorService
             throw new \RuntimeException('Could not create the company iXBRL directory.');
         }
         $sha256 = hash('sha256', $xhtml);
-        $base = pathinfo($this->artifactFilename($companyNumber, $periodStart, $periodEnd, $type, $runId), PATHINFO_FILENAME);
-        $filename = $base . '_' . substr($sha256, 0, 16) . '.xhtml';
+        $filename = (new IxbrlArtifactFilenameService())->build(
+            $companyNumber,
+            $accountingPeriodId,
+            $runId,
+            $destination,
+            $periodStart,
+            $periodEnd,
+            $sha256
+        );
         $path = $directory . DIRECTORY_SEPARATOR . $filename;
         if (is_file($path)) {
             $existingHash = hash_file('sha256', $path);
@@ -168,18 +162,6 @@ final class IxbrlGeneratorService
         }
         fclose($handle);
         return ['directory' => $directory, 'filename' => $filename, 'path' => $path, 'sha256' => $sha256, 'created' => $created];
-    }
-
-    public function artifactFilename(string $companyNumber, string $periodStart, string $periodEnd, string $type, int $runId): string
-    {
-        if (!in_array($type, ['accounting', 'tax'], true) || $runId <= 0) {
-            throw new \InvalidArgumentException('Invalid iXBRL artifact identity.');
-        }
-        $number = strtoupper((string)preg_replace('/[^A-Za-z0-9]/', '', $companyNumber));
-        if ($number === '' || !preg_match('/^\d{8}$/', $periodStart) || !preg_match('/^\d{8}$/', $periodEnd)) {
-            throw new \InvalidArgumentException('Invalid iXBRL company number or period dates.');
-        }
-        return 'accounts_ixbrl_' . $number . '_' . $periodStart . '_' . $periodEnd . '_' . $type . '_' . $runId . '.xhtml';
     }
 
     public function removeManagedArtifact(string $path, int $companyId): void

@@ -49,14 +49,15 @@ final class IxbrlAccountingService
                 throw new \RuntimeException('Generated iXBRL failed internal validation: ' . implode(' ', $validationErrors));
             }
 
-            $artifact = $this->accountingArtifactLocation($companyId, $accountingPeriodId, (int)$run['id']);
+            $artifact = $this->accountingArtifactLocation($companyId, $accountingPeriodId);
             $stored = (new IxbrlGeneratorService())->storeImmutableArtifact(
                 $companyId,
                 (string)$artifact['company_number'],
+                $accountingPeriodId,
+                (int)$run['id'],
+                IxbrlArtifactFilenameService::DESTINATION_HMRC_ACCOUNTING,
                 (string)$artifact['period_start'],
                 (string)$artifact['period_end'],
-                'accounting',
-                (int)$run['id'],
                 $xhtml
             );
             $filename = (string)$stored['filename'];
@@ -152,7 +153,7 @@ final class IxbrlAccountingService
         }
     }
 
-    private function accountingArtifactLocation(int $companyId, int $accountingPeriodId, int $runId): array
+    private function accountingArtifactLocation(int $companyId, int $accountingPeriodId): array
     {
         $row = \InterfaceDB::fetchOne(
             'SELECT c.company_number, ap.period_start, ap.period_end
@@ -176,31 +177,7 @@ final class IxbrlAccountingService
             'company_number' => $companyNumber,
             'period_start' => $this->filenameDate((string)($row['period_start'] ?? ''), 'start'),
             'period_end' => $this->filenameDate((string)($row['period_end'] ?? ''), 'end'),
-            'filename' => $this->artifactFilename(
-                $companyNumber,
-                $this->filenameDate((string)($row['period_start'] ?? ''), 'start'),
-                $this->filenameDate((string)($row['period_end'] ?? ''), 'end'),
-                'accounting',
-                $runId
-            ),
         ];
-    }
-
-    private function artifactFilename(
-        string $companyNumber,
-        string $periodStart,
-        string $periodEnd,
-        string $ixbrlType,
-        int $runId
-    ): string
-    {
-        return (new IxbrlGeneratorService())->artifactFilename(
-            $companyNumber,
-            $periodStart,
-            $periodEnd,
-            $ixbrlType,
-            $runId
-        );
     }
 
     private function normaliseCompanyNumber(string $companyNumber): string

@@ -116,10 +116,11 @@ final class IxbrlTaxComputationService
             $artifact = $generator->storeImmutableArtifact(
                 $companyId,
                 (string)$model['model']['identity']['company_number'],
+                $accountingPeriodId,
+                $runId,
+                IxbrlArtifactFilenameService::DESTINATION_HMRC_CT600,
                 str_replace('-', '', (string)$run['period_start']),
                 str_replace('-', '', (string)$run['period_end']),
-                'tax',
-                $runId,
                 $rendered['xhtml']
             );
             $beforeExternalValidation?->__invoke();

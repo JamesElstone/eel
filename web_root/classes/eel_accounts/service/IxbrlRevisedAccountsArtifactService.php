@@ -49,9 +49,10 @@ final class IxbrlRevisedAccountsArtifactService
         }
 
         $period = \InterfaceDB::fetchOne(
-            'SELECT period_start, period_end
-             FROM accounting_periods
-             WHERE id = :id AND company_id = :company_id
+            'SELECT ap.period_start, ap.period_end, c.company_number
+             FROM accounting_periods ap
+             INNER JOIN companies c ON c.id = ap.company_id
+             WHERE ap.id = :id AND ap.company_id = :company_id
              LIMIT 1',
             ['id' => $accountingPeriodId, 'company_id' => $companyId]
         );
@@ -102,23 +103,67 @@ final class IxbrlRevisedAccountsArtifactService
         if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
             return ['success' => false, 'errors' => ['Could not create the revised-accounts artifact directory.'], 'warnings' => []];
         }
-        $filename = 'revised_accounts_' . $companyId . '_' . $accountingPeriodId . '_' . substr($basisHash, 0, 16) . '.xhtml';
+        $xhtml = (string)$transformed['xhtml'];
+        $sha256 = hash('sha256', $xhtml);
+        try {
+            $filename = (new IxbrlArtifactFilenameService())->build(
+                (string)$period['company_number'],
+                $accountingPeriodId,
+                (int)($baseArtifact['run_id'] ?? 0),
+                IxbrlArtifactFilenameService::DESTINATION_COMPANIES_HOUSE,
+                str_replace('-', '', (string)$period['period_start']),
+                str_replace('-', '', $periodEnd),
+                $sha256
+            );
+        } catch (\InvalidArgumentException $exception) {
+            return ['success' => false, 'errors' => [$exception->getMessage()], 'warnings' => []];
+        }
         $path = $directory . DIRECTORY_SEPARATOR . $filename;
-        if (file_put_contents($path, (string)$transformed['xhtml']) === false) {
-            return ['success' => false, 'errors' => ['Could not write the revised-accounts artifact.'], 'warnings' => []];
+        $created = false;
+        if (is_file($path)) {
+            $existingHash = hash_file('sha256', $path);
+            if (!is_string($existingHash) || !hash_equals($sha256, strtolower($existingHash))) {
+                return ['success' => false, 'errors' => ['The revised-accounts artifact filename is occupied by different content.'], 'warnings' => []];
+            }
+        } else {
+            $handle = @fopen($path, 'x+b');
+            if ($handle === false) {
+                if (!is_file($path)) {
+                    return ['success' => false, 'errors' => ['Could not create the revised-accounts artifact.'], 'warnings' => []];
+                }
+                $existingHash = hash_file('sha256', $path);
+                if (!is_string($existingHash) || !hash_equals($sha256, strtolower($existingHash))) {
+                    return ['success' => false, 'errors' => ['The revised-accounts artifact filename is occupied by different content.'], 'warnings' => []];
+                }
+            } else {
+                $created = true;
+                try {
+                    if (!flock($handle, LOCK_EX) || fwrite($handle, $xhtml) !== strlen($xhtml) || !fflush($handle)) {
+                        throw new \RuntimeException('Could not write the revised-accounts artifact.');
+                    }
+                } catch (\Throwable $exception) {
+                    fclose($handle);
+                    @unlink($path);
+                    return ['success' => false, 'errors' => [$exception->getMessage()], 'warnings' => []];
+                }
+                fclose($handle);
+            }
         }
 
-        $sha256 = hash_file('sha256', $path);
-        if (!is_string($sha256) || $sha256 === '') {
-            $this->removeManagedArtifact($path, $companyId);
+        $storedSha256 = hash_file('sha256', $path);
+        if (!is_string($storedSha256) || !hash_equals($sha256, strtolower($storedSha256))) {
+            if ($created) {
+                $this->removeManagedArtifact($path, $companyId);
+            }
             return ['success' => false, 'errors' => ['The revised-accounts artifact could not be fingerprinted.'], 'warnings' => []];
         }
-        $sha256 = strtolower($sha256);
 
         $validation = ($this->validationService ?? new IxbrlExternalValidationService())
             ->validateArtifact($path);
         if ((string)($validation['status'] ?? '') !== 'passed') {
-            $this->removeManagedArtifact($path, $companyId);
+            if ($created) {
+                $this->removeManagedArtifact($path, $companyId);
+            }
             return [
                 'success' => false,
                 'errors' => (array)($validation['errors'] ?? ['The revised accounts did not pass Arelle validation.']),
@@ -128,7 +173,9 @@ final class IxbrlRevisedAccountsArtifactService
         }
         $validatedHash = strtolower(trim((string)($validation['validated_sha256'] ?? '')));
         if ($validatedHash === '' || !hash_equals($sha256, $validatedHash)) {
-            $this->removeManagedArtifact($path, $companyId);
+            if ($created) {
+                $this->removeManagedArtifact($path, $companyId);
+            }
             return [
                 'success' => false,
                 'errors' => ['The revised artifact does not match the file validated by Arelle.'],

@@ -49,7 +49,6 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $h->assertTrue(str_contains($xhtml, '<ct:BusinessNameDomain>Example &amp; Company</ct:BusinessNameDomain>'));
         $h->assertSame([], $service->validateStructure($xhtml, ['taxonomy.xsd']));
     });
-    $h->check($service::class, 'uses the company upload naming convention', static function () use ($h, $service): void { $h->assertSame('accounts_ixbrl_01234567_20250101_20251231_tax_9.xhtml', $service->artifactFilename('01234567', '20250101', '20251231', 'tax', 9)); });
     $h->check($service::class, 'embeds a schema-compatible EEL artifact metadata identifier', static function () use ($h, $service): void {
         $xhtml = $service->renderDocument([
             'contexts' => [['id' => 'ct', 'identifier' => '01234567', 'start_date' => '2025-01-01', 'end_date' => '2025-12-31']],

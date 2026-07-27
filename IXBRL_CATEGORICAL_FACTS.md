@@ -83,12 +83,9 @@ literal date value and the XBRL context instant serve different purposes: the
 fact value records the approval date, while the instant context locates the
 fact in the reporting snapshot.
 
-EEL uses the balance-sheet instant context for this fact. In the supplied
-artifact:
-
-- fact value: `17 July 2026`, transformed to the ISO value `2026-07-17`;
-- context: `current_period_end`;
-- context instant: `2023-09-30`.
+EEL uses the balance-sheet instant context for this fact. The fact's transformed
+ISO value is the workflow approval date, while its context is
+`current_period_end` at the balance-sheet date.
 
 This satisfies the 2026 concept period type, matches the structure emitted by
 the Companies House online filing reference (whose approval-date value also
@@ -104,33 +101,22 @@ Regression coverage exists in:
 - `web_root/tests/test_IxbrlAccountingService.php`; and
 - `web_root/tests/test_IxbrlCategoricalFacts.php`.
 
-## Dimensional contexts in the supplied final artifact
+## Dimensional contexts
 
-All contexts use entity identifier `14337285` with scheme
-`http://www.companieshouse.gov.uk/`. There are no `xbrldi:typedMember`
-contexts.
-
-| Context ID | Period | Explicit dimension(s) | Facts using the context |
-| --- | --- | --- | --- |
-| `current_period_duration_director_1` | 2022-09-05 to 2023-09-30 | `bus:EntityOfficersDimension = bus:Director1` | `core:DirectorSigningFinancialStatements`, `bus:NameEntityOfficer` |
-| `current_period_duration_accounts_type` | 2022-09-05 to 2023-09-30 | `bus:AccountsTypeDimension = bus:FullAccounts` | `bus:AccountsType` |
-| `current_period_duration_country_formation` | 2022-09-05 to 2023-09-30 | `countries:CountriesRegionsDimension = countries:EnglandWales` | `bus:CountryFormationOrIncorporation` |
-| `current_period_duration_legal_form` | 2022-09-05 to 2023-09-30 | `bus:LegalFormEntityDimension = bus:PrivateLimitedCompanyLtd` | `bus:LegalFormEntity` |
-| `current_period_duration_registered_office` | 2022-09-05 to 2023-09-30 | `bus:EntityContactTypeDimension = bus:RegisteredOffice`; `countries:CountriesRegionsDimension = countries:UnitedKingdom` | `bus:AddressLine1`, `bus:AddressLine2`, `bus:AddressLine3`, `bus:PostalCodeZip` |
-| `current_period_duration_accounting_standards` | 2022-09-05 to 2023-09-30 | `bus:AccountingStandardsDimension = bus:Micro-entities` | `bus:AccountingStandardsApplied` |
-| `current_period_duration_accounts_status` | 2022-09-05 to 2023-09-30 | `bus:AccountsStatusDimension = bus:AuditExempt-NoAccountantsReport` | `bus:AccountsStatusAuditedOrUnaudited` |
-| `current_period_end_creditors_within_one_year` | instant 2023-09-30 | `core:MaturitiesOrExpirationPeriodsDimension = core:WithinOneYear` | `core:Creditors` |
-| `current_period_end_creditors_after_one_year` | instant 2023-09-30 | `core:MaturitiesOrExpirationPeriodsDimension = core:AfterOneYear` | `core:Creditors` |
-| `current_period_end_superseded` | instant 2023-09-30 | `bus:OriginalRevisedDataDimension = bus:Superseded` | Original `core:CurrentAssets`, `core:Equity`, `core:FixedAssets`, `core:NetAssetsLiabilities`, `core:NetCurrentAssetsLiabilities`, `core:PrepaymentsAccruedIncomeNotExpressedWithinCurrentAssetSubtotal`, `core:TotalAssetsLessCurrentLiabilities` |
-| `current_period_end_superseded_creditors_within_one_year` | instant 2023-09-30 | `core:MaturitiesOrExpirationPeriodsDimension = core:WithinOneYear`; `bus:OriginalRevisedDataDimension = bus:Superseded` | Original `core:Creditors` |
+Generated contexts use the registered company number with scheme
+`http://www.companieshouse.gov.uk/`. The generator uses explicit dimensions
+for the director, accounts type, country of formation, legal form, registered
+office, accounting standard, accounts status, creditor maturity and
+superseded-original facts. It does not create `xbrldi:typedMember` contexts for
+these classifications.
 
 The current revised facts omit `bus:OriginalRevisedDataDimension` and therefore
 use its current/default member. Only superseded original facts use
 `bus:Superseded`.
 
-Arelle 2.43.0 accepted the supplied artifact against the installed package
-with no schema, concept, period-type or dimensional errors. During this audit,
-the prior artifact produced one unrelated recommendation that `ix:header` be
+Arelle accepted the reviewed artifact against the installed package with no
+schema, concept, period-type or dimensional errors. During this audit, the
+prior artifact produced one unrelated recommendation that `ix:header` be
 nested in an element whose inline style is `display:none`; class-based hiding
 was not recognised for that check. The generator now emits the inline style as
 well as its CSS class. That recommendation was not evidence against any

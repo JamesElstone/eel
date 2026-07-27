@@ -8,7 +8,11 @@
 declare(strict_types=1);
 
 $testAppRoot = rtrim((string)(realpath(dirname(__DIR__, 2)) ?: dirname(__DIR__, 2)), '\\/') . DIRECTORY_SEPARATOR;
-$testConfigDirectory = $testAppRoot . 'tests' . DIRECTORY_SEPARATOR . 'fixtures' . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR;
+$testFixtureConfigDirectory = $testAppRoot . 'tests' . DIRECTORY_SEPARATOR
+    . 'fixtures' . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR;
+$testConfigDirectory = $testAppRoot . 'tests' . DIRECTORY_SEPARATOR . 'tmp'
+    . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . (string)getmypid()
+    . DIRECTORY_SEPARATOR;
 $normaliseTestPath = static function (string $path): string {
     $resolved = realpath($path);
     $normalised = $resolved !== false ? $resolved : $path;
@@ -31,12 +35,33 @@ if (defined('APP_CONFIG')) {
     }
 }
 
-$testConfigFile = $testConfigDirectory . 'app.php';
-$testConfig = is_file($testConfigFile) ? require $testConfigFile : null;
+$testFixtureConfigFile = $testFixtureConfigDirectory . 'app.php';
+$testConfig = is_file($testFixtureConfigFile) ? require $testFixtureConfigFile : null;
 $testDsn = is_array($testConfig) ? trim((string)($testConfig['db']['dsn'] ?? '')) : '';
 if (strcasecmp($testDsn, 'sqlite::memory:') !== 0) {
     throw new RuntimeException('Unsafe test bootstrap blocked: the test database DSN must be sqlite::memory:.');
 }
+if (!is_dir($testConfigDirectory)
+    && !mkdir($testConfigDirectory, 0777, true)
+    && !is_dir($testConfigDirectory)) {
+    throw new RuntimeException(
+        'Unable to create the isolated test configuration directory: ' . $testConfigDirectory
+    );
+}
+$testConfigFile = $testConfigDirectory . 'app.php';
+if (!copy($testFixtureConfigFile, $testConfigFile)) {
+    throw new RuntimeException(
+        'Unable to create the isolated test configuration: ' . $testConfigFile
+    );
+}
+register_shutdown_function(static function () use ($testConfigDirectory, $testConfigFile): void {
+    if (is_file($testConfigFile)) {
+        @unlink($testConfigFile);
+    }
+    if (is_dir($testConfigDirectory)) {
+        @rmdir($testConfigDirectory);
+    }
+});
 
 if (class_exists('InterfaceDB', false)) {
     $activeDriver = strtolower(trim((string)InterfaceDB::driverName()));
@@ -56,8 +81,9 @@ unset(
     $normaliseTestPath,
     $pathsMatch,
     $testConfig,
-    $testConfigDirectory,
     $testConfigFile,
+    $testFixtureConfigDirectory,
+    $testFixtureConfigFile,
     $testDsn
 );
 
@@ -65,7 +91,8 @@ defined('APP_ROOT') || define('APP_ROOT', $testAppRoot);
 unset($testAppRoot);
 defined('PROJECT_ROOT') || define('PROJECT_ROOT', rtrim(dirname(APP_ROOT), '\\/') . DIRECTORY_SEPARATOR);
 defined('APP_CLASSES') || define('APP_CLASSES', APP_ROOT . 'classes' . DIRECTORY_SEPARATOR);
-defined('APP_CONFIG') || define('APP_CONFIG', APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'fixtures' . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR);
+defined('APP_CONFIG') || define('APP_CONFIG', $testConfigDirectory);
+unset($testConfigDirectory);
 defined('APP_CONTENT') || define('APP_CONTENT', APP_ROOT . 'content' . DIRECTORY_SEPARATOR);
 defined('APP_CARDS') || define('APP_CARDS', APP_CONTENT . 'cards' . DIRECTORY_SEPARATOR);
 defined('APP_PAGES') || define('APP_PAGES', APP_CONTENT . 'pages' . DIRECTORY_SEPARATOR);
@@ -121,7 +148,7 @@ if (!function_exists('test_write_file_contents_locked')) {
     function test_write_file_contents_locked(string $path, string $contents): void
     {
         $length = strlen($contents);
-        for ($attempt = 0; $attempt < 3; $attempt++) {
+        for ($attempt = 0; $attempt < 20; $attempt++) {
             $handle = @fopen($path, 'c+b');
             if (is_resource($handle)) {
                 $locked = false;
@@ -147,7 +174,7 @@ if (!function_exists('test_write_file_contents_locked')) {
                     fclose($handle);
                 }
             }
-            usleep(10000);
+            usleep(25000 * ($attempt + 1));
         }
 
         throw new RuntimeException('Unable to replace test file contents after retries: ' . $path);

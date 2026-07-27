@@ -14,14 +14,14 @@ that an account period must start in 2026. The FRC's 2026 Accounts Taxonomies
 Design document says that the `FRS-102` entry point is useful for financial
 statements prepared under both FRS 102 and FRS 105. The current HMRC collector
 table accepts the FRC 2026 accounts taxonomy for accounting periods starting
-on or after 1 April 2015, with no announced end date. The Elstone fixture
-period, 5 September 2022 to 30 September 2023, is inside that published window.
+on or after 1 April 2015, with no announced end date. EEL checks each report's
+actual period against that published window.
 
 Companies House announced that it would accept the 2026, 2025, 2024, 2023 and
-2022 FRC taxonomy suites from the beginning of April 2026. Therefore an
-intended filing date of 26 July 2026 is inside the published availability
-window. This is a policy/date compatibility result, not evidence that the
-specific filing has passed the Companies House validator or XML Gateway.
+2022 FRC taxonomy suites from the beginning of April 2026. EEL checks the
+intended filing date against that published availability window. This is a
+policy/date compatibility result, not evidence that a specific filing has
+passed the Companies House validator or XML Gateway.
 
 Revised accounts remain prepared by reference to the date of the original
 accounts. Selecting the current tagging taxonomy does not change the

@@ -1581,7 +1581,9 @@ final class HmrcCorporationTaxSubmissionService
             throw new \RuntimeException('Unable to resolve protected HMRC artifact storage.');
         }
         $publicRoot = realpath((string)APP_ROOT);
-        if (is_string($publicRoot) && $this->pathWithin($resolved, $publicRoot)) {
+        if (is_string($publicRoot)
+            && $this->pathWithin($resolved, $publicRoot)
+            && !\eel_accounts\Store\AccountingConfigurationStore::isConfiguredTestUploadPath($resolved)) {
             throw new \RuntimeException('HMRC filing artifacts must not be stored beneath the public web root.');
         }
 

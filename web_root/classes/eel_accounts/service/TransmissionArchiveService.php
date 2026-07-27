@@ -381,7 +381,9 @@ final class TransmissionArchiveService
             throw new \RuntimeException('Unable to resolve transmission archive storage.');
         }
         $publicRoot = realpath((string)APP_ROOT);
-        if (is_string($publicRoot) && $this->pathWithin($resolved, $publicRoot)) {
+        if (is_string($publicRoot)
+            && $this->pathWithin($resolved, $publicRoot)
+            && !\eel_accounts\Store\AccountingConfigurationStore::isConfiguredTestUploadPath($resolved)) {
             throw new \RuntimeException('Transmission archives must not be stored beneath the public web root.');
         }
 

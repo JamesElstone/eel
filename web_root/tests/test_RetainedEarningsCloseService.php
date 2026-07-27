@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'StandardNominalTestFixture.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ParticipatorLoanTestFixture.php';
 
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static function (GeneratedServiceClassTestHarness $harness): void {
@@ -16,7 +17,7 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
         InterfaceDB::beginTransaction();
         try {
             retainedEarningsCloseRequireSchema($harness);
-            StandardNominalTestFixture::ensureNominals(['1000', '3000', '4000', '5000']);
+            StandardNominalTestFixture::ensureNominals(['1000', '1200', '2100', '3000', '4000', '5000']);
             $fixture = retainedEarningsCloseCreateLossFixture();
             $service = new \eel_accounts\Service\RetainedEarningsCloseService();
             $precomputedProvision = [
@@ -84,12 +85,19 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
 
             $acknowledged = $service->saveAcknowledgement((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], true, 'test');
             $harness->assertSame(true, (bool)($acknowledged['success'] ?? false));
+            \eel_accounts\Support\RequestCache::clear();
             $reviewAfterApproval = (new \eel_accounts\Service\DividendReserveClassificationService())
-                ->fetchReviewContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], '2026-12-31');
+                ->fetchReviewContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], '2024-12-31');
             $harness->assertSame(true, (bool)($reviewAfterApproval['snapshot_current'] ?? false));
+            \eel_accounts\Support\RequestCache::clear();
 
             $posted = $service->postClose((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'test');
-            $harness->assertSame(true, (bool)($posted['success'] ?? false));
+            if (empty($posted['success'])) {
+                throw new RuntimeException(
+                    'Retained earnings close failed: '
+                    . implode('; ', array_map('strval', (array)($posted['errors'] ?? [])))
+                );
+            }
 
             $closeJournal = (new \eel_accounts\Service\ManualJournalService())->fetchJournalByTag(
                 (int)$fixture['company_id'],
@@ -106,24 +114,39 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
             $profit = (new \eel_accounts\Service\YearEndMetricsService())->profitAndLossSummary(
                 (int)$fixture['company_id'],
                 (int)$fixture['accounting_period_id'],
-                '2026-01-01',
-                '2026-12-31'
+                '2024-01-01',
+                '2024-12-31'
             );
             $harness->assertSame('-200.00', number_format((float)($profit['profit_before_tax'] ?? 0), 2, '.', ''));
 
             $balanceSheet = (new \eel_accounts\Service\YearEndMetricsService())->fetchBalanceSheetMetricValues(
                 (int)$fixture['company_id'],
                 (int)$fixture['accounting_period_id'],
-                '2026-01-01',
-                '2026-12-31'
+                '2024-01-01',
+                '2024-12-31'
             );
             $harness->assertSame('-200.00', number_format((float)($balanceSheet['equity_capital_reserves'] ?? 0), 2, '.', ''));
 
             $harness->assertSame(2, retainedEarningsCloseFixtureSourceJournalCount((int)$fixture['company_id'], (string)$fixture['marker']));
 
-            (new \eel_accounts\Service\YearEndLockService())->lockPeriod((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'test');
+            $locked = (new \eel_accounts\Service\YearEndLockService())->lockPeriod(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                'test'
+            );
+            if (empty($locked['success'])) {
+                throw new RuntimeException(
+                    'Year End lock failed: '
+                    . implode('; ', array_map('strval', (array)($locked['errors'] ?? [])))
+                );
+            }
             $unlocked = (new \eel_accounts\Service\YearEndLockService())->unlockPeriod((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'test');
-            $harness->assertSame(true, (bool)($unlocked['success'] ?? false));
+            if (empty($unlocked['success'])) {
+                throw new RuntimeException(
+                    'Year End unlock failed: '
+                    . implode('; ', array_map('strval', (array)($unlocked['errors'] ?? [])))
+                );
+            }
             $harness->assertSame(true, (new \eel_accounts\Service\ManualJournalService())->fetchJournalByTag(
                 (int)$fixture['company_id'],
                 (int)$fixture['accounting_period_id'],
@@ -142,7 +165,7 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
         InterfaceDB::beginTransaction();
         try {
             retainedEarningsCloseRequireSchema($harness);
-            StandardNominalTestFixture::ensureNominals(['1000', '3000', '4000', '5000']);
+            StandardNominalTestFixture::ensureNominals(['1000', '1200', '2100', '3000', '4000', '5000']);
             $fixture = retainedEarningsCloseCreateLossFixture();
             InterfaceDB::prepareExecute(
                 'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
@@ -150,8 +173,8 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
                 [
                     'company_id' => (int)$fixture['company_id'],
                     'label' => 'Retained prior ' . (string)$fixture['marker'],
-                    'period_start' => '2025-01-01',
-                    'period_end' => '2025-12-31',
+                    'period_start' => '2023-01-01',
+                    'period_end' => '2023-12-31',
                 ]
             );
             $priorPeriodId = (int)InterfaceDB::fetchColumn(
@@ -256,7 +279,7 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
         InterfaceDB::beginTransaction();
         try {
             retainedEarningsCloseRequireSchema($harness);
-            StandardNominalTestFixture::ensureNominals(['1000', '3000', '4000', '5000']);
+            StandardNominalTestFixture::ensureNominals(['1000', '1200', '2100', '3000', '4000', '5000']);
             $fixture = retainedEarningsCloseCreateLossFixture();
             $service = new \eel_accounts\Service\RetainedEarningsCloseService(
                 prepaymentPreviewContextFetcher: static fn(int $companyId, int $accountingPeriodId): array => [
@@ -297,14 +320,14 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
         InterfaceDB::beginTransaction();
         try {
             retainedEarningsCloseRequireSchema($harness);
-            StandardNominalTestFixture::ensureNominals(['1000', '3000', '4000', '5000']);
+            StandardNominalTestFixture::ensureNominals(['1000', '1200', '2100', '3000', '4000', '5000']);
             retainedEarningsCloseEnsureNominal('3010', 'Ordinary Share Capital', 'equity');
             $fixture = retainedEarningsCloseCreateLossFixture();
             retainedEarningsCloseInsertJournal(
                 (int)$fixture['company_id'],
                 (int)$fixture['accounting_period_id'],
                 (string)$fixture['marker'] . '-share-capital',
-                '2026-01-10',
+                '2024-01-10',
                 [
                     [
                         'nominal_account_id' => retainedEarningsCloseNominalId('1000'),
@@ -336,8 +359,8 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
             $beforeClose = (new \eel_accounts\Service\YearEndMetricsService())->financialStatementsSummary(
                 $companyId,
                 $accountingPeriodId,
-                '2026-01-01',
-                '2026-12-31'
+                '2024-01-01',
+                '2024-12-31'
             );
             $beforeBridge = (array)($beforeClose['retained_earnings'] ?? []);
             $harness->assertSame('500.00', number_format((float)($beforeBridge['share_capital_movement'] ?? 0), 2, '.', ''));
@@ -349,14 +372,20 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
             ]);
             $acknowledged = $service->saveAcknowledgement($companyId, $accountingPeriodId, true, 'test');
             $harness->assertSame(true, (bool)($acknowledged['success'] ?? false));
+            \eel_accounts\Support\RequestCache::clear();
             $posted = $service->postClose($companyId, $accountingPeriodId, 'test');
-            $harness->assertSame(true, (bool)($posted['success'] ?? false));
+            if (empty($posted['success'])) {
+                throw new RuntimeException(
+                    'Retained earnings close failed: '
+                    . implode('; ', array_map('strval', (array)($posted['errors'] ?? [])))
+                );
+            }
 
             $afterClose = (new \eel_accounts\Service\YearEndMetricsService())->financialStatementsSummary(
                 $companyId,
                 $accountingPeriodId,
-                '2026-01-01',
-                '2026-12-31'
+                '2024-01-01',
+                '2024-12-31'
             );
             $afterBridge = (array)($afterClose['retained_earnings'] ?? []);
             $harness->assertSame('500.00', number_format((float)($afterBridge['share_capital_movement'] ?? 0), 2, '.', ''));
@@ -459,30 +488,35 @@ function retainedEarningsCloseCreateLossFixture(): array
         'SELECT id FROM companies WHERE company_number = :company_number ORDER BY id DESC LIMIT 1',
         ['company_number' => $marker]
     );
+    ParticipatorLoanTestFixture::configureNominals(
+        $companyId,
+        StandardNominalTestFixture::id('1200'),
+        StandardNominalTestFixture::id('2100')
+    );
 
     InterfaceDB::prepareExecute(
         'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
          VALUES (:company_id, :label, :period_start, :period_end)',
         [
             'company_id' => $companyId,
-            'label' => '2026 retained close fixture',
-            'period_start' => '2026-01-01',
-            'period_end' => '2026-12-31',
+            'label' => '2024 retained close fixture',
+            'period_start' => '2024-01-01',
+            'period_end' => '2024-12-31',
         ]
     );
     $accountingPeriodId = (int)InterfaceDB::fetchColumn(
         'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label ORDER BY id DESC LIMIT 1',
         [
             'company_id' => $companyId,
-            'label' => '2026 retained close fixture',
+            'label' => '2024 retained close fixture',
         ]
     );
 
-    retainedEarningsCloseInsertJournal($companyId, $accountingPeriodId, $marker . '-sales', '2026-03-31', [
+    retainedEarningsCloseInsertJournal($companyId, $accountingPeriodId, $marker . '-sales', '2024-03-31', [
         ['nominal_account_id' => retainedEarningsCloseNominalId('1000'), 'debit' => '1000.00', 'credit' => '0.00', 'line_description' => 'Bank receipt'],
         ['nominal_account_id' => retainedEarningsCloseNominalId('4000'), 'debit' => '0.00', 'credit' => '1000.00', 'line_description' => 'Sales'],
     ]);
-    retainedEarningsCloseInsertJournal($companyId, $accountingPeriodId, $marker . '-materials', '2026-04-30', [
+    retainedEarningsCloseInsertJournal($companyId, $accountingPeriodId, $marker . '-materials', '2024-04-30', [
         ['nominal_account_id' => retainedEarningsCloseNominalId('5000'), 'debit' => '1200.00', 'credit' => '0.00', 'line_description' => 'Materials'],
         ['nominal_account_id' => retainedEarningsCloseNominalId('1000'), 'debit' => '0.00', 'credit' => '1200.00', 'line_description' => 'Bank payment'],
     ]);

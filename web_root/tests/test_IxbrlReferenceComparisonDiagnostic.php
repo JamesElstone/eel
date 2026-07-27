@@ -2,12 +2,11 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
-require_once dirname(__DIR__, 2)
-    . DIRECTORY_SEPARATOR . 'scripts'
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support'
     . DIRECTORY_SEPARATOR . 'ixbrl'
-    . DIRECTORY_SEPARATOR . 'compare-references.php';
+    . DIRECTORY_SEPARATOR . 'ReferenceComparisonDiagnostic.php';
 
-use eel_accounts\Scripts\Ixbrl\ReferenceComparisonDiagnostic;
+use eel_accounts\Tests\Support\Ixbrl\ReferenceComparisonDiagnostic;
 
 (new GeneratedServiceClassTestHarness())->run(
     ReferenceComparisonDiagnostic::class,

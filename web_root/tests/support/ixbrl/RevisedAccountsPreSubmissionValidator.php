@@ -7,7 +7,7 @@
  */
 declare(strict_types=1);
 
-namespace eel_accounts\Scripts\Ixbrl;
+namespace eel_accounts\Tests\Support\Ixbrl;
 
 use DateTimeImmutable;
 use DOMDocument;

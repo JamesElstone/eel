@@ -17,8 +17,6 @@ Its goal is simple:
 - [Supported Company Scope](SUPPORTED_COMPANY_SCOPE.md)
 - [FRC 2026 iXBRL Taxonomy Compatibility](IXBRL_TAXONOMY_COMPATIBILITY.md)
 - [FRC 2026 Categorical and Dimensional Fact Strategy](IXBRL_CATEGORICAL_FACTS.md)
-- [Revised-Accounts Validation and Preview Commands](scripts/ixbrl/README.md)
-- [Companies House Validation Procedure](scripts/ixbrl/COMPANIES_HOUSE_VALIDATION.md)
 - [Software Quality Management](SOFTWARE_QUALITY_MANAGEMENT.md)
 - [Mathematical Basis](MATHEMATIC_BASIS.md)
 - [PHP Requirements](PHP_REQUIREMENTS.md)

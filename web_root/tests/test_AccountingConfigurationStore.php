@@ -16,6 +16,26 @@ $harness->check(\eel_accounts\Store\AccountingConfigurationStore::class, 'normal
 });
 
 $harness->check(\eel_accounts\Store\AccountingConfigurationStore::class, 'returns array-backed configuration sections', static function () use ($harness): void {
-    $harness->assertTrue(is_array(\eel_accounts\Store\AccountingConfigurationStore::uploads()));
+    $uploads = \eel_accounts\Store\AccountingConfigurationStore::uploads();
+    $harness->assertTrue(is_array($uploads));
+    $harness->assertSame(
+        test_upload_base_directory(),
+        (string)($uploads['upload_base_dir'] ?? '')
+    );
     $harness->assertSame([], \eel_accounts\Store\AccountingConfigurationStore::hmrcConfig('missing-service'));
+});
+
+$harness->check(\eel_accounts\Store\AccountingConfigurationStore::class, 'limits protected test storage to the configured test temporary tree', static function () use ($harness): void {
+    $harness->assertSame(
+        true,
+        \eel_accounts\Store\AccountingConfigurationStore::isConfiguredTestUploadPath(
+            test_tmp_directory() . DIRECTORY_SEPARATOR . 'transmission'
+        )
+    );
+    $harness->assertSame(
+        false,
+        \eel_accounts\Store\AccountingConfigurationStore::isConfiguredTestUploadPath(
+            rtrim((string)APP_ROOT, '\\/') . DIRECTORY_SEPARATOR . 'content'
+        )
+    );
 });

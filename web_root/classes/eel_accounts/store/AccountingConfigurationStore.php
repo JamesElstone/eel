@@ -86,8 +86,16 @@ final class AccountingConfigurationStore
     public static function uploads(): array
     {
         $uploads = \AppConfigurationStore::get('uploads', []);
+        if (!is_array($uploads)) {
+            return [];
+        }
 
-        return is_array($uploads) ? $uploads : [];
+        $baseDirectory = trim((string)($uploads['upload_base_dir'] ?? ''));
+        if ($baseDirectory !== '') {
+            $uploads['upload_base_dir'] = self::absoluteProjectPath($baseDirectory);
+        }
+
+        return $uploads;
     }
 
     public static function hmrcConfig(string $service): array
@@ -95,5 +103,55 @@ final class AccountingConfigurationStore
         $config = \AppConfigurationStore::get('hmrc.' . trim($service), []);
 
         return is_array($config) ? $config : [];
+    }
+
+    public static function isConfiguredTestUploadPath(string $path): bool
+    {
+        if (PHP_SAPI !== 'cli' || !defined('APP_ROOT') || !defined('APP_CONFIG')) {
+            return false;
+        }
+
+        $appRoot = rtrim((string)APP_ROOT, '\\/');
+        $expectedConfigRoot = self::normaliseComparablePath(
+            $appRoot . DIRECTORY_SEPARATOR . 'tests' . DIRECTORY_SEPARATOR
+                . 'tmp' . DIRECTORY_SEPARATOR . 'config'
+        );
+        $configuredPath = self::normaliseComparablePath((string)APP_CONFIG);
+        if (!str_starts_with($configuredPath, $expectedConfigRoot . DIRECTORY_SEPARATOR)) {
+            return false;
+        }
+
+        $testRoot = $appRoot . DIRECTORY_SEPARATOR . 'tests' . DIRECTORY_SEPARATOR . 'tmp';
+        $normalisedPath = self::normaliseComparablePath($path);
+        $normalisedRoot = self::normaliseComparablePath($testRoot);
+
+        return $normalisedPath === $normalisedRoot
+            || str_starts_with($normalisedPath, $normalisedRoot . DIRECTORY_SEPARATOR);
+    }
+
+    private static function absoluteProjectPath(string $path): string
+    {
+        $path = trim($path);
+        if ($path === '' || preg_match('/^(?:[A-Za-z]:[\\\\\/]|[\\\\\/]{1,2})/D', $path) === 1) {
+            return rtrim($path, '\\/');
+        }
+
+        $projectRoot = defined('PROJECT_ROOT')
+            ? (string)PROJECT_ROOT
+            : dirname(__DIR__, 4) . DIRECTORY_SEPARATOR;
+
+        return rtrim($projectRoot, '\\/')
+            . DIRECTORY_SEPARATOR
+            . ltrim(str_replace(['\\', '/'], DIRECTORY_SEPARATOR, $path), DIRECTORY_SEPARATOR);
+    }
+
+    private static function normaliseComparablePath(string $path): string
+    {
+        $normalised = rtrim(
+            str_replace(['\\', '/'], DIRECTORY_SEPARATOR, trim($path)),
+            DIRECTORY_SEPARATOR
+        );
+
+        return DIRECTORY_SEPARATOR === '\\' ? strtolower($normalised) : $normalised;
     }
 }

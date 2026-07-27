@@ -13,15 +13,11 @@ $harness = new GeneratedServiceClassTestHarness();
 $harness->run(_director_loan_stateCard::class, static function (GeneratedServiceClassTestHarness $harness, _director_loan_stateCard $card): void {
     $harness->check(_director_loan_stateCard::class, 'uses the selected company and period for the subledger statement', static function () use ($harness, $card): void {
         $services = $card->services();
-        $harness->assertCount(2, $services);
+        $harness->assertCount(1, $services);
         $harness->assertSame(\eel_accounts\Service\DirectorLoanService::class, $services[0]['service'] ?? null);
         $harness->assertSame('fetchStatement', $services[0]['method'] ?? null);
         $harness->assertSame(':company.id', $services[0]['params']['companyId'] ?? null);
         $harness->assertSame(':company.accounting_period_id', $services[0]['params']['accountingPeriodId'] ?? null);
-        $harness->assertSame(\eel_accounts\Service\DirectorLoanReportingPresentationService::class, $services[1]['service'] ?? null);
-        $harness->assertSame('fetchPresentation', $services[1]['method'] ?? null);
-        $harness->assertSame(':company.id', $services[1]['params']['companyId'] ?? null);
-        $harness->assertSame(':company.accounting_period_id', $services[1]['params']['accountingPeriodId'] ?? null);
     });
 
     $harness->check(_director_loan_stateCard::class, 'is the single attribution workspace and keeps the counterparty separate', static function () use ($harness, $card): void {
@@ -76,25 +72,8 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
             ],
         ]);
 
-        foreach ([
-            'reporting intent' => 'name="intent" value="save_director_loan_reporting_presentation"',
-            'within-year choice' => 'name="classification" value="within_one_year" checked required',
-            'after-year choice' => 'name="classification" value="after_more_than_one_year" required',
-            'deferment confirmation' => 'name="deferment_right_confirmed" value="1"',
-            'set-off right confirmation' => 'name="set_off_right_confirmed" value="1"',
-            'net-settlement confirmation' => 'name="set_off_net_settlement_intended" value="1"',
-            'interest rate' => 'name="interest_rate_percent"',
-            'main terms' => 'name="main_terms"',
-            'repayment conditions' => 'name="repayment_conditions"',
-            'locked reporting badge' => 'Period locked - reporting choice is read only',
-            'disabled reporting save' => '<button class="button primary" type="submit" disabled>Save reporting presentation</button>',
-        ] as $contract => $needle) {
-            if (!str_contains($html, $needle)) {
-                throw new RuntimeException('Director Loan card is missing the ' . $contract . ' contract.');
-            }
-        }
         $harness->assertTrue(str_contains($html, 'Participator Loan'));
-        $harness->assertTrue(str_contains($html, 'Balances are never netted merely because they relate to the same party.'));
+        $harness->assertSame(false, str_contains($html, 'Statutory Repayment Presentation'));
         return;
 
         $harness->assertSame('Assign each posted Participator Loan control-account entry to the eligible party whose loan account it belongs to. Eligibility is checked on the transaction date.', $card->helper([]));

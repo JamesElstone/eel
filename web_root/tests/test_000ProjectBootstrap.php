@@ -31,6 +31,13 @@ $forbiddenPathFragments = [
     'APP_' . 'ROOT' . " . 'tests' . DIRECTORY_SEPARATOR . 'tmp'",
     'files/' . 'tmp',
     'files\\' . 'tmp',
+    'files/' . 'tests/' . 'tmp',
+    'files\\' . 'tests\\' . 'tmp',
+    "DIRECTORY_SEPARATOR . 'scripts'",
+    '/scripts/',
+    '\\scripts\\',
+    'output/' . 'ixbrl',
+    'output\\' . 'ixbrl',
 ];
 foreach (
     new RecursiveIteratorIterator(

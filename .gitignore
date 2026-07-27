@@ -4,6 +4,10 @@
 !/file_logs/README.md
 /files/*
 !/files/README.md
+/output/
+/web_root/tests/fixtures/companies_house/
+/web_root/tests/fixtures/generated/
+/web_root/tests/fixtures/ixbrl/
 /sqldump
 /tests/tmp
 /web_root/tests/tmp

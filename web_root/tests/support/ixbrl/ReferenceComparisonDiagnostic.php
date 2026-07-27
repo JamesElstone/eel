@@ -7,7 +7,7 @@
  */
 declare(strict_types=1);
 
-namespace eel_accounts\Scripts\Ixbrl;
+namespace eel_accounts\Tests\Support\Ixbrl;
 
 use DOMDocument;
 use DOMElement;
@@ -15,7 +15,6 @@ use DOMNode;
 use DOMXPath;
 use InvalidArgumentException;
 use RuntimeException;
-use Throwable;
 
 /**
  * Produces a compact, deterministic structural comparison of iXBRL references.
@@ -110,29 +109,6 @@ final class ReferenceComparisonDiagnostic
         }
 
         return $json . PHP_EOL;
-    }
-
-    /** @param list<string> $arguments */
-    public static function main(array $arguments): int
-    {
-        $paths = array_slice($arguments, 1);
-        if (count($paths) < 2) {
-            fwrite(
-                STDERR,
-                'Usage: php scripts/ixbrl/compare-references.php <first.xhtml> <second.xhtml> [more.xhtml ...]'
-                . PHP_EOL
-            );
-            return 2;
-        }
-
-        try {
-            $diagnostic = new self();
-            fwrite(STDOUT, $diagnostic->encode($diagnostic->compare($paths)));
-            return 0;
-        } catch (Throwable $exception) {
-            fwrite(STDERR, 'iXBRL comparison failed: ' . $exception->getMessage() . PHP_EOL);
-            return 1;
-        }
     }
 
     private function loadXml(string $source, string $path): DOMDocument
@@ -341,12 +317,4 @@ final class ReferenceComparisonDiagnostic
 
         return $result;
     }
-}
-
-$scriptPath = (string)($_SERVER['SCRIPT_FILENAME'] ?? '');
-$resolvedScriptPath = $scriptPath !== '' ? realpath($scriptPath) : false;
-if (PHP_SAPI === 'cli'
-    && $resolvedScriptPath !== false
-    && strcasecmp($resolvedScriptPath, __FILE__) === 0) {
-    exit(ReferenceComparisonDiagnostic::main($argv));
 }

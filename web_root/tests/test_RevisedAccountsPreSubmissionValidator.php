@@ -2,16 +2,14 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
-require_once dirname(__DIR__, 2)
-    . DIRECTORY_SEPARATOR . 'scripts'
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support'
     . DIRECTORY_SEPARATOR . 'ixbrl'
     . DIRECTORY_SEPARATOR . 'RevisedAccountsPreSubmissionValidator.php';
-require_once dirname(__DIR__, 2)
-    . DIRECTORY_SEPARATOR . 'scripts'
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support'
     . DIRECTORY_SEPARATOR . 'ixbrl'
-    . DIRECTORY_SEPARATOR . 'validate-revised-accounts.php';
+    . DIRECTORY_SEPARATOR . 'RevisedAccountsValidationSupport.php';
 
-use eel_accounts\Scripts\Ixbrl\RevisedAccountsPreSubmissionValidator;
+use eel_accounts\Tests\Support\Ixbrl\RevisedAccountsPreSubmissionValidator;
 use eel_accounts\Service\IxbrlTaxonomyProfileService;
 
 (new GeneratedServiceClassTestHarness())->run(

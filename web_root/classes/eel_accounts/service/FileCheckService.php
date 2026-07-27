@@ -25,8 +25,7 @@ final class FileCheckService
     )
     {
         if ($uploads === null) {
-            $config = \AppConfigurationStore::config();
-            $uploads = is_array($config['uploads'] ?? null) ? $config['uploads'] : [];
+            $uploads = \eel_accounts\Store\AccountingConfigurationStore::uploads();
         }
 
         $this->uploads = $uploads;
@@ -128,7 +127,8 @@ final class FileCheckService
     public static function defaultUploadBaseDirectory(): string
     {
         try {
-            $configuredPath = trim((string)\AppConfigurationStore::get('uploads.upload_base_dir', ''));
+            $uploads = \eel_accounts\Store\AccountingConfigurationStore::uploads();
+            $configuredPath = trim((string)($uploads['upload_base_dir'] ?? ''));
         } catch (\Throwable) {
             $configuredPath = '';
         }

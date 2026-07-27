@@ -23,7 +23,11 @@ $harness->check('TestBootstrapSafety', 'blocks a production configuration loaded
 
 $harness->check('TestBootstrapSafety', 'blocks an already initialised non-SQLite database driver', static function () use ($harness): void {
     $script = 'define("APP_CONFIG", '
-        . var_export(APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'fixtures' . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR, true)
+        . var_export(
+            test_tmp_directory() . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR,
+            true
+        )
+        . ' . (string)getmypid() . DIRECTORY_SEPARATOR'
         . '); final class InterfaceDB { public static function driverName(): string { return "mysql"; } }'
         . ' require ' . var_export(__DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'TestBootstrap.php', true) . ';';
     $result = testBootstrapSafetyRunPhp($script);
@@ -39,7 +43,10 @@ $harness->check('TestBootstrapSafety', 'allows the isolated in-memory SQLite tes
     $result = testBootstrapSafetyRunPhp($script);
 
     $harness->assertSame(0, $result['exit_code']);
-    $harness->assertTrue(str_contains($result['output'], 'tests' . DIRECTORY_SEPARATOR . 'fixtures' . DIRECTORY_SEPARATOR . 'config'));
+    $harness->assertTrue(str_contains(
+        $result['output'],
+        'tests' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'config'
+    ));
 });
 
 /**

@@ -33,6 +33,7 @@ final class _profit_loss extends PageContextFramework
     {
         return [
             'pl_summary',
+            'pl_trading',
             'pl_monthly_trend',
             'pl_income_breakdown',
             'pl_expense_breakdown',
@@ -50,6 +51,7 @@ final class _profit_loss extends PageContextFramework
                 'tab' => 'Overview',
                 'cards' => [
                     'pl_summary',
+                    'pl_trading',
                     'pl_monthly_trend',
                 ],
             ],
@@ -104,6 +106,7 @@ final class _profit_loss extends PageContextFramework
                 'ct_period_reconciliation' => $profitLossService->getCtPeriodProfitReconciliation($companyId, $accountingPeriodId),
                 'breakdown' => $profitLossService->getProfitLossBreakdown($companyId, $accountingPeriodId),
                 'monthly_trend' => $profitLossService->getMonthlyProfitLossTrend($companyId, $accountingPeriodId),
+                'sales_heatmap' => $profitLossService->getSalesHeatmap($companyId, $accountingPeriodId),
                 'health' => $profitLossService->getProfitLossHealth($companyId, $accountingPeriodId),
                 'source_coverage' => $profitLossService->getSourceCoverage($companyId, $accountingPeriodId),
             ],

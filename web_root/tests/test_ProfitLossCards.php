@@ -11,6 +11,31 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 
+$harness->run(_pl_tradingCard::class, static function (GeneratedServiceClassTestHarness $harness, _pl_tradingCard $card): void {
+    $html = $card->render([
+        'company' => ['settings' => ['default_currency_symbol' => '&#163;']],
+        'profit_loss' => [
+            'sales_heatmap' => [
+                'available' => true,
+                'period_start' => '2025-01-01',
+                'period_end' => '2025-12-31',
+                'total_sales' => 1750.50,
+                'days' => [
+                    ['date' => '2025-01-15', 'value' => 1250.50, 'sales' => 1250.50],
+                    ['date' => '2025-03-02', 'value' => 500.00, 'sales' => 500.00],
+                ],
+            ],
+        ],
+    ]);
+
+    $harness->check(_pl_tradingCard::class, 'renders the accounting-period sales heatmap', static function () use ($harness, $html): void {
+        $harness->assertTrue(str_contains($html, 'class="calendar-heatmap"'));
+        $harness->assertTrue(str_contains($html, 'Sales by day'));
+        $harness->assertTrue(str_contains($html, '&#163;1,250.50 sales on 15 January 2025'));
+        $harness->assertTrue(str_contains($html, '<strong>Total sales:</strong> &#163;1,750.50'));
+    });
+});
+
 $harness->run(_pl_summaryCard::class, static function (GeneratedServiceClassTestHarness $harness, _pl_summaryCard $card): void {
     $html = $card->render([
         'company' => [

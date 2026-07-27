@@ -636,6 +636,63 @@ final class ProfitLossService
         return $sources;
     }
 
+    public function getSalesHeatmap(int $companyId, int $accountingPeriodId): array
+    {
+        $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
+            return [
+                'available' => false,
+                'period_start' => '',
+                'period_end' => '',
+                'total_sales' => 0.0,
+                'days' => [],
+            ];
+        }
+
+        $periodStart = (string)$accountingPeriod['period_start'];
+        $periodEnd = (string)$accountingPeriod['period_end'];
+        $ledger = new PeriodLedgerReadService();
+        $scope = $ledger->scope($companyId, $accountingPeriodId);
+        $salesByDate = [];
+
+        foreach ((new DatedTaxTreatmentLedgerService())->fetch($scope) as $row) {
+            if ((string)($row['account_type'] ?? '') !== 'income'
+                || (string)($row['account_subtype_code'] ?? '') !== 'turnover') {
+                continue;
+            }
+
+            $date = (string)($row['journal_date'] ?? '');
+            if ($date === '') {
+                continue;
+            }
+
+            $salesByDate[$date] = round(
+                (float)($salesByDate[$date] ?? 0)
+                    + (float)($row['total_credit'] ?? 0)
+                    - (float)($row['total_debit'] ?? 0),
+                2
+            );
+        }
+
+        ksort($salesByDate);
+        $days = [];
+        foreach ($salesByDate as $date => $value) {
+            $days[] = [
+                'date' => $date,
+                'value' => max(0.0, $value),
+                'sales' => $value,
+            ];
+        }
+
+        return [
+            'available' => true,
+            'period_start' => $periodStart,
+            'period_end' => $periodEnd,
+            'total_sales' => round(array_sum($salesByDate), 2),
+            'days' => $days,
+        ];
+    }
+
     private function sourceCoverageSummary(array $rows, array $sources, array $evidenceByJournal = []): array
     {
         $coveredJournalCount = 0;

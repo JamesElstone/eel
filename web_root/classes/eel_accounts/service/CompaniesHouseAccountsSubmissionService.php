@@ -631,7 +631,8 @@ final class CompaniesHouseAccountsSubmissionService
             'identifier_embedded' => false,
             'metadata' => $this->revisedArtifactEvidenceMetadata(
                 (int)($artifact['base_run_id'] ?? 0),
-                $validation
+                $validation,
+                (int)($artifact['fact_count'] ?? 0)
             ),
         ]);
 
@@ -2656,8 +2657,23 @@ final class CompaniesHouseAccountsSubmissionService
             'base_run_id' => $baseRunId,
             'state' => 'stale',
             'current' => false,
+            'fact_count' => 0,
             'errors' => [],
         ];
+
+        if ($path === '' || !is_file($path)) {
+            $result['state'] = 'missing';
+            $result['errors'] = ['The prepared Companies House iXBRL artifact is missing.'];
+            return $result;
+        }
+        $actualHash = hash_file('sha256', $path);
+        if (!is_string($actualHash) || $expectedHash === ''
+            || !hash_equals($expectedHash, strtolower($actualHash))) {
+            $result['state'] = 'tampered';
+            $result['errors'] = ['The prepared Companies House iXBRL artifact has changed since validation.'];
+            return $result;
+        }
+        $result['fact_count'] = $this->inlineFactCount($path);
 
         $baseArtifact ??= (new IxbrlFilingArtifactService())->locate(
             (int)($submission['company_id'] ?? 0),
@@ -2675,22 +2691,24 @@ final class CompaniesHouseAccountsSubmissionService
             ];
             return $result;
         }
-        if ($path === '' || !is_file($path)) {
-            $result['state'] = 'missing';
-            $result['errors'] = ['The prepared Companies House iXBRL artifact is missing.'];
-            return $result;
-        }
-        $actualHash = hash_file('sha256', $path);
-        if (!is_string($actualHash) || $expectedHash === ''
-            || !hash_equals($expectedHash, strtolower($actualHash))) {
-            $result['state'] = 'tampered';
-            $result['errors'] = ['The prepared Companies House iXBRL artifact has changed since validation.'];
-            return $result;
-        }
-
         $result['state'] = 'current';
         $result['current'] = true;
         return $result;
+    }
+
+    private function inlineFactCount(string $path): int
+    {
+        $previous = libxml_use_internal_errors(true);
+        $document = new \DOMDocument();
+        $loaded = $document->load($path, LIBXML_NONET | LIBXML_COMPACT);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        if (!$loaded) {
+            return 0;
+        }
+        $xpath = new \DOMXPath($document);
+        $xpath->registerNamespace('ix', 'http://www.xbrl.org/2013/inlineXBRL');
+        return (int)($xpath->query('//ix:nonFraction | //ix:nonNumeric')->length ?? 0);
     }
 
     private function submission(int $submissionId): ?array
@@ -3082,16 +3100,19 @@ final class CompaniesHouseAccountsSubmissionService
             'errors' => array_values((array)($validation['errors'] ?? $fallbackErrors)),
             'warnings' => array_values((array)($validation['warnings'] ?? [])),
             'log_path' => (string)($validation['log_path'] ?? ''),
+            'fact_count' => (int)($metadata['fact_count'] ?? 0),
         ];
     }
 
     /** @return array<string, mixed> */
     private function revisedArtifactEvidenceMetadata(
         int $baseRunId,
-        array $validation
+        array $validation,
+        int $factCount = 0
     ): array {
         return [
             'base_run_id' => $baseRunId,
+            'fact_count' => max(0, $factCount),
             // Preserve the complete Arelle result so warnings, the exact
             // validated hash and immutable log provenance survive the prepare
             // redirect and can be reviewed before submission.

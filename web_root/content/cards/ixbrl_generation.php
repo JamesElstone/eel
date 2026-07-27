@@ -198,6 +198,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . $this->metric('Historical Base Run', (int)($artifact['base_run_id'] ?? 0) > 0
                     ? ('#' . (int)$artifact['base_run_id'])
                     : 'Unknown')
+                . $this->metric('Historical Facts', (string)(int)($artifact['fact_count'] ?? $revisedValidation['fact_count'] ?? 0))
                 . $this->metric('Historical Arelle Validation', $this->validationLabel((string)($revisedValidation['status'] ?? 'not_run')))
                 . $this->metricHtml('Artifact', 'Historical — current download unavailable')
                 . '</div>'
@@ -245,7 +246,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             . '<div class="helper ixbrl-complete-filing-set-helper">This is the prepared Companies House revised-accounts iXBRL artifact. It has not been transmitted by this page.</div>'
             . '<div class="summary-grid">'
             . $this->metric('Generated At', (string)($submission['prepared_at'] ?? ''))
-            . $this->metric('Facts', (string)(int)($baseRun['fact_count'] ?? 0))
+            . $this->metric('Facts', (string)(int)($artifact['fact_count'] ?? $revisedValidation['fact_count'] ?? 0))
             . $this->metric('Export Type', $this->exportTypeLabel((string)($baseRun['export_type'] ?? '')))
             . $this->metric('Validation', $this->validationLabel((string)($baseRun['validation_status'] ?? 'not_run')))
             . $this->metric('Arelle Status', !empty($arelleStatus['installed']) ? 'Installed' : 'Not Installed')

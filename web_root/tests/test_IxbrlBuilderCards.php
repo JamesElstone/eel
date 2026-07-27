@@ -678,6 +678,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                     'prepared_artifact' => [
                         'filename' => 'revised-old.xhtml',
                         'base_run_id' => 17,
+                        'fact_count' => 64,
                         'state' => 'stale',
                         'current' => false,
                         'errors' => [
@@ -696,6 +697,8 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(str_contains($html, 'earlier Accounting iXBRL run'));
         $harness->assertTrue(str_contains($html, 'Historical Base Run'));
         $harness->assertTrue(str_contains($html, '#17'));
+        $harness->assertTrue(str_contains($html, 'Historical Facts'));
+        $harness->assertTrue(str_contains($html, '>64</div>'));
         $harness->assertTrue(str_contains($html, 'Historical — current download unavailable'));
         $harness->assertFalse(str_contains($html, 'Download Companies House iXBRL'));
         $harness->assertTrue(preg_match(

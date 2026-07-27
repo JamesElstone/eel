@@ -66,10 +66,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $service,
                     'revisedArtifactEvidenceMetadata',
                     987,
-                    $validation
+                    $validation,
+                    73
                 );
 
                 $harness->assertSame(987, (int)$metadata['base_run_id']);
+                $harness->assertSame(73, (int)$metadata['fact_count']);
                 $harness->assertSame(
                     $validation,
                     (array)$metadata['arelle_validation']
@@ -93,7 +95,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 if ($path === false) {
                     $harness->skip('Could not create a temporary revised-accounts artifact.');
                 }
-                file_put_contents($path, '<html>current</html>');
+                file_put_contents(
+                    $path,
+                    '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:ix="http://www.xbrl.org/2013/inlineXBRL">'
+                    . '<body><ix:nonNumeric name="bus:Name" contextRef="current">Example</ix:nonNumeric>'
+                    . '<ix:nonFraction name="core:Assets" contextRef="current" unitRef="GBP">1</ix:nonFraction>'
+                    . '</body></html>'
+                );
                 try {
                     $submission = [
                         'company_id' => 49,
@@ -109,6 +117,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ]);
                     $harness->assertSame('current', (string)$current['state']);
                     $harness->assertSame(true, (bool)$current['current']);
+                    $harness->assertSame(2, (int)$current['fact_count']);
 
                     $stale = $invokePrivate($service, 'preparedArtifactState', $submission, [
                         'ok' => true,

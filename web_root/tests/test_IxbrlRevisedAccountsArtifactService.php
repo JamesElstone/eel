@@ -77,6 +77,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(str_contains($xhtml, 'format="ixt:datedaymonthyearen">21 July 2026'));
             $harness->assertFalse(str_contains($xhtml, 'EEL-AR-NOT-VISIBLE'));
             $harness->assertSame(1, (int)($result['superseded_fact_count'] ?? 0));
+            $factDocument = new DOMDocument();
+            $harness->assertTrue($factDocument->loadXML($xhtml, LIBXML_NONET));
+            $factXpath = new DOMXPath($factDocument);
+            $factXpath->registerNamespace('ix', 'http://www.xbrl.org/2013/inlineXBRL');
+            $harness->assertSame(
+                $factXpath->query('//ix:nonFraction | //ix:nonNumeric')->length,
+                (int)($result['fact_count'] ?? 0)
+            );
+            $harness->assertTrue((int)($result['fact_count'] ?? 0) > 4);
 
             $enhancedDeclarations = $oldDeclarations;
             $enhancedDeclarations['non_compliance_explanation'] =

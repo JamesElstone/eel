@@ -147,6 +147,7 @@ final class IxbrlRevisedAccountsArtifactService
             'basis_hash' => $basisHash,
             'base_run_id' => (int)($baseArtifact['run_id'] ?? 0),
             'base_sha256' => (string)($baseArtifact['hash'] ?? ''),
+            'fact_count' => (int)($transformed['fact_count'] ?? 0),
             'declarations' => $declarations,
             'validation' => $validation,
             'evidence_artifact_id' => $evidenceArtifactId,
@@ -338,6 +339,7 @@ final class IxbrlRevisedAccountsArtifactService
             'errors' => [],
             'warnings' => [],
             'xhtml' => $xhtml,
+            'fact_count' => (int)($checkXpath->query('//ix:nonFraction | //ix:nonNumeric')->length ?? 0),
             'superseded_fact_count' => count($changedSupersededFacts),
         ];
     }

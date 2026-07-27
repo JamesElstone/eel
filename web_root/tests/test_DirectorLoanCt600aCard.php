@@ -6,7 +6,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 (new GeneratedServiceClassTestHarness())->run(
     _director_loan_ct600aCard::class,
     static function (GeneratedServiceClassTestHarness $harness, _director_loan_ct600aCard $card): void {
-        $harness->check(_director_loan_ct600aCard::class, 'renders the company-wide CT period display sequence', static function () use ($harness, $card): void {
+        $harness->check(_director_loan_ct600aCard::class, 'renders the company-wide tax period display sequence', static function () use ($harness, $card): void {
             $html = $card->render([
                 'company' => [
                     'id' => 49,
@@ -38,8 +38,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 ],
             ]);
 
-            $harness->assertTrue(str_contains($html, 'CT period 3 — 2023-10-01 to 2024-09-30'));
-            $harness->assertTrue(!str_contains($html, 'CT period 1 — 2023-10-01 to 2024-09-30'));
+            $harness->assertTrue(str_contains($html, 'Tax period 3 — 2023-10-01 to 2024-09-30'));
+            $harness->assertTrue(!str_contains($html, 'Tax period 1 — 2023-10-01 to 2024-09-30'));
         });
     }
 );

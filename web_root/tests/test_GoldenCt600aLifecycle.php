@@ -152,6 +152,92 @@ $harness->check('GoldenCt600aLifecycle', 'reconciles transaction-backed CT600A e
     $harness->assertTrue(str_contains((string)$secondXhtml['xhtml'], 'Corporation Tax computation'));
     $harness->assertTrue(hash('sha256', (string)$xhtml['xhtml']) !== hash('sha256', (string)$secondXhtml['xhtml']));
 
+    // Regression: a genuine £253 advance-and-repayment sequence belongs to
+    // the first CT period only. The later period contains only funds
+    // introduced by the participator and must not inherit the explanation.
+    $narrativeReview = ['current' => true, 'complete' => true, 'errors' => []];
+    $narrativeS455 = [
+        'errors' => [],
+        'window_status' => 'window_complete',
+        'lots' => [
+            ['transaction_id' => 129, 'party_id' => GoldenAccountsFixture::CT600A_PARTY_ID,
+                'party_name' => 'Golden CT600A Director', 'origin_date' => '2022-11-02',
+                'original_amount' => 129.0, 'remaining_at_period_end' => 0.0, 'rate' => 0.0],
+            ['transaction_id' => 40, 'party_id' => GoldenAccountsFixture::CT600A_PARTY_ID,
+                'party_name' => 'Golden CT600A Director', 'origin_date' => '2023-06-01',
+                'original_amount' => 40.0, 'remaining_at_period_end' => 0.0, 'rate' => 0.0],
+            ['transaction_id' => 84, 'party_id' => GoldenAccountsFixture::CT600A_PARTY_ID,
+                'party_name' => 'Golden CT600A Director', 'origin_date' => '2023-06-05',
+                'original_amount' => 84.0, 'remaining_at_period_end' => 0.0, 'rate' => 0.0],
+        ],
+        'repayment_allocations' => [
+            ['loan_transaction_id' => 129, 'repayment_date' => '2023-06-08', 'amount' => 129.0],
+            ['loan_transaction_id' => 40, 'repayment_date' => '2023-06-08', 'amount' => 40.0],
+            ['loan_transaction_id' => 84, 'repayment_date' => '2023-06-08', 'amount' => 81.0],
+            ['loan_transaction_id' => 84, 'repayment_date' => '2023-08-15', 'amount' => 3.0],
+        ],
+    ];
+    $narrativeService = new \eel_accounts\Service\Ct600aService();
+    $firstNarrative = $narrativeService->buildFromEvidence(
+        ['period_start' => '2022-09-05', 'period_end' => '2023-09-04'],
+        $narrativeS455,
+        [],
+        $narrativeReview,
+        '2024-10-30'
+    );
+    $secondNarrative = $narrativeService->buildFromEvidence(
+        ['period_start' => '2023-09-05', 'period_end' => '2023-09-30'],
+        $narrativeS455,
+        [],
+        $narrativeReview,
+        '2024-10-30'
+    );
+    foreach ([$firstNarrative, $secondNarrative] as $narrative) {
+        $harness->assertSame(false, (bool)$narrative['required']);
+        $harness->assertSame(0.0, (float)$narrative['total_loans_outstanding']);
+        $harness->assertSame(0.0, (float)$narrative['tax_payable']);
+    }
+    $harness->assertSame('repaid_within_period', (string)$firstNarrative['section_455_narrative']);
+    $harness->assertSame(null, $secondNarrative['section_455_narrative']);
+
+    $firstNarrativeFiling = $firstFiling;
+    $firstNarrativeFiling['model']['ct600a'] = $firstNarrative;
+    $secondNarrativeFiling = $secondFiling;
+    $secondNarrativeFiling['model']['ct600a'] = $secondNarrative;
+    $firstNarrativeXhtml = (string)($render->invoke(
+        $ixbrl,
+        new \eel_accounts\Service\IxbrlGeneratorService(),
+        $firstNarrativeFiling,
+        goldenCt600aIxbrlMappings($firstNarrativeFiling),
+        'http://www.hmrc.gov.uk/schemas/ct/comp/2024-01-01/ct-comp-2024.xsd'
+    ))['xhtml'];
+    $secondNarrativeXhtml = (string)($render->invoke(
+        $ixbrl,
+        new \eel_accounts\Service\IxbrlGeneratorService(),
+        $secondNarrativeFiling,
+        goldenCt600aIxbrlMappings($secondNarrativeFiling),
+        'http://www.hmrc.gov.uk/schemas/ct/comp/2024-01-01/ct-comp-2024.xsd'
+    ))['xhtml'];
+    $visibleText = static function (string $xhtml): string {
+        $document = new DOMDocument();
+        if (!$document->loadXML($xhtml, LIBXML_NONET | LIBXML_NOBLANKS)) {
+            throw new RuntimeException('Golden CT600 iXBRL XHTML could not be parsed.');
+        }
+        return trim((string)preg_replace('/\s+/', ' ', (string)$document->textContent));
+    };
+    $statement = 'Repaid within the accounting period; no amount reportable and no Section 455 tax payable.';
+    $firstNarrativeText = $visibleText($firstNarrativeXhtml);
+    $secondNarrativeText = $visibleText($secondNarrativeXhtml);
+    $harness->assertSame(1, substr_count($firstNarrativeText, $statement));
+    $harness->assertTrue(str_contains($firstNarrativeText, '5 September 2022 to 4 September 2023'));
+    $harness->assertFalse(str_contains($firstNarrativeText, 'No exposure'));
+    $harness->assertFalse(str_contains($firstNarrativeText, '253.00'));
+    $harness->assertSame(0, substr_count($secondNarrativeText, $statement));
+    $harness->assertTrue(str_contains($secondNarrativeText, '5 September 2023 to 30 September 2023'));
+    $harness->assertFalse(str_contains($secondNarrativeText, 'Section 455'));
+    $harness->assertFalse(str_contains($secondNarrativeText, 'No exposure'));
+    $harness->assertFalse(str_contains($secondNarrativeText, 'No reportable participator loan'));
+
     InterfaceDB::prepareExecute(
         'UPDATE corporation_tax_periods SET status = :status WHERE id = :id',
         ['status' => 'accepted', 'id' => $firstCtPeriodId]

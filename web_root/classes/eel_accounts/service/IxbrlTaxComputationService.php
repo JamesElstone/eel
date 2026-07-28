@@ -557,9 +557,21 @@ final class IxbrlTaxComputationService
         $html .= '<div class="ct-section liability-section keep-together"><h2>Tax liability</h2>'
             . '<table class="financial-table"><thead><tr><th scope="col">Tax liability</th>'
             . '<th scope="col" class="amount">£</th></tr></thead><tbody>' . $taxRows . '</tbody></table></div>'
+            . $this->renderSection455Narrative($generator, (array)($model['ct600a'] ?? []))
             . $this->renderSupportingSchedules($generator, $filing)
             . '</div>';
         return $html;
+    }
+
+    private function renderSection455Narrative(IxbrlGeneratorService $generator, array $ct600a): string
+    {
+        if ((string)($ct600a['section_455_narrative'] ?? '') !== 'repaid_within_period') {
+            return '';
+        }
+        return '<div class="ct-section s455-narrative-section keep-together"><h2>Section 455</h2>'
+            . '<p>' . $generator->escape(
+                'Repaid within the accounting period; no amount reportable and no Section 455 tax payable.'
+            ) . '</p></div>';
     }
 
     private function renderAiaSchedule(IxbrlGeneratorService $generator, array $model): string

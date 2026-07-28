@@ -17,6 +17,72 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $h->assertSame(0.0, (float)$model['tax_payable']);
         });
 
+        $h->check($service::class, 'records a Section 455 narrative only for advances fully repaid in the same CT period', static function () use ($h, $service, $period, $review, $base): void {
+            $s455 = $base;
+            $s455['lots'] = [[
+                'transaction_id' => 129, 'party_id' => 10, 'party_name' => 'Jamie Example',
+                'origin_date' => '2023-06-01', 'original_amount' => 253.0,
+                'remaining_at_period_end' => 0.0, 'rate' => 0.3375,
+            ]];
+            $s455['repayment_allocations'] = [[
+                'loan_transaction_id' => 129, 'party_id' => 10, 'party_name' => 'Jamie Example',
+                'repayment_date' => '2023-08-15', 'amount' => 253.0, 'rate' => 0.3375,
+            ]];
+
+            $model = $service->buildFromEvidence($period, $s455, [], $review, '2025-12-31');
+
+            $h->assertSame('repaid_within_period', (string)$model['section_455_narrative']);
+            $h->assertSame(true, (bool)$model['before_end_period']);
+            $h->assertSame(false, (bool)$model['required']);
+            $h->assertSame(0.0, (float)$model['part1']['total_loans']);
+            $h->assertSame(0.0, (float)$model['tax_payable']);
+        });
+
+        $h->check($service::class, 'does not carry an earlier CT period repayment into a later period narrative', static function () use ($h, $service, $review, $base): void {
+            $laterPeriod = ['period_start' => '2023-09-05', 'period_end' => '2023-09-30'];
+            $s455 = $base;
+            $s455['lots'] = [[
+                'transaction_id' => 129, 'party_id' => 10, 'party_name' => 'Jamie Example',
+                'origin_date' => '2023-06-01', 'original_amount' => 253.0,
+                'remaining_at_period_end' => 0.0, 'rate' => 0.3375,
+            ]];
+            $s455['repayment_allocations'] = [[
+                'loan_transaction_id' => 129, 'party_id' => 10, 'party_name' => 'Jamie Example',
+                'repayment_date' => '2023-08-15', 'amount' => 253.0, 'rate' => 0.3375,
+            ]];
+
+            $model = $service->buildFromEvidence($laterPeriod, $s455, [], $review, '2025-12-31');
+
+            $h->assertSame(null, $model['section_455_narrative']);
+            $h->assertSame(false, (bool)$model['before_end_period']);
+            $h->assertSame(false, (bool)$model['required']);
+            $h->assertSame(0.0, (float)$model['tax_payable']);
+        });
+
+        $h->check($service::class, 'does not claim no amount is reportable when an earlier loan remains outstanding', static function () use ($h, $service, $period, $review, $base): void {
+            $s455 = $base;
+            $s455['lots'] = [[
+                'transaction_id' => 129, 'party_id' => 10, 'party_name' => 'Jamie Example',
+                'origin_date' => '2023-06-01', 'original_amount' => 253.0,
+                'remaining_at_period_end' => 0.0, 'rate' => 0.3375,
+            ]];
+            $s455['all_lots'] = [
+                $s455['lots'][0],
+                [
+                    'transaction_id' => 12, 'party_id' => 10, 'party_name' => 'Jamie Example',
+                    'origin_date' => '2022-12-01', 'original_amount' => 50.0,
+                    'remaining_at_period_end' => 50.0, 'rate' => 0.3375,
+                ],
+            ];
+            $s455['repayment_allocations'] = [[
+                'loan_transaction_id' => 129, 'repayment_date' => '2023-08-15', 'amount' => 253.0,
+            ]];
+
+            $model = $service->buildFromEvidence($period, $s455, [], $review, '2025-12-31');
+
+            $h->assertSame(null, $model['section_455_narrative']);
+        });
+
         $h->check($service::class, 'uses Yes/No section 464A and 464C risk declarations', static function () use ($h, $service): void {
             $questions = $service->reviewQuestions();
 

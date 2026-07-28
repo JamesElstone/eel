@@ -55,7 +55,7 @@ function ixbrlTaxComputationModel(array $overrides = []): array
             'filing_decisions' => ['aia_claimed_in_trade' => 0.00],
             'computation' => ['summary' => $summary],
             'audit' => ['capital_allowances' => ['rows' => []]],
-            'ct600a' => ['required' => false],
+            'ct600a' => array_replace(['required' => false], (array)($overrides['ct600a'] ?? [])),
         ],
     ];
     return $model;
@@ -217,6 +217,65 @@ function ixbrlTaxComputationMappings(array $model): array
         $h->assertTrue(str_contains($xhtml, '(<ix:nonFraction name="ct:TradingLossesBroughtForwardAmountUsedAgainstTotalProfits"'));
         $h->assertTrue(str_contains($xhtml, '>4.68</ix:nonFraction>)'));
         $h->assertTrue(str_contains($xhtml, '>558.54</span>') || str_contains($xhtml, '>558.54</td>'));
+    });
+    $h->check($service::class, 'renders the Section 455 repayment narrative in its qualifying CT period only', static function () use ($h, $service): void {
+        $firstPeriod = ixbrlTaxComputationModel([
+            'ct600a' => [
+                'required' => false,
+                'section_455_narrative' => 'repaid_within_period',
+                'total_loans_outstanding' => 0.0,
+                'tax_payable' => 0.0,
+            ],
+        ]);
+        $secondPeriod = ixbrlTaxComputationModel([
+            'period_start' => '2023-09-05',
+            'period_end' => '2023-09-30',
+            'ct600a' => [
+                'required' => false,
+                'total_loans_outstanding' => 0.0,
+                'tax_payable' => 0.0,
+            ],
+        ]);
+        $method = new ReflectionMethod($service::class, 'renderMappedDocument');
+        $method->setAccessible(true);
+        $firstXhtml = (string)($method->invoke(
+            $service,
+            new \eel_accounts\Service\IxbrlGeneratorService(),
+            $firstPeriod,
+            ixbrlTaxComputationMappings($firstPeriod),
+            'http://www.hmrc.gov.uk/schemas/ct/comp/2024-01-01/ct-comp-2024.xsd'
+        ))['xhtml'];
+        $secondXhtml = (string)($method->invoke(
+            $service,
+            new \eel_accounts\Service\IxbrlGeneratorService(),
+            $secondPeriod,
+            ixbrlTaxComputationMappings($secondPeriod),
+            'http://www.hmrc.gov.uk/schemas/ct/comp/2024-01-01/ct-comp-2024.xsd'
+        ))['xhtml'];
+        $visibleText = static function (string $xhtml): string {
+            $document = new DOMDocument();
+            if (!$document->loadXML($xhtml)) {
+                throw new RuntimeException('The generated iXBRL could not be parsed as XHTML.');
+            }
+            return trim((string)preg_replace('/\s+/', ' ', (string)$document->textContent));
+        };
+        $statement = 'Repaid within the accounting period; no amount reportable and no Section 455 tax payable.';
+        $firstText = $visibleText($firstXhtml);
+        $secondText = $visibleText($secondXhtml);
+
+        $h->assertSame(1, substr_count($firstText, $statement));
+        $h->assertFalse(str_contains($firstText, 'No exposure'));
+        $h->assertSame(0, substr_count($secondText, $statement));
+        $h->assertFalse(str_contains($secondText, 'Section 455'));
+        $h->assertFalse(str_contains($secondText, 'No reportable participator loan'));
+        $h->assertSame([], (new \eel_accounts\Service\IxbrlGeneratorService())->validateStructure(
+            $firstXhtml,
+            ['http://www.hmrc.gov.uk/schemas/ct/comp/2024-01-01/ct-comp-2024.xsd']
+        ));
+        $h->assertSame([], (new \eel_accounts\Service\IxbrlGeneratorService())->validateStructure(
+            $secondXhtml,
+            ['http://www.hmrc.gov.uk/schemas/ct/comp/2024-01-01/ct-comp-2024.xsd']
+        ));
     });
     $h->check($service::class, 'reconciles AIA rows only to frozen audit descriptions and dates', static function () use ($h, $service): void {
         $model = ixbrlTaxComputationModel()['model'];

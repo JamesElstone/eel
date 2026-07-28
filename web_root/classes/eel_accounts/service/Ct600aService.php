@@ -591,10 +591,17 @@ final class Ct600aService
                 ? 'The section 464A review is stale because its underlying evidence changed.'
                 : 'Complete and approve the section 464A review.';
         }
+        $section455Narrative = $this->section455Narrative($s455, $start, $end);
         $model = [
             'model_version' => self::MODEL_VERSION,
             'required' => $required,
-            'before_end_period' => $eventBeforeEnd || $this->hasBeforeEndRepayment($s455, $end),
+            // BeforeEndPeriod is a CT600A filing flag.  Do not let a
+            // repayment of an earlier-period advance make a later CT period
+            // appear to contain a before-end repayment.
+            'before_end_period' => $eventBeforeEnd || $section455Narrative !== null,
+            // This is presentation-only evidence for the CT computation.  It
+            // deliberately does not affect CT600A boxes or tax calculations.
+            'section_455_narrative' => $section455Narrative,
             'part1' => ['rows' => $part1, 'total_loans' => $a15, 'tax_chargeable' => $a20],
             'part2' => $this->reliefSection($reliefEarly, $a45),
             'part3' => $this->reliefSection($reliefLater, $a70),
@@ -869,10 +876,71 @@ final class Ct600aService
             'relief_due'=>$relief];
     }
 
-    private function hasBeforeEndRepayment(array $s455,string $end): bool
+    /**
+     * Identify the limited case where the computation should explain that an
+     * advance made in this CT period was fully repaid before that same period
+     * ended.  Repayments are matched to their originating loan transaction,
+     * so earlier-period repayments and liability-side funds introduced by a
+     * participator cannot leak into a later CT period's narrative.
+     */
+    private function section455Narrative(array $s455, string $start, string $end): ?string
     {
-        foreach((array)($s455['repayment_allocations']??$s455['basis']['repayment_allocations']??[]) as $row){if((string)($row['repayment_date']??'')<=$end){return true;}}
-        return false;
+        $repaymentsByLoan = [];
+        foreach ((array)(
+            $s455['repayment_allocations']
+            ?? $s455['basis']['repayment_allocations']
+            ?? []
+        ) as $allocation) {
+            if (!is_array($allocation) || (string)($allocation['repayment_date'] ?? '') > $end) {
+                continue;
+            }
+            $loanTransactionId = (int)($allocation['loan_transaction_id'] ?? 0);
+            if ($loanTransactionId <= 0) {
+                continue;
+            }
+            $repaymentsByLoan[$loanTransactionId] = round(
+                (float)($repaymentsByLoan[$loanTransactionId] ?? 0) + (float)($allocation['amount'] ?? 0),
+                2
+            );
+        }
+
+        $hasRelevantAdvance = false;
+        foreach ((array)($s455['lots'] ?? $s455['basis']['lots'] ?? []) as $lot) {
+            if (!is_array($lot)
+                || (string)($lot['origin_date'] ?? '') < $start
+                || (string)($lot['origin_date'] ?? '') > $end) {
+                continue;
+            }
+            $advance = round((float)($lot['original_amount'] ?? 0), 2);
+            if ($advance < 0.005) {
+                continue;
+            }
+            $hasRelevantAdvance = true;
+            if ((float)($lot['remaining_at_period_end'] ?? $advance) >= 0.005) {
+                return null;
+            }
+            $loanTransactionId = (int)($lot['transaction_id'] ?? 0);
+            if ($loanTransactionId <= 0
+                || (float)($repaymentsByLoan[$loanTransactionId] ?? 0) + 0.004 < $advance) {
+                return null;
+            }
+        }
+
+        // The wording says that no amount is reportable, so do not use it if
+        // an earlier loan remains outstanding at this CT-period end.
+        foreach ((array)(
+            $s455['all_lots']
+            ?? $s455['basis']['all_lots']
+            ?? $s455['lots']
+            ?? $s455['basis']['lots']
+            ?? []
+        ) as $lot) {
+            if (is_array($lot) && (float)($lot['remaining_at_period_end'] ?? 0) >= 0.005) {
+                return null;
+            }
+        }
+
+        return $hasRelevantAdvance ? 'repaid_within_period' : null;
     }
 
     /** @return list<array<string,mixed>> */

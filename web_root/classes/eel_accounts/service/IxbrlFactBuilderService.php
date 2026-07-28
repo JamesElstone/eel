@@ -354,9 +354,7 @@ final class IxbrlFactBuilderService
                 ? (new IxbrlTaxonomyProfileService())->directorLoanStatementText(
                     $directorLoanDisclosure
                 )
-                : (array_key_exists($sourceKey, $disclosures) && (int)$disclosures[$sourceKey] === 0
-                    ? (new IxbrlTaxonomyProfileService())->absenceStatementText((string)$mapping['fact_key'])
-                    : null),
+                : (new IxbrlTaxonomyProfileService())->absenceStatementText((string)$mapping['fact_key']),
             default => null,
         };
         if ($value === null) {
@@ -478,9 +476,6 @@ final class IxbrlFactBuilderService
             static fn(mixed $row): bool => is_array($row)
         ));
         $disclosures = $this->directorLoanDisclosureRows($summary);
-        if ($disclosures === []) {
-            return null;
-        }
         $hasExplicitDirectorScope = (bool)array_filter(
             $allDisclosures,
             static fn(array $row): bool => array_key_exists('is_director', $row)
@@ -501,7 +496,7 @@ final class IxbrlFactBuilderService
 
         if ($sourceKey === 'total_cash_repayments') {
             if (!array_key_exists('total_cash_repayments', $summary)) {
-                return null;
+                return 0.0;
             }
             return round(
                 !$hasExplicitDirectorScope

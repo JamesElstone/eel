@@ -142,7 +142,7 @@ final class IxbrlTaxonomyProfileService
     {
         return match ($factKey) {
             'no_material_off_balance_sheet_arrangements' => 'The company had no material off-balance sheet arrangements.',
-            'no_director_advances_or_credits' => 'The company made no advances or credits to directors.',
+            'no_director_advances_or_credits' => 'The company made no advances or credits (including loans) to directors during the period.',
             'no_director_guarantees' => 'The company entered into no guarantees on behalf of directors.',
             'no_capital_commitments' => 'The company had no capital commitments.',
             'no_financial_commitments' => 'The company had no other financial commitments or guarantees.',

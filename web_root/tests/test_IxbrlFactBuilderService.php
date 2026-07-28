@@ -337,12 +337,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
             unset($report['director_loan_disclosure']['total_cash_repayments']);
             $harness->assertSame(
-                null,
-                $method->invoke($service, $mappings['director_cash_repayments'], $report, false)
+                0.0,
+                (float)$method->invoke($service, $mappings['director_cash_repayments'], $report, false)['numeric_value']
             );
         });
 
-        $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'omits numeric director facts for evidence-only zero-advance rows', static function () use ($harness, $service): void {
+        $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'emits zero numeric director facts for evidence-only zero-advance rows', static function () use ($harness, $service): void {
             $mappings = [];
             foreach ((new \eel_accounts\Service\IxbrlTaxonomyProfileService())->mappings() as $mapping) {
                 $mappings[(string)$mapping['fact_key']] = $mapping;
@@ -371,9 +371,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 'director_loan_year_end_approval' => [],
             ];
 
-            $harness->assertSame(null, $method->invoke($service, $mappings['director_advances_made'], $report, false));
-            $harness->assertSame(null, $method->invoke($service, $mappings['director_cash_repayments'], $report, false));
-            $harness->assertSame(null, $method->invoke($service, $mappings['director_closing_advance'], $report, false));
+            $harness->assertSame(0.0, (float)$method->invoke($service, $mappings['director_advances_made'], $report, false)['numeric_value']);
+            $harness->assertSame(0.0, (float)$method->invoke($service, $mappings['director_cash_repayments'], $report, false)['numeric_value']);
+            $harness->assertSame(0.0, (float)$method->invoke($service, $mappings['director_closing_advance'], $report, false)['numeric_value']);
+            $harness->assertSame(
+                'The company made no advances or credits (including loans) to directors during the period.',
+                (string)$method->invoke($service, $mappings['no_director_advances_or_credits'], $report, false)['text_value']
+            );
         });
 
         $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'normalises the supported UK identity without duplicating the postcode', static function () use ($harness): void {

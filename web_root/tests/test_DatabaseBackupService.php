@@ -332,14 +332,26 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
     unset($streamingSql);
 
     $restorePdo->statements = [];
+    $restoreProgress = [];
     $streamingRestore = $guardedRestore->restoreBackup(
         'streaming_fixture.sql.zip',
         'eel_accounts_ap79_scratch',
-        'eel_accounts'
+        'eel_accounts',
+        static function (string $message, int $percent) use (&$restoreProgress): void {
+            $restoreProgress[] = [$message, $percent];
+        }
     );
     $harness->assertSame(1, (int)($streamingRestore['statement_count'] ?? 0));
     $harness->assertSame(2, count($restorePdo->statements));
     $harness->assertTrue(str_contains($restorePdo->statements[1] ?? '', ';inside quoted text'));
+    $harness->assertSame([
+        'Verifying the database backup integrity…',
+        'Checking the backup database identity…',
+        'Confirming the database restore target…',
+        'Restoring database SQL…',
+        'Finalising the database restore…',
+    ], array_values(array_unique(array_column($restoreProgress, 0))));
+    $harness->assertSame(98, (int)($restoreProgress[array_key_last($restoreProgress)][1] ?? -1));
 
     $legacyPdo = new DatabaseBackupRecordingPdo();
     $legacyPdo->databaseName = 'eel_accounts';

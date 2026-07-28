@@ -114,11 +114,14 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
     public function restoreBackup(
         string $filename,
         ?string $expectedTargetDatabase = null,
-        ?string $expectedSourceDatabase = null
+        ?string $expectedSourceDatabase = null,
+        ?\Closure $progress = null
     ): array
     {
         $backupPath = $this->resolveBackupPath($filename);
-        $entry = $this->inspectStoredSqlZip($backupPath);
+        $progress?->__invoke('Verifying the database backup integrity…', 10);
+        $entry = $this->inspectStoredSqlZip($backupPath, $progress);
+        $progress?->__invoke('Checking the backup database identity…', 25);
         $sourceDatabase = $this->databaseNameFromSqlDump($this->readStoredSqlPrefix($backupPath, $entry));
         $pdo = null;
 
@@ -130,12 +133,15 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
         }
 
         $this->assertExpectedBackupSource($sourceDatabase, $expectedSourceDatabase);
+        $progress?->__invoke('Confirming the database restore target…', 32);
         $pdo ??= $this->connect();
         $this->assertExpectedRestoreTarget($pdo, $expectedTargetDatabase);
-        $executed = $this->executeStoredSqlZip($pdo, $backupPath, $entry);
+        $progress?->__invoke('Restoring database SQL…', 35);
+        $executed = $this->executeStoredSqlZip($pdo, $backupPath, $entry, $progress);
         if ($executed === 0) {
             throw new RuntimeException('The selected backup does not contain SQL statements to restore.');
         }
+        $progress?->__invoke('Finalising the database restore…', 98);
 
         clearstatcache(true, $backupPath);
 
@@ -818,7 +824,7 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
      *
      * @return array{name: string, data_offset: int, data_size: int}
      */
-    private function inspectStoredSqlZip(string $zipPath): array
+    private function inspectStoredSqlZip(string $zipPath, ?\Closure $progress = null): array
     {
         $handle = @fopen($zipPath, 'rb');
         $fileSize = is_file($zipPath) ? (int)(filesize($zipPath) ?: 0) : 0;
@@ -869,6 +875,7 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
             $crcContext = hash_init('crc32b');
             $hasSqlContent = false;
             $remaining = $compressedSize;
+            $lastProgressPercent = 10;
             while ($remaining > 0) {
                 $chunk = fread($handle, min(1024 * 1024, $remaining));
                 if (!is_string($chunk) || $chunk === '') {
@@ -877,6 +884,11 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
                 hash_update($crcContext, $chunk);
                 $hasSqlContent = $hasSqlContent || preg_match('/\S/', $chunk) === 1;
                 $remaining -= strlen($chunk);
+                $percent = 10 + (int)floor((($compressedSize - $remaining) / $compressedSize) * 15);
+                if ($percent >= $lastProgressPercent + 5) {
+                    $progress?->__invoke('Verifying the database backup integrity…', $percent);
+                    $lastProgressPercent = $percent;
+                }
             }
             if (!$hasSqlContent) {
                 throw new RuntimeException('The selected backup SQL dump is empty.');
@@ -973,7 +985,7 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
     }
 
     /** @param array{name: string, data_offset: int, data_size: int} $entry */
-    private function executeStoredSqlZip(PDO $pdo, string $zipPath, array $entry): int
+    private function executeStoredSqlZip(PDO $pdo, string $zipPath, array $entry, ?\Closure $progress = null): int
     {
         $handle = @fopen($zipPath, 'rb');
         if (!is_resource($handle)) {
@@ -1094,12 +1106,19 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
             }
 
             $remaining = (int)$entry['data_size'];
+            $totalSize = $remaining;
+            $lastProgressPercent = 35;
             while ($remaining > 0) {
                 $chunk = fread($handle, min(1024 * 1024, $remaining));
                 if (!is_string($chunk) || $chunk === '') {
                     throw new RuntimeException('The selected backup ZIP SQL entry is truncated.');
                 }
                 $remaining -= strlen($chunk);
+                $percent = 35 + (int)floor((($totalSize - $remaining) / $totalSize) * 60);
+                if ($percent >= $lastProgressPercent + 5) {
+                    $progress?->__invoke('Restoring database SQL…', $percent);
+                    $lastProgressPercent = $percent;
+                }
                 $content = $pending . $chunk;
                 $pending = '';
                 $consume($content, $remaining === 0);

@@ -13,7 +13,7 @@ final class BackupAction implements ActionInterfaceFramework
     {
         return match ((string)$request->post('intent', '')) {
             'create_database_backup' => $this->createBackup($request),
-            'restore_database_backup' => $this->restoreBackup($request),
+            'restore_database_backup' => $this->restoreBackup($request, $services->actionProgress()),
             'download_database_backup' => $this->downloadBackup($request),
             default => ActionResultFramework::none(),
         };
@@ -46,7 +46,7 @@ final class BackupAction implements ActionInterfaceFramework
         );
     }
 
-    private function restoreBackup(RequestFramework $request): ActionResultFramework
+    private function restoreBackup(RequestFramework $request, ActionProgressFramework $progress): ActionResultFramework
     {
         $session = new SessionAuthenticationService();
         $session->startSession();
@@ -66,13 +66,18 @@ final class BackupAction implements ActionInterfaceFramework
 
         try {
             @set_time_limit(0);
+            $progress->report('Checking the restore target database…', 0);
             $backupService = new \eel_accounts\Service\DatabaseBackupService();
             $databaseName = $backupService->currentDatabaseName();
             $restore = $backupService->restoreBackup(
                 $filename,
                 $databaseName,
-                $databaseName
+                $databaseName,
+                static function (string $message, int $percent) use ($progress): void {
+                    $progress->report($message, $percent);
+                }
             );
+            $progress->report('Database restore complete.', 100);
         } catch (Throwable $exception) {
             return $this->error('Database restore failed: ' . $exception->getMessage());
         }

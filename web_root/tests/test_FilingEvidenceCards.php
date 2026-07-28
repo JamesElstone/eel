@@ -9,8 +9,28 @@ $h->run(_filing_evidence::class, static function (GeneratedServiceClassTestHarne
     $h->check($page::class, 'registers the lookup overview artifact and calculation cards', static function () use ($h, $page): void {
         $h->assertSame([
             'filing_evidence_lookup', 'filing_evidence_overview', 'filing_evidence_artifacts',
-            'filing_evidence_calculations', 'filing_evidence_calculation_detail',
+            'filing_evidence_calculations', 'filing_evidence_loans', 'filing_evidence_calculation_detail',
         ], $page->cards());
+    });
+});
+$h->run(_filing_evidence_loansCard::class, static function (GeneratedServiceClassTestHarness $h, _filing_evidence_loansCard $card): void {
+    $h->check($card::class, 'renders only a frozen loan snapshot', static function () use ($h, $card): void {
+        $html = $card->render(['company' => ['settings' => []], 'services' => ['filingEvidenceLoans' => [
+            'available' => true, 'snapshot_version' => 'loan-filing-evidence-v1', 'snapshot_hash' => str_repeat('a', 64), 'created_at' => '2026-07-28 10:00:00',
+            'snapshot' => ['applicable' => false, 'ct_periods' => [], 'ct600a' => [], 'section_413' => []],
+        ]]]);
+        $h->assertTrue(str_contains($html, 'Frozen Director Loan Evidence'));
+        $h->assertTrue(str_contains($html, 'No loan activity'));
+    });
+});
+$h->run(_director_loan_filing_evidenceCard::class, static function (GeneratedServiceClassTestHarness $h, _director_loan_filing_evidenceCard $card): void {
+    $h->check($card::class, 'links the current locked bundle to its immutable evidence', static function () use ($h, $card): void {
+        $html = $card->render(['services' => ['loanFilingEvidenceBundles' => ['bundles' => [[
+            'id' => 31, 'evidence_id' => 'EEL-FE-0123456789ABCDEF0123456789ABCDEF',
+            'display_id' => 'EEL-FE-0123', 'is_current_for_locked_period' => true,
+        ]]]]]);
+        $h->assertTrue(str_contains($html, 'evidence_bundle_id=31'));
+        $h->assertTrue(str_contains($html, 'Frozen'));
     });
 });
 $h->run(_filing_evidence_lookupCard::class, static function (GeneratedServiceClassTestHarness $h, _filing_evidence_lookupCard $card): void {

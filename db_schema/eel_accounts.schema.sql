@@ -4027,6 +4027,7 @@ INNER JOIN (
 ) new_card
 WHERE existing_permission.`card_key` IN ('incorporation_share_capital','tax_rate_bands','director_loan_state');
 DROP TABLE IF EXISTS `filing_evidence_events`;
+DROP TABLE IF EXISTS `filing_evidence_loan_snapshots`;
 DROP TABLE IF EXISTS `filing_evidence_artifacts`;
 DROP TABLE IF EXISTS `filing_evidence_ct_snapshots`;
 DROP TABLE IF EXISTS `filing_evidence_bundles`;
@@ -4077,6 +4078,18 @@ CREATE TABLE `filing_evidence_ct_snapshots` (
   CONSTRAINT `fk_filing_evidence_snapshot_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_filing_evidence_snapshot_run` FOREIGN KEY (`computation_run_id`) REFERENCES `corporation_tax_computation_runs` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_filing_evidence_snapshot_audit` FOREIGN KEY (`tax_audit_snapshot_id`) REFERENCES `corporation_tax_audit_snapshots` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE `filing_evidence_loan_snapshots` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `bundle_id` bigint(20) NOT NULL,
+  `snapshot_version` varchar(64) NOT NULL,
+  `snapshot_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `snapshot_json` longtext NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_filing_evidence_loan_snapshot_bundle` (`bundle_id`),
+  KEY `idx_filing_evidence_loan_snapshot_hash` (`snapshot_hash`),
+  CONSTRAINT `fk_filing_evidence_loan_snapshot_bundle` FOREIGN KEY (`bundle_id`) REFERENCES `filing_evidence_bundles` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE `filing_evidence_artifacts` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
@@ -4163,6 +4176,16 @@ FROM `role_card_permissions`
 WHERE `card_key` IN ('year_end_state', 'year_end_audit_log');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_28_001_year_end_evidence_bundles_permission.sql');
+INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
+SELECT DISTINCT `role_id`, 'filing_evidence_loans'
+FROM `role_card_permissions`
+WHERE `card_key` = 'filing_evidence_calculations';
+INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
+SELECT DISTINCT `role_id`, 'director_loan_filing_evidence'
+FROM `role_card_permissions`
+WHERE `card_key` = 'director_loan_s455';
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_28_002_filing_evidence_loan_snapshots.sql');
 
 DROP TRIGGER IF EXISTS `trg_journals_append_only_update`;
 CREATE TRIGGER `trg_journals_append_only_update`

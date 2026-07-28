@@ -15,6 +15,7 @@ final class _filing_evidence extends PageContextFramework
             'filing_evidence_overview',
             'filing_evidence_artifacts',
             'filing_evidence_calculations',
+            'filing_evidence_loans',
             'filing_evidence_calculation_detail',
         ];
     }

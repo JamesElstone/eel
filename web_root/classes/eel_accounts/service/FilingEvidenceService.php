@@ -12,7 +12,7 @@ final class FilingEvidenceService
     public const ARTIFACT_PREFIX = 'EEL-AR-';
 
     /** @return array<string,mixed> */
-    public function createForLock(int $companyId, int $accountingPeriodId, string $actor): array
+    public function createForLock(int $companyId, int $accountingPeriodId, string $actor, bool $captureLoanEvidence = true): array
     {
         $this->requireSchema();
         if (!\InterfaceDB::inTransaction()) {
@@ -47,6 +47,9 @@ final class FilingEvidenceService
         if ($snapshots === []) {
             throw new \RuntimeException('No sealed Corporation Tax audit snapshots exist for the locked period.');
         }
+        $loanSnapshot = $captureLoanEvidence
+            ? (new LoanFilingEvidenceSnapshotService())->captureForLock($companyId, $accountingPeriodId)
+            : null;
         $predecessor = \InterfaceDB::fetchOne(
             'SELECT * FROM filing_evidence_bundles
              WHERE company_id = :company_id AND accounting_period_id = :period_id
@@ -61,6 +64,10 @@ final class FilingEvidenceService
             'accounting_period_id' => $accountingPeriodId,
             'locked_at' => (string)$review['locked_at'],
             'application' => $identity,
+            'loan_evidence' => $loanSnapshot === null ? null : [
+                'snapshot_version' => (string)($loanSnapshot['payload']['snapshot_version'] ?? ''),
+                'snapshot_hash' => (string)$loanSnapshot['snapshot_hash'],
+            ],
             'snapshots' => array_map(static fn(array $row): array => [
                 'ct_period_id' => (int)$row['ct_period_id'],
                 'computation_run_id' => (int)$row['computation_run_id'],
@@ -115,6 +122,19 @@ final class FilingEvidenceService
             ]
         );
         $bundleId = $this->lastInsertId();
+        if ($loanSnapshot !== null) {
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO filing_evidence_loan_snapshots
+                    (bundle_id, snapshot_version, snapshot_hash, snapshot_json)
+                 VALUES (:bundle_id, :snapshot_version, :snapshot_hash, :snapshot_json)',
+                [
+                    'bundle_id' => $bundleId,
+                    'snapshot_version' => (string)($loanSnapshot['payload']['snapshot_version'] ?? ''),
+                    'snapshot_hash' => (string)$loanSnapshot['snapshot_hash'],
+                    'snapshot_json' => $this->canonicalJson((array)$loanSnapshot['payload']),
+                ]
+            );
+        }
         foreach ($snapshots as $snapshot) {
             \InterfaceDB::prepareExecute(
                 'INSERT INTO filing_evidence_ct_snapshots
@@ -135,6 +155,7 @@ final class FilingEvidenceService
         $this->recordEvent($bundleId, 'locked', 'success', $actor, 'Year End filing evidence frozen.', [
             'bundle_hash' => $bundleHash,
             'ct_period_count' => count($snapshots),
+            'loan_snapshot_hash' => $loanSnapshot === null ? null : (string)$loanSnapshot['snapshot_hash'],
         ]);
         $row = \InterfaceDB::fetchOne('SELECT * FROM filing_evidence_bundles WHERE id = :id', ['id' => $bundleId]);
         return $this->normaliseBundle(is_array($row) ? $row : ['id' => $bundleId, 'evidence_id' => $evidenceId]);
@@ -198,10 +219,10 @@ final class FilingEvidenceService
             );
             if (!is_array($review) || empty($review['is_locked'])) { throw $exception; }
             if (\InterfaceDB::inTransaction()) {
-                return $this->createForLock($companyId, $accountingPeriodId, $actor);
+                return $this->createForLock($companyId, $accountingPeriodId, $actor, false);
             }
             return (array)\InterfaceDB::transaction(
-                fn(): array => $this->createForLock($companyId, $accountingPeriodId, $actor)
+                fn(): array => $this->createForLock($companyId, $accountingPeriodId, $actor, false)
             );
         }
     }
@@ -445,6 +466,65 @@ final class FilingEvidenceService
     }
 
     /** @return array<string,mixed> */
+    public function loanEvidence(int $companyId, int $bundleId): array
+    {
+        $valid = $this->overview($companyId, $bundleId);
+        if (empty($valid['available'])) { return $valid; }
+        if (!\InterfaceDB::tableExists('filing_evidence_loan_snapshots')) {
+            return ['available' => false, 'legacy_unavailable' => true,
+                'errors' => ['Loan evidence was not captured for this historic bundle.']];
+        }
+        $row = \InterfaceDB::fetchOne(
+            'SELECT s.snapshot_version, s.snapshot_hash, s.snapshot_json, s.created_at
+             FROM filing_evidence_loan_snapshots s
+             INNER JOIN filing_evidence_bundles b ON b.id = s.bundle_id
+             WHERE s.bundle_id = :bundle_id AND b.company_id = :company_id LIMIT 1',
+            ['bundle_id' => $bundleId, 'company_id' => $companyId]
+        );
+        if (!is_array($row)) {
+            return ['available' => false, 'legacy_unavailable' => true,
+                'errors' => ['Loan evidence was not captured for this historic bundle.']];
+        }
+        $payload = json_decode((string)$row['snapshot_json'], true);
+        if (!is_array($payload)) {
+            return ['available' => false, 'errors' => ['The frozen loan evidence is unreadable.']];
+        }
+        if (!hash_equals((string)$row['snapshot_hash'], hash('sha256', $this->canonicalJson($payload)))) {
+            return ['available' => false, 'errors' => ['The frozen loan evidence hash cannot be verified.']];
+        }
+        $bundle = (array)($valid['bundle'] ?? []);
+        $bundleBasis = [
+            'evidence_id' => (string)($bundle['evidence_id'] ?? ''),
+            'company_id' => (int)($bundle['company_id'] ?? 0),
+            'accounting_period_id' => (int)($bundle['accounting_period_id'] ?? 0),
+            'locked_at' => (string)($bundle['locked_at'] ?? ''),
+            'application' => [
+                'name' => (string)($bundle['application_name'] ?? ''),
+                'version' => (string)($bundle['application_version'] ?? ''),
+                'calculation_build' => (string)($bundle['calculation_build'] ?? ''),
+            ],
+            'loan_evidence' => [
+                'snapshot_version' => (string)$row['snapshot_version'],
+                'snapshot_hash' => (string)$row['snapshot_hash'],
+            ],
+            'snapshots' => array_map(static fn(array $period): array => [
+                'ct_period_id' => (int)($period['ct_period_id'] ?? 0),
+                'computation_run_id' => (int)($period['computation_run_id'] ?? 0),
+                'snapshot_id' => (int)($period['tax_audit_snapshot_id'] ?? 0),
+                'basis_version' => (string)($period['calculation_basis_version'] ?? ''),
+                'basis_hash' => (string)($period['calculation_basis_hash'] ?? ''),
+                'trace_hash' => (string)($period['trace_hash'] ?? ''),
+            ], (array)($valid['ct_periods'] ?? [])),
+        ];
+        if (!hash_equals((string)($bundle['bundle_hash'] ?? ''), hash('sha256', $this->canonicalJson($bundleBasis)))) {
+            return ['available' => false, 'errors' => ['The frozen loan evidence is not bound to the filing evidence bundle hash.']];
+        }
+        return ['available' => true, 'snapshot' => $payload,
+            'snapshot_version' => (string)$row['snapshot_version'], 'snapshot_hash' => (string)$row['snapshot_hash'],
+            'created_at' => (string)$row['created_at'], 'errors' => []];
+    }
+
+    /** @return array<string,mixed> */
     public function calculationDetail(int $companyId, int $bundleId, int $snapshotId, string $areaCode, int $page = 1): array
     {
         if ($bundleId <= 0 || $snapshotId <= 0 || trim($areaCode) === '') {
@@ -598,7 +678,7 @@ final class FilingEvidenceService
     private function newReference(string $prefix): string { return $prefix . strtoupper(bin2hex(random_bytes(16))); }
     private function requireSchema(): void
     {
-        foreach (['filing_evidence_bundles','filing_evidence_ct_snapshots','filing_evidence_artifacts','filing_evidence_events'] as $table) {
+        foreach (['filing_evidence_bundles','filing_evidence_ct_snapshots','filing_evidence_loan_snapshots','filing_evidence_artifacts','filing_evidence_events'] as $table) {
             if (!\InterfaceDB::tableExists($table)) { throw new \RuntimeException('Apply the Filing Evidence database migration before locking Year End.'); }
         }
     }

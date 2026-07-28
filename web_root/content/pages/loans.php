@@ -37,6 +37,7 @@ final class _loans extends PageContextFramework
             'director_loan_attribution',
             'director_loan_s455',
             'director_loan_ct600a',
+            'director_loan_filing_evidence',
             'loan_review',
             'year_end_loan_confirmation',
         ];
@@ -70,6 +71,7 @@ final class _loans extends PageContextFramework
                 'cards' => [
                     'director_loan_s455',
                     'director_loan_ct600a',
+                    'director_loan_filing_evidence',
                 ],
             ],
             [

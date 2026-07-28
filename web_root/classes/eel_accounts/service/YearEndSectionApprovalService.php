@@ -378,6 +378,7 @@ final class YearEndSectionApprovalService
         $refreshed = 0;
         $errors = [];
         $total = count($rows);
+        $preparedChecklists = [];
         foreach ($rows as $index => $row) {
             $targetPeriodId = (int)($row['accounting_period_id'] ?? 0);
             $checkCode = trim((string)($row['check_code'] ?? ''));
@@ -389,7 +390,24 @@ final class YearEndSectionApprovalService
                 $total > 0 ? 70 + (int)floor((($index + 1) / $total) * 14) : 84
             );
             try {
-                $bundle = $this->refreshBundle($companyId, $targetPeriodId, $checkCode);
+                $preparedChecklist = null;
+                if ($this->usesChecklistContext($checkCode)) {
+                    if (!array_key_exists($targetPeriodId, $preparedChecklists)) {
+                        $preparedChecklists[$targetPeriodId] = (new YearEndChecklistService())->fetchChecklist(
+                            $companyId,
+                            $targetPeriodId,
+                            false
+                        ) ?? [];
+                    }
+                    $preparedChecklist = $preparedChecklists[$targetPeriodId];
+                }
+                $bundle = $this->refreshBundle(
+                    $companyId,
+                    $targetPeriodId,
+                    $checkCode,
+                    null,
+                    $preparedChecklist
+                );
                 if (empty($bundle['available'])) {
                     $errors[] = 'AP ' . $targetPeriodId . ' / ' . $checkCode . ': '
                         . (string)(($bundle['errors'] ?? [])[0] ?? 'The review bundle is unavailable.');
@@ -428,6 +446,22 @@ final class YearEndSectionApprovalService
             'companies_house_no_filing_acknowledgement' => 'No exact accounts filing',
             default => \HelperFramework::labelFromKey($checkCode, '_'),
         };
+    }
+
+    /**
+     * Most review bundles derive their facts from the common Year End
+     * checklist. During a bulk warm, calculating it once per period avoids
+     * re-running the full metrics, tax, asset, and prepayment read model for
+     * every individual section.
+     */
+    private function usesChecklistContext(string $checkCode): bool
+    {
+        return !in_array($checkCode, [
+            'director_loan_year_end_review',
+            'retained_earnings_close_confirmation',
+            'companies_house_mismatch_acknowledgement',
+            'companies_house_no_filing_acknowledgement',
+        ], true);
     }
 
     private function invalidateFromAccountingPeriod(
@@ -486,13 +520,20 @@ final class YearEndSectionApprovalService
         int $companyId,
         int $accountingPeriodId,
         string $checkCode,
-        ?array $preparedRetainedEarningsContext = null
+        ?array $preparedRetainedEarningsContext = null,
+        ?array $preparedChecklist = null
     ): array
     {
         $checkCode = $this->checkCode($checkCode);
-        $bundle = $this->buildBundle($companyId, $accountingPeriodId, $checkCode, $preparedRetainedEarningsContext);
+        $bundle = $this->buildBundle(
+            $companyId,
+            $accountingPeriodId,
+            $checkCode,
+            $preparedRetainedEarningsContext,
+            $preparedChecklist
+        );
         $bundle = $this->validateBundleForPersistence($bundle, $checkCode);
-        $bundle['source_token'] = $this->sourceToken($companyId, $accountingPeriodId, $checkCode);
+        $bundle['source_token'] = $this->sourceToken($companyId, $accountingPeriodId, $checkCode, $preparedChecklist);
         $bundle['definition_token'] = $this->definitionToken($checkCode);
         if (!$this->tableAvailable()) {
             return $bundle;
@@ -549,14 +590,19 @@ final class YearEndSectionApprovalService
         int $companyId,
         int $accountingPeriodId,
         string $checkCode,
-        ?array $preparedRetainedEarningsContext = null
+        ?array $preparedRetainedEarningsContext = null,
+        ?array $preparedChecklist = null
     ): array
     {
         if ($checkCode === 'director_loan_year_end_review') {
             return $this->directorLoanBundle($companyId, $accountingPeriodId);
         }
         if ($checkCode === 'tax_readiness_acknowledgement') {
-            return $this->taxReadinessBundle($companyId, $accountingPeriodId);
+            return $this->taxReadinessBundle(
+                $companyId,
+                $accountingPeriodId,
+                $preparedChecklist === null ? null : (array)($preparedChecklist['tax_readiness'] ?? [])
+            );
         }
         if ($checkCode === 'retained_earnings_close_confirmation') {
             return $this->retainedEarningsBundle($companyId, $accountingPeriodId, $preparedRetainedEarningsContext);
@@ -565,7 +611,7 @@ final class YearEndSectionApprovalService
             return $this->companiesHouseBundle($companyId, $accountingPeriodId, $checkCode);
         }
 
-        $checklist = (new YearEndChecklistService())->fetchChecklist(
+        $checklist = $preparedChecklist ?? (new YearEndChecklistService())->fetchChecklist(
             $companyId,
             $accountingPeriodId,
             false
@@ -1056,7 +1102,12 @@ final class YearEndSectionApprovalService
         return $value;
     }
 
-    private function sourceToken(int $companyId, int $accountingPeriodId, string $checkCode): string
+    private function sourceToken(
+        int $companyId,
+        int $accountingPeriodId,
+        string $checkCode,
+        ?array $preparedChecklist = null
+    ): string
     {
         if (in_array($checkCode, ['companies_house_mismatch_acknowledgement', 'companies_house_no_filing_acknowledgement'], true)) {
             $context = (new CompaniesHouseComparisonReviewService())->fetchContext($companyId, $accountingPeriodId);
@@ -1067,7 +1118,7 @@ final class YearEndSectionApprovalService
         }
 
         if ($checkCode !== 'director_loan_year_end_review') {
-            return $this->sectionSourceToken($companyId, $accountingPeriodId, $checkCode);
+            return $this->sectionSourceToken($companyId, $accountingPeriodId, $checkCode, $preparedChecklist);
         }
 
         $tokens = [];
@@ -1117,7 +1168,12 @@ final class YearEndSectionApprovalService
      * while still forcing a refresh if an underlying Year End data set changes.
      * Individual actions also invalidate their relevant bundle immediately.
      */
-    private function sectionSourceToken(int $companyId, int $accountingPeriodId, string $checkCode): string
+    private function sectionSourceToken(
+        int $companyId,
+        int $accountingPeriodId,
+        string $checkCode,
+        ?array $preparedChecklist = null
+    ): string
     {
         $tables = match ($checkCode) {
             'tax_readiness_acknowledgement' => [
@@ -1172,7 +1228,9 @@ final class YearEndSectionApprovalService
             $tokens['prior_period_lock'] = $this->priorPeriodLockToken($companyId, $accountingPeriodId);
         }
         if ($checkCode === 'tax_readiness_acknowledgement') {
-            $taxReadiness = $this->taxReadinessContext($companyId, $accountingPeriodId);
+            $taxReadiness = $preparedChecklist === null
+                ? $this->taxReadinessContext($companyId, $accountingPeriodId)
+                : (array)($preparedChecklist['tax_readiness'] ?? []);
             $tokens['tax_freeze'] = [
                 'available' => !empty($taxReadiness['available']),
                 'freeze_status' => (string)($taxReadiness['freeze_status'] ?? ''),

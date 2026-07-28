@@ -320,6 +320,31 @@ $harness->run(\eel_accounts\Service\YearEndSectionApprovalService::class, static
         $harness->assertSame(false, hash_equals($pnlToken, $defaultToken));
     });
 
+    $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'reuses a prepared checklist for the section bundles that derive from it', static function () use ($harness, $service): void {
+        $usesChecklist = new ReflectionMethod($service, 'usesChecklistContext');
+        $buildBundle = new ReflectionMethod($service, 'buildBundle');
+        $preparedChecklist = [
+            'checks_flat' => [[
+                'check_code' => 'transaction_tail_review',
+                'status' => 'warning',
+                'basis_data' => ['account_count' => 3, 'latest_transaction_date' => '2026-07-28'],
+            ]],
+        ];
+        $bundle = (array)$buildBundle->invoke(
+            $service,
+            12,
+            34,
+            'transaction_tail_review',
+            null,
+            $preparedChecklist
+        );
+
+        $harness->assertSame(true, (bool)$usesChecklist->invoke($service, 'transaction_tail_review'));
+        $harness->assertSame(true, (bool)$usesChecklist->invoke($service, 'tax_readiness_acknowledgement'));
+        $harness->assertSame(false, (bool)$usesChecklist->invoke($service, 'director_loan_year_end_review'));
+        $harness->assertSame(3, (int)(($bundle['facts'] ?? [])['account_count'] ?? 0));
+    });
+
     $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'ships the persistent bundle migration and master-schema definition', static function () use ($harness): void {
         $root = dirname(__DIR__, 2);
         $schema = (string)file_get_contents($root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'eel_accounts.schema.sql');

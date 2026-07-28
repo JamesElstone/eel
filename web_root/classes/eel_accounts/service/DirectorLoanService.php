@@ -464,11 +464,19 @@ final class DirectorLoanService
             ) >= 0.005;
 
             $presentation = (array)($position['party_terms'] ?? []);
-            $mainTerms = ucfirst((string)($presentation['security_type'] ?? 'unsecured')) . '.';
-            $repaymentConditions = !empty($presentation['repayable_on_demand'])
-                ? 'Repayable on demand.'
-                : ((string)($presentation['repayment_timing'] ?? 'within_12_months') === 'after_12_months'
-                    ? 'Repayable after more than 12 months.' : 'Repayable within 12 months.');
+            // Use the approved evidence verbatim.  A balance-sheet maturity
+            // classification is not a contractual repayment term and must not
+            // be restated as one in the statutory director-loan note.
+            $mainTerms = trim((string)($presentation['main_terms'] ?? ''));
+            $repaymentConditions = trim((string)($presentation['repayment_conditions'] ?? ''));
+            if ($mainTerms === '') {
+                $mainTerms = ucfirst((string)($presentation['security_type'] ?? 'unsecured')) . '.';
+            }
+            if ($repaymentConditions === '') {
+                $repaymentConditions = !empty($presentation['repayable_on_demand'])
+                    ? 'Repayable on demand.'
+                    : 'Repayment terms were not recorded.';
+            }
             $row = [
                 'director_id' => $position['director_id'] ?? null,
                 'director_name' => (string)($position['director_name'] ?? 'Unattributed'),
@@ -492,7 +500,9 @@ final class DirectorLoanService
                 'closing_company_to_director_balance' => $closingReceivable,
                 'closing_company_liability' => $closingLiability,
                 'interest_rate_percent' => (float)($presentation['interest_rate_percent'] ?? 0),
-                'interest_rate' => number_format((float)($presentation['interest_rate_percent'] ?? 0), 4, '.', '') . '%',
+                'interest_rate' => DirectorLoanReportingPresentationService::formatInterestRate(
+                    (float)($presentation['interest_rate_percent'] ?? 0)
+                ),
                 'main_terms' => $mainTerms,
                 'repayment_conditions' => $repaymentConditions,
                 'main_conditions' => $mainTerms . ' ' . $repaymentConditions,

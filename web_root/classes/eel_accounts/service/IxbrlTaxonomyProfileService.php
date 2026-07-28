@@ -18,7 +18,7 @@ namespace eel_accounts\Service;
 final class IxbrlTaxonomyProfileService
 {
     public const PROFILE = 'frc-2026-frs-105';
-    public const BASIS_VERSION = 'ixbrl-accounts-v3';
+    public const BASIS_VERSION = 'ixbrl-accounts-v6';
     public const SCHEMA_REF = 'https://xbrl.frc.org.uk/FRS-102/2026-01-01/FRS-102-2026-01-01.xsd';
 
     public const NAMESPACES = [
@@ -161,18 +161,37 @@ final class IxbrlTaxonomyProfileService
             $setOff = number_format((float)($disclosure['amounts_legally_set_off'] ?? 0), 2);
             $writtenOff = number_format((float)($disclosure['amounts_written_off'] ?? 0), 2);
             $waived = number_format((float)($disclosure['amounts_waived'] ?? 0), 2);
-            $closing = number_format((float)($disclosure['closing_company_to_director_balance'] ?? 0), 2);
-            $paragraphs[] = 'The company advanced £' . $advance . ' to ' . $name
-                . ' during the period. Cash repayments were £' . $cashRepayment
-                . ', amounts legally set off were £' . $setOff
-                . ', amounts written off were £' . $writtenOff
-                . ', and amounts waived were £' . $waived . '.'
-                . ' The closing amount due from the director was £' . $closing . '.'
-                . ' The interest rate was ' . (string)($disclosure['interest_rate'] ?? '0%') . '.'
-                . ' The main terms were ' . rtrim(
-                    (string)($disclosure['main_conditions'] ?? 'interest-free and repayable on demand'),
-                    '.'
-                ) . '.';
+            $closingAmount = (float)($disclosure['closing_company_to_director_balance'] ?? 0);
+            $interestRate = trim((string)($disclosure['interest_rate'] ?? '0%'));
+            $mainTerms = rtrim(trim((string)($disclosure['main_terms'] ?? '')), '.');
+            $repaymentConditions = rtrim(trim((string)($disclosure['repayment_conditions'] ?? '')), '.');
+            if ($mainTerms === '') {
+                $mainTerms = 'Unsecured';
+            }
+            if ($repaymentConditions === '') {
+                $repaymentConditions = 'Repayable on demand';
+            }
+
+            $closingStatement = abs($closingAmount) < 0.005
+                ? ' No balance was outstanding at the period end.'
+                : ' A balance of £' . number_format($closingAmount, 2)
+                    . ' was outstanding at the period end.';
+            $nilReductions = abs((float)($disclosure['amounts_legally_set_off'] ?? 0)) < 0.005
+                && abs((float)($disclosure['amounts_written_off'] ?? 0)) < 0.005
+                && abs((float)($disclosure['amounts_waived'] ?? 0)) < 0.005;
+            $reductionsStatement = $nilReductions
+                ? ' No amounts were legally set off, written off or waived.'
+                : ' Amounts legally set off were £' . $setOff
+                    . ', amounts written off were £' . $writtenOff
+                    . ', and amounts waived were £' . $waived . '.';
+
+            $paragraphs[] = 'During the period the company advanced £' . $advance . ' to ' . $name . '.'
+                . ' Main terms: ' . $mainTerms . '.'
+                . ' Interest rate: ' . $interestRate . '.'
+                . ' Repayment conditions: ' . $repaymentConditions . '.'
+                . ' Cash repayments during the period were £' . $cashRepayment . '.'
+                . $reductionsStatement
+                . $closingStatement;
         }
         return implode(' ', $paragraphs);
     }

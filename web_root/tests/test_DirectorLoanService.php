@@ -309,6 +309,14 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
             $harness->assertSame('0.00', directorLoanStatementMoney($summary['total_amounts_legally_set_off'] ?? 0));
         });
     });
+
+    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'uses compact shared interest-rate labels', static function () use ($harness): void {
+        $format = [\eel_accounts\Service\DirectorLoanReportingPresentationService::class, 'formatInterestRate'];
+        $harness->assertSame('0%', $format(0.0));
+        $harness->assertSame('5%', $format(5.0));
+        $harness->assertSame('5.25%', $format(5.25));
+        $harness->assertSame('5.1235%', $format(5.12345));
+    });
 });
 
 function directorLoanStatementWithFixture(GeneratedServiceClassTestHarness $harness, callable $callback): void

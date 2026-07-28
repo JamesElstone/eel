@@ -52,6 +52,28 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(str_contains($xhtml, 'name="core:PrepaymentsAccruedIncomeNotExpressedWithinCurrentAssetSubtotal"'));
             $harness->assertTrue(str_contains($xhtml, 'name="core:DateAuthorisationFinancialStatementsForIssue" contextRef="current_period_end"'));
             $harness->assertTrue(str_contains($xhtml, 'format="ixt:datedaymonthyearen">31 December 2025'));
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                '<ix:nonNumeric name="bus:EntityCurrentLegalOrRegisteredName"'
+                . ' contextRef="current_period_duration">Example Limited</ix:nonNumeric>'
+                . ' is a private company limited by shares'
+            ));
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                'incorporated and registered in England and Wales'
+            ));
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                'Registered office: <ix:nonNumeric name="bus:AddressLine1"'
+            ));
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                'cover the period from <ix:nonNumeric name="bus:StartDateForPeriodCoveredByReport"'
+            ));
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                'presented in pounds sterling (GBP) to the nearest penny.'
+            ));
             $harness->assertTrue(substr_count($xhtml, 'class="accountspage') >= 4);
             $harness->assertFalse(str_contains($xhtml, 'EEL-AR-NOT-VISIBLE'));
             $harness->assertFalse(str_contains($xhtml, '<section'));
@@ -62,12 +84,86 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue($document->loadXML($xhtml, LIBXML_NONET));
             $xpath = new DOMXPath($document);
             $xpath->registerNamespace('xhtml', 'http://www.w3.org/1999/xhtml');
+            $xpath->registerNamespace('ix', 'http://www.xbrl.org/2013/inlineXBRL');
+            foreach ([
+                'bus:EntityCurrentLegalOrRegisteredName' => 5,
+                'bus:UKCompaniesHouseRegisteredNumber' => 5,
+                'bus:CountryFormationOrIncorporation' => 1,
+                'bus:LegalFormEntity' => 1,
+                'bus:AddressLine1' => 1,
+                'bus:AddressLine2' => 1,
+                'bus:AddressLine3' => 1,
+                'bus:PostalCodeZip' => 1,
+                'bus:StartDateForPeriodCoveredByReport' => 1,
+                'bus:EndDateForPeriodCoveredByReport' => 7,
+            ] as $concept => $expectedOccurrences) {
+                $harness->assertSame(
+                    0,
+                    $xpath->query('//ix:hidden//*[@name="' . $concept . '"]')->length
+                );
+                $harness->assertSame(
+                    $expectedOccurrences,
+                    $xpath->query('//*[@name="' . $concept . '"]')->length
+                );
+            }
+            $harness->assertSame(3, $xpath->query(
+                '//xhtml:table[contains(@class, "page-header")]'
+                . '//ix:nonNumeric[@name="bus:EntityCurrentLegalOrRegisteredName"]'
+            )->length);
+            $harness->assertSame(3, $xpath->query(
+                '//xhtml:table[contains(@class, "page-header")]'
+                . '//ix:nonNumeric[@name="bus:UKCompaniesHouseRegisteredNumber"]'
+            )->length);
+            $harness->assertSame(3, $xpath->query(
+                '//xhtml:table[contains(@class, "page-header")]'
+                . '//ix:nonNumeric[@name="bus:EndDateForPeriodCoveredByReport"]'
+            )->length);
+            $headers = $xpath->query('//xhtml:table[contains(@class, "page-header")]');
+            $harness->assertSame(3, $headers->length);
+            foreach ($headers as $header) {
+                $harness->assertSame(2, $xpath->query('./xhtml:tbody/xhtml:tr', $header)->length);
+                $harness->assertSame(2, $xpath->query('./xhtml:tbody/xhtml:tr[1]/xhtml:td', $header)->length);
+                $harness->assertSame(
+                    '2',
+                    (string)$xpath->query('./xhtml:tbody/xhtml:tr[2]/xhtml:td', $header)->item(0)?->attributes?->getNamedItem('colspan')?->nodeValue
+                );
+            }
+            $profitAndLossLabels = [];
+            foreach ($xpath->query(
+                '//xhtml:h2[normalize-space(.)="Profit and loss account"]'
+                . '/following-sibling::xhtml:table[contains(@class, "financial-table")]'
+                . '/xhtml:tbody/xhtml:tr/xhtml:th'
+            ) as $label) {
+                $profitAndLossLabels[] = trim((string)$label->textContent);
+            }
+            $harness->assertSame([
+                'Turnover',
+                'Other income',
+                'Raw materials and consumables',
+                'Gross profit / (loss)',
+                'Staff costs',
+                'Depreciation and other amounts written off assets',
+                'Other charges',
+                'Operating profit / (loss)',
+                'Tax on profit / (loss)',
+                'Profit / (loss) for the financial year',
+            ], $profitAndLossLabels);
+            $harness->assertTrue(str_contains($xhtml, 'For the period ended'));
+            $harness->assertFalse(str_contains($xhtml, '>for the period ended'));
+            $harness->assertSame(1, $xpath->query(
+                '//ix:nonFraction[@name="direp:AdvancesCreditsMadeInPeriodDirectors"'
+                . ' and @format="ixt:zerodash"]'
+            )->length);
             $style = (string)$xpath->query('/xhtml:html/xhtml:head/xhtml:style')->item(0)?->textContent;
             $printStart = strpos($style, '@media print {');
             $harness->assertTrue($printStart !== false);
             $printCss = substr($style, (int)$printStart);
             $harness->assertTrue(str_contains($style, 'size: A4 portrait;'));
             $harness->assertTrue(str_contains($style, 'margin: 12mm 14mm 14mm;'));
+            $harness->assertTrue(str_contains($style, '.page-header {'));
+            $harness->assertTrue(str_contains($style, 'table-layout: fixed;'));
+            $harness->assertFalse(str_contains($style, 'display: grid;'));
+            $harness->assertFalse(str_contains($style, 'grid-template-columns:'));
             $harness->assertFalse(preg_match(
                 '/\.accountspage\s*\{[^}]*\bwidth\s*:\s*210mm/is',
                 $printCss
@@ -127,6 +223,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $validator = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'validateInlineXbrl');
             $validator->setAccessible(true);
             $harness->assertSame([], $validator->invoke($service, $xhtml));
+            $inconsistentDuplicate = str_replace(
+                '</body>',
+                '<p><ix:nonNumeric name="bus:EntityCurrentLegalOrRegisteredName" contextRef="current_period_duration">Other Limited</ix:nonNumeric></p></body>',
+                $xhtml
+            );
+            $harness->assertTrue(in_array(
+                'Inconsistent duplicate Inline XBRL fact was generated: bus:EntityCurrentLegalOrRegisteredName.',
+                $validator->invoke($service, $inconsistentDuplicate),
+                true
+            ));
         });
 
         $harness->check(\eel_accounts\Service\IxbrlAccountingService::class, 'rejects a required fact that exists only in a comparative context', static function () use ($harness, $service): void {

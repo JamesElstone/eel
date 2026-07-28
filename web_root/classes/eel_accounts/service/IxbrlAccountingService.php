@@ -278,17 +278,22 @@ final class IxbrlAccountingService
         $companyNumber = $this->factValue($this->currentFact($indexed, 'company_number'));
         $periodStart = $this->factValue($this->currentFact($indexed, 'period_start'));
         $periodEnd = $this->factValue($this->currentFact($indexed, 'period_end'));
-
-        $hidden = '';
+        $registeredOfficeFacts = [];
         foreach ([
-            'period_start',
-            'entity_dormant',
-            'country_formation_or_incorporation',
-            'legal_form_entity',
             'registered_office_address_line_1',
             'registered_office_address_line_2',
             'registered_office_address_line_3',
             'registered_office_postal_code',
+        ] as $key) {
+            $fact = $this->currentFact($indexed, $key);
+            if ($fact !== [] && $this->factValue($fact) !== '') {
+                $registeredOfficeFacts[] = $this->inlineFact($fact);
+            }
+        }
+
+        $hidden = '';
+        foreach ([
+            'entity_dormant',
             'entity_trading_status',
             'accounting_standards_applied',
             'accounts_status',
@@ -384,15 +389,36 @@ final class IxbrlAccountingService
             . '<p>For the period ended ' . $this->inlineFact(
                 $this->currentFact($indexed, 'period_end'),
                 ['natural_date' => true]
-            ) . '</p></div></div>' . "\n"
+            ) . '</p></div>'
+            . '<div class="cover-statutory-information">'
+            . '<p>' . $this->inlineFact($companyName) . ' is a private company limited by shares'
+            . $this->categoricalMarker($this->currentFact($indexed, 'legal_form_entity'))
+            . ', incorporated and registered in England and Wales'
+            . $this->categoricalMarker($this->currentFact($indexed, 'country_formation_or_incorporation'))
+            . ' under company number ' . $this->inlineFact(
+                $this->currentFact($indexed, 'company_number')
+            ) . '.</p>'
+            . '<p>Registered office: ' . implode(', ', $registeredOfficeFacts) . '.</p>'
+            . '<p>These financial statements cover the period from ' . $this->inlineFact(
+                $this->currentFact($indexed, 'period_start'),
+                ['natural_date' => true]
+            ) . ' to ' . $this->inlineFact(
+                $this->currentFact($indexed, 'period_end'),
+                ['natural_date' => true]
+            )
+            . ' and are presented in pounds sterling (GBP) to the nearest penny.</p>'
+            . '</div></div>' . "\n"
             . '<div class="accountspage pagebreak statement-page">'
-            . $this->pageHeader($indexed, 'Profit and loss account', $periodEnd)
+            . $this->pageHeader($indexed, 'Profit and loss account')
             . '<h2>Profit and loss account</h2>'
-            . '<p class="period-subtitle">for the period ended ' . $this->naturalDate($periodEnd) . '</p>'
+            . '<p class="period-subtitle">For the period ended ' . $this->inlineFact(
+                $this->currentFact($indexed, 'period_end'),
+                ['natural_date' => true]
+            ) . '</p>'
             . $this->profitAndLossTable($indexed)
             . '</div>' . "\n"
             . '<div class="accountspage pagebreak statement-page">'
-            . $this->pageHeader($indexed, 'Balance sheet', $periodEnd)
+            . $this->pageHeader($indexed, 'Balance sheet')
             . '<h2>Micro-entity Balance Sheet as at '
             . $this->inlineFact($this->currentFact($indexed, 'balance_sheet_date'), ['natural_date' => true])
             . '</h2>'
@@ -402,9 +428,12 @@ final class IxbrlAccountingService
             . '</div>'
             . '</div>' . "\n"
             . '<div class="accountspage pagebreak notes-page">'
-            . $this->pageHeader($indexed, 'Notes to the Micro-entity Accounts', $periodEnd)
+            . $this->pageHeader($indexed, 'Notes to the Micro-entity Accounts')
             . '<h2>Notes to the Micro-entity Accounts</h2>'
-            . '<p class="period-subtitle">for the period ended ' . $this->naturalDate($periodEnd) . '</p>'
+            . '<p class="period-subtitle">For the period ended ' . $this->inlineFact(
+                $this->currentFact($indexed, 'period_end'),
+                ['natural_date' => true]
+            ) . '</p>'
             . $notes . '</div>' . "\n"
             . '</body></html>' . "\n";
 
@@ -416,9 +445,9 @@ final class IxbrlAccountingService
     {
         $rows = [
             ['label' => 'Turnover', 'key' => 'turnover'],
+            ['label' => 'Other income', 'key' => 'other_income'],
             ['label' => 'Raw materials and consumables', 'key' => 'raw_materials_consumables', 'brackets' => true],
             ['label' => 'Gross profit / (loss)', 'key' => 'gross_profit_loss', 'rule' => 'subtotal'],
-            ['label' => 'Other operating income', 'key' => 'other_income'],
             ['label' => 'Staff costs', 'key' => 'staff_costs', 'brackets' => true],
             ['label' => 'Depreciation and other amounts written off assets', 'key' => 'depreciation_write_offs', 'brackets' => true],
             ['label' => 'Other charges', 'key' => 'other_charges', 'brackets' => true],
@@ -567,49 +596,24 @@ final class IxbrlAccountingService
                 ])
                 . '</td></tr>';
         }
-        $source = json_decode((string)($this->currentFact($indexed, 'no_director_advances_or_credits')['source_json'] ?? ''), true);
-        $summary = is_array($source)
-            ? (array)($source['director_loan_disclosure'] ?? $source['director_loan_summary'] ?? $source['summary'] ?? [])
-            : [];
-        foreach ([
-            ['label' => 'Amounts legally set off', 'key' => 'total_amounts_legally_set_off'],
-            ['label' => 'Amounts written off', 'key' => 'total_amounts_written_off'],
-            ['label' => 'Amounts waived', 'key' => 'total_amounts_waived'],
-        ] as $row) {
-            if (!array_key_exists($row['key'], $summary)) {
-                continue;
-            }
-            $html .= '<tr><th class="description" scope="row">' . $this->e($row['label'])
-                . '</th><td class="amount">' . $this->visibleAmount((float)$summary[$row['key']], true)
-                . '</td></tr>';
-        }
         $html .= '</tbody></table>';
-        $disclosure = (array)($summary['disclosures'][0] ?? []);
-        $presentation = (array)($source['director_loan_reporting_presentation'] ?? []);
-        foreach ([
-            ['label' => 'Interest rate', 'value' => $disclosure['interest_rate'] ?? $presentation['interest_rate'] ?? ''],
-            ['label' => 'Main terms', 'value' => $disclosure['main_terms'] ?? $presentation['main_terms'] ?? ''],
-            ['label' => 'Repayment conditions', 'value' => $disclosure['repayment_conditions'] ?? $presentation['repayment_conditions'] ?? ''],
-        ] as $row) {
-            $value = trim((string)$row['value']);
-            if ($value === '') {
-                continue;
-            }
-            $html .= '<p class="loan-term"><strong>' . $this->e((string)$row['label'])
-                . ':</strong> ' . $this->e($value) . '</p>';
-        }
 
         return $html;
     }
 
-    private function pageHeader(array $indexed, string $title, string $periodEnd): string
+    private function pageHeader(array $indexed, string $title): string
     {
-        return '<div class="page-header"><div class="page-header-name">'
-            . $this->e($this->factValue($this->currentFact($indexed, 'entity_name')))
-            . '</div><div class="page-header-number">Registered number '
-            . $this->e($this->factValue($this->currentFact($indexed, 'company_number')))
-            . '</div><div class="page-header-title">' . $this->e($title)
-            . ' · period ended ' . $this->e($this->naturalDate($periodEnd)) . '</div></div>';
+        return '<table class="page-header" role="presentation"><colgroup>'
+            . '<col class="page-header-name-column"/><col class="page-header-number-column"/>'
+            . '</colgroup><tbody><tr><td class="page-header-name">'
+            . $this->inlineFact($this->currentFact($indexed, 'entity_name'))
+            . '</td><td class="page-header-number">Registered number '
+            . $this->inlineFact($this->currentFact($indexed, 'company_number'))
+            . '</td></tr><tr><td class="page-header-title" colspan="2">' . $this->e($title)
+            . ' · For the period ended ' . $this->inlineFact(
+                $this->currentFact($indexed, 'period_end'),
+                ['natural_date' => true]
+            ) . '</td></tr></tbody></table>';
     }
 
     private function stylesheet(): string
@@ -643,9 +647,12 @@ body {
 .cover-centre h1 { margin: 0 0 13mm; font-size: 17pt; font-weight: normal; text-transform: uppercase; }
 .cover-centre h2 { margin: 0 0 8mm; font-size: 15pt; letter-spacing: .06em; }
 .cover-centre p { font-size: 12pt; }
+.cover-statutory-information { width: 82%; margin: 28mm auto 0; font-size: 10.5pt; }
+.cover-statutory-information p { margin: 0 0 4mm; }
 .page-header {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
     break-inside: avoid;
     page-break-inside: avoid;
     margin: 0 0 14mm;
@@ -653,9 +660,12 @@ body {
     border-bottom: .25mm solid #222;
     font-size: 9pt;
 }
-.page-header-name { grid-column: 1; font-weight: bold; text-transform: uppercase; }
-.page-header-number { grid-column: 2; text-align: right; }
-.page-header-title { grid-column: 1 / -1; padding-top: 1.8mm; color: #333; }
+.page-header-name-column { width: 64%; }
+.page-header-number-column { width: 36%; }
+.page-header td { padding: 0; vertical-align: top; }
+.page-header-name { font-weight: bold; text-transform: uppercase; }
+.page-header-number { text-align: right; white-space: nowrap; }
+.page-header-title { padding-top: 1.8mm !important; color: #333; }
 h2 { margin: 0; font-size: 13.5pt; text-align: center; }
 .period-subtitle { margin: 1mm 0 8mm; text-align: center; }
 .financial-table, .note-table { width: 92%; margin: 0 auto; border-collapse: collapse; table-layout: fixed; }
@@ -881,6 +891,17 @@ CSS;
         }
         return '<ix:nonNumeric name="' . $name . '" contextRef="' . $context . '"' . $format . '>'
             . $this->e($value) . '</ix:nonNumeric>';
+    }
+
+    /**
+     * FRC categorical facts are zero-length markers whose meaning is carried
+     * by their context dimensions.  Keeping the marker adjacent to the
+     * visible wording makes the cover statement traceable without placing an
+     * invalid literal value inside the fact.
+     */
+    private function categoricalMarker(array $fact): string
+    {
+        return $fact === [] ? '' : $this->inlineFact($fact);
     }
 
     private function visibleAmount(float $amount, bool $brackets = false): string
@@ -1150,7 +1171,7 @@ CSS;
             $unitIds[$id] = true;
         }
 
-        $duplicateFacts = [];
+        $duplicateFactValues = [];
         $referencedContexts = [];
         $referencedUnits = [];
         foreach ($xpath->query('//ix:nonFraction | //ix:nonNumeric') ?: [] as $fact) {
@@ -1183,20 +1204,23 @@ CSS;
                     $errors[] = 'Monetary facts must use the GBP unit.';
                 }
             }
-            $key = implode('|', [
+            $aspectKey = implode('|', [
                 $fact->localName,
                 $fact->getAttribute('name'),
                 $contextRef,
                 $unitRef,
+            ]);
+            $valueKey = implode('|', [
                 $fact->getAttribute('decimals'),
                 $fact->getAttribute('sign'),
                 trim($fact->textContent),
             ]);
-            if (isset($duplicateFacts[$key])) {
-                $errors[] = 'An exact duplicate Inline XBRL fact was generated: '
+            if (isset($duplicateFactValues[$aspectKey])
+                && !hash_equals($duplicateFactValues[$aspectKey], $valueKey)) {
+                $errors[] = 'Inconsistent duplicate Inline XBRL fact was generated: '
                     . $fact->getAttribute('name') . '.';
             }
-            $duplicateFacts[$key] = true;
+            $duplicateFactValues[$aspectKey] = $valueKey;
         }
         foreach (array_keys($contextIds) as $contextId) {
             if (!isset($referencedContexts[$contextId])) {
@@ -1211,8 +1235,15 @@ CSS;
 
         $expectedCompanyNumber = '';
         $companyFacts = $xpath->query('//*[@name="bus:UKCompaniesHouseRegisteredNumber"]');
-        if (($companyFacts->length ?? 0) === 1) {
+        if (($companyFacts->length ?? 0) >= 1) {
             $expectedCompanyNumber = trim((string)$companyFacts->item(0)?->textContent);
+            foreach ($companyFacts as $companyFact) {
+                if (!$companyFact instanceof \DOMElement
+                    || trim($companyFact->textContent) !== $expectedCompanyNumber) {
+                    $errors[] = 'Company-number facts are inconsistent.';
+                    break;
+                }
+            }
         }
         foreach ($xpath->query('//xbrli:context/xbrli:entity/xbrli:identifier') ?: [] as $identifier) {
             if (!$identifier instanceof \DOMElement
@@ -1295,7 +1326,7 @@ CSS;
             'bus:BalanceSheetDate',
             'core:DateAuthorisationFinancialStatementsForIssue',
         ] as $instantConcept) {
-            if (($xpath->query('//*[@name="' . $instantConcept . '" and @contextRef="current_period_end"]')->length ?? 0) !== 1) {
+            if (($xpath->query('//*[@name="' . $instantConcept . '" and @contextRef="current_period_end"]')->length ?? 0) < 1) {
                 $errors[] = $instantConcept . ' must use the balance-sheet instant context.';
             }
         }

@@ -419,7 +419,7 @@ final class DirectorLoanReportingPresentationService
             'deferment_right_confirmed' => $defermentRight,
             'deferment_evidence' => $defermentEvidence,
             'interest_rate_percent' => $interestRate,
-            'interest_rate' => $this->interestRateLabel($interestRate),
+            'interest_rate' => self::formatInterestRate($interestRate),
             'main_terms' => $mainTerms,
             'repayment_conditions' => $repaymentConditions,
             'main_conditions' => trim($mainTerms . ' ' . $repaymentConditions),
@@ -493,7 +493,7 @@ final class DirectorLoanReportingPresentationService
             : substr($text, 0, $maximumLength);
     }
 
-    private function interestRateLabel(float $interestRate): string
+    public static function formatInterestRate(float $interestRate): string
     {
         if ($interestRate < 0) {
             return '';

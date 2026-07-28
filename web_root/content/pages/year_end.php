@@ -36,6 +36,7 @@ final class _year_end extends PageContextFramework
             'year_end_notes',
             'year_end_state',
             'year_end_audit_log',
+            'year_end_evidence_bundles',
         ];
     }
 
@@ -64,6 +65,12 @@ final class _year_end extends PageContextFramework
                 'tab' => 'Audit',
                 'cards' => [
                     'year_end_audit_log',
+                ],
+            ],
+            [
+                'tab' => 'Evidence',
+                'cards' => [
+                    'year_end_evidence_bundles',
                 ],
             ],
         ];

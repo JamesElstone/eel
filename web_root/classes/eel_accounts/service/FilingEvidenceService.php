@@ -470,6 +470,100 @@ final class FilingEvidenceService
         return $detail;
     }
 
+    /** @return array{bundles:list<array<string,mixed>>,eligible_count:int} */
+    public function listForAccountingPeriod(int $companyId, int $accountingPeriodId): array
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || !\InterfaceDB::tableExists('filing_evidence_bundles')) {
+            return ['bundles' => [], 'eligible_count' => 0];
+        }
+
+        $rows = \InterfaceDB::fetchAll(
+            "SELECT b.*,
+                    b.id = (SELECT MAX(latest.id) FROM filing_evidence_bundles latest
+                            WHERE latest.company_id = b.company_id AND latest.accounting_period_id = b.accounting_period_id) AS is_latest,
+                    (SELECT COUNT(*) FROM filing_evidence_ct_snapshots s WHERE s.bundle_id = b.id) AS snapshot_count,
+                    (SELECT COUNT(*) FROM filing_evidence_artifacts a WHERE a.bundle_id = b.id) AS artifact_count,
+                    (SELECT COUNT(*) FROM filing_evidence_artifacts a
+                        WHERE a.bundle_id = b.id AND a.artifact_status IN ('generated', 'validated', 'historical')) AS completed_artifact_count,
+                    (SELECT COUNT(*) FROM ixbrl_accounts_filing_approvals a WHERE a.evidence_bundle_id = b.id) AS approval_count,
+                    (SELECT COUNT(*) FROM hmrc_ct600_submissions s WHERE s.evidence_bundle_id = b.id) AS hmrc_submission_count,
+                    (SELECT COUNT(*) FROM companies_house_accounts_submissions s WHERE s.evidence_bundle_id = b.id) AS companies_house_submission_count
+             FROM filing_evidence_bundles b
+             WHERE b.company_id = :company_id AND b.accounting_period_id = :period_id
+             ORDER BY b.id DESC",
+            ['company_id' => $companyId, 'period_id' => $accountingPeriodId]
+        ) ?: [];
+
+        $eligibleCount = 0;
+        foreach ($rows as &$row) {
+            $row = $this->normaliseBundle((array)$row);
+            $row['is_latest'] = !empty($row['is_latest']);
+            foreach (['snapshot_count', 'artifact_count', 'completed_artifact_count', 'approval_count', 'hmrc_submission_count', 'companies_house_submission_count'] as $countKey) {
+                $row[$countKey] = (int)($row[$countKey] ?? 0);
+            }
+            $reasons = [];
+            if ($row['is_latest']) { $reasons[] = 'Latest version'; }
+            if ((int)$row['approval_count'] > 0) { $reasons[] = 'Filing approval'; }
+            if ((int)$row['hmrc_submission_count'] > 0) { $reasons[] = 'HMRC submission'; }
+            if ((int)$row['companies_house_submission_count'] > 0) { $reasons[] = 'Companies House submission'; }
+            if ((int)$row['completed_artifact_count'] > 0) { $reasons[] = 'Completed filing artifact'; }
+            if ((string)($row['lifecycle_status'] ?? '') === 'current' && !$row['is_latest']) { $reasons[] = 'Current lifecycle'; }
+            $row['retained_reasons'] = $reasons;
+            $row['is_used'] = (int)$row['approval_count'] > 0 || (int)$row['hmrc_submission_count'] > 0
+                || (int)$row['companies_house_submission_count'] > 0 || (int)$row['completed_artifact_count'] > 0;
+            $row['eligible_for_cleanup'] = !$row['is_latest'] && !$row['is_used']
+                && (string)($row['lifecycle_status'] ?? '') !== 'current';
+            if ($row['eligible_for_cleanup']) { $eligibleCount++; }
+        }
+        unset($row);
+
+        return ['bundles' => $rows, 'eligible_count' => $eligibleCount];
+    }
+
+    /** @return array{success:bool,deleted_count:int,deleted_bundles:list<array{id:int,evidence_id:string}>} */
+    public function cleanupUnusedHistoricForAccountingPeriod(int $companyId, int $accountingPeriodId, string $actor): array
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            throw new \InvalidArgumentException('Select a company and accounting period before removing filing evidence.');
+        }
+        $this->requireSchema();
+
+        return (array)\InterfaceDB::transaction(function () use ($companyId, $accountingPeriodId, $actor): array {
+            $state = $this->listForAccountingPeriod($companyId, $accountingPeriodId);
+            $candidates = array_values(array_filter((array)$state['bundles'], static fn(array $bundle): bool => !empty($bundle['eligible_for_cleanup'])));
+            $deleted = [];
+
+            foreach ($candidates as $bundle) {
+                $bundleId = (int)$bundle['id'];
+                \InterfaceDB::prepareExecute(
+                    'UPDATE filing_evidence_bundles
+                     SET predecessor_bundle_id = :predecessor_id, updated_at = CURRENT_TIMESTAMP
+                     WHERE predecessor_bundle_id = :bundle_id AND company_id = :company_id AND accounting_period_id = :period_id',
+                    ['predecessor_id' => (int)($bundle['predecessor_bundle_id'] ?? 0) ?: null, 'bundle_id' => $bundleId,
+                        'company_id' => $companyId, 'period_id' => $accountingPeriodId]
+                );
+                \InterfaceDB::prepareExecute(
+                    'DELETE FROM filing_evidence_bundles WHERE id = :id AND company_id = :company_id AND accounting_period_id = :period_id',
+                    ['id' => $bundleId, 'company_id' => $companyId, 'period_id' => $accountingPeriodId]
+                );
+                $deleted[] = ['id' => $bundleId, 'evidence_id' => (string)$bundle['evidence_id']];
+            }
+
+            if ($deleted !== [] && \InterfaceDB::tableExists('year_end_audit_log')) {
+                \InterfaceDB::prepareExecute(
+                    'INSERT INTO year_end_audit_log (company_id, accounting_period_id, action, action_by, action_at, new_value_json, notes)
+                     VALUES (:company_id, :period_id, :action, :actor, CURRENT_TIMESTAMP, :value, :notes)',
+                    ['company_id' => $companyId, 'period_id' => $accountingPeriodId, 'action' => 'filing_evidence_cleanup',
+                        'actor' => substr(trim($actor) !== '' ? trim($actor) : 'web_app', 0, 100),
+                        'value' => $this->canonicalJson(['deleted_bundles' => $deleted]),
+                        'notes' => 'Developer cleanup removed unused historic filing evidence. Artifact files were not deleted.']
+                );
+            }
+
+            return ['success' => true, 'deleted_count' => count($deleted), 'deleted_bundles' => $deleted];
+        });
+    }
+
     public function normaliseReference(string $reference): string
     {
         $compact = strtoupper((string)preg_replace('/[^A-Za-z0-9]/', '', trim($reference)));

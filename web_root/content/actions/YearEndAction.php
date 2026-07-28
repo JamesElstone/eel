@@ -52,6 +52,11 @@ final class YearEndAction implements ActionInterfaceFramework
                 ]);
             }
 
+            if ($intent === 'cleanup_unused_historic_filing_evidence'
+                && !(bool)AppConfigurationStore::get('developer_options', false)) {
+                return $this->result(false, ['Developer options must be enabled to remove unused historic filing evidence.']);
+            }
+
             if ($this->requiresResolvedSourceCoverage($intent, $request)) {
                 $sourceCoverageBlock = $this->sourceCoverageBlockMessage($companyId, $accountingPeriodId);
                 if ($sourceCoverageBlock !== null) {
@@ -63,6 +68,8 @@ final class YearEndAction implements ActionInterfaceFramework
                 'recalculate' => (new \eel_accounts\Service\YearEndChecklistService())->recalculateChecklist($companyId, $accountingPeriodId, $actor),
                 'lock_period' => $this->lockPeriodWithProgress($companyId, $accountingPeriodId, $actor, $services->actionProgress()),
                 'unlock_period' => $this->unlockPeriodWithProgress($companyId, $accountingPeriodId, $actor, $services->actionProgress()),
+                'cleanup_unused_historic_filing_evidence' => (new \eel_accounts\Service\FilingEvidenceService())
+                    ->cleanupUnusedHistoricForAccountingPeriod($companyId, $accountingPeriodId, $actor),
                 'save_notes' => (new \eel_accounts\Service\YearEndChecklistService())->saveNotes($companyId, $accountingPeriodId, (string)$request->input('review_notes', ''), $actor),
                 'confirm_empty_month' => (new \eel_accounts\Service\EmptyMonthConfirmationService())->confirmMonth(
                     $companyId,
@@ -331,6 +338,10 @@ final class YearEndAction implements ActionInterfaceFramework
             return ['year.end.notes', 'year.end.state', 'year.end.checklist', 'year.end.audit.log'];
         }
 
+        if ($intent === 'cleanup_unused_historic_filing_evidence') {
+            return ['page.context', 'year.end.filing.evidence', 'year.end.audit.log'];
+        }
+
         if ($intent === 'save_expense_position_acknowledgement') {
             return ['year.end.expenses.confirmation'];
         }
@@ -356,6 +367,9 @@ final class YearEndAction implements ActionInterfaceFramework
             'unlock_period' => !empty(($result['legacy_director_loan_repair'] ?? [])['repaired'])
                 ? 'Accounting period unlocked and the legacy Director Loan offset was repaired.'
                 : 'Accounting period unlocked.',
+            'cleanup_unused_historic_filing_evidence' => ((int)($result['deleted_count'] ?? 0) > 0)
+                ? (int)$result['deleted_count'] . ' unused historic evidence bundle(s) removed. Artifact files were not deleted.'
+                : 'No unused historic evidence bundles were eligible for removal.',
             'save_notes' => 'Year-end notes saved.',
             'confirm_empty_month' => 'Empty month confirmation saved.',
             'confirm_empty_months' => 'Empty month confirmations saved.',

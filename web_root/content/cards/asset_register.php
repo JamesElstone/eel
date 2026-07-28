@@ -216,7 +216,7 @@ final class _asset_registerCard extends CardBaseFramework
             )
             ->column(
                 'resale_value',
-                'Resale Value',
+                'Net book value',
                 html: fn(array $row): string => HelperFramework::escape($this->money($settings, (float)($row['resale_value'] ?? 0))),
                 export: static fn(array $row): string => number_format((float)($row['resale_value'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',

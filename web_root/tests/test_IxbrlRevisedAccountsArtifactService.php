@@ -42,6 +42,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 'prepared_as_statement' => 'Prepared by reference to the original accounts, not the revision date, and excluding intervening events.',
                 'non_compliance_explanation' => 'The original report contained an error.',
                 'significant_amendments' => 'The comparative figures were corrected.',
+                'original_approval_date' => '2025-05-29',
                 'revision_approval_date' => '2026-07-21',
             ];
             $superseded = [[
@@ -69,8 +70,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(str_contains($xhtml, 'id="preserved"'));
             $harness->assertFalse(str_contains($xhtml, ' lang="en"'));
             $harness->assertTrue(str_contains($xhtml, ' xml:lang="en"'));
-            $harness->assertTrue(str_contains($xhtml, 'REVISED MICRO-ENTITY ACCOUNTS'));
+            $harness->assertTrue(str_contains($xhtml, 'REVISED ACCOUNTS'));
+            $harness->assertTrue(str_contains($xhtml, 'Micro-entity accounts'));
             $harness->assertTrue(str_contains($xhtml, 'class="accountspage pagebreak revision-page"'));
+            $harness->assertTrue(str_contains($xhtml, 'These revised accounts were approved on '));
             $harness->assertTrue(str_contains($xhtml, 'ReportAnAmendedRevisedVersionPreviouslyFiledReportTruefalse'));
             $harness->assertTrue(str_contains($xhtml, 'dimension="bus:OriginalRevisedDataDimension">bus:Superseded'));
             $harness->assertTrue(str_contains($xhtml, 'name="core:FixedAssets" contextRef="current_period_end_superseded"'));
@@ -81,6 +84,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue($factDocument->loadXML($xhtml, LIBXML_NONET));
             $factXpath = new DOMXPath($factDocument);
             $factXpath->registerNamespace('ix', 'http://www.xbrl.org/2013/inlineXBRL');
+            $factXpath->registerNamespace('xhtml', 'http://www.w3.org/1999/xhtml');
+            $revisionPage = $factXpath->query('//xhtml:div[@id="revised-accounts-statements"]')->item(0);
+            $harness->assertTrue($revisionPage instanceof DOMElement);
+            $harness->assertTrue(str_contains($revisionPage->textContent, '29 May 2025'));
+            $harness->assertTrue(str_contains($revisionPage->textContent, '21 July 2026'));
             $harness->assertSame(
                 $factXpath->query('//ix:nonFraction | //ix:nonNumeric')->length,
                 (int)($result['fact_count'] ?? 0)
@@ -163,6 +171,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 'prepared_as_statement' => 'Date basis.',
                 'non_compliance_explanation' => 'Original error.',
                 'significant_amendments' => 'Corrections made.',
+                'original_approval_date' => '2025-05-29',
                 'revision_approval_date' => '2026-07-21',
             ]);
             $harness->assertFalse((bool)($result['success'] ?? true));
@@ -175,11 +184,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $declarations = (array)$method->invoke($service, '2025-12-31', [
                 'non_compliance_explanation' => 'The original omitted assets.',
                 'significant_amendments' => 'Assets and reserves were corrected.',
+                'original_approval_date' => '2025-05-29',
                 'revision_approval_date' => '2026-07-21',
             ]);
             $wording = (string)$declarations['prepared_as_statement'];
-            $harness->assertTrue(str_contains($wording, 'by reference to the date of the original annual accounts'));
-            $harness->assertTrue(str_contains($wording, 'have not been prepared as at 21 July 2026'));
+            $harness->assertTrue(str_contains($wording, 'prepared as at 29 May 2025'));
+            $harness->assertTrue(str_contains($wording, 'not as at 21 July 2026'));
             $harness->assertTrue(str_contains($wording, 'do not deal with events occurring between'));
         });
     }

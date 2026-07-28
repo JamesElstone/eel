@@ -49,7 +49,7 @@ final class IxbrlRevisedAccountsArtifactService
         }
 
         $period = \InterfaceDB::fetchOne(
-            'SELECT ap.period_start, ap.period_end, c.company_number
+            'SELECT ap.period_start, ap.period_end, c.company_number, c.company_name
              FROM accounting_periods ap
              INNER JOIN companies c ON c.id = ap.company_id
              WHERE ap.id = :id AND ap.company_id = :company_id
@@ -61,6 +61,7 @@ final class IxbrlRevisedAccountsArtifactService
         }
 
         $periodEnd = (string)$period['period_end'];
+        $input['company_name'] = trim((string)($period['company_name'] ?? ''));
         $declarations = $this->declarations($periodEnd, $input);
         try {
             $supersededFacts = (new IxbrlSupersededFactsService())->facts(
@@ -257,6 +258,14 @@ final class IxbrlRevisedAccountsArtifactService
         }
 
         $approvalDate = trim((string)($declarations['revision_approval_date'] ?? ''));
+        $originalApprovalDate = trim((string)($declarations['original_approval_date'] ?? ''));
+        if (!$this->validDate($originalApprovalDate)) {
+            return [
+                'success' => false,
+                'errors' => ['The original accounts approval date is missing or invalid.'],
+                'warnings' => [],
+            ];
+        }
         $ordinaryApprovalDate = $this->ordinaryApprovalDate($xpath);
         if ($ordinaryApprovalDate === '' || $ordinaryApprovalDate !== $approvalDate) {
             return [
@@ -277,7 +286,11 @@ final class IxbrlRevisedAccountsArtifactService
         }
         $coverHeading = $xpath->query('.//xhtml:h2', $titlePage)->item(0);
         if ($coverHeading instanceof \DOMElement) {
-            $coverHeading->textContent = 'REVISED MICRO-ENTITY ACCOUNTS';
+            $coverHeading->textContent = 'REVISED ACCOUNTS';
+            $coverHeading->parentNode?->insertBefore(
+                $document->createElementNS(self::XHTML_NS, 'p', 'Micro-entity accounts'),
+                $coverHeading->nextSibling
+            );
         }
         $headTitle = $xpath->query('/xhtml:html/xhtml:head/xhtml:title')->item(0);
         if ($headTitle instanceof \DOMElement) {
@@ -320,7 +333,7 @@ final class IxbrlRevisedAccountsArtifactService
         $section->setAttribute('class', 'accountspage pagebreak revision-page');
         $this->appendRevisionPageHeader($document, $section, $xpath);
         $heading = $document->createElementNS(self::XHTML_NS, 'h2');
-        $heading->appendChild($document->createTextNode('Revised accounts statements'));
+        $heading->appendChild($document->createTextNode('REVISED ACCOUNTS'));
         $section->appendChild($heading);
 
         $this->appendFactParagraph($document, $section, '', 'StatementThatRevisedReportReplacesPreviouslyFiledReportForPeriod', (string)$declarations['replaces_statement']);
@@ -328,7 +341,7 @@ final class IxbrlRevisedAccountsArtifactService
         $this->appendFactParagraph($document, $section, '', 'StatementThatThisReportHasBeenPreparedAsDatePreviouslyFiledReport', (string)$declarations['prepared_as_statement']);
         $this->appendFactParagraph($document, $section, 'Respects in which the original accounts did not comply', 'StatementRespectsInWhichPreviouslyFiledReportDidNotComplyWithCompaniesAct2006', (string)$declarations['non_compliance_explanation']);
         $this->appendFactParagraph($document, $section, 'Significant amendments made to remedy those defects', 'StatementSignificantAmendmentsToPreviouslyFiledReport', (string)$declarations['significant_amendments']);
-        $this->appendFactParagraph($document, $section, 'Revision approved on', 'DateApprovalRevisionReport', $approvalDate, true);
+        $this->appendRevisionApprovalStatement($document, $section, $approvalDate);
 
         if ($titlePage->nextSibling instanceof \DOMNode) {
             $body->insertBefore($section, $titlePage->nextSibling);
@@ -569,7 +582,7 @@ final class IxbrlRevisedAccountsArtifactService
         foreach ([
             ['page-header-name', $companyName],
             ['page-header-number', 'Registered number ' . $companyNumber],
-            ['page-header-title', 'Revised accounts statements'],
+            ['page-header-title', 'REVISED ACCOUNTS'],
         ] as [$class, $value]) {
             $item = $document->createElementNS(self::XHTML_NS, 'div');
             $item->setAttribute('class', $class);
@@ -608,21 +621,50 @@ final class IxbrlRevisedAccountsArtifactService
         $section->appendChild($container);
     }
 
+    private function appendRevisionApprovalStatement(
+        \DOMDocument $document,
+        \DOMElement $section,
+        string $approvalDate
+    ): void {
+        $container = $document->createElementNS(self::XHTML_NS, 'div');
+        $container->setAttribute('class', 'revision-statement keepTogether');
+        $paragraph = $document->createElementNS(self::XHTML_NS, 'p');
+        $paragraph->appendChild($document->createTextNode('These revised accounts were approved on '));
+        $fact = $document->createElementNS(self::IX_NS, 'ix:nonNumeric');
+        $fact->setAttribute('name', 'bus:DateApprovalRevisionReport');
+        $fact->setAttribute('contextRef', 'current_period_duration');
+        $fact->setAttribute('format', 'ixt:datedaymonthyearen');
+        $fact->appendChild($document->createTextNode($this->displayDate($approvalDate)));
+        $paragraph->appendChild($fact);
+        $paragraph->appendChild($document->createTextNode('.'));
+        $container->appendChild($paragraph);
+        $section->appendChild($container);
+    }
+
     private function declarations(string $periodEnd, array $input): array
     {
         $displayEnd = $this->displayDate($periodEnd);
         $approvalDate = trim((string)($input['revision_approval_date'] ?? ''));
+        $originalApprovalDate = trim((string)($input['original_approval_date'] ?? ''));
         $displayApprovalDate = $this->displayDate($approvalDate);
+        $displayOriginalApprovalDate = $this->displayDate($originalApprovalDate);
 
         return [
             'report_is_revised' => true,
-            'replaces_statement' => 'These revised accounts replace the accounts previously delivered to the registrar for the period ended ' . $displayEnd . '.',
-            'statutory_accounts_statement' => 'These revised accounts are now the statutory accounts for the period ended ' . $displayEnd . '.',
-            'prepared_as_statement' => 'These revised accounts have been prepared by reference to the date of the original annual accounts and have not been prepared as at '
+            'replaces_statement' => 'These revised accounts replace the original annual accounts of '
+                . (trim((string)($input['company_name'] ?? '')) !== ''
+                    ? trim((string)$input['company_name'])
+                    : 'the company')
+                . ' for the period ended ' . $displayEnd . '.',
+            'statutory_accounts_statement' => 'They are now the statutory accounts of the company for that financial year.',
+            'prepared_as_statement' => 'They have been prepared as at ' . $displayOriginalApprovalDate
+                . ', being the date of the original annual accounts, and not as at '
                 . $displayApprovalDate
-                . ', the date of revision. Consequently, they do not deal with events occurring between the date of the original annual accounts and the date of revision.',
+                . '. Accordingly, they do not deal with events occurring between those dates.',
             'non_compliance_explanation' => trim((string)($input['non_compliance_explanation'] ?? $input['original_non_compliance_explanation'] ?? '')),
             'significant_amendments' => trim((string)($input['significant_amendments'] ?? '')),
+            'original_approval_date' => $originalApprovalDate,
+            'original_approval_evidence' => (array)($input['original_approval_evidence'] ?? []),
             'revision_approval_date' => $approvalDate,
         ];
     }
@@ -635,6 +677,10 @@ final class IxbrlRevisedAccountsArtifactService
         }
         if ((int)($input['original_document_id'] ?? 0) <= 0) {
             $errors[] = 'Select the exact original Companies House filing.';
+        }
+        $originalApprovalDate = trim((string)($input['original_approval_date'] ?? ''));
+        if (!$this->validDate($originalApprovalDate)) {
+            $errors[] = 'The original accounts approval date is missing or invalid.';
         }
         $nonCompliance = trim((string)($input['non_compliance_explanation'] ?? $input['original_non_compliance_explanation'] ?? ''));
         if ($nonCompliance === '') {

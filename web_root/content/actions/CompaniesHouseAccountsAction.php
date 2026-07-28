@@ -237,7 +237,12 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         return $this->service()->prepareAccounts(
             $companyId,
             $accountingPeriodId,
-            [],
+            [
+                'non_compliance_explanation' => trim((string)$request->input('non_compliance_explanation', '')),
+                'significant_amendments' => trim((string)$request->input('significant_amendments', '')),
+                'revision_approval_date' => trim((string)$request->input('revision_approval_date', '')),
+                'original_software_filing_confirmed' => (bool)$request->input('original_software_filing_confirmed', false),
+            ],
             $this->actor($request),
             $progress
         );

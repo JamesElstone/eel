@@ -56,6 +56,41 @@ final class IxbrlArtifactDownloadService
         );
     }
 
+    /** Locates the current prepared revised statutory artifact for another filing destination. */
+    public function revisedAccounts(int $companyId, int $accountingPeriodId): array
+    {
+        $accounts = $this->accounts($companyId, $accountingPeriodId);
+        if (empty($accounts['ok'])) {
+            return $this->failure('stale', 'Generate and validate the current Accounting iXBRL before using revised accounts.');
+        }
+        $row = \InterfaceDB::fetchOne(
+            'SELECT id, lifecycle, ixbrl_generation_run_id, filing_type,
+                    artifact_path, artifact_sha256,
+                    revised_artifact_path, revised_artifact_sha256
+             FROM companies_house_accounts_submissions
+             WHERE company_id = :company_id
+               AND accounting_period_id = :period_id
+               AND filing_type = :filing_type
+             ORDER BY id DESC LIMIT 1',
+            ['company_id' => $companyId, 'period_id' => $accountingPeriodId, 'filing_type' => 'revised']
+        );
+        if (!is_array($row)) {
+            return $this->failure('missing', 'Prepare the current shared revised accounts artifact before filing with HMRC.');
+        }
+        $error = $this->companiesHouseRowError($row, (int)($accounts['run_id'] ?? 0));
+        if ($error !== null) {
+            return $this->failure('stale', $error);
+        }
+        return $this->verifiedFile(
+            $row,
+            !empty($row['artifact_path']) ? 'artifact_path' : 'revised_artifact_path',
+            '',
+            !empty($row['artifact_sha256']) ? 'artifact_sha256' : 'revised_artifact_sha256',
+            !empty($row['artifact_sha256']) ? 'artifact_sha256' : 'revised_artifact_sha256',
+            (int)$accounts['run_id']
+        );
+    }
+
     public function computation(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
     {
         $row = \InterfaceDB::fetchOne(

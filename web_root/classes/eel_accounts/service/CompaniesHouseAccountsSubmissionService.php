@@ -648,7 +648,8 @@ final class CompaniesHouseAccountsSubmissionService
             'metadata' => $this->revisedArtifactEvidenceMetadata(
                 (int)($artifact['base_run_id'] ?? 0),
                 $validation,
-                (int)($artifact['fact_count'] ?? 0)
+                (int)($artifact['fact_count'] ?? 0),
+                (array)($artifact['declarations'] ?? [])
             ),
         ]);
 
@@ -2314,8 +2315,19 @@ final class CompaniesHouseAccountsSubmissionService
         }
         $supersededFacts = [];
         $originalDocumentId = (int)($eligibility['original_document_id'] ?? 0);
-        $periodEnd = trim((string)($model['accounting_period']['period_end'] ?? ''));
-        if ($originalDocumentId > 0 && $this->validStatutoryDate($periodEnd)) {
+        $periodEnd = trim((string)\InterfaceDB::fetchColumn(
+            'SELECT period_end FROM accounting_periods WHERE id = :id AND company_id = :company_id LIMIT 1',
+            ['id' => $accountingPeriodId, 'company_id' => $companyId]
+        ));
+        if (!$this->validStatutoryDate($periodEnd)) {
+            throw new \RuntimeException('The accounting period does not have a valid period end date.');
+        }
+        $originalApprovalEvidence = $this->originalApprovalEvidence(
+            $companyId,
+            $originalDocumentId,
+            $periodEnd
+        );
+        if ($originalDocumentId > 0) {
             try {
                 $supersededFacts = (new IxbrlSupersededFactsService())->facts(
                     $companyId,
@@ -2338,9 +2350,69 @@ final class CompaniesHouseAccountsSubmissionService
             'non_compliance_explanation' => $disclosures['non_compliance_explanation'],
             'original_non_compliance_explanation' => $disclosures['non_compliance_explanation'],
             'significant_amendments' => $disclosures['significant_amendments'],
+            'original_approval_date' => (string)$originalApprovalEvidence['approval_date'],
+            'original_approval_evidence' => $originalApprovalEvidence,
             'revision_approval_date' => $approvalDate,
             'original_software_filing_confirmed' => true,
         ]);
+    }
+
+    /** @return array{approval_date:string,document_id:int,external_document_id:string,fact_id:int,raw_value:string,context_ref:string,source_hash:string} */
+    private function originalApprovalEvidence(int $companyId, int $documentId, string $periodEnd): array
+    {
+        if ($documentId <= 0) {
+            throw new \RuntimeException('Select the exact original Companies House filing.');
+        }
+        foreach (['companies_house_documents', 'companies_house_document_facts', 'companies_house_document_contexts', 'companies_house_taxonomy_concepts'] as $table) {
+            if (!\InterfaceDB::tableExists($table)) {
+                throw new \RuntimeException('The parsed Companies House filing facts are unavailable. Refresh the original filing.');
+            }
+        }
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT d.id AS document_id, d.document_id AS external_document_id, d.raw_content_hash AS source_hash,
+                    f.id AS fact_id, f.raw_value, f.normalised_date, ctx.context_ref
+             FROM companies_house_documents d
+             INNER JOIN companies_house_document_facts f ON f.document_fk = d.id
+             INNER JOIN companies_house_document_contexts ctx ON ctx.id = f.context_fk
+             INNER JOIN companies_house_taxonomy_concepts concept ON concept.id = f.concept_fk
+             WHERE d.id = :document_id
+               AND (d.company_id = :company_id OR d.company_id IS NULL)
+               AND concept.short_name = :concept
+               AND f.is_latest_year_fact = 1
+               AND (ctx.instant_date = :period_end_instant OR ctx.period_end = :period_end_duration)
+             ORDER BY f.id',
+            [
+                'document_id' => $documentId,
+                'company_id' => $companyId,
+                'concept' => 'DateAuthorisationFinancialStatementsForIssue',
+                'period_end_instant' => $periodEnd,
+                'period_end_duration' => $periodEnd,
+            ]
+        );
+        $dates = [];
+        foreach ($rows as $row) {
+            $date = trim((string)($row['normalised_date'] ?? ''));
+            if (!$this->validStatutoryDate($date)) {
+                throw new \RuntimeException('The original filing contains an invalid original accounts approval date.');
+            }
+            $dates[$date] = $row;
+        }
+        if ($dates === []) {
+            throw new \RuntimeException('The selected original filing has no approval date for this accounting period. Refresh the original iXBRL filing.');
+        }
+        if (count($dates) !== 1) {
+            throw new \RuntimeException('The selected original filing contains conflicting approval dates.');
+        }
+        $row = array_values($dates)[0];
+        return [
+            'approval_date' => (string)$row['normalised_date'],
+            'document_id' => (int)$row['document_id'],
+            'external_document_id' => (string)$row['external_document_id'],
+            'fact_id' => (int)$row['fact_id'],
+            'raw_value' => (string)($row['raw_value'] ?? ''),
+            'context_ref' => (string)($row['context_ref'] ?? ''),
+            'source_hash' => (string)($row['source_hash'] ?? ''),
+        ];
     }
 
     private function authoritativeRevisionApprovalDate(
@@ -2648,8 +2720,17 @@ final class CompaniesHouseAccountsSubmissionService
             );
         }
 
-        $nonComplianceText = $this->finaliseRevisionDisclosure($nonCompliance);
-        $amendmentsText = $this->finaliseRevisionDisclosure($amendments);
+        $suppliedNonCompliance = trim((string)(
+            $input['non_compliance_explanation']
+                ?? $input['original_non_compliance_explanation']
+                ?? ''
+        ));
+        $nonComplianceText = $suppliedNonCompliance !== ''
+            ? $suppliedNonCompliance
+            : $this->finaliseRevisionDisclosure($nonCompliance);
+        $amendmentsText = $suppliedAmendments !== ''
+            ? $suppliedAmendments
+            : $this->finaliseRevisionDisclosure($amendments);
         if (mb_strtolower($nonComplianceText) === mb_strtolower($amendmentsText)) {
             $amendmentsText = $this->finaliseRevisionDisclosure([
                 $amendmentsText,
@@ -3455,11 +3536,13 @@ final class CompaniesHouseAccountsSubmissionService
     private function revisedArtifactEvidenceMetadata(
         int $baseRunId,
         array $validation,
-        int $factCount = 0
+        int $factCount = 0,
+        array $declarations = []
     ): array {
         return [
             'base_run_id' => $baseRunId,
             'fact_count' => max(0, $factCount),
+            'original_approval_evidence' => (array)($declarations['original_approval_evidence'] ?? []),
             // Preserve the complete Arelle result so warnings, the exact
             // validated hash and immutable log provenance survive the prepare
             // redirect and can be reviewed before submission.

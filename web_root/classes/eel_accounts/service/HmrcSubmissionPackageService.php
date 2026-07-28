@@ -33,7 +33,7 @@ final class HmrcSubmissionPackageService
     {
         return $this->accountsLocator !== null
             ? (array)($this->accountsLocator)($companyId, $accountingPeriodId)
-            : (new IxbrlFilingArtifactService())->locate($companyId, $accountingPeriodId);
+            : (new IxbrlStatutoryAccountsArtifactService())->locate($companyId, $accountingPeriodId);
     }
 
     public function locateComputationsIxbrl(int $companyId, int $accountingPeriodId): array

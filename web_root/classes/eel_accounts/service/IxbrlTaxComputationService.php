@@ -24,6 +24,9 @@ final class IxbrlTaxComputationService
         'computation.summary.disallowable_add_backs' => 'Disallowable expenses added back',
         'computation.summary.capital_add_backs' => 'Capital expenditure added back',
         'computation.summary.depreciation_add_back' => 'Depreciation added back',
+        'report.accounts_adjustment.revised_figure_before_tax' => 'Revised figure before tax',
+        'report.accounts_adjustment.adjusted_loss_of_period' => 'Adjusted loss of period',
+        'report.accounts_adjustment.adjusted_profit_for_period' => 'Adjusted profit for the period',
         'computation.summary.capital_allowances' => 'Capital allowances',
         'computation.summary.taxable_before_losses' => 'Trading profit or loss for the period',
         'computation.summary.losses_brought_forward' => 'Loss brought forward',
@@ -99,6 +102,7 @@ final class IxbrlTaxComputationService
         if (preg_match('/^[a-f0-9]{64}$/i', (string)($profile['content_hash'] ?? '')) !== 1) {
             return $this->failRun($runId, 'The active computation mapping profile has no valid content hash.');
         }
+        $reportProfileHash = $this->reportProfileHash((string)$profile['content_hash']);
         $mappingModel = $model;
         $ct600aTax = round((float)($model['model']['ct600a']['tax_payable'] ?? 0), 2);
         $ordinaryTax = round((float)($model['model']['computation']['summary']['ordinary_corporation_tax'] ?? 0), 2);
@@ -195,7 +199,7 @@ final class IxbrlTaxComputationService
                     'package_id' => (int)$package['id'],
                     'package_hash' => $packageHash,
                     'profile_id' => (int)$profile['id'],
-                    'profile_hash' => (string)$profile['content_hash'],
+                    'profile_hash' => $reportProfileHash,
                     'basis_version' => (string)$model['basis_version'],
                     'basis_hash' => (string)$model['basis_hash'],
                     'path' => $artifact['path'],
@@ -225,7 +229,7 @@ final class IxbrlTaxComputationService
                 'validator_version' => $validatorVersion,
                 'validation_status' => $externalStatus,
                 'identifier_embedded' => true,
-                'metadata' => ['computation_run_id' => $runId, 'mapping_hash' => (string)$profile['content_hash']],
+                'metadata' => ['computation_run_id' => $runId, 'mapping_hash' => $reportProfileHash],
             ]);
             return [
                 'success' => $fileable,
@@ -363,18 +367,20 @@ final class IxbrlTaxComputationService
                 }
                 $contextDefinition['dimensions'][$dimension] = $member;
             }
+            $contextPeriod = $this->contextPeriod($mapping, $model);
             $contextId = 'ct_' . substr(hash('sha256', (string)$mapping['period_type'] . '|'
-                . (string)json_encode($contextDefinition, JSON_UNESCAPED_SLASHES)), 0, 12);
+                . (string)json_encode($contextDefinition, JSON_UNESCAPED_SLASHES) . '|'
+                . (string)$contextPeriod['start_date'] . '|' . (string)$contextPeriod['end_date']), 0, 12);
             if (!isset($contexts[$contextId])) {
                 $contexts[$contextId] = [
                     'id' => $contextId,
                     'identifier' => (string)$model['model']['identity']['company_number'],
-                    'start_date' => (string)$run['period_start'],
-                    'end_date' => (string)$run['period_end'],
+                    'start_date' => (string)$contextPeriod['start_date'],
+                    'end_date' => (string)$contextPeriod['end_date'],
                 ] + $contextDefinition;
                 if ((string)$mapping['period_type'] === 'instant') {
                     unset($contexts[$contextId]['start_date'], $contexts[$contextId]['end_date']);
-                    $contexts[$contextId]['instant'] = (string)$run['period_end'];
+                    $contexts[$contextId]['instant'] = (string)$contextPeriod['end_date'];
                 }
             }
             $namespaces[$prefix] = (string)$mapping['namespace_uri'];
@@ -496,38 +502,45 @@ final class IxbrlTaxComputationService
         if (abs($adjusted - round($taxableBeforeLosses + $capitalAllowances, 2)) > 0.009) {
             throw new \RuntimeException('The frozen adjusted result does not reconcile to capital allowances and the trading result.');
         }
-        $tradingRows = $this->factMoneyRow($generator, $facts, 'computation.summary.accounting_profit')
-            . $this->factMoneyRow($generator, $facts, 'computation.summary.disallowable_add_backs')
-            . $this->factMoneyRow($generator, $facts, 'computation.summary.capital_add_backs')
-            . $this->factMoneyRow($generator, $facts, 'computation.summary.depreciation_add_back');
-        $roundingAdjustment = round((float)($allocation['apportionment_rounding_adjustment'] ?? 0), 2);
-        if (abs($roundingAdjustment) >= 0.005) {
+        $profileRows = (array)($report['accounts_adjustment_rows'] ?? []);
+        if ($profileRows !== []) {
+            $tradingRows = $this->reportMoneyRows($generator, $facts, $profileRows);
+        } else {
+            $tradingRows = $this->factMoneyRow($generator, $facts, 'computation.summary.accounting_profit')
+                . $this->factMoneyRow($generator, $facts, 'computation.summary.disallowable_add_backs')
+                . $this->factMoneyRow($generator, $facts, 'computation.summary.capital_add_backs')
+                . $this->factMoneyRow($generator, $facts, 'computation.summary.depreciation_add_back');
+        }
+        if ($profileRows === []) {
+            $roundingAdjustment = round((float)($allocation['apportionment_rounding_adjustment'] ?? 0), 2);
+            if (abs($roundingAdjustment) >= 0.005) {
+                $tradingRows .= $this->moneyRow(
+                    $generator,
+                    'Apportionment rounding adjustment',
+                    $roundingAdjustment
+                );
+            }
             $tradingRows .= $this->moneyRow(
                 $generator,
-                'Apportionment rounding adjustment',
-                $roundingAdjustment
-            );
-        }
-        $tradingRows .= $this->moneyRow(
-            $generator,
-            'Adjusted profit or loss before capital allowances',
-            $adjusted,
-            false,
-            'subtotal'
-        )
-            . $this->factMoneyRow(
-                $generator,
-                $facts,
-                'computation.summary.capital_allowances',
-                true
-            )
-            . $this->factMoneyRow(
-                $generator,
-                $facts,
-                'computation.summary.taxable_before_losses',
+                'Adjusted profit or loss before capital allowances',
+                $adjusted,
                 false,
-                'final-total'
-            );
+                'subtotal'
+            )
+                . $this->factMoneyRow(
+                    $generator,
+                    $facts,
+                    'computation.summary.capital_allowances',
+                    true
+                )
+                . $this->factMoneyRow(
+                    $generator,
+                    $facts,
+                    'computation.summary.taxable_before_losses',
+                    false,
+                    'final-total'
+                );
+        }
         $html .= '<div class="ct-section trading-section"><h2>Trading profit or loss computation</h2>'
             . '<table class="financial-table"><thead><tr><th scope="col">Trading computation</th>'
             . '<th scope="col" class="amount">£</th></tr></thead><tbody>' . $tradingRows . '</tbody></table></div>';
@@ -858,6 +871,39 @@ final class IxbrlTaxComputationService
             . $generator->escape((string)$fact['label']) . '</th><td class="amount">' . $display . '</td></tr>';
     }
 
+    /** @param list<array<string,mixed>> $rows */
+    private function reportMoneyRows(IxbrlGeneratorService $generator, array $facts, array $rows): string
+    {
+        $html = '';
+        foreach ($rows as $row) {
+            $label = trim((string)($row['label'] ?? ''));
+            $class = trim((string)($row['class'] ?? ''));
+            $factKey = trim((string)($row['fact_key'] ?? ''));
+            if ($label === '') {
+                throw new \RuntimeException('The computation report profile contains a row without a visible label.');
+            }
+            if ($factKey !== '') {
+                if (!isset($facts[$factKey])) {
+                    throw new \RuntimeException('The computation report profile refers to an unavailable fact ' . $factKey . '.');
+                }
+                $html .= '<tr' . ($class !== '' ? ' class="' . $generator->escape($class) . '"' : '') . '><th scope="row">'
+                    . $generator->escape($label) . '</th><td class="amount">' . $this->factHtml($facts, $factKey) . '</td></tr>';
+                continue;
+            }
+            if (!is_numeric($row['amount'] ?? null)) {
+                throw new \RuntimeException('The computation report profile contains an untagged row without an amount.');
+            }
+            $html .= $this->moneyRow(
+                $generator,
+                $label,
+                round((float)$row['amount'], 2),
+                (string)($row['direction'] ?? '') === 'deduction',
+                $class
+            );
+        }
+        return $html;
+    }
+
     private function moneyRow(
         IxbrlGeneratorService $generator,
         string $label,
@@ -1000,6 +1046,26 @@ CSS;
         ];
     }
 
+    /** @return array{start_date:string,end_date:string} */
+    private function contextPeriod(array $mapping, array $model): array
+    {
+        $role = trim((string)($mapping['context_role'] ?? 'ct_period'));
+        if ($role === 'ct_period') {
+            $period = (array)($model['run'] ?? []);
+            $start = (string)($period['period_start'] ?? '');
+            $end = (string)($period['period_end'] ?? '');
+        } elseif ($role === 'statutory_accounts_period') {
+            $period = (array)($model['model']['accounting_period'] ?? []);
+            $start = (string)($period['start_date'] ?? '');
+            $end = (string)($period['end_date'] ?? '');
+        } else {
+            throw new \RuntimeException('The computation report profile uses an unsupported context role.');
+        }
+        $this->longDate($start);
+        $this->longDate($end);
+        return ['start_date' => $start, 'end_date' => $end];
+    }
+
     /** Build the human-readable report solely from the verified frozen model and its resolved mappings. */
     public function buildReportModel(array $model, array $mappings): array
     {
@@ -1043,7 +1109,8 @@ CSS;
         ] as $key) {
             $this->money($summary, $key);
         }
-        $included = array_values(array_filter($mappings, static fn(array $mapping): bool => array_key_exists('source_value', $mapping)));
+        $profile = (new HmrcCtComputationReportProfile())->apply($model, $mappings);
+        $included = array_values(array_filter((array)$profile['mappings'], static fn(array $mapping): bool => array_key_exists('source_value', $mapping)));
         usort($included, fn(array $a, array $b): int => [self::SECTION_ORDER[(string)$a['presentation_section']] ?? 999, (int)$a['sort_order'], (int)$a['id']] <=> [self::SECTION_ORDER[(string)$b['presentation_section']] ?? 999, (int)$b['sort_order'], (int)$b['id']]);
         if ($included === []) {
             throw new \RuntimeException('The active profile produced no computation report facts.');
@@ -1071,6 +1138,8 @@ CSS;
             'framework_label' => $frameworkLabel,
             'sections' => $sections,
             'mappings' => $included,
+            'accounts_adjustment_rows' => (array)$profile['accounts_adjustment_rows'],
+            'format_version' => (string)$profile['format_version'],
         ];
     }
 
@@ -1108,7 +1177,10 @@ CSS;
             || (int)($stored['ixbrl_mapping_profile_id'] ?? 0) !== (int)($profile['id'] ?? 0)
             || preg_match('/^[a-f0-9]{64}$/i', (string)($profile['content_hash'] ?? '')) !== 1
             || preg_match('/^[a-f0-9]{64}$/i', (string)($stored['ixbrl_mapping_hash'] ?? '')) !== 1
-            || !hash_equals((string)($stored['ixbrl_mapping_hash'] ?? ''), (string)($profile['content_hash'] ?? ''))) {
+            || !hash_equals(
+                (string)($stored['ixbrl_mapping_hash'] ?? ''),
+                $this->reportProfileHash((string)($profile['content_hash'] ?? ''))
+            )) {
             $errors[] = 'The computation mapping profile is stale or changed.';
         }
         $outputHash = strtolower(trim((string)($stored['output_sha256'] ?? '')));
@@ -1127,6 +1199,11 @@ CSS;
             }
         }
         return array_values(array_unique($errors));
+    }
+
+    private function reportProfileHash(string $mappingProfileHash): string
+    {
+        return hash('sha256', $mappingProfileHash . '|' . HmrcCtComputationReportProfile::VERSION);
     }
 
     private function failRun(int $runId, string $message): array

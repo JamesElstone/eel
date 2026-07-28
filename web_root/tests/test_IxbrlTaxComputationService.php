@@ -28,6 +28,13 @@ function ixbrlTaxComputationModel(array $overrides = []): array
             'ct_period_days' => 365,
             'ct_period_count' => 2,
             'apportionment_rounding_adjustment' => 0.01,
+            'whole_period_values' => [
+                'accounting_profit' => -127.11,
+                'disallowable_add_backs' => 0.00,
+                'capital_add_backs' => 0.00,
+                'depreciation_add_back' => 197.41,
+                'adjusted_result_before_capital_allowances' => 70.30,
+            ],
             'allocated_values' => ['adjusted_result_before_capital_allowances' => 65.63],
         ],
     ], (array)($overrides['summary'] ?? []));
@@ -154,7 +161,7 @@ function ixbrlTaxComputationMappings(array $model): array
         $result = $service->generateFilingExport(0, 0, 0);
         $h->assertSame(false, $result['success']);
     });
-    $h->check($service::class, 'renders a human-readable A4 computation without changing tagged facts', static function () use ($h, $service): void {
+    $h->check($service::class, 'uses Format 1.1 whole-period accounts facts for a split accounting period', static function () use ($h, $service): void {
         $model = ixbrlTaxComputationModel();
         $method = new ReflectionMethod($service::class, 'renderMappedDocument');
         $method->setAccessible(true);
@@ -172,6 +179,7 @@ function ixbrlTaxComputationMappings(array $model): array
         $h->assertTrue($document->loadXML($xhtml));
         $xpath = new DOMXPath($document);
         $xpath->registerNamespace('ix', \eel_accounts\Service\IxbrlGeneratorService::IX_NAMESPACE);
+        $xpath->registerNamespace('xbrli', 'http://www.xbrl.org/2003/instance');
         $h->assertSame(
             'ELSTONE ELECTRICALS LIMITED: Corporation Tax computation for the period ended 4 September 2023',
             trim((string)$xpath->evaluate('string(/*[local-name()="html"]/*[local-name()="head"]/*[local-name()="title"])'))
@@ -179,8 +187,11 @@ function ixbrlTaxComputationMappings(array $model): array
         $body = (string)$xpath->evaluate('string(/*[local-name()="html"]/*[local-name()="body"])');
         $h->assertTrue(str_contains($body, 'FRS 105 micro-entity'));
         $h->assertTrue(str_contains($body, '365 / 391 days'));
-        $h->assertTrue(str_contains($body, 'Apportionment rounding adjustment'));
-        $h->assertTrue(str_contains($body, 'Adjusted profit or loss before capital allowances'));
+        $h->assertFalse(str_contains($body, 'Apportionment rounding adjustment'));
+        $h->assertTrue(str_contains($body, 'Profit/(loss) before tax per statutory accounts'));
+        $h->assertTrue(str_contains($body, 'Accounting adjustment for depreciation'));
+        $h->assertTrue(str_contains($body, 'Revised figure before tax'));
+        $h->assertTrue(str_contains($body, 'Time apportionment figure (365 / 391 days)'));
         $h->assertTrue(str_contains($body, '65.63'));
         $h->assertTrue(str_contains($body, 'Post-1 April 2017 trading losses'));
         $h->assertTrue(str_contains($body, 'Deductions allowance'));
@@ -195,8 +206,18 @@ function ixbrlTaxComputationMappings(array $model): array
         $profit = $xpath->query('//ix:nonFraction[@name="ct:ProfitLossPerAccounts"]')->item(0);
         $h->assertTrue($profit instanceof DOMElement);
         $h->assertSame('-', $profit?->getAttribute('sign'));
-        $h->assertSame('118.66', $profit?->textContent);
-        $h->assertTrue(str_contains((string)$profit?->parentNode?->textContent, '(118.66)'));
+        $h->assertSame('127.11', $profit?->textContent);
+        $profitContext = (string)$profit?->getAttribute('contextRef');
+        $h->assertSame('2022-09-05', $xpath->evaluate('string(//xbrli:context[@id="' . $profitContext . '"]/xbrli:period/xbrli:startDate)'));
+        $h->assertSame('2023-09-30', $xpath->evaluate('string(//xbrli:context[@id="' . $profitContext . '"]/xbrli:period/xbrli:endDate)'));
+        $depreciation = $xpath->query('//ix:nonFraction[@name="ct:AdjustmentsDepreciation"]')->item(0);
+        $h->assertSame('197.41', $depreciation?->textContent);
+        $revised = $xpath->query('//ix:nonFraction[@name="ct:AdjustedProfitOrLossBeforeAccountingPeriodAdjustments"]')->item(0);
+        $h->assertSame('70.30', $revised?->textContent);
+        $loss = $xpath->query('//ix:nonFraction[@name="ct:AdjustedLossOfPeriod"]')->item(0);
+        $h->assertSame('563.21', $loss?->textContent);
+        $h->assertSame(0, $xpath->query('//ix:nonFraction[@name="ct:AdjustedProfitForThePeriod"]')->length);
+        $h->assertSame(0, $xpath->query('//ix:nonFraction[@name="ct:ProfitsBeforeOtherDeductionsAndReliefs"]')->length);
         $allowances = $xpath->query('//ix:nonFraction[@name="ct:TotalCapitalAllowances"]')->item(0);
         $h->assertTrue($allowances instanceof DOMElement);
         $h->assertSame('', $allowances?->getAttribute('sign'));
@@ -206,7 +227,7 @@ function ixbrlTaxComputationMappings(array $model): array
             [(string)$rendered['schema_ref']]
         ));
     });
-    $h->check($service::class, 'preserves legacy frozen loss pennies in the visible movement', static function () use ($h, $service): void {
+    $h->check($service::class, 'uses the prescribed adjusted profit fact for the second split CT period', static function () use ($h, $service): void {
         $model = ixbrlTaxComputationModel([
             'period_start' => '2023-09-05',
             'period_end' => '2023-09-30',
@@ -214,10 +235,10 @@ function ixbrlTaxComputationMappings(array $model): array
                 'accounting_profit' => -8.45,
                 'depreciation_add_back' => 13.13,
                 'capital_allowances' => 0.00,
-                'taxable_before_losses' => 4.68,
+                'taxable_before_losses' => 4.67,
                 'loss_created_in_period' => 0.00,
-                'losses_brought_forward' => 563.22,
-                'losses_used' => 4.68,
+                'losses_brought_forward' => 563.21,
+                'losses_used' => 4.67,
                 'losses_carried_forward' => 558.54,
                 'accounting_allocation_basis' => [
                     'method' => 'whole_accounting_period_inclusive_days',
@@ -225,7 +246,14 @@ function ixbrlTaxComputationMappings(array $model): array
                     'accounting_period_days' => 391,
                     'ct_period_days' => 26,
                     'ct_period_count' => 2,
-                    'allocated_values' => ['adjusted_result_before_capital_allowances' => 4.68],
+                    'whole_period_values' => [
+                        'accounting_profit' => -127.11,
+                        'disallowable_add_backs' => 0.00,
+                        'capital_add_backs' => 0.00,
+                        'depreciation_add_back' => 197.41,
+                        'adjusted_result_before_capital_allowances' => 70.30,
+                    ],
+                    'allocated_values' => ['adjusted_result_before_capital_allowances' => 4.67],
                 ],
             ],
         ]);
@@ -242,12 +270,29 @@ function ixbrlTaxComputationMappings(array $model): array
         $h->assertTrue($document->loadXML($xhtml));
         $xpath = new DOMXPath($document);
         $xpath->registerNamespace('ix', \eel_accounts\Service\IxbrlGeneratorService::IX_NAMESPACE);
+        $xpath->registerNamespace('xbrli', 'http://www.xbrl.org/2003/instance');
         $broughtForward = $xpath->query('//ix:nonFraction[@name="ct:TradingLossesBroughtForward"]')->item(0);
         $used = $xpath->query('//ix:nonFraction[@name="ct:TradingLossesBroughtForwardAmountUsedAgainstTotalProfits"]')->item(0);
         $carriedForward = $xpath->query('//ix:nonFraction[@name="ct:BalanceOfLossesBroughtForwardCarriedForward"]')->item(0);
-        $h->assertSame('563.22', $broughtForward?->textContent);
-        $h->assertSame('4.68', $used?->textContent);
+        $h->assertSame('563.21', $broughtForward?->textContent);
+        $h->assertSame('4.67', $used?->textContent);
         $h->assertSame('558.54', $carriedForward?->textContent);
+        $body = (string)$xpath->evaluate('string(/*[local-name()="html"]/*[local-name()="body"])');
+        $h->assertTrue(str_contains($body, '26 / 391 days'));
+        $h->assertTrue(str_contains($body, 'Time apportionment figure (26 / 391 days)'));
+        $h->assertFalse(str_contains($body, 'Apportionment rounding adjustment'));
+        $profit = $xpath->query('//ix:nonFraction[@name="ct:ProfitLossPerAccounts"]')->item(0);
+        $h->assertSame('127.11', $profit?->textContent);
+        $depreciation = $xpath->query('//ix:nonFraction[@name="ct:AdjustmentsDepreciation"]')->item(0);
+        $h->assertSame('197.41', $depreciation?->textContent);
+        $revised = $xpath->query('//ix:nonFraction[@name="ct:AdjustedProfitOrLossBeforeAccountingPeriodAdjustments"]')->item(0);
+        $h->assertSame('70.30', $revised?->textContent);
+        $adjustedProfit = $xpath->query('//ix:nonFraction[@name="ct:AdjustedProfitForThePeriod"]')->item(0);
+        $h->assertSame('4.67', $adjustedProfit?->textContent);
+        $profitContext = (string)$adjustedProfit?->getAttribute('contextRef');
+        $h->assertSame('2023-09-05', $xpath->evaluate('string(//xbrli:context[@id="' . $profitContext . '"]/xbrli:period/xbrli:startDate)'));
+        $h->assertSame('2023-09-30', $xpath->evaluate('string(//xbrli:context[@id="' . $profitContext . '"]/xbrli:period/xbrli:endDate)'));
+        $h->assertSame(0, $xpath->query('//ix:nonFraction[@name="ct:AdjustedLossOfPeriod"]')->length);
     });
     $h->check($service::class, 'renders the Section 455 repayment narrative in its qualifying CT period only', static function () use ($h, $service): void {
         $firstPeriod = ixbrlTaxComputationModel([

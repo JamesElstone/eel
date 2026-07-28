@@ -603,7 +603,7 @@ final class IxbrlAccountingService
 
     private function pageHeader(array $indexed, string $title): string
     {
-        return '<table class="page-header" role="presentation"><colgroup>'
+        return '<table class="page-header"><colgroup>'
             . '<col class="page-header-name-column"/><col class="page-header-number-column"/>'
             . '</colgroup><tbody><tr><td class="page-header-name">'
             . $this->inlineFact($this->currentFact($indexed, 'entity_name'))

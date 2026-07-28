@@ -1001,6 +1001,10 @@ $harness->run(IxbrlAction::class, static function (GeneratedServiceClassTestHarn
             . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'IxbrlAction.php');
         $harness->assertTrue(str_contains($source, "\$intent === 'generate_all_filing_ixbrl'"));
         $harness->assertTrue(str_contains($source, '$this->generatePreview('));
+        $harness->assertTrue(str_contains(
+            $source,
+            'HMRC Accounting iXBRL failed Arelle validation. Corporation Tax and Companies House generation will not run.'
+        ));
         $harness->assertTrue(str_contains($source, '$this->generateComputation('));
         $harness->assertTrue(str_contains($source, 'CompaniesHouseAccountsSubmissionService'));
         $harness->assertTrue(str_contains($source, 'prepareAccounts($companyId, $accountingPeriodId, [], $actor)'));

@@ -120,6 +120,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             )->length);
             $headers = $xpath->query('//xhtml:table[contains(@class, "page-header")]');
             $harness->assertSame(3, $headers->length);
+            $harness->assertSame(0, $xpath->query('//xhtml:table[@role]')->length);
             foreach ($headers as $header) {
                 $harness->assertSame(2, $xpath->query('./xhtml:tbody/xhtml:tr', $header)->length);
                 $harness->assertSame(2, $xpath->query('./xhtml:tbody/xhtml:tr[1]/xhtml:td', $header)->length);

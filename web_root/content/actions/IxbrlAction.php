@@ -315,9 +315,19 @@ final class IxbrlAction implements ActionInterfaceFramework
         if ((string)($external['status'] ?? '') === 'passed') {
             $result['messages'][] = 'Arelle external validation passed for the generated file.';
         } else {
-            $result['warnings'] = (array)($external['errors'] ?? [
-                'The export was generated, but Arelle validation did not pass. Review the validation status before filing.',
+            $errors = (array)($external['errors'] ?? [
+                'The export was generated, but Arelle validation did not pass.',
             ]);
+            $progress?->report(
+                'HMRC Accounting iXBRL failed Arelle validation. Corporation Tax and Companies House generation will not run.',
+                $validationPercent ?? 0
+            );
+            return [
+                'success' => false,
+                'errors' => $errors,
+                'warnings' => [],
+                'messages' => ['The HMRC Accounting iXBRL was generated but did not pass Arelle validation.'],
+            ];
         }
 
         return $result;

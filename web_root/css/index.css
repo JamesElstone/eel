@@ -1058,6 +1058,41 @@ body.is-long-action-active #sidebar-shell {
   overflow: hidden;
 }
 
+#flash-messages .alert {
+  position: relative;
+  padding-right: 42px;
+}
+
+.flash-dismiss {
+  appearance: none;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: currentColor;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.flash-dismiss:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.flash-dismiss:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
 .alert.is-dismissing {
   opacity: 0;
   transform: translateY(-8px);

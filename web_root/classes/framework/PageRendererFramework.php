@@ -556,7 +556,7 @@ final class PageRendererFramework
 
         foreach ($flashMessages as $message) {
             if (!is_array($message)) {
-                $html .= '<div class="alert success">' . HelperFramework::escape((string)$message) . '</div>';
+                $html .= $this->renderFlashMessage('success', HelperFramework::escape((string)$message));
                 continue;
             }
 
@@ -565,10 +565,18 @@ final class PageRendererFramework
             $messageHtml = array_key_exists('message_html', $message)
                 ? (string)($message['message_html'] ?? '')
                 : HelperFramework::escape((string)($message['message'] ?? ''));
-            $html .= '<div class="alert ' . $class . '">' . $messageHtml . '</div>';
+            $html .= $this->renderFlashMessage($class, $messageHtml);
         }
 
         return $html;
+    }
+
+    private function renderFlashMessage(string $class, string $messageHtml): string
+    {
+        return '<div class="alert ' . $class . '">'
+            . '<div class="flash-message-content">' . $messageHtml . '</div>'
+            . '<button type="button" class="flash-dismiss" data-flash-dismiss aria-label="Close notification">&times;</button>'
+            . '</div>';
     }
 
     private function flashClass(string $type): string

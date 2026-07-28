@@ -44,6 +44,23 @@ $harness->check('CssFramework', 'styles warning alerts as advisory messages', fu
     $harness->assertTrue(str_contains($css, 'color: var(--warning);'));
 });
 
+$harness->check('CssFramework', 'styles flash dismiss controls within alert severity colours', function () use ($harness): void {
+    $css = (string)file_get_contents(APP_CSS . 'index.css');
+
+    foreach ([
+        '#flash-messages .alert',
+        'padding-right: 42px;',
+        '.flash-dismiss {',
+        'position: absolute;',
+        'color: currentColor;',
+        '.flash-dismiss:hover {',
+        '.flash-dismiss:focus-visible {',
+        'outline: 2px solid currentColor;',
+    ] as $declaration) {
+        $harness->assertTrue(str_contains($css, $declaration));
+    }
+});
+
 $harness->check('CssFramework', 'defines target card reveal scroll offset', function () use ($harness): void {
     $css = (string)file_get_contents(APP_CSS . 'index.css');
 

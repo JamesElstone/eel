@@ -174,7 +174,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
                 <td>' . HelperFramework::escape($this->nullableMoney($companySettings, $row['app_value'] ?? null)) . '</td>
                 <td>' . HelperFramework::escape($this->nullableMoney($companySettings, $row['filed_value'] ?? null)) . '</td>
                 <td>' . HelperFramework::escape($this->nullableMoney($companySettings, $row['variance'] ?? null)) . '</td>
-                <td><span class="badge ' . $this->badgeClass($status) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($status, '_')) . '</span></td>
+                <td><span class="badge ' . $this->badgeClass($status) . '">' . HelperFramework::escape($this->comparisonStatusLabel($status)) . '</span></td>
             </tr>';
         }
 
@@ -548,6 +548,13 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             'warning', 'not_filed' => 'warning',
             default => 'info',
         };
+    }
+
+    private function comparisonStatusLabel(string $status): string
+    {
+        return $status === 'fail'
+            ? 'Difference identified'
+            : HelperFramework::labelFromKey($status, '_');
     }
 
     private function nullableMoney(array $companySettings, mixed $value): string

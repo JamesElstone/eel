@@ -32,6 +32,7 @@ $harness->run(_year_end_companies_house_comparisonCard::class, static function (
         $harness->assertSame(true, str_contains($html, 'name="card_action" value="Company"'));
         $harness->assertSame(true, str_contains($html, 'Filing classification'));
         $harness->assertSame(true, str_contains($html, 'Revised'));
+        $harness->assertSame(true, str_contains($html, 'Difference identified'));
     });
 
     $harness->check(_year_end_companies_house_comparisonCard::class, 'shows approved gate answers from the acknowledgement basis', static function () use ($harness, $card): void {

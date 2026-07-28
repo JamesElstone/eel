@@ -45,9 +45,12 @@ final class IxbrlTaxComputationService
         'computation.summary.losses_used' => 'Losses used in this period',
         'computation.summary.losses_carried_forward' => 'Loss carried forward',
         'computation.summary.loss_restriction.post_2017_trading_losses.brought_forward' => 'Post-1 April 2017 trading losses brought forward',
+        'report.loss.post_2017_trading_loss_arising' => 'Post-1 April 2017 trading losses arising',
         'computation.summary.loss_restriction.post_2017_trading_losses.used' => 'Post-1 April 2017 trading losses used against total profits',
         'computation.summary.loss_restriction.post_2017_trading_losses.carried_forward' => 'Post-1 April 2017 trading losses carried forward',
         'computation.summary.loss_restriction.deduction_allowance.amount' => 'Non-group deductions allowance for the period',
+        'report.loss.qualifying_profits' => 'Qualifying profits',
+        'report.loss.carried_forward_relief_claimed' => 'Carried-forward loss relief claimed against total profits',
         'computation.summary.loss_restriction.calculated_loss_restriction' => 'Calculated loss restriction',
         'computation.summary.taxable_profit' => 'Taxable total profits',
         'computation.summary.ordinary_corporation_tax' => 'Corporation Tax chargeable',
@@ -582,13 +585,16 @@ final class IxbrlTaxComputationService
         $postCarriedForward = isset($facts['computation.summary.loss_restriction.post_2017_trading_losses.carried_forward'])
             ? $this->factHtml($facts, 'computation.summary.loss_restriction.post_2017_trading_losses.carried_forward')
             : $this->moneyHtml($generator, (float)$postLosses['carried_forward']);
+        $postArising = isset($facts['report.loss.post_2017_trading_loss_arising'])
+            ? $this->factHtml($facts, 'report.loss.post_2017_trading_loss_arising')
+            : $this->moneyHtml($generator, (float)$postLosses['arising']);
         $html .= '<div class="ct-section loss-section keep-together"><h2>Trading losses</h2>'
             . '<p>Post-1 April 2017 trading losses are available for relief against total profits.</p>'
             . '<table class="financial-table"><thead><tr><th scope="col">Loss category</th>'
             . '<th scope="col" class="amount">Brought forward £</th><th scope="col" class="amount">Arising £</th>'
             . '<th scope="col" class="amount">Used £</th><th scope="col" class="amount">Carried forward £</th></tr></thead><tbody>'
-            . $this->lossMovementRow($generator, 'Post-1 April 2017 trading losses', $postBroughtForward, (float)$postLosses['arising'], $postUsed, $postCarriedForward)
-            . $this->lossMovementRow($generator, 'Pre-1 April 2017 trading losses', $this->moneyHtml($generator, (float)$preLosses['brought_forward']), (float)$preLosses['arising'], $this->moneyHtml($generator, (float)$preLosses['used']), $this->moneyHtml($generator, (float)$preLosses['carried_forward']))
+            . $this->lossMovementRow($generator, 'Post-1 April 2017 trading losses', $postBroughtForward, $postArising, $postUsed, $postCarriedForward)
+            . $this->lossMovementRow($generator, 'Pre-1 April 2017 trading losses', $this->moneyHtml($generator, (float)$preLosses['brought_forward']), $this->moneyHtml($generator, (float)$preLosses['arising']), $this->moneyHtml($generator, (float)$preLosses['used']), $this->moneyHtml($generator, (float)$preLosses['carried_forward']))
             . '</tbody></table>'
             . $this->renderDeductionsAllowance($generator, $facts, $lossRestriction)
             . '</div>';
@@ -666,12 +672,12 @@ final class IxbrlTaxComputationService
         IxbrlGeneratorService $generator,
         string $label,
         string $broughtForwardHtml,
-        float $arising,
+        string $arisingHtml,
         string $usedHtml,
         string $carriedForwardHtml
     ): string {
         return '<tr><th scope="row">' . $generator->escape($label) . '</th><td class="amount">'
-            . $broughtForwardHtml . '</td><td class="amount">' . $this->moneyHtml($generator, $arising)
+            . $broughtForwardHtml . '</td><td class="amount">' . $arisingHtml
             . '</td><td class="amount">' . $usedHtml . '</td><td class="amount">'
             . $carriedForwardHtml . '</td></tr>';
     }
@@ -687,6 +693,14 @@ final class IxbrlTaxComputationService
         $restrictionHtml = isset($facts['computation.summary.loss_restriction.calculated_loss_restriction'])
             ? $this->factHtml($facts, 'computation.summary.loss_restriction.calculated_loss_restriction')
             : $this->moneyHtml($generator, $restriction);
+        $qualifyingProfits = round((float)($lossRestriction['qualifying_profits'] ?? 0), 2);
+        $qualifyingProfitsHtml = isset($facts['report.loss.qualifying_profits'])
+            ? $this->factHtml($facts, 'report.loss.qualifying_profits')
+            : $this->moneyHtml($generator, $qualifyingProfits);
+        $reliefClaimed = round((float)($lossRestriction['carried_forward_loss_relief_claimed'] ?? 0), 2);
+        $reliefClaimedHtml = isset($facts['report.loss.carried_forward_relief_claimed'])
+            ? $this->factHtml($facts, 'report.loss.carried_forward_relief_claimed')
+            : $this->moneyHtml($generator, $reliefClaimed);
         $days = (int)($allowance['period_days'] ?? 0);
         $daysInYear = (int)($allowance['days_in_year'] ?? 365);
         if ($days <= 0 || $daysInYear <= 0) {
@@ -698,9 +712,9 @@ final class IxbrlTaxComputationService
             . $days . ' / ' . $daysInYear . ' of £5,000,000).</p><table class="financial-table"><tbody>'
             . '<tr><th scope="row">Non-group deductions allowance for the period</th><td class="amount">'
             . $allowanceHtml . '</td></tr><tr><th scope="row">Qualifying profits</th><td class="amount">'
-            . $this->moneyHtml($generator, (float)($lossRestriction['qualifying_profits'] ?? 0))
+            . $qualifyingProfitsHtml
             . '</td></tr><tr><th scope="row">Carried-forward loss relief claimed against total profits</th><td class="amount">'
-            . $this->moneyHtml($generator, (float)($lossRestriction['carried_forward_loss_relief_claimed'] ?? 0))
+            . $reliefClaimedHtml
             . '</td></tr><tr><th scope="row">Calculated loss restriction</th><td class="amount">'
             . $restrictionHtml . '</td></tr><tr class="final-total"><th scope="row">Loss restriction</th><td class="amount">'
             . $generator->escape($restrictionText) . '</td></tr></tbody></table></div>';
@@ -1195,6 +1209,8 @@ CSS;
             'mappings' => $included,
             'accounts_adjustment_rows' => (array)$profile['accounts_adjustment_rows'],
             'main_pool_rows' => (array)$profile['main_pool_rows'],
+            'loss_schedule_rows' => (array)$profile['loss_schedule_rows'],
+            'untagged_row_allowlist' => (array)$profile['untagged_row_allowlist'],
             'format_version' => (string)$profile['format_version'],
         ];
     }

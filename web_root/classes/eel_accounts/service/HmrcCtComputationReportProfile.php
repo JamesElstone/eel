@@ -13,11 +13,42 @@ namespace eel_accounts\Service;
  */
 final class HmrcCtComputationReportProfile
 {
-    public const VERSION = 'hmrc-ct-computations-format-1.1/main-pool-v1';
+    public const VERSION = 'hmrc-ct-computations-format-1.1/loss-and-allowance-tagging-v1';
+
+    /**
+     * Visible support rows intentionally left as text or display-only values.
+     * The exact CT Computation 2024 concept is either absent or would duplicate
+     * a separately tagged aggregate fact.  This controlled list is surfaced in
+     * the report model for audit rather than silently omitting semantic detail.
+     *
+     * @var array<string,array{taxonomy_version:string,reason:string}>
+     */
+    private const UNTAGGED_ROW_ALLOWLIST = [
+        'time_apportionment_figure' => [
+            'taxonomy_version' => 'HMRC CT Computation 2024',
+            'reason' => 'The prescribed time-apportionment working has no exact standalone taxonomy concept.',
+        ],
+        'pre_2017_trading_losses' => [
+            'taxonomy_version' => 'HMRC CT Computation 2024',
+            'reason' => 'This visible zero-value comparison row is supporting disclosure; no applicable AP79 pre-2017 loss fact exists.',
+        ],
+        'loss_restriction_result' => [
+            'taxonomy_version' => 'HMRC CT Computation 2024',
+            'reason' => 'The numeric calculated restriction is tagged; the rendered “None” result is explanatory text, not a separate fact.',
+        ],
+        'aia_asset_allocation' => [
+            'taxonomy_version' => 'HMRC CT Computation 2024',
+            'reason' => 'The taxonomy provides aggregate main-pool allowance facts but no exact per-asset allocation concept.',
+        ],
+        'main_pool_working_values' => [
+            'taxonomy_version' => 'HMRC CT Computation 2024',
+            'reason' => 'AIA limit, intermediate pool balances and the published WDA rate are calculation workings; tagged aggregate pool facts carry the reportable values.',
+        ],
+    ];
 
     /**
      * @param list<array<string,mixed>> $mappings
-     * @return array{mappings:list<array<string,mixed>>,accounts_adjustment_rows:list<array<string,mixed>>,main_pool_rows:list<array<string,mixed>>,format_version:string}
+     * @return array{mappings:list<array<string,mixed>>,accounts_adjustment_rows:list<array<string,mixed>>,main_pool_rows:list<array<string,mixed>>,loss_schedule_rows:list<array<string,mixed>>,untagged_row_allowlist:array<string,array{taxonomy_version:string,reason:string}>,format_version:string}
      */
     public function apply(array $filing, array $mappings): array
     {
@@ -28,6 +59,8 @@ final class HmrcCtComputationReportProfile
                 'mappings' => $mappings,
                 'accounts_adjustment_rows' => [],
                 'main_pool_rows' => [],
+                'loss_schedule_rows' => [],
+                'untagged_row_allowlist' => self::UNTAGGED_ROW_ALLOWLIST,
                 'format_version' => self::VERSION,
             ];
         }
@@ -108,7 +141,9 @@ final class HmrcCtComputationReportProfile
             float $value,
             string $contextRole,
             int $sortOrder,
-            string $periodType = 'duration'
+            string $periodType = 'duration',
+            string $contextProfile = CtFilingMappingService::CONTEXT_HMRC_CT_UK_TRADE,
+            string $section = 'accounts_adjustments'
         ) use ($namespaceUri, $prefix): array {
             return [
                 'id' => 10000 + $sortOrder,
@@ -118,13 +153,13 @@ final class HmrcCtComputationReportProfile
                 'local_name' => $localName,
                 'value_type' => 'numeric',
                 'period_type' => $periodType,
-                'context_profile' => CtFilingMappingService::CONTEXT_HMRC_CT_UK_TRADE,
+                'context_profile' => $contextProfile,
                 'context_role' => $contextRole,
                 'unit_ref' => 'GBP',
                 'decimals_value' => '2',
                 'dimensions_json' => null,
                 'sign_multiplier' => 1,
-                'presentation_section' => 'accounts_adjustments',
+                'presentation_section' => $section,
                 'presentation_label' => $key,
                 'null_policy' => 'omit',
                 'is_required' => 0,
@@ -209,16 +244,112 @@ final class HmrcCtComputationReportProfile
         }
         unset($row);
 
+        $lossSchedule = $this->lossSchedule($summary, $synthetic);
+        foreach ($lossSchedule['mappings'] as $mapping) {
+            $outputMappings[] = $mapping;
+        }
+        $mappedByKey = [];
+        foreach ($outputMappings as $mapping) {
+            $mappedByKey[(string)$mapping['canonical_key']] = (string)$mapping['taxonomy_concept'];
+        }
+        foreach ($lossSchedule['rows'] as &$row) {
+            $factKey = (string)($row['fact_key'] ?? '');
+            if ($factKey !== '') {
+                $row['taxonomy_concept'] = $mappedByKey[$factKey] ?? null;
+            }
+        }
+        unset($row);
+
         return [
             'mappings' => $outputMappings,
             'accounts_adjustment_rows' => $rows,
             'main_pool_rows' => $mainPool['rows'],
+            'loss_schedule_rows' => $lossSchedule['rows'],
+            'untagged_row_allowlist' => self::UNTAGGED_ROW_ALLOWLIST,
             'format_version' => self::VERSION,
         ];
     }
 
     /**
-     * @param \Closure(string,string,float,string,int,string):array<string,mixed> $synthetic
+     * @param \Closure(string,string,float,string,int,string,string,string):array<string,mixed> $synthetic
+     * @return array{mappings:list<array<string,mixed>>,rows:list<array<string,mixed>>}
+     */
+    private function lossSchedule(array $summary, \Closure $synthetic): array
+    {
+        $restriction = (array)($summary['loss_restriction'] ?? []);
+        $post = (array)($restriction['post_2017_trading_losses'] ?? []);
+        $allowance = (array)($restriction['deduction_allowance'] ?? []);
+        foreach (['arising'] as $key) {
+            if (!is_numeric($post[$key] ?? null)) {
+                throw new \RuntimeException('The frozen loss schedule is missing post-2017 trading loss ' . $key . '.');
+            }
+        }
+        foreach (['qualifying_profits', 'carried_forward_loss_relief_claimed'] as $key) {
+            if (!is_numeric($restriction[$key] ?? null)) {
+                throw new \RuntimeException('The frozen loss-restriction schedule is missing ' . $key . '.');
+            }
+        }
+        if (!is_numeric($allowance['amount'] ?? null) || !is_numeric($restriction['calculated_loss_restriction'] ?? null)) {
+            throw new \RuntimeException('The frozen loss-restriction schedule is incomplete.');
+        }
+
+        $mappings = [
+            $synthetic(
+                'report.loss.post_2017_trading_loss_arising',
+                'TradingLossesOfThisOrLaterAP',
+                $this->money($post['arising']),
+                'ct_period',
+                230,
+                'duration',
+                CtFilingMappingService::CONTEXT_HMRC_CT_UK_TRADE,
+                'losses'
+            ),
+            $synthetic(
+                'report.loss.carried_forward_relief_claimed',
+                'TradingLossesBroughtForwardValueClaimedAgainstTotalProfits',
+                $this->money($restriction['carried_forward_loss_relief_claimed']),
+                'ct_period',
+                240,
+                'duration',
+                CtFilingMappingService::CONTEXT_HMRC_CT_UK_TRADE,
+                'losses'
+            ),
+            $synthetic(
+                'report.loss.qualifying_profits',
+                'ProfitsThatCanBeCoveredByBroughtForwardLosses',
+                $this->money($restriction['qualifying_profits']),
+                'ct_period',
+                250,
+                'duration',
+                CtFilingMappingService::CONTEXT_HMRC_CT_LOSS_RESTRICTION,
+                'losses'
+            ),
+        ];
+        $rows = [
+            $this->row('post_2017_trading_losses_brought_forward', 'computation.summary.loss_restriction.post_2017_trading_losses.brought_forward', 'Post-1 April 2017 trading losses brought forward', 'normal', 'ct_period', 'frozen_post_2017_trading_losses_brought_forward'),
+            $this->row('post_2017_trading_losses_arising', 'report.loss.post_2017_trading_loss_arising', 'Post-1 April 2017 trading losses arising', 'normal', 'ct_period', 'frozen_post_2017_trading_losses_arising'),
+            $this->row('post_2017_trading_losses_used', 'computation.summary.loss_restriction.post_2017_trading_losses.used', 'Post-1 April 2017 trading losses used against total profits', 'normal', 'ct_period', 'frozen_post_2017_trading_losses_used'),
+            $this->row('post_2017_trading_losses_carried_forward', 'computation.summary.loss_restriction.post_2017_trading_losses.carried_forward', 'Post-1 April 2017 trading losses carried forward', 'normal', 'ct_period_end', 'frozen_post_2017_trading_losses_carried_forward'),
+            $this->row('deduction_allowance', 'computation.summary.loss_restriction.deduction_allowance.amount', 'Non-group deductions allowance for the period', 'normal', 'ct_period', 'frozen_non_group_deduction_allowance'),
+            $this->row('qualifying_profits', 'report.loss.qualifying_profits', 'Qualifying profits', 'normal', 'ct_period', 'frozen_qualifying_profits'),
+            $this->row('carried_forward_relief_claimed', 'report.loss.carried_forward_relief_claimed', 'Carried-forward loss relief claimed against total profits', 'normal', 'ct_period', 'frozen_carried_forward_loss_relief_claimed'),
+            $this->row('calculated_loss_restriction', 'computation.summary.loss_restriction.calculated_loss_restriction', 'Calculated loss restriction', 'normal', 'ct_period', 'frozen_calculated_loss_restriction'),
+            [
+                'id' => 'loss_restriction_result',
+                'label' => 'Loss restriction',
+                'value_type' => 'text',
+                'taxonomy_concept' => null,
+                'context_role' => 'ct_period',
+                'visibility' => 'always',
+                'nil_rule' => 'untagged_allowlisted',
+                'source_calculation_reference' => 'frozen_loss_restriction_result',
+            ],
+        ];
+        return ['mappings' => $mappings, 'rows' => $rows];
+    }
+
+    /**
+     * @param \Closure(string,string,float,string,int,string,string,string):array<string,mixed> $synthetic
      * @return array{mappings:list<array<string,mixed>>,rows:list<array<string,mixed>>}
      */
     private function mainPoolSchedule(array $filing, array $summary, \Closure $synthetic): array

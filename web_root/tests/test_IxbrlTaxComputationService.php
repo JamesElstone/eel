@@ -222,6 +222,32 @@ function ixbrlTaxComputationMappings(array $model): array
         $h->assertTrue($allowances instanceof DOMElement);
         $h->assertSame('', $allowances?->getAttribute('sign'));
         $h->assertTrue(str_contains((string)$allowances?->parentNode?->textContent, '(628.84)'));
+        foreach ([
+            'TradingLossesBroughtForward' => '0.00',
+            'TradingLossesOfThisOrLaterAP' => '563.21',
+            'TradingLossesBroughtForwardAmountUsedAgainstTotalProfits' => '0.00',
+            'BalanceOfLossesBroughtForwardCarriedForward' => '563.21',
+            'DeductionAllowance' => '5000000.00',
+            'ProfitsThatCanBeCoveredByBroughtForwardLosses' => '0.00',
+            'TradingLossesBroughtForwardValueClaimedAgainstTotalProfits' => '0.00',
+            'CalculatedLossRestriction' => '0.00',
+        ] as $name => $value) {
+            $fact = $xpath->query('//ix:nonFraction[@name="ct:' . $name . '"]');
+            $h->assertSame(1, $fact->length);
+            $element = $fact->item(0);
+            $h->assertSame($value, $element?->textContent);
+            $h->assertSame('GBP', $element?->getAttribute('unitRef'));
+            $h->assertSame('2', $element?->getAttribute('decimals'));
+            $context = (string)$element?->getAttribute('contextRef');
+            $h->assertSame('2022-09-05', $xpath->evaluate('string(//xbrli:context[@id="' . $context . '"]/xbrli:period/xbrli:startDate)'));
+            $h->assertSame('2023-09-04', $xpath->evaluate('string(//xbrli:context[@id="' . $context . '"]/xbrli:period/xbrli:endDate)'));
+        }
+        $report = $service->buildReportModel($model, ixbrlTaxComputationMappings($model));
+        $lossRows = array_column((array)$report['loss_schedule_rows'], 'taxonomy_concept', 'id');
+        $h->assertSame('ct:TradingLossesOfThisOrLaterAP', $lossRows['post_2017_trading_losses_arising'] ?? null);
+        $h->assertSame('ct:ProfitsThatCanBeCoveredByBroughtForwardLosses', $lossRows['qualifying_profits'] ?? null);
+        $h->assertSame('ct:TradingLossesBroughtForwardValueClaimedAgainstTotalProfits', $lossRows['carried_forward_relief_claimed'] ?? null);
+        $h->assertSame('HMRC CT Computation 2024', $report['untagged_row_allowlist']['loss_restriction_result']['taxonomy_version'] ?? null);
         $h->assertSame([], (new \eel_accounts\Service\IxbrlGeneratorService())->validateStructure(
             $xhtml,
             [(string)$rendered['schema_ref']]
@@ -277,6 +303,26 @@ function ixbrlTaxComputationMappings(array $model): array
         $h->assertSame('563.21', $broughtForward?->textContent);
         $h->assertSame('4.67', $used?->textContent);
         $h->assertSame('558.54', $carriedForward?->textContent);
+        foreach ([
+            'TradingLossesBroughtForward' => '563.21',
+            'TradingLossesOfThisOrLaterAP' => '0.00',
+            'TradingLossesBroughtForwardAmountUsedAgainstTotalProfits' => '4.67',
+            'BalanceOfLossesBroughtForwardCarriedForward' => '558.54',
+            'DeductionAllowance' => '356164.38',
+            'ProfitsThatCanBeCoveredByBroughtForwardLosses' => '4.67',
+            'TradingLossesBroughtForwardValueClaimedAgainstTotalProfits' => '4.67',
+            'CalculatedLossRestriction' => '0.00',
+        ] as $name => $value) {
+            $fact = $xpath->query('//ix:nonFraction[@name="ct:' . $name . '"]');
+            $h->assertSame(1, $fact->length);
+            $element = $fact->item(0);
+            $h->assertSame($value, $element?->textContent);
+            $h->assertSame('GBP', $element?->getAttribute('unitRef'));
+            $h->assertSame('2', $element?->getAttribute('decimals'));
+            $context = (string)$element?->getAttribute('contextRef');
+            $h->assertSame('2023-09-05', $xpath->evaluate('string(//xbrli:context[@id="' . $context . '"]/xbrli:period/xbrli:startDate)'));
+            $h->assertSame('2023-09-30', $xpath->evaluate('string(//xbrli:context[@id="' . $context . '"]/xbrli:period/xbrli:endDate)'));
+        }
         $body = (string)$xpath->evaluate('string(/*[local-name()="html"]/*[local-name()="body"])');
         $h->assertTrue(str_contains($body, '26 / 391 days'));
         $h->assertTrue(str_contains($body, 'Time apportionment figure (26 / 391 days)'));

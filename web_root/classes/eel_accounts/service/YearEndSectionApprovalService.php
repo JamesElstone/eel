@@ -385,7 +385,7 @@ final class YearEndSectionApprovalService
                 continue;
             }
             $progress?->__invoke(
-                'Rebuilding Year End review caches…',
+                'Rebuilding Year End review cache: ' . $this->sectionLabel($checkCode) . '…',
                 $total > 0 ? 70 + (int)floor((($index + 1) / $total) * 14) : 84
             );
             try {
@@ -407,6 +407,27 @@ final class YearEndSectionApprovalService
             'failed_count' => count($errors),
             'errors' => $errors,
         ];
+    }
+
+    /**
+     * Cached review bundles are identified by stable internal check codes. Use
+     * the corresponding checklist title in long-running progress updates.
+     */
+    private function sectionLabel(string $checkCode): string
+    {
+        return match ($checkCode) {
+            'director_loan_year_end_review' => 'Director Loan Year End Review',
+            'tax_readiness_acknowledgement' => 'Tax readiness acknowledgement',
+            'expense_position_acknowledgement' => 'Expense position acknowledgement',
+            'retained_earnings_close_confirmation' => 'Profit & Loss confirmation',
+            'transaction_tail_review' => 'Bank transaction cut-off review',
+            'prepayment_approvals' => 'Prepayment approvals',
+            'cut_off_journals_review' => 'Cut-off journals review',
+            'fixed_asset_review_placeholder' => 'Fixed asset review',
+            'companies_house_mismatch_acknowledgement' => 'Accounts comparison metrics',
+            'companies_house_no_filing_acknowledgement' => 'No exact accounts filing',
+            default => \HelperFramework::labelFromKey($checkCode, '_'),
+        };
     }
 
     private function invalidateFromAccountingPeriod(

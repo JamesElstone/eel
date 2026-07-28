@@ -87,6 +87,13 @@ $harness->run(\eel_accounts\Service\YearEndSectionApprovalService::class, static
         $harness->assertSame(64, strlen($token));
     });
 
+    $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'uses journal-specific cache validation only for the cut-off approval', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod($service, 'usesJournalCutOffCacheValidation');
+
+        $harness->assertSame(true, (bool)$method->invoke($service, 'cut_off_journals_review'));
+        $harness->assertSame(false, (bool)$method->invoke($service, 'tax_readiness_acknowledgement'));
+        $harness->assertSame(false, (bool)$method->invoke($service, 'director_loan_year_end_review'));
+    });
     $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'does not stale a Director Loan bundle when only the S455 evaluation clock changes', static function () use ($harness, $service): void {
         $method = new ReflectionMethod($service, 'bundleSourceHash');
         $bundle = [

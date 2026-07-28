@@ -121,7 +121,8 @@ final class YearEndSectionApprovalService
             $bundle = $this->refreshBundle($companyId, $accountingPeriodId, $checkCode);
         } elseif (empty($cached['is_current'])
             || !$this->sourceTokenMatches($cached, $companyId, $accountingPeriodId, $checkCode)
-            || !$this->bundleHashMatchesLive($cached, $companyId, $accountingPeriodId, $checkCode)) {
+            || (!$this->usesJournalCutOffCacheValidation($checkCode)
+                && !$this->bundleHashMatchesLive($cached, $companyId, $accountingPeriodId, $checkCode))) {
             // The rebuilt bundle is deliberately returned without approval. The
             // user must see any changed question or fact before signing it off.
             $previousBundle = $this->decodeBundle($cached);
@@ -219,12 +220,14 @@ final class YearEndSectionApprovalService
         if (empty($result['success'])) {
             return $result;
         }
-        $this->invalidate(
-            $companyId,
-            $accountingPeriodId,
-            $checkCode,
-            'Section approval revoked; rebuild the review before reapproval'
-        );
+        if (!$this->usesJournalCutOffCacheValidation($checkCode)) {
+            $this->invalidate(
+                $companyId,
+                $accountingPeriodId,
+                $checkCode,
+                'Section approval revoked; rebuild the review before reapproval'
+            );
+        }
 
         (new YearEndLockService())->writeAuditLog(
             $companyId,
@@ -1070,6 +1073,19 @@ final class YearEndSectionApprovalService
         }
         $current = $this->sourceToken($companyId, $accountingPeriodId, $checkCode);
         return $current === '' || hash_equals($stored, $current);
+    }
+
+    /**
+     * A cut-off approval is concerned only with its journal and prepayment
+     * inputs, which are covered by its section source token. Keeping this
+     * bundle current after its live token validation avoids rebuilding the
+     * whole Year End checklist immediately after the acknowledgement is saved.
+     * Other sections retain the full live-bundle comparison that protects their
+     * wider, potentially indirect dependencies.
+     */
+    private function usesJournalCutOffCacheValidation(string $checkCode): bool
+    {
+        return $checkCode === 'cut_off_journals_review';
     }
 
     private function bundleHashMatchesLive(

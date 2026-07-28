@@ -14,6 +14,8 @@ final class _filing_evidence extends PageContextFramework
             'filing_evidence_lookup',
             'filing_evidence_overview',
             'filing_evidence_artifacts',
+            'filing_evidence_coverage',
+            'filing_evidence_section_detail',
             'filing_evidence_calculations',
             'filing_evidence_loans',
             'filing_evidence_calculation_detail',
@@ -22,7 +24,7 @@ final class _filing_evidence extends PageContextFramework
 
     protected function handlePageAction(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
-        if (!in_array($request->action(), ['lookup-filing-evidence', 'select-filing-evidence-area'], true)) {
+        if (!in_array($request->action(), ['lookup-filing-evidence', 'select-filing-evidence-area', 'select-filing-evidence-section'], true)) {
             return ActionResultFramework::none();
         }
         $companyId = max(0, (int)$request->input('company_id', 0));
@@ -49,6 +51,8 @@ final class _filing_evidence extends PageContextFramework
             'evidence_snapshot_id' => max(0, (int)$request->input('evidence_snapshot_id', 0)),
             'evidence_area_code' => strtolower(trim((string)$request->input('evidence_area_code', ''))),
             'evidence_detail_page' => max(1, (int)$request->input('evidence_detail_page', 1)),
+            'evidence_section_code' => strtolower(trim((string)$request->input('evidence_section_code', ''))),
+            'evidence_section_page' => max(1, (int)$request->input('evidence_section_page', 1)),
         ]);
     }
 
@@ -66,6 +70,8 @@ final class _filing_evidence extends PageContextFramework
             'snapshot_id' => max(0, (int)($query['evidence_snapshot_id'] ?? $request->input('evidence_snapshot_id', 0))),
             'area_code' => strtolower(trim((string)($query['evidence_area_code'] ?? $request->input('evidence_area_code', '')))),
             'detail_page' => max(1, (int)($query['evidence_detail_page'] ?? $request->input('evidence_detail_page', 1))),
+            'section_code' => strtolower(trim((string)($query['evidence_section_code'] ?? $request->input('evidence_section_code', '')))),
+            'section_page' => max(1, (int)($query['evidence_section_page'] ?? $request->input('evidence_section_page', 1))),
         ]];
     }
 }

@@ -4187,6 +4187,33 @@ WHERE `card_key` = 'director_loan_s455';
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_28_002_filing_evidence_loan_snapshots.sql');
 
+DROP TABLE IF EXISTS `filing_evidence_section_snapshots`;
+CREATE TABLE `filing_evidence_section_snapshots` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `bundle_id` bigint(20) NOT NULL,
+  `section_code` varchar(64) NOT NULL,
+  `section_version` varchar(64) NOT NULL,
+  `snapshot_kind` enum('lock','lifecycle') NOT NULL DEFAULT 'lock',
+  `sequence_no` int(11) NOT NULL DEFAULT 1,
+  `record_count` int(11) NOT NULL DEFAULT 0,
+  `totals_json` longtext DEFAULT NULL,
+  `snapshot_json` longtext NOT NULL,
+  `snapshot_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_filing_evidence_section_version` (`bundle_id`,`section_code`,`snapshot_kind`,`sequence_no`),
+  KEY `idx_filing_evidence_section_lookup` (`bundle_id`,`section_code`,`id`),
+  CONSTRAINT `fk_filing_evidence_section_bundle` FOREIGN KEY (`bundle_id`) REFERENCES `filing_evidence_bundles` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
+SELECT DISTINCT `role_id`, 'filing_evidence_coverage'
+FROM `role_card_permissions` WHERE `card_key` = 'filing_evidence_calculations';
+INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
+SELECT DISTINCT `role_id`, 'filing_evidence_section_detail'
+FROM `role_card_permissions` WHERE `card_key` = 'filing_evidence_calculations';
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_28_003_filing_evidence_section_snapshots.sql');
+
 DROP TRIGGER IF EXISTS `trg_journals_append_only_update`;
 CREATE TRIGGER `trg_journals_append_only_update`
 BEFORE UPDATE ON `journals`

@@ -6,11 +6,38 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $h = new GeneratedServiceClassTestHarness();
 $h->run(_filing_evidence::class, static function (GeneratedServiceClassTestHarness $h, _filing_evidence $page): void {
-    $h->check($page::class, 'registers the lookup overview artifact and calculation cards', static function () use ($h, $page): void {
+    $h->check($page::class, 'registers coverage and frozen section cards beside specialist evidence', static function () use ($h, $page): void {
         $h->assertSame([
             'filing_evidence_lookup', 'filing_evidence_overview', 'filing_evidence_artifacts',
-            'filing_evidence_calculations', 'filing_evidence_loans', 'filing_evidence_calculation_detail',
+            'filing_evidence_coverage', 'filing_evidence_section_detail', 'filing_evidence_calculations',
+            'filing_evidence_loans', 'filing_evidence_calculation_detail',
         ], $page->cards());
+    });
+});
+$h->run(_filing_evidence_coverageCard::class, static function (GeneratedServiceClassTestHarness $h, _filing_evidence_coverageCard $card): void {
+    $h->check($card::class, 'labels legacy section gaps without reconstructing live records', static function () use ($h, $card): void {
+        $html = $card->render(['filing_evidence' => ['bundle_id' => 17, 'reference' => 'EEL-FE-TEST'], 'services' => ['filingEvidenceCoverage' => [
+            'available' => true, 'sections' => [
+                ['section_code' => 'transactions', 'captured' => true, 'lock_snapshot' => ['record_count' => 3, 'snapshot_hash' => str_repeat('a', 64)]],
+                ['section_code' => 'assets', 'captured' => false, 'lock_snapshot' => null],
+            ],
+        ]]]);
+        $h->assertTrue(str_contains($html, 'Show frozen records'));
+        $h->assertTrue(str_contains($html, 'Not captured for this historic bundle.'));
+        $h->assertTrue(str_contains($html, 'select-filing-evidence-section'));
+    });
+});
+$h->run(_filing_evidence_section_detailCard::class, static function (GeneratedServiceClassTestHarness $h, _filing_evidence_section_detailCard $card): void {
+    $h->check($card::class, 'renders a read-only frozen section payload', static function () use ($h, $card): void {
+        $html = $card->render(['services' => ['filingEvidenceSectionDetail' => [
+            'available' => true, 'section' => ['section_code' => 'transactions', 'snapshot_hash' => str_repeat('b', 64)],
+            'rows' => [['id' => 9, 'amount' => '12.00']], 'pagination' => ['page' => 1, 'page_count' => 2],
+            'lifecycle' => [['created_at' => '2026-07-28 15:00:00', 'snapshot_hash' => str_repeat('c', 64)]],
+        ]]]);
+        $h->assertTrue(str_contains($html, 'Frozen evidence'));
+        $h->assertTrue(str_contains($html, '&quot;id&quot;'));
+        $h->assertTrue(str_contains($html, 'Next'));
+        $h->assertTrue(str_contains($html, 'Append-only filing lifecycle snapshots'));
     });
 });
 $h->run(_filing_evidence_loansCard::class, static function (GeneratedServiceClassTestHarness $h, _filing_evidence_loansCard $card): void {
@@ -19,7 +46,7 @@ $h->run(_filing_evidence_loansCard::class, static function (GeneratedServiceClas
             'available' => true, 'snapshot_version' => 'loan-filing-evidence-v1', 'snapshot_hash' => str_repeat('a', 64), 'created_at' => '2026-07-28 10:00:00',
             'snapshot' => ['applicable' => false, 'ct_periods' => [], 'ct600a' => [], 'section_413' => []],
         ]]]);
-        $h->assertTrue(str_contains($html, 'Frozen Director Loan Evidence'));
+        $h->assertTrue(str_contains($html, 'Snapshot version'));
         $h->assertTrue(str_contains($html, 'No loan activity'));
     });
 });

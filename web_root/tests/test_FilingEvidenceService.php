@@ -40,5 +40,17 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $h->assertSame(true, (bool)($calculations['available'] ?? false));
             $h->assertSame(true, (bool)($artifacts['available'] ?? false));
         });
+
+        $h->check($service::class, 'binds full evidence section manifests and keeps historic gaps explicit', static function () use ($h): void {
+            $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'classes' . DIRECTORY_SEPARATOR
+                . 'eel_accounts' . DIRECTORY_SEPARATOR . 'service' . DIRECTORY_SEPARATOR . 'FilingEvidenceService.php');
+            $h->assertTrue(str_contains($source, "'section_evidence'"));
+            $h->assertTrue(str_contains($source, 'prepareForLock'));
+            $h->assertTrue(str_contains($source, 'coverageIndex'));
+            $h->assertTrue(str_contains($source, 'sectionDetail'));
+            $h->assertTrue(str_contains($source, 'This section was not captured for this historic bundle.'));
+            $h->assertTrue(str_contains($source, 'appendLifecycleSnapshot'));
+            $h->assertTrue(str_contains($source, 'submission_snapshot'));
+        });
     }
 );

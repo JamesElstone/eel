@@ -27,6 +27,18 @@ final class IxbrlTaxComputationService
         'report.accounts_adjustment.revised_figure_before_tax' => 'Revised figure before tax',
         'report.accounts_adjustment.adjusted_loss_of_period' => 'Adjusted loss of period',
         'report.accounts_adjustment.adjusted_profit_for_period' => 'Adjusted profit for the period',
+        'report.main_pool.opening_wdv' => 'Main pool, written down value',
+        'report.main_pool.aia_qualifying_expenditure' => 'Main pool, expenditure qualifying for annual investment allowance',
+        'report.main_pool.wda_qualifying_expenditure' => 'Main pool, expenditure qualifying for writing down allowance',
+        'report.main_pool.total_qualifying_expenditure' => 'Main pool, total qualifying expenditure',
+        'report.main_pool.aia_claimed' => 'Main pool, annual investment allowance',
+        'report.main_pool.disposal_receipts' => 'Main pool, total disposal receipts',
+        'report.main_pool.wda_claimed' => 'Main pool, writing down allowances',
+        'report.main_pool.balancing_allowance' => 'Main pool, balancing allowances',
+        'report.main_pool.balancing_charge' => 'Main pool, balancing charges',
+        'report.main_pool.closing_wdv' => 'Main pool, written down value',
+        'report.main_pool.total_fya_and_wda' => 'Main pool, total FYA and WDA',
+        'report.main_pool.total_allowances' => 'Main pool, total allowances',
         'computation.summary.capital_allowances' => 'Capital allowances',
         'computation.summary.taxable_before_losses' => 'Trading profit or loss for the period',
         'computation.summary.losses_brought_forward' => 'Loss brought forward',
@@ -546,6 +558,7 @@ final class IxbrlTaxComputationService
             . '<th scope="col" class="amount">£</th></tr></thead><tbody>' . $tradingRows . '</tbody></table></div>';
 
         $html .= $this->renderAiaSchedule($generator, $model);
+        $html .= $this->renderMainPoolSchedule($generator, $report, $facts);
 
         $lossRestriction = $this->lossRestrictionForReport($summary, (array)($model['ct_period'] ?? []));
         $postLosses = (array)$lossRestriction['post_2017_trading_losses'];
@@ -787,6 +800,44 @@ final class IxbrlTaxComputationService
             . $generator->escape(number_format(round($expenditureTotal, 2), 2, '.', ','))
             . '</td><td class="amount">' . $generator->escape(number_format($claimTotal, 2, '.', ','))
             . '</td></tr></tbody></table></div>';
+    }
+
+    /** @param array<string,mixed> $report */
+    private function renderMainPoolSchedule(IxbrlGeneratorService $generator, array $report, array $facts): string
+    {
+        $rows = (array)($report['main_pool_rows'] ?? []);
+        if ($rows === []) {
+            return '';
+        }
+        $body = '';
+        foreach ($rows as $row) {
+            $label = trim((string)($row['label'] ?? ''));
+            $factKey = trim((string)($row['fact_key'] ?? ''));
+            $class = trim((string)($row['class'] ?? ''));
+            if ($label === '') {
+                throw new \RuntimeException('The main-pool report model contains a row without a label.');
+            }
+            if ($factKey !== '') {
+                if (!isset($facts[$factKey])) {
+                    throw new \RuntimeException('The main-pool report model refers to an unavailable fact ' . $factKey . '.');
+                }
+                $value = $this->factHtml($facts, $factKey);
+            } elseif ((string)($row['display_type'] ?? 'money') === 'percent') {
+                if (!is_numeric($row['amount'] ?? null)) {
+                    throw new \RuntimeException('The main-pool percentage row has no amount.');
+                }
+                $value = $generator->escape(number_format((float)$row['amount'] * 100, 2, '.', ',') . '%');
+            } elseif (is_numeric($row['amount'] ?? null)) {
+                $value = $this->moneyHtml($generator, round((float)$row['amount'], 2));
+            } else {
+                throw new \RuntimeException('The main-pool report model has an untagged row without an amount.');
+            }
+            $body .= '<tr' . ($class !== '' ? ' class="' . $generator->escape($class) . '"' : '') . '><th scope="row">'
+                . $generator->escape($label) . '</th><td class="amount">' . $value . '</td></tr>';
+        }
+        return '<div class="ct-section main-pool-section keep-together"><h2>Main pool</h2>'
+            . '<table class="financial-table"><thead><tr><th scope="col">Plant and machinery main pool</th>'
+            . '<th scope="col" class="amount">£</th></tr></thead><tbody>' . $body . '</tbody></table></div>';
     }
 
     private function renderSupportingSchedules(IxbrlGeneratorService $generator, array $filing): string
@@ -1050,10 +1101,14 @@ CSS;
     private function contextPeriod(array $mapping, array $model): array
     {
         $role = trim((string)($mapping['context_role'] ?? 'ct_period'));
-        if ($role === 'ct_period') {
+        if ($role === 'ct_period' || $role === 'ct_period_end') {
             $period = (array)($model['run'] ?? []);
             $start = (string)($period['period_start'] ?? '');
             $end = (string)($period['period_end'] ?? '');
+        } elseif ($role === 'ct_period_beginning') {
+            $period = (array)($model['run'] ?? []);
+            $start = (string)($period['period_start'] ?? '');
+            $end = $start;
         } elseif ($role === 'statutory_accounts_period') {
             $period = (array)($model['model']['accounting_period'] ?? []);
             $start = (string)($period['start_date'] ?? '');
@@ -1139,6 +1194,7 @@ CSS;
             'sections' => $sections,
             'mappings' => $included,
             'accounts_adjustment_rows' => (array)$profile['accounts_adjustment_rows'],
+            'main_pool_rows' => (array)$profile['main_pool_rows'],
             'format_version' => (string)$profile['format_version'],
         ];
     }

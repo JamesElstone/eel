@@ -13,11 +13,11 @@ namespace eel_accounts\Service;
  */
 final class HmrcCtComputationReportProfile
 {
-    public const VERSION = 'hmrc-ct-computations-format-1.1';
+    public const VERSION = 'hmrc-ct-computations-format-1.1/main-pool-v1';
 
     /**
      * @param list<array<string,mixed>> $mappings
-     * @return array{mappings:list<array<string,mixed>>,accounts_adjustment_rows:list<array<string,mixed>>,format_version:string}
+     * @return array{mappings:list<array<string,mixed>>,accounts_adjustment_rows:list<array<string,mixed>>,main_pool_rows:list<array<string,mixed>>,format_version:string}
      */
     public function apply(array $filing, array $mappings): array
     {
@@ -27,6 +27,7 @@ final class HmrcCtComputationReportProfile
             return [
                 'mappings' => $mappings,
                 'accounts_adjustment_rows' => [],
+                'main_pool_rows' => [],
                 'format_version' => self::VERSION,
             ];
         }
@@ -101,7 +102,14 @@ final class HmrcCtComputationReportProfile
             $outputMappings[] = $mapping;
         }
 
-        $synthetic = static function (string $key, string $localName, float $value, string $contextRole, int $sortOrder) use ($tradeMapping, $namespaceUri, $prefix): array {
+        $synthetic = static function (
+            string $key,
+            string $localName,
+            float $value,
+            string $contextRole,
+            int $sortOrder,
+            string $periodType = 'duration'
+        ) use ($namespaceUri, $prefix): array {
             return [
                 'id' => 10000 + $sortOrder,
                 'canonical_key' => $key,
@@ -109,7 +117,7 @@ final class HmrcCtComputationReportProfile
                 'namespace_uri' => $namespaceUri,
                 'local_name' => $localName,
                 'value_type' => 'numeric',
-                'period_type' => 'duration',
+                'period_type' => $periodType,
                 'context_profile' => CtFilingMappingService::CONTEXT_HMRC_CT_UK_TRADE,
                 'context_role' => $contextRole,
                 'unit_ref' => 'GBP',
@@ -185,11 +193,135 @@ final class HmrcCtComputationReportProfile
         }
         unset($row);
 
+        $mainPool = $this->mainPoolSchedule($filing, $summary, $synthetic);
+        foreach ($mainPool['mappings'] as $mapping) {
+            $outputMappings[] = $mapping;
+        }
+        $mappedByKey = [];
+        foreach ($outputMappings as $mapping) {
+            $mappedByKey[(string)$mapping['canonical_key']] = (string)$mapping['taxonomy_concept'];
+        }
+        foreach ($mainPool['rows'] as &$row) {
+            $factKey = (string)($row['fact_key'] ?? '');
+            if ($factKey !== '') {
+                $row['taxonomy_concept'] = $mappedByKey[$factKey] ?? null;
+            }
+        }
+        unset($row);
+
         return [
             'mappings' => $outputMappings,
             'accounts_adjustment_rows' => $rows,
+            'main_pool_rows' => $mainPool['rows'],
             'format_version' => self::VERSION,
         ];
+    }
+
+    /**
+     * @param \Closure(string,string,float,string,int,string):array<string,mixed> $synthetic
+     * @return array{mappings:list<array<string,mixed>>,rows:list<array<string,mixed>>}
+     */
+    private function mainPoolSchedule(array $filing, array $summary, \Closure $synthetic): array
+    {
+        $breakdown = (array)($summary['capital_allowance_breakdown'] ?? []);
+        $main = null;
+        foreach ((array)($breakdown['rows'] ?? []) as $pool) {
+            if (is_array($pool) && (string)($pool['pool_type'] ?? '') === 'main_pool') {
+                $main = $pool;
+                break;
+            }
+        }
+        if (!is_array($main)) {
+            return ['mappings' => [], 'rows' => []];
+        }
+        $aiaQualifyingExpenditure = 0.0;
+        $hasAssetActivity = false;
+        foreach ((array)($breakdown['asset_calculations'] ?? []) as $calculation) {
+            if (!is_array($calculation) || (string)($calculation['pool_type'] ?? '') !== 'main_pool') {
+                continue;
+            }
+            $hasAssetActivity = true;
+            if ((string)($calculation['allowance_type'] ?? '') === 'aia') {
+                $aiaQualifyingExpenditure += $this->money($calculation['addition_amount'] ?? null);
+            }
+        }
+        $opening = $this->money($main['opening_wdv'] ?? null);
+        $allocatedToPool = $this->money($main['additions'] ?? null);
+        $aiaClaimed = $this->money($main['aia_claimed'] ?? null);
+        $fyaClaimed = $this->money($main['fya_claimed'] ?? null);
+        $disposals = $this->money($main['disposal_value'] ?? null);
+        $wdaClaimed = $this->money($main['wda_claimed'] ?? null);
+        $balancingAllowance = $this->money($main['balancing_allowance'] ?? null);
+        $balancingCharge = $this->money($main['balancing_charge'] ?? null);
+        $closing = $this->money($main['closing_wdv'] ?? null);
+        if (!$hasAssetActivity && max(
+            abs($opening), abs($allocatedToPool), abs($aiaClaimed), abs($disposals), abs($wdaClaimed),
+            abs($balancingAllowance), abs($balancingCharge), abs($closing)
+        ) < 0.005) {
+            return ['mappings' => [], 'rows' => []];
+        }
+        $aiaQualifyingExpenditure = round($aiaQualifyingExpenditure, 2);
+        $totalAdditions = round($aiaQualifyingExpenditure + $allocatedToPool, 2);
+        $available = round($opening + $totalAdditions, 2);
+        $afterAia = round($available - $aiaClaimed, 2);
+        $balanceBeforeWda = round($afterAia - $disposals + $balancingCharge, 2);
+        $expectedClosing = round($balanceBeforeWda - $wdaClaimed - $balancingAllowance, 2);
+        if (abs($closing - $expectedClosing) > 0.009) {
+            throw new \RuntimeException('The frozen main-pool calculation does not reconcile to its closing written-down value.');
+        }
+        $run = (array)($filing['run'] ?? []);
+        $periodStart = (string)($run['period_start'] ?? '');
+        $periodEnd = (string)($run['period_end'] ?? '');
+        if ($periodStart === '' || $periodEnd === '') {
+            throw new \RuntimeException('The frozen main-pool report has no CT-period dates.');
+        }
+        $periodDays = (int)(new \DateTimeImmutable($periodStart))->diff(new \DateTimeImmutable($periodEnd))->days + 1;
+        $rateRules = new TaxRateRuleService();
+        $aiaLimit = round($rateRules->weightedAmountForPeriod(
+            'capital_allowances', 'plant_machinery', 'aia_annual_limit', $periodStart, $periodEnd
+        ) * min(1.0, $periodDays / 365), 2);
+        $wdaRate = $rateRules->weightedRateForPeriod(
+            'capital_allowances', 'plant_machinery', 'main_pool_wda', $periodStart, $periodEnd
+        );
+        $wdaAvailable = round($balanceBeforeWda * $wdaRate * min(1.0, $periodDays / 365), 2);
+        $totalFyaAndWda = round($fyaClaimed + $wdaClaimed, 2);
+        $totalAllowances = round($aiaClaimed + $totalFyaAndWda + $balancingAllowance, 2);
+
+        $mappings = [
+            $synthetic('report.main_pool.opening_wdv', 'MainPoolWrittenDownValue', $opening, 'ct_period_beginning', 310, 'instant'),
+            $synthetic('report.main_pool.aia_qualifying_expenditure', 'MainPoolExpenditureQualifyingForAnnualInvestmentAllowance', $aiaQualifyingExpenditure, 'ct_period', 320),
+            $synthetic('report.main_pool.wda_qualifying_expenditure', 'MainPoolExpenditureQualifyingForWritingDownAllowance', $allocatedToPool, 'ct_period', 330),
+            $synthetic('report.main_pool.total_qualifying_expenditure', 'MainPoolTotalQualifyingExpenditure', $available, 'ct_period', 340),
+            $synthetic('report.main_pool.aia_claimed', 'MainPoolAnnualInvestmentAllowance', $aiaClaimed, 'ct_period', 350),
+            $synthetic('report.main_pool.disposal_receipts', 'MainPoolTotalDisposalReceipts', $disposals, 'ct_period', 360),
+            $synthetic('report.main_pool.wda_claimed', 'MainPoolWritingDownAllowances', $wdaClaimed, 'ct_period', 370),
+            $synthetic('report.main_pool.balancing_allowance', 'MainPoolBalancingAllowances', $balancingAllowance, 'ct_period', 380),
+            $synthetic('report.main_pool.balancing_charge', 'MainPoolBalancingCharges', $balancingCharge, 'ct_period', 390),
+            $synthetic('report.main_pool.closing_wdv', 'MainPoolWrittenDownValue', $closing, 'ct_period_end', 400, 'instant'),
+            $synthetic('report.main_pool.total_fya_and_wda', 'MainPoolTotalFYAAndWDA', $totalFyaAndWda, 'ct_period', 410),
+            $synthetic('report.main_pool.total_allowances', 'MainPoolTotalAllowances', $totalAllowances, 'ct_period', 420),
+        ];
+        $rows = [
+            $this->row('main_pool_opening_wdv', 'report.main_pool.opening_wdv', 'Unrelieved qualifying expenditure brought forward', 'normal', 'ct_period_beginning', 'frozen_main_pool_opening_wdv'),
+            $this->plainRow('main_pool_additions', 'Qualifying expenditure added to the pool', $totalAdditions, 'frozen_main_pool_aia_qualifying_expenditure_plus_allocated_additions'),
+            $this->row('main_pool_aia_qualifying_expenditure', 'report.main_pool.aia_qualifying_expenditure', 'Additions qualifying for Annual Investment Allowance', 'normal', 'ct_period', 'frozen_main_pool_aia_qualifying_expenditure'),
+            $this->row('main_pool_allocated', 'report.main_pool.wda_qualifying_expenditure', 'Amount allocated to the pool', 'normal', 'ct_period', 'frozen_main_pool_expenditure_qualifying_for_wda'),
+            $this->row('main_pool_available', 'report.main_pool.total_qualifying_expenditure', 'Available qualifying expenditure', 'normal', 'ct_period', 'opening_plus_additions', 'subtotal'),
+            $this->plainRow('main_pool_aia_limit', 'Annual Investment Allowance limit', $aiaLimit, 'published_aia_limit_for_ct_period'),
+            $this->row('main_pool_aia_claimed', 'report.main_pool.aia_claimed', 'AIA claimed', 'normal', 'ct_period', 'frozen_main_pool_aia_claimed'),
+            $this->plainRow('main_pool_after_aia', 'Available qualifying expenditure less AIA', $afterAia, 'available_qualifying_expenditure_less_aia'),
+            $this->row('main_pool_disposals', 'report.main_pool.disposal_receipts', 'Total disposal receipts', 'normal', 'ct_period', 'frozen_main_pool_disposal_receipts'),
+            $this->plainRow('main_pool_balance', 'Balance of qualifying expenditure', $balanceBeforeWda, 'available_less_aia_and_disposals'),
+            $this->plainRow('main_pool_wda_rate', 'WDA rate', $wdaRate, 'published_main_pool_wda_rate', 'percent'),
+            $this->plainRow('main_pool_wda_available', 'WDA available', $wdaAvailable, 'published_main_pool_wda_rate_applied_to_frozen_balance'),
+            $this->row('main_pool_wda_claimed', 'report.main_pool.wda_claimed', 'WDA claimed', 'normal', 'ct_period', 'frozen_main_pool_wda_claimed'),
+            $this->row('main_pool_balancing_allowance', 'report.main_pool.balancing_allowance', 'Balancing allowance', 'normal', 'ct_period', 'frozen_main_pool_balancing_allowance'),
+            $this->row('main_pool_balancing_charge', 'report.main_pool.balancing_charge', 'Balancing charge', 'normal', 'ct_period', 'frozen_main_pool_balancing_charge'),
+            $this->row('main_pool_closing_wdv', 'report.main_pool.closing_wdv', 'Unrelieved qualifying expenditure carried forward', 'normal', 'ct_period_end', 'frozen_main_pool_closing_wdv', 'subtotal'),
+            $this->row('main_pool_total_fya_and_wda', 'report.main_pool.total_fya_and_wda', 'Total FYA and WDA claimed for the main pool', 'normal', 'ct_period', 'frozen_main_pool_total_fya_and_wda'),
+            $this->row('main_pool_total_allowances', 'report.main_pool.total_allowances', 'Total capital allowances for the main pool', 'normal', 'ct_period', 'frozen_main_pool_total_allowances', 'final-total'),
+        ];
+        return ['mappings' => $mappings, 'rows' => $rows];
     }
 
     /** @return array<string,mixed> */
@@ -205,6 +337,23 @@ final class HmrcCtComputationReportProfile
             'nil_rule' => 'omit_when_null',
             'source_calculation_reference' => $source,
             'class' => $class,
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    private function plainRow(string $id, string $label, float $amount, string $source, string $displayType = 'money'): array
+    {
+        return [
+            'id' => $id,
+            'label' => $label,
+            'amount' => $amount,
+            'direction' => 'normal',
+            'taxonomy_concept' => null,
+            'context_role' => 'ct_period',
+            'visibility' => 'always',
+            'nil_rule' => 'untagged_no_exact_taxonomy_concept',
+            'source_calculation_reference' => $source,
+            'display_type' => $displayType,
         ];
     }
 

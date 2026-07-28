@@ -118,8 +118,8 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
     ): array
     {
         $backupPath = $this->resolveBackupPath($filename);
-        $sql = $this->extractSqlFromBackup($backupPath);
-        $sourceDatabase = $this->databaseNameFromSqlDump($sql);
+        $entry = $this->inspectStoredSqlZip($backupPath);
+        $sourceDatabase = $this->databaseNameFromSqlDump($this->readStoredSqlPrefix($backupPath, $entry));
         $pdo = null;
 
         if ($expectedTargetDatabase === null || $expectedSourceDatabase === null) {
@@ -130,22 +130,11 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
         }
 
         $this->assertExpectedBackupSource($sourceDatabase, $expectedSourceDatabase);
-        $statements = $this->splitSqlStatements($sql);
-        if ($statements === []) {
-            throw new RuntimeException('The selected backup does not contain SQL statements to restore.');
-        }
-
         $pdo ??= $this->connect();
         $this->assertExpectedRestoreTarget($pdo, $expectedTargetDatabase);
-        $executed = 0;
-
-        foreach ($statements as $statement) {
-            if ($this->shouldSkipRestoreStatement($statement)) {
-                continue;
-            }
-
-            $pdo->exec($statement);
-            $executed++;
+        $executed = $this->executeStoredSqlZip($pdo, $backupPath, $entry);
+        if ($executed === 0) {
+            throw new RuntimeException('The selected backup does not contain SQL statements to restore.');
         }
 
         clearstatcache(true, $backupPath);
@@ -798,65 +787,335 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
 
     private function extractSqlFromBackup(string $zipPath): string
     {
-        $content = @file_get_contents($zipPath);
-        if (!is_string($content) || $content === '') {
+        $entry = $this->inspectStoredSqlZip($zipPath);
+        $handle = @fopen($zipPath, 'rb');
+        if (!is_resource($handle)) {
             throw new RuntimeException('The selected backup file is empty or unreadable.');
         }
 
-        $offset = 0;
-        $entries = [];
-        while (($offset + 30) <= strlen($content) && substr($content, $offset, 4) === "PK\x03\x04") {
-            $header = unpack('Vsignature/vversion/vflags/vmethod/vtime/vdate/Vcrc/Vcompressed_size/Vuncompressed_size/vname_length/vextra_length', substr($content, $offset, 30));
-            if (!is_array($header)) {
-                throw new RuntimeException('The selected backup ZIP header is malformed.');
-            }
-
-            $method = (int)$header['method'];
-            $compressedSize = (int)$header['compressed_size'];
-            $uncompressedSize = (int)$header['uncompressed_size'];
-            $nameLength = (int)$header['name_length'];
-            $extraLength = (int)$header['extra_length'];
-            $dataOffset = $offset + 30 + $nameLength + $extraLength;
-            $dataEnd = $dataOffset + $compressedSize;
-
-            if ($nameLength <= 0 || $compressedSize < 0 || $dataEnd > strlen($content)) {
+        try {
+            if (fseek($handle, (int)$entry['data_offset']) !== 0) {
                 throw new RuntimeException('The selected backup ZIP entry is malformed.');
             }
-
-            $entryName = substr($content, $offset + 30, $nameLength);
-            $entryData = substr($content, $dataOffset, $compressedSize);
-            if ($method !== 0 || strlen($entryData) !== $uncompressedSize) {
-                throw new RuntimeException('The selected backup ZIP uses an unsupported compression method.');
-            }
-            $expectedCrc = sprintf('%08x', (int)$header['crc']);
-            $actualCrc = hash('crc32b', $entryData);
-            if (!hash_equals($expectedCrc, $actualCrc)) {
-                throw new RuntimeException('The selected backup ZIP failed its integrity checksum.');
-            }
-
-            $entries[] = [
-                'name' => $entryName,
-                'data' => $entryData,
-            ];
-
-            $offset = $dataEnd;
+            $sql = $this->readExactly(
+                $handle,
+                (int)$entry['data_size'],
+                'The selected backup ZIP SQL entry is truncated.'
+            );
+        } finally {
+            fclose($handle);
         }
 
-        if (count($entries) !== 1) {
-            throw new RuntimeException('The selected backup ZIP must contain exactly one SQL file.');
-        }
-
-        $entry = $entries[0];
-        if (!str_ends_with(strtolower((string)$entry['name']), '.sql')) {
-            throw new RuntimeException('The selected backup ZIP does not contain a SQL dump.');
-        }
-
-        $sql = (string)$entry['data'];
         if (trim($sql) === '') {
             throw new RuntimeException('The selected backup SQL dump is empty.');
         }
 
         return $sql;
+    }
+
+    /**
+     * Inspect the single, stored (uncompressed) SQL entry without loading it into memory.
+     *
+     * @return array{name: string, data_offset: int, data_size: int}
+     */
+    private function inspectStoredSqlZip(string $zipPath): array
+    {
+        $handle = @fopen($zipPath, 'rb');
+        $fileSize = is_file($zipPath) ? (int)(filesize($zipPath) ?: 0) : 0;
+        if (!is_resource($handle) || $fileSize <= 0) {
+            throw new RuntimeException('The selected backup file is empty or unreadable.');
+        }
+
+        try {
+            $localHeader = unpack(
+                'Vsignature/vversion/vflags/vmethod/vtime/vdate/Vcrc/Vcompressed_size/Vuncompressed_size/vname_length/vextra_length',
+                $this->readExactly($handle, 30, 'The selected backup ZIP header is malformed.')
+            );
+            if (!is_array($localHeader) || (int)($localHeader['signature'] ?? 0) !== 0x04034b50) {
+                throw new RuntimeException('The selected backup ZIP header is malformed.');
+            }
+
+            $flags = (int)$localHeader['flags'];
+            $method = (int)$localHeader['method'];
+            $compressedSize = (int)$localHeader['compressed_size'];
+            $uncompressedSize = (int)$localHeader['uncompressed_size'];
+            $nameLength = (int)$localHeader['name_length'];
+            $extraLength = (int)$localHeader['extra_length'];
+            if (
+                $flags !== 0
+                || $method !== 0
+                || $compressedSize <= 0
+                || $compressedSize !== $uncompressedSize
+                || $nameLength <= 0
+                || $extraLength < 0
+            ) {
+                throw new RuntimeException('The selected backup ZIP uses an unsupported compression method.');
+            }
+
+            $entryName = $this->readExactly($handle, $nameLength, 'The selected backup ZIP entry name is malformed.');
+            if (!str_ends_with(strtolower($entryName), '.sql')) {
+                throw new RuntimeException('The selected backup ZIP does not contain a SQL dump.');
+            }
+            if ($extraLength > 0) {
+                $this->readExactly($handle, $extraLength, 'The selected backup ZIP entry metadata is malformed.');
+            }
+
+            $dataOffset = 30 + $nameLength + $extraLength;
+            $dataEnd = $dataOffset + $compressedSize;
+            if ($dataEnd >= $fileSize) {
+                throw new RuntimeException('The selected backup ZIP entry is malformed.');
+            }
+
+            $crcContext = hash_init('crc32b');
+            $hasSqlContent = false;
+            $remaining = $compressedSize;
+            while ($remaining > 0) {
+                $chunk = fread($handle, min(1024 * 1024, $remaining));
+                if (!is_string($chunk) || $chunk === '') {
+                    throw new RuntimeException('The selected backup ZIP SQL entry is truncated.');
+                }
+                hash_update($crcContext, $chunk);
+                $hasSqlContent = $hasSqlContent || preg_match('/\S/', $chunk) === 1;
+                $remaining -= strlen($chunk);
+            }
+            if (!$hasSqlContent) {
+                throw new RuntimeException('The selected backup SQL dump is empty.');
+            }
+
+            $expectedCrc = sprintf('%08x', (int)$localHeader['crc']);
+            if (!hash_equals($expectedCrc, hash_final($crcContext))) {
+                throw new RuntimeException('The selected backup ZIP failed its integrity checksum.');
+            }
+
+            $centralHeaderContent = $this->readExactly($handle, 46, 'The selected backup ZIP directory is malformed.');
+            $centralHeader = unpack(
+                'Vsignature/vversion_made/vversion_needed/vflags/vmethod/vtime/vdate/Vcrc/Vcompressed_size/Vuncompressed_size/vname_length/vextra_length/vcomment_length/vdisk_start/vinternal_attributes/Vexternal_attributes/Vlocal_offset',
+                $centralHeaderContent
+            );
+            if (!is_array($centralHeader) || (int)($centralHeader['signature'] ?? 0) !== 0x02014b50) {
+                throw new RuntimeException('The selected backup ZIP directory is malformed.');
+            }
+
+            $centralNameLength = (int)$centralHeader['name_length'];
+            $centralExtraLength = (int)$centralHeader['extra_length'];
+            $centralCommentLength = (int)$centralHeader['comment_length'];
+            $centralSize = 46 + $centralNameLength + $centralExtraLength + $centralCommentLength;
+            $centralEntryName = $this->readExactly(
+                $handle,
+                $centralNameLength,
+                'The selected backup ZIP directory is malformed.'
+            );
+            if ($centralExtraLength + $centralCommentLength > 0) {
+                $this->readExactly(
+                    $handle,
+                    $centralExtraLength + $centralCommentLength,
+                    'The selected backup ZIP directory is malformed.'
+                );
+            }
+
+            $endRecord = unpack(
+                'Vsignature/vdisk/vcentral_disk/ventries_disk/ventries_total/Vcentral_size/Vcentral_offset/vcomment_length',
+                $this->readExactly($handle, 22, 'The selected backup ZIP directory is malformed.')
+            );
+            if (
+                !is_array($endRecord)
+                || (int)($endRecord['signature'] ?? 0) !== 0x06054b50
+                || (int)$endRecord['disk'] !== 0
+                || (int)$endRecord['central_disk'] !== 0
+                || (int)$endRecord['entries_disk'] !== 1
+                || (int)$endRecord['entries_total'] !== 1
+                || (int)$endRecord['comment_length'] !== 0
+                || $fileSize !== $dataEnd + $centralSize + 22
+                || (int)$endRecord['central_size'] !== $centralSize
+                || (int)$endRecord['central_offset'] !== $dataEnd
+                || (int)$centralHeader['flags'] !== $flags
+                || (int)$centralHeader['method'] !== $method
+                || (int)$centralHeader['crc'] !== (int)$localHeader['crc']
+                || (int)$centralHeader['compressed_size'] !== $compressedSize
+                || (int)$centralHeader['uncompressed_size'] !== $uncompressedSize
+                || (int)$centralHeader['local_offset'] !== 0
+                || $centralEntryName !== $entryName
+            ) {
+                throw new RuntimeException('The selected backup ZIP directory is malformed.');
+            }
+
+            return [
+                'name' => $entryName,
+                'data_offset' => $dataOffset,
+                'data_size' => $compressedSize,
+            ];
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    /** @param array{name: string, data_offset: int, data_size: int} $entry */
+    private function readStoredSqlPrefix(string $zipPath, array $entry): string
+    {
+        $handle = @fopen($zipPath, 'rb');
+        if (!is_resource($handle)) {
+            throw new RuntimeException('The selected backup file is empty or unreadable.');
+        }
+
+        try {
+            if (fseek($handle, (int)$entry['data_offset']) !== 0) {
+                throw new RuntimeException('The selected backup ZIP entry is malformed.');
+            }
+
+            return $this->readExactly(
+                $handle,
+                min(4096, (int)$entry['data_size']),
+                'The selected backup ZIP SQL entry is truncated.'
+            );
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    /** @param array{name: string, data_offset: int, data_size: int} $entry */
+    private function executeStoredSqlZip(PDO $pdo, string $zipPath, array $entry): int
+    {
+        $handle = @fopen($zipPath, 'rb');
+        if (!is_resource($handle)) {
+            throw new RuntimeException('The selected backup file is empty or unreadable.');
+        }
+
+        $buffer = '';
+        $pending = '';
+        $quote = null;
+        $lineComment = false;
+        $blockComment = false;
+        $executed = 0;
+        $emitStatement = function () use (&$buffer, &$executed, $pdo): void {
+            $statement = trim($buffer);
+            $buffer = '';
+            if ($statement === '' || $this->shouldSkipRestoreStatement($statement)) {
+                return;
+            }
+
+            $pdo->exec($statement);
+            $executed++;
+        };
+        $consume = function (string $content, bool $final) use (
+            &$buffer,
+            &$pending,
+            &$quote,
+            &$lineComment,
+            &$blockComment,
+            $emitStatement
+        ): void {
+            $length = strlen($content);
+            for ($index = 0; $index < $length; $index++) {
+                $char = $content[$index];
+                $next = $index + 1 < $length ? $content[$index + 1] : '';
+
+                if ($lineComment) {
+                    $buffer .= $char;
+                    if ($char === "\n") {
+                        $lineComment = false;
+                    }
+                    continue;
+                }
+
+                if ($blockComment) {
+                    if ($char === '*' && $next === '' && !$final) {
+                        $pending = '*';
+                        return;
+                    }
+                    $buffer .= $char;
+                    if ($char === '*' && $next === '/') {
+                        $buffer .= $next;
+                        $index++;
+                        $blockComment = false;
+                    }
+                    continue;
+                }
+
+                if ($quote !== null) {
+                    if ($char === '\\' && $next === '' && !$final) {
+                        $pending = '\\';
+                        return;
+                    }
+                    $buffer .= $char;
+                    if ($char === '\\' && $next !== '') {
+                        $buffer .= $next;
+                        $index++;
+                        continue;
+                    }
+                    if ($char === $quote) {
+                        $quote = null;
+                    }
+                    continue;
+                }
+
+                if ($char === '-' && $next === '' && !$final) {
+                    $pending = '-';
+                    return;
+                }
+                if (($char === '-' && $next === '-' && ($index + 2 >= $length || preg_match('/\s/', $content[$index + 2]) === 1)) || $char === '#') {
+                    $lineComment = true;
+                    $buffer .= $char;
+                    if ($char === '-') {
+                        $buffer .= $next;
+                        $index++;
+                    }
+                    continue;
+                }
+
+                if ($char === '/' && $next === '' && !$final) {
+                    $pending = '/';
+                    return;
+                }
+                if ($char === '/' && $next === '*') {
+                    $blockComment = true;
+                    $buffer .= $char . $next;
+                    $index++;
+                    continue;
+                }
+
+                if ($char === "'" || $char === '"' || $char === '`') {
+                    $quote = $char;
+                    $buffer .= $char;
+                    continue;
+                }
+
+                if ($char === ';') {
+                    $emitStatement();
+                    continue;
+                }
+
+                $buffer .= $char;
+            }
+        };
+
+        try {
+            if (fseek($handle, (int)$entry['data_offset']) !== 0) {
+                throw new RuntimeException('The selected backup ZIP entry is malformed.');
+            }
+
+            $remaining = (int)$entry['data_size'];
+            while ($remaining > 0) {
+                $chunk = fread($handle, min(1024 * 1024, $remaining));
+                if (!is_string($chunk) || $chunk === '') {
+                    throw new RuntimeException('The selected backup ZIP SQL entry is truncated.');
+                }
+                $remaining -= strlen($chunk);
+                $content = $pending . $chunk;
+                $pending = '';
+                $consume($content, $remaining === 0);
+            }
+            if ($pending !== '') {
+                $content = $pending;
+                $pending = '';
+                $consume($content, true);
+            }
+
+            $emitStatement();
+        } finally {
+            fclose($handle);
+        }
+
+        return $executed;
     }
 
     private function splitSqlStatements(string $sql): array

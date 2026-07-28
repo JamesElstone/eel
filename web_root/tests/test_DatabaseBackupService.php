@@ -319,6 +319,28 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
     $harness->assertSame('eel_accounts', (string)($restored['source_database'] ?? ''));
     $harness->assertSame('eel_accounts_ap79_scratch', (string)($restored['target_database'] ?? ''));
 
+    $streamingSqlPath = $backupDirectory . DIRECTORY_SEPARATOR . 'streaming_fixture.sql';
+    $streamingZipPath = $backupDirectory . DIRECTORY_SEPARATOR . 'streaming_fixture.sql.zip';
+    $streamingSql = "-- EEL Accounts database backup\n"
+        . "-- Database: eel_accounts\n"
+        . "-- Database-Name-Base64: " . base64_encode('eel_accounts') . "\n\n"
+        . "INSERT INTO `sample` (`note`) VALUES ('"
+        . str_repeat('x', 1024 * 1024 + 100)
+        . ";inside quoted text');\n";
+    file_put_contents($streamingSqlPath, $streamingSql);
+    $publishMethod->invoke($directoryService, $streamingSqlPath, $streamingZipPath, basename($streamingSqlPath));
+    unset($streamingSql);
+
+    $restorePdo->statements = [];
+    $streamingRestore = $guardedRestore->restoreBackup(
+        'streaming_fixture.sql.zip',
+        'eel_accounts_ap79_scratch',
+        'eel_accounts'
+    );
+    $harness->assertSame(1, (int)($streamingRestore['statement_count'] ?? 0));
+    $harness->assertSame(2, count($restorePdo->statements));
+    $harness->assertTrue(str_contains($restorePdo->statements[1] ?? '', ';inside quoted text'));
+
     $legacyPdo = new DatabaseBackupRecordingPdo();
     $legacyPdo->databaseName = 'eel_accounts';
     $legacyRestore = new \eel_accounts\Service\DatabaseBackupService(

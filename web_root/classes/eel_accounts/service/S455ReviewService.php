@@ -115,7 +115,13 @@ final class S455ReviewService
             ? ['rows' => [], 'errors' => []]
             : $this->cashEvidence($companyId, $ledgerStart, $evidenceThroughDate, $cutoff);
         $lotsByParty = [];
-        $liabilitiesByParty = [];
+        // A positive legal balance means that the company owes the
+        // participator. A negative balance means that the participator owes
+        // the company. Section 455 lots may arise only from the latter.
+        // Keep this separate from the gross debit and credit control totals:
+        // those totals are accounting controls, not legal loan balances.
+        $legalBalancesByParty = [];
+        $legalPeriodByParty = [];
         $movements = [];
         $unattributedMovements = [];
         $futureUnattributedMovements = [];
@@ -163,40 +169,71 @@ final class S455ReviewService
                     . ', but that party is not an effective shareholder, participator, or associate on ' . $date . '.';
             }
             $amount = round((float)($row['amount'] ?? 0), 2);
-            $kind = (string)$row['cash_direction'];
-            $settled = 0.0;
-            if ($kind === 'payment') {
-                $liability = round((float)($liabilitiesByParty[$partyId] ?? 0), 2);
-                $settled = min($liability, $amount);
-                $liabilitiesByParty[$partyId] = round($liability - $settled, 2);
-                $advance = round($amount - $settled, 2);
-                if ($advance >= 0.005) {
-                    $rate = $this->rateForDate($date, $rateRules);
-                    if ($rate === null) {
-                        $errors[] = 'No local s455 rate rule covers loan transaction #' . (int)$row['transaction_id'] . ' dated ' . $date . '.';
-                        $rate = 0.0;
-                    }
-                    $lotsByParty[$partyId][] = [
-                        'transaction_id' => (int)$row['transaction_id'],
+            $legalBalanceBefore = round((float)($legalBalancesByParty[$partyId] ?? 0), 2);
+            $legalMovement = round((float)($row['credit'] ?? 0) - (float)($row['debit'] ?? 0), 2);
+            $legalBalanceAfter = round($legalBalanceBefore + $legalMovement, 2);
+            $legalBalancesByParty[$partyId] = $legalBalanceAfter;
+            $directorDebtBefore = round(max(0.0, -$legalBalanceBefore), 2);
+            $directorDebtAfter = round(max(0.0, -$legalBalanceAfter), 2);
+            $advance = round(max(0.0, $directorDebtAfter - $directorDebtBefore), 2);
+            $repayment = round(max(0.0, $directorDebtBefore - $directorDebtAfter), 2);
+            if ($date >= (string)$period['period_start'] && $date <= (string)$period['period_end']) {
+                if (!isset($legalPeriodByParty[$partyId])) {
+                    $legalPeriodByParty[$partyId] = [
                         'party_id' => $partyId,
-                        'party_name' => (string)$row['party_name'],
-                        'origin_date' => $date,
-                        'original_amount' => $advance,
-                        'remaining_at_period_end' => 0.0,
-                        'remaining' => $advance,
-                        'rate' => $rate,
+                        'party_name' => (string)($row['party_name'] ?? ''),
+                        'opening_balance' => $legalBalanceBefore,
+                        'minimum_balance' => $legalBalanceBefore,
+                        'maximum_balance' => $legalBalanceBefore,
+                        'advance_created' => 0.0,
+                        'repayment_classified' => 0.0,
                     ];
                 }
-            } else {
-                $remainingReceipt = $amount;
+                $legalPeriodByParty[$partyId]['minimum_balance'] = min(
+                    (float)$legalPeriodByParty[$partyId]['minimum_balance'],
+                    $legalBalanceAfter
+                );
+                $legalPeriodByParty[$partyId]['maximum_balance'] = max(
+                    (float)$legalPeriodByParty[$partyId]['maximum_balance'],
+                    $legalBalanceAfter
+                );
+                $legalPeriodByParty[$partyId]['advance_created'] = round(
+                    (float)$legalPeriodByParty[$partyId]['advance_created'] + $advance,
+                    2
+                );
+                $legalPeriodByParty[$partyId]['repayment_classified'] = round(
+                    (float)$legalPeriodByParty[$partyId]['repayment_classified'] + $repayment,
+                    2
+                );
+            }
+            $settled = 0.0;
+            if ($advance >= 0.005) {
+                $rate = $this->rateForDate($date, $rateRules);
+                if ($rate === null) {
+                    $errors[] = 'No local s455 rate rule covers loan transaction #' . (int)$row['transaction_id'] . ' dated ' . $date . '.';
+                    $rate = 0.0;
+                }
+                $lotsByParty[$partyId][] = [
+                    'transaction_id' => (int)$row['transaction_id'],
+                    'party_id' => $partyId,
+                    'party_name' => (string)$row['party_name'],
+                    'origin_date' => $date,
+                    'original_amount' => $advance,
+                    'remaining_at_period_end' => 0.0,
+                    'remaining' => $advance,
+                    'rate' => $rate,
+                ];
+            }
+            if ($repayment >= 0.005) {
+                $remainingRepayment = $repayment;
                 if (isset($lotsByParty[$partyId])) {
                     foreach ($lotsByParty[$partyId] as &$lot) {
-                        if ($remainingReceipt < 0.005 || (float)$lot['remaining'] < 0.005) {
+                        if ($remainingRepayment < 0.005 || (float)$lot['remaining'] < 0.005) {
                             continue;
                         }
-                        $applied = min((float)$lot['remaining'], $remainingReceipt);
+                        $applied = min((float)$lot['remaining'], $remainingRepayment);
                         $lot['remaining'] = round((float)$lot['remaining'] - $applied, 2);
-                        $remainingReceipt = round($remainingReceipt - $applied, 2);
+                        $remainingRepayment = round($remainingRepayment - $applied, 2);
                         $settled += $applied;
                         $repaymentAllocations[] = [
                             'loan_transaction_id' => (int)$lot['transaction_id'],
@@ -211,11 +248,14 @@ final class S455ReviewService
                     }
                     unset($lot);
                 }
-                if ($remainingReceipt >= 0.005) {
-                    $liabilitiesByParty[$partyId] = round((float)($liabilitiesByParty[$partyId] ?? 0) + $remainingReceipt, 2);
-                }
             }
-            $movements[] = $row + ['settled_opposite_balance' => round($settled, 2)];
+            $movements[] = $row + [
+                'legal_balance_before' => $legalBalanceBefore,
+                'legal_balance_after' => $legalBalanceAfter,
+                'legal_advance_created' => $advance,
+                'legal_repayment_classified' => $repayment,
+                'settled_opposite_balance' => round($settled, 2),
+            ];
             if ($date <= (string)$period['period_end']) {
                 foreach ($lotsByParty as &$partyLots) {
                     foreach ($partyLots as &$lot) {
@@ -264,6 +304,44 @@ final class S455ReviewService
         $qualifyingRepayments = round($qualifyingRepayments, 2);
         $reliefTax = round($reliefTax, 2);
         $netTax = $closeCompanyStatus === 'yes' ? round(max(0, $grossTax - $reliefTax), 2) : 0.0;
+        $legalPeriodRows = array_values(array_map(static function (array $row) use ($legalBalancesByParty): array {
+            $row['closing_balance'] = round((float)($legalBalancesByParty[(int)$row['party_id']] ?? 0), 2);
+            $row['minimum_balance'] = round((float)$row['minimum_balance'], 2);
+            $row['maximum_balance'] = round((float)$row['maximum_balance'], 2);
+            $row['advance_created'] = round((float)$row['advance_created'], 2);
+            $row['repayment_classified'] = round((float)$row['repayment_classified'], 2);
+            return $row;
+        }, $legalPeriodByParty));
+        $statementLegalPeriodRows = $this->legalPeriodBalances(
+            $companyId,
+            $accountingPeriodId,
+            (string)$period['period_start'],
+            (string)$period['period_end']
+        );
+        if ($statementLegalPeriodRows !== []) {
+            $legalPeriodRows = $statementLegalPeriodRows;
+        }
+        $legalAdvanceCreated = round(array_sum(array_column($legalPeriodRows, 'advance_created')), 2);
+        $legalRepaymentClassified = round(array_sum(array_column($legalPeriodRows, 'repayment_classified')), 2);
+        $legalBalanceRemainedCreditor = $legalPeriodRows !== [] && !array_filter(
+            $legalPeriodRows,
+            static fn(array $row): bool => (float)($row['minimum_balance'] ?? 0) < -0.004
+        );
+        if ($legalBalanceRemainedCreditor && $legalAdvanceCreated < 0.005) {
+            // Debit-side control movements that merely reduce a creditor do
+            // not create a company-to-participator loan or an s455 charge.
+            $grossPrincipal = 0.0;
+            $grossTax = 0.0;
+            $qualifyingRepayments = 0.0;
+            $reliefTax = 0.0;
+            $netTax = 0.0;
+            $lots = [];
+        }
+        $s455Outcome = $grossPrincipal >= 0.005
+            ? 'reportable_loan'
+            : ($legalAdvanceCreated >= 0.005 && $legalRepaymentClassified + 0.004 >= $legalAdvanceCreated
+                ? 'repaid_within_period'
+                : 'no_reportable_participator_loan');
         $basis = [
             'version' => 's455-cash-v2',
             'company_id' => $companyId,
@@ -292,6 +370,11 @@ final class S455ReviewService
             'unsupported_movements' => (array)($evidence['unsupported_movements'] ?? []),
             'repayment_allocations' => $repaymentAllocations,
             'all_repayment_allocations' => $repaymentAllocations,
+            'legal_period_balances' => $legalPeriodRows,
+            'legal_advance_created' => $legalAdvanceCreated,
+            'legal_repayment_classified' => $legalRepaymentClassified,
+            'legal_balance_remained_creditor' => $legalBalanceRemainedCreditor,
+            's455_outcome' => $s455Outcome,
             'errors' => array_values(array_unique($errors)),
             'gross_principal' => $grossPrincipal,
             'gross_tax' => $grossTax,
@@ -317,6 +400,11 @@ final class S455ReviewService
             'relief_tax' => $reliefTax,
             'net_tax' => $netTax,
             'ct600a_required' => $closeCompanyStatus === 'yes' && $grossPrincipal >= 0.005,
+            's455_outcome' => $s455Outcome,
+            'legal_period_balances' => $legalPeriodRows,
+            'legal_advance_created' => $legalAdvanceCreated,
+            'legal_repayment_classified' => $legalRepaymentClassified,
+            'legal_balance_remained_creditor' => $legalBalanceRemainedCreditor,
             'basis' => $basis,
             'basis_hash' => $basisHash,
             'close_status_calculated' => $closeCompanyStatus !== 'unconfirmed',
@@ -607,6 +695,82 @@ final class S455ReviewService
         $valid = $parsed !== false && $parsed->format('Y-m-d') === $start;
 
         return $valid && $start < $fallback ? $start : $fallback;
+    }
+
+    /**
+     * Summarise the legal participator balance from the signed control-ledger
+     * statement. Gross asset and liability control totals must not decide
+     * whether a company-to-participator advance or its repayment exists.
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function legalPeriodBalances(
+        int $companyId,
+        int $accountingPeriodId,
+        string $periodStart,
+        string $periodEnd
+    ): array {
+        $statement = (new DirectorLoanService())->fetchStatement($companyId, $accountingPeriodId);
+        if (empty($statement['success'])) {
+            return [];
+        }
+        $balances = [];
+        foreach ((array)($statement['per_director'] ?? []) as $position) {
+            $partyId = (int)($position['party_id'] ?? 0);
+            if ($partyId <= 0) {
+                continue;
+            }
+            $balances[$partyId] = round(
+                (float)($position['opening_liability'] ?? 0) - (float)($position['opening_asset'] ?? 0),
+                2
+            );
+        }
+        $result = [];
+        foreach ((array)($statement['statement_rows'] ?? []) as $row) {
+            $partyId = (int)($row['party_id'] ?? $row['director_id'] ?? 0);
+            if ($partyId <= 0) {
+                continue;
+            }
+            $before = round((float)($balances[$partyId] ?? 0), 2);
+            $after = round((float)($row['running_balance'] ?? $before), 2);
+            $balances[$partyId] = $after;
+            $date = (string)($row['journal_date'] ?? '');
+            if ($date < $periodStart || $date > $periodEnd) {
+                continue;
+            }
+            if (!isset($result[$partyId])) {
+                $result[$partyId] = [
+                    'party_id' => $partyId,
+                    'party_name' => (string)($row['party_name'] ?? $row['director_name'] ?? ''),
+                    'opening_balance' => $before,
+                    'minimum_balance' => $before,
+                    'maximum_balance' => $before,
+                    'advance_created' => 0.0,
+                    'repayment_classified' => 0.0,
+                    'closing_balance' => $before,
+                ];
+            }
+            $debtBefore = round(max(0.0, -$before), 2);
+            $debtAfter = round(max(0.0, -$after), 2);
+            $result[$partyId]['minimum_balance'] = min((float)$result[$partyId]['minimum_balance'], $after);
+            $result[$partyId]['maximum_balance'] = max((float)$result[$partyId]['maximum_balance'], $after);
+            $result[$partyId]['advance_created'] = round(
+                (float)$result[$partyId]['advance_created'] + max(0.0, $debtAfter - $debtBefore),
+                2
+            );
+            $result[$partyId]['repayment_classified'] = round(
+                (float)$result[$partyId]['repayment_classified'] + max(0.0, $debtBefore - $debtAfter),
+                2
+            );
+            $result[$partyId]['closing_balance'] = $after;
+        }
+
+        return array_values(array_map(static function (array $row): array {
+            foreach (['opening_balance', 'minimum_balance', 'maximum_balance', 'advance_created', 'repayment_classified', 'closing_balance'] as $key) {
+                $row[$key] = round((float)$row[$key], 2);
+            }
+            return $row;
+        }, $result));
     }
 
     /** @param list<array<string,mixed>> $rateRules */

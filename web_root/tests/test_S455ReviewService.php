@@ -30,8 +30,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $fixture['ct_period_id'],
                     '2099-12-31 23:59:59'
                 );
-                $harness->assertCount(1, (array)($beforeCorrection['movements'] ?? []));
-                $harness->assertSame($fixture['transaction_id'], (int)($beforeCorrection['movements'][0]['transaction_id'] ?? 0));
+                $harness->assertCount(1, (array)($beforeCorrection['unattributed_movements'] ?? []));
+                $harness->assertSame($fixture['transaction_id'], (int)($beforeCorrection['unattributed_movements'][0]['transaction_id'] ?? 0));
                 $attribution = (new \eel_accounts\Service\DirectorLoanAttributionService())->assignJournalLine(
                     $fixture['company_id'],
                     $fixture['loan_line_id'],
@@ -115,6 +115,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame(true, (bool)($loanReviewAfter['future_attribution_warning']['acknowledged'] ?? false));
 
                 s455CorrectionAwareManualMovement($fixture);
+                \eel_accounts\Support\RequestCache::forgetNamespace('tax.s455');
                 $withManualMovement = $service->calculate(
                     $fixture['company_id'],
                     $fixture['accounting_period_id'],
@@ -131,6 +132,57 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     (string)($withManualMovement['unsupported_movements'][0]['source_url'] ?? ''),
                     'page=journal'
                 ));
+            } finally {
+                if (InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
+                }
+            }
+        });
+
+        $harness->check(get_class($service), 'does not treat debit-side control movements within a creditor balance as advances', static function () use ($harness, $service): void {
+            InterfaceDB::beginTransaction();
+            try {
+                $fixture = s455CorrectionAwareFixture();
+                s455CorrectionAwareOpeningCreditor($fixture, 1035.63);
+                $attribution = (new \eel_accounts\Service\DirectorLoanAttributionService())->assignJournalLine(
+                    $fixture['company_id'], $fixture['loan_line_id'], $fixture['party_id'], 'test-suite',
+                    'Legal running-balance fixture.'
+                );
+                $harness->assertSame(true, (bool)($attribution['success'] ?? false));
+                InterfaceDB::prepareExecute(
+                    'UPDATE transactions SET amount = -470.00 WHERE id = :id',
+                    ['id' => $fixture['transaction_id']]
+                );
+                InterfaceDB::prepareExecute(
+                    'UPDATE journal_lines SET debit = 470.00
+                     WHERE journal_id = :journal_id AND nominal_account_id = :nominal_account_id',
+                    [
+                        'journal_id' => (int)$attribution['replacement_journal_id'],
+                        'nominal_account_id' => $fixture['asset_nominal_id'],
+                    ]
+                );
+                s455CorrectionAwareManualControlMovement(
+                    $fixture, $fixture['liability_nominal_id'], 0.00, 10873.46, '2024-06-16', 'Further participator funding'
+                );
+                s455CorrectionAwareManualControlMovement(
+                    $fixture, $fixture['asset_nominal_id'], 4150.83, 0.00, '2024-06-17', 'Company payment within creditor balance'
+                );
+                $result = $service->calculate(
+                    $fixture['company_id'],
+                    $fixture['accounting_period_id'],
+                    $fixture['ct_period_id'],
+                    '2099-12-31 23:59:59'
+                );
+                $legal = (array)($result['legal_period_balances'][0] ?? []);
+                $harness->assertSame('no_reportable_participator_loan', (string)($result['s455_outcome'] ?? ''));
+                $harness->assertSame('0.00', number_format((float)($result['legal_advance_created'] ?? 0), 2, '.', ''));
+                $harness->assertSame('0.00', number_format((float)($result['legal_repayment_classified'] ?? 0), 2, '.', ''));
+                $harness->assertSame(true, (bool)($result['legal_balance_remained_creditor'] ?? false));
+                $harness->assertSame('1035.63', number_format((float)($legal['opening_balance'] ?? 0), 2, '.', ''));
+                $harness->assertSame('565.63', number_format((float)($legal['minimum_balance'] ?? 0), 2, '.', ''));
+                $harness->assertSame('7288.26', number_format((float)($legal['closing_balance'] ?? 0), 2, '.', ''));
+                $harness->assertSame('0.00', number_format((float)($result['gross_principal'] ?? 0), 2, '.', ''));
+                $harness->assertSame(false, (bool)($result['ct600a_required'] ?? true));
             } finally {
                 if (InterfaceDB::inTransaction()) {
                     InterfaceDB::rollBack();
@@ -177,6 +229,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'UPDATE transactions SET amount = -125.00 WHERE id = :id',
                     ['id' => $fixture['transaction_id']]
                 );
+                InterfaceDB::prepareExecute(
+                    'UPDATE journal_lines SET debit = 125.00
+                     WHERE journal_id = :journal_id AND nominal_account_id = :nominal_account_id',
+                    [
+                        'journal_id' => (int)$attribution['replacement_journal_id'],
+                        'nominal_account_id' => $fixture['asset_nominal_id'],
+                    ]
+                );
                 $directAgain = $service->calculate(
                     $fixture['company_id'], $fixture['accounting_period_id'], $fixture['ct_period_id'], '2099-12-31 23:59:59'
                 );
@@ -190,6 +250,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 InterfaceDB::prepareExecute(
                     'UPDATE transactions SET amount = -150.00 WHERE id = :id',
                     ['id' => $fixture['transaction_id']]
+                );
+                InterfaceDB::prepareExecute(
+                    'UPDATE journal_lines SET debit = 150.00
+                     WHERE journal_id = :journal_id AND nominal_account_id = :nominal_account_id',
+                    [
+                        'journal_id' => (int)$attribution['replacement_journal_id'],
+                        'nominal_account_id' => $fixture['asset_nominal_id'],
+                    ]
                 );
                 $cachedAgain = $service->calculate(
                     $fixture['company_id'], $fixture['accounting_period_id'], $fixture['ct_period_id'], '2099-12-31 23:59:59'
@@ -445,6 +513,75 @@ function s455CorrectionAwareManualMovement(array $fixture): void
                 'debit' => $debit,
                 'credit' => $credit,
                 'description' => 'Unsupported manual loan movement fixture',
+            ]
+        );
+    }
+}
+
+/** @param array<string,int> $fixture */
+function s455CorrectionAwareOpeningCreditor(array $fixture, float $amount): void
+{
+    s455CorrectionAwareManualControlMovement(
+        $fixture,
+        $fixture['liability_nominal_id'],
+        0.00,
+        $amount,
+        '2023-12-31',
+        'Opening participator creditor fixture'
+    );
+}
+
+/** @param array<string,int> $fixture */
+function s455CorrectionAwareManualControlMovement(
+    array $fixture,
+    int $controlNominalId,
+    float $controlDebit,
+    float $controlCredit,
+    string $date,
+    string $description
+): void
+{
+    InterfaceDB::prepareExecute(
+        'INSERT INTO journals (
+            company_id, accounting_period_id, source_type, source_ref,
+            journal_date, description, is_posted
+         ) VALUES (
+            :company_id, :accounting_period_id, :source_type, :source_ref,
+            :journal_date, :description, 1
+         )',
+        [
+            'company_id' => $fixture['company_id'],
+            'accounting_period_id' => $fixture['accounting_period_id'],
+            'source_type' => 'manual',
+            'source_ref' => 's455-legal-control:' . $fixture['transaction_id'] . ':' . hash('crc32b', $date . $description),
+            'journal_date' => $date,
+            'description' => $description,
+        ]
+    );
+    $journalId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM journals WHERE company_id = :company_id AND source_ref = :source_ref',
+        [
+            'company_id' => $fixture['company_id'],
+            'source_ref' => 's455-legal-control:' . $fixture['transaction_id'] . ':' . hash('crc32b', $date . $description),
+        ]
+    );
+    foreach ([
+        [$fixture['bank_nominal_id'], $controlCredit, $controlDebit, null],
+        [$controlNominalId, $controlDebit, $controlCredit, $fixture['party_id']],
+    ] as [$nominalId, $debit, $credit, $partyId]) {
+        InterfaceDB::prepareExecute(
+            'INSERT INTO journal_lines (
+                journal_id, nominal_account_id, debit, credit, party_id, line_description
+             ) VALUES (
+                :journal_id, :nominal_id, :debit, :credit, :party_id, :description
+             )',
+            [
+                'journal_id' => $journalId,
+                'nominal_id' => $nominalId,
+                'debit' => $debit,
+                'credit' => $credit,
+                'party_id' => $partyId,
+                'description' => $description,
             ]
         );
     }

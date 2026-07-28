@@ -43,6 +43,8 @@ final class _director_loan_s455Card extends CardBaseFramework
             </div>';
         foreach ((array)$s455['periods'] as $period) {
             if (empty($period['available'])) { continue; }
+            $outcome = $this->outcome($period);
+            $noReportableLoan = $outcome === 'no_reportable_participator_loan';
             $html .= '<section class="panel-soft settings-stack">'
                 . '<div class="summary-grid four">'
                 . $this->stat(
@@ -53,15 +55,13 @@ final class _director_loan_s455Card extends CardBaseFramework
                 . $this->stat('Evidence cutoff', (string)$period['evidence_cutoff'])
                 . $this->stat(
                     's455 exposure',
-                    (float)($period['gross_tax'] ?? 0) > 0
-                        ? 'Exposure'
-                        : 'Repaid within the accounting period; no amount reportable and no s455 tax payable',
-                    (float)($period['gross_tax'] ?? 0) > 0 ? 'warn' : 'success'
+                    $this->outcomeLabel($outcome),
+                    $outcome === 'reportable_loan' ? 'warn' : 'success'
                 )
-                . $this->stat('Repayment deadline', (string)$period['repayment_deadline'])
+                . ($noReportableLoan ? '' : $this->stat('Repayment deadline', (string)$period['repayment_deadline']))
                 . '</div>'
-                . $this->s455TaxTable($settings, $period)
-                . ($this->repaymentGuidance($period))
+                . ($noReportableLoan ? '' : $this->s455TaxTable($settings, $period))
+                . ($noReportableLoan ? '' : $this->repaymentGuidance($period))
                 . '</section>';
         }
         return $html . '</section>';
@@ -76,6 +76,24 @@ final class _director_loan_s455Card extends CardBaseFramework
         return '<div class="panel-soft warn"><strong>Repayment opportunity</strong><div class="helper">Future transactions that are cash repayments, correctly categorised to the Participator Loan nominal on or before '
             . HelperFramework::escape((string)($period['repayment_deadline'] ?? 'the repayment deadline'))
             . ' may reduce this s455 position. A repayment is counted only when the party, timing, and statutory eligibility checks pass. This is guidance only and does not block Year End from closing.</div></div>';
+    }
+
+    private function outcome(array $period): string
+    {
+        $outcome = (string)($period['s455_outcome'] ?? '');
+        if (in_array($outcome, ['reportable_loan', 'repaid_within_period', 'no_reportable_participator_loan'], true)) {
+            return $outcome;
+        }
+        return (float)($period['gross_tax'] ?? 0) > 0 ? 'reportable_loan' : 'repaid_within_period';
+    }
+
+    private function outcomeLabel(string $outcome): string
+    {
+        return match ($outcome) {
+            'reportable_loan' => 'Exposure',
+            'no_reportable_participator_loan' => 'No reportable participator loan; no Section 455 tax payable',
+            default => 'Repaid within the accounting period; no amount reportable and no Section 455 tax payable',
+        };
     }
 
     private function stat(string $label, string $value, string $variant = ''): string

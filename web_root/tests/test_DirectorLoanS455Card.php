@@ -76,6 +76,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                             'period_end' => '2023-12-31',
                             'evidence_cutoff' => '2023-12-31 12:00:00',
                             'gross_tax' => 0.0,
+                            's455_outcome' => 'no_reportable_participator_loan',
                             'repayment_deadline' => '2024-09-30',
                         ]],
                     ],
@@ -83,8 +84,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             ]);
             $harness->assertTrue(str_contains(
                 $noExposureHtml,
-                'Repaid within the accounting period; no amount reportable and no s455 tax payable'
+                'No reportable participator loan; no Section 455 tax payable'
             ));
+            $harness->assertFalse(str_contains($noExposureHtml, 'Repaid within the accounting period'));
+            $harness->assertFalse(str_contains($noExposureHtml, 'Repayment deadline'));
+            $harness->assertFalse(str_contains($noExposureHtml, 'Payments made after this Accounting Period'));
             $harness->assertFalse(str_contains($noExposureHtml, '>No exposure<'));
         });
     }

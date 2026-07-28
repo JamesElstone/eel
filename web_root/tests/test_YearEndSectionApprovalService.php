@@ -345,6 +345,18 @@ $harness->run(\eel_accounts\Service\YearEndSectionApprovalService::class, static
         $harness->assertSame(3, (int)(($bundle['facts'] ?? [])['account_count'] ?? 0));
     });
 
+    $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'identifies the accounting period in cache-rebuild progress updates', static function () use ($harness, $service): void {
+        $periodLabel = new ReflectionMethod($service, 'accountingPeriodLabel');
+
+        $harness->assertSame('01/10/2023 to 30/09/2024', (string)$periodLabel->invoke($service, [
+            'accounting_period_id' => 80,
+            'accounting_period_label' => '01/10/2023 to 30/09/2024',
+        ]));
+        $harness->assertSame('Accounting period 80', (string)$periodLabel->invoke($service, [
+            'accounting_period_id' => 80,
+        ]));
+    });
+
     $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'ships the persistent bundle migration and master-schema definition', static function () use ($harness): void {
         $root = dirname(__DIR__, 2);
         $schema = (string)file_get_contents($root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'eel_accounts.schema.sql');

@@ -355,7 +355,7 @@ final class YearEndSectionApprovalService
         }
 
         $rows = \InterfaceDB::fetchAll(
-            'SELECT b.accounting_period_id, b.check_code
+            'SELECT b.accounting_period_id, b.check_code, ap.label AS accounting_period_label
              FROM year_end_section_review_bundles b
              INNER JOIN accounting_periods ap ON ap.id = b.accounting_period_id
              WHERE b.company_id = :bundle_company_id
@@ -386,7 +386,8 @@ final class YearEndSectionApprovalService
                 continue;
             }
             $progress?->__invoke(
-                'Rebuilding Year End review cache: ' . $this->sectionLabel($checkCode) . '…',
+                'Rebuilding Year End review cache: ' . $this->sectionLabel($checkCode)
+                    . ' — ' . $this->accountingPeriodLabel($row) . '…',
                 $total > 0 ? 70 + (int)floor((($index + 1) / $total) * 14) : 84
             );
             try {
@@ -446,6 +447,17 @@ final class YearEndSectionApprovalService
             'companies_house_no_filing_acknowledgement' => 'No exact accounts filing',
             default => \HelperFramework::labelFromKey($checkCode, '_'),
         };
+    }
+
+    /** @param array<string,mixed> $row */
+    private function accountingPeriodLabel(array $row): string
+    {
+        $label = trim((string)($row['accounting_period_label'] ?? ''));
+        if ($label !== '') {
+            return $label;
+        }
+
+        return 'Accounting period ' . (int)($row['accounting_period_id'] ?? 0);
     }
 
     /**

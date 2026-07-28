@@ -142,6 +142,7 @@ final class IxbrlTaxComputationService
                 $companyId,
                 (string)$model['model']['identity']['company_number'],
                 $accountingPeriodId,
+                (int)($model['approval']['id'] ?? 0),
                 $runId,
                 IxbrlArtifactFilenameService::DESTINATION_HMRC_CT600,
                 str_replace('-', '', (string)$run['period_start']),

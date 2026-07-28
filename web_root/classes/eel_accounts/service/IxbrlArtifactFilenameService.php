@@ -25,6 +25,7 @@ final class IxbrlArtifactFilenameService
     public function build(
         string $companyNumber,
         int $accountingPeriodId,
+        int $approvalId,
         int $runId,
         string $destination,
         string $periodStart,
@@ -33,7 +34,7 @@ final class IxbrlArtifactFilenameService
     ): string {
         $number = strtoupper((string)preg_replace('/[^A-Za-z0-9]/', '', trim($companyNumber)));
         $hash = strtolower(trim($sha256));
-        if ($number === '' || $accountingPeriodId <= 0 || $runId <= 0) {
+        if ($number === '' || $accountingPeriodId <= 0 || $approvalId <= 0 || $runId <= 0) {
             throw new \InvalidArgumentException('Invalid iXBRL artifact identity.');
         }
         if (!in_array($destination, self::DESTINATIONS, true)) {
@@ -48,6 +49,7 @@ final class IxbrlArtifactFilenameService
 
         return 'accounts_' . $number
             . '_' . $accountingPeriodId
+            . '_' . $approvalId
             . '_' . $runId
             . '_' . $destination
             . '_' . $periodStart

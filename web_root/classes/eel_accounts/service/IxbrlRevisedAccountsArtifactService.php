@@ -109,6 +109,7 @@ final class IxbrlRevisedAccountsArtifactService
             $filename = (new IxbrlArtifactFilenameService())->build(
                 (string)$period['company_number'],
                 $accountingPeriodId,
+                (int)($baseArtifact['filing_approval_id'] ?? 0),
                 (int)($baseArtifact['run_id'] ?? 0),
                 IxbrlArtifactFilenameService::DESTINATION_COMPANIES_HOUSE,
                 str_replace('-', '', (string)$period['period_start']),

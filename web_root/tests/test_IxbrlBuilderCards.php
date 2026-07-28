@@ -845,50 +845,76 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
 });
 
 $harness->run(_ixbrl_historyCard::class, static function (GeneratedServiceClassTestHarness $harness, _ixbrl_historyCard $card): void {
-    $harness->check(_ixbrl_historyCard::class, 'groups every historical run by approval and keeps unlinked history', static function () use ($harness, $card): void {
+    $harness->check(_ixbrl_historyCard::class, 'unifies generated iXBRL artifacts under approval cells and keeps unlinked history', static function () use ($harness, $card): void {
         $generatedRun = [
             'evidence_bundle_id' => 15,
             'approved_at' => '2026-07-27 01:27:05',
             'fact_count' => 57,
-            'status' => 'generated',
+            'output_status' => 'generated',
             'generated_filename' => 'accounts.xhtml',
             'generated_path' => 'missing-accounts.xhtml',
             'artifact_exists' => false,
             'validation_status' => 'passed',
             'external_validation_status' => 'passed',
-            'companies_house_count' => 2,
-            'companies_house_filed_count' => 0,
             'created_at' => '2026-07-27 01:28:00',
             'generated_at' => '2026-07-27 01:29:00',
+            'history_at' => '2026-07-27 01:29:00',
         ];
         $html = $card->render([
             'services' => [
                 'ixbrl_history' => [
-                    array_replace($generatedRun, ['id' => 19, 'filing_approval_id' => 12]),
-                    array_replace($generatedRun, ['id' => 22, 'filing_approval_id' => 0, 'evidence_bundle_id' => 0]),
-                    array_replace($generatedRun, ['id' => 20, 'filing_approval_id' => 11, 'evidence_bundle_id' => 14]),
-                    array_replace($generatedRun, ['id' => 21, 'filing_approval_id' => 12]),
+                    array_replace($generatedRun, [
+                        'source_id' => 19, 'run_id' => 19, 'filing_approval_id' => 12,
+                        'output_type' => 'hmrc_accounting', 'output_label' => 'HMRC Accounting',
+                    ]),
+                    array_replace($generatedRun, [
+                        'source_id' => 22, 'run_id' => 22, 'filing_approval_id' => 0, 'evidence_bundle_id' => 0,
+                        'output_type' => 'hmrc_accounting', 'output_label' => 'HMRC Accounting',
+                        'history_at' => '2026-07-27 01:35:00', 'is_latest' => true,
+                    ]),
+                    array_replace($generatedRun, [
+                        'source_id' => 20, 'run_id' => 20, 'filing_approval_id' => 11, 'evidence_bundle_id' => 14,
+                        'output_type' => 'hmrc_accounting', 'output_label' => 'HMRC Accounting',
+                    ]),
+                    array_replace($generatedRun, [
+                        'source_id' => 31, 'run_id' => 31, 'filing_approval_id' => 12,
+                        'output_type' => 'hmrc_ct600', 'output_label' => 'HMRC CT600',
+                        'ct_period_label' => 'CT period 1 (2025-04-01 to 2026-03-31)',
+                        'fact_count' => null, 'output_status' => 'validated',
+                        'generated_filename' => 'ct600.xhtml', 'history_at' => '2026-07-27 01:31:00',
+                    ]),
+                    array_replace($generatedRun, [
+                        'source_id' => 41, 'run_id' => 19, 'filing_approval_id' => 12,
+                        'output_type' => 'companies_house_revised', 'output_label' => 'Companies House Revised',
+                        'generated_filename' => 'revised.xhtml', 'history_at' => '2026-07-27 01:33:00',
+                        'lifecycle' => 'accepted',
+                    ]),
                 ],
             ],
         ]);
 
-        $harness->assertTrue(str_contains($html, '#21'));
-        $harness->assertTrue(str_contains($html, '#19'));
-        $harness->assertTrue(str_contains($html, '#20'));
-        $harness->assertTrue(str_contains($html, '#22'));
-        $harness->assertSame(1, substr_count($html, 'Approval #12 · Evidence bundle #15'));
-        $harness->assertTrue(str_contains($html, 'Approval #11 · Evidence bundle #14'));
-        $harness->assertTrue(str_contains($html, 'Unlinked runs'));
+        $harness->assertTrue(str_contains($html, 'Run #19'));
+        $harness->assertTrue(str_contains($html, 'Run #20'));
+        $harness->assertTrue(str_contains($html, 'Run #22'));
+        $harness->assertTrue(str_contains($html, 'Run #31'));
+        $harness->assertTrue(str_contains($html, 'Base run #19'));
+        $harness->assertSame(1, substr_count($html, '<td rowspan="3"><strong>#12</strong></td>'));
+        $harness->assertTrue(str_contains($html, '<td rowspan="3">#15</td>'));
+        $harness->assertTrue(str_contains($html, '<td rowspan="1"><strong>#11</strong></td>'));
+        $harness->assertTrue(str_contains($html, '<td rowspan="1">#14</td>'));
+        $harness->assertTrue(str_contains($html, '<td rowspan="1"><strong>Unlinked</strong></td>'));
         $harness->assertTrue(
-            strpos($html, 'Approval #12') < strpos($html, 'Approval #11')
-            && strpos($html, 'Approval #11') < strpos($html, 'Unlinked runs')
+            strpos($html, '<strong>#12</strong>') < strpos($html, '<strong>#11</strong>')
+            && strpos($html, '<strong>#11</strong>') < strpos($html, '<strong>Unlinked</strong>')
         );
-        $harness->assertTrue(strpos($html, '<strong>#21</strong>') < strpos($html, '<strong>#19</strong>'));
+        $harness->assertTrue(strpos($html, 'Companies House Revised') < strpos($html, 'HMRC CT600')
+            && strpos($html, 'HMRC CT600') < strpos($html, 'HMRC Accounting'));
         $harness->assertTrue(str_contains($html, '>57</td>'));
         $harness->assertTrue(str_contains($html, 'Missing'));
-        $harness->assertTrue(str_contains($html, '2 record(s); 0 filed/in-flight'));
+        $harness->assertTrue(str_contains($html, 'CT period 1 (2025-04-01 to 2026-03-31)'));
+        $harness->assertFalse(str_contains($html, 'accepted'));
         $harness->assertSame(1, substr_count($html, '<span class="badge info">Latest</span>'));
-        $harness->assertTrue(str_contains((string)strstr($html, '<strong>#22</strong>'), '<span class="badge info">Latest</span>'));
+        $harness->assertTrue(str_contains((string)strstr($html, 'Run #22'), '<span class="badge info">Latest</span>'));
     });
     $harness->check(_ixbrl_historyCard::class, 'shows untransmitted-history cleanup only with developer options', static function () use ($harness, $card): void {
         $context = [

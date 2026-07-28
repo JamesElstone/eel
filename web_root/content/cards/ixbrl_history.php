@@ -15,7 +15,7 @@ final class _ixbrl_historyCard extends CardBaseFramework
 
     public function helper(array $context): string
     {
-        return 'Previous accounts fact snapshots and generated iXBRL artifacts for the selected accounting period.';
+        return 'Generated HMRC Accounting, HMRC CT600, and Companies House iXBRL artifacts for the selected accounting period.';
     }
 
     public function services(): array
@@ -70,11 +70,8 @@ final class _ixbrl_historyCard extends CardBaseFramework
     {
         $approvalGroups = [];
         $unlinkedRuns = [];
-        $latestRunId = 0;
         foreach ($runs as $run) {
             $run = (array)$run;
-            $runId = (int)($run['id'] ?? 0);
-            $latestRunId = max($latestRunId, $runId);
             $approvalId = (int)($run['filing_approval_id'] ?? 0);
             if ($approvalId <= 0) {
                 $unlinkedRuns[] = $run;
@@ -87,68 +84,97 @@ final class _ixbrl_historyCard extends CardBaseFramework
         }
 
         krsort($approvalGroups, SORT_NUMERIC);
-        $bodies = '';
+        $rows = '';
         foreach ($approvalGroups as $approvalId => $group) {
             $groupRuns = (array)$group['runs'];
-            usort($groupRuns, static fn(array $left, array $right): int => (int)($right['id'] ?? 0) <=> (int)($left['id'] ?? 0));
+            usort($groupRuns, fn(array $left, array $right): int => $this->compareRows($left, $right));
             $approval = (array)$group['approval'];
             $bundleId = (int)($approval['evidence_bundle_id'] ?? 0);
-            $label = 'Approval #' . $approvalId;
-            if ($bundleId > 0) {
-                $label .= ' · Evidence bundle #' . $bundleId;
+            foreach ($groupRuns as $index => $run) {
+                $rows .= '<tr>'
+                    . ($index === 0
+                        ? $this->approvalCells(
+                            '#' . $approvalId,
+                            $bundleId > 0 ? '#' . $bundleId : '—',
+                            (string)($approval['approved_at'] ?? ''),
+                            count($groupRuns)
+                        )
+                        : '')
+                    . $this->runCells($run)
+                    . '</tr>';
             }
-            $bodies .= '<tbody><tr><th scope="rowgroup" colspan="8">'
-                . HelperFramework::escape($label)
-                . '<div class="helper">Approved ' . HelperFramework::escape((string)($approval['approved_at'] ?? '')) . '</div>'
-                . '</th></tr>';
-            foreach ($groupRuns as $run) {
-                $bodies .= $this->runRow($run, (int)($run['id'] ?? 0) === $latestRunId);
-            }
-            $bodies .= '</tbody>';
         }
 
         if ($unlinkedRuns !== []) {
-            usort($unlinkedRuns, static fn(array $left, array $right): int => (int)($right['id'] ?? 0) <=> (int)($left['id'] ?? 0));
-            $bodies .= '<tbody><tr><th scope="rowgroup" colspan="8">Unlinked runs'
-                . '<div class="helper">Historical runs created before a filing approval was recorded.</div>'
-                . '</th></tr>';
-            foreach ($unlinkedRuns as $run) {
-                $bodies .= $this->runRow($run, (int)($run['id'] ?? 0) === $latestRunId);
+            usort($unlinkedRuns, fn(array $left, array $right): int => $this->compareRows($left, $right));
+            foreach ($unlinkedRuns as $index => $run) {
+                $rows .= '<tr>'
+                    . ($index === 0
+                        ? $this->approvalCells('Unlinked', '—', '—', count($unlinkedRuns))
+                        : '')
+                    . $this->runCells($run)
+                    . '</tr>';
             }
-            $bodies .= '</tbody>';
         }
 
         return '<div class="table-scroll"><table class="data-table"><thead><tr>'
-            . '<th>Run</th><th>Facts</th><th>Status</th><th>Artifact</th>'
-            . '<th>Internal validation</th><th>Arelle</th><th>Companies House</th><th>Dates</th>'
-            . '</tr></thead>' . $bodies . '</table></div>';
+            . '<th>Approval ID</th><th>Evidence bundle</th><th>Approved</th><th>Run</th>'
+            . '<th>Output</th><th>CT period</th><th>Facts</th><th>Status</th><th>Artifact</th>'
+            . '<th>Internal validation</th><th>Arelle</th><th>Dates</th>'
+            . '</tr></thead><tbody>' . $rows . '</tbody></table></div>';
     }
 
-    private function runRow(array $run, bool $isLatest): string
+    private function approvalCells(string $approvalId, string $evidenceBundle, string $approvedAt, int $rowSpan): string
+    {
+        $approvedAt = trim($approvedAt) !== '' ? $approvedAt : '—';
+
+        return '<td rowspan="' . $rowSpan . '"><strong>' . HelperFramework::escape($approvalId) . '</strong></td>'
+            . '<td rowspan="' . $rowSpan . '">' . HelperFramework::escape($evidenceBundle) . '</td>'
+            . '<td rowspan="' . $rowSpan . '">' . HelperFramework::escape($approvedAt) . '</td>';
+    }
+
+    private function runCells(array $run): string
     {
         $path = trim((string)($run['generated_path'] ?? ''));
         $artifact = $path === ''
             ? 'Not generated'
             : (!empty($run['artifact_exists']) ? 'Present' : 'Missing');
-        $companiesHouseCount = (int)($run['companies_house_count'] ?? 0);
-        $companiesHouseFiledCount = (int)($run['companies_house_filed_count'] ?? 0);
-        $companiesHouse = $companiesHouseCount === 0
-            ? 'None'
-            : $companiesHouseCount . ' record(s); ' . $companiesHouseFiledCount . ' filed/in-flight';
+        $outputType = (string)($run['output_type'] ?? '');
+        $runId = (int)($run['run_id'] ?? $run['id'] ?? 0);
+        $sourceId = (int)($run['source_id'] ?? $runId);
+        $runLabel = $runId > 0 ? 'Run #' . $runId : 'Record #' . $sourceId;
+        if (str_starts_with($outputType, 'companies_house_')) {
+            $runLabel = $runId > 0 ? 'Base run #' . $runId : 'Preparation #' . $sourceId;
+        }
+        $runHelper = str_starts_with($outputType, 'companies_house_') && $runId > 0
+            ? 'Preparation #' . $sourceId
+            : '';
+        $facts = array_key_exists('fact_count', $run) && $run['fact_count'] !== null
+            ? (string)(int)$run['fact_count']
+            : '—';
 
-        return '<tr>'
-            . '<td><strong>#' . (int)($run['id'] ?? 0) . '</strong>'
-                . ($isLatest ? '<div><span class="badge info">Latest</span></div>' : '') . '</td>'
-            . '<td>' . (int)($run['fact_count'] ?? 0) . '</td>'
-            . '<td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($run['status'] ?? 'draft'), '_')) . '</td>'
+        return '<td><strong>' . HelperFramework::escape($runLabel) . '</strong>'
+                . ($runHelper !== '' ? '<div class="helper">' . HelperFramework::escape($runHelper) . '</div>' : '')
+                . (!empty($run['is_latest']) ? '<div><span class="badge info">Latest</span></div>' : '') . '</td>'
+            . '<td>' . HelperFramework::escape((string)($run['output_label'] ?? 'iXBRL')) . '</td>'
+            . '<td>' . HelperFramework::escape((string)($run['ct_period_label'] ?? '')) . '</td>'
+            . '<td>' . HelperFramework::escape($facts) . '</td>'
+            . '<td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($run['output_status'] ?? $run['status'] ?? 'draft'), '_')) . '</td>'
             . '<td>' . HelperFramework::escape($artifact)
                 . '<div class="helper">' . HelperFramework::escape((string)($run['generated_filename'] ?? '')) . '</div></td>'
             . '<td>' . HelperFramework::escape($this->validation((string)($run['validation_status'] ?? 'not_validated'))) . '</td>'
             . '<td>' . HelperFramework::escape($this->validation((string)($run['external_validation_status'] ?? 'not_configured'))) . '</td>'
-            . '<td>' . HelperFramework::escape($companiesHouse) . '</td>'
             . '<td>' . HelperFramework::escape((string)($run['created_at'] ?? ''))
-                . '<div class="helper">Generated ' . HelperFramework::escape((string)($run['generated_at'] ?? 'Not generated')) . '</div></td>'
-            . '</tr>';
+                . '<div class="helper">Generated ' . HelperFramework::escape((string)($run['generated_at'] ?? 'Not generated')) . '</div></td>';
+    }
+
+    private function compareRows(array $left, array $right): int
+    {
+        $time = strcmp((string)($right['history_at'] ?? $right['generated_at'] ?? ''), (string)($left['history_at'] ?? $left['generated_at'] ?? ''));
+        if ($time !== 0) {
+            return $time;
+        }
+        return (int)($right['source_id'] ?? $right['id'] ?? 0) <=> (int)($left['source_id'] ?? $left['id'] ?? 0);
     }
 
     private function validation(string $status): string

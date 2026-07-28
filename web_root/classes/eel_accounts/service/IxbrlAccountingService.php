@@ -54,6 +54,7 @@ final class IxbrlAccountingService
                 $companyId,
                 (string)$artifact['company_number'],
                 $accountingPeriodId,
+                (int)($run['filing_approval_id'] ?? 0),
                 (int)$run['id'],
                 IxbrlArtifactFilenameService::DESTINATION_HMRC_ACCOUNTING,
                 (string)$artifact['period_start'],

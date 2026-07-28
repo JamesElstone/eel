@@ -67,6 +67,7 @@ final class IxbrlOriginalAccountsArtifactService
             $filename = (new IxbrlArtifactFilenameService())->build(
                 (string)$period['company_number'],
                 $accountingPeriodId,
+                (int)($base['filing_approval_id'] ?? 0),
                 (int)$base['run_id'],
                 IxbrlArtifactFilenameService::DESTINATION_COMPANIES_HOUSE,
                 str_replace('-', '', (string)$period['period_start']),

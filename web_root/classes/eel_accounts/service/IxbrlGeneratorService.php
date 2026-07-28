@@ -142,6 +142,7 @@ final class IxbrlGeneratorService
         int $companyId,
         string $companyNumber,
         int $accountingPeriodId,
+        int $approvalId,
         int $runId,
         string $destination,
         string $periodStart,
@@ -156,6 +157,7 @@ final class IxbrlGeneratorService
         $filename = (new IxbrlArtifactFilenameService())->build(
             $companyNumber,
             $accountingPeriodId,
+            $approvalId,
             $runId,
             $destination,
             $periodStart,

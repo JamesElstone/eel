@@ -25,6 +25,7 @@ $h->run(_year_end_evidence_bundlesCard::class, static function (GeneratedService
         $h->assertTrue(str_contains($html, '0 active artifacts'));
         $h->assertFalse(str_contains($html, '8 artifacts'));
         $h->assertTrue(str_contains($html, 'Frozen Year End filing evidence'));
+        $h->assertTrue(str_contains($html, 'local filing approvals or submissions'));
     });
 });
 $h->run(\eel_accounts\Service\FilingEvidenceService::class, static function (GeneratedServiceClassTestHarness $h): void {
@@ -37,6 +38,15 @@ $h->run(\eel_accounts\Service\FilingEvidenceService::class, static function (Gen
         $h->assertTrue(str_contains($source, 'UPDATE filing_evidence_bundles'));
         $h->assertTrue(str_contains($source, 'cleanupUnusedHistoricForAccountingPeriod'));
         $h->assertTrue(str_contains($source, 'is_current_for_locked_period'));
+        $h->assertTrue(str_contains($source, "Linked filing approval"));
+        $h->assertTrue(str_contains($source, "Linked HMRC submission"));
+        $h->assertTrue(str_contains($source, "Linked Companies House submission"));
+        $h->assertTrue(str_contains($source, "approval_count'] > 0"));
+        $h->assertTrue(str_contains($source, "hmrc_submission_count'] > 0"));
+        $h->assertTrue(str_contains($source, "companies_house_submission_count'] > 0"));
+        $h->assertTrue(str_contains($source, 'approval.evidence_bundle_id = filing_evidence_bundles.id'));
+        $h->assertTrue(str_contains($source, 'FROM hmrc_ct600_submissions submission'));
+        $h->assertTrue(str_contains($source, 'FROM companies_house_accounts_submissions submission'));
         $h->assertTrue(str_contains($source, "AND lifecycle_status <> :current_status"));
     });
 });

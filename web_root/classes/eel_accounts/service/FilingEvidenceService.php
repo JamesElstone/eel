@@ -50,6 +50,13 @@ final class FilingEvidenceService
         $loanSnapshot = $captureLoanEvidence
             ? (new LoanFilingEvidenceSnapshotService())->captureForLock($companyId, $accountingPeriodId)
             : null;
+        // A bundle created during the actual close captures complete source evidence. Lazy
+        // bundles for historic locks deliberately remain visibly incomplete rather than
+        // presenting current records as if they had been frozen at the original lock.
+        $sectionSnapshots = $captureLoanEvidence
+            ? (new FilingEvidenceSnapshotService())->prepareForLock($companyId, $accountingPeriodId, $loanSnapshot, $snapshots)
+            : [];
+        usort($sectionSnapshots, static fn(array $left, array $right): int => (string)$left['section_code'] <=> (string)$right['section_code']);
         $predecessor = \InterfaceDB::fetchOne(
             'SELECT * FROM filing_evidence_bundles
              WHERE company_id = :company_id AND accounting_period_id = :period_id
@@ -76,6 +83,12 @@ final class FilingEvidenceService
                 'basis_hash' => (string)$row['basis_hash'],
                 'trace_hash' => (string)($row['calculation_trace_hash'] ?? ''),
             ], $snapshots),
+            'section_evidence' => array_map(static fn(array $section): array => [
+                'section_code' => (string)$section['section_code'],
+                'section_version' => (string)$section['section_version'],
+                'snapshot_hash' => (string)$section['snapshot_hash'],
+                'record_count' => (int)$section['record_count'],
+            ], $sectionSnapshots),
         ];
         $bundleHash = hash('sha256', $this->canonicalJson($basis));
         if (is_array($predecessor)) {
@@ -152,10 +165,14 @@ final class FilingEvidenceService
                 ]
             );
         }
+        if ($sectionSnapshots !== []) {
+            (new FilingEvidenceSnapshotService())->persist($bundleId, $sectionSnapshots);
+        }
         $this->recordEvent($bundleId, 'locked', 'success', $actor, 'Year End filing evidence frozen.', [
             'bundle_hash' => $bundleHash,
             'ct_period_count' => count($snapshots),
             'loan_snapshot_hash' => $loanSnapshot === null ? null : (string)$loanSnapshot['snapshot_hash'],
+            'section_count' => count($sectionSnapshots),
         ]);
         $row = \InterfaceDB::fetchOne('SELECT * FROM filing_evidence_bundles WHERE id = :id', ['id' => $bundleId]);
         return $this->normaliseBundle(is_array($row) ? $row : ['id' => $bundleId, 'evidence_id' => $evidenceId]);
@@ -366,6 +383,10 @@ final class FilingEvidenceService
                 'context' => $context === [] ? null : $this->canonicalJson($context),
             ]
         );
+        if (\InterfaceDB::tableExists('filing_evidence_section_snapshots')
+            && (str_starts_with($type, 'companies_house_') || str_starts_with($type, 'hmrc_'))) {
+            $this->appendLifecycleSnapshot($bundleId, $type, $status, $message, $context);
+        }
     }
 
     /** @return array<string,mixed> */
@@ -516,6 +537,10 @@ final class FilingEvidenceService
                 'trace_hash' => (string)($period['trace_hash'] ?? ''),
             ], (array)($valid['ct_periods'] ?? [])),
         ];
+        $sectionManifest = $this->sectionManifest($bundleId);
+        if ($sectionManifest !== []) {
+            $bundleBasis['section_evidence'] = $sectionManifest;
+        }
         if (!hash_equals((string)($bundle['bundle_hash'] ?? ''), hash('sha256', $this->canonicalJson($bundleBasis)))) {
             return ['available' => false, 'errors' => ['The frozen loan evidence is not bound to the filing evidence bundle hash.']];
         }
@@ -548,6 +573,73 @@ final class FilingEvidenceService
         $detail['pagination'] = ['page' => $page, 'page_count' => $pages, 'total_rows' => count($all), 'per_page' => $perPage];
         $detail['available'] = true; $detail['frozen'] = true; $detail['legacy_reconstructed'] = !empty($row['legacy_backfill']);
         return $detail;
+    }
+
+    /** @return array<string,mixed> */
+    public function coverageIndex(int $companyId, int $bundleId): array
+    {
+        $valid = $this->overview($companyId, $bundleId);
+        if (empty($valid['available'])) { return $valid; }
+        $codes = ['transactions', 'expense_claims', 'loans', 'assets', 'prepayments', 'journals', 'profit_loss', 'corporation_tax', 'companies_house'];
+        $found = [];
+        if (\InterfaceDB::tableExists('filing_evidence_section_snapshots')) {
+            foreach (\InterfaceDB::fetchAll(
+                "SELECT section_code, section_version, snapshot_kind, sequence_no, record_count, totals_json, snapshot_hash, created_at
+                 FROM filing_evidence_section_snapshots WHERE bundle_id = :bundle_id ORDER BY section_code, snapshot_kind, sequence_no",
+                ['bundle_id' => $bundleId]
+            ) ?: [] as $row) {
+                $row['totals'] = json_decode((string)($row['totals_json'] ?? ''), true) ?: [];
+                $found[(string)$row['section_code']][] = $row;
+            }
+        }
+        $sections = [];
+        foreach ($codes as $code) {
+            $snapshots = $found[$code] ?? [];
+            $lock = array_values(array_filter($snapshots, static fn(array $row): bool => (string)$row['snapshot_kind'] === 'lock'));
+            $sections[] = ['section_code' => $code, 'captured' => $lock !== [], 'snapshots' => $snapshots,
+                'lock_snapshot' => $lock[0] ?? null, 'legacy_unavailable' => $lock === []];
+        }
+        return ['available' => true, 'sections' => $sections, 'errors' => []];
+    }
+
+    /** @return array<string,mixed> */
+    public function sectionDetail(int $companyId, int $bundleId, string $sectionCode, int $page = 1): array
+    {
+        $sectionCode = strtolower(trim($sectionCode));
+        if ($sectionCode === '') { return ['available' => false, 'empty_selection' => true, 'errors' => []]; }
+        $coverage = $this->coverageIndex($companyId, $bundleId);
+        if (empty($coverage['available'])) { return $coverage; }
+        $selected = null;
+        foreach ((array)$coverage['sections'] as $section) {
+            if ((string)$section['section_code'] === $sectionCode) { $selected = $section; break; }
+        }
+        if (!is_array($selected) || empty($selected['captured'])) {
+            return ['available' => false, 'legacy_unavailable' => true, 'errors' => ['This section was not captured for this historic bundle.']];
+        }
+        $header = (array)$selected['lock_snapshot'];
+        $row = \InterfaceDB::fetchOne(
+            "SELECT snapshot_json FROM filing_evidence_section_snapshots WHERE bundle_id = :bundle_id
+             AND section_code = :section_code AND snapshot_kind = 'lock' AND sequence_no = :sequence_no LIMIT 1",
+            ['bundle_id' => $bundleId, 'section_code' => $sectionCode, 'sequence_no' => (int)$header['sequence_no']]
+        );
+        $payload = is_array($row) ? json_decode((string)$row['snapshot_json'], true) : null;
+        if (!is_array($payload)) { return ['available' => false, 'errors' => ['The frozen section evidence is unreadable.']]; }
+        $records = (array)($payload['records'] ?? []);
+        if (!array_is_list($records)) {
+            $flattened = [];
+            foreach ($records as $group => $value) {
+                if (is_array($value) && array_is_list($value)) {
+                    foreach ($value as $item) { $flattened[] = ['record_group' => $group, 'record' => $item]; }
+                } else { $flattened[] = ['record_group' => $group, 'record' => $value]; }
+            }
+            $records = $flattened;
+        }
+        $perPage = 50; $pageCount = max(1, (int)ceil(count($records) / $perPage)); $page = max(1, min($page, $pageCount));
+        return ['available' => true, 'section' => $header, 'payload' => $payload,
+            'rows' => array_slice($records, ($page - 1) * $perPage, $perPage),
+            'pagination' => ['page' => $page, 'page_count' => $pageCount, 'total_rows' => count($records), 'per_page' => $perPage],
+            'lifecycle' => array_values(array_filter((array)$selected['snapshots'], static fn(array $snapshot): bool => (string)$snapshot['snapshot_kind'] === 'lifecycle')),
+            'errors' => []];
     }
 
     /** @return array{bundles:list<array<string,mixed>>,eligible_count:int} */
@@ -592,10 +684,16 @@ final class FilingEvidenceService
             $reasons = [];
             if ($row['is_latest']) { $reasons[] = 'Latest version'; }
             if ((int)$row['retained_artifact_count'] > 0) { $reasons[] = 'Transmitted filing artifact'; }
+            if ((int)$row['approval_count'] > 0) { $reasons[] = 'Linked filing approval'; }
+            if ((int)$row['hmrc_submission_count'] > 0) { $reasons[] = 'Linked HMRC submission'; }
+            if ((int)$row['companies_house_submission_count'] > 0) { $reasons[] = 'Linked Companies House submission'; }
             if ((string)($row['lifecycle_status'] ?? '') === 'current' && !$row['is_latest']) { $reasons[] = 'Current lifecycle'; }
             if ($row['is_current_for_locked_period']) { $reasons[] = 'Current evidence for locked period'; }
             $row['retained_reasons'] = $reasons;
-            $row['is_used'] = (int)$row['retained_artifact_count'] > 0;
+            $row['is_used'] = (int)$row['retained_artifact_count'] > 0
+                || (int)$row['approval_count'] > 0
+                || (int)$row['hmrc_submission_count'] > 0
+                || (int)$row['companies_house_submission_count'] > 0;
             $row['eligible_for_cleanup'] = !$row['is_latest'] && !$row['is_used']
                 && (string)($row['lifecycle_status'] ?? '') !== 'current'
                 && !$row['is_current_for_locked_period'];
@@ -739,7 +837,19 @@ final class FilingEvidenceService
                 $delete = \InterfaceDB::prepareExecute(
                     'DELETE FROM filing_evidence_bundles
                      WHERE id = :id AND company_id = :company_id AND accounting_period_id = :period_id
-                       AND lifecycle_status <> :current_status',
+                       AND lifecycle_status <> :current_status
+                       AND NOT EXISTS (
+                           SELECT 1 FROM ixbrl_accounts_filing_approvals approval
+                           WHERE approval.evidence_bundle_id = filing_evidence_bundles.id
+                       )
+                       AND NOT EXISTS (
+                           SELECT 1 FROM hmrc_ct600_submissions submission
+                           WHERE submission.evidence_bundle_id = filing_evidence_bundles.id
+                       )
+                       AND NOT EXISTS (
+                           SELECT 1 FROM companies_house_accounts_submissions submission
+                           WHERE submission.evidence_bundle_id = filing_evidence_bundles.id
+                       )',
                     ['id' => $bundleId, 'company_id' => $companyId, 'period_id' => $accountingPeriodId, 'current_status' => 'current']
                 );
                 if ($delete->rowCount() === 1) {
@@ -777,10 +887,74 @@ final class FilingEvidenceService
         return $prefix . implode('-', str_split($hex, 4));
     }
 
+    /** @return list<array{section_code:string,section_version:string,snapshot_hash:string,record_count:int}> */
+    private function sectionManifest(int $bundleId): array
+    {
+        if (!\InterfaceDB::tableExists('filing_evidence_section_snapshots')) { return []; }
+        return array_map(static fn(array $row): array => [
+            'section_code' => (string)$row['section_code'], 'section_version' => (string)$row['section_version'],
+            'snapshot_hash' => (string)$row['snapshot_hash'], 'record_count' => (int)$row['record_count'],
+        ], \InterfaceDB::fetchAll(
+            "SELECT section_code, section_version, snapshot_hash, record_count
+             FROM filing_evidence_section_snapshots WHERE bundle_id = :bundle_id AND snapshot_kind = 'lock'
+             ORDER BY section_code, sequence_no", ['bundle_id' => $bundleId]
+        ) ?: []);
+    }
+
+    private function appendLifecycleSnapshot(int $bundleId, string $type, string $status, string $message, array $context): void
+    {
+        $section = str_starts_with($type, 'companies_house_') ? 'companies_house' : 'corporation_tax';
+        $submission = $this->filingSubmissionSnapshot($section, $bundleId, (int)($context['submission_id'] ?? 0));
+        if ($submission !== []) { $context['submission_snapshot'] = $submission; }
+        $sequence = 1 + (int)\InterfaceDB::fetchColumn(
+            'SELECT COALESCE(MAX(sequence_no), 0) FROM filing_evidence_section_snapshots
+             WHERE bundle_id = :bundle_id AND section_code = :section_code AND snapshot_kind = :snapshot_kind',
+            ['bundle_id' => $bundleId, 'section_code' => $section, 'snapshot_kind' => 'lifecycle']
+        );
+        $payload = (new FilingEvidenceSnapshotService())->lifecyclePayload($type, $status, $message, $context);
+        $json = $this->canonicalJson($payload);
+        \InterfaceDB::prepareExecute(
+            'INSERT INTO filing_evidence_section_snapshots
+                (bundle_id, section_code, section_version, snapshot_kind, sequence_no, record_count, totals_json, snapshot_json, snapshot_hash)
+             VALUES (:bundle_id, :section_code, :version, :snapshot_kind, :sequence_no, :record_count, :totals, :snapshot_json, :snapshot_hash)',
+            ['bundle_id' => $bundleId, 'section_code' => $section, 'version' => FilingEvidenceSnapshotService::VERSION,
+                'snapshot_kind' => 'lifecycle', 'sequence_no' => $sequence, 'record_count' => 1,
+                'totals' => $this->canonicalJson([]), 'snapshot_json' => $json, 'snapshot_hash' => hash('sha256', $json)]
+        );
+    }
+
+    /** @return array<string,mixed> */
+    private function filingSubmissionSnapshot(string $section, int $bundleId, int $submissionId): array
+    {
+        if ($submissionId <= 0) { return []; }
+        if ($section === 'companies_house' && \InterfaceDB::tableExists('companies_house_accounts_submissions')) {
+            return (array)(\InterfaceDB::fetchOne(
+                'SELECT id, environment, filing_type, lifecycle, submission_number, gateway_submission_reference,
+                        artifact_path, artifact_sha256, revised_artifact_path, revised_artifact_sha256,
+                        schema_manifest_sha256, basis_hash, gateway_status_summary, rejection_code,
+                        rejection_description, examiner_comments, prepared_at, submitted_at, accepted_at, rejected_at
+                 FROM companies_house_accounts_submissions WHERE id = :id AND evidence_bundle_id = :bundle_id LIMIT 1',
+                ['id' => $submissionId, 'bundle_id' => $bundleId]
+            ) ?: []);
+        }
+        if ($section === 'corporation_tax' && \InterfaceDB::tableExists('hmrc_ct600_submissions')) {
+            return (array)(\InterfaceDB::fetchOne(
+                'SELECT id, environment, status, protocol_state, business_outcome, submission_type,
+                        accounts_ixbrl_path, accounts_sha256, computations_ixbrl_path, computations_sha256,
+                        package_hash, transaction_id, hmrc_submission_reference, hmrc_correlation_id,
+                        body_sha256, ct600_sha256, response_sha256, source_manifest_sha256,
+                        submitted_at, final_response_at
+                 FROM hmrc_ct600_submissions WHERE id = :id AND evidence_bundle_id = :bundle_id LIMIT 1',
+                ['id' => $submissionId, 'bundle_id' => $bundleId]
+            ) ?: []);
+        }
+        return [];
+    }
+
     private function newReference(string $prefix): string { return $prefix . strtoupper(bin2hex(random_bytes(16))); }
     private function requireSchema(): void
     {
-        foreach (['filing_evidence_bundles','filing_evidence_ct_snapshots','filing_evidence_loan_snapshots','filing_evidence_artifacts','filing_evidence_events'] as $table) {
+        foreach (['filing_evidence_bundles','filing_evidence_ct_snapshots','filing_evidence_loan_snapshots','filing_evidence_artifacts','filing_evidence_events','filing_evidence_section_snapshots'] as $table) {
             if (!\InterfaceDB::tableExists($table)) { throw new \RuntimeException('Apply the Filing Evidence database migration before locking Year End.'); }
         }
     }

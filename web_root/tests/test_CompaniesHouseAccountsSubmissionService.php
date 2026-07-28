@@ -391,6 +391,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $amendments = (string)($texts['significant_amendments'] ?? '');
                 $amendmentsLower = mb_strtolower($amendments);
 
+
                 $harness->assertTrue($nonCompliance !== '');
                 $harness->assertTrue($amendments !== '');
                 $harness->assertFalse(mb_strtolower($nonCompliance) === $amendmentsLower);
@@ -441,6 +442,48 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $invokePrivate($service, 'revisionMoney', -58.54)
                 );
                 $harness->assertTrue(str_contains($amendments, 'Fixed assets were restated'));
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'states each changed creditor maturity class from original and revised fact models',
+            static function () use ($harness, $service, $invokePrivate): void {
+                $facts = static fn(float $within, float $after): array => [
+                    [
+                        'concept' => 'core:Creditors',
+                        'context_ref' => 'current_period_end_superseded_creditors_within_one_year',
+                        'value' => $within,
+                    ],
+                    [
+                        'concept' => 'core:Creditors',
+                        'context_ref' => 'current_period_end_superseded_creditors_after_one_year',
+                        'value' => $after,
+                    ],
+                ];
+                $sentence = static fn(array $facts, float $within, float $after): string => (string)$invokePrivate(
+                    $service,
+                    'creditorMaturityRestatementSentence',
+                    $facts,
+                    [
+                        'creditors_within_one_year' => $within,
+                        'creditors_after_more_than_one_year' => $after,
+                    ]
+                );
+
+                $harness->assertSame(
+                    'Creditors falling due within one year were restated from £64.00 to £279.00.',
+                    $sentence($facts(64.0, 0.0), 279.0, 0.0)
+                );
+                $harness->assertSame(
+                    'Creditors falling due after more than one year were restated from £0.00 to £1,035.63.',
+                    $sentence($facts(64.0, 0.0), 64.0, 1035.63)
+                );
+                $harness->assertSame(
+                    'Creditors falling due within one year were restated from £64.00 to £279.00, and creditors falling due after more than one year were restated from £0.00 to £1,035.63.',
+                    $sentence($facts(64.0, 0.0), 279.0, 1035.63)
+                );
+                $harness->assertSame('', $sentence($facts(64.0, 0.0), 64.0, 0.0));
             }
         );
     }

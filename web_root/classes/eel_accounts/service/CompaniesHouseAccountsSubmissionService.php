@@ -2499,9 +2499,10 @@ final class CompaniesHouseAccountsSubmissionService
                 ?? '')
         );
         $suppliedAmendments = trim((string)($input['significant_amendments'] ?? ''));
-        if ($suppliedAmendments !== ''
+        $useSuppliedAmendments = $suppliedAmendments !== ''
             && mb_strtolower($this->normaliseRevisionDisclosureText($suppliedAmendments))
-                !== mb_strtolower($this->normaliseRevisionDisclosureText(implode(' ', $nonCompliance)))) {
+                !== mb_strtolower($this->normaliseRevisionDisclosureText(implode(' ', $nonCompliance)));
+        if ($useSuppliedAmendments) {
             $this->appendRevisionDisclosurePart($amendments, $suppliedAmendments);
         }
 
@@ -2514,6 +2515,10 @@ final class CompaniesHouseAccountsSubmissionService
             $buckets,
             $directorLoan,
             $directorPresentation
+        );
+        $creditorMaturityAmendment = $this->creditorMaturityRestatementSentence(
+            $supersededFacts,
+            $buckets
         );
         $changedMetrics = [];
         foreach ((array)($comparison['rows'] ?? []) as $row) {
@@ -2569,7 +2574,8 @@ final class CompaniesHouseAccountsSubmissionService
         $creditorMaturityChanged = isset($changedMetrics['creditors_within_one_year'])
             || isset($changedMetrics['creditors_after_more_than_one_year'])
             || isset($changedMetrics['creditors_after_one_year'])
-            || $creditorCorrection !== [];
+            || $creditorCorrection !== []
+            || $creditorMaturityAmendment !== '';
         $netAssetsChanged = isset($changedMetrics['net_assets_liabilities']);
         $equityChanged = isset($changedMetrics['equity_capital_reserves']);
         $depreciation = round((float)($buckets['depreciation_write_offs'] ?? 0), 2);
@@ -2603,6 +2609,9 @@ final class CompaniesHouseAccountsSubmissionService
             );
         }
         if ($creditorMaturityChanged) {
+            if ($creditorMaturityAmendment !== '') {
+                $this->appendRevisionDisclosurePart($amendments, $creditorMaturityAmendment);
+            }
             if ($creditorCorrection !== []) {
                 $this->appendRevisionDisclosurePart(
                     $nonCompliance,
@@ -2728,9 +2737,9 @@ final class CompaniesHouseAccountsSubmissionService
         $nonComplianceText = $suppliedNonCompliance !== ''
             ? $suppliedNonCompliance
             : $this->finaliseRevisionDisclosure($nonCompliance);
-        $amendmentsText = $suppliedAmendments !== ''
-            ? $suppliedAmendments
-            : $this->finaliseRevisionDisclosure($amendments);
+        // A user-supplied explanation supplements the generated statutory
+        // restatements; it must not suppress fact-model-derived amendments.
+        $amendmentsText = $this->finaliseRevisionDisclosure($amendments);
         if (mb_strtolower($nonComplianceText) === mb_strtolower($amendmentsText)) {
             $amendmentsText = $this->finaliseRevisionDisclosure([
                 $amendmentsText,
@@ -2829,6 +2838,53 @@ final class CompaniesHouseAccountsSubmissionService
             'gross_participator_liability' => $grossLiability,
             'legally_offset_loan_asset' => $legallyOffsetAsset,
         ];
+    }
+
+    /**
+     * Build the human-readable restatement strictly from the original
+     * superseded facts and the revised balance-sheet model. This applies to
+     * any creditor maturity change, not only participator-loan corrections.
+     */
+    private function creditorMaturityRestatementSentence(array $supersededFacts, array $buckets): string
+    {
+        $originalWithin = $this->supersededFactValue(
+            $supersededFacts,
+            'core:Creditors',
+            'current_period_end_superseded_creditors_within_one_year'
+        );
+        $originalAfter = $this->supersededFactValue(
+            $supersededFacts,
+            'core:Creditors',
+            'current_period_end_superseded_creditors_after_one_year'
+        );
+        if ($originalWithin === null
+            || $originalAfter === null
+            || !array_key_exists('creditors_within_one_year', $buckets)
+            || (!array_key_exists('creditors_after_more_than_one_year', $buckets)
+                && !array_key_exists('creditors_after_one_year', $buckets))) {
+            return '';
+        }
+        $revisedWithin = round((float)$buckets['creditors_within_one_year'], 2);
+        $revisedAfter = round((float)(
+            $buckets['creditors_after_more_than_one_year']
+                ?? $buckets['creditors_after_one_year']
+                ?? 0
+        ), 2);
+        $withinChanged = abs($originalWithin - $revisedWithin) >= 0.005;
+        $afterChanged = abs($originalAfter - $revisedAfter) >= 0.005;
+        $within = 'Creditors falling due within one year were restated from '
+            . $this->revisionMoney($originalWithin)
+            . ' to ' . $this->revisionMoney($revisedWithin);
+        $after = 'creditors falling due after more than one year were restated from '
+            . $this->revisionMoney($originalAfter)
+            . ' to ' . $this->revisionMoney($revisedAfter);
+
+        return match (true) {
+            $withinChanged && $afterChanged => $within . ', and ' . $after . '.',
+            $withinChanged => $within . '.',
+            $afterChanged => ucfirst($after) . '.',
+            default => '',
+        };
     }
 
     private function supersededFactValue(

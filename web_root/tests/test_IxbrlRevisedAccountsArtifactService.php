@@ -28,13 +28,17 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 . '<div class="ixbrl-header"><ix:header><ix:hidden></ix:hidden><ix:resources>'
                 . '<xbrli:context id="current_period_duration"><xbrli:entity><xbrli:identifier scheme="http://www.companieshouse.gov.uk/">01234567</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period></xbrli:context>'
                 . '<xbrli:context id="current_period_end"><xbrli:entity><xbrli:identifier scheme="http://www.companieshouse.gov.uk/">01234567</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>'
+                . '<xbrli:context id="current_period_end_creditors_within_one_year"><xbrli:entity><xbrli:identifier scheme="http://www.companieshouse.gov.uk/">01234567</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>'
+                . '<xbrli:context id="current_period_end_creditors_after_one_year"><xbrli:entity><xbrli:identifier scheme="http://www.companieshouse.gov.uk/">01234567</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>'
                 . '<xbrli:unit id="GBP"><xbrli:measure>iso4217:GBP</xbrli:measure></xbrli:unit>'
                 . '</ix:resources></ix:header></div>'
                 . '<div class="accountspage titlepage"><h1><ix:nonNumeric name="bus:EntityCurrentLegalOrRegisteredName" contextRef="current_period_duration">Example Limited</ix:nonNumeric></h1>'
                 . '<p><ix:nonNumeric name="bus:UKCompaniesHouseRegisteredNumber" contextRef="current_period_duration">01234567</ix:nonNumeric></p>'
                 . '<h2>MICRO-ENTITY ACCOUNTS</h2></div>'
                 . '<div class="accountspage pagebreak" id="preserved"><ix:nonNumeric name="core:DateAuthorisationFinancialStatementsForIssue" contextRef="current_period_end" format="ixt:datedaymonthyearen">21 July 2026</ix:nonNumeric>'
-                . '<ix:nonFraction name="core:FixedAssets" contextRef="current_period_end" unitRef="GBP" decimals="2" format="ixt:numdotdecimal">100.00</ix:nonFraction></div>'
+                . '<ix:nonFraction name="core:FixedAssets" contextRef="current_period_end" unitRef="GBP" decimals="2" format="ixt:numdotdecimal">100.00</ix:nonFraction>'
+                . '<ix:nonFraction name="core:Creditors" contextRef="current_period_end_creditors_within_one_year" unitRef="GBP" decimals="2" format="ixt:numdotdecimal">279.00</ix:nonFraction>'
+                . '<ix:nonFraction name="core:Creditors" contextRef="current_period_end_creditors_after_one_year" unitRef="GBP" decimals="2" format="ixt:numdotdecimal">1035.63</ix:nonFraction></div>'
                 . '</body></html>';
             $oldDeclarations = [
                 'replaces_statement' => 'These revised accounts replace the previously filed report.',
@@ -48,6 +52,20 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $superseded = [[
                 'concept' => 'core:FixedAssets',
                 'context_ref' => 'current_period_end_superseded',
+                'value' => 0.0,
+                'unit_ref' => 'GBP',
+                'decimals' => '2',
+                'source_document_id' => 90,
+            ], [
+                'concept' => 'core:Creditors',
+                'context_ref' => 'current_period_end_superseded_creditors_within_one_year',
+                'value' => 64.0,
+                'unit_ref' => 'GBP',
+                'decimals' => '2',
+                'source_document_id' => 90,
+            ], [
+                'concept' => 'core:Creditors',
+                'context_ref' => 'current_period_end_superseded_creditors_after_one_year',
                 'value' => 0.0,
                 'unit_ref' => 'GBP',
                 'decimals' => '2',
@@ -79,7 +97,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(str_contains($xhtml, 'name="core:FixedAssets" contextRef="current_period_end_superseded"'));
             $harness->assertTrue(str_contains($xhtml, 'format="ixt:datedaymonthyearen">21 July 2026'));
             $harness->assertFalse(str_contains($xhtml, 'EEL-AR-NOT-VISIBLE'));
-            $harness->assertSame(1, (int)($result['superseded_fact_count'] ?? 0));
+            $harness->assertSame(3, (int)($result['superseded_fact_count'] ?? 0));
             $factDocument = new DOMDocument();
             $harness->assertTrue($factDocument->loadXML($xhtml, LIBXML_NONET));
             $factXpath = new DOMXPath($factDocument);
@@ -99,12 +117,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $enhancedDeclarations['non_compliance_explanation'] =
                 'Creditors falling due within one year were originally reported as £64.00.';
             $enhancedDeclarations['significant_amendments'] =
-                'Creditors falling due within one year have been revised from £64.00 to £1,314.63. '
-                . 'The revised balance includes a net participator-loan liability of £1,035.63 '
-                . 'which was repayable on demand at the balance-sheet date and has therefore been '
-                . 'classified as falling due within one year. Creditors falling due after more '
-                . 'than one year are £0.00. This correction affects the classification and '
-                . 'presentation of liabilities but does not change the company’s total net assets.';
+                'Creditors falling due within one year were restated from £64.00 to £279.00, and '
+                . 'creditors falling due after more than one year were restated from £0.00 to £1,035.63.';
             $enhanced = $service->transform(
                 $source,
                 $enhancedDeclarations,
@@ -125,8 +139,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $amendment = $amendments->item(0);
             $harness->assertTrue($amendment instanceof DOMElement);
             $harness->assertSame('current_period_duration', $amendment->getAttribute('contextRef'));
-            $harness->assertTrue(str_contains($amendment->textContent, '£1,314.63'));
-            $harness->assertTrue(str_contains($amendment->textContent, 'repayable on demand'));
+            $sentence = 'Creditors falling due within one year were restated from £64.00 to £279.00, and '
+                . 'creditors falling due after more than one year were restated from £0.00 to £1,035.63.';
+            $harness->assertSame(1, substr_count($amendment->textContent, $sentence));
+            $harness->assertSame(1, substr_count($enhancedXhtml, $sentence));
+            $harness->assertSame(1, $xpath->query('//ix:nonFraction[@name="core:Creditors" and @contextRef="current_period_end_creditors_within_one_year"]')->length);
+            $harness->assertSame(1, $xpath->query('//ix:nonFraction[@name="core:Creditors" and @contextRef="current_period_end_creditors_after_one_year"]')->length);
+            $harness->assertSame(1, $xpath->query('//ix:hidden//ix:nonFraction[@name="core:Creditors" and @contextRef="current_period_end_superseded_creditors_within_one_year"]')->length);
+            $harness->assertSame(1, $xpath->query('//ix:hidden//ix:nonFraction[@name="core:Creditors" and @contextRef="current_period_end_superseded_creditors_after_one_year"]')->length);
             $harness->assertSame(
                 0,
                 $xpath->query(

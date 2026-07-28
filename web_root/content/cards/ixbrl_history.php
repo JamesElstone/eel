@@ -68,45 +68,87 @@ final class _ixbrl_historyCard extends CardBaseFramework
 
     private function historyTable(array $runs): string
     {
-        $rows = '';
-        foreach ($runs as $index => $run) {
+        $approvalGroups = [];
+        $unlinkedRuns = [];
+        $latestRunId = 0;
+        foreach ($runs as $run) {
             $run = (array)$run;
-            $path = trim((string)($run['generated_path'] ?? ''));
-            $artifact = $path === ''
-                ? 'Not generated'
-                : (!empty($run['artifact_exists']) ? 'Present' : 'Missing');
+            $runId = (int)($run['id'] ?? 0);
+            $latestRunId = max($latestRunId, $runId);
             $approvalId = (int)($run['filing_approval_id'] ?? 0);
-            $approval = $approvalId > 0 ? '#' . $approvalId : 'Unlinked';
-            $bundleId = (int)($run['evidence_bundle_id'] ?? 0);
-            if ($bundleId > 0) {
-                $approval .= ' · Evidence #' . $bundleId;
+            if ($approvalId <= 0) {
+                $unlinkedRuns[] = $run;
+                continue;
             }
-            $companiesHouseCount = (int)($run['companies_house_count'] ?? 0);
-            $companiesHouseFiledCount = (int)($run['companies_house_filed_count'] ?? 0);
-            $companiesHouse = $companiesHouseCount === 0
-                ? 'None'
-                : $companiesHouseCount . ' record(s); ' . $companiesHouseFiledCount . ' filed/in-flight';
-            $rows .= '<tr>'
-                . '<td><strong>#' . (int)($run['id'] ?? 0) . '</strong>'
-                    . ($index === 0 ? '<div><span class="badge info">Latest</span></div>' : '') . '</td>'
-                . '<td>' . HelperFramework::escape($approval)
-                    . '<div class="helper">' . HelperFramework::escape((string)($run['approved_at'] ?? '')) . '</div></td>'
-                . '<td>' . (int)($run['fact_count'] ?? 0) . '</td>'
-                . '<td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($run['status'] ?? 'draft'), '_')) . '</td>'
-                . '<td>' . HelperFramework::escape($artifact)
-                    . '<div class="helper">' . HelperFramework::escape((string)($run['generated_filename'] ?? '')) . '</div></td>'
-                . '<td>' . HelperFramework::escape($this->validation((string)($run['validation_status'] ?? 'not_validated'))) . '</td>'
-                . '<td>' . HelperFramework::escape($this->validation((string)($run['external_validation_status'] ?? 'not_configured'))) . '</td>'
-                . '<td>' . HelperFramework::escape($companiesHouse) . '</td>'
-                . '<td>' . HelperFramework::escape((string)($run['created_at'] ?? ''))
-                    . '<div class="helper">Generated ' . HelperFramework::escape((string)($run['generated_at'] ?? 'Not generated')) . '</div></td>'
-                . '</tr>';
+            if (!isset($approvalGroups[$approvalId])) {
+                $approvalGroups[$approvalId] = ['approval' => $run, 'runs' => []];
+            }
+            $approvalGroups[$approvalId]['runs'][] = $run;
+        }
+
+        krsort($approvalGroups, SORT_NUMERIC);
+        $bodies = '';
+        foreach ($approvalGroups as $approvalId => $group) {
+            $groupRuns = (array)$group['runs'];
+            usort($groupRuns, static fn(array $left, array $right): int => (int)($right['id'] ?? 0) <=> (int)($left['id'] ?? 0));
+            $approval = (array)$group['approval'];
+            $bundleId = (int)($approval['evidence_bundle_id'] ?? 0);
+            $label = 'Approval #' . $approvalId;
+            if ($bundleId > 0) {
+                $label .= ' · Evidence bundle #' . $bundleId;
+            }
+            $bodies .= '<tbody><tr><th scope="rowgroup" colspan="8">'
+                . HelperFramework::escape($label)
+                . '<div class="helper">Approved ' . HelperFramework::escape((string)($approval['approved_at'] ?? '')) . '</div>'
+                . '</th></tr>';
+            foreach ($groupRuns as $run) {
+                $bodies .= $this->runRow($run, (int)($run['id'] ?? 0) === $latestRunId);
+            }
+            $bodies .= '</tbody>';
+        }
+
+        if ($unlinkedRuns !== []) {
+            usort($unlinkedRuns, static fn(array $left, array $right): int => (int)($right['id'] ?? 0) <=> (int)($left['id'] ?? 0));
+            $bodies .= '<tbody><tr><th scope="rowgroup" colspan="8">Unlinked runs'
+                . '<div class="helper">Historical runs created before a filing approval was recorded.</div>'
+                . '</th></tr>';
+            foreach ($unlinkedRuns as $run) {
+                $bodies .= $this->runRow($run, (int)($run['id'] ?? 0) === $latestRunId);
+            }
+            $bodies .= '</tbody>';
         }
 
         return '<div class="table-scroll"><table class="data-table"><thead><tr>'
-            . '<th>Run</th><th>Approval</th><th>Facts</th><th>Status</th><th>Artifact</th>'
+            . '<th>Run</th><th>Facts</th><th>Status</th><th>Artifact</th>'
             . '<th>Internal validation</th><th>Arelle</th><th>Companies House</th><th>Dates</th>'
-            . '</tr></thead><tbody>' . $rows . '</tbody></table></div>';
+            . '</tr></thead>' . $bodies . '</table></div>';
+    }
+
+    private function runRow(array $run, bool $isLatest): string
+    {
+        $path = trim((string)($run['generated_path'] ?? ''));
+        $artifact = $path === ''
+            ? 'Not generated'
+            : (!empty($run['artifact_exists']) ? 'Present' : 'Missing');
+        $companiesHouseCount = (int)($run['companies_house_count'] ?? 0);
+        $companiesHouseFiledCount = (int)($run['companies_house_filed_count'] ?? 0);
+        $companiesHouse = $companiesHouseCount === 0
+            ? 'None'
+            : $companiesHouseCount . ' record(s); ' . $companiesHouseFiledCount . ' filed/in-flight';
+
+        return '<tr>'
+            . '<td><strong>#' . (int)($run['id'] ?? 0) . '</strong>'
+                . ($isLatest ? '<div><span class="badge info">Latest</span></div>' : '') . '</td>'
+            . '<td>' . (int)($run['fact_count'] ?? 0) . '</td>'
+            . '<td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($run['status'] ?? 'draft'), '_')) . '</td>'
+            . '<td>' . HelperFramework::escape($artifact)
+                . '<div class="helper">' . HelperFramework::escape((string)($run['generated_filename'] ?? '')) . '</div></td>'
+            . '<td>' . HelperFramework::escape($this->validation((string)($run['validation_status'] ?? 'not_validated'))) . '</td>'
+            . '<td>' . HelperFramework::escape($this->validation((string)($run['external_validation_status'] ?? 'not_configured'))) . '</td>'
+            . '<td>' . HelperFramework::escape($companiesHouse) . '</td>'
+            . '<td>' . HelperFramework::escape((string)($run['created_at'] ?? ''))
+                . '<div class="helper">Generated ' . HelperFramework::escape((string)($run['generated_at'] ?? 'Not generated')) . '</div></td>'
+            . '</tr>';
     }
 
     private function validation(string $status): string

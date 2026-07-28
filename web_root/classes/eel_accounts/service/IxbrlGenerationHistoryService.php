@@ -37,7 +37,9 @@ final class IxbrlGenerationHistoryService
              WHERE run.company_id = :company_id
                AND run.accounting_period_id = :period_id
              GROUP BY run.id
-             ORDER BY run.id DESC",
+             ORDER BY CASE WHEN run.filing_approval_id IS NULL THEN 1 ELSE 0 END,
+                      run.filing_approval_id DESC,
+                      run.id DESC",
             ['company_id' => $companyId, 'period_id' => $accountingPeriodId]
         );
 

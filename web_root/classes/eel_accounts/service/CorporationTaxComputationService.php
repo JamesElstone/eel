@@ -14,6 +14,8 @@ final class CorporationTaxComputationService
 {
     public const PREPAYMENT_PREVIEW_WARNING = 'The Corporation Tax estimate omits one or more pending prepayment adjustments because the prepayment preview is unreliable.';
     private const FINAL_CT_STATUSES = ['submitted', 'accepted'];
+    private const POST_LOSS_REFORM_START = '2017-04-01';
+    private const NON_GROUP_DEDUCTION_ALLOWANCE = 5000000.00;
 
     private array $accountingPeriodLossScheduleCache = [];
     private array $activeCtPeriodsCache = [];
@@ -272,6 +274,15 @@ final class CorporationTaxComputationService
         $taxableProfit = max(0.0, round($taxableBeforeLosses - $lossUsed, 2));
         $lossCreated = $taxableBeforeLosses < 0 ? abs($taxableBeforeLosses) : 0.0;
         $lossCarriedForward = round((float)$losses['brought_forward'] - $lossUsed + $lossCreated, 2);
+        $lossRestriction = $this->lossRestrictionDisclosure(
+            (string)$ctPeriod['period_start'],
+            (string)$ctPeriod['period_end'],
+            (float)$losses['brought_forward'],
+            $lossCreated,
+            $lossUsed,
+            $lossCarriedForward,
+            $taxableBeforeLosses
+        );
         $associatedCompanyCount = $this->associatedCompanyCount($companyId, $ctPeriodId);
         $ordinaryCorporationTax = 0.0;
         $rateCalculation = $this->resolvedRateService()->calculate(
@@ -301,6 +312,7 @@ final class CorporationTaxComputationService
             'allowances' => (float)$assetAdjustments['capital_allowances'],
             'loss_bf' => (float)$losses['brought_forward'],
             'loss_used' => $lossUsed,
+            'loss_restriction' => $lossRestriction,
             'associated_company_count' => $associatedCompanyCount,
             'ordinary_corporation_tax' => $ordinaryCorporationTax,
             's455_tax' => $s455Tax,
@@ -336,6 +348,7 @@ final class CorporationTaxComputationService
             'loss_brought_forward' => round((float)$losses['brought_forward'], 2),
             'loss_utilised' => round($lossUsed, 2),
             'loss_carried_forward' => $lossCarriedForward,
+            'loss_restriction' => $lossRestriction,
             'other_treatment_count' => (int)($pnl['other_treatment_count'] ?? 0),
             'unknown_treatment_count' => (int)($pnl['unknown_treatment_count'] ?? 0),
             'other_treatment_amount' => $this->treatmentAmount($pnl, 'other'),
@@ -358,6 +371,7 @@ final class CorporationTaxComputationService
         $summary['period_end'] = (string)$ctPeriod['period_end'];
         $summary['capital_allowance_breakdown'] = (array)($assetAdjustments['capital_allowance_breakdown'] ?? []);
         $summary['accounting_allocation_basis'] = (array)($accountingAllocation['basis'] ?? []);
+        $summary['loss_restriction'] = $lossRestriction;
         $summary['computation_hash'] = $computationHash;
 
         return $summary;
@@ -1522,6 +1536,67 @@ final class CorporationTaxComputationService
         }
 
         return (int)$startDate->diff($endDate)->days + 1;
+    }
+
+    /**
+     * Classifies the supported trading-loss pool and calculates the statutory
+     * deductions allowance for the CT period. This application has no
+     * imported legacy loss pools; loss movements it creates on or after the
+     * reform date are therefore post-reform trading losses.
+     *
+     * @return array<string,mixed>
+     */
+    private function lossRestrictionDisclosure(
+        string $periodStart,
+        string $periodEnd,
+        float $broughtForward,
+        float $created,
+        float $used,
+        float $carriedForward,
+        float $qualifyingProfits
+    ): array {
+        $postReform = $periodStart >= self::POST_LOSS_REFORM_START;
+        $periodDays = $this->inclusiveDays($periodStart, $periodEnd);
+        $deductionAllowance = $postReform
+            ? round(self::NON_GROUP_DEDUCTION_ALLOWANCE * $periodDays / 365, 2)
+            : 0.00;
+        $qualifyingProfits = round(max(0.0, $qualifyingProfits), 2);
+        $used = round(max(0.0, $used), 2);
+        $maximumRelief = $postReform
+            ? round($deductionAllowance + max(0.0, $qualifyingProfits - $deductionAllowance) / 2, 2)
+            : $qualifyingProfits;
+        $calculatedRestriction = round(max(0.0, $used - $maximumRelief), 2);
+
+        $movement = static fn(float $bf, float $arising, float $utilised, float $cf): array => [
+            'brought_forward' => round($bf, 2),
+            'arising' => round($arising, 2),
+            'used' => round($utilised, 2),
+            'carried_forward' => round($cf, 2),
+        ];
+
+        return [
+            'classification_date' => self::POST_LOSS_REFORM_START,
+            'post_2017_trading_losses' => $postReform
+                ? $movement($broughtForward, $created, $used, $carriedForward)
+                : $movement(0, 0, 0, 0),
+            'pre_2017_trading_losses' => $postReform
+                ? $movement(0, 0, 0, 0)
+                : $movement($broughtForward, $created, $used, $carriedForward),
+            'post_2017_relief_basis' => $postReform
+                ? 'trading_loss_available_against_total_profits'
+                : 'not_applicable',
+            'deduction_allowance' => [
+                'basis' => 'non_group',
+                'annual_amount' => self::NON_GROUP_DEDUCTION_ALLOWANCE,
+                'period_days' => $periodDays,
+                'days_in_year' => 365,
+                'amount' => $deductionAllowance,
+            ],
+            'qualifying_profits' => $qualifyingProfits,
+            'carried_forward_loss_relief_claimed' => $used,
+            'calculated_loss_restriction' => $calculatedRestriction,
+            'loss_restriction' => $calculatedRestriction > 0.0 ? 'restricted' : 'none',
+        ];
     }
 
     private function depreciationAddBack(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): float

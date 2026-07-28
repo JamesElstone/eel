@@ -4,6 +4,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 function ixbrlTaxComputationModel(array $overrides = []): array
 {
+    $periodStart = (string)($overrides['period_start'] ?? '2022-09-05');
+    $periodEnd = (string)($overrides['period_end'] ?? '2023-09-04');
     $summary = array_replace([
         'accounting_profit' => -118.66,
         'disallowable_add_backs' => 0.00,
@@ -29,12 +31,29 @@ function ixbrlTaxComputationModel(array $overrides = []): array
             'allocated_values' => ['adjusted_result_before_capital_allowances' => 65.63],
         ],
     ], (array)($overrides['summary'] ?? []));
+    if (!isset($summary['loss_restriction'])) {
+        $days = (int)(new DateTimeImmutable($periodStart))->diff(new DateTimeImmutable($periodEnd))->days + 1;
+        $summary['loss_restriction'] = [
+            'post_2017_trading_losses' => [
+                'brought_forward' => (float)$summary['losses_brought_forward'],
+                'arising' => (float)$summary['loss_created_in_period'],
+                'used' => (float)$summary['losses_used'],
+                'carried_forward' => (float)$summary['losses_carried_forward'],
+            ],
+            'pre_2017_trading_losses' => ['brought_forward' => 0.00, 'arising' => 0.00, 'used' => 0.00, 'carried_forward' => 0.00],
+            'deduction_allowance' => ['basis' => 'non_group', 'period_days' => $days, 'days_in_year' => 365, 'amount' => round(5000000 * $days / 365, 2)],
+            'qualifying_profits' => max(0.00, (float)$summary['taxable_before_losses']),
+            'carried_forward_loss_relief_claimed' => (float)$summary['losses_used'],
+            'calculated_loss_restriction' => 0.00,
+            'loss_restriction' => 'none',
+        ];
+    }
     $model = [
         'available' => true,
         'facts' => [],
         'run' => [
-            'period_start' => (string)($overrides['period_start'] ?? '2022-09-05'),
-            'period_end' => (string)($overrides['period_end'] ?? '2023-09-04'),
+            'period_start' => $periodStart,
+            'period_end' => $periodEnd,
         ],
         'model' => [
             'identity' => [
@@ -44,8 +63,8 @@ function ixbrlTaxComputationModel(array $overrides = []): array
             'filing_identity' => ['utr' => '2794616478'],
             'accounting_period' => ['start_date' => '2022-09-05', 'end_date' => '2023-09-30'],
             'ct_period' => [
-                'start_date' => (string)($overrides['period_start'] ?? '2022-09-05'),
-                'end_date' => (string)($overrides['period_end'] ?? '2023-09-04'),
+                'start_date' => $periodStart,
+                'end_date' => $periodEnd,
             ],
             'supported_return_profile' => [
                 'profile_code' => 'ordinary-uk-trading-frs105',
@@ -86,8 +105,11 @@ function ixbrlTaxComputationMappings(array $model): array
         ['computation.summary.depreciation_add_back', 'AdjustmentsDepreciation', 'numeric', 'duration', 'accounts_adjustments'],
         ['computation.summary.capital_allowances', 'TotalCapitalAllowances', 'numeric', 'duration', 'capital_allowances'],
         ['computation.summary.taxable_before_losses', 'ProfitsBeforeOtherDeductionsAndReliefs', 'numeric', 'duration', 'losses'],
-        ['computation.summary.losses_brought_forward', 'TradingLossesBroughtForward', 'numeric', 'duration', 'losses'],
-        ['computation.summary.losses_used', 'TradingLossesBroughtForwardAmountUsedAgainstTotalProfits', 'numeric', 'duration', 'losses'],
+        ['computation.summary.loss_restriction.post_2017_trading_losses.brought_forward', 'TradingLossesBroughtForward', 'numeric', 'duration', 'losses'],
+        ['computation.summary.loss_restriction.post_2017_trading_losses.used', 'TradingLossesBroughtForwardAmountUsedAgainstTotalProfits', 'numeric', 'duration', 'losses'],
+        ['computation.summary.loss_restriction.post_2017_trading_losses.carried_forward', 'BalanceOfLossesBroughtForwardCarriedForward', 'numeric', 'instant', 'losses'],
+        ['computation.summary.loss_restriction.deduction_allowance.amount', 'DeductionAllowance', 'numeric', 'duration', 'losses'],
+        ['computation.summary.loss_restriction.calculated_loss_restriction', 'CalculatedLossRestriction', 'numeric', 'duration', 'losses'],
         ['computation.summary.taxable_profit', 'TotalProfitsChargeableToCorporationTax', 'numeric', 'duration', 'tax_liability'],
         ['computation.summary.ordinary_corporation_tax', 'CorporationTaxChargeable', 'numeric', 'duration', 'tax_liability'],
         ['return_position.ct600a_a80', 'TaxPayableOnLoansToParticipators', 'numeric', 'duration', 'tax_liability'],
@@ -98,6 +120,8 @@ function ixbrlTaxComputationMappings(array $model): array
         $trade = in_array($localName, [
             'ProfitLossPerAccounts', 'AdjustmentsMiscellaneousExpensesPerAccounts',
             'AdjustmentsCapitalExpenditure', 'AdjustmentsDepreciation', 'TotalCapitalAllowances',
+            'TradingLossesBroughtForward', 'TradingLossesBroughtForwardAmountUsedAgainstTotalProfits',
+            'BalanceOfLossesBroughtForwardCarriedForward',
         ], true);
         $mappings[] = [
             'id' => $index + 1,
@@ -107,9 +131,9 @@ function ixbrlTaxComputationMappings(array $model): array
             'local_name' => $localName,
             'value_type' => $type,
             'period_type' => $periodType,
-            'context_profile' => $trade
-                ? \eel_accounts\Service\CtFilingMappingService::CONTEXT_HMRC_CT_UK_TRADE
-                : \eel_accounts\Service\CtFilingMappingService::CONTEXT_HMRC_CT_COMPANY,
+            'context_profile' => in_array($localName, ['DeductionAllowance', 'CalculatedLossRestriction'], true)
+                ? \eel_accounts\Service\CtFilingMappingService::CONTEXT_HMRC_CT_LOSS_RESTRICTION
+                : ($trade ? \eel_accounts\Service\CtFilingMappingService::CONTEXT_HMRC_CT_UK_TRADE : \eel_accounts\Service\CtFilingMappingService::CONTEXT_HMRC_CT_COMPANY),
             'unit_ref' => $type === 'numeric' ? 'GBP' : null,
             'decimals_value' => $type === 'numeric' ? '2' : null,
             'dimensions_json' => null,
@@ -158,7 +182,8 @@ function ixbrlTaxComputationMappings(array $model): array
         $h->assertTrue(str_contains($body, 'Apportionment rounding adjustment'));
         $h->assertTrue(str_contains($body, 'Adjusted profit or loss before capital allowances'));
         $h->assertTrue(str_contains($body, '65.63'));
-        $h->assertTrue(str_contains($body, 'Loss carried forward'));
+        $h->assertTrue(str_contains($body, 'Post-1 April 2017 trading losses'));
+        $h->assertTrue(str_contains($body, 'Deductions allowance'));
         $h->assertTrue(str_contains($body, '563.21'));
         $h->assertFalse(str_contains($body, 'identity.company_name'));
         $h->assertFalse(str_contains($body, 'EEL filing evidence artifact'));
@@ -213,10 +238,16 @@ function ixbrlTaxComputationMappings(array $model): array
             ixbrlTaxComputationMappings($model),
             'http://www.hmrc.gov.uk/schemas/ct/comp/2024-01-01/ct-comp-2024.xsd'
         ))['xhtml'];
-        $h->assertTrue(str_contains($xhtml, '>563.22</ix:nonFraction>'));
-        $h->assertTrue(str_contains($xhtml, '(<ix:nonFraction name="ct:TradingLossesBroughtForwardAmountUsedAgainstTotalProfits"'));
-        $h->assertTrue(str_contains($xhtml, '>4.68</ix:nonFraction>)'));
-        $h->assertTrue(str_contains($xhtml, '>558.54</span>') || str_contains($xhtml, '>558.54</td>'));
+        $document = new DOMDocument();
+        $h->assertTrue($document->loadXML($xhtml));
+        $xpath = new DOMXPath($document);
+        $xpath->registerNamespace('ix', \eel_accounts\Service\IxbrlGeneratorService::IX_NAMESPACE);
+        $broughtForward = $xpath->query('//ix:nonFraction[@name="ct:TradingLossesBroughtForward"]')->item(0);
+        $used = $xpath->query('//ix:nonFraction[@name="ct:TradingLossesBroughtForwardAmountUsedAgainstTotalProfits"]')->item(0);
+        $carriedForward = $xpath->query('//ix:nonFraction[@name="ct:BalanceOfLossesBroughtForwardCarriedForward"]')->item(0);
+        $h->assertSame('563.22', $broughtForward?->textContent);
+        $h->assertSame('4.68', $used?->textContent);
+        $h->assertSame('558.54', $carriedForward?->textContent);
     });
     $h->check($service::class, 'renders the Section 455 repayment narrative in its qualifying CT period only', static function () use ($h, $service): void {
         $firstPeriod = ixbrlTaxComputationModel([

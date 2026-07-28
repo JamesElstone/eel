@@ -4213,6 +4213,16 @@ SELECT DISTINCT `role_id`, 'filing_evidence_section_detail'
 FROM `role_card_permissions` WHERE `card_key` = 'filing_evidence_calculations';
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_28_003_filing_evidence_section_snapshots.sql');
+INSERT IGNORE INTO ct_filing_canonical_sources
+  (target_scope, canonical_key, source_label, value_type, source_section, is_required)
+VALUES
+  ('computation_ixbrl', 'computation.summary.loss_restriction.post_2017_trading_losses.brought_forward', 'Post-1 April 2017 trading losses brought forward', 'numeric', 'losses', 1),
+  ('computation_ixbrl', 'computation.summary.loss_restriction.post_2017_trading_losses.used', 'Post-1 April 2017 trading losses used against total profits', 'numeric', 'losses', 1),
+  ('computation_ixbrl', 'computation.summary.loss_restriction.post_2017_trading_losses.carried_forward', 'Post-1 April 2017 trading losses carried forward', 'numeric', 'losses', 1),
+  ('computation_ixbrl', 'computation.summary.loss_restriction.deduction_allowance.amount', 'Non-group deductions allowance for the period', 'numeric', 'losses', 1),
+  ('computation_ixbrl', 'computation.summary.loss_restriction.calculated_loss_restriction', 'Calculated loss restriction', 'numeric', 'losses', 1);
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_28_004_ct_loss_restriction_ixbrl.sql');
 
 DROP TRIGGER IF EXISTS `trg_journals_append_only_update`;
 CREATE TRIGGER `trg_journals_append_only_update`

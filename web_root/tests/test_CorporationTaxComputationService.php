@@ -63,6 +63,23 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(-101, array_sum($negative));
         });
 
+        $harness->check(\eel_accounts\Service\CorporationTaxComputationService::class, 'discloses post-reform carried-forward loss relief and apportions the non-group deductions allowance', static function () use ($harness, $service): void {
+            $disclosure = new ReflectionMethod($service, 'lossRestrictionDisclosure');
+            $disclosure->setAccessible(true);
+            $result = $disclosure->invoke($service, '2023-09-05', '2023-09-30', 563.21, 0.00, 4.67, 558.54, 4.67);
+
+            $post = (array)$result['post_2017_trading_losses'];
+            $pre = (array)$result['pre_2017_trading_losses'];
+            $harness->assertSame('563.21', number_format((float)$post['brought_forward'], 2, '.', ''));
+            $harness->assertSame('4.67', number_format((float)$post['used'], 2, '.', ''));
+            $harness->assertSame('558.54', number_format((float)$post['carried_forward'], 2, '.', ''));
+            $harness->assertSame('0.00', number_format((float)$pre['brought_forward'], 2, '.', ''));
+            $harness->assertSame('356164.38', number_format((float)($result['deduction_allowance']['amount'] ?? 0), 2, '.', ''));
+            $harness->assertSame('4.67', number_format((float)$result['qualifying_profits'], 2, '.', ''));
+            $harness->assertSame('4.67', number_format((float)$result['carried_forward_loss_relief_claimed'], 2, '.', ''));
+            $harness->assertSame('none', (string)$result['loss_restriction']);
+        });
+
         $harness->check(\eel_accounts\Service\CorporationTaxComputationService::class, 'apportions the adjusted result before reconciling naturally rounded component disclosures', static function () use ($harness, $service): void {
             $allocate = new ReflectionMethod($service, 'allocateAccountingComponentsByInclusiveDays');
             $allocate->setAccessible(true);

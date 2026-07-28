@@ -10,6 +10,7 @@ final class CtFilingMappingService
     public const TARGET_COMPUTATION = 'computation_ixbrl';
     public const CONTEXT_HMRC_CT_COMPANY = 'hmrc_ct_company';
     public const CONTEXT_HMRC_CT_UK_TRADE = 'hmrc_ct_uk_trade';
+    public const CONTEXT_HMRC_CT_LOSS_RESTRICTION = 'hmrc_ct_loss_restriction';
 
     public function fetchProfiles(?string $targetType = null): array
     {
@@ -109,7 +110,7 @@ final class CtFilingMappingService
         if ($targetType === self::TARGET_COMPUTATION
             && in_array($version, ['2024', '2025'], true) && $artifactVersion === 'V1.0.0') {
             return [
-                'profile_name' => 'reviewed_ct_computation_' . $version . '_v1_0_0_return_v2',
+                'profile_name' => 'reviewed_ct_computation_' . $version . '_v1_0_0_return_v3',
                 'natural_identity' => ['taxonomy_version' => $version, 'artifact_version' => 'V1.0.0'],
                 'mappings' => [
                     ['canonical_key' => 'identity.company_name', 'local_name' => 'CompanyName', 'period_type' => 'instant', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
@@ -122,8 +123,11 @@ final class CtFilingMappingService
                     ['canonical_key' => 'computation.summary.depreciation_add_back', 'local_name' => 'AdjustmentsDepreciation', 'context_profile' => self::CONTEXT_HMRC_CT_UK_TRADE],
                     ['canonical_key' => 'computation.summary.capital_allowances', 'local_name' => 'TotalCapitalAllowances', 'context_profile' => self::CONTEXT_HMRC_CT_UK_TRADE],
                     ['canonical_key' => 'computation.summary.taxable_before_losses', 'local_name' => 'ProfitsBeforeOtherDeductionsAndReliefs', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
-                    ['canonical_key' => 'computation.summary.losses_brought_forward', 'local_name' => 'TradingLossesBroughtForward', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
-                    ['canonical_key' => 'computation.summary.losses_used', 'local_name' => 'TradingLossesBroughtForwardAmountUsedAgainstTotalProfits', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
+                    ['canonical_key' => 'computation.summary.loss_restriction.post_2017_trading_losses.brought_forward', 'local_name' => 'TradingLossesBroughtForward', 'context_profile' => self::CONTEXT_HMRC_CT_UK_TRADE],
+                    ['canonical_key' => 'computation.summary.loss_restriction.post_2017_trading_losses.used', 'local_name' => 'TradingLossesBroughtForwardAmountUsedAgainstTotalProfits', 'context_profile' => self::CONTEXT_HMRC_CT_UK_TRADE],
+                    ['canonical_key' => 'computation.summary.loss_restriction.post_2017_trading_losses.carried_forward', 'local_name' => 'BalanceOfLossesBroughtForwardCarriedForward', 'period_type' => 'instant', 'context_profile' => self::CONTEXT_HMRC_CT_UK_TRADE],
+                    ['canonical_key' => 'computation.summary.loss_restriction.deduction_allowance.amount', 'local_name' => 'DeductionAllowance', 'context_profile' => self::CONTEXT_HMRC_CT_LOSS_RESTRICTION],
+                    ['canonical_key' => 'computation.summary.loss_restriction.calculated_loss_restriction', 'local_name' => 'CalculatedLossRestriction', 'context_profile' => self::CONTEXT_HMRC_CT_LOSS_RESTRICTION],
                     ['canonical_key' => 'computation.summary.taxable_profit', 'local_name' => 'TotalProfitsChargeableToCorporationTax', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
                     ['canonical_key' => 'computation.summary.ordinary_corporation_tax', 'local_name' => 'CorporationTaxChargeable', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
                     ['canonical_key' => 'return_position.ct600a_a80', 'local_name' => 'TaxPayableOnLoansToParticipators', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],

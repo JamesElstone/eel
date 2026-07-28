@@ -20,7 +20,7 @@ final class _tax_corporation_tax_summaryCard extends CardBaseFramework
         $rows = [
             ['Taxable profit', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['taxable_profit'] ?? 0)],
             ['Taxable loss', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['taxable_loss'] ?? 0)],
-            ['Ordinary Corporation Tax [CT600 box 475]', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['ordinary_corporation_tax'] ?? 0)],
+            ['Net Corporation Tax liability [CT600 box 475]', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['ordinary_corporation_tax'] ?? 0)],
             ['Net S455 tax (included within A80)', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['s455_tax'] ?? 0)],
             ['CT600A net tax payable [A80 / CT600 box 480]', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['ct600a_tax'] ?? 0)],
             ['Total tax payable [CT600 boxes 510 / 525]', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['tax_payable'] ?? $summary['estimated_corporation_tax'] ?? 0)],

@@ -29,6 +29,11 @@ final class IxbrlTaxComputationService
         'computation.summary.losses_brought_forward' => 'Loss brought forward',
         'computation.summary.losses_used' => 'Losses used in this period',
         'computation.summary.losses_carried_forward' => 'Loss carried forward',
+        'computation.summary.loss_restriction.post_2017_trading_losses.brought_forward' => 'Post-1 April 2017 trading losses brought forward',
+        'computation.summary.loss_restriction.post_2017_trading_losses.used' => 'Post-1 April 2017 trading losses used against total profits',
+        'computation.summary.loss_restriction.post_2017_trading_losses.carried_forward' => 'Post-1 April 2017 trading losses carried forward',
+        'computation.summary.loss_restriction.deduction_allowance.amount' => 'Non-group deductions allowance for the period',
+        'computation.summary.loss_restriction.calculated_loss_restriction' => 'Calculated loss restriction',
         'computation.summary.taxable_profit' => 'Taxable total profits',
         'computation.summary.ordinary_corporation_tax' => 'Corporation Tax chargeable',
         'computation.summary.s455_tax' => 'Tax on loans to participators',
@@ -529,20 +534,38 @@ final class IxbrlTaxComputationService
 
         $html .= $this->renderAiaSchedule($generator, $model);
 
-        $lossBroughtForward = $this->money($summary, 'losses_brought_forward');
-        $lossArising = $this->money($summary, 'loss_created_in_period');
-        $lossesUsed = $this->money($summary, 'losses_used');
-        $lossCarriedForward = $this->money($summary, 'losses_carried_forward');
-        if (abs(round($lossBroughtForward + $lossArising - $lossesUsed, 2) - $lossCarriedForward) > 0.009) {
-            throw new \RuntimeException('The frozen trading-loss movement does not reconcile.');
+        $lossRestriction = $this->lossRestrictionForReport($summary, (array)($model['ct_period'] ?? []));
+        $postLosses = (array)$lossRestriction['post_2017_trading_losses'];
+        $preLosses = (array)$lossRestriction['pre_2017_trading_losses'];
+        foreach ([$postLosses, $preLosses] as $movement) {
+            if (abs(round((float)$movement['brought_forward'] + (float)$movement['arising'] - (float)$movement['used'], 2)
+                - (float)$movement['carried_forward']) > 0.009) {
+                throw new \RuntimeException('The frozen trading-loss category movement does not reconcile.');
+            }
         }
-        $lossRows = $this->factMoneyRow($generator, $facts, 'computation.summary.losses_brought_forward')
-            . $this->moneyRow($generator, 'Loss arising in this period', $lossArising)
-            . $this->factMoneyRow($generator, $facts, 'computation.summary.losses_used', true)
-            . $this->moneyRow($generator, 'Loss carried forward', $lossCarriedForward, false, 'final-total');
+        $postBroughtForward = isset($facts['computation.summary.loss_restriction.post_2017_trading_losses.brought_forward'])
+            ? $this->factHtml($facts, 'computation.summary.loss_restriction.post_2017_trading_losses.brought_forward')
+            : (isset($facts['computation.summary.losses_brought_forward'])
+                ? $this->factHtml($facts, 'computation.summary.losses_brought_forward')
+                : $this->moneyHtml($generator, (float)$postLosses['brought_forward']));
+        $postUsed = isset($facts['computation.summary.loss_restriction.post_2017_trading_losses.used'])
+            ? $this->factHtml($facts, 'computation.summary.loss_restriction.post_2017_trading_losses.used')
+            : (isset($facts['computation.summary.losses_used'])
+                ? $this->factHtml($facts, 'computation.summary.losses_used')
+                : $this->moneyHtml($generator, (float)$postLosses['used']));
+        $postCarriedForward = isset($facts['computation.summary.loss_restriction.post_2017_trading_losses.carried_forward'])
+            ? $this->factHtml($facts, 'computation.summary.loss_restriction.post_2017_trading_losses.carried_forward')
+            : $this->moneyHtml($generator, (float)$postLosses['carried_forward']);
         $html .= '<div class="ct-section loss-section keep-together"><h2>Trading losses</h2>'
-            . '<table class="financial-table"><thead><tr><th scope="col">Loss movement</th>'
-            . '<th scope="col" class="amount">£</th></tr></thead><tbody>' . $lossRows . '</tbody></table></div>';
+            . '<p>Post-1 April 2017 trading losses are available for relief against total profits.</p>'
+            . '<table class="financial-table"><thead><tr><th scope="col">Loss category</th>'
+            . '<th scope="col" class="amount">Brought forward £</th><th scope="col" class="amount">Arising £</th>'
+            . '<th scope="col" class="amount">Used £</th><th scope="col" class="amount">Carried forward £</th></tr></thead><tbody>'
+            . $this->lossMovementRow($generator, 'Post-1 April 2017 trading losses', $postBroughtForward, (float)$postLosses['arising'], $postUsed, $postCarriedForward)
+            . $this->lossMovementRow($generator, 'Pre-1 April 2017 trading losses', $this->moneyHtml($generator, (float)$preLosses['brought_forward']), (float)$preLosses['arising'], $this->moneyHtml($generator, (float)$preLosses['used']), $this->moneyHtml($generator, (float)$preLosses['carried_forward']))
+            . '</tbody></table>'
+            . $this->renderDeductionsAllowance($generator, $facts, $lossRestriction)
+            . '</div>';
 
         $participatorKey = isset($facts['return_position.ct600a_a80'])
             ? 'return_position.ct600a_a80'
@@ -572,6 +595,89 @@ final class IxbrlTaxComputationService
             . '<p>' . $generator->escape(
                 'Repaid within the accounting period; no amount reportable and no Section 455 tax payable.'
             ) . '</p></div>';
+    }
+
+    /** @return array<string,mixed> */
+    private function lossRestrictionForReport(array $summary, array $ctPeriod): array
+    {
+        $stored = (array)($summary['loss_restriction'] ?? []);
+        if (isset($stored['post_2017_trading_losses'], $stored['pre_2017_trading_losses'], $stored['deduction_allowance'])) {
+            return $stored;
+        }
+
+        $start = (string)($ctPeriod['start_date'] ?? '');
+        $end = (string)($ctPeriod['end_date'] ?? '');
+        if ($start === '' || $end === '') {
+            throw new \RuntimeException('The frozen loss disclosure has no CT-period dates.');
+        }
+        $days = (int)(new \DateTimeImmutable($start))->diff(new \DateTimeImmutable($end))->days + 1;
+        $postReform = $start >= '2017-04-01';
+        $broughtForward = $this->money($summary, 'losses_brought_forward');
+        $arising = $this->money($summary, 'loss_created_in_period');
+        $used = $this->money($summary, 'losses_used');
+        $carriedForward = $this->money($summary, 'losses_carried_forward');
+        $movement = static fn(float $bf, float $created, float $utilised, float $cf): array => [
+            'brought_forward' => $bf, 'arising' => $created, 'used' => $utilised, 'carried_forward' => $cf,
+        ];
+        $allowance = $postReform ? round(5000000.00 * $days / 365, 2) : 0.00;
+        return [
+            'post_2017_trading_losses' => $postReform
+                ? $movement($broughtForward, $arising, $used, $carriedForward)
+                : $movement(0, 0, 0, 0),
+            'pre_2017_trading_losses' => $postReform
+                ? $movement(0, 0, 0, 0)
+                : $movement($broughtForward, $arising, $used, $carriedForward),
+            'post_2017_relief_basis' => $postReform ? 'trading_loss_available_against_total_profits' : 'not_applicable',
+            'deduction_allowance' => ['basis' => 'non_group', 'period_days' => $days, 'days_in_year' => 365, 'amount' => $allowance],
+            'qualifying_profits' => round(max(0.0, $this->money($summary, 'taxable_before_losses')), 2),
+            'carried_forward_loss_relief_claimed' => $used,
+            'calculated_loss_restriction' => 0.00,
+            'loss_restriction' => 'none',
+        ];
+    }
+
+    private function lossMovementRow(
+        IxbrlGeneratorService $generator,
+        string $label,
+        string $broughtForwardHtml,
+        float $arising,
+        string $usedHtml,
+        string $carriedForwardHtml
+    ): string {
+        return '<tr><th scope="row">' . $generator->escape($label) . '</th><td class="amount">'
+            . $broughtForwardHtml . '</td><td class="amount">' . $this->moneyHtml($generator, $arising)
+            . '</td><td class="amount">' . $usedHtml . '</td><td class="amount">'
+            . $carriedForwardHtml . '</td></tr>';
+    }
+
+    private function renderDeductionsAllowance(IxbrlGeneratorService $generator, array $facts, array $lossRestriction): string
+    {
+        $allowance = (array)($lossRestriction['deduction_allowance'] ?? []);
+        $allowanceAmount = round((float)($allowance['amount'] ?? 0), 2);
+        $allowanceHtml = isset($facts['computation.summary.loss_restriction.deduction_allowance.amount'])
+            ? $this->factHtml($facts, 'computation.summary.loss_restriction.deduction_allowance.amount')
+            : $this->moneyHtml($generator, $allowanceAmount);
+        $restriction = round((float)($lossRestriction['calculated_loss_restriction'] ?? 0), 2);
+        $restrictionHtml = isset($facts['computation.summary.loss_restriction.calculated_loss_restriction'])
+            ? $this->factHtml($facts, 'computation.summary.loss_restriction.calculated_loss_restriction')
+            : $this->moneyHtml($generator, $restriction);
+        $days = (int)($allowance['period_days'] ?? 0);
+        $daysInYear = (int)($allowance['days_in_year'] ?? 365);
+        if ($days <= 0 || $daysInYear <= 0) {
+            throw new \RuntimeException('The frozen deductions allowance has invalid period days.');
+        }
+        $restrictionText = $restriction < 0.005 ? 'None' : '£' . number_format($restriction, 2, '.', ',');
+        return '<div class="deductions-allowance keep-together"><h3>Deductions allowance</h3>'
+            . '<p>Non-group deductions allowance, apportioned for the ' . $days . '-day CT period ('
+            . $days . ' / ' . $daysInYear . ' of £5,000,000).</p><table class="financial-table"><tbody>'
+            . '<tr><th scope="row">Non-group deductions allowance for the period</th><td class="amount">'
+            . $allowanceHtml . '</td></tr><tr><th scope="row">Qualifying profits</th><td class="amount">'
+            . $this->moneyHtml($generator, (float)($lossRestriction['qualifying_profits'] ?? 0))
+            . '</td></tr><tr><th scope="row">Carried-forward loss relief claimed against total profits</th><td class="amount">'
+            . $this->moneyHtml($generator, (float)($lossRestriction['carried_forward_loss_relief_claimed'] ?? 0))
+            . '</td></tr><tr><th scope="row">Calculated loss restriction</th><td class="amount">'
+            . $restrictionHtml . '</td></tr><tr class="final-total"><th scope="row">Loss restriction</th><td class="amount">'
+            . $generator->escape($restrictionText) . '</td></tr></tbody></table></div>';
     }
 
     private function renderAiaSchedule(IxbrlGeneratorService $generator, array $model): string
@@ -727,6 +833,11 @@ final class IxbrlTaxComputationService
         return (string)$facts[$canonicalKey]['html'];
     }
 
+    private function moneyHtml(IxbrlGeneratorService $generator, float $amount): string
+    {
+        return $generator->escape(number_format(abs(round($amount, 2)), 2, '.', ','));
+    }
+
     private function factMoneyRow(
         IxbrlGeneratorService $generator,
         array $facts,
@@ -836,6 +947,7 @@ CSS;
         if (in_array($profile, [
             CtFilingMappingService::CONTEXT_HMRC_CT_COMPANY,
             CtFilingMappingService::CONTEXT_HMRC_CT_UK_TRADE,
+            CtFilingMappingService::CONTEXT_HMRC_CT_LOSS_RESTRICTION,
         ], true)) {
             return $profile;
         }
@@ -858,6 +970,13 @@ CSS;
             return [
                 'dimension_container' => 'segment',
                 'dimensions' => $companyDimensions,
+                'typed_dimensions' => [],
+            ];
+        }
+        if ($profile === CtFilingMappingService::CONTEXT_HMRC_CT_LOSS_RESTRICTION) {
+            return [
+                'dimension_container' => 'segment',
+                'dimensions' => [],
                 'typed_dimensions' => [],
             ];
         }

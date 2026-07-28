@@ -42,7 +42,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $h->assertTrue(is_array($computation));
         $computation2024 = $service->reviewedTemplate(\eel_accounts\Service\CtFilingMappingService::TARGET_COMPUTATION, '2024', 'V1.0.0');
         $h->assertTrue(is_array($computation2024));
-        $h->assertSame('reviewed_ct_computation_2024_v1_0_0_return_v2', (string)$computation2024['profile_name']);
+        $h->assertSame('reviewed_ct_computation_2024_v1_0_0_return_v3', (string)$computation2024['profile_name']);
         $h->assertSame(
             ['taxonomy_version' => '2024', 'artifact_version' => 'V1.0.0'],
             (array)$computation2024['natural_identity']
@@ -59,6 +59,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $h->assertSame(
             \eel_accounts\Service\CtFilingMappingService::CONTEXT_HMRC_CT_COMPANY,
             (string)$computationMappings['NetTaxPayable']['context_profile']
+        );
+        $h->assertSame(
+            \eel_accounts\Service\CtFilingMappingService::CONTEXT_HMRC_CT_LOSS_RESTRICTION,
+            (string)$computationMappings['DeductionAllowance']['context_profile']
         );
         $h->assertSame(null, $service->reviewedTemplate(\eel_accounts\Service\CtFilingMappingService::TARGET_COMPUTATION, '2026', 'V1.0.0'));
     });

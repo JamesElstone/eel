@@ -429,68 +429,131 @@ final class S455ReviewService
         $supportedTransactionSource = $sqlite
             ? "'transaction:' || supported_t.id"
             : "CONCAT('transaction:', supported_t.id)";
+        $evidenceCorrectionJoins = '';
         $correctionJoins = '';
         $correctionWhere = '';
-        $transactionReferenceCondition = 'j.source_ref = ' . $transactionSource;
+        $hasJournalReversals = \InterfaceDB::tableExists('journal_reversals');
         $supportedTransactionReferenceCondition = 'j.source_ref = ' . $supportedTransactionSource;
-        if (\InterfaceDB::tableExists('journal_reversals')) {
-            $correctionJoins = '
-             LEFT JOIN journal_reversals jr_source ON jr_source.source_journal_id = j.id
-             LEFT JOIN journal_reversals jr_reversal ON jr_reversal.reversal_journal_id = j.id
-             LEFT JOIN journal_reversals jr_replacement ON jr_replacement.replacement_journal_id = j.id';
+        if ($hasJournalReversals) {
+            $evidenceCorrectionJoins = '
+              LEFT JOIN journal_reversals jr_source ON jr_source.source_journal_id = j.id
+              LEFT JOIN journal_reversals jr_reversal ON jr_reversal.reversal_journal_id = j.id';
+            $correctionJoins = $evidenceCorrectionJoins . '
+              LEFT JOIN journal_reversals jr_replacement ON jr_replacement.replacement_journal_id = j.id';
             $correctionWhere = '
                AND jr_source.source_journal_id IS NULL
                AND jr_reversal.reversal_journal_id IS NULL';
-            $replacementSource = $sqlite
-                ? "'transaction:' || t.id || ':revision-of:' || jr_replacement.source_journal_id"
-                : "CONCAT('transaction:', t.id, ':revision-of:', jr_replacement.source_journal_id)";
             $supportedReplacementSource = $sqlite
                 ? "'transaction:' || supported_t.id || ':revision-of:' || jr_replacement.source_journal_id"
                 : "CONCAT('transaction:', supported_t.id, ':revision-of:', jr_replacement.source_journal_id)";
-            $transactionReferenceCondition = '(j.source_ref = ' . $transactionSource . '
-                  OR (jr_replacement.replacement_journal_id IS NOT NULL
-                      AND j.source_ref = ' . $replacementSource . '))';
             $supportedTransactionReferenceCondition = '(j.source_ref = ' . $supportedTransactionSource . '
-                      OR (jr_replacement.replacement_journal_id IS NOT NULL
-                          AND j.source_ref = ' . $supportedReplacementSource . '))';
+                          OR (jr_replacement.replacement_journal_id IS NOT NULL
+                              AND j.source_ref = ' . $supportedReplacementSource . '))';
         }
-        $rows = \InterfaceDB::fetchAll(
-            'SELECT t.id AS transaction_id, t.txn_date, ABS(t.amount) AS amount,
+        $unsupportedCorrectionJoins = $sqlite ? $correctionJoins : $evidenceCorrectionJoins;
+        $unsupportedBankTransactionCondition = $sqlite
+            ? $supportedTransactionReferenceCondition
+            : 'j.source_ref LIKE \'transaction:%\'
+               AND EXISTS (
+                    SELECT 1 FROM transactions supported_t
+                    WHERE supported_t.id = CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(j.source_ref, \':\', 2), \':\', -1) AS UNSIGNED)
+                      AND supported_t.company_id = j.company_id
+               )';
+        $evidenceSelect = 'SELECT t.id AS transaction_id, t.txn_date, ABS(t.amount) AS amount,
                     j.accounting_period_id,
                     jl.nominal_account_id, jl.debit, jl.credit,
                     COALESCE(jl.party_id, t.party_id, cp_director.id) AS party_id,
                     COALESCE(cp_line.legal_name, cp.legal_name, cp_director.legal_name, \'Unattributed\') AS party_name,
                     CASE WHEN t.amount < 0 THEN \'payment\' ELSE \'receipt\' END AS cash_direction,
-                    t.director_id
-             FROM journals j
-             ' . $correctionJoins . '
-             INNER JOIN transactions t
-               ON t.company_id = j.company_id
-              AND ' . $transactionReferenceCondition . '
+                    t.director_id, jl.id AS evidence_line_id';
+        $evidenceThroughDate = min(substr($cutoff, 0, 10), $windowEnd);
+        $normalJournalJoin = $sqlite
+            ? 'INNER JOIN journals j ON j.company_id = t.company_id
+                    AND j.source_type = \'bank_csv\'
+                    AND j.source_ref = ' . $transactionSource
+            : 'STRAIGHT_JOIN journals j FORCE INDEX (uq_journals_company_source_ref)
+                   ON j.company_id = t.company_id
+                  AND j.source_type = \'bank_csv\'
+                  AND j.source_ref = ' . $transactionSource;
+        $transactionTable = $sqlite
+            ? 'transactions t'
+            : 'transactions t FORCE INDEX (idx_transactions_company_month)';
+        $normalEvidenceSql = $evidenceSelect . '
+             FROM ' . $transactionTable . '
+             ' . $normalJournalJoin . '
              INNER JOIN journal_lines jl ON jl.journal_id = j.id AND jl.nominal_account_id IN (' . $placeholders . ')
              LEFT JOIN company_parties cp_line ON cp_line.id = jl.party_id AND cp_line.company_id = t.company_id
              LEFT JOIN company_parties cp ON cp.id = t.party_id AND cp.company_id = t.company_id
              LEFT JOIN company_parties cp_director
                ON cp_director.linked_director_id = t.director_id AND cp_director.company_id = t.company_id
+             ' . $evidenceCorrectionJoins . '
              WHERE t.company_id = ?
-               AND j.source_type = \'bank_csv\'
-               AND j.is_posted = 1
                AND t.txn_date <= ?
                AND t.created_at <= ?
                AND t.updated_at <= ?
+               AND j.is_posted = 1
                AND j.created_at <= ?
                AND j.updated_at <= ?'
-             . $correctionWhere . '
-             ORDER BY t.txn_date, t.id, jl.id',
-            array_merge($allIds, [
+              . $correctionWhere;
+        $normalEvidenceParams = array_merge($allIds, [
+            $companyId,
+            $evidenceThroughDate,
+            $cutoff,
+            $cutoff,
+            $cutoff,
+            $cutoff,
+        ]);
+
+        if (!$hasJournalReversals) {
+            $rows = \InterfaceDB::fetchAll(
+                $normalEvidenceSql . ' ORDER BY t.txn_date, t.id, jl.id',
+                $normalEvidenceParams
+            );
+        } else {
+            $replacementTransactionJoin = $sqlite
+                ? 'INNER JOIN transactions t
+                     ON t.company_id = j.company_id
+                    AND j.source_ref = \'transaction:\' || t.id || \':revision-of:\' || jr_replacement.source_journal_id'
+                : 'INNER JOIN transactions t
+                     ON t.id = CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(j.source_ref, \':\', 2), \':\', -1) AS UNSIGNED)
+                    AND t.company_id = j.company_id';
+            $replacementEvidenceSql = $evidenceSelect . '
+                 FROM journal_reversals jr_replacement
+                 INNER JOIN journals j ON j.id = jr_replacement.replacement_journal_id
+                 ' . $replacementTransactionJoin . '
+                 INNER JOIN journal_lines jl ON jl.journal_id = j.id AND jl.nominal_account_id IN (' . $placeholders . ')
+                 LEFT JOIN company_parties cp_line ON cp_line.id = jl.party_id AND cp_line.company_id = t.company_id
+                 LEFT JOIN company_parties cp ON cp.id = t.party_id AND cp.company_id = t.company_id
+                 LEFT JOIN company_parties cp_director
+                   ON cp_director.linked_director_id = t.director_id AND cp_director.company_id = t.company_id
+                 ' . $evidenceCorrectionJoins . '
+                 WHERE jr_replacement.company_id = ?
+                   AND j.source_type = \'bank_csv\'
+                   AND j.source_ref LIKE \'transaction:%:revision-of:%\'
+                   AND j.is_posted = 1
+                   AND t.txn_date <= ?
+                   AND t.created_at <= ?
+                   AND t.updated_at <= ?
+                   AND j.created_at <= ?
+                   AND j.updated_at <= ?'
+                  . $correctionWhere;
+            $replacementEvidenceParams = array_merge($allIds, [
                 $companyId,
-                min(substr($cutoff, 0, 10), $windowEnd),
+                $evidenceThroughDate,
                 $cutoff,
                 $cutoff,
                 $cutoff,
                 $cutoff,
-            ])
-        );
+            ]);
+            $rows = \InterfaceDB::fetchAll(
+                'SELECT transaction_id, txn_date, amount, accounting_period_id,
+                        nominal_account_id, debit, credit, party_id, party_name,
+                        cash_direction, director_id
+                 FROM (' . $normalEvidenceSql . ' UNION ALL ' . $replacementEvidenceSql . ') cash_evidence
+                 ORDER BY txn_date, transaction_id, evidence_line_id',
+                array_merge($normalEvidenceParams, $replacementEvidenceParams)
+            );
+        }
         $errors = [];
         $unsupportedMovements = \InterfaceDB::fetchAll(
             'SELECT j.id AS journal_id, jl.id AS journal_line_id, j.journal_date,
@@ -500,18 +563,14 @@ final class S455ReviewService
                     jl.debit, jl.credit
              FROM journals j
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
-             ' . $correctionJoins . '
+             ' . $unsupportedCorrectionJoins . '
              WHERE j.company_id = ? AND j.is_posted = 1
                AND j.journal_date >= ?
                AND j.journal_date <= ?
                AND j.created_at <= ?
                AND j.updated_at <= ?
                AND jl.nominal_account_id IN (' . $placeholders . ')
-               AND NOT (j.source_type = \'bank_csv\' AND EXISTS (
-                   SELECT 1 FROM transactions supported_t
-                   WHERE supported_t.company_id = j.company_id
-                     AND ' . $supportedTransactionReferenceCondition . '
-               ))
+                AND NOT (j.source_type = \'bank_csv\' AND ' . $unsupportedBankTransactionCondition . ')
                AND NOT EXISTS (
                    SELECT 1 FROM journal_entry_metadata jem
                    WHERE jem.journal_id = j.id AND jem.journal_tag = \'director_loan_offset\'

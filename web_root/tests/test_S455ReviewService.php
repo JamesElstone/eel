@@ -24,6 +24,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             InterfaceDB::beginTransaction();
             try {
                 $fixture = s455CorrectionAwareFixture();
+                $beforeCorrection = $service->calculate(
+                    $fixture['company_id'],
+                    $fixture['accounting_period_id'],
+                    $fixture['ct_period_id'],
+                    '2099-12-31 23:59:59'
+                );
+                $harness->assertCount(1, (array)($beforeCorrection['movements'] ?? []));
+                $harness->assertSame($fixture['transaction_id'], (int)($beforeCorrection['movements'][0]['transaction_id'] ?? 0));
                 $attribution = (new \eel_accounts\Service\DirectorLoanAttributionService())->assignJournalLine(
                     $fixture['company_id'],
                     $fixture['loan_line_id'],

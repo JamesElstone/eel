@@ -414,7 +414,10 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
             'message' => 'Saved with caveats.',
         ]]);
 
-        $harness->assertSame('<div class="alert warning">Saved with caveats.</div>', $html);
+        $harness->assertSame(
+            '<div class="alert warning"><div class="flash-message-content">Saved with caveats.</div><button type="button" class="flash-dismiss" data-flash-dismiss aria-label="Close notification">&times;</button></div>',
+            $html
+        );
     });
 
     $harness->check(PageRendererFramework::class, 'falls back unknown flash types to success alerts', function () use ($harness, $instance, $renderFlashMessages): void {
@@ -427,9 +430,34 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
         ]);
 
         $harness->assertSame(
-            '<div class="alert success">Plain string.</div><div class="alert success">Unknown type.</div>',
+            '<div class="alert success"><div class="flash-message-content">Plain string.</div><button type="button" class="flash-dismiss" data-flash-dismiss aria-label="Close notification">&times;</button></div><div class="alert success"><div class="flash-message-content">Unknown type.</div><button type="button" class="flash-dismiss" data-flash-dismiss aria-label="Close notification">&times;</button></div>',
             $html
         );
+    });
+
+    $harness->check(PageRendererFramework::class, 'renders dismiss controls alongside escaped and HTML flashes', function () use ($harness, $instance, $renderFlashMessages): void {
+        $html = $renderFlashMessages->invoke($instance, [
+            ['message' => '<Saved & verified>'],
+            ['message_html' => '<strong>Saved</strong>'],
+        ]);
+
+        $harness->assertSame(
+            '<div class="alert success"><div class="flash-message-content">&lt;Saved &amp; verified&gt;</div><button type="button" class="flash-dismiss" data-flash-dismiss aria-label="Close notification">&times;</button></div><div class="alert success"><div class="flash-message-content"><strong>Saved</strong></div><button type="button" class="flash-dismiss" data-flash-dismiss aria-label="Close notification">&times;</button></div>',
+            $html
+        );
+    });
+
+    $harness->check(PageRendererFramework::class, 'frontend delegates flash close controls to the shared dismissal animation', function () use ($harness): void {
+        $script = file_get_contents(APP_JS . 'index.js');
+
+        if (!is_string($script)) {
+            throw new RuntimeException('Unable to read frontend script.');
+        }
+
+        $harness->assertTrue(str_contains($script, "event.target.closest('[data-flash-dismiss]')"));
+        $harness->assertTrue(str_contains($script, "flashDismiss.closest('#flash-messages .alert')"));
+        $harness->assertTrue(str_contains($script, 'dismissFlashMessage(message);'));
+        $harness->assertTrue(str_contains($script, "message.querySelector('.flash-message-content')"));
     });
 
     $harness->check(PageRendererFramework::class, 'frontend rebinds page card tabs after AJAX card replacement', function () use ($harness): void {

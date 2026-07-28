@@ -3366,7 +3366,8 @@
             const type = message.classList.contains('error')
                 ? 'error'
                 : (message.classList.contains('warning') ? 'warning' : 'success');
-            const text = (message.innerText || message.textContent || '')
+            const content = message.querySelector('.flash-message-content');
+            const text = ((content instanceof HTMLElement ? content.innerText || content.textContent : message.innerText || message.textContent) || '')
                 .trim()
                 .replace(/\s*\n\s*/g, ' - ');
 
@@ -3986,6 +3987,17 @@
 
     document.addEventListener('click', async (event) => {
         rememberTableExportClipboardIntent(event);
+
+        const flashDismiss = event.target instanceof Element ? event.target.closest('[data-flash-dismiss]') : null;
+        if (flashDismiss instanceof HTMLButtonElement) {
+            const message = flashDismiss.closest('#flash-messages .alert');
+            if (message instanceof HTMLElement) {
+                event.preventDefault();
+                dismissFlashMessage(message);
+            }
+
+            return;
+        }
 
         const cardSizeToggle = event.target instanceof Element ? event.target.closest('[data-card-size-toggle]') : null;
         if (cardSizeToggle instanceof HTMLButtonElement) {

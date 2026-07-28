@@ -382,18 +382,36 @@ final class YearEndSectionApprovalService
         $errors = [];
         $total = count($rows);
         $preparedChecklists = [];
+        $preparedCompaniesHouseContexts = [];
         foreach ($rows as $index => $row) {
             $targetPeriodId = (int)($row['accounting_period_id'] ?? 0);
             $checkCode = trim((string)($row['check_code'] ?? ''));
             if ($targetPeriodId <= 0 || $checkCode === '') {
                 continue;
             }
+            $sectionLabel = $this->isCompaniesHouseCheck($checkCode)
+                ? 'Companies House comparison'
+                : $this->sectionLabel($checkCode);
             $progress?->__invoke(
-                'Rebuilding Year End review cache: ' . $this->sectionLabel($checkCode)
+                'Rebuilding Year End review cache: ' . $sectionLabel
                     . ' — ' . $this->accountingPeriodLabel($row) . '…',
                 $total > 0 ? 70 + (int)floor((($index + 1) / $total) * 14) : 84
             );
             try {
+                $preparedCompaniesHouseContext = null;
+                if ($this->isCompaniesHouseCheck($checkCode)) {
+                    if (!array_key_exists($targetPeriodId, $preparedCompaniesHouseContexts)) {
+                        $preparedCompaniesHouseContexts[$targetPeriodId] = $this->companiesHouseContext(
+                            $companyId,
+                            $targetPeriodId
+                        );
+                    }
+                    $preparedCompaniesHouseContext = $preparedCompaniesHouseContexts[$targetPeriodId];
+                    if ($checkCode !== $this->companiesHouseCheckCode($preparedCompaniesHouseContext)) {
+                        $this->deleteCachedBundle($companyId, $targetPeriodId, $checkCode);
+                        continue;
+                    }
+                }
                 $preparedChecklist = null;
                 if ($this->usesChecklistContext($checkCode)) {
                     if (!array_key_exists($targetPeriodId, $preparedChecklists)) {
@@ -410,7 +428,8 @@ final class YearEndSectionApprovalService
                     $targetPeriodId,
                     $checkCode,
                     null,
-                    $preparedChecklist
+                    $preparedChecklist,
+                    $preparedCompaniesHouseContext
                 );
                 if (empty($bundle['available'])) {
                     $errors[] = 'AP ' . $targetPeriodId . ' / ' . $checkCode . ': '
@@ -461,6 +480,37 @@ final class YearEndSectionApprovalService
         }
 
         return 'Accounting period ' . (int)($row['accounting_period_id'] ?? 0);
+    }
+
+    private function isCompaniesHouseCheck(string $checkCode): bool
+    {
+        return in_array($checkCode, [
+            'companies_house_mismatch_acknowledgement',
+            'companies_house_no_filing_acknowledgement',
+        ], true);
+    }
+
+    private function companiesHouseCheckCode(array $context): string
+    {
+        return !empty((($context['comparison'] ?? [])['has_exact_filing'] ?? false))
+            ? 'companies_house_mismatch_acknowledgement'
+            : 'companies_house_no_filing_acknowledgement';
+    }
+
+    /** Removes a stale cache-only variant that cannot apply to this period. */
+    private function deleteCachedBundle(int $companyId, int $accountingPeriodId, string $checkCode): void
+    {
+        \InterfaceDB::execute(
+            'DELETE FROM year_end_section_review_bundles
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND check_code = :check_code',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'check_code' => $checkCode,
+            ]
+        );
     }
 
     /**
@@ -536,7 +586,8 @@ final class YearEndSectionApprovalService
         int $accountingPeriodId,
         string $checkCode,
         ?array $preparedRetainedEarningsContext = null,
-        ?array $preparedChecklist = null
+        ?array $preparedChecklist = null,
+        ?array $preparedCompaniesHouseContext = null
     ): array
     {
         $checkCode = $this->checkCode($checkCode);
@@ -545,10 +596,17 @@ final class YearEndSectionApprovalService
             $accountingPeriodId,
             $checkCode,
             $preparedRetainedEarningsContext,
-            $preparedChecklist
+            $preparedChecklist,
+            $preparedCompaniesHouseContext
         );
         $bundle = $this->validateBundleForPersistence($bundle, $checkCode);
-        $bundle['source_token'] = $this->sourceToken($companyId, $accountingPeriodId, $checkCode, $preparedChecklist);
+        $bundle['source_token'] = $this->sourceToken(
+            $companyId,
+            $accountingPeriodId,
+            $checkCode,
+            $preparedChecklist,
+            $preparedCompaniesHouseContext
+        );
         $bundle['definition_token'] = $this->definitionToken($checkCode);
         if (!$this->tableAvailable()) {
             return $bundle;
@@ -606,7 +664,8 @@ final class YearEndSectionApprovalService
         int $accountingPeriodId,
         string $checkCode,
         ?array $preparedRetainedEarningsContext = null,
-        ?array $preparedChecklist = null
+        ?array $preparedChecklist = null,
+        ?array $preparedCompaniesHouseContext = null
     ): array
     {
         if ($checkCode === 'director_loan_year_end_review') {
@@ -622,8 +681,13 @@ final class YearEndSectionApprovalService
         if ($checkCode === 'retained_earnings_close_confirmation') {
             return $this->retainedEarningsBundle($companyId, $accountingPeriodId, $preparedRetainedEarningsContext);
         }
-        if (in_array($checkCode, ['companies_house_mismatch_acknowledgement', 'companies_house_no_filing_acknowledgement'], true)) {
-            return $this->companiesHouseBundle($companyId, $accountingPeriodId, $checkCode);
+        if ($this->isCompaniesHouseCheck($checkCode)) {
+            return $this->companiesHouseBundle(
+                $companyId,
+                $accountingPeriodId,
+                $checkCode,
+                $preparedCompaniesHouseContext
+            );
         }
 
         $checklist = $preparedChecklist ?? (new YearEndChecklistService())->fetchChecklist(
@@ -842,9 +906,14 @@ final class YearEndSectionApprovalService
         ]));
     }
 
-    private function companiesHouseBundle(int $companyId, int $accountingPeriodId, string $checkCode): array
+    private function companiesHouseBundle(
+        int $companyId,
+        int $accountingPeriodId,
+        string $checkCode,
+        ?array $preparedContext = null
+    ): array
     {
-        $display = (new CompaniesHouseComparisonReviewService())->fetchContext($companyId, $accountingPeriodId);
+        $display = $preparedContext ?? $this->companiesHouseContext($companyId, $accountingPeriodId);
         $comparison = (array)($display['comparison'] ?? []);
         if (empty($comparison['available'])) {
             return ['available' => false, 'errors' => (array)($comparison['errors'] ?? ['Companies House comparison is unavailable.']), 'check_code' => $checkCode];
@@ -1134,11 +1203,12 @@ final class YearEndSectionApprovalService
         int $companyId,
         int $accountingPeriodId,
         string $checkCode,
-        ?array $preparedChecklist = null
+        ?array $preparedChecklist = null,
+        ?array $preparedCompaniesHouseContext = null
     ): string
     {
-        if (in_array($checkCode, ['companies_house_mismatch_acknowledgement', 'companies_house_no_filing_acknowledgement'], true)) {
-            $context = (new CompaniesHouseComparisonReviewService())->fetchContext($companyId, $accountingPeriodId);
+        if ($this->isCompaniesHouseCheck($checkCode)) {
+            $context = $preparedCompaniesHouseContext ?? $this->companiesHouseContext($companyId, $accountingPeriodId);
             return hash('sha256', $this->canonicalJson([
                 'comparison' => (array)($context['comparison'] ?? []),
                 'eligibility' => (array)($context['eligibility'] ?? []),
@@ -1292,6 +1362,21 @@ final class YearEndSectionApprovalService
                 ) ?? [];
                 return (array)($checklist['tax_readiness'] ?? []);
             }
+        );
+
+        return is_array($context) ? $context : [];
+    }
+
+    /** @return array<string,mixed> */
+    private function companiesHouseContext(int $companyId, int $accountingPeriodId): array
+    {
+        $context = \eel_accounts\Support\RequestCache::remember(
+            'year-end-section.companies-house',
+            $companyId . ':' . $accountingPeriodId,
+            static fn(): array => (new CompaniesHouseComparisonReviewService())->fetchContext(
+                $companyId,
+                $accountingPeriodId
+            )
         );
 
         return is_array($context) ? $context : [];

@@ -94,6 +94,41 @@ $harness->run(\eel_accounts\Service\YearEndSectionApprovalService::class, static
         $harness->assertSame(false, (bool)$method->invoke($service, 'tax_readiness_acknowledgement'));
         $harness->assertSame(false, (bool)$method->invoke($service, 'director_loan_year_end_review'));
     });
+
+    $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'reuses a prepared Companies House comparison for its bundle and source token', static function () use ($harness, $service): void {
+        $bundleMethod = new ReflectionMethod($service, 'companiesHouseBundle');
+        $sourceToken = new ReflectionMethod($service, 'sourceToken');
+        $activeCheck = new ReflectionMethod($service, 'companiesHouseCheckCode');
+        $context = [
+            'comparison' => [
+                'available' => true,
+                'has_exact_filing' => true,
+                'reliable_closing_balance' => true,
+            ],
+            'mismatch_count' => 0,
+            'eligibility' => ['eligible' => true],
+        ];
+        $bundle = (array)$bundleMethod->invoke(
+            $service,
+            12,
+            34,
+            'companies_house_mismatch_acknowledgement',
+            $context
+        );
+        $token = (string)$sourceToken->invoke(
+            $service,
+            12,
+            34,
+            'companies_house_mismatch_acknowledgement',
+            null,
+            $context
+        );
+
+        $harness->assertSame('companies_house_mismatch_acknowledgement', (string)$bundle['check_code']);
+        $harness->assertSame(64, strlen($token));
+        $harness->assertSame('companies_house_mismatch_acknowledgement', (string)$activeCheck->invoke($service, $context));
+    });
+
     $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'does not stale a Director Loan bundle when only the S455 evaluation clock changes', static function () use ($harness, $service): void {
         $method = new ReflectionMethod($service, 'bundleSourceHash');
         $bundle = [

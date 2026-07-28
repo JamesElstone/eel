@@ -109,6 +109,48 @@ foreach ($cardClasses as $className) {
                 $harness->assertTrue(str_contains($html, 'capital_allowances_summary.wda_claimed'));
                 $harness->assertTrue(str_contains($html, '$ 556.90'));
             });
+
+            $harness->check($className, 'renders the calculation as an exportable framework table', static function () use ($harness, $card): void {
+                $context = taxWorkingsCardsContext();
+                $context['page'] = [
+                    'page_id' => 'corporation_tax',
+                    'page_cards' => ['tax_capital_allowances_summary'],
+                    'csrf_token' => 'test-token',
+                ];
+
+                $html = $card->render($context);
+                $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="csv"'));
+                $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="xlsx"'));
+
+                $tables = $card->tables($context);
+                $harness->assertCount(1, $tables);
+                $harness->assertTrue($tables[0] instanceof TableFramework);
+                $csvLines = preg_split('/\r\n|\r|\n/', trim($tables[0]->exportCsv()));
+                $harness->assertSame(['Line', 'Source', 'Amount', 'Running total'], str_getcsv((string)($csvLines[0] ?? ''), ',', '"', '\\'));
+                $harness->assertSame(['Annual Investment Allowance (AIA) claimed', 'VAN-1 Van bought 2026-04-20 from addition $ 1,000.00', '1000.00', '1000.00'], str_getcsv((string)($csvLines[1] ?? ''), ',', '"', '\\'));
+            });
+        }
+
+        if ($className === _tax_aia_allocationCard::class) {
+            $harness->check($className, 'renders an exportable framework allocation table', static function () use ($harness, $card): void {
+                $context = taxWorkingsCardsContext();
+                $context['page'] = [
+                    'page_id' => 'corporation_tax',
+                    'page_cards' => ['tax_aia_allocation'],
+                    'csrf_token' => 'test-token',
+                ];
+
+                $html = $card->render($context);
+                $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="csv"'));
+                $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="xlsx"'));
+
+                $tables = $card->tables($context);
+                $harness->assertCount(1, $tables);
+                $harness->assertTrue($tables[0] instanceof TableFramework);
+                $csvLines = preg_split('/\r\n|\r|\n/', trim($tables[0]->exportCsv()));
+                $harness->assertSame(['Purchase date', 'Asset', 'Addition', 'Annual Investment Allowance (AIA) claimed', 'Annual Investment Allowance (AIA) used'], str_getcsv((string)($csvLines[0] ?? ''), ',', '"', '\\'));
+                $harness->assertSame(['2026-04-20', 'VAN-1 Van', '1000.00', '1000.00', '1000.00'], str_getcsv((string)($csvLines[1] ?? ''), ',', '"', '\\'));
+            });
         }
 
         if (in_array($className, [_tax_main_rate_poolCard::class, _tax_special_rate_poolCard::class], true)) {

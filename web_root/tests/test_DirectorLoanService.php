@@ -96,10 +96,13 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
             $statementText = (new \eel_accounts\Service\IxbrlTaxonomyProfileService())->directorLoanStatementText($disclosure);
             $harness->assertTrue(str_contains($statementText, 'advanced £253.00 to Primary Director'));
             $harness->assertTrue(str_contains($statementText, 'advanced £100.00 to Other Director'));
-            $harness->assertTrue(str_contains($statementText, 'amounts legally set off were £0.00'));
             $harness->assertTrue(str_contains(
                 $statementText,
-                'The main terms were Unsecured. Repayable after more than 12 months.'
+                'No amounts were legally set off, written off or waived.'
+            ));
+            $harness->assertTrue(str_contains(
+                $statementText,
+                'Main terms: Unsecured. Interest rate: 0%. Repayment conditions: Repayable after more than 12 months.'
             ));
             $harness->assertSame('253.00', directorLoanStatementMoney($primaryDirector['gross_asset'] ?? 0));
             $harness->assertSame('1288.63', directorLoanStatementMoney($primaryDirector['gross_liability'] ?? 0));

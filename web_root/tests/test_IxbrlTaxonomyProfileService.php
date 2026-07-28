@@ -98,11 +98,17 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'amounts_waived' => 0.0,
                     'closing_company_to_director_balance' => 90.0,
                     'interest_rate' => '0%',
-                    'main_conditions' => 'Interest-free and repayable on demand.',
+                    'main_terms' => 'Unsecured',
+                    'repayment_conditions' => 'Originally repayable 12 months after each advance but repaid early during the period.',
                 ]],
             ]);
-            $harness->assertTrue(str_contains($statement, 'Cash repayments were £20.00'));
-            $harness->assertTrue(str_contains($statement, 'amounts legally set off were £10.00'));
+            $harness->assertTrue(str_contains($statement, 'Cash repayments during the period were £20.00'));
+            $harness->assertTrue(str_contains($statement, 'Amounts legally set off were £10.00'));
+            $harness->assertTrue(str_contains($statement, 'Interest rate: 0%.'));
+            $harness->assertTrue(str_contains(
+                $statement,
+                'Repayment conditions: Originally repayable 12 months after each advance but repaid early during the period.'
+            ));
             $harness->assertSame(false, str_contains($statement, 'repaid or settled'));
         });
     }

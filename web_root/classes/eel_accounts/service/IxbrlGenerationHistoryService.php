@@ -55,6 +55,7 @@ final class IxbrlGenerationHistoryService
             "SELECT 'hmrc_accounting' AS output_type, 'HMRC Accounting' AS output_label,
                     run.id AS source_id, run.id AS run_id, '' AS ct_period_label,
                     run.filing_approval_id, approval.evidence_bundle_id, approval.approved_at,
+                    evidence_bundle.id AS evidence_bundle_exists,
                     (SELECT COUNT(*) FROM ixbrl_generation_facts fact WHERE fact.run_id = run.id) AS fact_count,
                     run.status AS output_status, run.generated_filename, run.generated_path,
                     run.validation_status, run.external_validation_status,
@@ -62,6 +63,7 @@ final class IxbrlGenerationHistoryService
                     COALESCE(run.generated_at, run.created_at) AS history_at
              FROM ixbrl_generation_runs run
              LEFT JOIN ixbrl_accounts_filing_approvals approval ON approval.id = run.filing_approval_id
+             LEFT JOIN filing_evidence_bundles evidence_bundle ON evidence_bundle.id = approval.evidence_bundle_id
              WHERE run.company_id = :company_id AND run.accounting_period_id = :period_id",
             $params
         ) ?: [];
@@ -74,6 +76,7 @@ final class IxbrlGenerationHistoryService
                     run.id AS source_id, run.id AS run_id,
                     CONCAT('CT period ', period.sequence_no, ' (', period.period_start, ' to ', period.period_end, ')') AS ct_period_label,
                     basis.filing_approval_id, approval.evidence_bundle_id, approval.approved_at,
+                    evidence_bundle.id AS evidence_bundle_exists,
                     NULL AS fact_count, run.ixbrl_status AS output_status,
                     run.generated_filename, run.generated_path,
                     run.validation_status, run.external_validation_status,
@@ -86,6 +89,7 @@ final class IxbrlGenerationHistoryService
                    AND basis.company_id = run.company_id
                    AND basis.accounting_period_id = run.accounting_period_id
              LEFT JOIN ixbrl_accounts_filing_approvals approval ON approval.id = basis.filing_approval_id
+             LEFT JOIN filing_evidence_bundles evidence_bundle ON evidence_bundle.id = approval.evidence_bundle_id
              WHERE run.company_id = :company_id AND run.accounting_period_id = :period_id
                AND (run.ixbrl_status <> 'not_generated'
                     OR run.generated_filename IS NOT NULL
@@ -116,6 +120,7 @@ final class IxbrlGenerationHistoryService
                     '' AS ct_period_label, run.filing_approval_id,
                     COALESCE(approval.evidence_bundle_id, submission.evidence_bundle_id) AS evidence_bundle_id,
                     approval.approved_at,
+                    evidence_bundle.id AS evidence_bundle_exists,
                     (SELECT COUNT(*) FROM ixbrl_generation_facts fact WHERE fact.run_id = run.id) AS fact_count,
                     {$artifactColumns},
                     COALESCE(submission.artifact_path, submission.revised_artifact_path) AS generated_path,
@@ -124,6 +129,8 @@ final class IxbrlGenerationHistoryService
              FROM companies_house_accounts_submissions submission
              LEFT JOIN ixbrl_generation_runs run ON run.id = submission.ixbrl_generation_run_id
              LEFT JOIN ixbrl_accounts_filing_approvals approval ON approval.id = run.filing_approval_id
+             LEFT JOIN filing_evidence_bundles evidence_bundle
+                    ON evidence_bundle.id = COALESCE(approval.evidence_bundle_id, submission.evidence_bundle_id)
              {$evidenceJoin}
              WHERE submission.company_id = :company_id AND submission.accounting_period_id = :period_id
                AND COALESCE(submission.artifact_path, submission.revised_artifact_path) IS NOT NULL

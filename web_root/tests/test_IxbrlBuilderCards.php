@@ -521,7 +521,10 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                         'can_generate' => false,
                         'can_validate' => true,
                         'ready_for_filing' => false,
-                        'generation_errors' => ['Approve the current accounts disclosure basis before generating iXBRL.'],
+                        'generation_errors' => [
+                            'Approve the current accounts disclosure basis before generating iXBRL.',
+                            'Filing approval #18 refers to missing evidence bundle #21. Unlock Year End, then re-lock it to create replacement immutable filing evidence; approve the filing basis again before generating iXBRL.',
+                        ],
                         'arelle_status' => ['installed' => true],
                     ],
                     'latest_run' => [
@@ -560,6 +563,8 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $harness->assertTrue(str_contains($draftHtml, 'Generate Accounting iXBRL</button>') && str_contains($draftHtml, 'disabled'));
             $harness->assertTrue(str_contains($draftHtml, 'Generation requirements'));
             $harness->assertTrue(str_contains($draftHtml, 'Approve the current accounts disclosure basis before generating iXBRL.'));
+            $harness->assertTrue(str_contains($draftHtml, 'Filing approval #18 refers to missing evidence bundle #21.'));
+            $harness->assertTrue(str_contains($draftHtml, 'Unlock Year End, then re-lock it to create replacement immutable filing evidence;'));
             $harness->assertFalse(str_contains($draftHtml, 'Run External Validation'));
             $harness->assertFalse(str_contains($draftHtml, 'name="intent" value="validate_ixbrl_external"'));
             $harness->assertTrue(str_contains($draftHtml, 'Arelle Status') && str_contains($draftHtml, 'Installed'));
@@ -589,6 +594,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $harness->assertTrue(str_contains($readyHtml, 'name="card_action" value="CompaniesHouseAccounts"'));
             $harness->assertTrue(str_contains($readyHtml, 'name="intent" value="sync_missing_ixbrl_runs"'));
             $harness->assertTrue(str_contains($readyHtml, 'data-chicken-title="Synchronise missing iXBRL runs"'));
+            $harness->assertTrue(str_contains($readyHtml, 'Filing approvals, evidence bundles, and runs used by transmitted or in-flight Companies House filings are retained.'));
             $developerOptions = (bool)AppConfigurationStore::get('developer_options', false);
             try {
                 AppConfigurationStore::set('developer_options', false);
@@ -848,6 +854,7 @@ $harness->run(_ixbrl_historyCard::class, static function (GeneratedServiceClassT
     $harness->check(_ixbrl_historyCard::class, 'unifies generated iXBRL artifacts under approval cells and keeps unlinked history', static function () use ($harness, $card): void {
         $generatedRun = [
             'evidence_bundle_id' => 15,
+            'evidence_bundle_exists' => 15,
             'approved_at' => '2026-07-27 01:27:05',
             'fact_count' => 57,
             'output_status' => 'generated',
@@ -916,6 +923,16 @@ $harness->run(_ixbrl_historyCard::class, static function (GeneratedServiceClassT
         $harness->assertSame(1, substr_count($html, '<span class="badge info">Latest</span>'));
         $harness->assertTrue(str_contains((string)strstr($html, 'Run #22'), '<span class="badge info">Latest</span>'));
     });
+    $harness->check(_ixbrl_historyCard::class, 'flags an approval whose recorded evidence bundle no longer exists', static function () use ($harness, $card): void {
+        $html = $card->render(['services' => ['ixbrl_history' => [[
+            'source_id' => 19, 'run_id' => 19, 'filing_approval_id' => 18,
+            'evidence_bundle_id' => 21, 'evidence_bundle_exists' => null,
+            'approved_at' => '2026-07-28 13:00:00', 'output_type' => 'hmrc_accounting',
+            'output_label' => 'HMRC Accounting', 'output_status' => 'generated',
+        ]]]]);
+
+        $harness->assertTrue(str_contains($html, '<td rowspan="1">#21<div><span class="badge danger">Missing</span></div></td>'));
+    });
     $harness->check(_ixbrl_historyCard::class, 'shows untransmitted-history cleanup only with developer options', static function () use ($harness, $card): void {
         $context = [
             'company' => ['id' => 49, 'accounting_period_id' => 79],
@@ -931,6 +948,7 @@ $harness->run(_ixbrl_historyCard::class, static function (GeneratedServiceClassT
             $harness->assertTrue(str_contains($html, 'name="intent" value="cleanup_untransmitted_ixbrl_history"'));
             $harness->assertTrue(str_contains($html, '>Clean Untransmitted History</button>'));
             $harness->assertTrue(str_contains($html, 'data-chicken-title="Clean untransmitted iXBRL history"'));
+            $harness->assertTrue(str_contains($html, 'Filing approvals, evidence bundles, linked submissions, and all generated files are retained.'));
         } finally {
             AppConfigurationStore::set('developer_options', $developerOptions);
         }

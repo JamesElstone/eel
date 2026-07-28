@@ -235,6 +235,18 @@ final class IxbrlReadinessService
                     ?? 'Approve disclosures and build filing facts from the Accounts Disclosures panel.')
         );
 
+        $missingEvidenceError = $this->missingApprovalEvidenceError($filingApproval);
+        $this->addCheck(
+            $checks,
+            'filing_approval_evidence_available',
+            'Filing approval evidence available',
+            $missingEvidenceError === '',
+            ['build', 'generate', 'filing'],
+            $missingEvidenceError !== ''
+                ? $missingEvidenceError
+                : 'The latest filing approval has an available immutable evidence bundle.'
+        );
+
         $latestRun = $validSelection && \InterfaceDB::tableExists('ixbrl_generation_runs')
             ? (new \eel_accounts\Service\IxbrlFactBuilderService())->getLatestRun($companyId, $accountingPeriodId)
             : null;
@@ -368,6 +380,32 @@ final class IxbrlReadinessService
         ];
             }
         );
+    }
+
+    /** Returns a generation blocker when the approval points at deleted Year End evidence. */
+    private function missingApprovalEvidenceError(array $filingApproval): string
+    {
+        $approval = is_array($filingApproval['approval'] ?? null)
+            ? (array)$filingApproval['approval']
+            : [];
+        $approvalId = (int)($approval['id'] ?? 0);
+        $bundleId = (int)($approval['evidence_bundle_id'] ?? 0);
+        if ($approvalId <= 0 || $bundleId <= 0
+            || !\InterfaceDB::tableExists('filing_evidence_bundles')) {
+            return '';
+        }
+
+        $bundleExists = (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*) FROM filing_evidence_bundles WHERE id = :id',
+            ['id' => $bundleId]
+        ) === 1;
+        if ($bundleExists) {
+            return '';
+        }
+
+        return 'Filing approval #' . $approvalId . ' refers to missing evidence bundle #' . $bundleId
+            . '. Unlock Year End, then re-lock it to create replacement immutable filing evidence; '
+            . 'approve the filing basis again before generating iXBRL.';
     }
 
     private function addCheck(

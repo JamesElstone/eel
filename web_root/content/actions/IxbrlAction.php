@@ -165,11 +165,9 @@ final class IxbrlAction implements ActionInterfaceFramework
                     [],
                     $changedFacts,
                     [
-                        (int)$cleanup['deleted_bundles'] . ' historical evidence bundle(s), '
-                        . (int)$cleanup['deleted_approvals'] . ' historical approval(s), '
-                        . (int)$cleanup['deleted_runs'] . ' obsolete run(s), '
+                        (int)$cleanup['deleted_runs'] . ' unlinked iXBRL run(s), '
                         . ((int)$cleanup['deleted_companies_house_drafts'] + (int)$cleanup['deleted_hmrc_drafts'])
-                        . ' unsent submission draft(s) removed.',
+                        . ' unlinked submission draft(s) removed. Filing approvals and evidence bundles were retained.',
                     ],
                     []
                 );

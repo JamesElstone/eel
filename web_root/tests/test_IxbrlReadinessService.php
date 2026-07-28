@@ -44,6 +44,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('Build blocked', (string)($checks[0]['status_label'] ?? ''));
         });
 
+        $harness->check(\eel_accounts\Service\IxbrlReadinessService::class, 'identifies missing approval evidence and gives the Year End recovery path', static function () use ($harness): void {
+            $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'classes'
+                . DIRECTORY_SEPARATOR . 'eel_accounts' . DIRECTORY_SEPARATOR . 'service'
+                . DIRECTORY_SEPARATOR . 'IxbrlReadinessService.php');
+
+            $harness->assertTrue(str_contains($source, 'missingApprovalEvidenceError'));
+            $harness->assertTrue(str_contains($source, 'Unlock Year End, then re-lock it to create replacement immutable filing evidence'));
+        });
+
         $harness->check(\eel_accounts\Service\IxbrlReadinessService::class, 'requires every statutory profile fact before generation', static function () use ($harness, $service): void {
             $method = new ReflectionMethod(\eel_accounts\Service\IxbrlReadinessService::class, 'requiredProfileFactKeys');
             $method->setAccessible(true);

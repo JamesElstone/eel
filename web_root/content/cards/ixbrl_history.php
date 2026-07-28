@@ -60,7 +60,7 @@ final class _ixbrl_historyCard extends CardBaseFramework
                     . '<input type="hidden" name="intent" value="cleanup_untransmitted_ixbrl_history">'
                     . '<input type="hidden" name="company_id" value="' . (int)($company['id'] ?? 0) . '">'
                     . '<input type="hidden" name="accounting_period_id" value="' . (int)($company['accounting_period_id'] ?? 0) . '">'
-                    . '<button class="button danger" type="submit" title="Developer only" data-chicken-check="true" data-chicken-title="Clean untransmitted iXBRL history" data-chicken-message="Remove superseded filing approvals, runs, evidence bundles, artifacts, events, and unsent submission drafts for this accounting period?<br><br>A current approval, evidence bundle, and facts are protected when present. If the filing basis is stale, all untransmitted history is removed. Any transmitted or in-flight evidence is always protected. Files are not deleted." data-chicken-confirm-text="Clean history" data-chicken-button-class="button danger">Clean Untransmitted History</button>'
+                    . '<button class="button danger" type="submit" title="Developer only" data-chicken-check="true" data-chicken-title="Clean untransmitted iXBRL history" data-chicken-message="Remove only untransmitted iXBRL runs and submission drafts that have no approval or evidence-bundle link.<br><br>Filing approvals, evidence bundles, linked submissions, and all generated files are retained." data-chicken-confirm-text="Clean history" data-chicken-button-class="button danger">Clean Untransmitted History</button>'
                     . '</form></div>'
                 : '')
             . '</div>';
@@ -90,12 +90,15 @@ final class _ixbrl_historyCard extends CardBaseFramework
             usort($groupRuns, fn(array $left, array $right): int => $this->compareRows($left, $right));
             $approval = (array)$group['approval'];
             $bundleId = (int)($approval['evidence_bundle_id'] ?? 0);
+            $bundleExists = !array_key_exists('evidence_bundle_exists', $approval)
+                || (int)$approval['evidence_bundle_exists'] > 0;
             foreach ($groupRuns as $index => $run) {
                 $rows .= '<tr>'
                     . ($index === 0
                         ? $this->approvalCells(
                             '#' . $approvalId,
-                            $bundleId > 0 ? '#' . $bundleId : '—',
+                            $bundleId,
+                            $bundleExists,
                             (string)($approval['approved_at'] ?? ''),
                             count($groupRuns)
                         )
@@ -110,7 +113,7 @@ final class _ixbrl_historyCard extends CardBaseFramework
             foreach ($unlinkedRuns as $index => $run) {
                 $rows .= '<tr>'
                     . ($index === 0
-                        ? $this->approvalCells('Unlinked', '—', '—', count($unlinkedRuns))
+                        ? $this->approvalCells('Unlinked', 0, true, '—', count($unlinkedRuns))
                         : '')
                     . $this->runCells($run)
                     . '</tr>';
@@ -124,12 +127,22 @@ final class _ixbrl_historyCard extends CardBaseFramework
             . '</tr></thead><tbody>' . $rows . '</tbody></table></div>';
     }
 
-    private function approvalCells(string $approvalId, string $evidenceBundle, string $approvedAt, int $rowSpan): string
+    private function approvalCells(
+        string $approvalId,
+        int $evidenceBundleId,
+        bool $evidenceBundleExists,
+        string $approvedAt,
+        int $rowSpan
+    ): string
     {
         $approvedAt = trim($approvedAt) !== '' ? $approvedAt : '—';
+        $evidenceBundle = $evidenceBundleId > 0
+            ? '#' . $evidenceBundleId
+                . (!$evidenceBundleExists ? '<div><span class="badge danger">Missing</span></div>' : '')
+            : '—';
 
         return '<td rowspan="' . $rowSpan . '"><strong>' . HelperFramework::escape($approvalId) . '</strong></td>'
-            . '<td rowspan="' . $rowSpan . '">' . HelperFramework::escape($evidenceBundle) . '</td>'
+            . '<td rowspan="' . $rowSpan . '">' . $evidenceBundle . '</td>'
             . '<td rowspan="' . $rowSpan . '">' . HelperFramework::escape($approvedAt) . '</td>';
     }
 

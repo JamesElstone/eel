@@ -53,7 +53,9 @@ final class _director_loan_s455Card extends CardBaseFramework
                 . $this->stat('Evidence cutoff', (string)$period['evidence_cutoff'])
                 . $this->stat(
                     's455 exposure',
-                    (float)($period['gross_tax'] ?? 0) > 0 ? 'Exposure' : 'No exposure',
+                    (float)($period['gross_tax'] ?? 0) > 0
+                        ? 'Exposure'
+                        : 'Repaid within the accounting period; no amount reportable and no s455 tax payable',
                     (float)($period['gross_tax'] ?? 0) > 0 ? 'warn' : 'success'
                 )
                 . $this->stat('Repayment deadline', (string)$period['repayment_deadline'])

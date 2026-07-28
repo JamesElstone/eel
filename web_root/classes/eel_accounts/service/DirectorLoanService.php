@@ -464,6 +464,11 @@ final class DirectorLoanService
             ) >= 0.005;
 
             $presentation = (array)($position['party_terms'] ?? []);
+            $mainTerms = ucfirst((string)($presentation['security_type'] ?? 'unsecured')) . '.';
+            $repaymentConditions = !empty($presentation['repayable_on_demand'])
+                ? 'Repayable on demand.'
+                : ((string)($presentation['repayment_timing'] ?? 'within_12_months') === 'after_12_months'
+                    ? 'Repayable after more than 12 months.' : 'Repayable within 12 months.');
             $row = [
                 'director_id' => $position['director_id'] ?? null,
                 'director_name' => (string)($position['director_name'] ?? 'Unattributed'),
@@ -488,12 +493,9 @@ final class DirectorLoanService
                 'closing_company_liability' => $closingLiability,
                 'interest_rate_percent' => (float)($presentation['interest_rate_percent'] ?? 0),
                 'interest_rate' => number_format((float)($presentation['interest_rate_percent'] ?? 0), 4, '.', '') . '%',
-                'main_terms' => ucfirst((string)($presentation['security_type'] ?? 'unsecured')) . '.',
-                'repayment_conditions' => !empty($presentation['repayable_on_demand'])
-                    ? 'Repayable on demand.'
-                    : ((string)($presentation['repayment_timing'] ?? 'within_12_months') === 'after_12_months'
-                        ? 'Repayable after 12 months.' : 'Repayable within 12 months.'),
-                'main_conditions' => ucfirst((string)($presentation['security_type'] ?? 'unsecured')) . '.',
+                'main_terms' => $mainTerms,
+                'repayment_conditions' => $repaymentConditions,
+                'main_conditions' => $mainTerms . ' ' . $repaymentConditions,
                 'set_off_permitted' => !empty($position['set_off_permitted']),
                 'section_413_required' => $hasDisclosure,
             ];

@@ -63,6 +63,29 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 'This is a live s455 estimate based on correctly attributed cash transactions and the close-company result calculated from effective ownership and relationship records.',
                 $card->helper([])
             );
+
+            $noExposureHtml = $card->render([
+                'company' => ['settings' => []],
+                'services' => [
+                    's455' => [
+                        'available' => true,
+                        'periods' => [[
+                            'available' => true,
+                            'sequence_no' => 1,
+                            'period_start' => '2023-01-01',
+                            'period_end' => '2023-12-31',
+                            'evidence_cutoff' => '2023-12-31 12:00:00',
+                            'gross_tax' => 0.0,
+                            'repayment_deadline' => '2024-09-30',
+                        ]],
+                    ],
+                ],
+            ]);
+            $harness->assertTrue(str_contains(
+                $noExposureHtml,
+                'Repaid within the accounting period; no amount reportable and no s455 tax payable'
+            ));
+            $harness->assertFalse(str_contains($noExposureHtml, '>No exposure<'));
         });
     }
 );

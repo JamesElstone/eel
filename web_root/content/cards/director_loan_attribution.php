@@ -152,8 +152,9 @@ final class _director_loan_attributionCard extends CardBaseFramework
     private function table(array $context, string $filter): TableFramework
     {
         $statement = (array)($context['services']['directorLoanStatement'] ?? []);
+        $entries = $this->withRunningBalances((array)($statement['attribution_entries'] ?? []));
         $entries = array_values(array_filter(
-            (array)($statement['attribution_entries'] ?? []),
+            $entries,
             fn(mixed $entry): bool => is_array($entry) && ($filter === 'all' || (int)($entry['director_id'] ?? 0) <= 0)
         ));
         $directors = array_values(array_filter((array)($statement['directors'] ?? []), static fn(mixed $director): bool => is_array($director)));
@@ -175,7 +176,32 @@ final class _director_loan_attributionCard extends CardBaseFramework
             }, export: static fn(array $row): string => trim((string)($row['counterparty_name'] ?? '')))
             ->column('source_label', 'Source', html: fn(array $row): string => $this->attributionSourceHtml($row), export: static fn(array $row): string => trim((string)($row['source_label'] ?? '')))
             ->column('signed_amount', 'Movement', html: fn(array $row): string => HelperFramework::escape($this->money($settings, $this->attributionAmount($row))), export: fn(array $row): string => number_format($this->attributionAmount($row), 2, '.', ''), headerClass: 'numeric', cellClass: 'numeric', exportType: 'number')
+            ->column('running_balance', 'Running balance', html: fn(array $row): string => HelperFramework::escape($this->money($settings, (float)($row['running_balance'] ?? 0))), export: static fn(array $row): string => number_format((float)($row['running_balance'] ?? 0), 2, '.', ''), headerClass: 'numeric', cellClass: 'numeric', exportType: 'number')
             ->column('director_id', 'Participator loan account', html: fn(array $row): string => $this->attributionForm($row, $directors, $companyId, $accountingPeriodId, $filter), export: fn(array $row): string => $this->attributedDirectorLabel($row, $directors));
+    }
+
+    /** @param list<mixed> $entries @return list<array<string,mixed>> */
+    private function withRunningBalances(array $entries): array
+    {
+        $entries = array_values(array_filter($entries, 'is_array'));
+        usort($entries, static fn(array $left, array $right): int => [
+            (string)($left['journal_date'] ?? ''),
+            (int)($left['journal_id'] ?? 0),
+            (int)($left['journal_line_id'] ?? 0),
+        ] <=> [
+            (string)($right['journal_date'] ?? ''),
+            (int)($right['journal_id'] ?? 0),
+            (int)($right['journal_line_id'] ?? 0),
+        ]);
+
+        $balance = 0.0;
+        foreach ($entries as &$entry) {
+            $balance = round($balance + $this->attributionAmount($entry), 2);
+            $entry['running_balance'] = $balance;
+        }
+        unset($entry);
+
+        return $entries;
     }
 
     private function selectedFilter(array $context): string

@@ -132,7 +132,7 @@ final class _director_loan_termsCard extends CardBaseFramework
     {
         return match ($repaymentBasis) {
             'on_demand' => 'On demand',
-            'after_12_months' => 'After more than 12 months',
+            'after_12_months' => 'Repayable after more than 12 months',
             default => 'Within 12 months',
         };
     }
@@ -143,6 +143,6 @@ final class _director_loan_termsCard extends CardBaseFramework
         return '<option value=""' . $option('') . '>Select repayment basis…</option>'
             . '<option value="on_demand"' . $option('on_demand') . '>On demand</option>'
             . '<option value="within_12_months"' . $option('within_12_months') . '>Within 12 months</option>'
-            . '<option value="after_12_months"' . $option('after_12_months') . '>After more than 12 months — company has an unconditional right to defer</option>';
+            . '<option value="after_12_months"' . $option('after_12_months') . '>Repayable after more than 12 months — company has an unconditional right to defer</option>';
     }
 }

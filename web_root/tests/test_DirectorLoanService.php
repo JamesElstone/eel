@@ -63,8 +63,8 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
                 [
                     'interest_rate_percent' => 0,
                     'security_type' => 'unsecured',
-                    'repayable_on_demand' => true,
-                    'repayment_timing' => 'within_12_months',
+                    'repayable_on_demand' => false,
+                    'repayment_timing' => 'after_12_months',
                     'deferment_right_confirmed' => false,
                     'set_off_right_confirmed' => true,
                     'settlement_intention' => 'simultaneous',
@@ -97,6 +97,10 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
             $harness->assertTrue(str_contains($statementText, 'advanced £253.00 to Primary Director'));
             $harness->assertTrue(str_contains($statementText, 'advanced £100.00 to Other Director'));
             $harness->assertTrue(str_contains($statementText, 'amounts legally set off were £0.00'));
+            $harness->assertTrue(str_contains(
+                $statementText,
+                'The main terms were Unsecured. Repayable after more than 12 months.'
+            ));
             $harness->assertSame('253.00', directorLoanStatementMoney($primaryDirector['gross_asset'] ?? 0));
             $harness->assertSame('1288.63', directorLoanStatementMoney($primaryDirector['gross_liability'] ?? 0));
             $harness->assertSame('253.00', directorLoanStatementMoney($primaryDirector['desired_reclassification'] ?? 0));

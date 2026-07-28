@@ -48,7 +48,10 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
             'directory_exists' => $directoryExists,
             'directory_writable' => $directoryExists && is_writable($this->backupDirectory),
             'zip_available' => true,
-            'recent_backups' => array_slice($this->fetchAvailableBackups($companyId), 0, 5),
+            // Status consumers need only lightweight file metadata. Inspecting
+            // every archive to read its trigger can make an otherwise simple
+            // card render take tens of seconds when a long backup history exists.
+            'recent_backups' => $this->fetchBackupMetadata($companyId, 5),
         ];
     }
 
@@ -81,6 +84,50 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
                 'size_bytes' => (int)(filesize($file) ?: 0),
                 'created_at' => date('Y-m-d H:i:s', (int)(filemtime($file) ?: time())),
                 'trigger' => $this->backupTrigger($file),
+                'scope' => $legacy ? 'legacy' : 'company',
+                'legacy' => $legacy,
+            ];
+        }
+
+        return $backups;
+    }
+
+    /**
+     * Returns the newest backup files without opening each archive. This is
+     * intended for status displays; the backup-history view still uses
+     * fetchAvailableBackups() so it can show the recorded trigger.
+     *
+     * @return list<array{filename: string, path: string, restore_key: string, size_bytes: int, created_at: string, trigger: string, scope: string, legacy: bool}>
+     */
+    private function fetchBackupMetadata(int $companyId, int $limit): array
+    {
+        $files = $this->backupFiles($companyId > 0 ? $this->companyBackupDirectory($companyId) : $this->backupDirectory);
+        $legacyFiles = $this->backupDirectoryOverride === null
+            ? $this->backupFiles($this->defaultBackupDirectory())
+            : [];
+
+        $files = array_merge($files, $legacyFiles);
+        usort($files, static function (string $left, string $right): int {
+            $timeComparison = (filemtime($right) ?: 0) <=> (filemtime($left) ?: 0);
+
+            return $timeComparison !== 0 ? $timeComparison : strcmp(basename($right), basename($left));
+        });
+
+        $backups = [];
+        foreach (array_slice($files, 0, max(0, $limit)) as $file) {
+            if (!is_file($file)) {
+                continue;
+            }
+
+            $filename = basename($file);
+            $legacy = in_array($file, $legacyFiles, true);
+            $backups[] = [
+                'filename' => $filename,
+                'path' => $file,
+                'restore_key' => hash('sha256', $filename),
+                'size_bytes' => (int)(filesize($file) ?: 0),
+                'created_at' => date('Y-m-d H:i:s', (int)(filemtime($file) ?: time())),
+                'trigger' => self::TRIGGER_UNKNOWN,
                 'scope' => $legacy ? 'legacy' : 'company',
                 'legacy' => $legacy,
             ];

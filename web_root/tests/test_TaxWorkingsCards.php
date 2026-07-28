@@ -148,7 +148,7 @@ foreach ($cardClasses as $className) {
                 $harness->assertCount(1, $tables);
                 $harness->assertTrue($tables[0] instanceof TableFramework);
                 $csvLines = preg_split('/\r\n|\r|\n/', trim($tables[0]->exportCsv()));
-                $harness->assertSame(['Purchase date', 'Asset', 'Addition', 'Annual Investment Allowance (AIA) claimed', 'Annual Investment Allowance (AIA) used'], str_getcsv((string)($csvLines[0] ?? ''), ',', '"', '\\'));
+                $harness->assertSame(['Purchase date', 'Asset', 'Addition', 'Annual Investment Allowance (AIA) claimed', 'Cumulative Annual Investment Allowance (AIA) used'], str_getcsv((string)($csvLines[0] ?? ''), ',', '"', '\\'));
                 $harness->assertSame(['2026-04-20', 'VAN-1 Van', '1000.00', '1000.00', '1000.00'], str_getcsv((string)($csvLines[1] ?? ''), ',', '"', '\\'));
             });
         }
@@ -163,6 +163,32 @@ foreach ($cardClasses as $className) {
 
                 $harness->assertTrue(str_contains($html, 'Balancing allowance'));
                 $harness->assertTrue(str_contains($html, '$ 321.45'));
+            });
+        }
+
+        if ($className === _tax_main_rate_poolCard::class) {
+            $harness->check($className, 'reconciles qualifying additions before deducting AIA', static function () use ($harness, $card): void {
+                $context = taxWorkingsCardsContext();
+                $context['services']['taxWorkings']['main_rate_pool'] = [
+                    'opening_wdv' => 0,
+                    'additions' => 0,
+                    'aia_claimed' => 628.84,
+                    'fya_claimed' => 0,
+                    'disposal_value' => 0,
+                    'wda_claimed' => 0,
+                    'balancing_allowance' => 0,
+                    'balancing_charge' => 0,
+                    'closing_wdv' => 0,
+                ];
+
+                $html = $card->render($context);
+
+                $harness->assertTrue(str_contains($html, 'Qualifying additions'));
+                $harness->assertTrue(str_contains($html, 'Less: Annual Investment Allowance (AIA) claimed'));
+                $harness->assertTrue(str_contains($html, 'Less: disposal values'));
+                $harness->assertTrue(str_contains($html, 'Available qualifying expenditure'));
+                $harness->assertSame(2, substr_count($html, '$ 628.84'));
+                $harness->assertSame(false, str_contains($html, '>Additions<'));
             });
         }
 

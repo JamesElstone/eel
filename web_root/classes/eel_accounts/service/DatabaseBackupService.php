@@ -1114,14 +1114,23 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
                     throw new RuntimeException('The selected backup ZIP SQL entry is truncated.');
                 }
                 $remaining -= strlen($chunk);
-                $percent = 35 + (int)floor((($totalSize - $remaining) / $totalSize) * 60);
-                if ($percent >= $lastProgressPercent + 5) {
-                    $progress?->__invoke('Restoring database SQL…', $percent);
-                    $lastProgressPercent = $percent;
-                }
                 $content = $pending . $chunk;
                 $pending = '';
                 $consume($content, $remaining === 0);
+
+                $processedSize = $totalSize - $remaining;
+                $percent = 35 + (int)floor(($processedSize / $totalSize) * 60);
+                if ($percent >= $lastProgressPercent + 5 || $remaining === 0) {
+                    $progress?->__invoke(
+                        'Restoring database SQL… ' . $percent . '% — '
+                        . $this->formatBackupByteCount($processedSize) . ' of '
+                        . $this->formatBackupByteCount($totalSize) . ' read; '
+                        . number_format($executed) . ' '
+                        . ($executed === 1 ? 'statement' : 'statements') . ' applied.',
+                        $percent
+                    );
+                    $lastProgressPercent = $percent;
+                }
             }
             if ($pending !== '') {
                 $content = $pending;
@@ -1135,6 +1144,21 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
         }
 
         return $executed;
+    }
+
+    private function formatBackupByteCount(int $bytes): string
+    {
+        if ($bytes >= 1024 * 1024 * 1024) {
+            return number_format($bytes / (1024 * 1024 * 1024), 1) . ' GB';
+        }
+        if ($bytes >= 1024 * 1024) {
+            return number_format($bytes / (1024 * 1024), 1) . ' MB';
+        }
+        if ($bytes >= 1024) {
+            return number_format($bytes / 1024, 1) . ' KB';
+        }
+
+        return number_format($bytes) . ' bytes';
     }
 
     private function splitSqlStatements(string $sql): array

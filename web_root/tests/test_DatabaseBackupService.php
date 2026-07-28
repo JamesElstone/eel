@@ -344,14 +344,24 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
     $harness->assertSame(1, (int)($streamingRestore['statement_count'] ?? 0));
     $harness->assertSame(2, count($restorePdo->statements));
     $harness->assertTrue(str_contains($restorePdo->statements[1] ?? '', ';inside quoted text'));
+    $restoreProgressMessages = array_values(array_unique(array_filter(
+        array_column($restoreProgress, 0),
+        static fn(string $message): bool => !str_contains($message, '% — ')
+    )));
     $harness->assertSame([
         'Verifying the database backup integrity…',
         'Checking the backup database identity…',
         'Confirming the database restore target…',
         'Restoring database SQL…',
         'Finalising the database restore…',
-    ], array_values(array_unique(array_column($restoreProgress, 0))));
+    ], $restoreProgressMessages);
     $harness->assertSame(98, (int)($restoreProgress[array_key_last($restoreProgress)][1] ?? -1));
+    $detailedRestoreProgress = array_values(array_filter(
+        array_column($restoreProgress, 0),
+        static fn(string $message): bool => str_starts_with($message, 'Restoring database SQL… 95%')
+    ));
+    $harness->assertSame(1, count($detailedRestoreProgress));
+    $harness->assertTrue(str_contains($detailedRestoreProgress[0], 'of 1.0 MB read; 1 statement applied.'));
 
     $legacyPdo = new DatabaseBackupRecordingPdo();
     $legacyPdo->databaseName = 'eel_accounts';

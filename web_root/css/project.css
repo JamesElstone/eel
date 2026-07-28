@@ -3493,7 +3493,7 @@
 }
 
 .long-action-progress-overlay {
-  width: min(900px, calc(100vw - 40px));
+  width: min(980px, calc(100vw - 40px));
 }
 
 @-moz-document url-prefix() {

@@ -174,6 +174,29 @@ foreach ($cardClasses as $className) {
             });
         }
 
+        if ($className === _tax_depreciation_add_backCard::class) {
+            $harness->check($className, 'renders an exportable framework table', static function () use ($harness, $card): void {
+                $context = taxWorkingsCardsContext();
+                $context['page'] = [
+                    'page_id' => 'corporation_tax',
+                    'page_cards' => ['tax_depreciation_add_back'],
+                    'csrf_token' => 'test-token',
+                ];
+
+                $html = $card->render($context);
+                $harness->assertTrue(str_contains($html, '<div class="card-toolbar">'));
+                $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="csv"'));
+                $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="xlsx"'));
+
+                $tables = $card->tables($context);
+                $harness->assertCount(1, $tables);
+                $harness->assertTrue($tables[0] instanceof TableFramework);
+                $csvLines = preg_split('/\r\n|\r|\n/', trim($tables[0]->exportCsv()));
+                $harness->assertSame(['Asset', 'Direction', 'Amount'], str_getcsv((string)($csvLines[0] ?? ''), ',', '"', '\\'));
+                $harness->assertSame(['FA-1 Laptop', 'add', '1500.00'], str_getcsv((string)($csvLines[1] ?? ''), ',', '"', '\\'));
+            });
+        }
+
         if ($className === _tax_corporation_tax_summaryCard::class) {
             $harness->check($className, 'renders penny precision for live and persisted computation values', static function () use ($harness, $card): void {
                 foreach (['live', 'persisted'] as $mode) {

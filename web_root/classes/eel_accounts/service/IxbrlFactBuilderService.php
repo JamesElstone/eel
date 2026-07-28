@@ -586,6 +586,10 @@ final class IxbrlFactBuilderService
                     && (int)($row['linked_director_id'] ?? 0) <= 0) {
                     return false;
                 }
+                if (array_key_exists('section_413_required', $row)
+                    && empty($row['section_413_required'])) {
+                    return false;
+                }
                 return true;
             }
         ));

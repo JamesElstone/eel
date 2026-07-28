@@ -90,13 +90,13 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
             $harness->assertSame(true, (bool)($disclosure['has_company_to_director_exposure'] ?? false));
             $harness->assertSame('353.00', directorLoanStatementMoney($disclosure['total_advances'] ?? 0));
             $harness->assertSame('0.00', directorLoanStatementMoney($disclosure['total_cash_repayments'] ?? 0));
-            $harness->assertSame('253.00', directorLoanStatementMoney($disclosure['total_amounts_legally_set_off'] ?? 0));
+            $harness->assertSame('0.00', directorLoanStatementMoney($disclosure['total_amounts_legally_set_off'] ?? 0));
             $harness->assertSame('253.00', directorLoanStatementMoney($disclosure['total_repayments'] ?? 0));
             $harness->assertSame('1288.63', directorLoanStatementMoney($disclosure['total_director_funding'] ?? 0));
             $statementText = (new \eel_accounts\Service\IxbrlTaxonomyProfileService())->directorLoanStatementText($disclosure);
             $harness->assertTrue(str_contains($statementText, 'advanced £253.00 to Primary Director'));
             $harness->assertTrue(str_contains($statementText, 'advanced £100.00 to Other Director'));
-            $harness->assertTrue(str_contains($statementText, 'amounts legally set off were £253.00'));
+            $harness->assertTrue(str_contains($statementText, 'amounts legally set off were £0.00'));
             $harness->assertSame('253.00', directorLoanStatementMoney($primaryDirector['gross_asset'] ?? 0));
             $harness->assertSame('1288.63', directorLoanStatementMoney($primaryDirector['gross_liability'] ?? 0));
             $harness->assertSame('253.00', directorLoanStatementMoney($primaryDirector['desired_reclassification'] ?? 0));
@@ -193,6 +193,116 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
             $harness->assertSame('500.00', directorLoanStatementMoney($statement['potential_s455_exposure'] ?? 0));
             $harness->assertSame(1, (int)($statement['unattributed_count'] ?? 0));
             $harness->assertCount(1, (array)($statement['unattributed_entries'] ?? []));
+        });
+    });
+
+    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'derives statutory advances and repayments from the legal running balance', static function () use ($harness, $service): void {
+        directorLoanStatementWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            $partyId = (int)$fixture['primary_party_id'];
+            $asset = (int)$fixture['asset_nominal_id'];
+            $liability = (int)$fixture['liability_nominal_id'];
+
+            directorLoanStatementInsertManualLine($fixture, $asset, 100.00, 0.00, $partyId, 'Company payment 100', '', '2025-01-02', 'bank_csv');
+            directorLoanStatementInsertManualLine($fixture, $liability, 0.00, 200.00, $partyId, 'Director payment 200', '', '2025-01-03', 'bank_csv');
+            directorLoanStatementInsertManualLine($fixture, $asset, 300.00, 0.00, $partyId, 'Company payment 300', '', '2025-01-04', 'bank_csv');
+            directorLoanStatementInsertManualLine($fixture, $liability, 0.00, 50.00, $partyId, 'Director payment 50', '', '2025-01-05', 'bank_csv');
+
+            $summary = $service->fetchDisclosureSummary((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $row = (array)($summary['disclosures'][0] ?? []);
+            $harness->assertSame('300.00', directorLoanStatementMoney($summary['total_advances'] ?? 0));
+            $harness->assertSame('150.00', directorLoanStatementMoney($summary['total_cash_repayments'] ?? 0));
+            $harness->assertSame('150.00', directorLoanStatementMoney($summary['total_repayments'] ?? 0));
+            $harness->assertSame('150.00', directorLoanStatementMoney($summary['closing_company_to_director_balance'] ?? 0));
+            $harness->assertSame('0.00', directorLoanStatementMoney($summary['closing_company_liability'] ?? 0));
+            $harness->assertSame(true, (bool)($summary['has_company_to_director_exposure'] ?? false));
+            $harness->assertSame('0.00', directorLoanStatementMoney($row['amounts_legally_set_off'] ?? 0));
+        });
+    });
+
+    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'does not disclose debit movements that remain within an opening company creditor', static function () use ($harness, $service): void {
+        directorLoanStatementWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            $partyId = (int)$fixture['primary_party_id'];
+            $asset = (int)$fixture['asset_nominal_id'];
+            $liability = (int)$fixture['liability_nominal_id'];
+            directorLoanStatementInsertManualLine($fixture, $liability, 0.00, 1035.63, $partyId, 'Opening creditor', '', '2024-12-31', 'bank_csv');
+            directorLoanStatementInsertManualLine($fixture, $liability, 0.00, 10873.46, $partyId, 'Director funding in period', '', '2025-01-02', 'bank_csv');
+            directorLoanStatementInsertManualLine($fixture, $asset, 4620.83, 0.00, $partyId, 'Asset-control debits in period', '', '2025-01-03', 'bank_csv');
+
+            $summary = $service->fetchDisclosureSummary((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $evidence = (array)($summary['director_evidence'][0] ?? []);
+            $harness->assertSame(false, (bool)($summary['has_company_to_director_exposure'] ?? true));
+            $harness->assertSame('0.00', directorLoanStatementMoney($summary['total_advances'] ?? 0));
+            $harness->assertSame('0.00', directorLoanStatementMoney($summary['total_repayments'] ?? 0));
+            $harness->assertSame('7288.26', directorLoanStatementMoney($summary['closing_company_liability'] ?? 0));
+            $harness->assertSame('0.00', directorLoanStatementMoney($evidence['advances'] ?? 1));
+            $harness->assertSame(false, (bool)($evidence['section_413_required'] ?? true));
+        });
+    });
+
+    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'excludes tagged year-end offsets and retains zero-advance director evidence', static function () use ($harness, $service): void {
+        directorLoanStatementWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            $partyId = (int)$fixture['primary_party_id'];
+            $asset = (int)$fixture['asset_nominal_id'];
+            $liability = (int)$fixture['liability_nominal_id'];
+            directorLoanStatementInsertManualLine($fixture, $asset, 0.00, 250.00, $partyId, 'Year-end asset offset', 'director_loan_offset');
+            directorLoanStatementInsertManualLine($fixture, $liability, 250.00, 0.00, $partyId, 'Year-end liability offset', 'director_loan_offset');
+
+            $summary = $service->fetchDisclosureSummary((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $evidenceByName = [];
+            foreach ((array)($summary['director_evidence'] ?? []) as $row) {
+                $evidenceByName[(string)($row['director_name'] ?? '')] = $row;
+            }
+            $harness->assertSame(false, (bool)($summary['has_company_to_director_exposure'] ?? true));
+            $harness->assertSame('0.00', directorLoanStatementMoney($summary['total_advances'] ?? 0));
+            $harness->assertSame('0.00', directorLoanStatementMoney($summary['total_repayments'] ?? 0));
+            $harness->assertSame('0.00', directorLoanStatementMoney($summary['total_amounts_legally_set_off'] ?? 0));
+            $harness->assertSame('0.00', directorLoanStatementMoney($evidenceByName['Other Director']['advances'] ?? 1));
+        });
+    });
+
+    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'retains a disclosure for an advance fully repaid during the period', static function () use ($harness, $service): void {
+        directorLoanStatementWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            $partyId = (int)$fixture['primary_party_id'];
+            directorLoanStatementInsertManualLine($fixture, (int)$fixture['asset_nominal_id'], 253.00, 0.00, $partyId, 'Advance fully repaid', '', '2025-01-02', 'bank_csv');
+            directorLoanStatementInsertManualLine($fixture, (int)$fixture['liability_nominal_id'], 0.00, 253.00, $partyId, 'Repayment in full', '', '2025-01-03', 'bank_csv');
+
+            $summary = $service->fetchDisclosureSummary((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $harness->assertSame(true, (bool)($summary['has_company_to_director_exposure'] ?? false));
+            $harness->assertSame('253.00', directorLoanStatementMoney($summary['total_advances'] ?? 0));
+            $harness->assertSame('253.00', directorLoanStatementMoney($summary['total_cash_repayments'] ?? 0));
+            $harness->assertSame('0.00', directorLoanStatementMoney($summary['closing_company_to_director_balance'] ?? 1));
+        });
+    });
+
+    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'matches the frozen AP79 legal running-account result', static function () use ($harness, $service): void {
+        directorLoanStatementWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            $partyId = (int)$fixture['primary_party_id'];
+            directorLoanStatementInsertManualLine($fixture, (int)$fixture['asset_nominal_id'], 253.00, 0.00, $partyId, 'AP79 advances', '', '2025-01-02', 'bank_csv');
+            directorLoanStatementInsertManualLine($fixture, (int)$fixture['liability_nominal_id'], 0.00, 1288.63, $partyId, 'AP79 director funding', '', '2025-01-03', 'bank_csv');
+
+            $summary = $service->fetchDisclosureSummary((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $harness->assertSame('253.00', directorLoanStatementMoney($summary['total_advances'] ?? 0));
+            $harness->assertSame('253.00', directorLoanStatementMoney($summary['total_cash_repayments'] ?? 0));
+            $harness->assertSame('0.00', directorLoanStatementMoney($summary['closing_company_to_director_balance'] ?? 0));
+            $harness->assertSame('1035.63', directorLoanStatementMoney($summary['closing_company_liability'] ?? 0));
+            $harness->assertSame('0.00', directorLoanStatementMoney($summary['total_amounts_legally_set_off'] ?? 0));
+            $harness->assertSame(true, (bool)($summary['has_company_to_director_exposure'] ?? false));
+        });
+    });
+
+    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'matches the frozen AP81 creditor-only result', static function () use ($harness, $service): void {
+        directorLoanStatementWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            $partyId = (int)$fixture['primary_party_id'];
+            directorLoanStatementInsertManualLine($fixture, (int)$fixture['liability_nominal_id'], 0.00, 7288.26, $partyId, 'AP81 opening creditor', '', '2024-12-31', 'bank_csv');
+            directorLoanStatementInsertManualLine($fixture, (int)$fixture['liability_nominal_id'], 0.00, 350.52, $partyId, 'AP81 director funding', '', '2025-01-02', 'bank_csv');
+            directorLoanStatementInsertManualLine($fixture, (int)$fixture['asset_nominal_id'], 185.82, 0.00, $partyId, 'AP81 asset-control debits', '', '2025-01-03', 'bank_csv');
+
+            $summary = $service->fetchDisclosureSummary((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $harness->assertSame(false, (bool)($summary['has_company_to_director_exposure'] ?? true));
+            $harness->assertSame('0.00', directorLoanStatementMoney($summary['total_advances'] ?? 0));
+            $harness->assertSame('0.00', directorLoanStatementMoney($summary['total_repayments'] ?? 0));
+            $harness->assertSame('7452.96', directorLoanStatementMoney($summary['closing_company_liability'] ?? 0));
+            $harness->assertSame('0.00', directorLoanStatementMoney($summary['total_amounts_legally_set_off'] ?? 0));
         });
     });
 });
@@ -308,7 +418,9 @@ function directorLoanStatementInsertManualLine(
     float $credit,
     ?int $partyId,
     string $description,
-    string $journalTag = ''
+    string $journalTag = '',
+    string $journalDate = '2025-12-31',
+    string $sourceType = 'manual'
 ): int {
     $sourceRef = 'dla-manual:' . $fixture['marker'] . ':' . hash('sha256', $description . microtime(true));
     InterfaceDB::prepareExecute(
@@ -317,9 +429,9 @@ function directorLoanStatementInsertManualLine(
         [
             'company_id' => (int)$fixture['company_id'],
             'period_id' => (int)$fixture['accounting_period_id'],
-            'source_type' => 'manual',
+            'source_type' => $sourceType,
             'source_ref' => $sourceRef,
-            'journal_date' => '2025-12-31',
+            'journal_date' => $journalDate,
             'description' => $description,
         ]
     );

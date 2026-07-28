@@ -459,9 +459,26 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                 . '; settled: £' . number_format((float)($summary['total_repayments'] ?? 0), 2) . '.'
             : 'The chronological running balance never became negative for any attributed director.';
 
+        $evidenceRows = '';
+        foreach ((array)($summary['director_evidence'] ?? []) as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $evidenceRows .= '<tr><th class="description" scope="row">'
+                . HelperFramework::escape((string)($row['director_name'] ?? 'Director'))
+                . '</th><td class="amount">£'
+                . number_format((float)($row['advances'] ?? 0), 2)
+                . '</td></tr>';
+        }
+        $evidence = $evidenceRows === '' ? ''
+            : '<table class="note-table"><thead><tr><th class="description" scope="col">Director</th>'
+                . '<th class="amount" scope="col">Advances during period</th></tr></thead><tbody>'
+                . $evidenceRows . '</tbody></table>';
+
         return '<fieldset class="panel-soft">
             <legend>Director or Participant Advances and Credits requiring disclosure</legend>
             <div class="helper">Automatically calculated from the chronological Director Loan Statement. ' . HelperFramework::escape($detail) . '</div>
+            ' . $evidence . '
         </fieldset>';
     }
 

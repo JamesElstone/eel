@@ -68,6 +68,31 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(25.0, (float)$summary['total_cash_repayments']);
         });
 
+        $harness->check($service::class, 'retains zero-advance director evidence without enabling a section 413 disclosure', static function () use ($harness, $service): void {
+            $method = new ReflectionMethod($service, 'filterDirectorLoanDisclosure');
+            $method->setAccessible(true);
+            $summary = (array)$method->invoke($service, [
+                'has_company_to_director_exposure' => false,
+                'disclosures' => [[
+                    'director_id' => 10,
+                    'director_name' => 'Linked party name',
+                    'advances' => 0.0,
+                    'cash_repayments' => 0.0,
+                    'total_repayments' => 0.0,
+                    'closing_director_loan' => 0.0,
+                    'closing_company_liability' => 7288.26,
+                    'section_413_required' => false,
+                ]],
+            ], [
+                10 => ['linked_director_id' => 77, 'director_name' => 'Companies House Director'],
+            ]);
+
+            $harness->assertCount(1, (array)$summary['disclosures']);
+            $harness->assertFalse((bool)$summary['has_company_to_director_exposure']);
+            $harness->assertSame(0.0, (float)$summary['total_advances']);
+            $harness->assertSame(7288.26, (float)$summary['closing_company_liability']);
+        });
+
         $harness->check($service::class, 'retains only director-linked canonical party facts for director disclosures', static function () use ($harness, $service): void {
             $method = new ReflectionMethod($service, 'directorPartyFacts');
             $method->setAccessible(true);

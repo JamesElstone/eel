@@ -497,7 +497,11 @@ final class IxbrlAccountsReportService
         }
 
         $summary['disclosures'] = $directorDisclosures;
-        $summary['has_company_to_director_exposure'] = $directorDisclosures !== [];
+        $summary['has_company_to_director_exposure'] = !empty(array_filter(
+            $directorDisclosures,
+            static fn(array $row): bool => !array_key_exists('section_413_required', $row)
+                || !empty($row['section_413_required'])
+        ));
         $summary['director_party_count'] = count($directorDisclosures);
         foreach ([
             'total_advances' => 'advances',

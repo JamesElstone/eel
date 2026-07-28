@@ -342,6 +342,40 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             );
         });
 
+        $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'omits numeric director facts for evidence-only zero-advance rows', static function () use ($harness, $service): void {
+            $mappings = [];
+            foreach ((new \eel_accounts\Service\IxbrlTaxonomyProfileService())->mappings() as $mapping) {
+                $mappings[(string)$mapping['fact_key']] = $mapping;
+            }
+            $method = new ReflectionMethod(\eel_accounts\Service\IxbrlFactBuilderService::class, 'factFromMapping');
+            $method->setAccessible(true);
+            $report = [
+                'company' => [],
+                'accounting_period' => ['period_start' => '2025-01-01', 'period_end' => '2025-12-31'],
+                'disclosures' => [],
+                'current' => ['buckets' => [], 'sources' => []],
+                'director_loan_disclosure' => [
+                    'has_company_to_director_exposure' => false,
+                    'disclosures' => [[
+                        'party_id' => 10,
+                        'director_id' => 1,
+                        'linked_director_id' => 1,
+                        'is_director' => true,
+                        'section_413_required' => false,
+                        'advances' => 0.0,
+                        'cash_repayments' => 0.0,
+                        'closing_company_to_director_balance' => 0.0,
+                        'closing_company_liability' => 7288.26,
+                    ]],
+                ],
+                'director_loan_year_end_approval' => [],
+            ];
+
+            $harness->assertSame(null, $method->invoke($service, $mappings['director_advances_made'], $report, false));
+            $harness->assertSame(null, $method->invoke($service, $mappings['director_cash_repayments'], $report, false));
+            $harness->assertSame(null, $method->invoke($service, $mappings['director_closing_advance'], $report, false));
+        });
+
         $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'normalises the supported UK identity without duplicating the postcode', static function () use ($harness): void {
             $identity = new \eel_accounts\Service\IxbrlCompanyIdentityService();
             $company = $identity->normalise([

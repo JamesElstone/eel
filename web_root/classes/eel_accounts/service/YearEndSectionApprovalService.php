@@ -476,6 +476,12 @@ final class YearEndSectionApprovalService
     {
         $label = trim((string)($row['accounting_period_label'] ?? ''));
         if ($label !== '') {
+            preg_match_all('/(?<!\d)(?:19|20)\d{2}(?!\d)/', $label, $years);
+            $years = $years[0] ?? [];
+            if (count($years) >= 2) {
+                return 'AP:' . substr((string)$years[0], -2) . '/' . substr((string)$years[count($years) - 1], -2);
+            }
+
             return $label;
         }
 

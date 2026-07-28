@@ -390,7 +390,7 @@ $harness->run(\eel_accounts\Service\YearEndSectionApprovalService::class, static
     $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'identifies the accounting period in cache-rebuild progress updates', static function () use ($harness, $service): void {
         $periodLabel = new ReflectionMethod($service, 'accountingPeriodLabel');
 
-        $harness->assertSame('01/10/2023 to 30/09/2024', (string)$periodLabel->invoke($service, [
+        $harness->assertSame('AP:23/24', (string)$periodLabel->invoke($service, [
             'accounting_period_id' => 80,
             'accounting_period_label' => '01/10/2023 to 30/09/2024',
         ]));

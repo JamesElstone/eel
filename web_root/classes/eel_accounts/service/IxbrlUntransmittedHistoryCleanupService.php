@@ -11,6 +11,13 @@ namespace eel_accounts\Service;
 
 final class IxbrlUntransmittedHistoryCleanupService
 {
+    /**
+     * Removes local filing records that have never been transmitted.
+     *
+     * Filing evidence bundles and their artifact files are deliberately never
+     * deleted. An approval is removable only when neither its accounts run nor
+     * any CT-period basis has been transmitted to a filing authority.
+     */
     public function clean(int $companyId, int $accountingPeriodId): array
     {
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
@@ -22,21 +29,69 @@ final class IxbrlUntransmittedHistoryCleanupService
                 "DELETE FROM companies_house_accounts_submissions
                  WHERE company_id = :company_id AND accounting_period_id = :period_id
                    AND lifecycle = 'prepared' AND submitted_at IS NULL
-                   AND COALESCE(evidence_bundle_id, 0) = 0
-                   AND NOT EXISTS (
-                       SELECT 1 FROM ixbrl_generation_runs run
-                       WHERE run.id = companies_house_accounts_submissions.ixbrl_generation_run_id
-                         AND run.filing_approval_id IS NOT NULL
-                   )",
+                   ",
                 ['company_id' => $companyId, 'period_id' => $accountingPeriodId]
             );
             $deletedHmrc = \InterfaceDB::execute(
                 "DELETE FROM hmrc_ct600_submissions
                  WHERE company_id = :company_id AND accounting_period_id = :period_id
-                   AND protocol_state IN ('prepared', 'validation_failed', 'ready', 'invalidated')
-                   AND COALESCE(evidence_bundle_id, 0) = 0",
+                   AND submitted_at IS NULL",
                 ['company_id' => $companyId, 'period_id' => $accountingPeriodId]
             );
+
+            $approvals = \InterfaceDB::fetchAll(
+                "SELECT approval.id
+                 FROM ixbrl_accounts_filing_approvals approval
+                 WHERE approval.company_id = :company_id
+                   AND approval.accounting_period_id = :period_id
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM companies_house_accounts_submissions submission
+                       INNER JOIN ixbrl_generation_runs accounts_run
+                               ON accounts_run.id = submission.ixbrl_generation_run_id
+                       WHERE accounts_run.filing_approval_id = approval.id
+                         AND submission.submitted_at IS NOT NULL
+                   )
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM hmrc_ct600_submissions submission
+                       INNER JOIN ixbrl_generation_runs accounts_run
+                               ON accounts_run.id = submission.accounts_run_id
+                       WHERE accounts_run.filing_approval_id = approval.id
+                         AND submission.submitted_at IS NOT NULL
+                   )
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM hmrc_ct600_submissions submission
+                       INNER JOIN ct_period_filing_bases basis
+                               ON basis.computation_run_id = submission.computation_run_id
+                       WHERE basis.filing_approval_id = approval.id
+                         AND submission.submitted_at IS NOT NULL
+                   )",
+                ['company_id' => $companyId, 'period_id' => $accountingPeriodId]
+            ) ?: [];
+
+            $deletedApprovals = 0;
+            foreach ($approvals as $approval) {
+                $approvalId = (int)($approval['id'] ?? 0);
+                if ($approvalId <= 0) {
+                    continue;
+                }
+
+                // The foreign key is RESTRICT, so detach local accounts runs
+                // before deleting the approval. Its CT filing bases cascade.
+                \InterfaceDB::prepareExecute(
+                    "UPDATE ixbrl_generation_runs
+                     SET filing_approval_id = NULL, filing_approval_hash = NULL
+                     WHERE filing_approval_id = :approval_id",
+                    ['approval_id' => $approvalId]
+                );
+                $deletedApprovals += \InterfaceDB::execute(
+                    'DELETE FROM ixbrl_accounts_filing_approvals WHERE id = :approval_id',
+                    ['approval_id' => $approvalId]
+                );
+            }
+
             $clearedCt600Outputs = \InterfaceDB::execute(
                 "UPDATE corporation_tax_computation_runs run
                  SET ixbrl_status = 'not_generated',
@@ -92,7 +147,7 @@ final class IxbrlUntransmittedHistoryCleanupService
             return [
                 'success' => true,
                 'deleted_bundles' => 0,
-                'deleted_approvals' => 0,
+                'deleted_approvals' => $deletedApprovals,
                 'deleted_runs' => $deletedRuns,
                 'cleared_ct600_outputs' => $clearedCt600Outputs,
                 'deleted_companies_house_drafts' => $deletedCh,

@@ -709,6 +709,46 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         $ready = $card->render($context);
         $harness->assertFalse(str_contains($ready, 'iXBRL generation blocked'));
     });
+    $harness->check(_ixbrl_generationCard::class, 'collapses downstream iXBRL blockers when the filing basis is unapproved', static function () use ($harness, $card): void {
+        $context = [
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'ixbrl' => [
+                'readiness' => [
+                    'can_generate' => false,
+                    'year_end_locked' => false,
+                    'filing_approval' => ['state' => 'absent'],
+                    'generation_errors' => [
+                        'The Accounts Report basis changed after the previous filing approval.',
+                        'The facts do not belong to the current approved filing basis. Approve the disclosures again.',
+                    ],
+                ],
+                'latest_run' => [],
+                'computation_periods' => [[
+                    'ct_period' => ['id' => 6, 'sequence_no' => 1],
+                    'status' => ['ready' => false, 'errors' => [
+                        'Approve the current disclosures and filing basis before preparing CT filing output.',
+                    ]],
+                ]],
+            ],
+            'services' => [
+                'companies_house_ixbrl' => [
+                    'filing_required' => true,
+                    'preparation_blockers' => [
+                        'Approve the current accounts disclosure basis before generating iXBRL.',
+                    ],
+                ],
+            ],
+        ];
+
+        $html = $card->render($context);
+        $panel = strstr($html, '<section class="panel-soft warn ixbrl-generation-blockers">');
+        $panel = is_string($panel) ? strstr($panel, '</section>', true) : false;
+        $harness->assertTrue(is_string($panel));
+        $harness->assertTrue(str_contains((string)$panel, 'Complete and lock Year End, then approve the Accounts Disclosures filing basis.'));
+        $harness->assertFalse(str_contains((string)$panel, 'The Accounts Report basis changed'));
+        $harness->assertFalse(str_contains((string)$panel, 'Corporation Tax Period 1 iXBRL'));
+        $harness->assertFalse(str_contains((string)$panel, 'Companies House Accounting iXBRL'));
+    });
     $harness->check(_ixbrl_generationCard::class, 'shows a previous-run Companies House artifact as historical and blocks current download', static function () use ($harness, $card): void {
         $context = [
             'company' => ['id' => 49, 'accounting_period_id' => 79],

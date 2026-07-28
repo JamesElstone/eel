@@ -60,7 +60,7 @@ final class _ixbrl_historyCard extends CardBaseFramework
                     . '<input type="hidden" name="intent" value="cleanup_untransmitted_ixbrl_history">'
                     . '<input type="hidden" name="company_id" value="' . (int)($company['id'] ?? 0) . '">'
                     . '<input type="hidden" name="accounting_period_id" value="' . (int)($company['accounting_period_id'] ?? 0) . '">'
-                    . '<button class="button danger" type="submit" title="Developer only" data-chicken-check="true" data-chicken-title="Clean untransmitted iXBRL history" data-chicken-message="Remove only untransmitted iXBRL runs and submission drafts that have no approval or evidence-bundle link.<br><br>Filing approvals, evidence bundles, linked submissions, and all generated files are retained." data-chicken-confirm-text="Clean history" data-chicken-button-class="button danger">Clean Untransmitted History</button>'
+                    . '<button class="button danger" type="submit" title="Developer only" data-chicken-check="true" data-chicken-title="Clean untransmitted iXBRL history" data-chicken-message="Remove only untransmitted iXBRL history and submission drafts that have no approval or evidence-bundle link. Unlinked CT600 output metadata is cleared, while its tax computation remains.<br><br>Filing approvals, evidence bundles, linked submissions, and all generated files are retained." data-chicken-confirm-text="Clean history" data-chicken-button-class="button danger">Clean Untransmitted History</button>'
                     . '</form></div>'
                 : '')
             . '</div>';

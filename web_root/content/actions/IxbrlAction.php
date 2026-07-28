@@ -165,9 +165,11 @@ final class IxbrlAction implements ActionInterfaceFramework
                     [],
                     $changedFacts,
                     [
-                        (int)$cleanup['deleted_runs'] . ' unlinked iXBRL run(s), '
+                        (int)$cleanup['deleted_runs'] . ' unlinked iXBRL run(s) and '
                         . ((int)$cleanup['deleted_companies_house_drafts'] + (int)$cleanup['deleted_hmrc_drafts'])
-                        . ' unlinked submission draft(s) removed. Filing approvals and evidence bundles were retained.',
+                        . ' unlinked submission draft(s) removed; '
+                        . (int)($cleanup['cleared_ct600_outputs'] ?? 0) . ' unlinked CT600 iXBRL output(s) cleared. '
+                        . 'Filing approvals and evidence bundles were retained.',
                     ],
                     []
                 );

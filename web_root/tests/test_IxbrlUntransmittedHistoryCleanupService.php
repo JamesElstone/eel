@@ -19,6 +19,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertFalse(str_contains($historySource, 'DELETE FROM ixbrl_accounts_filing_approvals'));
             $harness->assertFalse(str_contains($missingRunSource, 'DELETE FROM filing_evidence_bundles'));
             $harness->assertTrue(str_contains($historySource, 'AND filing_approval_id IS NULL'));
+            $harness->assertTrue(str_contains($historySource, "UPDATE corporation_tax_computation_runs run"));
+            $harness->assertTrue(str_contains($historySource, "SET ixbrl_status = 'not_generated'"));
+            $harness->assertTrue(str_contains($historySource, 'FROM ct_period_filing_bases basis'));
+            $harness->assertTrue(str_contains($historySource, 'FROM hmrc_ct600_submissions submission'));
         });
     }
 );

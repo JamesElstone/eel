@@ -286,6 +286,21 @@ final class _ixbrl_generationCard extends CardBaseFramework
     {
         $groups = [];
         $readiness = (array)($context['ixbrl']['readiness'] ?? []);
+        $filingApproval = (array)($readiness['filing_approval'] ?? []);
+        $filingApprovalState = trim((string)($filingApproval['state'] ?? ''));
+        if ($filingApprovalState !== '' && $filingApprovalState !== 'current') {
+            $yearEndLocked = !array_key_exists('year_end_locked', $readiness)
+                || !empty($readiness['year_end_locked']);
+            $nextStep = $yearEndLocked
+                ? 'Approve the Accounts Disclosures filing basis.'
+                : 'Complete and lock Year End, then approve the Accounts Disclosures filing basis.';
+            return '<section class="panel-soft warn ixbrl-generation-blockers"><div class="status-head">'
+                . '<h3 class="card-title">iXBRL generation blocked</h3>'
+                . '<span class="badge warning">Action required</span></div>'
+                . '<div class="helper"><strong>' . HelperFramework::escape($nextStep) . '</strong> '
+                . 'This is the next step before generating HMRC Accounting, Corporation Tax, or Companies House iXBRL.</div>'
+                . '</section>';
+        }
         if (empty($readiness['can_generate'])) {
             $groups['HMRC Accounting iXBRL'] = $this->uniqueMessages(
                 (array)($readiness['generation_errors'] ?? []),

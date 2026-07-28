@@ -669,6 +669,40 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         $harness->assertTrue($buttonDisabled($genuineBlocker, 'Generate All Filing iXBRLs'));
         $harness->assertTrue($buttonDisabled($genuineBlocker, 'Generate Companies House iXBRL'));
     });
+    $harness->check(_ixbrl_generationCard::class, 'summarises only current iXBRL generation blockers above the filing actions', static function () use ($harness, $card): void {
+        $context = [
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'ixbrl' => [
+                'readiness' => ['can_generate' => true],
+                'latest_run' => [],
+                'computation_periods' => [[
+                    'ct_period' => ['id' => 6, 'sequence_no' => 1],
+                    'status' => ['ready' => true],
+                ], [
+                    'ct_period' => ['id' => 7, 'sequence_no' => 2],
+                    'status' => [
+                        'ready' => false,
+                        'errors' => ['Approve the Corporation Tax computation for this period.'],
+                    ],
+                ]],
+            ],
+            'services' => [
+                'companies_house_ixbrl' => ['filing_required' => false],
+            ],
+        ];
+
+        $blocked = $card->render($context);
+        $harness->assertTrue(str_contains($blocked, 'iXBRL generation blocked'));
+        $harness->assertTrue(str_contains($blocked, 'Corporation Tax Period 2 iXBRL'));
+        $harness->assertTrue(str_contains($blocked, 'Approve the Corporation Tax computation for this period.'));
+        $harness->assertTrue(
+            strpos($blocked, 'iXBRL generation blocked') < strpos($blocked, 'Complete Filing Set')
+        );
+
+        $context['ixbrl']['computation_periods'][1]['status'] = ['ready' => true];
+        $ready = $card->render($context);
+        $harness->assertFalse(str_contains($ready, 'iXBRL generation blocked'));
+    });
     $harness->check(_ixbrl_generationCard::class, 'shows a previous-run Companies House artifact as historical and blocks current download', static function () use ($harness, $card): void {
         $context = [
             'company' => ['id' => 49, 'accounting_period_id' => 79],

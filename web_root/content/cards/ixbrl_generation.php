@@ -55,6 +55,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
         $canGenerateAll = $canGenerate
             && $this->allComputationPeriodsReady($context)
             && $this->companiesHouseArtifactReady($context);
+        $generationBlockerPanel = $this->generationBlockerPanel($context);
         $developerOptions = (bool)AppConfigurationStore::get('developer_options', false);
         $runFreshness = (array)($run['run_freshness'] ?? []);
         $stale = (int)($run['fact_count'] ?? 0) > 0
@@ -77,6 +78,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             : '';
         $artifact = $download !== '' ? $download : 'Not generated';
         return '<div class="settings-stack">
+            ' . $generationBlockerPanel . '
             <section class="panel-soft">
                 <div class="status-head">
                     <div>
@@ -278,6 +280,77 @@ final class _ixbrl_generationCard extends CardBaseFramework
         }
 
         return $html . '</ul></div>';
+    }
+
+    private function generationBlockerPanel(array $context): string
+    {
+        $groups = [];
+        $readiness = (array)($context['ixbrl']['readiness'] ?? []);
+        if (empty($readiness['can_generate'])) {
+            $groups['HMRC Accounting iXBRL'] = $this->uniqueMessages(
+                (array)($readiness['generation_errors'] ?? []),
+                'The Accounting iXBRL is not ready to generate.'
+            );
+        }
+
+        $periods = (array)($context['ixbrl']['computation_periods'] ?? []);
+        if ($periods === []) {
+            $groups['Corporation Tax computations'] = ['No CT periods are available for computations generation.'];
+        } else {
+            foreach ($periods as $item) {
+                $period = (array)($item['ct_period'] ?? []);
+                $status = (array)($item['status'] ?? []);
+                if (!empty($status['ready'])) {
+                    continue;
+                }
+
+                $ctPeriodNumber = (int)($period['sequence_no'] ?? $period['ct_period_sequence_no']
+                    ?? $period['ct_period_id'] ?? $period['id'] ?? 0);
+                $label = $ctPeriodNumber > 0
+                    ? 'Corporation Tax Period ' . $ctPeriodNumber . ' iXBRL'
+                    : 'Corporation Tax iXBRL';
+                $groups[$label] = $this->uniqueMessages(
+                    (array)($status['errors'] ?? []),
+                    'This Corporation Tax period is not ready to generate iXBRL.'
+                );
+            }
+        }
+
+        $filing = (array)(($context['services'] ?? [])['companies_house_ixbrl'] ?? []);
+        if (!empty($filing['filing_required']) && !$this->companiesHouseArtifactReady($context)) {
+            $groups['Companies House Accounting iXBRL'] = $this->uniqueMessages(
+                (array)($filing['preparation_blockers'] ?? []),
+                'The Companies House Accounting iXBRL is not ready to generate.'
+            );
+        }
+
+        if ($groups === []) {
+            return '';
+        }
+
+        $html = '<section class="panel-soft warn ixbrl-generation-blockers"><div class="status-head">'
+            . '<h3 class="card-title">iXBRL generation blocked</h3>'
+            . '<span class="badge warning">Action required</span></div>'
+            . '<div class="helper">Resolve the following before generating the complete iXBRL filing set.</div><ul>';
+        foreach ($groups as $label => $messages) {
+            foreach ($messages as $message) {
+                $html .= '<li><strong>' . HelperFramework::escape($label) . ':</strong> '
+                    . HelperFramework::escape($message) . '</li>';
+            }
+        }
+
+        return $html . '</ul></section>';
+    }
+
+    /** @return list<string> */
+    private function uniqueMessages(array $messages, string $fallback): array
+    {
+        $messages = array_values(array_unique(array_filter(array_map(
+            static fn(mixed $message): string => trim((string)$message),
+            $messages
+        ), static fn(string $message): bool => $message !== '')));
+
+        return $messages !== [] ? $messages : [$fallback];
     }
 
     private function computationPeriods(array $context, int $companyId, int $accountingPeriodId): string

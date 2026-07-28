@@ -481,6 +481,10 @@ final class FilingEvidenceService
             "SELECT b.*,
                     b.id = (SELECT MAX(latest.id) FROM filing_evidence_bundles latest
                             WHERE latest.company_id = b.company_id AND latest.accounting_period_id = b.accounting_period_id) AS is_latest,
+                    EXISTS (SELECT 1 FROM year_end_reviews yr
+                            WHERE yr.company_id = b.company_id
+                              AND yr.accounting_period_id = b.accounting_period_id
+                              AND yr.is_locked = 1) AS period_is_locked,
                     (SELECT COUNT(*) FROM filing_evidence_ct_snapshots s WHERE s.bundle_id = b.id) AS snapshot_count,
                     (SELECT COUNT(*) FROM filing_evidence_artifacts a WHERE a.bundle_id = b.id) AS artifact_count,
                     (SELECT COUNT(*) FROM filing_evidence_artifacts a
@@ -498,6 +502,8 @@ final class FilingEvidenceService
         foreach ($rows as &$row) {
             $row = $this->normaliseBundle((array)$row);
             $row['is_latest'] = !empty($row['is_latest']);
+            $row['is_current_for_locked_period'] = !empty($row['period_is_locked'])
+                && (string)($row['lifecycle_status'] ?? '') === 'current';
             foreach (['snapshot_count', 'artifact_count', 'completed_artifact_count', 'approval_count', 'hmrc_submission_count', 'companies_house_submission_count'] as $countKey) {
                 $row[$countKey] = (int)($row[$countKey] ?? 0);
             }
@@ -508,11 +514,13 @@ final class FilingEvidenceService
             if ((int)$row['companies_house_submission_count'] > 0) { $reasons[] = 'Companies House submission'; }
             if ((int)$row['completed_artifact_count'] > 0) { $reasons[] = 'Completed filing artifact'; }
             if ((string)($row['lifecycle_status'] ?? '') === 'current' && !$row['is_latest']) { $reasons[] = 'Current lifecycle'; }
+            if ($row['is_current_for_locked_period']) { $reasons[] = 'Current evidence for locked period'; }
             $row['retained_reasons'] = $reasons;
             $row['is_used'] = (int)$row['approval_count'] > 0 || (int)$row['hmrc_submission_count'] > 0
                 || (int)$row['companies_house_submission_count'] > 0 || (int)$row['completed_artifact_count'] > 0;
             $row['eligible_for_cleanup'] = !$row['is_latest'] && !$row['is_used']
-                && (string)($row['lifecycle_status'] ?? '') !== 'current';
+                && (string)($row['lifecycle_status'] ?? '') !== 'current'
+                && !$row['is_current_for_locked_period'];
             if ($row['eligible_for_cleanup']) { $eligibleCount++; }
         }
         unset($row);
@@ -530,7 +538,11 @@ final class FilingEvidenceService
 
         return (array)\InterfaceDB::transaction(function () use ($companyId, $accountingPeriodId, $actor): array {
             $state = $this->listForAccountingPeriod($companyId, $accountingPeriodId);
-            $candidates = array_values(array_filter((array)$state['bundles'], static fn(array $bundle): bool => !empty($bundle['eligible_for_cleanup'])));
+            $candidates = array_values(array_filter(
+                (array)$state['bundles'],
+                static fn(array $bundle): bool => !empty($bundle['eligible_for_cleanup'])
+                    && empty($bundle['is_current_for_locked_period'])
+            ));
             $deleted = [];
 
             foreach ($candidates as $bundle) {
@@ -542,11 +554,15 @@ final class FilingEvidenceService
                     ['predecessor_id' => (int)($bundle['predecessor_bundle_id'] ?? 0) ?: null, 'bundle_id' => $bundleId,
                         'company_id' => $companyId, 'period_id' => $accountingPeriodId]
                 );
-                \InterfaceDB::prepareExecute(
-                    'DELETE FROM filing_evidence_bundles WHERE id = :id AND company_id = :company_id AND accounting_period_id = :period_id',
-                    ['id' => $bundleId, 'company_id' => $companyId, 'period_id' => $accountingPeriodId]
+                $delete = \InterfaceDB::prepareExecute(
+                    'DELETE FROM filing_evidence_bundles
+                     WHERE id = :id AND company_id = :company_id AND accounting_period_id = :period_id
+                       AND lifecycle_status <> :current_status',
+                    ['id' => $bundleId, 'company_id' => $companyId, 'period_id' => $accountingPeriodId, 'current_status' => 'current']
                 );
-                $deleted[] = ['id' => $bundleId, 'evidence_id' => (string)$bundle['evidence_id']];
+                if ($delete->rowCount() === 1) {
+                    $deleted[] = ['id' => $bundleId, 'evidence_id' => (string)$bundle['evidence_id']];
+                }
             }
 
             if ($deleted !== [] && \InterfaceDB::tableExists('year_end_audit_log')) {

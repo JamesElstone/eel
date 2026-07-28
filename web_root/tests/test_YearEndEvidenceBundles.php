@@ -31,6 +31,8 @@ $h->run(\eel_accounts\Service\FilingEvidenceService::class, static function (Gen
         $h->assertTrue(str_contains($source, "artifact_status IN ('generated', 'validated', 'historical')"));
         $h->assertTrue(str_contains($source, 'UPDATE filing_evidence_bundles'));
         $h->assertTrue(str_contains($source, 'cleanupUnusedHistoricForAccountingPeriod'));
+        $h->assertTrue(str_contains($source, 'is_current_for_locked_period'));
+        $h->assertTrue(str_contains($source, "AND lifecycle_status <> :current_status"));
     });
 });
 $h->run(YearEndAction::class, static function (GeneratedServiceClassTestHarness $h): void {

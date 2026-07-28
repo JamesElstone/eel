@@ -61,6 +61,6 @@ final class _tax_aia_allocationCard extends CardBaseFramework
             ->textColumn('asset', 'Asset')
             ->column('addition', 'Addition', html: static fn(array $row): string => HelperFramework::escape((string)($row['addition_html'] ?? '')), export: static fn(array $row): string => number_format((float)($row['addition'] ?? 0), 2, '.', ''), headerClass: 'numeric', cellClass: 'numeric', exportType: 'number')
             ->column('allowance', 'Annual Investment Allowance (AIA) claimed', html: static fn(array $row): string => HelperFramework::escape((string)($row['allowance_html'] ?? '')), export: static fn(array $row): string => number_format((float)($row['allowance'] ?? 0), 2, '.', ''), headerClass: 'numeric', cellClass: 'numeric', exportType: 'number')
-            ->column('used', 'Annual Investment Allowance (AIA) used', html: static fn(array $row): string => HelperFramework::escape((string)($row['used_html'] ?? '')), export: static fn(array $row): string => number_format((float)($row['used'] ?? 0), 2, '.', ''), headerClass: 'numeric', cellClass: 'numeric', exportType: 'number');
+            ->column('used', 'Cumulative Annual Investment Allowance (AIA) used', html: static fn(array $row): string => HelperFramework::escape((string)($row['used_html'] ?? '')), export: static fn(array $row): string => number_format((float)($row['used'] ?? 0), 2, '.', ''), headerClass: 'numeric', cellClass: 'numeric', exportType: 'number');
     }
 }

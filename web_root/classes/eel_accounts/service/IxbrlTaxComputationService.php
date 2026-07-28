@@ -684,6 +684,9 @@ final class IxbrlTaxComputationService
 
     private function renderDeductionsAllowance(IxbrlGeneratorService $generator, array $facts, array $lossRestriction): string
     {
+        if (!$this->deductionsAllowanceIsRelevant($lossRestriction)) {
+            return '';
+        }
         $allowance = (array)($lossRestriction['deduction_allowance'] ?? []);
         $allowanceAmount = round((float)($allowance['amount'] ?? 0), 2);
         $allowanceHtml = isset($facts['computation.summary.loss_restriction.deduction_allowance.amount'])
@@ -718,6 +721,20 @@ final class IxbrlTaxComputationService
             . '</td></tr><tr><th scope="row">Calculated loss restriction</th><td class="amount">'
             . $restrictionHtml . '</td></tr><tr class="final-total"><th scope="row">Loss restriction</th><td class="amount">'
             . $generator->escape($restrictionText) . '</td></tr></tbody></table></div>';
+    }
+
+    /**
+     * The allowance facts remain part of the canonical CT model, but the
+     * explanatory table is useful only when a brought-forward loss claim or
+     * a restriction calculation actually affects the period.
+     */
+    private function deductionsAllowanceIsRelevant(array $lossRestriction): bool
+    {
+        $post2017 = (array)($lossRestriction['post_2017_trading_losses'] ?? []);
+        return abs((float)($post2017['used'] ?? 0)) >= 0.005
+            || abs((float)($lossRestriction['carried_forward_loss_relief_claimed'] ?? 0)) >= 0.005
+            || abs((float)($lossRestriction['calculated_loss_restriction'] ?? 0)) >= 0.005
+            || !in_array((string)($lossRestriction['loss_restriction'] ?? 'none'), ['', 'none', 'not_applicable'], true);
     }
 
     private function renderAiaSchedule(IxbrlGeneratorService $generator, array $model): string

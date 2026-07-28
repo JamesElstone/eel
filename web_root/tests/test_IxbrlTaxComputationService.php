@@ -161,6 +161,29 @@ function ixbrlTaxComputationMappings(array $model): array
         $result = $service->generateFilingExport(0, 0, 0);
         $h->assertSame(false, $result['success']);
     });
+    $h->check($service::class, 'renders deductions allowance only for a relevant loss claim or restriction', static function () use ($h, $service): void {
+        $method = new ReflectionMethod($service::class, 'renderDeductionsAllowance');
+        $method->setAccessible(true);
+        $render = static function (float $used, float $reliefClaimed, float $restriction) use ($method, $service): string {
+            return (string)$method->invoke(
+                $service,
+                new \eel_accounts\Service\IxbrlGeneratorService(),
+                [],
+                [
+                    'post_2017_trading_losses' => ['used' => $used],
+                    'carried_forward_loss_relief_claimed' => $reliefClaimed,
+                    'calculated_loss_restriction' => $restriction,
+                    'loss_restriction' => $restriction === 0.0 ? 'none' : 'applies',
+                    'deduction_allowance' => ['amount' => 5000000.00, 'period_days' => 365, 'days_in_year' => 365],
+                ]
+            );
+        };
+        $h->assertSame('', $render(0.00, 0.00, 0.00));
+        $h->assertTrue(str_contains($render(1.00, 0.00, 0.00), 'Deductions allowance'));
+        $h->assertTrue(str_contains($render(0.00, 1.00, 0.00), 'Deductions allowance'));
+        $h->assertTrue(str_contains($render(1.00, 1.00, 0.00), 'Deductions allowance'));
+        $h->assertTrue(str_contains($render(0.00, 0.00, 1.00), 'Deductions allowance'));
+    });
     $h->check($service::class, 'uses Format 1.1 whole-period accounts facts for a split accounting period', static function () use ($h, $service): void {
         $model = ixbrlTaxComputationModel();
         $method = new ReflectionMethod($service::class, 'renderMappedDocument');
@@ -194,7 +217,9 @@ function ixbrlTaxComputationMappings(array $model): array
         $h->assertTrue(str_contains($body, 'Time apportionment figure (365 / 391 days)'));
         $h->assertTrue(str_contains($body, '65.63'));
         $h->assertTrue(str_contains($body, 'Post-1 April 2017 trading losses'));
-        $h->assertTrue(str_contains($body, 'Deductions allowance'));
+        $h->assertSame(0, $xpath->query('//*[local-name()="div" and contains(concat(" ", normalize-space(@class), " "), " deductions-allowance ")]')->length);
+        $h->assertSame(1, $xpath->query('//*[local-name()="h2" and normalize-space(.)="Trading losses"]')->length);
+        $h->assertSame(1, $xpath->query('//*[local-name()="h2" and normalize-space(.)="Tax liability"]')->length);
         $h->assertTrue(str_contains($body, '563.21'));
         $h->assertFalse(str_contains($body, 'identity.company_name'));
         $h->assertFalse(str_contains($body, 'EEL filing evidence artifact'));
@@ -241,6 +266,9 @@ function ixbrlTaxComputationMappings(array $model): array
             $context = (string)$element?->getAttribute('contextRef');
             $h->assertSame('2022-09-05', $xpath->evaluate('string(//xbrli:context[@id="' . $context . '"]/xbrli:period/xbrli:startDate)'));
             $h->assertSame('2023-09-04', $xpath->evaluate('string(//xbrli:context[@id="' . $context . '"]/xbrli:period/xbrli:endDate)'));
+        }
+        foreach (['CompanyName', 'TaxReference', 'StartOfPeriodCoveredByReturn', 'EndOfPeriodCoveredByReturn'] as $identityFact) {
+            $h->assertSame(1, $xpath->query('//ix:nonNumeric[@name="ct:' . $identityFact . '"]')->length);
         }
         $report = $service->buildReportModel($model, ixbrlTaxComputationMappings($model));
         $lossRows = array_column((array)$report['loss_schedule_rows'], 'taxonomy_concept', 'id');
@@ -339,6 +367,16 @@ function ixbrlTaxComputationMappings(array $model): array
         $h->assertSame('2023-09-05', $xpath->evaluate('string(//xbrli:context[@id="' . $profitContext . '"]/xbrli:period/xbrli:startDate)'));
         $h->assertSame('2023-09-30', $xpath->evaluate('string(//xbrli:context[@id="' . $profitContext . '"]/xbrli:period/xbrli:endDate)'));
         $h->assertSame(0, $xpath->query('//ix:nonFraction[@name="ct:AdjustedLossOfPeriod"]')->length);
+        $deductionsAllowance = $xpath->query('//*[local-name()="div" and contains(concat(" ", normalize-space(@class), " "), " deductions-allowance ")]');
+        $h->assertSame(1, $deductionsAllowance->length);
+        $deductionsAllowanceText = (string)$deductionsAllowance->item(0)?->textContent;
+        $h->assertTrue(str_contains($deductionsAllowanceText, '356,164.38'));
+        $h->assertTrue(str_contains($deductionsAllowanceText, 'Qualifying profits'));
+        $h->assertTrue(str_contains($deductionsAllowanceText, 'Carried-forward loss relief claimed against total profits'));
+        $h->assertTrue(str_contains($deductionsAllowanceText, 'Calculated loss restriction'));
+        $h->assertTrue(str_contains($deductionsAllowanceText, '0.00'));
+        $h->assertSame(1, $xpath->query('//*[local-name()="h2" and normalize-space(.)="Trading losses"]')->length);
+        $h->assertSame(1, $xpath->query('//*[local-name()="h2" and normalize-space(.)="Tax liability"]')->length);
         $h->assertFalse(str_contains($body, 'Main pool'));
     });
     $h->check($service::class, 'renders the CT period 1 main-pool bridge with distinct WDV instants', static function () use ($h, $service): void {

@@ -31,6 +31,7 @@ final class _year_end_stateCard extends CardBaseFramework
                 'key' => 'backup_status',
                 'service' => \eel_accounts\Service\DatabaseBackupService::class,
                 'method' => 'fetchBackupStatus',
+                'params' => ['companyId' => ':company.id'],
             ],
             [
                 'key' => 'period_lock_state',
@@ -70,8 +71,11 @@ final class _year_end_stateCard extends CardBaseFramework
         $lockIntent = $isLocked ? 'unlock_period' : 'lock_period';
         $lockLabel = $isLocked ? 'Unlock Period' : 'Run Year-End Close and Lock';
         $lockTitle = $isLocked
-            ? 'Reopen this accounting period for changes.'
+            ? 'Creates a fresh database backup, then reopens this accounting period for changes.'
             : 'Runs the live preflight, creates a fresh database backup, completes the final close tasks, and locks this accounting period against further changes.';
+        $backupHelp = $isLocked
+            ? 'A fresh database backup is created automatically before this accounting period is reopened.'
+            : 'A fresh database backup is created automatically after the live preflight passes and before any closing entries are posted.';
         $latestBackupAt = $this->latestBackupCreatedAt($context);
         $hasChecklistBlockers = !empty((($context['year_end'] ?? [])['checklist_has_blockers'] ?? false));
         $periodLockState = (array)($context['services']['period_lock_state'] ?? []);
@@ -105,7 +109,7 @@ final class _year_end_stateCard extends CardBaseFramework
                         <div class="summary-value">' . HelperFramework::escape($latestBackupAt !== '' ? $latestBackupAt : 'No backup available') . '</div>
                     </div>
                 </div>
-                <div class="helper">A fresh database backup is created automatically after the live preflight passes and before any closing entries are posted.</div>
+                <div class="helper">' . HelperFramework::escape($backupHelp) . '</div>
                 <div class="helper">' . HelperFramework::escape($this->statusHelp($status, $isLocked)) . '</div>
                 ' . ($unlockLockOrderHelp !== '' ? '<div class="helper">' . HelperFramework::escape($unlockLockOrderHelp) . '</div>' : '') . '
                 <div class="actions-row">
@@ -131,6 +135,7 @@ final class _year_end_stateCard extends CardBaseFramework
         return '<form method="post" data-ajax="true" data-year-end-state-form="true">
             ' . $this->hiddenCardFields($context) . '
             <input type="hidden" name="card_action" value="Backup">
+            <input type="hidden" name="company_id" value="' . (int)($context['company']['id'] ?? 0) . '">
             <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
             <button class="button primary" type="submit" name="intent" value="create_database_backup" data-processing-text="Creating Backup" data-processing-state="disabled">Backup</button>
         </form>';

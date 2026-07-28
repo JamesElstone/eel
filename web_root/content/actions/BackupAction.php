@@ -30,7 +30,10 @@ final class BackupAction implements ActionInterfaceFramework
 
         try {
             @set_time_limit(0);
-            $backup = (new \eel_accounts\Service\DatabaseBackupService())->createBackup();
+            $backup = (new \eel_accounts\Service\DatabaseBackupService())->createBackup(
+                $this->companyId($request),
+                \eel_accounts\Service\DatabaseBackupService::TRIGGER_MANUAL
+            );
         } catch (Throwable $exception) {
             return $this->error('Database backup failed: ' . $exception->getMessage());
         }
@@ -61,7 +64,7 @@ final class BackupAction implements ActionInterfaceFramework
         }
 
         if ((string)$request->post('restore_confirmation', '') !== 'RESTORE') {
-            return $this->error('Type RESTORE to confirm the database restore.');
+            return $this->error('Type RESTORE to confirm replacement of the database and protected configuration.');
         }
 
         try {
@@ -70,14 +73,22 @@ final class BackupAction implements ActionInterfaceFramework
             $backupService = new \eel_accounts\Service\DatabaseBackupService();
             $databaseName = $backupService->currentDatabaseName();
             $restore = $backupService->restoreBackup(
+                $this->companyId($request),
                 $filename,
                 $databaseName,
                 $databaseName,
                 static function (string $message, int $percent) use ($progress): void {
                     $progress->report($message, $percent);
+                },
+                (string)$request->post('backup_scope', 'company')
+            );
+            $migration = (new \eel_accounts\Service\DatabaseMigrationService())->runOutstanding(
+                static function (string $message, int $percent) use ($progress): void {
+                    $progress->report($message, $percent);
                 }
             );
-            $progress->report('Database restore complete.', 100);
+            $restore['migrations'] = $migration;
+            $progress->report('Database restore and migrations complete.', 100);
         } catch (Throwable $exception) {
             return $this->error('Database restore failed: ' . $exception->getMessage());
         }
@@ -108,7 +119,11 @@ final class BackupAction implements ActionInterfaceFramework
         }
 
         try {
-            $download = (new \eel_accounts\Service\DatabaseBackupService())->backupFileForDownload($filename);
+            $download = (new \eel_accounts\Service\DatabaseBackupService())->backupFileForDownload(
+                $this->companyId($request),
+                $filename,
+                (string)$request->post('backup_scope', 'company')
+            );
         } catch (Throwable $exception) {
             return $this->error('Database backup download failed: ' . $exception->getMessage());
         }
@@ -133,5 +148,10 @@ final class BackupAction implements ActionInterfaceFramework
             'type' => 'error',
             'message' => $message,
         ]]);
+    }
+
+    private function companyId(RequestFramework $request): int
+    {
+        return max(0, (int)$request->input('company_id', (new \eel_accounts\Service\AccountingContextService())->companyId()));
     }
 }

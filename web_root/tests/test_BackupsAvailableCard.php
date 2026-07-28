@@ -31,6 +31,8 @@ $harness->run(_backups_availableCard::class, static function (GeneratedServiceCl
 
     $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="csv"'));
     $harness->assertTrue(str_contains($html, 'Database backups'));
+    $harness->assertTrue(str_contains($html, '>Trigger</'));
+    $harness->assertTrue(str_contains($html, 'Automatic - Year End pre-lock'));
     $harness->assertTrue(str_contains($html, '1-8 of 9'));
     $harness->assertTrue(strpos($html, 'eel_accounts_20260714_120000.sql.zip') < strpos($html, 'eel_accounts_20260713_120000.sql.zip'));
     $harness->assertTrue(str_contains($html, 'name="card_action" value="Backup"'));
@@ -54,6 +56,7 @@ $harness->run(_backups_availableCard::class, static function (GeneratedServiceCl
     $harness->assertTrue($tables[0] instanceof TableFramework);
     $csv = $tables[0]->exportCsv();
     $harness->assertTrue(str_contains($csv, 'eel_accounts_20260714_120000.sql.zip'));
+    $harness->assertTrue(str_contains($csv, 'Automatic - Year End pre-lock'));
     $harness->assertTrue(!str_contains($csv, 'Restore'));
     $harness->assertTrue(!str_contains($csv, 'Download'));
 });
@@ -69,6 +72,7 @@ function backupRows(): array
             'restore_key' => hash('sha256', (string)$index),
             'size_bytes' => 1024 + $index,
             'created_at' => '2026-07-' . str_pad((string)$day, 2, '0', STR_PAD_LEFT) . ' 12:00:00',
+            'trigger' => $index === 0 ? 'Automatic - Year End pre-lock' : 'Manual',
         ];
     }
 

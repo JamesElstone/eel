@@ -18,41 +18,48 @@ use Throwable;
 
 final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBackupCreatorInterface
 {
+    public const TRIGGER_MANUAL = 'Manual';
+    public const TRIGGER_YEAR_END_PRE_LOCK = 'Automatic - Year End pre-lock';
+    public const TRIGGER_YEAR_END_PRE_UNLOCK = 'Automatic - Year End pre-unlock';
+    public const TRIGGER_UNKNOWN = 'Unknown';
+
     private array $dbConfig;
     private string $backupDirectory;
+    private readonly ?string $backupDirectoryOverride;
+    private readonly ?string $secureDirectoryOverride;
     private ?PDO $connection;
 
-    public function __construct(?array $dbConfig = null, ?string $backupDirectory = null, ?PDO $connection = null)
+    public function __construct(?array $dbConfig = null, ?string $backupDirectory = null, ?PDO $connection = null, ?string $secureDirectory = null)
     {
         $this->dbConfig = $dbConfig ?? (array)\AppConfigurationStore::get('db', []);
+        $this->backupDirectoryOverride = $backupDirectory;
+        $this->secureDirectoryOverride = $secureDirectory;
         $this->backupDirectory = $backupDirectory ?? $this->defaultBackupDirectory();
         $this->connection = $connection;
     }
 
-    public function fetchBackupStatus(): array
+    public function fetchBackupStatus(int $companyId = 0): array
     {
-        $directoryExists = is_dir($this->backupDirectory);
+        $directory = $companyId > 0 ? $this->companyBackupDirectory($companyId) : $this->backupDirectory;
+        $directoryExists = is_dir($directory);
 
         return [
-            'directory' => $this->backupDirectory,
+            'directory' => $directory,
             'directory_exists' => $directoryExists,
             'directory_writable' => $directoryExists && is_writable($this->backupDirectory),
             'zip_available' => true,
-            'recent_backups' => array_slice($this->fetchAvailableBackups(), 0, 5),
+            'recent_backups' => array_slice($this->fetchAvailableBackups($companyId), 0, 5),
         ];
     }
 
-    public function fetchAvailableBackups(): array
+    public function fetchAvailableBackups(int $companyId = 0): array
     {
-        if (!is_dir($this->backupDirectory)) {
-            return [];
-        }
+        $files = $this->backupFiles($companyId > 0 ? $this->companyBackupDirectory($companyId) : $this->backupDirectory);
+        $legacyFiles = $this->backupDirectoryOverride === null
+            ? $this->backupFiles($this->defaultBackupDirectory())
+            : [];
 
-        $files = glob($this->backupDirectory . DIRECTORY_SEPARATOR . '*.sql.zip');
-        if ($files === false) {
-            return [];
-        }
-
+        $files = array_merge($files, $legacyFiles);
         usort($files, static function (string $left, string $right): int {
             $timeComparison = (filemtime($right) ?: 0) <=> (filemtime($left) ?: 0);
 
@@ -66,20 +73,26 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
             }
 
             $filename = basename($file);
+            $legacy = in_array($file, $legacyFiles, true);
             $backups[] = [
                 'filename' => $filename,
                 'path' => $file,
                 'restore_key' => hash('sha256', $filename),
                 'size_bytes' => (int)(filesize($file) ?: 0),
                 'created_at' => date('Y-m-d H:i:s', (int)(filemtime($file) ?: time())),
+                'trigger' => $this->backupTrigger($file),
+                'scope' => $legacy ? 'legacy' : 'company',
+                'legacy' => $legacy,
             ];
         }
 
         return $backups;
     }
 
-    public function createBackup(): array
+    public function createBackup(int $companyId, string $trigger = self::TRIGGER_MANUAL): array
     {
+        $trigger = $this->normaliseTrigger($trigger);
+        $this->backupDirectory = $this->companyBackupDirectory($companyId);
         $this->ensureBackupDirectory();
         $pdo = $this->connect();
         $databaseName = $this->databaseName($pdo);
@@ -91,8 +104,8 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
         $zipPath = $this->backupDirectory . DIRECTORY_SEPARATOR . $baseName . '.sql.zip';
 
         try {
-            $tableCount = $this->writeSqlDump($pdo, $sqlPath, $databaseName);
-            $this->publishZipAtomically($sqlPath, $zipPath, basename($sqlPath));
+            $tableCount = $this->writeSqlDump($pdo, $sqlPath, $databaseName, $trigger);
+            $this->publishFullBackupAtomically($sqlPath, $zipPath, basename($sqlPath), $companyId);
         } finally {
             if (is_file($sqlPath)) {
                 @unlink($sqlPath);
@@ -108,19 +121,25 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
             'size_bytes' => is_file($zipPath) ? (int)filesize($zipPath) : 0,
             'table_count' => $tableCount,
             'created_at' => (new DateTimeImmutable())->format('Y-m-d H:i:s'),
+            'trigger' => $trigger,
+            'company_id' => $companyId,
+            'includes_secure' => true,
         ];
     }
 
     public function restoreBackup(
+        int $companyId,
         string $filename,
         ?string $expectedTargetDatabase = null,
         ?string $expectedSourceDatabase = null,
-        ?\Closure $progress = null
+        ?\Closure $progress = null,
+        string $scope = 'company'
     ): array
     {
-        $backupPath = $this->resolveBackupPath($filename);
+        $backupPath = $this->resolveBackupPath($companyId, $filename, $scope);
         $progress?->__invoke('Verifying the database backup integrity…', 10);
-        $entry = $this->inspectStoredSqlZip($backupPath, $progress);
+        $archive = $this->inspectBackupArchive($backupPath, $progress);
+        $entry = $archive['sql_entry'];
         $progress?->__invoke('Checking the backup database identity…', 25);
         $sourceDatabase = $this->databaseNameFromSqlDump($this->readStoredSqlPrefix($backupPath, $entry));
         $pdo = null;
@@ -141,6 +160,12 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
         if ($executed === 0) {
             throw new RuntimeException('The selected backup does not contain SQL statements to restore.');
         }
+        $secureRestored = false;
+        if (!empty($archive['includes_secure'])) {
+            $progress?->__invoke('Restoring protected application configuration…', 96);
+            $this->restoreSecureDirectory($backupPath, (array)$archive['entries']);
+            $secureRestored = true;
+        }
         $progress?->__invoke('Finalising the database restore…', 98);
 
         clearstatcache(true, $backupPath);
@@ -154,6 +179,8 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
             'source_database' => $sourceDatabase,
             'target_database' => $this->connectedDatabaseName($pdo),
             'restored_at' => (new DateTimeImmutable())->format('Y-m-d H:i:s'),
+            'legacy' => !empty($archive['legacy']),
+            'secure_restored' => $secureRestored,
         ];
     }
 
@@ -162,9 +189,9 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
         return $this->requireConnectedDatabaseName($this->connect());
     }
 
-    public function backupFileForDownload(string $filename): array
+    public function backupFileForDownload(int $companyId, string $filename, string $scope = 'company'): array
     {
-        $backupPath = $this->resolveBackupPath($filename);
+        $backupPath = $this->resolveBackupPath($companyId, $filename, $scope);
 
         return [
             'file' => $backupPath,
@@ -173,7 +200,7 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
         ];
     }
 
-    private function writeSqlDump(PDO $pdo, string $sqlPath, string $databaseName): int
+    private function writeSqlDump(PDO $pdo, string $sqlPath, string $databaseName, string $trigger): int
     {
         $handle = @fopen($sqlPath, 'wb');
         if (!is_resource($handle)) {
@@ -191,6 +218,7 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
 
             $this->write($handle, "-- EEL Accounts database backup\n");
             $this->write($handle, '-- Created: ' . (new DateTimeImmutable())->format('Y-m-d H:i:s') . "\n");
+            $this->write($handle, '-- Trigger: ' . $trigger . "\n");
             $this->write(
                 $handle,
                 '-- Database: ' . $this->databaseNameForComment($databaseName !== '' ? $databaseName : 'unknown') . "\n"
@@ -460,6 +488,143 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
         }
     }
 
+    private function publishFullBackupAtomically(string $sqlPath, string $zipPath, string $entryName, int $companyId): void
+    {
+        $temporaryZipPath = $zipPath . '.partial-' . bin2hex(random_bytes(8));
+        $manifestPath = $this->backupDirectory . DIRECTORY_SEPARATOR . '.backup-manifest-' . bin2hex(random_bytes(8)) . '.json';
+        try {
+            $entries = [['name' => 'database/' . basename($entryName), 'path' => $sqlPath]];
+            foreach ($this->secureFiles() as $file) {
+                $entries[] = $file;
+            }
+            $manifestEntries = [];
+            foreach ($entries as $entry) {
+                $hash = hash_file('sha256', (string)$entry['path']);
+                if (!is_string($hash)) {
+                    throw new RuntimeException('Unable to hash backup entry: ' . (string)$entry['name']);
+                }
+                $manifestEntries[] = [
+                    'path' => (string)$entry['name'],
+                    'size_bytes' => (int)(filesize((string)$entry['path']) ?: 0),
+                    'sha256' => $hash,
+                ];
+            }
+            $manifest = json_encode([
+                'format' => 'eel_accounts_full_backup_v1',
+                'company_id' => $companyId,
+                'created_at' => (new DateTimeImmutable())->format(DATE_ATOM),
+                'entries' => $manifestEntries,
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+            if (file_put_contents($manifestPath, $manifest, LOCK_EX) === false) {
+                throw new RuntimeException('Unable to write backup manifest.');
+            }
+            $entries[] = ['name' => 'backup-manifest.json', 'path' => $manifestPath];
+            $this->writeStoredZip($entries, $temporaryZipPath);
+            $this->inspectFullBackupArchive($temporaryZipPath);
+            if (file_exists($zipPath)) {
+                throw new RuntimeException('A database backup with this timestamp already exists.');
+            }
+            if (!@rename($temporaryZipPath, $zipPath)) {
+                throw new RuntimeException('Unable to publish the completed backup ZIP atomically.');
+            }
+        } finally {
+            if (is_file($temporaryZipPath)) {
+                @unlink($temporaryZipPath);
+            }
+            if (is_file($manifestPath)) {
+                @unlink($manifestPath);
+            }
+        }
+    }
+
+    /** @param list<array{name:string,path:string}> $entries */
+    private function writeStoredZip(array $entries, string $zipPath): void
+    {
+        $handle = @fopen($zipPath, 'wb');
+        if (!is_resource($handle)) {
+            throw new RuntimeException('Unable to create backup ZIP file: ' . $zipPath);
+        }
+        $offset = 0;
+        $central = '';
+        try {
+            foreach ($entries as $entry) {
+                $name = str_replace('\\', '/', (string)$entry['name']);
+                $path = (string)$entry['path'];
+                if (!$this->isSafeArchivePath($name) || !is_file($path)) {
+                    throw new RuntimeException('Backup contains an invalid file entry.');
+                }
+                $size = (int)(filesize($path) ?: 0);
+                if ($size < 0 || $size > 0xFFFFFFFF) {
+                    throw new RuntimeException('Backup entry is too large for the built-in ZIP writer.');
+                }
+                $crcHex = hash_file('crc32b', $path);
+                if (!is_string($crcHex)) {
+                    throw new RuntimeException('Unable to checksum backup entry: ' . $name);
+                }
+                $crc = (int)hexdec($crcHex);
+                $nameLength = strlen($name);
+                $local = pack('VvvvvvVVVvv', 0x04034b50, 20, 0, 0, 0, 0, $crc, $size, $size, $nameLength, 0) . $name;
+                $this->write($handle, $local);
+                $input = @fopen($path, 'rb');
+                if (!is_resource($input)) {
+                    throw new RuntimeException('Unable to read backup entry: ' . $name);
+                }
+                try {
+                    while (!feof($input)) {
+                        $chunk = fread($input, 1024 * 1024);
+                        if (!is_string($chunk)) {
+                            throw new RuntimeException('Unable to read backup entry: ' . $name);
+                        }
+                        if ($chunk !== '') {
+                            $this->write($handle, $chunk);
+                        }
+                    }
+                } finally {
+                    fclose($input);
+                }
+                $central .= pack('VvvvvvvVVVvvvvvVV', 0x02014b50, 20, 20, 0, 0, 0, 0, $crc, $size, $size, $nameLength, 0, 0, 0, 0, 0, $offset) . $name;
+                $offset += strlen($local) + $size;
+            }
+            $this->write($handle, $central);
+            $this->write($handle, pack('VvvvvVVv', 0x06054b50, 0, 0, count($entries), count($entries), strlen($central), $offset, 0));
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    /** @return list<array{name:string,path:string}> */
+    private function secureFiles(): array
+    {
+        $root = $this->secureDirectory();
+        if (!is_dir($root)) {
+            throw new RuntimeException('The protected secure directory is unavailable.');
+        }
+        $files = [];
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::LEAVES_ONLY
+        );
+        foreach ($iterator as $file) {
+            if (!$file instanceof \SplFileInfo || $file->isLink()) {
+                if ($file instanceof \SplFileInfo && $file->isLink()) {
+                    throw new RuntimeException('The protected secure directory must not contain symbolic links.');
+                }
+                continue;
+            }
+            if (!$file->isFile()) {
+                continue;
+            }
+            $path = $file->getPathname();
+            $relative = substr($path, strlen(rtrim($root, '\\/')) + 1);
+            $name = 'secure/' . str_replace('\\', '/', $relative);
+            if (!$this->isSafeArchivePath($name)) {
+                throw new RuntimeException('The protected secure directory contains an invalid path.');
+            }
+            $files[] = ['name' => $name, 'path' => $path];
+        }
+        return $files;
+    }
+
     private function verifyStoredSqlZip(string $zipPath, string $expectedSqlHash): void
     {
         $handle = @fopen($zipPath, 'rb');
@@ -592,6 +757,204 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
         } finally {
             fclose($handle);
         }
+    }
+
+    /** @return array{sql_entry: array{name:string,data_offset:int,data_size:int},entries: array<string,array{name:string,data_offset:int,data_size:int,sha256:string}>,includes_secure:bool,legacy:bool} */
+    private function inspectBackupArchive(string $zipPath, ?\Closure $progress = null): array
+    {
+        try {
+            return $this->inspectFullBackupArchive($zipPath);
+        } catch (RuntimeException $exception) {
+            $entry = $this->inspectStoredSqlZip($zipPath, $progress);
+            return [
+                'sql_entry' => $entry,
+                'entries' => [$entry['name'] => $entry + ['sha256' => '']],
+                'includes_secure' => false,
+                'legacy' => true,
+            ];
+        }
+    }
+
+    /** @return array{sql_entry: array{name:string,data_offset:int,data_size:int},entries: array<string,array{name:string,data_offset:int,data_size:int,sha256:string}>,includes_secure:bool,legacy:bool} */
+    private function inspectFullBackupArchive(string $zipPath): array
+    {
+        $handle = @fopen($zipPath, 'rb');
+        if (!is_resource($handle)) {
+            throw new RuntimeException('The selected backup file is empty or unreadable.');
+        }
+        $entries = [];
+        try {
+            while (true) {
+                $signatureContent = fread($handle, 4);
+                if ($signatureContent === false || $signatureContent === '') {
+                    break;
+                }
+                $signature = unpack('Vsignature', $signatureContent);
+                if (!is_array($signature) || (int)($signature['signature'] ?? 0) === 0x02014b50) {
+                    break;
+                }
+                if ((int)($signature['signature'] ?? 0) !== 0x04034b50) {
+                    throw new RuntimeException('The selected backup ZIP header is malformed.');
+                }
+                $header = unpack(
+                    'vversion/vflags/vmethod/vtime/vdate/Vcrc/Vcompressed_size/Vuncompressed_size/vname_length/vextra_length',
+                    $this->readExactly($handle, 26, 'The selected backup ZIP header is malformed.')
+                );
+                if (!is_array($header) || (int)$header['flags'] !== 0 || (int)$header['method'] !== 0 || (int)$header['compressed_size'] !== (int)$header['uncompressed_size']) {
+                    throw new RuntimeException('The selected backup ZIP uses an unsupported compression method.');
+                }
+                $name = $this->readExactly($handle, (int)$header['name_length'], 'The selected backup ZIP entry name is malformed.');
+                if (!$this->isSafeArchivePath($name) || isset($entries[$name])) {
+                    throw new RuntimeException('The selected backup ZIP contains an invalid or duplicate entry.');
+                }
+                if ((int)$header['extra_length'] > 0) {
+                    $this->readExactly($handle, (int)$header['extra_length'], 'The selected backup ZIP entry metadata is malformed.');
+                }
+                $offset = ftell($handle);
+                if (!is_int($offset) || $offset < 0) {
+                    throw new RuntimeException('The selected backup ZIP entry is malformed.');
+                }
+                $size = (int)$header['compressed_size'];
+                $sha = hash_init('sha256');
+                $crc = hash_init('crc32b');
+                $remaining = $size;
+                while ($remaining > 0) {
+                    $chunk = fread($handle, min(1024 * 1024, $remaining));
+                    if (!is_string($chunk) || $chunk === '') {
+                        throw new RuntimeException('The selected backup ZIP entry is truncated.');
+                    }
+                    hash_update($sha, $chunk);
+                    hash_update($crc, $chunk);
+                    $remaining -= strlen($chunk);
+                }
+                if (!hash_equals(sprintf('%08x', (int)$header['crc']), hash_final($crc))) {
+                    throw new RuntimeException('The selected backup ZIP failed its integrity checksum.');
+                }
+                $entries[$name] = ['name' => $name, 'data_offset' => $offset, 'data_size' => $size, 'sha256' => hash_final($sha)];
+            }
+        } finally {
+            fclose($handle);
+        }
+        $manifestEntry = $entries['backup-manifest.json'] ?? null;
+        if (!is_array($manifestEntry)) {
+            throw new RuntimeException('The selected backup is a legacy SQL-only archive.');
+        }
+        $manifestContent = $this->readArchiveEntry($zipPath, $manifestEntry, 2 * 1024 * 1024);
+        try {
+            $manifest = json_decode($manifestContent, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            throw new RuntimeException('The selected backup manifest is invalid.');
+        }
+        if (!is_array($manifest) || ($manifest['format'] ?? '') !== 'eel_accounts_full_backup_v1' || !is_array($manifest['entries'] ?? null)) {
+            throw new RuntimeException('The selected backup manifest is invalid.');
+        }
+        $declared = [];
+        foreach ($manifest['entries'] as $manifestEntryRow) {
+            if (!is_array($manifestEntryRow)) {
+                throw new RuntimeException('The selected backup manifest is invalid.');
+            }
+            $name = (string)($manifestEntryRow['path'] ?? '');
+            $hash = (string)($manifestEntryRow['sha256'] ?? '');
+            $size = (int)($manifestEntryRow['size_bytes'] ?? -1);
+            $entry = $entries[$name] ?? null;
+            if (!$this->isSafeArchivePath($name) || !is_array($entry) || $hash === '' || $size !== (int)$entry['data_size'] || !hash_equals($hash, (string)$entry['sha256'])) {
+                throw new RuntimeException('The selected backup manifest does not match its archive entries.');
+            }
+            $declared[$name] = true;
+        }
+        if (count($entries) !== count($declared) + 1) {
+            throw new RuntimeException('The selected backup contains unexpected archive entries.');
+        }
+        $sqlEntries = array_values(array_filter($entries, static fn(array $entry): bool => str_starts_with((string)$entry['name'], 'database/') && str_ends_with(strtolower((string)$entry['name']), '.sql')));
+        if (count($sqlEntries) !== 1) {
+            throw new RuntimeException('The selected backup does not contain exactly one database SQL dump.');
+        }
+        foreach (array_keys($declared) as $name) {
+            if (!str_starts_with($name, 'database/') && !str_starts_with($name, 'secure/')) {
+                throw new RuntimeException('The selected backup contains an unexpected archive entry.');
+            }
+        }
+        return ['sql_entry' => $sqlEntries[0], 'entries' => $entries, 'includes_secure' => true, 'legacy' => false];
+    }
+
+    /** @param array{data_offset:int,data_size:int} $entry */
+    private function readArchiveEntry(string $zipPath, array $entry, int $maximumBytes = PHP_INT_MAX): string
+    {
+        if ((int)$entry['data_size'] > $maximumBytes) {
+            throw new RuntimeException('The selected backup archive entry is too large.');
+        }
+        $handle = @fopen($zipPath, 'rb');
+        if (!is_resource($handle)) {
+            throw new RuntimeException('The selected backup file is empty or unreadable.');
+        }
+        try {
+            if (fseek($handle, (int)$entry['data_offset']) !== 0) {
+                throw new RuntimeException('The selected backup ZIP entry is malformed.');
+            }
+            return $this->readExactly($handle, (int)$entry['data_size'], 'The selected backup ZIP entry is truncated.');
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    /** @param array<string,array{name:string,data_offset:int,data_size:int,sha256:string}> $entries */
+    private function restoreSecureDirectory(string $zipPath, array $entries): void
+    {
+        $live = $this->secureDirectory();
+        $parent = dirname($live);
+        $stage = $parent . DIRECTORY_SEPARATOR . '.secure-restore-' . bin2hex(random_bytes(8));
+        $previous = $parent . DIRECTORY_SEPARATOR . '.secure-before-restore-' . bin2hex(random_bytes(8));
+        if (!@mkdir($stage, 0700, true)) {
+            throw new RuntimeException('Unable to prepare protected configuration restore storage.');
+        }
+        try {
+            foreach ($entries as $entry) {
+                $name = (string)$entry['name'];
+                if (!str_starts_with($name, 'secure/')) {
+                    continue;
+                }
+                $relative = substr($name, strlen('secure/'));
+                if ($relative === '' || !$this->isSafeArchivePath('secure/' . $relative)) {
+                    throw new RuntimeException('The selected backup contains an invalid protected file path.');
+                }
+                $target = $stage . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relative);
+                $targetDirectory = dirname($target);
+                if (!is_dir($targetDirectory) && !@mkdir($targetDirectory, 0700, true)) {
+                    throw new RuntimeException('Unable to prepare protected configuration restore storage.');
+                }
+                $contents = $this->readArchiveEntry($zipPath, $entry);
+                if (file_put_contents($target, $contents, LOCK_EX) === false || !hash_equals((string)$entry['sha256'], (string)hash_file('sha256', $target))) {
+                    throw new RuntimeException('Unable to restore a protected configuration file.');
+                }
+                if (DIRECTORY_SEPARATOR !== '\\') {
+                    @chmod($target, 0600);
+                }
+            }
+            if (!is_dir($live) || !@rename($live, $previous)) {
+                throw new RuntimeException('Unable to stage the current protected configuration for replacement.');
+            }
+            if (!@rename($stage, $live)) {
+                @rename($previous, $live);
+                throw new RuntimeException('Unable to replace the protected configuration directory.');
+            }
+            $this->removeDirectory($previous);
+        } catch (Throwable $exception) {
+            $this->removeDirectory($stage);
+            throw $exception;
+        }
+    }
+
+    private function removeDirectory(string $directory): void
+    {
+        if (!is_dir($directory)) {
+            return;
+        }
+        $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS), \RecursiveIteratorIterator::CHILD_FIRST);
+        foreach ($iterator as $item) {
+            $path = $item->getPathname();
+            $item->isDir() && !$item->isLink() ? @rmdir($path) : @unlink($path);
+        }
+        @rmdir($directory);
     }
 
     private function connect(): PDO
@@ -757,8 +1120,12 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
 
     private function ensureBackupDirectory(): void
     {
-        if (!is_dir($this->backupDirectory) && !@mkdir($this->backupDirectory, 0755, true) && !is_dir($this->backupDirectory)) {
+        if (!is_dir($this->backupDirectory) && !@mkdir($this->backupDirectory, 0700, true) && !is_dir($this->backupDirectory)) {
             throw new RuntimeException('Unable to create SQL dump directory: ' . $this->backupDirectory);
+        }
+
+        if (DIRECTORY_SEPARATOR !== '\\') {
+            @chmod($this->backupDirectory, 0700);
         }
 
         if (!is_writable($this->backupDirectory)) {
@@ -766,14 +1133,21 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
         }
     }
 
-    private function resolveBackupPath(string $filename): string
+    private function resolveBackupPath(int $companyId, string $filename, string $scope): string
     {
         $filename = trim(str_replace('\\', '/', $filename));
         if ($filename === '' || basename($filename) !== $filename || !str_ends_with(strtolower($filename), '.sql.zip')) {
             throw new RuntimeException('Select a valid SQL ZIP backup file to restore.');
         }
 
-        $directory = realpath($this->backupDirectory);
+        $scope = trim($scope);
+        if (!in_array($scope, ['company', 'legacy'], true)) {
+            throw new RuntimeException('Select a valid backup storage location.');
+        }
+        if ($scope === 'legacy' && $this->backupDirectoryOverride !== null) {
+            throw new RuntimeException('Legacy backups are not available in this environment.');
+        }
+        $directory = realpath($scope === 'legacy' ? $this->defaultBackupDirectory() : $this->companyBackupDirectory($companyId));
         if ($directory === false || !is_dir($directory)) {
             throw new RuntimeException('The SQL dump directory is not available.');
         }
@@ -789,6 +1163,59 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
         }
 
         return $path;
+    }
+
+    /** @return list<string> */
+    private function backupFiles(string $directory): array
+    {
+        if (!is_dir($directory)) {
+            return [];
+        }
+        $files = glob(rtrim($directory, '\\/') . DIRECTORY_SEPARATOR . '*.sql.zip');
+        return $files === false ? [] : array_values(array_filter($files, 'is_file'));
+    }
+
+    private function companyBackupDirectory(int $companyId): string
+    {
+        if ($this->backupDirectoryOverride !== null) {
+            return $this->backupDirectoryOverride;
+        }
+        if ($companyId <= 0) {
+            throw new RuntimeException('Select a company with a registered number before creating or restoring backups.');
+        }
+        $company = (new \eel_accounts\Repository\CompanyRepository())->fetchCompanyDetails($companyId);
+        $number = preg_replace('/[^A-Za-z0-9]/', '', trim((string)($company['company_number'] ?? '')));
+        if ($number === '') {
+            throw new RuntimeException('The selected company must have a registered company number before backups can be used.');
+        }
+        $uploads = \eel_accounts\Store\AccountingConfigurationStore::uploads();
+        $base = trim((string)($uploads['upload_base_dir'] ?? ''));
+        if ($base === '') {
+            throw new RuntimeException('The configured upload base directory is required for backups.');
+        }
+        return rtrim($base, '\\/') . DIRECTORY_SEPARATOR . $number . DIRECTORY_SEPARATOR . 'backups';
+    }
+
+    private function secureDirectory(): string
+    {
+        if ($this->secureDirectoryOverride !== null) {
+            return rtrim($this->secureDirectoryOverride, '\\/');
+        }
+        return rtrim(defined('APP_CONFIG') ? (string)APP_CONFIG : rtrim((string)PROJECT_ROOT, '\\/') . DIRECTORY_SEPARATOR . 'secure', '\\/');
+    }
+
+    private function isSafeArchivePath(string $path): bool
+    {
+        $path = str_replace('\\', '/', $path);
+        if ($path === '' || str_starts_with($path, '/') || str_contains($path, "\0") || str_contains($path, '../') || str_starts_with($path, '..')) {
+            return false;
+        }
+        foreach (explode('/', $path) as $segment) {
+            if ($segment === '' || $segment === '.' || $segment === '..') {
+                return false;
+            }
+        }
+        return true;
     }
 
     private function extractSqlFromBackup(string $zipPath): string
@@ -982,6 +1409,32 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
         } finally {
             fclose($handle);
         }
+    }
+
+    private function backupTrigger(string $backupPath): string
+    {
+        try {
+            $archive = $this->inspectBackupArchive($backupPath);
+            $entry = $archive['sql_entry'];
+            $header = $this->readStoredSqlPrefix($backupPath, $entry);
+            if (preg_match('/^-- Trigger:[ \t]*([^\r\n]+)[ \t]*$/mi', $header, $matches) !== 1) {
+                return self::TRIGGER_UNKNOWN;
+            }
+
+            return $this->normaliseTrigger((string)$matches[1], self::TRIGGER_UNKNOWN);
+        } catch (Throwable) {
+            return self::TRIGGER_UNKNOWN;
+        }
+    }
+
+    private function normaliseTrigger(string $trigger, string $fallback = self::TRIGGER_MANUAL): string
+    {
+        $trigger = trim(str_replace(["\r", "\n"], ' ', $trigger));
+        if ($trigger === '') {
+            return $fallback;
+        }
+
+        return substr($trigger, 0, 255);
     }
 
     /** @param array{name: string, data_offset: int, data_size: int} $entry */

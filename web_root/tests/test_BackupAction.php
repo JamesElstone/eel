@@ -61,6 +61,8 @@ $harness->run(BackupAction::class, static function (GeneratedServiceClassTestHar
     $harness->assertTrue(str_contains($source, 'currentDatabaseName()'));
     $harness->assertTrue(str_contains($source, '$databaseName,'));
     $harness->assertTrue(str_contains($source, '$services->actionProgress()'));
+    $harness->assertTrue(str_contains($source, 'DatabaseBackupService::TRIGGER_MANUAL'));
     $harness->assertTrue(str_contains($source, "'Checking the restore target database…', 0"));
-    $harness->assertTrue(str_contains($source, "'Database restore complete.', 100"));
+    $harness->assertTrue(str_contains($source, 'DatabaseMigrationService'));
+    $harness->assertTrue(str_contains($source, "'Database restore and migrations complete.', 100"));
 });

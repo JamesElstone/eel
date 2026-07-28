@@ -35,6 +35,6 @@ $harness->run(_backupCard::class, static function (GeneratedServiceClassTestHarn
     $harness->assertTrue(str_contains($html, 'name="intent" value="create_database_backup"'));
     $harness->assertTrue(str_contains($html, 'name="csrf_token"'));
     $harness->assertTrue(str_contains($html, 'data-processing-state="disabled"'));
-    $harness->assertTrue(str_contains($html, 'sqldump folder'));
+    $harness->assertTrue(str_contains($html, 'Company backup folder'));
     $harness->assertTrue(!str_contains($html, 'eel_accounts_20260706_120000.sql.zip'));
 });

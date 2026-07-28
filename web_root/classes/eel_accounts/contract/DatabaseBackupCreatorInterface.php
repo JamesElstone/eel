@@ -11,5 +11,5 @@ namespace eel_accounts\Contract;
 
 interface DatabaseBackupCreatorInterface
 {
-    public function createBackup(): array;
+    public function createBackup(int $companyId, string $trigger = 'Manual'): array;
 }

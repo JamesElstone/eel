@@ -32,6 +32,7 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
         $harness->assertSame(true, str_contains($action, 'private function unlockPeriodWithProgress'));
         $harness->assertSame(true, str_contains($action, '$progress->report($message, $percent)'));
         $harness->assertSame(true, str_contains($service, "'Preparing to reopen the accounting period…', 0"));
+        $harness->assertSame(true, str_contains($service, "'Creating and verifying the pre-unlock database backup…', 12"));
         $harness->assertSame(true, str_contains($service, "'Finalising the reopened accounting period…', 99"));
         $harness->assertSame(true, str_contains($service, 'RequestCache::beginFor($this)'));
         $harness->assertSame(true, str_contains($service, "(array)((\$finalTaxFreeze['tax_readiness'] ?? [])['periods'] ?? [])"));
@@ -53,6 +54,10 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
         $unlockFinalProgress = strpos($unlockMethod, "'Finalising the reopened accounting period…', 99");
         $unlockCommit = strpos($unlockMethod, '$this->commitLockTransaction($transaction)');
         $harness->assertSame(true, $unlockFinalProgress !== false && $unlockCommit !== false && $unlockFinalProgress < $unlockCommit);
+        $unlockBackup = strpos($unlockMethod, '->createBackup(');
+        $unlockMutation = strpos($unlockMethod, '$lock->unlockPeriod(');
+        $harness->assertSame(true, $unlockBackup !== false && $unlockMutation !== false && $unlockBackup < $unlockMutation);
+        $harness->assertSame(true, str_contains($unlockMethod, 'TRIGGER_YEAR_END_PRE_UNLOCK'));
     });
 
     $harness->check(YearEndAction::class, 'streams standard action progress while approving Corporation Tax for Year End', static function () use ($harness): void {

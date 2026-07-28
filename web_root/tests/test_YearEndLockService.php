@@ -345,12 +345,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         $harness->assertSame(2, $snapshotCountBefore);
                         $harness->assertSame(0, yearEndLockPartyLoanUnlockReversalCount($companyId, $periodId));
 
-                        $failedUnlock = (new \eel_accounts\Service\YearEndChecklistService())
+                        $failedUnlock = (new \eel_accounts\Service\YearEndChecklistService(
+                            backupCreator: yearEndLockVerifiedBackupCreator()
+                        ))
                             ->unlockPeriod(
                                 $companyId,
                                 $periodId,
                                 'rollback-test',
-                                'This unlock must roll back.'
+                                'This unlock must roll back.',
+                                null,
+                                true
                             );
 
                         $harness->assertSame(false, (bool)($failedUnlock['success'] ?? true));
@@ -432,12 +436,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
                         $offsetJournalCountBefore = yearEndLockPartyLoanOffsetJournalCount($companyId);
                         $auditCountBefore = yearEndLockPartyLoanAuditCount($companyId, $periodId);
-                        $failedUnlock = (new \eel_accounts\Service\YearEndChecklistService())
+                        $failedUnlock = (new \eel_accounts\Service\YearEndChecklistService(
+                            backupCreator: yearEndLockVerifiedBackupCreator()
+                        ))
                             ->unlockPeriod(
                                 $companyId,
                                 $periodId,
                                 'missing-snapshot-test',
-                                'Frozen liability mapping is intentionally absent.'
+                                'Frozen liability mapping is intentionally absent.',
+                                null,
+                                true
                             );
 
                         $harness->assertSame(false, (bool)($failedUnlock['success'] ?? true));
@@ -474,12 +482,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                             'UPDATE journals SET is_posted = 0 WHERE id = :journal_id',
                             ['journal_id' => $originalJournalId]
                         );
-                        $noOpUnlock = (new \eel_accounts\Service\YearEndChecklistService())
+                        $noOpUnlock = (new \eel_accounts\Service\YearEndChecklistService(
+                            backupCreator: yearEndLockVerifiedBackupCreator()
+                        ))
                             ->unlockPeriod(
                                 $companyId,
                                 $periodId,
                                 'missing-snapshot-no-op',
-                                'No effective party offset remains.'
+                                'No effective party offset remains.',
+                                null,
+                                true
                             );
                         $harness->assertSame(true, (bool)($noOpUnlock['success'] ?? false));
                         $harness->assertSame(
@@ -640,6 +652,21 @@ function yearEndLockPartyLoanWithFixture(
             InterfaceDB::rollBack();
         }
     }
+}
+
+function yearEndLockVerifiedBackupCreator(): \eel_accounts\Contract\DatabaseBackupCreatorInterface
+{
+    return new class implements \eel_accounts\Contract\DatabaseBackupCreatorInterface {
+        public function createBackup(int $companyId, string $trigger = 'Manual'): array
+        {
+            return [
+                'filename' => 'year-end-test.sql.zip',
+                'size_bytes' => 1024,
+                'table_count' => 1,
+                'trigger' => $trigger,
+            ];
+        }
+    };
 }
 
 function yearEndLockPartyLoanNominal(

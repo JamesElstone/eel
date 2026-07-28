@@ -129,9 +129,11 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
     $harness->assertSame('eel_accounts_20260705_120000.sql.zip', (string)($available[1]['filename'] ?? ''));
     $harness->assertSame(2, count((array)($directoryStatus['recent_backups'] ?? [])));
     $harness->assertTrue(isset($available[0]['restore_key']));
+    $harness->assertSame('Unknown', (string)($available[0]['trigger'] ?? ''));
 
     try {
         $directoryService->restoreBackup(
+            0,
             '../eel_accounts_20260706_120000.sql.zip',
             'eel_accounts',
             'eel_accounts'
@@ -142,7 +144,7 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
     }
 
     try {
-        $directoryService->restoreBackup('not-a-backup.sql', 'eel_accounts', 'eel_accounts');
+        $directoryService->restoreBackup(0, 'not-a-backup.sql', 'eel_accounts', 'eel_accounts');
         throw new RuntimeException('Non ZIP restore filename was accepted.');
     } catch (RuntimeException $exception) {
         $harness->assertTrue(str_contains($exception->getMessage(), 'valid SQL ZIP backup'));
@@ -192,6 +194,7 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
         $sqlPath,
         "-- EEL Accounts database backup\n"
         . "-- Created: 2026-07-16 12:00:00\n"
+        . "-- Trigger: Automatic - Year End pre-lock\n"
         . "-- Database: eel_accounts\n\n"
         . "CREATE TABLE `sample` (`note` varchar(255));\n"
         . "INSERT INTO `sample` (`note`) VALUES ('semi;colon');\n"
@@ -203,6 +206,38 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
     $publishMethod->setAccessible(true);
     $publishMethod->invoke($directoryService, $sqlPath, $zipPath, basename($sqlPath));
     $harness->assertCount(0, glob($zipPath . '.partial-*') ?: []);
+    $publishedBackup = array_values(array_filter(
+        $directoryService->fetchAvailableBackups(),
+        static fn(array $backup): bool => (string)($backup['filename'] ?? '') === 'fixture.sql.zip'
+    ));
+    $harness->assertSame('Automatic - Year End pre-lock', (string)(($publishedBackup[0] ?? [])['trigger'] ?? ''));
+
+    $secureDirectory = $backupDirectory . DIRECTORY_SEPARATOR . 'secure-fixture';
+    mkdir($secureDirectory . DIRECTORY_SEPARATOR . 'nested', 0700, true);
+    file_put_contents($secureDirectory . DIRECTORY_SEPARATOR . 'security.keys', 'original-security-key');
+    file_put_contents($secureDirectory . DIRECTORY_SEPARATOR . 'nested' . DIRECTORY_SEPARATOR . 'api.keys', 'original-api-key');
+    $fullSqlPath = $backupDirectory . DIRECTORY_SEPARATOR . 'full_fixture.sql';
+    $fullZipPath = $backupDirectory . DIRECTORY_SEPARATOR . 'full_fixture.sql.zip';
+    file_put_contents(
+        $fullSqlPath,
+        "-- EEL Accounts database backup\n-- Trigger: Manual\n-- Database: eel_accounts\n\nCREATE TABLE `full_sample` (`id` int);\n"
+    );
+    $fullService = new \eel_accounts\Service\DatabaseBackupService([], $backupDirectory, null, $secureDirectory);
+    $publishFull = new ReflectionMethod($fullService, 'publishFullBackupAtomically');
+    $publishFull->setAccessible(true);
+    $publishFull->invoke($fullService, $fullSqlPath, $fullZipPath, basename($fullSqlPath), 42);
+    $inspectFull = new ReflectionMethod($fullService, 'inspectFullBackupArchive');
+    $inspectFull->setAccessible(true);
+    $fullArchive = (array)$inspectFull->invoke($fullService, $fullZipPath);
+    $harness->assertSame(true, (bool)($fullArchive['includes_secure'] ?? false));
+    $harness->assertTrue(isset($fullArchive['entries']['secure/security.keys']));
+    $harness->assertTrue(isset($fullArchive['entries']['secure/nested/api.keys']));
+    file_put_contents($secureDirectory . DIRECTORY_SEPARATOR . 'security.keys', 'changed-security-key');
+    $restoreSecure = new ReflectionMethod($fullService, 'restoreSecureDirectory');
+    $restoreSecure->setAccessible(true);
+    $restoreSecure->invoke($fullService, $fullZipPath, (array)($fullArchive['entries'] ?? []));
+    $harness->assertSame('original-security-key', (string)file_get_contents($secureDirectory . DIRECTORY_SEPARATOR . 'security.keys'));
+    $harness->assertSame('original-api-key', (string)file_get_contents($secureDirectory . DIRECTORY_SEPARATOR . 'nested' . DIRECTORY_SEPARATOR . 'api.keys'));
 
     $verifyMethod = new ReflectionMethod($directoryService, 'verifyStoredSqlZip');
     $verifyMethod->setAccessible(true);
@@ -279,7 +314,7 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
     $harness->assertSame('eel_accounts_ap79_scratch', $guardedRestore->currentDatabaseName());
     $restorePdo->statements = [];
     try {
-        $guardedRestore->restoreBackup('fixture.sql.zip', '', '');
+        $guardedRestore->restoreBackup(0, 'fixture.sql.zip', '', '');
         throw new RuntimeException('A restore without database identity guards was accepted.');
     } catch (RuntimeException $exception) {
         $harness->assertTrue(str_contains($exception->getMessage(), 'source database name is required'));
@@ -287,7 +322,7 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
     $harness->assertSame([], $restorePdo->statements);
 
     try {
-        $guardedRestore->restoreBackup('fixture.sql.zip', 'eel_accounts', 'eel_accounts');
+        $guardedRestore->restoreBackup(0, 'fixture.sql.zip', 'eel_accounts', 'eel_accounts');
         throw new RuntimeException('A mismatched restore target database was accepted.');
     } catch (RuntimeException $exception) {
         $harness->assertTrue(str_contains($exception->getMessage(), 'restore target mismatch'));
@@ -297,6 +332,7 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
     $restorePdo->statements = [];
     try {
         $guardedRestore->restoreBackup(
+            0,
             'fixture.sql.zip',
             'eel_accounts_ap79_scratch',
             'another_database'
@@ -309,6 +345,7 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
 
     $restorePdo->statements = [];
     $restored = $guardedRestore->restoreBackup(
+        0,
         'fixture.sql.zip',
         'eel_accounts_ap79_scratch',
         'eel_accounts'
@@ -334,6 +371,7 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
     $restorePdo->statements = [];
     $restoreProgress = [];
     $streamingRestore = $guardedRestore->restoreBackup(
+        0,
         'streaming_fixture.sql.zip',
         'eel_accounts_ap79_scratch',
         'eel_accounts',
@@ -370,7 +408,7 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
         $backupDirectory,
         $legacyPdo
     );
-    $legacyResult = $legacyRestore->restoreBackup('fixture.sql.zip');
+    $legacyResult = $legacyRestore->restoreBackup(0, 'fixture.sql.zip');
     $harness->assertSame(3, (int)($legacyResult['statement_count'] ?? 0));
     $harness->assertSame('eel_accounts', (string)($legacyResult['source_database'] ?? ''));
     $harness->assertSame('eel_accounts', (string)($legacyResult['target_database'] ?? ''));
@@ -402,7 +440,7 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
         $selectorPdo
     );
     $harness->assertSame($selectorDatabaseName, $selectorRestore->currentDatabaseName());
-    $selectorResult = $selectorRestore->restoreBackup('selector_fixture.sql.zip');
+    $selectorResult = $selectorRestore->restoreBackup(0, 'selector_fixture.sql.zip');
     $harness->assertSame($selectorDatabaseName, (string)($selectorResult['source_database'] ?? ''));
     $harness->assertSame($selectorDatabaseName, (string)($selectorResult['target_database'] ?? ''));
     $harness->assertSame(1, (int)($selectorResult['statement_count'] ?? 0));
@@ -410,7 +448,7 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
     $selectorPdo->databaseName = 'fixture-dbap79';
     $selectorPdo->statements = [];
     try {
-        $selectorRestore->restoreBackup('selector_fixture.sql.zip');
+        $selectorRestore->restoreBackup(0, 'selector_fixture.sql.zip');
         throw new RuntimeException('A legacy one-argument restore crossed database identities.');
     } catch (RuntimeException $exception) {
         $harness->assertTrue(str_contains($exception->getMessage(), 'backup source mismatch'));
@@ -425,6 +463,7 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
     );
     try {
         $unknownTargetRestore->restoreBackup(
+            0,
             'fixture.sql.zip',
             'eel_accounts_ap79_scratch',
             'eel_accounts'

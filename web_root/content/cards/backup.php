@@ -16,7 +16,7 @@ final class _backupCard extends CardBaseFramework
 
     public function helper(array $context): string
     {
-        return 'Create a point-in-time SQL dump and store it as a zipped file in the sqldump folder.';
+        return 'Create a full database and protected-configuration recovery archive for the selected company.';
     }
 
     public function services(): array
@@ -26,6 +26,7 @@ final class _backupCard extends CardBaseFramework
                 'key' => 'backup_status',
                 'service' => \eel_accounts\Service\DatabaseBackupService::class,
                 'method' => 'fetchBackupStatus',
+                'params' => ['companyId' => ':company.id'],
             ],
         ];
     }
@@ -47,6 +48,7 @@ final class _backupCard extends CardBaseFramework
             <form method="post" action="?page=backup" data-ajax="true">
                 ' . $this->hiddenFields($context) . '
                 <input type="hidden" name="card_action" value="Backup">
+                <input type="hidden" name="company_id" value="' . (int)($context['company']['id'] ?? 0) . '">
                 <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
                 <button class="button primary" type="submit" name="intent" value="create_database_backup" data-processing-text="Creating Backup" data-processing-state="disabled">Create Backup</button>
             </form>
@@ -83,7 +85,7 @@ final class _backupCard extends CardBaseFramework
             <div class="helper">' . HelperFramework::escape($detail) . '</div>
             <div class="path-meta">
                 <div class="path-meta-item">
-                    <span class="status-indicator"><span class="status-square ' . HelperFramework::escape($directoryExists ? 'ok' : 'warn') . '"></span>sqldump folder: ' . HelperFramework::escape($directoryExists ? 'Exists' : 'Will be created') . '</span>
+                    <span class="status-indicator"><span class="status-square ' . HelperFramework::escape($directoryExists ? 'ok' : 'warn') . '"></span>Company backup folder: ' . HelperFramework::escape($directoryExists ? 'Exists' : 'Will be created') . '</span>
                 </div>
                 <div class="path-meta-item">
                     <span class="status-indicator"><span class="status-square ' . HelperFramework::escape($directoryWritable || !$directoryExists ? 'ok' : 'bad') . '"></span>Write access: ' . HelperFramework::escape($directoryWritable || !$directoryExists ? 'Ready' : 'Needs attention') . '</span>

@@ -24,7 +24,7 @@ final class _backups_availableCard extends CardBaseFramework
 
     public function helper(array $context): string
     {
-        return 'Review, export, or restore zipped SQL database backups from the sqldump folder.';
+        return 'Review, export, or restore full backups for the selected company. Legacy SQL-only backups are labelled separately.';
     }
 
     public function services(): array
@@ -34,6 +34,7 @@ final class _backups_availableCard extends CardBaseFramework
                 'key' => 'available_backups',
                 'service' => \eel_accounts\Service\DatabaseBackupService::class,
                 'method' => 'fetchAvailableBackups',
+                'params' => ['companyId' => ':company.id'],
             ],
         ];
     }
@@ -109,6 +110,20 @@ final class _backups_availableCard extends CardBaseFramework
                 sort: static fn(array $row): string => (string)($row['created_at'] ?? '')
             )
             ->column(
+                'trigger',
+                'Trigger',
+                html: static fn(array $row): string => HelperFramework::escape((string)($row['trigger'] ?? 'Unknown')),
+                export: static fn(array $row): string => (string)($row['trigger'] ?? 'Unknown'),
+                sort: static fn(array $row): string => (string)($row['trigger'] ?? 'Unknown')
+            )
+            ->column(
+                'contents',
+                'Contents',
+                html: static fn(array $row): string => !empty($row['legacy']) ? 'Legacy database only' : 'Database + secure',
+                export: static fn(array $row): string => !empty($row['legacy']) ? 'Legacy database only' : 'Database + secure',
+                sort: static fn(array $row): string => !empty($row['legacy']) ? 'Legacy database only' : 'Database + secure'
+            )
+            ->column(
                 'filename',
                 'Filename',
                 html: static fn(array $row): string => '<strong>' . HelperFramework::escape((string)($row['filename'] ?? 'backup.sql.zip')) . '</strong>',
@@ -166,13 +181,15 @@ final class _backups_availableCard extends CardBaseFramework
         $hiddenFields = $this->hiddenFields()
             . '<input type="hidden" name="card_action" value="Backup">'
             . '<input type="hidden" name="backup_filename" value="' . HelperFramework::escape($filename) . '">'
+            . '<input type="hidden" name="backup_scope" value="' . HelperFramework::escape((string)($row['scope'] ?? 'company')) . '">'
+            . '<input type="hidden" name="company_id" value="' . (int)($this->renderContext['company']['id'] ?? 0) . '">'
             . '<input type="hidden" name="csrf_token" value="' . HelperFramework::escape($this->csrfToken()) . '">';
 
         return '<form class="backup-restore-form" method="post" action="?page=backup" data-ajax="true">
             ' . $hiddenFields . '
             <input type="hidden" name="intent" value="restore_database_backup">
             <div class="backup-restore-controls">
-                <input class="input backup-restore-input" name="restore_confirmation" placeholder="RESTORE" autocomplete="off" required>
+                <input class="input backup-restore-input" name="restore_confirmation" placeholder="RESTORE" autocomplete="off" required title="RESTORE replaces the database and, for full backups, the protected secure directory.">
                 <button class="button secondary" type="submit" data-processing-text="Restoring" data-processing-state="disabled">Restore</button>
             </div>
         </form>';
@@ -190,6 +207,8 @@ final class _backups_availableCard extends CardBaseFramework
             <input type="hidden" name="card_action" value="Backup">
             <input type="hidden" name="intent" value="download_database_backup">
             <input type="hidden" name="backup_filename" value="' . HelperFramework::escape($filename) . '">
+            <input type="hidden" name="backup_scope" value="' . HelperFramework::escape((string)($row['scope'] ?? 'company')) . '">
+            <input type="hidden" name="company_id" value="' . (int)($this->renderContext['company']['id'] ?? 0) . '">
             <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($this->csrfToken()) . '">
             <button class="button secondary" type="submit">Download</button>
         </form>';

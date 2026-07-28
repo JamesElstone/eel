@@ -44,8 +44,12 @@ final class YearEndAction implements ActionInterfaceFramework
                 return $this->result(false, ['This accounting period is locked. Unlock it before changing year-end review data.']);
             }
 
-            if ($intent === 'lock_period' && !$this->canCreateBackups()) {
-                return $this->result(false, ['You do not have permission to create the automatic pre-close database backup.']);
+            if (in_array($intent, ['lock_period', 'unlock_period'], true) && !$this->canCreateBackups()) {
+                return $this->result(false, [
+                    $intent === 'unlock_period'
+                        ? 'You do not have permission to create the automatic pre-unlock database backup.'
+                        : 'You do not have permission to create the automatic pre-close database backup.',
+                ]);
             }
 
             if ($this->requiresResolvedSourceCoverage($intent, $request)) {
@@ -247,7 +251,8 @@ final class YearEndAction implements ActionInterfaceFramework
             null,
             static function (string $message, int $percent) use ($progress): void {
                 $progress->report($message, $percent);
-            }
+            },
+            true
         );
     }
 

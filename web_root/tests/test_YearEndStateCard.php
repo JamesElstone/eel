@@ -103,6 +103,7 @@ $harness->run(_year_end_stateCard::class, static function (GeneratedServiceClass
 
         $harness->assertSame(true, str_contains($html, 'Unlock Period'));
         $harness->assertSame(true, str_contains($html, 'intent" value="unlock_period"'));
+        $harness->assertSame(true, str_contains($html, 'A fresh database backup is created automatically before this accounting period is reopened.'));
         $harness->assertSame(false, str_contains($html, 'disabled title="Resolve year-end checklist warnings and blockers'));
         $harness->assertSame(true, str_contains($html, 'value="recalculate"'));
         $harness->assertSame(true, str_contains($html, 'data-year-end-state-running-label="Refreshing..." disabled title="This accounting period is locked."'));

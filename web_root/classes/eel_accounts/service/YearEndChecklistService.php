@@ -352,7 +352,10 @@ final class YearEndChecklistService
 
             try {
                 $progress?->__invoke('Creating and verifying the pre-close database backup…', 12);
-                $backup = ($this->backupCreator ?? new \eel_accounts\Service\DatabaseBackupService())->createBackup();
+                $backup = ($this->backupCreator ?? new \eel_accounts\Service\DatabaseBackupService())->createBackup(
+                    $companyId,
+                    \eel_accounts\Service\DatabaseBackupService::TRIGGER_YEAR_END_PRE_LOCK
+                );
                 if (trim((string)($backup['filename'] ?? '')) === ''
                     || (int)($backup['size_bytes'] ?? 0) <= 0
                     || (int)($backup['table_count'] ?? 0) <= 0) {
@@ -1134,7 +1137,8 @@ final class YearEndChecklistService
         int $accountingPeriodId,
         string $changedBy = 'web_app',
         ?string $notes = null,
-        ?\Closure $progress = null
+        ?\Closure $progress = null,
+        bool $backupPermitted = false
     ): array {
         $scopeError = $this->vatSupportScopeMutationError($companyId, 'unlock this accounting period');
         if ($scopeError !== null) {
@@ -1144,6 +1148,33 @@ final class YearEndChecklistService
         $progress?->__invoke('Preparing to reopen the accounting period…', 0);
         $transaction = $this->beginLockTransaction();
         try {
+            if (!$backupPermitted) {
+                return $this->rollbackUnlockTransaction($transaction, [
+                    'success' => false,
+                    'status' => 403,
+                    'errors' => ['Permission to create the automatic pre-unlock database backup was not verified.'],
+                ]);
+            }
+
+            try {
+                $progress?->__invoke('Creating and verifying the pre-unlock database backup…', 12);
+                $backup = ($this->backupCreator ?? new \eel_accounts\Service\DatabaseBackupService())->createBackup(
+                    $companyId,
+                    \eel_accounts\Service\DatabaseBackupService::TRIGGER_YEAR_END_PRE_UNLOCK
+                );
+                if (trim((string)($backup['filename'] ?? '')) === ''
+                    || (int)($backup['size_bytes'] ?? 0) <= 0
+                    || (int)($backup['table_count'] ?? 0) <= 0) {
+                    throw new \RuntimeException('The backup service did not return a verified, non-empty full database backup.');
+                }
+            } catch (\Throwable $exception) {
+                return $this->rollbackUnlockTransaction($transaction, [
+                    'success' => false,
+                    'status' => 500,
+                    'errors' => ['The automatic pre-unlock database backup failed: ' . $exception->getMessage()],
+                ]);
+            }
+
             $progress?->__invoke('Reopening the accounting period and filing evidence…', 30);
             $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
             $result = $lock->unlockPeriod(
@@ -1161,7 +1192,7 @@ final class YearEndChecklistService
             $progress?->__invoke('Finalising the reopened accounting period…', 99);
             $this->commitLockTransaction($transaction);
 
-            return $result;
+            return $result + ['backup' => $backup];
         } catch (\Throwable $exception) {
             return $this->rollbackUnlockTransaction($transaction, ['success' => false, 'errors' => [$exception->getMessage()]]);
         }

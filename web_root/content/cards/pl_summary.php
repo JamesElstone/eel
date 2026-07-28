@@ -64,7 +64,7 @@ final class _pl_summaryCard extends CardBaseFramework
                 ' . $this->summaryCard('Operating expenses', $summary['operating_expense_total'] ?? ($summary['expense_total'] ?? 0), $companySettings) . '
                 ' . $this->summaryCard('Depreciation preview', $summary['depreciation_expense'] ?? 0, $companySettings) . '
                 ' . $this->summaryCard('Posted CT charge', $summary['posted_corporation_tax_charge'] ?? 0, $companySettings) . '
-                ' . $this->summaryCard('Ordinary Corporation Tax [CT600 box 475]', $summary['ordinary_corporation_tax'] ?? 0, $companySettings) . '
+                ' . $this->summaryCard('Net Corporation Tax liability [CT600 box 475]', $summary['ordinary_corporation_tax'] ?? 0, $companySettings) . '
                 ' . $this->summaryCard('CT600A net tax payable [A80]', $summary['ct600a_tax'] ?? 0, $companySettings) . '
                 ' . $this->summaryCard('Total Corporation Tax payable', $summary['estimated_corporation_tax'] ?? 0, $companySettings) . '
                 ' . $this->summaryCard('L2P relief receivable', $summary['l2p_relief_receivable'] ?? 0, $companySettings) . '

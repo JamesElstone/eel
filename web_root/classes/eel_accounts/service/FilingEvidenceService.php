@@ -587,17 +587,15 @@ final class FilingEvidenceService
             foreach (['snapshot_count', 'artifact_count', 'completed_artifact_count', 'approval_count', 'hmrc_submission_count', 'companies_house_submission_count'] as $countKey) {
                 $row[$countKey] = (int)($row[$countKey] ?? 0);
             }
+            $row['retained_artifact_count'] = $this->retainedArtifactCount((int)$row['id']);
+            $row['active_artifact_count'] = $row['retained_artifact_count'];
             $reasons = [];
             if ($row['is_latest']) { $reasons[] = 'Latest version'; }
-            if ((int)$row['approval_count'] > 0) { $reasons[] = 'Filing approval'; }
-            if ((int)$row['hmrc_submission_count'] > 0) { $reasons[] = 'HMRC submission'; }
-            if ((int)$row['companies_house_submission_count'] > 0) { $reasons[] = 'Companies House submission'; }
-            if ((int)$row['completed_artifact_count'] > 0) { $reasons[] = 'Completed filing artifact'; }
+            if ((int)$row['retained_artifact_count'] > 0) { $reasons[] = 'Transmitted filing artifact'; }
             if ((string)($row['lifecycle_status'] ?? '') === 'current' && !$row['is_latest']) { $reasons[] = 'Current lifecycle'; }
             if ($row['is_current_for_locked_period']) { $reasons[] = 'Current evidence for locked period'; }
             $row['retained_reasons'] = $reasons;
-            $row['is_used'] = (int)$row['approval_count'] > 0 || (int)$row['hmrc_submission_count'] > 0
-                || (int)$row['companies_house_submission_count'] > 0 || (int)$row['completed_artifact_count'] > 0;
+            $row['is_used'] = (int)$row['retained_artifact_count'] > 0;
             $row['eligible_for_cleanup'] = !$row['is_latest'] && !$row['is_used']
                 && (string)($row['lifecycle_status'] ?? '') !== 'current'
                 && !$row['is_current_for_locked_period'];
@@ -606,6 +604,110 @@ final class FilingEvidenceService
         unset($row);
 
         return ['bundles' => $rows, 'eligible_count' => $eligibleCount];
+    }
+
+    /**
+     * Counts completed artifacts that remain a usable record of a transmitted filing.
+     *
+     * A generated file by itself is not filing evidence for cleanup purposes. Its
+     * file must remain present and it must still be traceable to an existing iXBRL
+     * source run and a Companies House or HMRC submission that was transmitted.
+     */
+    private function retainedArtifactCount(int $bundleId): int
+    {
+        if ($bundleId <= 0) {
+            return 0;
+        }
+
+        $artifacts = \InterfaceDB::fetchAll(
+            "SELECT id, artifact_role, storage_path, metadata_json
+             FROM filing_evidence_artifacts
+             WHERE bundle_id = :bundle_id
+               AND artifact_status IN ('generated', 'validated', 'historical')",
+            ['bundle_id' => $bundleId]
+        ) ?: [];
+        if ($artifacts === []) {
+            return 0;
+        }
+
+        $companiesHouse = \InterfaceDB::fetchAll(
+            'SELECT submission.id, submission.artifact_path, submission.revised_artifact_path,
+                    run.id AS ixbrl_run_exists
+             FROM companies_house_accounts_submissions submission
+             LEFT JOIN ixbrl_generation_runs run ON run.id = submission.ixbrl_generation_run_id
+             WHERE submission.evidence_bundle_id = :bundle_id
+               AND submission.submitted_at IS NOT NULL',
+            ['bundle_id' => $bundleId]
+        ) ?: [];
+        $hmrc = \InterfaceDB::fetchAll(
+            'SELECT submission.id, submission.accounts_ixbrl_path, submission.computations_ixbrl_path,
+                    accounts_run.id AS accounts_ixbrl_run_exists,
+                    computation_run.id AS computation_run_exists
+             FROM hmrc_ct600_submissions submission
+             LEFT JOIN ixbrl_generation_runs accounts_run ON accounts_run.id = submission.accounts_run_id
+             LEFT JOIN corporation_tax_computation_runs computation_run ON computation_run.id = submission.computation_run_id
+             WHERE submission.evidence_bundle_id = :bundle_id
+               AND submission.submitted_at IS NOT NULL',
+            ['bundle_id' => $bundleId]
+        ) ?: [];
+
+        $count = 0;
+        foreach ($artifacts as $artifact) {
+            $path = trim((string)($artifact['storage_path'] ?? ''));
+            if ($path === '' || !is_file($path)) {
+                continue;
+            }
+            $submissionId = $this->artifactSubmissionId((string)($artifact['metadata_json'] ?? ''));
+            if ($this->matchesTransmittedCompaniesHouseArtifact($path, $submissionId, $companiesHouse)
+                || $this->matchesTransmittedHmrcArtifact($path, $submissionId, $hmrc)) {
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+
+    /** @param list<array<string,mixed>> $submissions */
+    private function matchesTransmittedCompaniesHouseArtifact(string $path, int $submissionId, array $submissions): bool
+    {
+        foreach ($submissions as $submission) {
+            if ((int)($submission['ixbrl_run_exists'] ?? 0) <= 0) {
+                continue;
+            }
+            if ($submissionId > 0 && $submissionId === (int)($submission['id'] ?? 0)) {
+                return true;
+            }
+            if ($path === trim((string)($submission['artifact_path'] ?? ''))
+                || $path === trim((string)($submission['revised_artifact_path'] ?? ''))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** @param list<array<string,mixed>> $submissions */
+    private function matchesTransmittedHmrcArtifact(string $path, int $submissionId, array $submissions): bool
+    {
+        foreach ($submissions as $submission) {
+            if ((int)($submission['accounts_ixbrl_run_exists'] ?? 0) <= 0
+                || (int)($submission['computation_run_exists'] ?? 0) <= 0) {
+                continue;
+            }
+            if ($submissionId > 0 && $submissionId === (int)($submission['id'] ?? 0)) {
+                return true;
+            }
+            if ($path === trim((string)($submission['accounts_ixbrl_path'] ?? ''))
+                || $path === trim((string)($submission['computations_ixbrl_path'] ?? ''))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function artifactSubmissionId(string $metadata): int
+    {
+        $decoded = json_decode($metadata, true);
+        return is_array($decoded) ? max(0, (int)($decoded['submission_id'] ?? 0)) : 0;
     }
 
     /** @return array{success:bool,deleted_count:int,deleted_bundles:list<array{id:int,evidence_id:string}>} */

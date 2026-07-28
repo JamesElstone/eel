@@ -33,12 +33,15 @@ final class _year_end_evidence_bundlesCard extends CardBaseFramework
                 ? '<span class="badge warning">Unused historic</span>'
                 : '<span class="badge success">Retained</span>';
             $reasons = $retained === [] ? 'No filing use recorded' : implode(', ', $retained);
+            $activeArtifactCount = array_key_exists('active_artifact_count', $bundle)
+                ? (int)$bundle['active_artifact_count']
+                : (int)($bundle['artifact_count'] ?? 0);
             $rows .= '<tr><td><strong>' . HelperFramework::escape((string)($bundle['display_id'] ?? $bundle['evidence_id'] ?? '')) . '</strong>'
                 . '<div class="helper">#' . (int)($bundle['id'] ?? 0) . '</div></td><td>'
                 . HelperFramework::escape((string)($bundle['lifecycle_status'] ?? '')) . '</td><td>'
                 . HelperFramework::escape((string)($bundle['locked_at'] ?? '')) . '<div class="helper">'
                 . HelperFramework::escape((string)($bundle['locked_by'] ?? '')) . '</div></td><td>'
-                . (int)($bundle['snapshot_count'] ?? 0) . ' snapshots<br>' . (int)($bundle['artifact_count'] ?? 0) . ' artifacts</td><td>'
+                . (int)($bundle['snapshot_count'] ?? 0) . ' snapshots<br>' . $activeArtifactCount . ' active artifacts</td><td>'
                 . $status . '<div class="helper">' . HelperFramework::escape($reasons) . '</div></td></tr>';
         }
         if ($rows === '') { $rows = '<tr><td colspan="5">No filing evidence bundles exist for the selected accounting period.</td></tr>'; }
@@ -51,10 +54,10 @@ final class _year_end_evidence_bundlesCard extends CardBaseFramework
                 . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
                 . '<input type="hidden" name="card_action" value="YearEnd"><input type="hidden" name="intent" value="cleanup_unused_historic_filing_evidence">'
                 . '<input type="hidden" name="company_id" value="' . (int)($company['id'] ?? 0) . '"><input type="hidden" name="accounting_period_id" value="' . (int)($company['accounting_period_id'] ?? 0) . '">'
-                . '<button class="button danger" type="submit" title="Developer only" data-chicken-check="true" data-chicken-title="Remove unused historic evidence" data-chicken-message="Remove ' . $eligible . ' unused historic evidence bundle(s) for this accounting period?<br><br>Latest evidence, the current evidence bundle for a locked period, and any bundle used by an approval, submission, or completed artifact are retained. Bundle records and their dependent snapshots, artifacts, and events are removed. Files on disk are not deleted." data-chicken-confirm-text="Remove evidence" data-chicken-button-class="button danger">Remove unused historic evidence</button></form></div>';
+                . '<button class="button danger" type="submit" title="Developer only" data-chicken-check="true" data-chicken-title="Remove unused historic evidence" data-chicken-message="Remove ' . $eligible . ' unused historic evidence bundle(s) for this accounting period?<br><br>Latest evidence and the current evidence bundle for a locked period are retained. A historic bundle is retained only for an artifact that still exists on disk, has an existing iXBRL source run, and belongs to a transmitted filing. Bundle records and their dependent snapshots, artifacts, and events are removed. Files on disk are not deleted." data-chicken-confirm-text="Remove evidence" data-chicken-button-class="button danger">Remove unused historic evidence</button></form></div>';
         }
 
-        return '<p class="helper">Frozen Year End filing evidence for the selected accounting period. Completed artifacts and filing links keep a historic bundle.</p>'
+        return '<p class="helper">Frozen Year End filing evidence for the selected accounting period. Historic evidence is retained only for an on-disk artifact linked to an existing iXBRL run and transmitted filing.</p>'
             . '<div class="table-scroll"><table><thead><tr><th>Evidence bundle</th><th>Lifecycle</th><th>Locked</th><th>Frozen content</th><th>Retention</th></tr></thead><tbody>'
             . $rows . '</tbody></table></div>' . $cleanup;
     }

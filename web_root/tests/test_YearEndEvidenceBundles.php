@@ -16,12 +16,14 @@ $h->run(_year_end_evidence_bundlesCard::class, static function (GeneratedService
         $html = $card->render(['company' => ['id' => 49, 'accounting_period_id' => 79], 'services' => ['year_end_evidence_bundles' => [
             'eligible_count' => 1,
             'bundles' => [
-                ['id' => 21, 'display_id' => 'EEL-FE-0000', 'lifecycle_status' => 'superseded', 'locked_at' => '2026-07-27', 'locked_by' => 'James', 'snapshot_count' => 2, 'artifact_count' => 0, 'eligible_for_cleanup' => true, 'retained_reasons' => []],
-                ['id' => 22, 'display_id' => 'EEL-FE-1111', 'lifecycle_status' => 'current', 'locked_at' => '2026-07-28', 'locked_by' => 'James', 'snapshot_count' => 2, 'artifact_count' => 1, 'eligible_for_cleanup' => false, 'retained_reasons' => ['Latest version', 'Completed filing artifact']],
+                ['id' => 21, 'display_id' => 'EEL-FE-0000', 'lifecycle_status' => 'superseded', 'locked_at' => '2026-07-27', 'locked_by' => 'James', 'snapshot_count' => 2, 'artifact_count' => 0, 'active_artifact_count' => 0, 'eligible_for_cleanup' => true, 'retained_reasons' => []],
+                ['id' => 22, 'display_id' => 'EEL-FE-1111', 'lifecycle_status' => 'current', 'locked_at' => '2026-07-28', 'locked_by' => 'James', 'snapshot_count' => 2, 'artifact_count' => 8, 'active_artifact_count' => 0, 'eligible_for_cleanup' => false, 'retained_reasons' => ['Latest version', 'Transmitted filing artifact']],
             ],
         ]]]);
         $h->assertTrue(str_contains($html, 'Unused historic'));
-        $h->assertTrue(str_contains($html, 'Latest version, Completed filing artifact'));
+        $h->assertTrue(str_contains($html, 'Latest version, Transmitted filing artifact'));
+        $h->assertTrue(str_contains($html, '0 active artifacts'));
+        $h->assertFalse(str_contains($html, '8 artifacts'));
         $h->assertTrue(str_contains($html, 'Frozen Year End filing evidence'));
     });
 });
@@ -29,6 +31,9 @@ $h->run(\eel_accounts\Service\FilingEvidenceService::class, static function (Gen
     $h->check(\eel_accounts\Service\FilingEvidenceService::class, 'defines safe historic cleanup retention checks and successor re-parenting', static function () use ($h): void {
         $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'classes' . DIRECTORY_SEPARATOR . 'eel_accounts' . DIRECTORY_SEPARATOR . 'service' . DIRECTORY_SEPARATOR . 'FilingEvidenceService.php');
         $h->assertTrue(str_contains($source, "artifact_status IN ('generated', 'validated', 'historical')"));
+        $h->assertTrue(str_contains($source, 'is_file($path)'));
+        $h->assertTrue(str_contains($source, 'submission.submitted_at IS NOT NULL'));
+        $h->assertTrue(str_contains($source, 'ixbrl_generation_runs'));
         $h->assertTrue(str_contains($source, 'UPDATE filing_evidence_bundles'));
         $h->assertTrue(str_contains($source, 'cleanupUnusedHistoricForAccountingPeriod'));
         $h->assertTrue(str_contains($source, 'is_current_for_locked_period'));

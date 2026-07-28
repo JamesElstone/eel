@@ -9,7 +9,12 @@ declare(strict_types=1);
 
 namespace eel_accounts\Service;
 
-/** Live party terms with immutable accounting-period snapshots. */
+/**
+ * Directional party terms with immutable accounting-period snapshots.
+ *
+ * The original structured columns are creditor (participator-to-company)
+ * terms. Company-to-participator advance terms are separate evidence.
+ */
 final class ParticipatorLoanPartyTermsService
 {
     private const TERMS = 'participator_loan_party_terms';
@@ -37,6 +42,8 @@ final class ParticipatorLoanPartyTermsService
             'party' => $party,
             'terms' => $terms,
             'explicit' => $snapshot !== null || $live !== null,
+            'funding_terms_explicit' => $snapshot !== null || $live !== null,
+            'advance_terms_explicit' => !empty($terms['advance_terms_explicit']),
             'terms_source' => $snapshot !== null ? 'locked_snapshot' : ($live !== null ? 'live' : 'default'),
             'is_locked' => $locked,
             'schema_ready' => true,
@@ -55,6 +62,7 @@ final class ParticipatorLoanPartyTermsService
             }
             return $snapshot['terms'] + [
                 'explicit' => true,
+                'funding_terms_explicit' => true,
                 'terms_source' => 'locked_snapshot',
                 'liability_nominal_account_id' => (int)$snapshot['liability_nominal_account_id'],
             ];
@@ -63,6 +71,7 @@ final class ParticipatorLoanPartyTermsService
         $live = $this->live($companyId, $partyId);
         return ($live ?? $this->defaults()) + [
             'explicit' => $live !== null,
+            'funding_terms_explicit' => $live !== null,
             'terms_source' => $live !== null ? 'live' : 'default',
             'liability_nominal_account_id' => 0,
         ];
@@ -123,12 +132,29 @@ final class ParticipatorLoanPartyTermsService
         if ($repaymentValues === null) {
             return $this->error('Select one valid repayment basis.');
         }
-        $terms = $this->normalise(array_replace($input, $repaymentValues));
-        if ($terms === null) {
+        $fundingTerms = $this->normalise(array_replace($input, $repaymentValues));
+        if ($fundingTerms === null) {
             return $this->error('Enter valid participator loan terms.');
         }
 
         $old = $this->live($companyId, $partyId);
+        $advanceTerms = $old['advance_terms'] ?? null;
+        if (array_key_exists('advance_terms', $input)
+            || trim((string)($input['advance_repayment_basis'] ?? '')) !== '') {
+            $advanceInput = array_key_exists('advance_terms', $input)
+                ? (array)$input['advance_terms']
+                : [
+                    'interest_rate_percent' => $input['advance_interest_rate_percent'] ?? 0,
+                    'security_type' => $input['advance_security_type'] ?? 'unsecured',
+                    'repayment_basis' => $input['advance_repayment_basis'] ?? '',
+                    'fixed_repayment_date' => $input['advance_fixed_repayment_date'] ?? '',
+                ];
+            $advanceTerms = $this->normaliseAdvanceTerms($advanceInput);
+            if ($advanceTerms === null) {
+                return $this->error('Select valid company-to-participator advance terms.');
+            }
+        }
+        $terms = $this->record($fundingTerms, $advanceTerms);
         $oldRevision = (int)($old['revision'] ?? 0);
         $json = \eel_accounts\Support\PersistentJson::encode($terms, JSON_UNESCAPED_SLASHES);
         if ($old !== null
@@ -152,6 +178,9 @@ final class ParticipatorLoanPartyTermsService
                 'party_id' => $partyId,
                 'actor' => substr(trim($changedBy) !== '' ? trim($changedBy) : 'web_app', 0, 100),
                 'revision' => $oldRevision + 1,
+                'advance_terms_json' => $terms['advance_terms'] === null
+                    ? null
+                    : \eel_accounts\Support\PersistentJson::encode($terms['advance_terms'], JSON_UNESCAPED_SLASHES),
             ];
             if ($old !== null) {
                 \InterfaceDB::prepareExecute(
@@ -163,6 +192,7 @@ final class ParticipatorLoanPartyTermsService
                          deferment_right_confirmed = :deferment_right_confirmed,
                          set_off_right_confirmed = :set_off_right_confirmed,
                          settlement_intention = :settlement_intention,
+                         advance_terms_json = :advance_terms_json,
                          revision = :revision,
                          updated_by = :actor,
                          updated_at = CURRENT_TIMESTAMP
@@ -174,11 +204,13 @@ final class ParticipatorLoanPartyTermsService
                     'INSERT INTO ' . self::TERMS . ' (
                         company_id, party_id, ' . $rateColumn . ', security_type,
                         repayable_on_demand, repayment_timing, deferment_right_confirmed,
-                        set_off_right_confirmed, settlement_intention, revision, created_by, updated_by
+                        set_off_right_confirmed, settlement_intention, advance_terms_json,
+                        revision, created_by, updated_by
                      ) VALUES (
                         :company_id, :party_id, :interest_rate_percent, :security_type,
                         :repayable_on_demand, :repayment_timing, :deferment_right_confirmed,
-                        :set_off_right_confirmed, :settlement_intention, :revision, :actor, :actor
+                        :set_off_right_confirmed, :settlement_intention, :advance_terms_json,
+                        :revision, :actor, :actor
                      )',
                     $params
                 );
@@ -231,6 +263,14 @@ final class ParticipatorLoanPartyTermsService
 
         $relevant = [];
         $missing = [];
+        $missingAdvanceTerms = [];
+        $disclosure = (new DirectorLoanService())->fetchDisclosureSummary($companyId, $accountingPeriodId);
+        $advanceRequired = [];
+        foreach ((array)($disclosure['disclosures'] ?? []) as $row) {
+            if (!empty($row['section_413_required'])) {
+                $advanceRequired[(int)($row['party_id'] ?? $row['director_id'] ?? 0)] = true;
+            }
+        }
         foreach ((array)$statement['per_director'] as $position) {
             $partyId = (int)($position['director_id'] ?? 0);
             if ($partyId <= 0 || !$this->positionRequiresTerms((array)$position)) {
@@ -241,10 +281,19 @@ final class ParticipatorLoanPartyTermsService
                 $missing[] = (string)($position['director_name'] ?? ('Party #' . $partyId));
                 continue;
             }
+            if (!empty($advanceRequired[$partyId]) && empty($terms['advance_terms_explicit'])) {
+                $missingAdvanceTerms[] = (string)($position['director_name'] ?? ('Party #' . $partyId));
+            }
             $relevant[] = ['party_id' => $partyId, 'terms' => $terms];
         }
         if ($missing !== []) {
             return $this->error('Save Participator Loan terms for: ' . implode(', ', array_values(array_unique($missing))) . '.');
+        }
+        if ($missingAdvanceTerms !== []) {
+            return $this->error(
+                'Record company-to-participator advance terms before freezing: '
+                . implode(', ', array_values(array_unique($missingAdvanceTerms))) . '.'
+            );
         }
 
         $nominalId = (int)($statement['liability_nominal']['id'] ?? 0);
@@ -341,8 +390,15 @@ final class ParticipatorLoanPartyTermsService
             && array_key_exists('INTEGERerest_rate_percent', $row)) {
             $row['interest_rate_percent'] = $row['INTEGERerest_rate_percent'];
         }
-        $normalised = is_array($row) ? $this->normalise($row) : null;
-        return $normalised !== null ? $normalised + ['revision' => (int)($row['revision'] ?? 0)] : null;
+        if (!is_array($row)) {
+            return null;
+        }
+        $normalised = $this->normalise($row);
+        if ($normalised === null) {
+            return null;
+        }
+        $advance = $this->decodeAdvanceTerms((string)($row['advance_terms_json'] ?? ''));
+        return $this->record($normalised, $advance) + ['revision' => (int)($row['revision'] ?? 0)];
     }
 
     /**
@@ -381,6 +437,7 @@ final class ParticipatorLoanPartyTermsService
         if ($terms === null) {
             throw new \RuntimeException('The saved Participator Loan terms snapshot is invalid.');
         }
+        $terms = $this->record($terms, $this->normaliseAdvanceTerms((array)($decoded['advance_terms'] ?? [])));
         $terms['revision'] = max(0, (int)($decoded['revision'] ?? 0));
         return [
             'terms' => $terms,
@@ -416,7 +473,7 @@ final class ParticipatorLoanPartyTermsService
 
     private function defaults(): array
     {
-        return [
+        return $this->record([
             'interest_rate_percent' => 0.0,
             'security_type' => 'unsecured',
             'repayable_on_demand' => 1,
@@ -424,7 +481,59 @@ final class ParticipatorLoanPartyTermsService
             'deferment_right_confirmed' => 0,
             'set_off_right_confirmed' => 0,
             'settlement_intention' => 'independently',
-            'revision' => 0,
+        ], null) + ['revision' => 0];
+    }
+
+    /** @param array<string,mixed> $fundingTerms */
+    private function record(array $fundingTerms, ?array $advanceTerms): array
+    {
+        return $fundingTerms + [
+            'funding_terms' => $fundingTerms,
+            'advance_terms' => $advanceTerms,
+            'advance_terms_explicit' => $advanceTerms !== null,
+        ];
+    }
+
+    private function decodeAdvanceTerms(string $json): ?array
+    {
+        if (trim($json) === '') {
+            return null;
+        }
+        $decoded = json_decode($json, true);
+        return is_array($decoded) ? $this->normaliseAdvanceTerms($decoded) : null;
+    }
+
+    /**
+     * `no_fixed_date` is intentional evidence, not an inference from a null
+     * repayment date. An absent payload remains genuinely unknown.
+     */
+    private function normaliseAdvanceTerms(array $values): ?array
+    {
+        if ($values === []) {
+            return null;
+        }
+        $basis = trim((string)($values['repayment_basis'] ?? ''));
+        $rate = (float)($values['interest_rate_percent'] ?? 0);
+        $security = trim((string)($values['security_type'] ?? 'unsecured'));
+        $date = trim((string)($values['fixed_repayment_date'] ?? ''));
+        if (!in_array($basis, ['on_demand', 'no_fixed_date', 'fixed_date'], true)
+            || $rate < 0 || $rate > 100
+            || !in_array($security, ['secured', 'unsecured'], true)) {
+            return null;
+        }
+        if ($basis === 'fixed_date') {
+            $parsed = \DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+            if ($parsed === false || $parsed->format('Y-m-d') !== $date) {
+                return null;
+            }
+        } else {
+            $date = '';
+        }
+        return [
+            'interest_rate_percent' => round($rate, 4),
+            'security_type' => $security,
+            'repayment_basis' => $basis,
+            'fixed_repayment_date' => $date,
         ];
     }
 
@@ -539,14 +648,17 @@ final class ParticipatorLoanPartyTermsService
 
     private function withoutMeta(array $values): array
     {
-        return $this->normalise($values) ?? array_diff_key($this->defaults(), ['revision' => true]);
+        $funding = $this->normalise($values)
+            ?? array_diff_key($this->defaults(), ['revision' => true, 'funding_terms' => true, 'advance_terms' => true, 'advance_terms_explicit' => true]);
+        return $this->record($funding, $this->normaliseAdvanceTerms((array)($values['advance_terms'] ?? [])));
     }
 
     private function ready(): bool
     {
         return \InterfaceDB::tableExists(self::TERMS)
             && \InterfaceDB::tableExists(self::AUDIT)
-            && \InterfaceDB::tableExists(self::SNAPSHOTS);
+            && \InterfaceDB::tableExists(self::SNAPSHOTS)
+            && \InterfaceDB::columnExists(self::TERMS, 'advance_terms_json');
     }
 
     private function error(string $message): array

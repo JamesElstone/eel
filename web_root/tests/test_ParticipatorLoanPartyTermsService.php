@@ -324,6 +324,42 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             \eel_accounts\Service\ParticipatorLoanPartyTermsService::class,
+            'blocks a period freeze when a historical advance has no independent advance terms',
+            static function () use ($harness, $service): void {
+                participatorLoanTermsSnapshotTestWithFixture(
+                    $harness,
+                    static function (array $fixture) use ($harness, $service): void {
+                        participatorLoanTermsSnapshotTestInsertNetZeroMovement($fixture);
+                        $saved = $service->save(
+                            (int)$fixture['company_id'],
+                            (int)$fixture['party_id'],
+                            [
+                                'interest_rate_percent' => 0,
+                                'security_type' => 'unsecured',
+                                'repayment_basis' => 'after_12_months',
+                                'set_off_right_confirmed' => 0,
+                                'settlement_intention' => 'independently',
+                            ],
+                            'creditor-only-test'
+                        );
+                        $harness->assertSame(true, (bool)($saved['success'] ?? false));
+                        $frozen = $service->snapshotPeriod(
+                            (int)$fixture['company_id'],
+                            (int)$fixture['accounting_period_id'],
+                            'snapshot-test'
+                        );
+                        $harness->assertSame(false, (bool)($frozen['success'] ?? true));
+                        $harness->assertTrue(str_contains(
+                            strtolower((string)(($frozen['errors'] ?? [])[0] ?? '')),
+                            'company-to-participator advance terms'
+                        ));
+                    }
+                );
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Service\ParticipatorLoanPartyTermsService::class,
             'atomically replaces an existing period snapshot with current live terms on relock',
             static function () use ($harness, $service): void {
                 participatorLoanTermsSnapshotTestWithFixture(
@@ -629,6 +665,9 @@ function participatorLoanTermsSnapshotTestSave(
             'deferment_right_confirmed' => 1,
             'set_off_right_confirmed' => 1,
             'settlement_intention' => 'simultaneous',
+            'advance_interest_rate_percent' => $interestRate,
+            'advance_security_type' => 'unsecured',
+            'advance_repayment_basis' => 'no_fixed_date',
         ],
         'snapshot-test'
     );

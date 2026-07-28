@@ -36,6 +36,10 @@ final class DirectorLoanAction implements ActionInterfaceFramework
                         'repayment_basis' => $repaymentBasis,
                         'set_off_right_confirmed' => $this->checked($request->input('set_off_right_confirmed', '')),
                         'settlement_intention' => (string)$request->input('settlement_intention', 'independently'),
+                        'advance_repayment_basis' => (string)$request->input('advance_repayment_basis', ''),
+                        'advance_interest_rate_percent' => (string)$request->input('advance_interest_rate_percent', '0'),
+                        'advance_security_type' => (string)$request->input('advance_security_type', 'unsecured'),
+                        'advance_fixed_repayment_date' => (string)$request->input('advance_fixed_repayment_date', ''),
                     ],
                     $this->actor($request)
                 ),

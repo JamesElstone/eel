@@ -200,8 +200,9 @@ final class DirectorLoanService
                     'liability_nominal' => $liabilityNominal,
                 ];
             }
-            $setOffPermitted = !empty($partyTerms['set_off_right_confirmed'])
-                && in_array((string)($partyTerms['settlement_intention'] ?? ''), ['net', 'simultaneous'], true);
+            $fundingTerms = (array)($partyTerms['funding_terms'] ?? $partyTerms);
+            $setOffPermitted = !empty($fundingTerms['set_off_right_confirmed'])
+                && in_array((string)($fundingTerms['settlement_intention'] ?? ''), ['net', 'simultaneous'], true);
             $desired = $key === 'unattributed' || !$setOffPermitted
                 ? 0.0
                 : round(min(max(0.0, $asset), max(0.0, $liability)), 2);
@@ -210,9 +211,9 @@ final class DirectorLoanService
             $reportableLiability = round(max(0.0, $liability - $desired), 2);
             $hasPeriodMovement = (int)($position['period_movement_count'] ?? 0) > 0;
             $hasClosingPosition = abs($asset) >= 0.005 || abs($liability) >= 0.005;
-            $classification = (string)($partyTerms['repayment_timing'] ?? 'within_12_months') === 'after_12_months'
-                && !empty($partyTerms['deferment_right_confirmed'])
-                && empty($partyTerms['repayable_on_demand'])
+            $classification = (string)($fundingTerms['repayment_timing'] ?? 'within_12_months') === 'after_12_months'
+                && !empty($fundingTerms['deferment_right_confirmed'])
+                && empty($fundingTerms['repayable_on_demand'])
                 ? DirectorLoanReportingPresentationService::AFTER_MORE_THAN_ONE_YEAR
                 : DirectorLoanReportingPresentationService::WITHIN_ONE_YEAR;
             $resolvedLiabilityNominalId = (int)($partyTerms['liability_nominal_account_id'] ?? 0);
@@ -230,9 +231,11 @@ final class DirectorLoanService
                 'gross_liability' => $liability,
                 'desired_reclassification' => $desired,
                 'set_off_permitted' => $setOffPermitted,
-                'set_off_conclusion' => $this->setOffConclusion($partyTerms, $setOffPermitted),
+                'set_off_conclusion' => $this->setOffConclusion($fundingTerms, $setOffPermitted),
                 'party_terms' => $partyTerms,
                 'terms_saved' => !empty($partyTerms['explicit']),
+                'funding_terms_saved' => !empty($partyTerms['funding_terms_explicit']),
+                'advance_terms_saved' => !empty($partyTerms['advance_terms_explicit']),
                 'terms_source' => (string)($partyTerms['terms_source'] ?? ($partyId > 0 ? 'default' : 'unattributed')),
                 'terms_revision' => max(0, (int)($partyTerms['revision'] ?? 0)),
                 'terms_snapshot' => (string)($partyTerms['terms_source'] ?? '') === 'locked_snapshot',
@@ -464,18 +467,26 @@ final class DirectorLoanService
             ) >= 0.005;
 
             $presentation = (array)($position['party_terms'] ?? []);
-            // Use the approved evidence verbatim.  A balance-sheet maturity
-            // classification is not a contractual repayment term and must not
-            // be restated as one in the statutory director-loan note.
-            $mainTerms = trim((string)($presentation['main_terms'] ?? ''));
-            $repaymentConditions = trim((string)($presentation['repayment_conditions'] ?? ''));
-            if ($mainTerms === '') {
-                $mainTerms = ucfirst((string)($presentation['security_type'] ?? 'unsecured')) . '.';
-            }
-            if ($repaymentConditions === '') {
-                $repaymentConditions = !empty($presentation['repayable_on_demand'])
-                    ? 'Repayable on demand.'
-                    : 'Repayment terms were not recorded.';
+            $advanceTerms = (array)($presentation['advance_terms'] ?? []);
+            $advanceTermsExplicit = !empty($presentation['advance_terms_explicit']) && $advanceTerms !== [];
+            // A creditor maturity classification is never used as evidence of
+            // the historical terms on a company-to-participator advance.
+            if ($advanceTermsExplicit) {
+                $mainTerms = ucfirst((string)($advanceTerms['security_type'] ?? 'unsecured'))
+                    . '. Interest rate: '
+                    . DirectorLoanReportingPresentationService::formatInterestRate(
+                        (float)($advanceTerms['interest_rate_percent'] ?? 0)
+                    )
+                    . '.';
+                $repaymentConditions = match ((string)($advanceTerms['repayment_basis'] ?? '')) {
+                    'on_demand' => 'Repayable on demand.',
+                    'no_fixed_date' => 'No fixed repayment date was agreed.',
+                    'fixed_date' => 'Repayable on ' . (string)($advanceTerms['fixed_repayment_date'] ?? '') . '.',
+                    default => 'Advance repayment condition requires filing review.',
+                };
+            } else {
+                $mainTerms = 'Company-to-participator advance terms require filing review.';
+                $repaymentConditions = 'No advance repayment condition has been confirmed.';
             }
             $row = [
                 'director_id' => $position['director_id'] ?? null,
@@ -499,13 +510,14 @@ final class DirectorLoanService
                 'director_funding' => round($directorFunding, 2),
                 'closing_company_to_director_balance' => $closingReceivable,
                 'closing_company_liability' => $closingLiability,
-                'interest_rate_percent' => (float)($presentation['interest_rate_percent'] ?? 0),
+                'interest_rate_percent' => (float)($advanceTerms['interest_rate_percent'] ?? 0),
                 'interest_rate' => DirectorLoanReportingPresentationService::formatInterestRate(
-                    (float)($presentation['interest_rate_percent'] ?? 0)
+                    (float)($advanceTerms['interest_rate_percent'] ?? 0)
                 ),
                 'main_terms' => $mainTerms,
                 'repayment_conditions' => $repaymentConditions,
                 'main_conditions' => $mainTerms . ' ' . $repaymentConditions,
+                'advance_terms_explicit' => $advanceTermsExplicit,
                 'set_off_permitted' => !empty($position['set_off_permitted']),
                 'section_413_required' => $hasDisclosure,
             ];

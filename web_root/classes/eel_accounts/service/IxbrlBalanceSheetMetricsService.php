@@ -394,6 +394,7 @@ final class IxbrlBalanceSheetMetricsService
                 continue;
             }
             $terms = (array)($position['terms'] ?? $position['party_terms'] ?? []);
+            $fundingTerms = (array)($terms['funding_terms'] ?? $terms);
             $partyId = (int)($position['party_id'] ?? $position['director_id'] ?? 0);
             $grossAsset = round((float)($position['gross_asset'] ?? 0), 2);
             $grossLiability = round((float)($position['gross_liability'] ?? 0), 2);
@@ -416,13 +417,13 @@ final class IxbrlBalanceSheetMetricsService
             }
 
             $normalisedTerms = [
-                'interest_rate_percent' => (float)($position['interest_rate_percent'] ?? $terms['interest_rate_percent'] ?? 0),
-                'security_type' => (string)($position['security_type'] ?? $terms['security_type'] ?? 'unsecured'),
-                'repayable_on_demand' => !empty($position['repayable_on_demand'] ?? $terms['repayable_on_demand'] ?? false),
-                'repayment_timing' => (string)($position['repayment_timing'] ?? $terms['repayment_timing'] ?? 'within_12_months'),
-                'deferment_right_confirmed' => !empty($position['deferment_right_confirmed'] ?? $terms['deferment_right_confirmed'] ?? false),
-                'set_off_right_confirmed' => !empty($position['set_off_right_confirmed'] ?? $terms['set_off_right_confirmed'] ?? false),
-                'settlement_intention' => (string)($position['settlement_intention'] ?? $terms['settlement_intention'] ?? 'independently'),
+                'interest_rate_percent' => (float)($position['interest_rate_percent'] ?? $fundingTerms['interest_rate_percent'] ?? 0),
+                'security_type' => (string)($position['security_type'] ?? $fundingTerms['security_type'] ?? 'unsecured'),
+                'repayable_on_demand' => !empty($position['repayable_on_demand'] ?? $fundingTerms['repayable_on_demand'] ?? false),
+                'repayment_timing' => (string)($position['repayment_timing'] ?? $fundingTerms['repayment_timing'] ?? 'within_12_months'),
+                'deferment_right_confirmed' => !empty($position['deferment_right_confirmed'] ?? $fundingTerms['deferment_right_confirmed'] ?? false),
+                'set_off_right_confirmed' => !empty($position['set_off_right_confirmed'] ?? $fundingTerms['set_off_right_confirmed'] ?? false),
+                'settlement_intention' => (string)($position['settlement_intention'] ?? $fundingTerms['settlement_intention'] ?? 'independently'),
             ];
             $facts[] = [
                 'party_id' => $partyId > 0 ? $partyId : null,

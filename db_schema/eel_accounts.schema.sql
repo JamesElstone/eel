@@ -3665,6 +3665,7 @@ CREATE TABLE `participator_loan_party_terms` (
   `deferment_right_confirmed` tinyint(1) NOT NULL DEFAULT 0,
   `set_off_right_confirmed` tinyint(1) NOT NULL DEFAULT 0,
   `settlement_intention` enum('net','simultaneous','independently') NOT NULL DEFAULT 'independently',
+  `advance_terms_json` longtext DEFAULT NULL,
   `revision` int(10) unsigned NOT NULL DEFAULT 1,
   `created_by` varchar(100) NOT NULL,
   `updated_by` varchar(100) NOT NULL,
@@ -3991,6 +3992,8 @@ INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_26_004_ixbrl_approving_director.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_26_006_participator_loan_party_terms.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_28_001_participator_loan_directional_terms.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_27_001_arelle_logs_directory.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES

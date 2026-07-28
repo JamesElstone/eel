@@ -47,6 +47,25 @@ final class LoanReviewService
                 'party_name' => $partyName,
             ]);
         }
+        $disclosure = (new DirectorLoanService())->fetchDisclosureSummary($companyId, $accountingPeriodId);
+        foreach ((array)($disclosure['disclosures'] ?? []) as $row) {
+            if (empty($row['section_413_required']) || !empty($row['advance_terms_explicit'])) {
+                continue;
+            }
+            $partyName = trim((string)($row['director_name'] ?? '')) ?: 'Participator';
+            $this->appendItem($items, [
+                'kind' => 'advance_terms',
+                'state' => 'requires_action',
+                'title' => 'Company-to-participator advance terms are required',
+                'detail' => $partyName . ' has a reportable company advance, but its repayment condition has not been confirmed independently of creditor terms.',
+                'source_label' => 'Advance terms',
+                'source_url' => '?page=loans&show_card=director_loan_terms',
+                'action_label' => 'Record advance terms',
+                'action_url' => '?page=loans&show_card=director_loan_terms',
+                'party_id' => (int)($row['party_id'] ?? 0),
+                'party_name' => $partyName,
+            ]);
+        }
         foreach ((array)($statement['attribution_entries'] ?? []) as $entry) {
             if (!is_array($entry) || (int)($entry['director_id'] ?? 0) > 0) {
                 continue;

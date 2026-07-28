@@ -5,7 +5,7 @@ final class _director_loan_termsCard extends CardBaseFramework
 {
     public function key(): string { return 'director_loan_terms'; }
     public function title(): string { return 'Terms'; }
-    public function helper(array $context): string { return 'Maintain terms by participator loan party. Locked periods retain a read-only snapshot.'; }
+    public function helper(array $context): string { return 'Maintain separate terms for director funding (creditor classification) and company advances (statutory disclosure). Locked periods retain a read-only snapshot.'; }
     public function services(): array { return [[
         'key'=>'partyTerms','service'=>\eel_accounts\Service\ParticipatorLoanPartyTermsService::class,'method'=>'fetchTermsWorkspace',
         'params'=>['companyId'=>':company.id','accountingPeriodId'=>':company.accounting_period_id'],
@@ -38,11 +38,12 @@ final class _director_loan_termsCard extends CardBaseFramework
         return '<form id="participator-loan-terms-' . $partyId . '" method="post" data-ajax="true" class="panel-soft settings-stack">'.HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             .'<input type="hidden" name="card_action" value="DirectorLoan"><input type="hidden" name="intent" value="save_participator_loan_party_terms"><input type="hidden" name="company_id" value="'.$companyId.'"><input type="hidden" name="accounting_period_id" value="'.$periodId.'"><input type="hidden" name="party_id" value="'.$partyId.'">'
             .'<div class="status-head"><div><h3 class="card-title">'.($hasSavedTerms ? 'Edit terms' : 'Add terms').'</h3><div class="helper">'.HelperFramework::escape((string)($party['legal_name']??'Participator')).'</div></div>'.($locked?'<span class="badge warning">Locked snapshot</span>':'').'</div>'
-            .'<div class="participator-loan-terms-fields"><label><span class="helper">Interest rate (%)</span><input class="input" type="number" name="interest_rate_percent" data-no-submit-on-change="true" min="0" max="100" step="0.0001" value="'.HelperFramework::escape(number_format((float)($terms['interest_rate_percent']??0),4,'.','')).'"'.$disabled.'></label>'
+            .'<h4 class="card-title">Participator-to-company funding (creditor)</h4><div class="participator-loan-terms-fields"><label><span class="helper">Interest rate (%)</span><input class="input" type="number" name="interest_rate_percent" data-no-submit-on-change="true" min="0" max="100" step="0.0001" value="'.HelperFramework::escape(number_format((float)($terms['interest_rate_percent']??0),4,'.','')).'"'.$disabled.'></label>'
             .'<label><span class="helper">Security</span><select class="select" name="security_type" data-no-submit-on-change="true"'.$disabled.'><option value="unsecured"'.$option('security_type','unsecured').'>Unsecured</option><option value="secured"'.$option('security_type','secured').'>Secured</option></select></label>'
-            .'<label><span class="helper">When can the director require repayment?</span><select class="select" name="repayment_basis" data-no-submit-on-change="true" required'.$disabled.'>'.$this->repaymentBasisOptions($repaymentBasis).'</select><span class="helper">Applies to the entire party balance at the accounting-period end.</span></label>'
+            .'<label><span class="helper">When can the director require repayment?</span><select class="select" name="repayment_basis" data-no-submit-on-change="true" required'.$disabled.'>'.$this->repaymentBasisOptions($repaymentBasis).'</select><span class="helper">Used only for the closing creditor classification.</span></label>'
             .'<label><span class="helper">Settlement intention</span><select class="select" name="settlement_intention" data-no-submit-on-change="true"'.$disabled.'><option value="independently"'.$option('settlement_intention','independently').'>Independently</option><option value="net"'.$option('settlement_intention','net').'>Net</option><option value="simultaneous"'.$option('settlement_intention','simultaneous').'>Simultaneous</option></select></label></div>'
             .'<label class="checkbox-row"><input type="checkbox" name="set_off_right_confirmed" value="1"'.$checked('set_off_right_confirmed').$disabled.'><span>A legally enforceable right of set-off exists.</span></label>'
+            .$this->advanceTermsFields((array)($terms['advance_terms']??[]),$disabled)
             .($locked?'':'<div><button class="button primary" type="submit">Save terms</button></div>').'</form>';
     }
     private function addForm(int $companyId, int $periodId, array $entries): string
@@ -65,14 +66,26 @@ final class _director_loan_termsCard extends CardBaseFramework
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="DirectorLoan"><input type="hidden" name="intent" value="save_participator_loan_party_terms"><input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $periodId . '">'
             . '<h3 class="card-title" data-participator-loan-terms-title>Add terms</h3><label class="participator-loan-terms-entity-field"><span class="helper">Entity</span><select class="select" name="party_id" data-participator-loan-terms-entity data-no-submit-on-change="true" required>' . $options . '</select></label>'
-            . '<div class="participator-loan-terms-fields"><label><span class="helper">Interest rate (%)</span><input class="input" type="number" name="interest_rate_percent" data-no-submit-on-change="true" min="0" max="100" step="0.0001" value="0.0000"></label>'
+            . '<h4 class="card-title">Participator-to-company funding (creditor)</h4><div class="participator-loan-terms-fields"><label><span class="helper">Interest rate (%)</span><input class="input" type="number" name="interest_rate_percent" data-no-submit-on-change="true" min="0" max="100" step="0.0001" value="0.0000"></label>'
             . '<label><span class="helper">Security</span><select class="select" name="security_type" data-no-submit-on-change="true"><option value="unsecured">Unsecured</option><option value="secured">Secured</option></select></label>'
             . '<label><span class="helper">When can the director require repayment?</span><select class="select" name="repayment_basis" data-no-submit-on-change="true" required>' . $this->repaymentBasisOptions('') . '</select><span class="helper">Applies to the entire party balance at the accounting-period end.</span></label>'
             . '<label><span class="helper">Settlement intention</span><select class="select" name="settlement_intention" data-no-submit-on-change="true"><option value="independently">Independently</option><option value="net">Net</option><option value="simultaneous">Simultaneous</option></select></label></div>'
             . '<label class="checkbox-row"><input type="checkbox" name="set_off_right_confirmed" value="1"><span>A legally enforceable right of set-off exists.</span></label>'
+            . $this->advanceTermsFields([], '')
             . '<div><button class="button primary" type="submit">Save terms</button></div></form>';
     }
     private function errors(array $errors): string { return implode('',array_map(static fn($e)=>'<div class="helper">'.HelperFramework::escape((string)$e).'</div>',$errors)); }
+
+    private function advanceTermsFields(array $terms, string $disabled): string
+    {
+        $basis=(string)($terms['repayment_basis']??'');
+        $option=static fn(string $value): string => $basis===$value?' selected':'';
+        return '<h4 class="card-title">Company-to-participator advance (statutory disclosure)</h4><div class="helper">Complete this only from the advance agreement. Creditor due-date evidence is not reused here; leave it unselected if the condition is unknown.</div><div class="participator-loan-terms-fields">'
+            .'<label><span class="helper">Interest rate (%)</span><input class="input" type="number" name="advance_interest_rate_percent" data-no-submit-on-change="true" min="0" max="100" step="0.0001" value="'.HelperFramework::escape(number_format((float)($terms['interest_rate_percent']??0),4,'.','')).'"'.$disabled.'></label>'
+            .'<label><span class="helper">Security</span><select class="select" name="advance_security_type" data-no-submit-on-change="true"'.$disabled.'><option value="unsecured"'.((string)($terms['security_type']??'unsecured')==='unsecured'?' selected':'').'>Unsecured</option><option value="secured"'.((string)($terms['security_type']??'')==='secured'?' selected':'').'>Secured</option></select></label>'
+            .'<label><span class="helper">Advance repayment condition</span><select class="select" name="advance_repayment_basis" data-no-submit-on-change="true"'.$disabled.'><option value=""'.$option('').'>Not confirmed</option><option value="on_demand"'.$option('on_demand').'>Repayable on demand</option><option value="no_fixed_date"'.$option('no_fixed_date').'>No fixed repayment date was agreed</option><option value="fixed_date"'.$option('fixed_date').'>Fixed repayment date</option></select></label>'
+            .'<label><span class="helper">Fixed repayment date</span><input class="input" type="date" name="advance_fixed_repayment_date" data-no-submit-on-change="true" value="'.HelperFramework::escape((string)($terms['fixed_repayment_date']??'')).'"'.$disabled.'></label></div>';
+    }
 
     private function termsTable(array $entries): TableFramework
     {

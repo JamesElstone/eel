@@ -102,7 +102,11 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
             ));
             $harness->assertTrue(str_contains(
                 $statementText,
-                'Main terms: Unsecured. Interest rate: 0%. Repayment conditions: Repayable after more than 12 months.'
+                'Company-to-participator advance terms require filing review.'
+            ));
+            $harness->assertSame(false, str_contains(
+                $statementText,
+                'Repayment conditions: Repayable after more than 12 months.'
             ));
             $harness->assertSame('253.00', directorLoanStatementMoney($primaryDirector['gross_asset'] ?? 0));
             $harness->assertSame('1288.63', directorLoanStatementMoney($primaryDirector['gross_liability'] ?? 0));
@@ -117,6 +121,33 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
             $harness->assertCount(1, $externalCounterpartyEntry);
             $harness->assertSame($primaryPartyId, (int)($externalCounterpartyEntry[0]['director_id'] ?? 0));
             $harness->assertSame(true, str_contains((string)($externalCounterpartyEntry[0]['source_url'] ?? ''), 'transaction_id='));
+
+            $advanceEvidence = (new \eel_accounts\Service\ParticipatorLoanPartyTermsService())->save(
+                (int)$fixture['company_id'],
+                $primaryPartyId,
+                [
+                    'interest_rate_percent' => 0,
+                    'security_type' => 'unsecured',
+                    'repayment_basis' => 'after_12_months',
+                    'set_off_right_confirmed' => true,
+                    'settlement_intention' => 'simultaneous',
+                    'advance_interest_rate_percent' => 0,
+                    'advance_security_type' => 'unsecured',
+                    'advance_repayment_basis' => 'no_fixed_date',
+                ],
+                'test'
+            );
+            $harness->assertSame(true, (bool)($advanceEvidence['success'] ?? false));
+            $confirmedText = (new \eel_accounts\Service\IxbrlTaxonomyProfileService())
+                ->directorLoanStatementText($service->fetchDisclosureSummary(
+                    (int)$fixture['company_id'],
+                    (int)$fixture['accounting_period_id']
+                ));
+            $harness->assertTrue(str_contains(
+                $confirmedText,
+                'Repayment conditions: No fixed repayment date was agreed.'
+            ));
+            $harness->assertSame(false, str_contains($confirmedText, 'Repayable after more than 12 months.'));
         });
     });
 
@@ -278,6 +309,44 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
             $harness->assertSame('253.00', directorLoanStatementMoney($summary['total_advances'] ?? 0));
             $harness->assertSame('253.00', directorLoanStatementMoney($summary['total_cash_repayments'] ?? 0));
             $harness->assertSame('0.00', directorLoanStatementMoney($summary['closing_company_to_director_balance'] ?? 1));
+        });
+    });
+
+    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'keeps advance terms separate when the closing balance reverses to a long-term director creditor', static function () use ($harness, $service): void {
+        directorLoanStatementWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            $partyId = (int)$fixture['primary_party_id'];
+            $assetId = (int)$fixture['asset_nominal_id'];
+            $liabilityId = (int)$fixture['liability_nominal_id'];
+            directorLoanStatementInsertManualLine($fixture, $assetId, 253.00, 0.00, $partyId, 'Company advance', '', '2025-01-02', 'bank_csv');
+            directorLoanStatementInsertManualLine($fixture, $assetId, 0.00, 253.00, $partyId, 'Advance repaid', '', '2025-08-15', 'bank_csv');
+            directorLoanStatementInsertManualLine($fixture, $liabilityId, 0.00, 1035.63, $partyId, 'Director funding', '', '2025-09-30', 'manual');
+            $saved = (new \eel_accounts\Service\ParticipatorLoanPartyTermsService())->save(
+                (int)$fixture['company_id'],
+                $partyId,
+                [
+                    'interest_rate_percent' => 0,
+                    'security_type' => 'unsecured',
+                    'repayment_basis' => 'after_12_months',
+                    'set_off_right_confirmed' => false,
+                    'settlement_intention' => 'independently',
+                    'advance_interest_rate_percent' => 0,
+                    'advance_security_type' => 'unsecured',
+                    'advance_repayment_basis' => 'no_fixed_date',
+                ],
+                'directional-terms-test'
+            );
+            $harness->assertSame(true, (bool)($saved['success'] ?? false));
+
+            $statement = $service->fetchStatement((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $disclosure = $service->fetchDisclosureSummary((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $text = (new \eel_accounts\Service\IxbrlTaxonomyProfileService())->directorLoanStatementText($disclosure);
+            $harness->assertSame('253.00', directorLoanStatementMoney($disclosure['total_advances'] ?? 0));
+            $harness->assertSame('253.00', directorLoanStatementMoney($disclosure['total_cash_repayments'] ?? 0));
+            $harness->assertSame('0.00', directorLoanStatementMoney($disclosure['closing_company_to_director_balance'] ?? 1));
+            $harness->assertSame('1035.63', directorLoanStatementMoney($disclosure['closing_company_liability'] ?? 0));
+            $harness->assertSame('1035.63', directorLoanStatementMoney($statement['liability_after_one_year'] ?? 0));
+            $harness->assertTrue(str_contains($text, 'No fixed repayment date was agreed.'));
+            $harness->assertSame(false, str_contains($text, 'Repayable after more than 12 months.'));
         });
     });
 

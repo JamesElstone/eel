@@ -12,6 +12,3 @@ VALUES
   ('ct600_rim', 'ct600.calculation.trading_losses_carried_forward_claimed', 'CT600 carried-forward trading losses claimed against total profits', 'numeric', 'losses', 0),
   ('ct600_rim', 'ct600.calculation.total_deductions_and_reliefs', 'CT600 total deductions and reliefs', 'numeric', 'tax_liability', 0),
   ('ct600_rim', 'ct600.calculation.profits_before_donations_group_relief', 'CT600 profits before qualifying donations and group relief', 'numeric', 'tax_liability', 0);
-
-INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
-  ('2026_07_28_005_ct600_post_2017_loss_boxes.sql');

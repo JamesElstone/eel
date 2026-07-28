@@ -352,6 +352,9 @@ function goldenCt600aSavePartyLoanTerms(int $companyId): void
             'deferment_right_confirmed' => 0,
             'set_off_right_confirmed' => 0,
             'settlement_intention' => 'independently',
+            'advance_interest_rate_percent' => 0,
+            'advance_security_type' => 'unsecured',
+            'advance_repayment_basis' => 'on_demand',
         ],
         'golden_ct600a'
     ));

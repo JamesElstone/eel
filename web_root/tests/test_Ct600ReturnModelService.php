@@ -178,6 +178,82 @@ function ct600_return_model_test_service(array $filing): \eel_accounts\Service\C
 
         $h->check(
             \eel_accounts\Service\Ct600ReturnModelService::class,
+            'derives Golden Company AP79 CT600 loss boxes from the frozen loss schedule',
+            static function () use ($h): void {
+                $first = ct600_return_model_test_filing();
+                $first['model']['computation']['summary'] = array_replace(
+                    $first['model']['computation']['summary'],
+                    [
+                        'accounting_profit' => -118.66,
+                        'capital_allowances' => 628.84,
+                        'taxable_before_losses' => -563.21,
+                        'taxable_profit' => 0.00,
+                        'taxable_loss' => 563.21,
+                        'losses_brought_forward' => 0.00,
+                        'losses_used' => 0.00,
+                        'losses_carried_forward' => 563.21,
+                        'loss_created_in_period' => 563.21,
+                        'ordinary_corporation_tax' => 0.00,
+                        'estimated_corporation_tax' => 0.00,
+                        'loss_restriction' => [
+                            'post_2017_trading_losses' => ['brought_forward' => 0.00, 'arising' => 563.21, 'used' => 0.00, 'carried_forward' => 563.21],
+                            'carried_forward_loss_relief_claimed' => 0.00,
+                        ],
+                    ]
+                );
+                $first['model']['filing_decisions']['main_pool_capital_allowances'] = 628.84;
+                $first['model']['filing_decisions']['aia_claimed_in_trade'] = 628.84;
+                $first['model']['filing_decisions']['qualifying_expenditure_other_machinery_plant'] = 628.84;
+                $first['model']['filing_decisions']['tax_calculation_bands'] = [];
+                $firstResult = ct600_return_model_test_service($first)->build(49, 79, 6);
+                $h->assertSame(true, (bool)$firstResult['ok']);
+                $firstCalculation = (array)$firstResult['model']['calculation'];
+                $h->assertSame(0.00, (float)$firstCalculation['trading_profit_before_losses']);
+                $h->assertSame(0.00, (float)$firstCalculation['trading_losses_carried_forward_claimed']);
+                $h->assertSame(0.00, (float)$firstCalculation['total_deductions_and_reliefs']);
+                $h->assertSame(563.21, (float)$firstResult['model']['amounts']['loss_created_in_period']);
+                $h->assertSame(false, (bool)($firstResult['model']['ct600a']['required'] ?? false));
+                $h->assertSame(0.00, (float)$firstResult['model']['amounts']['tax_payable']);
+
+                $second = $first;
+                $second['model']['ct_period'] = ['id' => 7, 'start_date' => '2023-09-05', 'end_date' => '2023-09-30'];
+                $second['model']['computation']['summary'] = array_replace(
+                    $second['model']['computation']['summary'],
+                    [
+                        'accounting_profit' => -8.45,
+                        'capital_allowances' => 0.00,
+                        'taxable_before_losses' => 4.67,
+                        'taxable_profit' => 0.00,
+                        'taxable_loss' => 0.00,
+                        'losses_brought_forward' => 563.21,
+                        'losses_used' => 4.67,
+                        'losses_carried_forward' => 558.54,
+                        'loss_created_in_period' => 0.00,
+                        'loss_restriction' => [
+                            'post_2017_trading_losses' => ['brought_forward' => 563.21, 'arising' => 0.00, 'used' => 4.67, 'carried_forward' => 558.54],
+                            'carried_forward_loss_relief_claimed' => 4.67,
+                        ],
+                    ]
+                );
+                $second['model']['filing_decisions']['main_pool_capital_allowances'] = 0.00;
+                $second['model']['filing_decisions']['aia_claimed_in_trade'] = 0.00;
+                $second['model']['filing_decisions']['qualifying_expenditure_other_machinery_plant'] = 0.00;
+                $secondResult = ct600_return_model_test_service($second)->build(49, 79, 7);
+                $h->assertSame(true, (bool)$secondResult['ok']);
+                $secondCalculation = (array)$secondResult['model']['calculation'];
+                $h->assertSame(4.67, (float)$secondCalculation['trading_profit_before_losses']);
+                $h->assertSame(0.00, (float)$secondCalculation['trading_losses_brought_forward_used']);
+                $h->assertSame(4.67, (float)$secondCalculation['trading_losses_carried_forward_claimed']);
+                $h->assertSame(4.67, (float)$secondCalculation['total_deductions_and_reliefs']);
+                $h->assertSame(0.00, (float)$secondCalculation['profits_before_donations_group_relief']);
+                $h->assertSame(558.54, (float)$secondResult['model']['amounts']['losses_carried_forward']);
+                $h->assertSame(false, (bool)($secondResult['model']['ct600a']['required'] ?? false));
+                $h->assertSame(0.00, (float)$secondResult['model']['amounts']['tax_payable']);
+            }
+        );
+
+        $h->check(
+            \eel_accounts\Service\Ct600ReturnModelService::class,
             'fails closed when the frozen Corporation Tax UTR is invalid',
             static function () use ($h): void {
                 $filing = ct600_return_model_test_filing();

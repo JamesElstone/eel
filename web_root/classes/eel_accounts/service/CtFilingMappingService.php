@@ -61,7 +61,7 @@ final class CtFilingMappingService
         if ($targetType === self::TARGET_RIM
             && $version === 'V3' && $artifactVersion === 'V1.994') {
             return [
-                'profile_name' => 'reviewed_ct600_v3_v1_994_return_v2',
+                'profile_name' => 'reviewed_ct600_v3_v1_994_return_v3',
                 'natural_identity' => ['form_version' => 'V3', 'artifact_version' => 'V1.994'],
                 'mappings' => [
                     ['canonical_key' => 'identity.company_name', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyInformation/CompanyName'],
@@ -70,11 +70,14 @@ final class CtFilingMappingService
                     ['canonical_key' => 'ct_period.start_date', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyInformation/PeriodCovered/From'],
                     ['canonical_key' => 'ct_period.end_date', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyInformation/PeriodCovered/To'],
                     ['canonical_key' => 'accounts_facts.turnover', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/Turnover/Total'],
-                    ['canonical_key' => 'filing_decisions.trading_profit_before_losses', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/Income/Trading/Profits'],
-                    ['canonical_key' => 'filing_decisions.trading_losses_brought_forward_used', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/Income/Trading/LossesBroughtForward'],
-                    ['canonical_key' => 'filing_decisions.net_trading_profits', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/Income/Trading/NetProfits'],
-                    ['canonical_key' => 'filing_decisions.profits_before_other_deductions', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/ProfitsBeforeOtherDeductions'],
-                    ['canonical_key' => 'filing_decisions.profits_before_donations_group_relief', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/ChargesAndReliefs/ProfitsBeforeDonationsAndGroupRelief'],
+                    ['canonical_key' => 'ct600.calculation.trading_profit_before_losses', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/Income/Trading/Profits'],
+                    ['canonical_key' => 'ct600.calculation.trading_losses_brought_forward_used', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/Income/Trading/LossesBroughtForward'],
+                    ['canonical_key' => 'ct600.calculation.net_trading_profits', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/Income/Trading/NetProfits'],
+                    ['canonical_key' => 'ct600.calculation.profits_before_other_deductions', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/ProfitsBeforeOtherDeductions'],
+                    ['canonical_key' => 'ct600.calculation.trading_losses_current_or_later_claimed', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/TradingLosses'],
+                    ['canonical_key' => 'ct600.calculation.trading_losses_carried_forward_claimed', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/TradingLossesCarriedForward'],
+                    ['canonical_key' => 'ct600.calculation.total_deductions_and_reliefs', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/Total'],
+                    ['canonical_key' => 'ct600.calculation.profits_before_donations_group_relief', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/ChargesAndReliefs/ProfitsBeforeDonationsAndGroupRelief'],
                     ['canonical_key' => 'computation.summary.taxable_profit', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/ChargeableProfits'],
                     ['canonical_key' => 'computation.summary.ordinary_corporation_tax', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/NetCorporationTaxChargeable'],
                     ['canonical_key' => 'filing_decisions.associated_company_count', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/CorporationTaxChargeable/AssociatedCompanies/ThisPeriod'],
@@ -91,14 +94,6 @@ final class CtFilingMappingService
                     ['canonical_key' => 'computation.summary.loss_created_in_period', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/LossesDeficitsAndExcess/AmountArising/LossesOfTradesUK/Arising'],
                 ],
                 'unsupported_decisions' => [
-                    [
-                        'canonical_keys' => ['computation.summary.losses_used', 'computation.summary.losses_carried_forward'],
-                        'reason' => 'The frozen aggregate values do not distinguish a box 275 current/later-period claim from a box 285 carried-forward-loss claim. Box 160 is supported only by the exact frozen same-trade relief decision and amount.',
-                        'claim_targets' => [
-                            'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/TradingLosses',
-                            'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/TradingLossesCarriedForward',
-                        ],
-                    ],
                     [
                         'canonical_keys' => [],
                         'reason' => 'A carry-back election must be explicit; no numeric loss balance may imply it.',
@@ -322,28 +317,35 @@ final class CtFilingMappingService
         if ($targetType === self::TARGET_RIM
             && (is_int($lossesUsed) || is_float($lossesUsed))
             && (float)$lossesUsed > 0.0) {
-            $decisionAmount = $facts['filing_decisions.trading_losses_brought_forward_used'] ?? null;
-            $hasBox160Mapping = false;
+            $claimKeys = [
+                'ct600.calculation.trading_losses_brought_forward_used' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/Income/Trading/LossesBroughtForward',
+                'ct600.calculation.trading_losses_current_or_later_claimed' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/TradingLosses',
+                'ct600.calculation.trading_losses_carried_forward_claimed' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/TradingLossesCarriedForward',
+            ];
+            $mappedTargets = [];
             foreach ($mappings as $mapping) {
-                if ((string)($mapping['canonical_key'] ?? '') === 'filing_decisions.trading_losses_brought_forward_used'
-                    && (string)($mapping['target_xpath'] ?? '') === 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/Income/Trading/LossesBroughtForward') {
-                    $hasBox160Mapping = true;
-                    break;
+                $key = (string)($mapping['canonical_key'] ?? '');
+                if (isset($claimKeys[$key])
+                    && (string)($mapping['target_xpath'] ?? '') === $claimKeys[$key]) {
+                    $mappedTargets[$key] = true;
                 }
             }
-            $approvedSameTradeUse = (string)($facts['filing_decisions.loss_relief_treatment'] ?? '')
-                    === 'trading_brought_forward_against_same_trade_profit'
-                && (is_int($decisionAmount) || is_float($decisionAmount))
-                && is_finite((float)$decisionAmount)
-                && abs((float)$decisionAmount - (float)$lossesUsed) < 0.005
-                && $hasBox160Mapping;
-            if (!$approvedSameTradeUse) {
+            $claims = [];
+            foreach ($claimKeys as $key => $target) {
+                $value = $facts[$key] ?? null;
+                if (!is_int($value) && !is_float($value) || !is_finite((float)$value) || (float)$value < 0.0) {
+                    return $this->mappingFailure('A positive aggregate losses-used value requires a complete explicit CT600 loss-claim model.');
+                }
+                if ((float)$value > 0.004 && empty($mappedTargets[$key])) {
+                    return $this->mappingFailure('The explicit CT600 loss claim has no reviewed RIM mapping: ' . $target . '.');
+                }
+                $claims[] = (float)$value;
+            }
+            if (abs(array_sum($claims) - (float)$lossesUsed) > 0.005) {
                 return [
                     'success' => false,
                     'errors' => [
-                        'A positive aggregate losses-used value requires an explicit CT600 claim decision: '
-                        . 'box 160 (trading losses brought forward), box 275 (TradingLosses), and box 285 '
-                        . '(TradingLossesCarriedForward) cannot be inferred safely.',
+                        'The explicit CT600 loss claims do not reconcile to the frozen aggregate losses used.',
                     ],
                     'basis_version' => (string)$filingModel['basis_version'],
                     'basis_hash' => (string)$filingModel['basis_hash'],

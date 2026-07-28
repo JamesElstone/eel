@@ -33,6 +33,12 @@ function ct600_builder_test_mappings(array $amounts): array
         'profits_before_donations'
             => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/ChargesAndReliefs/'
                 . 'ProfitsBeforeDonationsAndGroupRelief',
+        'trading_losses_current_or_later'
+            => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/TradingLosses',
+        'trading_losses_carried_forward'
+            => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/TradingLossesCarriedForward',
+        'total_deductions_and_reliefs'
+            => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/Total',
         'net_corporation_tax_liability'
             => 'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/'
                 . 'NetCorporationTaxLiability',
@@ -198,6 +204,38 @@ function ct600_builder_test_assert_official_schema(
     }
 }
 
+function ct600_builder_test_assert_official_business_rules(
+    GeneratedServiceClassTestHarness $harness,
+    string $xml
+): void {
+    if (!class_exists(XSLTProcessor::class)) {
+        $harness->skip('PHP XSL support is not available for HMRC business-rule validation.');
+    }
+    $root = defined('PROJECT_ROOT') ? (string)PROJECT_ROOT : dirname(__DIR__, 2);
+    $transform = rtrim($root, '\\/') . DIRECTORY_SEPARATOR . 'third_party' . DIRECTORY_SEPARATOR . 'hmrc'
+        . DIRECTORY_SEPARATOR . 'ct600-rim' . DIRECTORY_SEPARATOR . 'ct600-v3-artefacts-v1.994'
+        . DIRECTORY_SEPARATOR . 'CT-2014-v1-994.xslt';
+    if (!is_file($transform)) {
+        $harness->skip('The locally extracted official CT600 V3 business-rule transform is not installed.');
+    }
+    $document = new DOMDocument();
+    $inner = new DOMDocument();
+    if (!$inner->loadXML($xml, LIBXML_NONET | LIBXML_NOBLANKS)) {
+        throw new RuntimeException('The CT600 XML could not be wrapped for business-rule validation.');
+    }
+    $document->loadXML('<GovTalkMessage xmlns="http://www.govtalk.gov.uk/CM/envelope"><Body/></GovTalkMessage>');
+    $body = $document->documentElement?->lastChild;
+    if (!$body instanceof DOMElement) {
+        throw new RuntimeException('The GovTalk test wrapper has no Body.');
+    }
+    $body->appendChild($document->importNode($inner->documentElement, true));
+    $service = new \eel_accounts\Service\HmrcCt600ValidationService();
+    $method = new ReflectionMethod($service, 'schematronDiagnostics');
+    $method->setAccessible(true);
+    $diagnostics = (array)$method->invoke($service, $document, $transform);
+    $harness->assertSame([], $diagnostics);
+}
+
 (new GeneratedServiceClassTestHarness())->run(
     \eel_accounts\Service\Ct600BuilderService::class,
     static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\Ct600BuilderService $service): void {
@@ -302,6 +340,69 @@ function ct600_builder_test_assert_official_schema(
                         . 'ct:CompanyTaxCalculation/ct:Income/ct:Trading/ct:NetProfits)')
                 );
                 ct600_builder_test_assert_official_schema($harness, (string)$result['xml']);
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Service\Ct600BuilderService::class,
+            'serializes the Golden Company first-period loss and capital-allowance boxes',
+            static function () use ($harness): void {
+                $return = ct600_builder_test_return([
+                    // CT600 V3 whole-pound fields after RIM monetary policy.
+                    'chargeable_profits' => '0.00',
+                    'net_corporation_tax' => '0.00',
+                    'tax_payable' => '0.00',
+                    'aia' => '629.00',
+                    'main_pool_allowance' => '629.00',
+                    'main_pool_charge' => '0.00',
+                    'qualifying_expenditure' => '629.00',
+                    'loss_arising' => '563.00',
+                ], []);
+                $result = ct600_builder_test_build($return, 997019);
+                $harness->assertSame(true, (bool)($result['ok'] ?? false));
+                $xpath = ct600_builder_test_xpath((string)$result['xml']);
+                $harness->assertSame('629.00', $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/ct:AllowancesAndCharges/ct:AIACapitalAllowancesInc)'));
+                $harness->assertSame('629.00', $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/ct:AllowancesAndCharges/ct:MachineryAndPlantMainPool/ct:CapitalAllowances)'));
+                $harness->assertSame('', $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/ct:AllowancesAndCharges/ct:MachineryAndPlantMainPool/ct:BalancingCharges)'));
+                $harness->assertSame('629.00', $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/ct:QualifyingExpenditure/ct:OtherMachineryAndPlant)'));
+                $harness->assertSame('563.00', $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/ct:LossesDeficitsAndExcess/ct:AmountArising/ct:LossesOfTradesUK/ct:Arising)'));
+                $harness->assertSame(0, $xpath->query('/ct:IRenvelope/ct:CompanyTaxReturn/ct:ReturnInfoSummary/ct:SupplementaryPages/ct:CT600A')?->length);
+                $harness->assertSame('0.00', $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/ct:CalculationOfTaxOutstandingOrOverpaid/ct:TaxPayable)'));
+                ct600_builder_test_assert_official_schema($harness, (string)$result['xml']);
+                ct600_builder_test_assert_official_business_rules($harness, (string)$result['xml']);
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Service\Ct600BuilderService::class,
+            'serializes a post-2017 carried-forward loss claim in box 285 rather than box 160',
+            static function () use ($harness): void {
+                $return = ct600_builder_test_return([
+                    'chargeable_profits' => '0',
+                    'net_corporation_tax' => '0.00',
+                    'net_corporation_tax_liability' => '0.00',
+                    'tax_chargeable' => '0.00',
+                    'tax_payable' => '0.00',
+                    // CT600 V3 whole-pound RIM fields: £4.67 serializes as £5.00.
+                    'trading_profit' => '5.00',
+                    'losses_brought_forward' => '0.00',
+                    'net_trading_profits' => '5.00',
+                    'profits_before_other_deductions' => '5.00',
+                    'trading_losses_current_or_later' => '0.00',
+                    'trading_losses_carried_forward' => '5.00',
+                    'total_deductions_and_reliefs' => '5.00',
+                    'profits_before_donations' => '0.00',
+                ], []);
+                $result = ct600_builder_test_build($return, 997018);
+                $harness->assertSame(true, (bool)($result['ok'] ?? false));
+                $xpath = ct600_builder_test_xpath((string)$result['xml']);
+                $harness->assertSame('5.00', $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/ct:CompanyTaxCalculation/ct:Income/ct:Trading/ct:Profits)'));
+                $harness->assertSame('', $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/ct:CompanyTaxCalculation/ct:Income/ct:Trading/ct:LossesBroughtForward)'));
+                $harness->assertSame('5.00', $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/ct:CompanyTaxCalculation/ct:DeductionsAndReliefs/ct:TradingLossesCarriedForward)'));
+                $harness->assertSame('5.00', $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/ct:CompanyTaxCalculation/ct:DeductionsAndReliefs/ct:Total)'));
+                $harness->assertSame('', $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/ct:CompanyTaxCalculation/ct:DeductionsAndReliefs/ct:TradingLosses)'));
+                ct600_builder_test_assert_official_schema($harness, (string)$result['xml']);
+                ct600_builder_test_assert_official_business_rules($harness, (string)$result['xml']);
             }
         );
 

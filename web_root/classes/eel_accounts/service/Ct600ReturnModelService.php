@@ -10,7 +10,7 @@ namespace eel_accounts\Service;
  */
 final class Ct600ReturnModelService
 {
-    public const MODEL_VERSION = 'ct600-return-model-v3';
+    public const MODEL_VERSION = 'ct600-return-model-v4';
 
     private ?\Closure $filingModelLoader;
     private ?\Closure $rimResolver;
@@ -79,6 +79,31 @@ final class Ct600ReturnModelService
             return $this->failure('The resolved CT600 RIM package has no stable database identity.');
         }
 
+        // A reviewed template revision is a semantic compatibility boundary.
+        // Ensure a newly shipped correction is activated before resolving the
+        // profile, rather than allowing a stale profile to serialize an older
+        // box interpretation. Injected resolvers keep focused tests read-only.
+        if ($this->profileResolver === null) {
+            $mappingService = new CtFilingMappingService();
+            $template = $mappingService->reviewedTemplate(
+                CtFilingMappingService::TARGET_RIM,
+                (string)($rim['form_version'] ?? ''),
+                (string)($rim['artifact_version'] ?? '')
+            );
+            $active = $mappingService->activeProfile(CtFilingMappingService::TARGET_RIM, $packageId);
+            if (is_array($template)
+                && (!is_array($active) || (string)($active['profile_name'] ?? '') !== (string)$template['profile_name'])) {
+                try {
+                    $mappingService->prepareMappingsForPackage(
+                        CtFilingMappingService::TARGET_RIM,
+                        $packageId,
+                        'ct600-return-model'
+                    );
+                } catch (\Throwable $exception) {
+                    return $this->failure('The reviewed CT600 mapping profile could not be prepared.', [$exception->getMessage()]);
+                }
+            }
+        }
         $profile = $this->resolveProfile($packageId);
         if (!is_array($profile)) {
             return $this->failure('Activate a compatible CT600 mapping profile for the selected RIM package.');
@@ -175,6 +200,7 @@ final class Ct600ReturnModelService
         $ct600aTax = round((float)($ct600a['tax_payable'] ?? 0), 2);
         $taxPayable = round($ordinaryTax + $ct600aTax, 2);
         $taxBands = array_values((array)($decisions['tax_calculation_bands'] ?? []));
+        $ct600Calculation = $this->ct600Calculation($summary, $decisions);
         $grossTax = round(array_sum(array_map(
             static fn(array $band): float => (float)($band['gross_tax'] ?? 0),
             $taxBands
@@ -208,12 +234,15 @@ final class Ct600ReturnModelService
                 'supplementary_pages' => array_values((array)($decisions['supplementary_pages'] ?? [])),
             ],
             'calculation' => [
-                'loss_relief_treatment' => (string)$decisions['loss_relief_treatment'],
-                'trading_profit_before_losses' => (float)$decisions['trading_profit_before_losses'],
-                'trading_losses_brought_forward_used' => (float)$decisions['trading_losses_brought_forward_used'],
-                'net_trading_profits' => (float)$decisions['net_trading_profits'],
-                'profits_before_other_deductions' => (float)$decisions['profits_before_other_deductions'],
-                'profits_before_donations_group_relief' => (float)$decisions['profits_before_donations_group_relief'],
+                'loss_relief_treatment' => (string)$ct600Calculation['loss_relief_treatment'],
+                'trading_profit_before_losses' => (float)$ct600Calculation['trading_profit_before_losses'],
+                'trading_losses_brought_forward_used' => (float)$ct600Calculation['trading_losses_brought_forward_used'],
+                'trading_losses_current_or_later_claimed' => (float)$ct600Calculation['trading_losses_current_or_later_claimed'],
+                'trading_losses_carried_forward_claimed' => (float)$ct600Calculation['trading_losses_carried_forward_claimed'],
+                'net_trading_profits' => (float)$ct600Calculation['net_trading_profits'],
+                'profits_before_other_deductions' => (float)$ct600Calculation['profits_before_other_deductions'],
+                'total_deductions_and_reliefs' => (float)$ct600Calculation['total_deductions_and_reliefs'],
+                'profits_before_donations_group_relief' => (float)$ct600Calculation['profits_before_donations_group_relief'],
                 'associated_company_count' => (int)$decisions['associated_company_count'],
                 'tax_bands' => $taxBands,
                 'gross_corporation_tax' => $grossTax,
@@ -245,6 +274,67 @@ final class Ct600ReturnModelService
                 'tax_payable' => $taxPayable,
             ],
             'ct600a' => $ct600a,
+        ];
+    }
+
+    /**
+     * Derive the CT600 loss boxes from the immutable computation summary.
+     * Legacy approved bases without a loss-restriction schedule retain their
+     * original same-trade treatment; a schedule makes the post-2017 box 285
+     * treatment explicit and takes precedence over legacy presentation fields.
+     *
+     * @return array<string,float|string>
+     */
+    private function ct600Calculation(array $summary, array $decisions): array
+    {
+        $beforeLosses = max(0.0, round($this->number($summary, 'taxable_before_losses'), 2));
+        $lossesUsed = round($this->number($summary, 'losses_used'), 2);
+        $restriction = (array)($summary['loss_restriction'] ?? []);
+        $post = (array)($restriction['post_2017_trading_losses'] ?? []);
+        $hasPost2017Schedule = $post !== []
+            && is_numeric($post['brought_forward'] ?? null)
+            && is_numeric($post['used'] ?? null)
+            && is_numeric($restriction['carried_forward_loss_relief_claimed'] ?? null);
+
+        if ($hasPost2017Schedule) {
+            $broughtForward = round((float)$post['brought_forward'], 2);
+            $used = round((float)$post['used'], 2);
+            $claimed = round((float)$restriction['carried_forward_loss_relief_claimed'], 2);
+            if ($broughtForward < $used || abs($used - $lossesUsed) > 0.009 || abs($claimed - $used) > 0.009) {
+                throw new \RuntimeException('The frozen post-2017 loss schedule does not reconcile to the CT600 claim.');
+            }
+            $currentOrLater = 0.0;
+            $carriedForward = $used;
+            $sameTrade = 0.0;
+            $treatment = $carriedForward > 0.004
+                ? 'post_2017_carried_forward_against_total_profits'
+                : 'none';
+        } else {
+            $sameTrade = round((float)($decisions['trading_losses_brought_forward_used'] ?? 0), 2);
+            if ($sameTrade < 0.0 || abs($sameTrade - $lossesUsed) > 0.009) {
+                throw new \RuntimeException('The frozen legacy CT600 loss decision does not reconcile to the computation.');
+            }
+            $currentOrLater = 0.0;
+            $carriedForward = 0.0;
+            $treatment = $sameTrade > 0.004 ? 'trading_brought_forward_against_same_trade_profit' : 'none';
+        }
+        $netTrading = round($beforeLosses - $sameTrade, 2);
+        $deductions = round($currentOrLater + $carriedForward, 2);
+        $beforeDonations = round($netTrading - $deductions, 2);
+        if ($netTrading < -0.004 || $beforeDonations < -0.004
+            || abs($beforeDonations - $this->number($summary, 'taxable_profit')) > 0.009) {
+            throw new \RuntimeException('The CT600 loss boxes do not reconcile to the frozen taxable profit.');
+        }
+        return [
+            'loss_relief_treatment' => $treatment,
+            'trading_profit_before_losses' => $beforeLosses,
+            'trading_losses_brought_forward_used' => $sameTrade,
+            'trading_losses_current_or_later_claimed' => $currentOrLater,
+            'trading_losses_carried_forward_claimed' => $carriedForward,
+            'net_trading_profits' => $netTrading,
+            'profits_before_other_deductions' => $netTrading,
+            'total_deductions_and_reliefs' => $deductions,
+            'profits_before_donations_group_relief' => $beforeDonations,
         ];
     }
 
@@ -352,22 +442,17 @@ final class Ct600ReturnModelService
             }
         }
         if ($decisionNumericKeys !== [] && $summary !== []) {
-            $lossesUsed = (float)($summary['losses_used'] ?? 0);
-            $expectedTreatment = $lossesUsed > 0.004
-                ? 'trading_brought_forward_against_same_trade_profit'
-                : 'none';
-            if ((string)($decisions['loss_relief_treatment'] ?? '') !== $expectedTreatment
-                || abs((float)($decisions['trading_losses_brought_forward_used'] ?? -1) - $lossesUsed) > 0.009
-                || abs((float)($decisions['trading_profit_before_losses'] ?? -1) - max(0.0, (float)($summary['taxable_before_losses'] ?? 0))) > 0.009
-                || abs((float)($decisions['net_trading_profits'] ?? -1) - (float)($summary['taxable_profit'] ?? 0)) > 0.009
-                || abs((float)($decisions['profits_before_other_deductions'] ?? -1) - (float)($summary['taxable_profit'] ?? 0)) > 0.009
-                || abs((float)($decisions['profits_before_donations_group_relief'] ?? -1) - (float)($summary['taxable_profit'] ?? 0)) > 0.009
-                || abs(
-                    (float)($decisions['main_pool_capital_allowances'] ?? 0)
-                    + (float)($decisions['special_rate_pool_capital_allowances'] ?? 0)
-                    - (float)($summary['capital_allowances'] ?? 0)
-                ) > 0.009) {
-                $errors[] = 'The approved CT600 presentation decisions do not reconcile to the frozen calculation.';
+            try {
+                $this->ct600Calculation($summary, $decisions);
+            } catch (\Throwable $exception) {
+                $errors[] = $exception->getMessage();
+            }
+            if (abs(
+                (float)($decisions['main_pool_capital_allowances'] ?? 0)
+                + (float)($decisions['special_rate_pool_capital_allowances'] ?? 0)
+                - (float)($summary['capital_allowances'] ?? 0)
+            ) > 0.009) {
+                $errors[] = 'The approved CT600 capital-allowance decisions do not reconcile to the frozen calculation.';
             }
         }
         $taxBands = (array)($decisions['tax_calculation_bands'] ?? []);

@@ -251,6 +251,24 @@ final class Ct600BuilderService
         if ($this->positive($values, $profitsBeforePath)) {
             $this->element($document, $calculation, 'ProfitsBeforeOtherDeductions', $values[$profitsBeforePath]);
         }
+        $tradingLossesPath = 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/'
+            . 'DeductionsAndReliefs/TradingLosses';
+        $tradingLossesCarriedForwardPath = 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/'
+            . 'DeductionsAndReliefs/TradingLossesCarriedForward';
+        $deductionsTotalPath = 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/'
+            . 'DeductionsAndReliefs/Total';
+        if ($this->anyPositive($values, [
+            $tradingLossesPath, $tradingLossesCarriedForwardPath, $deductionsTotalPath,
+        ])) {
+            $deductions = $this->element($document, $calculation, 'DeductionsAndReliefs');
+            if ($this->positive($values, $tradingLossesPath)) {
+                $this->element($document, $deductions, 'TradingLosses', $values[$tradingLossesPath]);
+            }
+            if ($this->positive($values, $tradingLossesCarriedForwardPath)) {
+                $this->element($document, $deductions, 'TradingLossesCarriedForward', $values[$tradingLossesCarriedForwardPath]);
+            }
+            $this->element($document, $deductions, 'Total', $this->mapped($values, $deductionsTotalPath));
+        }
         $profitsBeforeDonationsPath = 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/'
             . 'ChargesAndReliefs/ProfitsBeforeDonationsAndGroupRelief';
         if ($this->positive($values, $profitsBeforeDonationsPath)) {

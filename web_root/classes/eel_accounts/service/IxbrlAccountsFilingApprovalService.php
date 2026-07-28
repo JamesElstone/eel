@@ -534,13 +534,20 @@ final class IxbrlAccountsFilingApprovalService
             'supplementary_pages' => !empty($ct600a['required']) ? ['CT600A'] : [],
             'ct600a_tax_payable' => round((float)($ct600a['tax_payable'] ?? 0), 2),
             'ct600a_relief_due' => !empty($ct600a['relief_due']),
+            // Post-1 April 2017 carried-forward trading losses are claimed
+            // against total profits (CT600 box 285), not as same-trade losses
+            // brought forward in box 160.  These are presentation decisions
+            // derived solely from the frozen loss-restriction schedule.
             'loss_relief_treatment' => $lossesUsed > 0.0
-                ? 'trading_brought_forward_against_same_trade_profit'
+                ? 'post_2017_carried_forward_against_total_profits'
                 : 'none',
             'trading_profit_before_losses' => max(0.0, $beforeLosses),
-            'trading_losses_brought_forward_used' => $lossesUsed,
-            'net_trading_profits' => $taxableProfit,
-            'profits_before_other_deductions' => $taxableProfit,
+            'trading_losses_brought_forward_used' => 0.0,
+            'trading_losses_current_or_later_claimed' => 0.0,
+            'trading_losses_carried_forward_claimed' => $lossesUsed,
+            'net_trading_profits' => max(0.0, $beforeLosses),
+            'profits_before_other_deductions' => max(0.0, $beforeLosses),
+            'total_deductions_and_reliefs' => $lossesUsed,
             'profits_before_donations_group_relief' => $taxableProfit,
             'associated_company_count' => (int)$summary['associated_company_count'],
             'tax_calculation_bands' => $taxBands,

@@ -37,6 +37,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             ['IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/LoansToParticipators'],
             $paths['return_position.ct600a_a80']
         );
+        $h->assertSame(
+            ['IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/TradingLossesCarriedForward'],
+            $paths['ct600.calculation.trading_losses_carried_forward_claimed']
+        );
+        $h->assertSame(
+            ['IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/Total'],
+            $paths['ct600.calculation.total_deductions_and_reliefs']
+        );
         $h->assertSame(null, $service->reviewedTemplate(\eel_accounts\Service\CtFilingMappingService::TARGET_RIM, 'V3', 'V1.995'));
         $computation = $service->reviewedTemplate(\eel_accounts\Service\CtFilingMappingService::TARGET_COMPUTATION, '2025', 'V1.0.0');
         $h->assertTrue(is_array($computation));
@@ -186,10 +194,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             ]]
         );
         $h->assertSame(false, $result['success']);
-        $h->assertTrue(str_contains(implode(' ', (array)$result['errors']), 'box 275'));
-        $h->assertCount(3, (array)$result['blocked_claim_targets']);
+        $h->assertTrue(str_contains(implode(' ', (array)$result['errors']), 'complete explicit CT600 loss-claim model'));
+        $h->assertSame([], (array)($result['mappings'] ?? []));
     });
-    $h->check($service::class, 'allows exact explicitly frozen same-trade loss relief at box 160', static function () use ($h, $service): void {
+    $h->check($service::class, 'allows an explicit CT600 same-trade loss claim at box 160', static function () use ($h, $service): void {
         $result = $service->mapFrozenFacts(
             \eel_accounts\Service\CtFilingMappingService::TARGET_RIM,
             [
@@ -201,8 +209,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 'seal' => ['basis_hash' => str_repeat('d', 64)],
                 'facts' => [
                     'computation.summary.losses_used' => 100.0,
-                    'filing_decisions.loss_relief_treatment' => 'trading_brought_forward_against_same_trade_profit',
-                    'filing_decisions.trading_losses_brought_forward_used' => 100.0,
+                    'ct600.calculation.trading_losses_brought_forward_used' => 100.0,
+                    'ct600.calculation.trading_losses_current_or_later_claimed' => 0.0,
+                    'ct600.calculation.trading_losses_carried_forward_claimed' => 0.0,
                 ],
             ],
             [
@@ -214,7 +223,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             ],
             [[
                 'profile_id' => 11,
-                'canonical_key' => 'filing_decisions.trading_losses_brought_forward_used',
+                'canonical_key' => 'ct600.calculation.trading_losses_brought_forward_used',
                 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/Income/Trading/LossesBroughtForward',
                 'value_type' => 'numeric',
                 'rim_data_type' => 'ct:CTwholePoundStructure',
@@ -225,5 +234,44 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         );
         $h->assertSame(true, $result['success']);
         $h->assertSame('100.00', $result['mappings'][0]['serialized_value']);
+    });
+    $h->check($service::class, 'maps post-2017 carried-forward loss relief to box 285 and not box 160', static function () use ($h, $service): void {
+        $profile = [
+            'id' => 12, 'target_type' => \eel_accounts\Service\CtFilingMappingService::TARGET_RIM,
+            'rim_package_id' => 4, 'status' => 'active', 'compatibility_status' => 'compatible',
+        ];
+        $paths = [
+            'ct600.calculation.trading_losses_brought_forward_used' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/Income/Trading/LossesBroughtForward',
+            'ct600.calculation.trading_losses_current_or_later_claimed' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/TradingLosses',
+            'ct600.calculation.trading_losses_carried_forward_claimed' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/TradingLossesCarriedForward',
+        ];
+        $mappings = [];
+        foreach ($paths as $key => $path) {
+            $mappings[] = [
+                'profile_id' => 12, 'canonical_key' => $key, 'target_xpath' => $path,
+                'value_type' => 'numeric', 'rim_data_type' => 'ct:CTwholePoundStructure',
+                'sign_multiplier' => 1, 'null_policy' => 'omit', 'is_required' => 0,
+            ];
+        }
+        $result = $service->mapFrozenFacts(
+            \eel_accounts\Service\CtFilingMappingService::TARGET_RIM,
+            [
+                'available' => true, 'basis_version' => 'test-basis-v1', 'basis_hash' => str_repeat('e', 64),
+                'run' => ['run_id' => 95], 'model' => ['ct_period' => ['id' => 21]],
+                'seal' => ['basis_hash' => str_repeat('e', 64)],
+                'facts' => [
+                    'computation.summary.losses_used' => 4.67,
+                    'ct600.calculation.trading_losses_brought_forward_used' => 0.0,
+                    'ct600.calculation.trading_losses_current_or_later_claimed' => 0.0,
+                    'ct600.calculation.trading_losses_carried_forward_claimed' => 4.67,
+                ],
+            ],
+            $profile,
+            $mappings
+        );
+        $h->assertSame(true, $result['success']);
+        $resolved = array_column((array)$result['mappings'], 'serialized_value', 'target_xpath');
+        $h->assertSame('5.00', $resolved['IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/TradingLossesCarriedForward'] ?? null);
+        $h->assertSame('0.00', $resolved['IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/Income/Trading/LossesBroughtForward'] ?? null);
     });
 });

@@ -481,7 +481,11 @@ final class _ixbrl_generationCard extends CardBaseFramework
             (array)($filing['preparation_blockers'] ?? [])
         ), static fn(string $blocker): bool => $blocker !== ''));
 
-        return $blockers !== [] && array_values(array_diff($blockers, $resolvable)) === [];
+        return $blockers !== [] && array_values(array_filter(
+            $blockers,
+            static fn(string $blocker): bool => !in_array($blocker, $resolvable, true)
+                && !str_starts_with($blocker, 'Latest export failed Arelle external validation.')
+        )) === [];
     }
 
     private function metric(string $label, string $value): string

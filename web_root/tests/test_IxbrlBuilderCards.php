@@ -670,6 +670,14 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         }
         $harness->assertTrue($buttonDisabled($prerequisiteGeneratedByAction, 'Generate Companies House iXBRL'));
 
+        $context['services']['companies_house_ixbrl']['preparation_blockers'] = [
+            'Latest export failed Arelle external validation.',
+        ];
+        $failedExportCanBeRebuilt = $card->render($context);
+        if ($buttonDisabled($failedExportCanBeRebuilt, 'Generate All Filing iXBRLs')) {
+            throw new RuntimeException('The combined action should rebuild a failed HMRC Accounting iXBRL export.');
+        }
+
         $context['services']['companies_house_ixbrl']['preparation_blockers'][] = 'Record Companies House written confirmation.';
         $genuineBlocker = $card->render($context);
         $harness->assertTrue($buttonDisabled($genuineBlocker, 'Generate All Filing iXBRLs'));

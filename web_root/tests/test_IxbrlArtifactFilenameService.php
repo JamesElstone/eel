@@ -12,8 +12,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $hash = '7f7e6007e08223fc' . str_repeat('a', 48);
         $h->check($service::class, 'builds the three canonical destination filenames', static function () use ($h, $service, $hash): void {
             $h->assertSame(
-                'accounts_14337285_79_91_113_hmrc-ct600_20220905_20230904_7f7e6007e08223fc.xhtml',
-                $service->build('14337285', 79, 91, 113, $service::DESTINATION_HMRC_CT600, '20220905', '20230904', strtoupper($hash))
+                'accounts_14337285_79_91_113_hmrc-computation_20220905_20230904_7f7e6007e08223fc.xhtml',
+                $service->build('14337285', 79, 91, 113, $service::DESTINATION_HMRC_COMPUTATION, '20220905', '20230904', strtoupper($hash))
             );
             $h->assertSame(
                 'accounts_SC123456_79_12_16_hmrc-accounting_20220905_20230930_7f7e6007e08223fc.xhtml',

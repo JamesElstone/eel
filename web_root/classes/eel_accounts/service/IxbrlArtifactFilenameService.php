@@ -12,12 +12,12 @@ namespace eel_accounts\Service;
 /** Builds the canonical, auditable filename for newly generated iXBRL filing artifacts. */
 final class IxbrlArtifactFilenameService
 {
-    public const DESTINATION_HMRC_CT600 = 'hmrc-ct600';
+    public const DESTINATION_HMRC_COMPUTATION = 'hmrc-computation';
     public const DESTINATION_HMRC_ACCOUNTING = 'hmrc-accounting';
     public const DESTINATION_COMPANIES_HOUSE = 'companies-house';
 
     private const DESTINATIONS = [
-        self::DESTINATION_HMRC_CT600,
+        self::DESTINATION_HMRC_COMPUTATION,
         self::DESTINATION_HMRC_ACCOUNTING,
         self::DESTINATION_COMPANIES_HOUSE,
     ];

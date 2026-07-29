@@ -204,7 +204,7 @@ final class IxbrlTaxComputationService
                 $accountingPeriodId,
                 (int)($model['approval']['id'] ?? 0),
                 $runId,
-                IxbrlArtifactFilenameService::DESTINATION_HMRC_CT600,
+                IxbrlArtifactFilenameService::DESTINATION_HMRC_COMPUTATION,
                 str_replace('-', '', (string)$run['period_start']),
                 str_replace('-', '', (string)$run['period_end']),
                 $rendered['xhtml']

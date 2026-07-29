@@ -128,7 +128,12 @@ final class _ixbrl_generationCard extends CardBaseFramework
                         . '</div>'
                     : '') . '
                 ' . $this->internalValidationDetails($run) . '
-                ' . $this->arelleOutput($run) . '
+                ' . $this->arelleOutput($run, [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'scope' => 'accounts',
+                    'run_id' => (int)($run['id'] ?? 0),
+                ]) . '
                 ' . (!$readyForFiling && $fileExists
                     ? '<div class="helper"><span class="badge warning">Review draft only</span> The generated file is withheld from filing download until the current file passes every validation and hash check.</div>'
                     : '') . '
@@ -180,7 +185,12 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . '<span class="badge muted">Not Generated</span></div>'
                 . '<div class="helper ixbrl-complete-filing-set-helper">Prepare the Companies House-specific accounts iXBRL from the approved '
                 . \eel_accounts\Support\Utf8::html($filingLabel) . ' filing basis. This does not transmit it.</div>'
-                . $this->arelleOutput($revisedValidation)
+                . $this->arelleOutput($revisedValidation, [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'scope' => 'companies_house',
+                    'submission_id' => (int)($submission['id'] ?? 0),
+                ])
                 . $blockersHtml
                 . '<form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">'
                 . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
@@ -234,7 +244,12 @@ final class _ixbrl_generationCard extends CardBaseFramework
             . $this->metric('Submission number', (string)($submission['submission_number'] ?? 'Allocated on send'))
             . $this->metricHtml('Artifact', $artifactDownload)
             . '</div>'
-            . $this->arelleOutput($revisedValidation)
+            . $this->arelleOutput($revisedValidation, [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'scope' => 'companies_house',
+                'submission_id' => (int)($submission['id'] ?? 0),
+            ])
             . '<div class="actions-row">' . $regenerate . '</div>'
             . '</section>';
     }
@@ -382,7 +397,13 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . $this->metric('Arelle validation', $this->validationLabel((string)($run['external_validation_status'] ?? 'not_run')))
                 . $this->metricHtml('Artifact', $artifact)
                 . '</div>'
-                . $this->arelleOutput($run);
+                . $this->arelleOutput($run, [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'scope' => 'computation',
+                    'run_id' => (int)($run['id'] ?? 0),
+                    'ct_period_id' => $ctPeriodId,
+                ]);
             $errors = array_values(array_unique(array_merge((array)($status['errors'] ?? []), (array)($status['artifact_errors'] ?? []))));
             $staleArtifactErrors = [
                 'The computation artifact filing basis is stale.',
@@ -507,7 +528,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
         return $html;
     }
 
-    private function arelleOutput(array $result): string
+    private function arelleOutput(array $result, array $download = []): string
     {
         $status = trim((string)($result['external_validation_status'] ?? $result['status'] ?? ''));
         $version = trim((string)($result['external_validator_version'] ?? $result['version'] ?? ''));
@@ -537,9 +558,28 @@ final class _ixbrl_generationCard extends CardBaseFramework
         }
         $logPath = trim((string)($result['external_validation_log_path'] ?? $result['log_path'] ?? ''));
         if ($logPath !== '') {
-            $html .= '<details class="ixbrl-arelle-raw-log"><summary>Raw Arelle diagnostic log</summary>'
-                . '<div class="helper">The complete unparsed stdout and stderr are retained in the server diagnostic log for authorised support access.</div>'
-                . '</details>';
+            $companyId = (int)($download['company_id'] ?? 0);
+            $accountingPeriodId = (int)($download['accounting_period_id'] ?? 0);
+            $scope = trim((string)($download['scope'] ?? ''));
+            $runId = (int)($download['run_id'] ?? 0);
+            $ctPeriodId = (int)($download['ct_period_id'] ?? 0);
+            $submissionId = (int)($download['submission_id'] ?? 0);
+            $identityReady = $scope === 'companies_house' ? $submissionId > 0 : $runId > 0;
+            if ($companyId > 0 && $accountingPeriodId > 0 && $scope !== '' && $identityReady) {
+                $html .= '<form method="post" action="?page=disclosures" class="actions-row ixbrl-arelle-log-download">'
+                    . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+                    . '<input type="hidden" name="card_action" value="Ixbrl">'
+                    . '<input type="hidden" name="intent" value="download_arelle_log">'
+                    . '<input type="hidden" name="company_id" value="' . $companyId . '">'
+                    . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
+                    . '<input type="hidden" name="arelle_scope" value="'
+                    . \eel_accounts\Support\Utf8::html($scope) . '">'
+                    . '<input type="hidden" name="run_id" value="' . $runId . '">'
+                    . '<input type="hidden" name="ct_period_id" value="' . $ctPeriodId . '">'
+                    . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
+                    . '<button class="button compact secondary" type="submit">Download Arelle Log</button>'
+                    . '</form>';
+            }
         }
         return $html . '</section>';
     }

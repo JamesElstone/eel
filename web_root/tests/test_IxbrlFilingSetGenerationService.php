@@ -198,5 +198,118 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 ));
             }
         );
+
+        $harness->check(
+            \eel_accounts\Service\IxbrlFilingSetGenerationService::class,
+            'reports separate validation boundaries with time-weighted filing-set progress',
+            static function () use ($harness): void {
+                $accountsCurrent = false;
+                $ctCurrent = [71 => false, 72 => false];
+                $companiesHouseCurrent = false;
+                $progress = [];
+                $service = new \eel_accounts\Service\IxbrlFilingSetGenerationService(
+                    readinessResolver: static function () use (&$accountsCurrent): array {
+                        return [
+                            'can_generate' => true,
+                            'ready_for_filing' => $accountsCurrent,
+                        ];
+                    },
+                    periodProjectionResolver: static fn(): array => [
+                        'periods' => [
+                            ['ct_period_id' => 71, 'sequence_no' => 1, 'status' => 'current'],
+                            ['ct_period_id' => 72, 'sequence_no' => 2, 'status' => 'current'],
+                        ],
+                    ],
+                    companiesHouseResolver: static function () use (&$companiesHouseCurrent): array {
+                        return [
+                            'filing_required' => true,
+                            'filing_kind' => 'revised',
+                            'can_prepare' => true,
+                            'can_prepare_after_accounts_generation' => true,
+                            'preparation_blockers' => [],
+                            'prepared_artifact' => $companiesHouseCurrent
+                                ? ['state' => 'current', 'current' => true, 'filename' => 'revised.xhtml']
+                                : [],
+                            'revised_validation' => $companiesHouseCurrent
+                                ? ['status' => 'passed']
+                                : [],
+                        ];
+                    },
+                    accountsGenerator: static fn(): array => ['success' => true, 'warnings' => []],
+                    accountsValidator: static function () use (&$accountsCurrent): array {
+                        $accountsCurrent = true;
+                        return ['status' => 'passed', 'warnings' => []];
+                    },
+                    computationStatusResolver: static function (
+                        int $companyId,
+                        int $accountingPeriodId,
+                        int $ctPeriodId
+                    ) use (&$ctCurrent): array {
+                        return ['ready' => true, 'fileable' => $ctCurrent[$ctPeriodId]];
+                    },
+                    computationGenerator: static function (
+                        int $companyId,
+                        int $accountingPeriodId,
+                        int $ctPeriodId,
+                        callable $beforeValidation
+                    ) use (&$ctCurrent): array {
+                        $beforeValidation();
+                        $ctCurrent[$ctPeriodId] = true;
+                        return ['success' => true, 'warnings' => []];
+                    },
+                    companiesHousePreparer: static function (
+                        int $companyId,
+                        int $accountingPeriodId,
+                        string $actor,
+                        callable $report
+                    ) use (&$companiesHouseCurrent): array {
+                        $report('Checking Companies House iXBRL preparation requirements…', 0);
+                        $report('Preparing the filing-evidence bundle…', 15);
+                        $report('Reserving the Companies House iXBRL evidence record…', 30);
+                        $report('Generating the Companies House revised-accounts iXBRL…', 40);
+                        $report('Running Arelle validation for the Companies House revised-accounts iXBRL…', 45);
+                        $report('Recording the validated Companies House iXBRL…', 92);
+                        $report('Creating the Companies House filing record…', 96);
+                        $report('Companies House iXBRL prepared and validated.', 100);
+                        $companiesHouseCurrent = true;
+                        return ['success' => true, 'warnings' => []];
+                    },
+                    revisionReadinessResolver: static fn(): array => [
+                        'applicable' => true,
+                        'ready' => true,
+                    ],
+                );
+
+                $result = $service->generate(
+                    49005,
+                    80005,
+                    'test',
+                    static function (string $message, int $percent) use (&$progress): void {
+                        $progress[] = [$message, $percent];
+                    }
+                );
+
+                $harness->assertTrue((bool)$result['success']);
+                $harness->assertSame([
+                    ['Checking the complete filing-set prerequisites…', 0],
+                    ['Generating the Accounting iXBRL…', 12],
+                    ['Running Arelle validation for the Accounting iXBRL…', 15],
+                    ['Generating iXBRL for Corporation Tax period 1 of 2…', 49],
+                    ['Running Arelle validation for Corporation Tax period 1 of 2…', 51],
+                    ['Generating iXBRL for Corporation Tax period 2 of 2…', 61],
+                    ['Running Arelle validation for Corporation Tax period 2 of 2…', 63],
+                    ['Preparing the Companies House revised-accounts iXBRL…', 73],
+                    ['Checking Companies House iXBRL preparation requirements…', 73],
+                    ['Preparing the filing-evidence bundle…', 76],
+                    ['Reserving the Companies House iXBRL evidence record…', 80],
+                    ['Generating the Companies House revised-accounts iXBRL…', 83],
+                    ['Running Arelle validation for the Companies House revised-accounts iXBRL…', 84],
+                    ['Recording the validated Companies House iXBRL…', 96],
+                    ['Creating the Companies House filing record…', 97],
+                    ['Companies House iXBRL prepared and validated.', 99],
+                    ['The filing iXBRL set is complete.', 100],
+                ], $progress);
+            }
+        );
     }
 );

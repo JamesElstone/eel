@@ -31,8 +31,13 @@ final class IxbrlRevisedAccountsArtifactService
     ) {
     }
 
-    public function prepare(int $companyId, int $accountingPeriodId, array $input, string $evidenceArtifactId = ''): array
-    {
+    public function prepare(
+        int $companyId,
+        int $accountingPeriodId,
+        array $input,
+        string $evidenceArtifactId = '',
+        mixed $progress = null
+    ): array {
         $errors = $this->inputErrors($companyId, $accountingPeriodId, $input);
         if ($errors !== []) {
             return ['success' => false, 'errors' => $errors, 'warnings' => []];
@@ -160,6 +165,11 @@ final class IxbrlRevisedAccountsArtifactService
             return ['success' => false, 'errors' => ['The revised-accounts artifact could not be fingerprinted.'], 'warnings' => []];
         }
 
+        $this->reportProgress(
+            $progress,
+            'Running Arelle validation for the Companies House revised-accounts iXBRL…',
+            45
+        );
         $validation = ($this->validationService ?? new IxbrlExternalValidationService())
             ->validateArtifact($path);
         if ((string)($validation['status'] ?? '') !== 'passed') {
@@ -201,6 +211,15 @@ final class IxbrlRevisedAccountsArtifactService
             'validation' => $validation,
             'evidence_artifact_id' => $evidenceArtifactId,
         ];
+    }
+
+    private function reportProgress(mixed $progress, string $message, int $percent): void
+    {
+        if ($progress instanceof \ActionProgressFramework) {
+            $progress->report($message, $percent);
+        } elseif (is_callable($progress)) {
+            $progress($message, $percent);
+        }
     }
 
     /** @return array{success: bool, errors: array, warnings: array, xhtml?: string} */

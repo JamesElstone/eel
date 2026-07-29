@@ -189,16 +189,16 @@ final class IxbrlFilingSetGenerationService
         $warnings = [];
         if ((string)$plan['accounts']['state'] === 'current') {
             $messages[] = 'Accounting iXBRL reused because it is current and filing-ready.';
-            $this->report($progress, 'Reusing the current validated Accounting iXBRL…', 25);
+            $this->report($progress, 'Reusing the current validated Accounting iXBRL…', 49);
         } else {
-            $this->report($progress, 'Generating the Accounting iXBRL…', 20);
+            $this->report($progress, 'Generating the Accounting iXBRL…', 12);
             $generated = $this->generateAccounts($companyId, $accountingPeriodId);
             if (empty($generated['success'])) {
                 return $this->failure((array)($generated['errors'] ?? [
                     'Accounting iXBRL generation failed.',
                 ]), (array)($generated['warnings'] ?? []), $messages, $plan);
             }
-            $this->report($progress, 'Running Arelle validation for the Accounting iXBRL…', 35);
+            $this->report($progress, 'Running Arelle validation for the Accounting iXBRL…', 15);
             $validated = $this->validateAccounts($companyId, $accountingPeriodId);
             if ((string)($validated['status'] ?? '') !== 'passed') {
                 return $this->failure((array)($validated['errors'] ?? [
@@ -220,7 +220,12 @@ final class IxbrlFilingSetGenerationService
         foreach ((array)$plan['computations'] as $index => $computationStage) {
             $ctPeriodId = (int)$computationStage['ct_period_id'];
             $sequence = (int)$computationStage['sequence_no'];
-            $percent = 45 + (int)floor((max(0, $index) / max(1, $periodCount)) * 35);
+            $periodShare = 24 / max(1, $periodCount);
+            $percent = 49 + (int)floor(max(0, $index) * $periodShare);
+            $validationPercent = min(
+                72,
+                $percent + max(1, (int)floor($periodShare * 0.2))
+            );
             if ((string)$computationStage['state'] === 'current') {
                 $messages[] = 'Corporation Tax period ' . $sequence
                     . ' iXBRL reused because it is current and filing-ready.';
@@ -242,12 +247,12 @@ final class IxbrlFilingSetGenerationService
                 $companyId,
                 $accountingPeriodId,
                 $ctPeriodId,
-                function () use ($progress, $index, $periodCount, $percent): void {
+                function () use ($progress, $index, $periodCount, $validationPercent): void {
                     $this->report(
                         $progress,
                         'Running Arelle validation for Corporation Tax period '
                             . ($index + 1) . ' of ' . $periodCount . '…',
-                        min(84, $percent + 8)
+                        $validationPercent
                     );
                 }
             );
@@ -283,16 +288,16 @@ final class IxbrlFilingSetGenerationService
             $messages[] = 'No Companies House filing artifact is required for this accounting period.';
         } elseif ((string)$companiesHouseStage['state'] === 'current') {
             $messages[] = 'Companies House accounts iXBRL reused because it is current.';
-            $this->report($progress, 'Reusing the current Companies House accounts iXBRL…', 90);
+            $this->report($progress, 'Reusing the current Companies House accounts iXBRL…', 99);
         } else {
             $kind = (string)($companiesHouseContext['filing_kind'] ?? '');
             $this->report(
                 $progress,
                 'Preparing the Companies House ' . $kind . '-accounts iXBRL…',
-                90
+                73
             );
             $companiesHouseProgress = function (string $message, int $percent) use ($progress): void {
-                $this->report($progress, $message, min(99, 90 + (int)floor($percent * 0.09)));
+                $this->report($progress, $message, min(99, 73 + (int)floor($percent * 0.26)));
             };
             $prepared = $this->prepareCompaniesHouse(
                 $companyId,

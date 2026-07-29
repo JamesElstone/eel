@@ -675,9 +675,15 @@ final class CompaniesHouseAccountsSubmissionService
         } catch (\Throwable $exception) {
             return $this->failure('Current filing evidence is required: ' . $exception->getMessage());
         }
-        $this->reportProgress($progress, 'Generating and validating the Companies House iXBRL…', 40);
+        $this->reportProgress($progress, 'Generating the Companies House revised-accounts iXBRL…', 40);
         $artifact = ($this->artifactService ?? new IxbrlRevisedAccountsArtifactService())
-            ->prepare($companyId, $accountingPeriodId, $input, (string)$evidenceArtifact['display_id']);
+            ->prepare(
+                $companyId,
+                $accountingPeriodId,
+                $input,
+                (string)$evidenceArtifact['display_id'],
+                $progress
+            );
         if (empty($artifact['success'])) {
             $validation = (array)($artifact['validation'] ?? []);
             $evidenceService->failArtifact(
@@ -693,7 +699,7 @@ final class CompaniesHouseAccountsSubmissionService
             ];
         }
         $validation = (array)($artifact['validation'] ?? []);
-        $this->reportProgress($progress, 'Recording the validated Companies House iXBRL…', 80);
+        $this->reportProgress($progress, 'Recording the validated Companies House iXBRL…', 92);
         $evidenceService->completeArtifact((int)$evidenceArtifact['id'], [
             'status' => 'validated',
             'filename' => (string)$artifact['filename'],
@@ -742,7 +748,7 @@ final class CompaniesHouseAccountsSubmissionService
         }
 
         $now = gmdate('Y-m-d H:i:s');
-        $this->reportProgress($progress, 'Creating the Companies House filing record…', 90);
+        $this->reportProgress($progress, 'Creating the Companies House filing record…', 96);
         \InterfaceDB::transaction(function () use (
             $eligibility,
             $context,
@@ -892,6 +898,7 @@ final class CompaniesHouseAccountsSubmissionService
             $evidenceService = new FilingEvidenceService();
             $this->reportProgress($progress, 'Preparing the filing-evidence bundle…', 15);
             $evidenceBundle = $evidenceService->ensureCurrentBundle($companyId, $accountingPeriodId, $actor);
+            $this->reportProgress($progress, 'Reserving the Companies House iXBRL evidence record…', 30);
             $evidenceArtifact = $evidenceService->reserveArtifact(
                 $companyId,
                 $accountingPeriodId,
@@ -899,13 +906,14 @@ final class CompaniesHouseAccountsSubmissionService
                 null,
                 ['filing_kind' => 'original']
             );
-            $this->reportProgress($progress, 'Freezing and validating the original Companies House iXBRL…', 40);
+            $this->reportProgress($progress, 'Generating the Companies House original-accounts iXBRL…', 40);
             $artifact = ($this->originalArtifactService ?? new IxbrlOriginalAccountsArtifactService())
                 ->prepare(
                     $companyId,
                     $accountingPeriodId,
                     $classification,
-                    (string)$evidenceArtifact['display_id']
+                    (string)$evidenceArtifact['display_id'],
+                    $progress
                 );
         } catch (\Throwable $exception) {
             return $this->failure($exception->getMessage());
@@ -922,6 +930,7 @@ final class CompaniesHouseAccountsSubmissionService
         }
 
         $validation = (array)($artifact['validation'] ?? []);
+        $this->reportProgress($progress, 'Recording the validated Companies House iXBRL…', 92);
         $evidenceService->completeArtifact((int)$evidenceArtifact['id'], [
             'status' => 'validated',
             'filename' => (string)$artifact['filename'],
@@ -963,6 +972,7 @@ final class CompaniesHouseAccountsSubmissionService
             ['environment' => $environment, 'idempotency_key' => $idempotencyKey]
         );
         if (is_array($existing)) {
+            $this->reportProgress($progress, 'The current Companies House iXBRL is already prepared.', 100);
             return [
                 'success' => true,
                 'errors' => [],
@@ -974,6 +984,7 @@ final class CompaniesHouseAccountsSubmissionService
         }
 
         $now = gmdate('Y-m-d H:i:s');
+        $this->reportProgress($progress, 'Creating the Companies House filing record…', 96);
         \InterfaceDB::prepareExecute(
             'INSERT INTO ' . self::SUBMISSIONS_TABLE . ' (
                 evidence_bundle_id, eligibility_id, company_id, accounting_period_id,
@@ -1030,6 +1041,7 @@ final class CompaniesHouseAccountsSubmissionService
             'Original Companies House accounts prepared and validated.',
             $actor
         );
+        $this->reportProgress($progress, 'Companies House iXBRL prepared and validated.', 100);
 
         return [
             'success' => true,
@@ -3510,7 +3522,9 @@ final class CompaniesHouseAccountsSubmissionService
         $params = [
             'company_id' => $companyId,
             'period_id' => $accountingPeriodId,
-            'role' => 'companies_house_revised_accounts_ixbrl',
+            'role' => strtolower(trim((string)($submission['filing_type'] ?? ''))) === 'original'
+                ? 'companies_house_original_accounts_ixbrl'
+                : 'companies_house_revised_accounts_ixbrl',
         ];
         if ($bundleCondition !== '') {
             $params['bundle_id'] = (int)$submission['evidence_bundle_id'];

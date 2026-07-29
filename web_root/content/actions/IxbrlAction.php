@@ -15,6 +15,7 @@ final class IxbrlAction implements ActionInterfaceFramework
         $companyId = (int)$request->input('company_id', 0);
         $accountingPeriodId = (int)$request->input('accounting_period_id', 0);
         $ctPeriodId = (int)$request->input('ct_period_id', 0);
+        $runId = (int)$request->input('run_id', 0);
         $changedFacts = ['ixbrl.readiness', 'ixbrl.disclosures', 'ixbrl.trial.balance', 'ixbrl.accounts.mapping', 'ixbrl.facts.preview', 'ixbrl.generation', 'ct.filing', 'page.context'];
 
         $contextError = $this->accountingContextError($companyId, $accountingPeriodId);
@@ -28,6 +29,16 @@ final class IxbrlAction implements ActionInterfaceFramework
             }
             if ($intent === 'download_computation_ixbrl') {
                 $this->downloadComputation($companyId, $accountingPeriodId, $ctPeriodId);
+            }
+            if ($intent === 'download_arelle_log') {
+                $this->downloadArelleLog(
+                    $companyId,
+                    $accountingPeriodId,
+                    trim((string)$request->input('arelle_scope', '')),
+                    $runId,
+                    $ctPeriodId,
+                    (int)$request->input('submission_id', 0)
+                );
             }
             if ($intent === 'save_ixbrl_disclosures') {
                 $result = $this->saveDisclosures($request, $companyId, $accountingPeriodId);
@@ -462,6 +473,42 @@ final class IxbrlAction implements ActionInterfaceFramework
         header('Content-Disposition: attachment; filename="' . str_replace('"', '', basename((string)$artifact['filename'])) . '"');
         $size = filesize($path);
         if (is_int($size)) { header('Content-Length: ' . $size); }
+        readfile($path);
+        exit;
+    }
+
+    private function downloadArelleLog(
+        int $companyId,
+        int $accountingPeriodId,
+        string $scope,
+        int $runId,
+        int $ctPeriodId,
+        int $submissionId
+    ): never {
+        $log = (new \eel_accounts\Service\IxbrlArelleLogDownloadService())->resolve(
+            $companyId,
+            $accountingPeriodId,
+            $scope,
+            $runId,
+            $ctPeriodId,
+            $submissionId
+        );
+        if (empty($log['ok'])) {
+            header('Content-Type: text/plain; charset=utf-8', true, 404);
+            echo (string)(($log['errors'] ?? [])[0] ?? 'The Arelle diagnostic log is unavailable.');
+            exit;
+        }
+
+        $path = (string)$log['path'];
+        header('Content-Type: text/plain; charset=utf-8');
+        header('Content-Disposition: attachment; filename="'
+            . str_replace('"', '', basename((string)$log['filename'])) . '"');
+        header('X-Content-Type-Options: nosniff');
+        header('Cache-Control: private, no-store');
+        $size = filesize($path);
+        if (is_int($size)) {
+            header('Content-Length: ' . $size);
+        }
         readfile($path);
         exit;
     }

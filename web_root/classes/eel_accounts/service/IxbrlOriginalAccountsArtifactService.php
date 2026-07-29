@@ -25,7 +25,8 @@ final class IxbrlOriginalAccountsArtifactService
         int $companyId,
         int $accountingPeriodId,
         array $classification,
-        string $evidenceArtifactId = ''
+        string $evidenceArtifactId = '',
+        mixed $progress = null
     ): array {
         if ((string)($classification['filing_kind'] ?? '') !== 'original'
             || trim((string)($classification['approval_basis_hash'] ?? '')) === '') {
@@ -107,6 +108,11 @@ final class IxbrlOriginalAccountsArtifactService
             fclose($handle);
         }
 
+        $this->reportProgress(
+            $progress,
+            'Running Arelle validation for the Companies House original-accounts iXBRL…',
+            45
+        );
         $validation = ($this->validationService ?? new IxbrlExternalValidationService())
             ->validateArtifact($path);
         if ((string)($validation['status'] ?? '') !== 'passed') {
@@ -192,5 +198,14 @@ final class IxbrlOriginalAccountsArtifactService
     private function failure(string $message): array
     {
         return ['success' => false, 'errors' => [$message], 'warnings' => []];
+    }
+
+    private function reportProgress(mixed $progress, string $message, int $percent): void
+    {
+        if ($progress instanceof \ActionProgressFramework) {
+            $progress->report($message, $percent);
+        } elseif (is_callable($progress)) {
+            $progress($message, $percent);
+        }
     }
 }

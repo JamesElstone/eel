@@ -506,12 +506,13 @@ $harness->run(_ixbrl_facts_previewCard::class, static function (GeneratedService
 });
 
 $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceClassTestHarness $harness, _ixbrl_generationCard $card): void {
-    $harness->check(_ixbrl_generationCard::class, 'renders structured Arelle diagnostics safely with the retained raw-log detail', static function () use ($harness, $card): void {
+    $harness->check(_ixbrl_generationCard::class, 'renders structured Arelle diagnostics safely with a scoped log download', static function () use ($harness, $card): void {
         $context = [
             'company' => ['id' => 1, 'accounting_period_id' => 1],
             'ixbrl' => [
                 'readiness' => ['arelle_status' => ['installed' => true]],
                 'latest_run' => [
+                    'id' => 41,
                     'status' => 'generated',
                     'external_validation_status' => 'failed',
                     'external_validation_errors_json' => json_encode([[
@@ -542,8 +543,70 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(str_contains($html, 'File: filing.xhtml'));
         $harness->assertFalse(str_contains($html, 'C:\\private'));
         $harness->assertTrue(str_contains($html, 'SomeNamespace:SomeWarning'));
-        $harness->assertTrue(str_contains($html, 'Raw Arelle diagnostic log'));
+        $harness->assertTrue(str_contains($html, 'Download Arelle Log'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="download_arelle_log"'));
+        $harness->assertTrue(str_contains($html, 'name="arelle_scope" value="accounts"'));
+        $harness->assertTrue(str_contains($html, 'name="run_id" value="41"'));
+        $harness->assertFalse(str_contains($html, 'Raw Arelle diagnostic log'));
+        $harness->assertFalse(str_contains(
+            $html,
+            'The complete unparsed stdout and stderr are retained'
+        ));
         $harness->assertFalse(str_contains($html, 'Arelle exited with code 3.'));
+    });
+
+    $harness->check(_ixbrl_generationCard::class, 'provides scoped Arelle log downloads for Accounting, CT, and Companies House panels', static function () use ($harness, $card): void {
+        $context = [
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'ixbrl' => [
+                'readiness' => ['arelle_status' => ['installed' => true]],
+                'latest_run' => [
+                    'id' => 101,
+                    'external_validation_status' => 'passed',
+                    'external_validation_log_path' => 'C:\\private\\arelle_validation_accounts.log',
+                ],
+                'computation_periods' => [[
+                    'ct_period' => [
+                        'id' => 6,
+                        'sequence_no' => 1,
+                        'period_start' => '2025-01-01',
+                        'period_end' => '2025-12-31',
+                    ],
+                    'status' => [
+                        'run' => [
+                            'id' => 202,
+                            'external_validation_status' => 'passed',
+                            'external_validation_log_path' => 'C:\\private\\arelle_validation_ct.log',
+                        ],
+                    ],
+                ]],
+            ],
+            'services' => [
+                'companies_house_ixbrl' => [
+                    'filing_kind' => 'revised',
+                    'submission' => ['id' => 303, 'lifecycle' => 'prepared'],
+                    'prepared_artifact' => [
+                        'state' => 'current',
+                        'current' => true,
+                        'filename' => 'companies-house.xhtml',
+                    ],
+                    'revised_validation' => [
+                        'status' => 'passed',
+                        'log_path' => 'C:\\private\\arelle_validation_companies_house.log',
+                    ],
+                ],
+            ],
+        ];
+
+        $html = $card->render($context);
+        $harness->assertSame(3, substr_count($html, '>Download Arelle Log</button>'));
+        $harness->assertTrue(str_contains($html, 'name="arelle_scope" value="accounts"'));
+        $harness->assertTrue(str_contains($html, 'name="run_id" value="101"'));
+        $harness->assertTrue(str_contains($html, 'name="arelle_scope" value="computation"'));
+        $harness->assertTrue(str_contains($html, 'name="run_id" value="202"'));
+        $harness->assertTrue(str_contains($html, 'name="ct_period_id" value="6"'));
+        $harness->assertTrue(str_contains($html, 'name="arelle_scope" value="companies_house"'));
+        $harness->assertTrue(str_contains($html, 'name="submission_id" value="303"'));
     });
 
     $harness->check(_ixbrl_generationCard::class, 'uses shared capabilities and withholds filing download until fully ready', static function () use ($harness, $card): void {

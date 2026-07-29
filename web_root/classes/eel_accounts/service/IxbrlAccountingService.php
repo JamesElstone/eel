@@ -416,6 +416,7 @@ final class IxbrlAccountingService
                 ['natural_date' => true]
             ) . '</p>'
             . $this->profitAndLossTable($indexed)
+            . $this->grossProfitBridge($indexed)
             . '</div>' . "\n"
             . '<div class="accountspage pagebreak statement-page">'
             . $this->pageHeader($indexed, 'Balance sheet')
@@ -457,6 +458,80 @@ final class IxbrlAccountingService
         ];
 
         return $this->statementTable($indexed, $rows, $this->factValue($this->currentFact($indexed, 'period_end')));
+    }
+
+    private function grossProfitBridge(array $indexed): string
+    {
+        $current = $this->grossProfitBridgeAmounts($indexed, false);
+        $comparative = $this->hasComparative($indexed)
+            ? $this->grossProfitBridgeAmounts($indexed, true)
+            : null;
+        if (empty($current['has_subcontractor_labour'])
+            && empty($comparative['has_subcontractor_labour'])) {
+            return '';
+        }
+
+        $hasComparative = $this->hasComparative($indexed);
+        $periodEnd = $this->factValue($this->currentFact($indexed, 'period_end'));
+        $comparativePeriod = $hasComparative ? $this->comparativePeriodFromIndex($indexed) : null;
+        $amount = fn(?array $values, string $key, bool $brackets = false): string => $values === null
+            ? '–'
+            : $this->visibleAmount((float)($values[$key] ?? 0), $brackets);
+
+        $html = '<div class="gross-profit-bridge keepTogether">'
+            . '<p>The statutory gross profit / (loss) subtotal is turnover less raw materials and consumables. '
+            . 'Subcontractor labour is included within other charges.</p>'
+            . '<table class="financial-table gross-profit-bridge-table"><colgroup><col class="description-column"/>'
+            . '<col class="amount-column"/>'
+            . ($hasComparative ? '<col class="amount-column"/>' : '')
+            . '</colgroup><thead><tr><th class="description" scope="col"></th>'
+            . '<th class="amount" scope="col">' . $this->e($this->yearOf($periodEnd)) . '<br/><span>£</span></th>'
+            . ($hasComparative
+                ? '<th class="amount" scope="col">'
+                    . $this->e($this->yearOf((string)($comparativePeriod['period_end'] ?? '')))
+                    . '<br/><span>£</span></th>'
+                : '')
+            . '</tr></thead><tbody>'
+            . '<tr><th class="description" scope="row">Statutory gross profit / (loss)</th>'
+            . '<td class="amount">' . $amount($current, 'gross_profit') . '</td>'
+            . ($hasComparative ? '<td class="amount">' . $amount($comparative, 'gross_profit') . '</td>' : '')
+            . '</tr>'
+            . '<tr><th class="description" scope="row">Less: subcontractor labour included in other charges</th>'
+            . '<td class="amount">' . $amount($current, 'subcontractor_labour', true) . '</td>'
+            . ($hasComparative
+                ? '<td class="amount">' . $amount($comparative, 'subcontractor_labour', true) . '</td>'
+                : '')
+            . '</tr>'
+            . '<tr class="subtotal"><th class="description" scope="row">Management gross profit / (loss)</th>'
+            . '<td class="amount">' . $amount($current, 'management_gross_profit') . '</td>'
+            . ($hasComparative ? '<td class="amount">' . $amount($comparative, 'management_gross_profit') . '</td>' : '')
+            . '</tr></tbody></table></div>';
+
+        return $html;
+    }
+
+    private function grossProfitBridgeAmounts(array $indexed, bool $comparative): array
+    {
+        $otherCharges = $comparative
+            ? $this->comparativeFact($indexed, 'other_charges')
+            : $this->currentFact($indexed, 'other_charges');
+        $source = json_decode((string)($otherCharges['source_json'] ?? ''), true);
+        $subcontractorLabour = 0.0;
+        foreach ((array)($source['source_rows'] ?? []) as $row) {
+            if (!is_array($row)
+                || preg_match('/\bsubcontract(?:or|ors|ing|ed)?\b/i', (string)($row['label'] ?? '')) !== 1) {
+                continue;
+            }
+            $subcontractorLabour += (float)($row['amount'] ?? 0);
+        }
+        $subcontractorLabour = round($subcontractorLabour, 2);
+        $grossProfit = $this->numericFact($indexed, 'gross_profit_loss', $comparative);
+        return [
+            'gross_profit' => $grossProfit,
+            'subcontractor_labour' => $subcontractorLabour,
+            'management_gross_profit' => round($grossProfit - $subcontractorLabour, 2),
+            'has_subcontractor_labour' => abs($subcontractorLabour) >= 0.005,
+        ];
     }
 
     private function statementTable(array $indexed, array $rows, string $periodEnd): string
@@ -692,6 +767,9 @@ body {
 h2 { margin: 0; font-size: 13.5pt; text-align: center; }
 .period-subtitle { margin: 1mm 0 8mm; text-align: center; }
 .financial-table, .note-table { width: 92%; margin: 0 auto; border-collapse: collapse; table-layout: fixed; }
+.gross-profit-bridge { width: 92%; margin: 4mm auto 0; }
+.gross-profit-bridge p { margin: 0 0 2mm; font-size: 9.5pt; }
+.gross-profit-bridge .financial-table { width: 100%; }
 .financial-table .description-column, .note-table .description-column { width: auto; }
 .financial-table .amount-column { width: 29mm; }
 .note-table .amount-column { width: 34mm; }

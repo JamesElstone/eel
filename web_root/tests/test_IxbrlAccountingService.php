@@ -14,9 +14,23 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $harness->check(\eel_accounts\Service\IxbrlAccountingService::class, 'renders the FRC 2026 Inline XBRL profile with valid contexts units and signs', static function () use ($harness, $service): void {
             $method = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'renderXhtml');
             $method->setAccessible(true);
+            $facts = ixbrlRenderFixtureFacts();
+            foreach ($facts as &$fact) {
+                if ((string)$fact['fact_key'] === 'other_charges') {
+                    $fact['source_json'] = json_encode([
+                        'period_start' => '2025-01-01',
+                        'period_end' => '2025-12-31',
+                        'source_rows' => [[
+                            'label' => 'Labour services',
+                            'amount' => 1000.0,
+                        ]],
+                    ]);
+                }
+            }
+            unset($fact);
             $xhtml = (string)$method->invoke(
                 $service,
-                ixbrlRenderFixtureFacts(),
+                $facts,
                 false,
                 'EEL-AR-NOT-VISIBLE'
             );
@@ -154,6 +168,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 'Tax on profit / (loss)',
                 'Profit / (loss) for the financial year',
             ], $profitAndLossLabels);
+            $harness->assertFalse(str_contains($xhtml, 'Management gross profit / (loss)'));
             $harness->assertTrue(str_contains($xhtml, 'For the period ended'));
             $harness->assertFalse(str_contains($xhtml, '>for the period ended'));
             $harness->assertSame(1, $xpath->query(
@@ -239,6 +254,69 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $validator->invoke($service, $inconsistentDuplicate),
                 true
             ));
+        });
+
+        $harness->check(\eel_accounts\Service\IxbrlAccountingService::class, 'renders an untagged AP80 gross-profit bridge from subcontractor provenance', static function () use ($harness, $service): void {
+            $facts = ixbrlRenderFixtureFacts();
+            foreach ($facts as &$fact) {
+                $amounts = [
+                    'turnover' => 27972.34,
+                    'raw_materials_consumables' => 17957.69,
+                    'gross_profit_loss' => 10014.65,
+                    'depreciation_write_offs' => 0.0,
+                    'other_charges' => 141.0,
+                    'operating_profit_loss' => 9873.65,
+                    'profit_loss' => 9873.65,
+                ];
+                $key = (string)$fact['fact_key'];
+                if (array_key_exists($key, $amounts)) {
+                    $fact['numeric_value'] = $amounts[$key];
+                }
+                if ($key === 'other_charges') {
+                    $fact['source_json'] = json_encode([
+                        'period_start' => '2025-01-01',
+                        'period_end' => '2025-12-31',
+                        'source_rows' => [[
+                            'label' => 'Electrical subcontractors',
+                            'amount' => 141.0,
+                        ]],
+                    ]);
+                }
+            }
+            unset($fact);
+
+            $render = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'renderXhtml');
+            $render->setAccessible(true);
+            $xhtml = (string)$render->invoke($service, $facts);
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                'The statutory gross profit / (loss) subtotal is turnover less raw materials and consumables. '
+                . 'Subcontractor labour is included within other charges.'
+            ));
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                '<table class="financial-table gross-profit-bridge-table"><colgroup><col class="description-column"/>'
+                . '<col class="amount-column"/></colgroup>'
+            ));
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                '<tr><th class="description" scope="row">Statutory gross profit / (loss)</th>'
+                . '<td class="amount">10,014.65</td></tr>'
+            ));
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                '<tr><th class="description" scope="row">Less: subcontractor labour included in other charges</th>'
+                . '<td class="amount">(141.00)</td></tr>'
+            ));
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                '<tr class="subtotal"><th class="description" scope="row">Management gross profit / (loss)</th>'
+                . '<td class="amount">9,873.65</td></tr>'
+            ));
+            $harness->assertSame(1, substr_count($xhtml, 'name="core:GrossProfitLoss"'));
+            $validator = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'validateInlineXbrl');
+            $validator->setAccessible(true);
+            $harness->assertSame([], $validator->invoke($service, $xhtml));
         });
 
         $harness->check(\eel_accounts\Service\IxbrlAccountingService::class, 'rejects a required fact that exists only in a comparative context', static function () use ($harness, $service): void {
@@ -449,6 +527,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $comparative = $fact;
                 $comparative['context_ref'] = str_replace('current_', 'comparative_', (string)$fact['context_ref']);
                 $comparative['source_json'] = json_encode(['period_start' => '2024-01-01', 'period_end' => '2024-12-31']);
+                if ((string)$fact['fact_key'] === 'other_charges') {
+                    $comparative['source_json'] = json_encode([
+                        'period_start' => '2024-01-01',
+                        'period_end' => '2024-12-31',
+                        'source_rows' => [[
+                            'label' => 'Electrical subcontractors',
+                            'amount' => 50.0,
+                        ]],
+                    ]);
+                }
                 if ((string)$fact['fact_key'] === 'average_number_employees') {
                     $comparative['numeric_value'] = 3.0;
                 }
@@ -474,6 +562,21 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $xhtml,
                 '<th class="amount" scope="col">2025<br/><span>£</span></th>'
                 . '<th class="amount" scope="col">2024<br/><span>£</span></th>'
+            ));
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                '<table class="financial-table gross-profit-bridge-table"><colgroup><col class="description-column"/>'
+                . '<col class="amount-column"/><col class="amount-column"/></colgroup>'
+            ));
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                '<tr><th class="description" scope="row">Less: subcontractor labour included in other charges</th>'
+                . '<td class="amount">–</td><td class="amount">(50.00)</td></tr>'
+            ));
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                '<tr class="subtotal"><th class="description" scope="row">Management gross profit / (loss)</th>'
+                . '<td class="amount">900.00</td><td class="amount">850.00</td></tr>'
             ));
             foreach ([
                 'direp:AdvancesCreditsMadeInPeriodDirectors' => 'comparative_period_duration',

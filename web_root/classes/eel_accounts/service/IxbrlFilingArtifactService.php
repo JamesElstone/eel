@@ -123,6 +123,10 @@ final class IxbrlFilingArtifactService
             'errors' => [],
             'hash' => $outputHash,
             'basis_hash' => (string)($row['basis_hash'] ?? ''),
+            'taxonomy_profile' => (string)($row['taxonomy_profile'] ?? ''),
+            'taxonomy_package_id' => (int)($row['external_taxonomy_package_id'] ?? 0),
+            'taxonomy_package_hash' => (string)($row['external_taxonomy_sha256'] ?? ''),
+            'validation_status' => (string)($row['external_validation_status'] ?? ''),
         ];
     }
 

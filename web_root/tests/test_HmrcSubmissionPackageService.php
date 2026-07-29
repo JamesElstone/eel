@@ -63,6 +63,57 @@ function hmrcPackageTestIxbrl(string $startDate, string $endDate, bool $includeU
 
         $harness->check(
             \eel_accounts\Service\HmrcSubmissionPackageService::class,
+            'records unambiguous CT600 and iXBRL artifact roles with mapping provenance',
+            static function () use ($harness, $service): void {
+                $method = new ReflectionMethod($service, 'manifestArtifacts');
+                $method->setAccessible(true);
+                $artifacts = (array)$method->invoke(
+                    $service,
+                    [
+                        'accounting_period_id' => 79,
+                        'ct_period_id' => 6,
+                        'model' => [
+                            'period' => ['start_date' => '2022-09-05', 'end_date' => '2023-09-04'],
+                            'attachments' => ['supplementary_pages' => []],
+                        ],
+                        'rim' => ['form_version' => 'V3', 'artifact_version' => 'V1.994'],
+                        'mapping_profile' => [
+                            'id' => 6, 'profile_name' => 'reviewed_ct600_v3_v1_994_return_v3',
+                            'revision_no' => 1, 'content_hash' => str_repeat('a', 64),
+                        ],
+                    ],
+                    ['filename' => 'ct600.xml'],
+                    [
+                        'filename' => 'accounts.xhtml', 'hash' => str_repeat('b', 64),
+                        'taxonomy_profile' => 'FRS-102/2025', 'validation_status' => 'passed',
+                    ],
+                    [
+                        'filename' => 'computation.xhtml', 'hash' => str_repeat('c', 64),
+                        'taxonomy_profile' => '2025/V1.0.0', 'mapping_profile_id' => 8,
+                        'mapping_hash' => str_repeat('d', 64), 'validation_status' => 'passed',
+                    ],
+                    str_repeat('e', 64),
+                    'ct600-final.xml',
+                    'passed'
+                );
+
+                $byRole = array_column($artifacts, null, 'role');
+                $harness->assertSame(
+                    ['ct600_return_xml', 'statutory_accounts_ixbrl', 'ct_computation_ixbrl'],
+                    array_column($artifacts, 'role')
+                );
+                $harness->assertSame('V3/V1.994', (string)$byRole['ct600_return_xml']['schema_version']);
+                $harness->assertSame(6, (int)$byRole['ct600_return_xml']['mapping_profile_id']);
+                $harness->assertSame('reviewed_ct600_v3_v1_994_return_v3', (string)$byRole['ct600_return_xml']['mapping_profile_name']);
+                $harness->assertSame([], (array)$byRole['ct600_return_xml']['supplementary_pages']);
+                $harness->assertSame('FRS-102/2025', (string)$byRole['statutory_accounts_ixbrl']['schema_version']);
+                $harness->assertSame('2025/V1.0.0', (string)$byRole['ct_computation_ixbrl']['schema_version']);
+                $harness->assertSame(8, (int)$byRole['ct_computation_ixbrl']['mapping_profile_id']);
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Service\HmrcSubmissionPackageService::class,
             'uses injected builders and artifact locators without masking readiness errors',
             static function () use ($harness): void {
                 InterfaceDB::beginTransaction();

@@ -181,6 +181,7 @@ final class CtFilingMappingService
             ]
         );
         if (!is_array($profile)) {
+            $predecessor = $this->activeProfile($targetType, $packageId);
             $revision = (int)(\InterfaceDB::fetchColumn(
                 'SELECT COALESCE(MAX(revision_no), 0) + 1 FROM ct_filing_mapping_profiles
                  WHERE target_type = :target AND profile_name = :name',
@@ -189,8 +190,9 @@ final class CtFilingMappingService
             \InterfaceDB::prepareExecute(
                 'INSERT INTO ct_filing_mapping_profiles
                  (target_type, rim_package_id, computation_package_id, profile_name, revision_no, status,
-                  content_hash, compatibility_status, created_by)
-                 VALUES (:target, :rim_id, :computation_id, :name, :revision, :status, :hash, :compatibility, :actor)',
+                  parent_profile_id, content_hash, compatibility_status, created_by)
+                 VALUES (:target, :rim_id, :computation_id, :name, :revision, :status, :parent_profile_id,
+                         :hash, :compatibility, :actor)',
                 [
                     'target' => $targetType,
                     'rim_id' => $targetType === self::TARGET_RIM ? $packageId : null,
@@ -198,13 +200,20 @@ final class CtFilingMappingService
                     'name' => (string)$template['profile_name'],
                     'revision' => $revision,
                     'status' => 'draft',
+                    'parent_profile_id' => is_array($predecessor) ? (int)$predecessor['id'] : null,
                     'hash' => hash('sha256', 'empty'),
                     'compatibility' => 'pending',
                     'actor' => $actor,
                 ]
             );
             $profileId = $this->lastInsertId();
-            $this->audit($profileId, 'created', $actor, ['reviewed_natural_identity' => $template['natural_identity']]);
+            $this->audit($profileId, 'created', $actor, [
+                'reviewed_natural_identity' => $template['natural_identity'],
+                'predecessor_profile_id' => is_array($predecessor) ? (int)$predecessor['id'] : null,
+                'replacement_reason' => $targetType === self::TARGET_RIM
+                    ? 'Reviewed CT600 loss-relief mappings and canonical return-position sources supersede the prior profile.'
+                    : 'Reviewed filing mapping template supersedes the prior profile.',
+            ]);
             $profile = $this->profile($profileId);
         }
         $profileId = (int)$profile['id'];
@@ -583,7 +592,10 @@ final class CtFilingMappingService
                 'UPDATE ct_filing_mapping_profiles SET status = :active, activated_by = :actor, activated_at = CURRENT_TIMESTAMP WHERE id = :id',
                 ['active' => 'active', 'actor' => $actor, 'id' => $profileId]
             );
-            $this->audit($profileId, 'activated', $actor, []);
+            $this->audit($profileId, 'activated', $actor, [
+                'predecessor_profile_id' => (int)($profile['parent_profile_id'] ?? 0),
+                'replacement_reason' => 'Validated reviewed profile activated transactionally.',
+            ]);
             \InterfaceDB::commit();
         } catch (\Throwable $exception) {
             \InterfaceDB::rollBack();

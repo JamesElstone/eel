@@ -91,6 +91,14 @@ final class HmrcSubmissionPackageService
             return $this->artifactFailure('not_ready', (string)($errors[0] ?? 'The computations iXBRL artifact is not filing-ready.'), $errors);
         }
         $run = (array)$status['run'];
+        $taxonomy = [];
+        if ((int)($run['computation_taxonomy_package_id'] ?? 0) > 0
+            && \InterfaceDB::tableExists('hmrc_ct_computation_packages')) {
+            $taxonomy = (array)(\InterfaceDB::fetchOne(
+                'SELECT taxonomy_version, artifact_version FROM hmrc_ct_computation_packages WHERE id = :id LIMIT 1',
+                ['id' => (int)$run['computation_taxonomy_package_id']]
+            ) ?: []);
+        }
         return [
             'ok' => true,
             'state' => 'ready',
@@ -105,6 +113,10 @@ final class HmrcSubmissionPackageService
             'mapping_hash' => (string)($run['ixbrl_mapping_hash'] ?? ''),
             'taxonomy_package_id' => (int)($run['computation_taxonomy_package_id'] ?? 0),
             'taxonomy_package_hash' => (string)($run['computation_taxonomy_package_hash'] ?? ''),
+            'taxonomy_profile' => trim((string)($taxonomy['taxonomy_version'] ?? '')) !== ''
+                ? (string)$taxonomy['taxonomy_version'] . '/' . (string)$taxonomy['artifact_version']
+                : '',
+            'validation_status' => (string)($run['external_validation_status'] ?? ''),
             'warnings' => json_decode((string)($run['external_validation_warnings_json'] ?? '[]'), true) ?: [],
             'errors' => [],
         ];
@@ -218,6 +230,15 @@ final class HmrcSubmissionPackageService
             ],
             'rim_validation_artifact_hashes' => $artifactHashes,
             'cross_document_policy' => (string)$crossDocument['policy_version'],
+            'artifacts' => $this->manifestArtifacts(
+                $return,
+                $builder,
+                $accounts,
+                $computation,
+                $bodyHash,
+                basename($path),
+                'passed'
+            ),
         ]);
         $manifestJson = $this->canonicalJson($sourceManifest);
         $manifestHash = hash('sha256', $manifestJson);
@@ -333,6 +354,15 @@ final class HmrcSubmissionPackageService
             ],
             'rim_validation_artifact_hashes' => $artifactHashes,
             'cross_document_policy' => (string)$cross['policy_version'],
+            'artifacts' => $this->manifestArtifacts(
+                $return,
+                [],
+                $accounts,
+                $computation,
+                '',
+                '',
+                'pending_declaration'
+            ),
         ]);
         $manifestHash = hash('sha256', $this->canonicalJson($manifest));
 
@@ -660,6 +690,78 @@ final class HmrcSubmissionPackageService
         }
         @chmod($path, 0660);
         return $path;
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function manifestArtifacts(
+        array $return,
+        array $builder,
+        array $accounts,
+        array $computation,
+        string $ct600Hash,
+        string $ct600Filename,
+        string $ct600ValidationStatus
+    ): array {
+        $model = (array)($return['model'] ?? []);
+        $period = (array)($model['period'] ?? []);
+        $rim = (array)($return['rim'] ?? []);
+        $profile = (array)($return['mapping_profile'] ?? []);
+        $accountingPeriodId = (int)($return['accounting_period_id'] ?? 0);
+        $ctPeriodId = (int)($return['ct_period_id'] ?? 0);
+        $ct600Filename = $ct600Filename !== ''
+            ? $ct600Filename
+            : (string)($builder['filename'] ?? '');
+
+        return [
+            [
+                'role' => 'ct600_return_xml',
+                'accounting_period_id' => $accountingPeriodId,
+                'ct_period_id' => $ctPeriodId,
+                'period_start' => (string)($period['start_date'] ?? ''),
+                'period_end' => (string)($period['end_date'] ?? ''),
+                'filename' => $ct600Filename,
+                'sha256' => $ct600Hash,
+                'schema_version' => (string)($rim['form_version'] ?? '') . '/' . (string)($rim['artifact_version'] ?? ''),
+                'mapping_profile_id' => (int)($profile['id'] ?? 0),
+                'mapping_profile_name' => (string)($profile['profile_name'] ?? ''),
+                'mapping_revision_no' => (int)($profile['revision_no'] ?? 0),
+                'mapping_content_hash' => (string)($profile['content_hash'] ?? ''),
+                'validation_status' => $ct600ValidationStatus,
+                'supplementary_pages' => array_values((array)($model['attachments']['supplementary_pages'] ?? [])),
+            ],
+            [
+                'role' => 'statutory_accounts_ixbrl',
+                'accounting_period_id' => $accountingPeriodId,
+                'ct_period_id' => null,
+                'period_start' => '',
+                'period_end' => '',
+                'filename' => (string)($accounts['filename'] ?? ''),
+                'sha256' => (string)($accounts['hash'] ?? ''),
+                'schema_version' => (string)($accounts['taxonomy_profile'] ?? ''),
+                'mapping_profile_id' => null,
+                'mapping_profile_name' => '',
+                'mapping_revision_no' => null,
+                'mapping_content_hash' => '',
+                'validation_status' => (string)($accounts['validation_status'] ?? 'passed'),
+                'supplementary_pages' => [],
+            ],
+            [
+                'role' => 'ct_computation_ixbrl',
+                'accounting_period_id' => $accountingPeriodId,
+                'ct_period_id' => $ctPeriodId,
+                'period_start' => (string)($period['start_date'] ?? ''),
+                'period_end' => (string)($period['end_date'] ?? ''),
+                'filename' => (string)($computation['filename'] ?? ''),
+                'sha256' => (string)($computation['hash'] ?? ''),
+                'schema_version' => (string)($computation['taxonomy_profile'] ?? ''),
+                'mapping_profile_id' => (int)($computation['mapping_profile_id'] ?? 0),
+                'mapping_profile_name' => '',
+                'mapping_revision_no' => null,
+                'mapping_content_hash' => (string)($computation['mapping_hash'] ?? ''),
+                'validation_status' => (string)($computation['validation_status'] ?? 'passed'),
+                'supplementary_pages' => [],
+            ],
+        ];
     }
 
     private function canonicalJson(array $value): string

@@ -117,8 +117,8 @@ final class Ct600ReturnModelService
             [
                 'return_position.ct600a_a80' => (float)($returnModel['ct600a']['tax_payable'] ?? 0),
                 'return_position.tax_payable' => (float)$returnModel['amounts']['tax_payable'],
-                // Historical active mapping profiles remain readable until
-                // the reviewed return-v2 profile is prepared and activated.
+                // Historic immutable artifacts can still resolve their legacy
+                // profile keys; reviewed profiles use return-position keys.
                 'computation.summary.s455_tax' => (float)($returnModel['ct600a']['tax_payable'] ?? 0),
                 'computation.summary.estimated_corporation_tax' => (float)$returnModel['amounts']['tax_payable'],
             ]
@@ -155,8 +155,10 @@ final class Ct600ReturnModelService
             'rim_artifact_version' => (string)($rim['artifact_version'] ?? ''),
             'rim_package_sha256' => (string)($rim['sha256'] ?? ''),
             'mapping_profile_id' => (int)$profile['id'],
+            'mapping_profile_name' => (string)($profile['profile_name'] ?? ''),
             'mapping_revision_no' => (int)($profile['revision_no'] ?? 0),
             'mapping_content_hash' => (string)($profile['content_hash'] ?? ''),
+            'mapping_compatibility_status' => (string)($profile['compatibility_status'] ?? ''),
             'monetary_policy_version' => (string)($mapped['monetary_policy_version'] ?? ''),
         ];
         $sourceManifestJson = $this->canonicalJson($sourceManifest);
@@ -300,7 +302,10 @@ final class Ct600ReturnModelService
             $broughtForward = round((float)$post['brought_forward'], 2);
             $used = round((float)$post['used'], 2);
             $claimed = round((float)$restriction['carried_forward_loss_relief_claimed'], 2);
-            if ($broughtForward < $used || abs($used - $lossesUsed) > 0.009 || abs($claimed - $used) > 0.009) {
+            if ($broughtForward < 0.0 || $used < 0.0 || $claimed < 0.0
+                || $broughtForward + 0.009 < $used
+                || $used > $beforeLosses + 0.009
+                || abs($used - $lossesUsed) > 0.009 || abs($claimed - $used) > 0.009) {
                 throw new \RuntimeException('The frozen post-2017 loss schedule does not reconcile to the CT600 claim.');
             }
             $currentOrLater = 0.0;
@@ -321,7 +326,11 @@ final class Ct600ReturnModelService
         $netTrading = round($beforeLosses - $sameTrade, 2);
         $deductions = round($currentOrLater + $carriedForward, 2);
         $beforeDonations = round($netTrading - $deductions, 2);
-        if ($netTrading < -0.004 || $beforeDonations < -0.004
+        if ($sameTrade < -0.004 || $currentOrLater < -0.004 || $carriedForward < -0.004
+            || $currentOrLater > $netTrading + 0.009
+            || $carriedForward > $netTrading - $currentOrLater + 0.009
+            || $deductions < -0.004 || $deductions > $netTrading + 0.009
+            || $netTrading < -0.004 || $beforeDonations < -0.004
             || abs($beforeDonations - $this->number($summary, 'taxable_profit')) > 0.009) {
             throw new \RuntimeException('The CT600 loss boxes do not reconcile to the frozen taxable profit.');
         }

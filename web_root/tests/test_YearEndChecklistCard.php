@@ -48,7 +48,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
         }
     });
 
-    $harness->check(_year_end_checklistCard::class, 'uses the active company context for the developer cache refresh action', static function () use ($harness, $card): void {
+    $harness->check(_year_end_checklistCard::class, 'does not submit company or period values with the developer cache refresh action', static function () use ($harness, $card): void {
         $previous = (bool)AppConfigurationStore::get('developer_options', false);
         try {
             AppConfigurationStore::set('developer_options', true);
@@ -56,14 +56,16 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
                 'company' => ['id' => 49, 'accounting_period_id' => 79],
                 'year_end' => ['checklist' => [
                     'company_id' => 12,
-                    'accounting_period' => ['id' => 79],
+                    'accounting_period' => ['id' => 80],
                     'overall_status' => 'in_progress',
                     'sections' => [],
                 ]],
             ]);
 
-            $harness->assertTrue(str_contains($html, 'name="company_id" value="49"'));
-            $harness->assertFalse(str_contains($html, 'name="company_id" value="12"'));
+            $harness->assertFalse(str_contains($html, 'name="company_id"'));
+            $harness->assertFalse(str_contains($html, 'name="accounting_period_id"'));
+            $harness->assertFalse(str_contains($html, 'name="year_end_cache_company_id"'));
+            $harness->assertFalse(str_contains($html, 'name="year_end_cache_accounting_period_id"'));
         } finally {
             AppConfigurationStore::set('developer_options', $previous);
         }

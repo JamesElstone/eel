@@ -70,9 +70,13 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
 
         $harness->assertTrue(str_contains($action, "'refresh_year_end_review_caches'"));
         $harness->assertTrue(str_contains($action, 'Developer options must be enabled to refresh Year End review caches.'));
+        $harness->assertTrue(str_contains($action, 'authCompanyId()'));
+        $harness->assertTrue(str_contains($action, 'authAccountingPeriodId()'));
         $harness->assertTrue(str_contains($action, 'invalidateAllFromAccountingPeriod('));
         $harness->assertTrue(str_contains($action, 'refreshInvalidatedFromAccountingPeriod('));
         $harness->assertTrue(str_contains($action, 'RequestCache::clear()'));
+        $harness->assertTrue(str_contains($action, 'Year End review cache refresh resolved server context company #'));
+        $harness->assertTrue(str_contains($action, 'Year End review cache refresh issue:'));
         $harness->assertTrue(str_contains($sectionApprovals, 'Rebuilding Year End review cache:'));
     });
 

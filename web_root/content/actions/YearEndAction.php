@@ -16,9 +16,14 @@ final class YearEndAction implements ActionInterfaceFramework
 
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
-        $companyId = max(0, (int)$request->input('company_id', 0));
-        $accountingPeriodId = max(0, (int)$request->input('accounting_period_id', 0));
         $intent = trim((string)$request->input('intent', ''));
+        $accountingContext = new \eel_accounts\Service\AccountingContextService();
+        $companyId = $intent === 'refresh_year_end_review_caches'
+            ? $accountingContext->authCompanyId()
+            : max(0, (int)$request->input('company_id', 0));
+        $accountingPeriodId = $intent === 'refresh_year_end_review_caches'
+            ? $accountingContext->authAccountingPeriodId()
+            : max(0, (int)$request->input('accounting_period_id', 0));
         $actor = $this->currentWebActor($request);
 
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
@@ -294,6 +299,16 @@ final class YearEndAction implements ActionInterfaceFramework
             }
         );
         \eel_accounts\Support\RequestCache::clear();
+        if (empty($result['success'])) {
+            $progress->report(
+                'Year End review cache refresh resolved server context company #' . $companyId
+                    . ' and accounting period #' . $accountingPeriodId . '.',
+                100
+            );
+        }
+        foreach ((array)($result['errors'] ?? []) as $error) {
+            $progress->report('Year End review cache refresh issue: ' . (string)$error, 100);
+        }
         $progress->report(
             !empty($result['success'])
                 ? 'Year End review caches refreshed.'

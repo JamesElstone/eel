@@ -61,20 +61,10 @@ final class _year_end_checklistCard extends CardBaseFramework
             return '';
         }
 
-        $company = (array)($context['company'] ?? []);
-        $companyId = (int)($company['id'] ?? ($checklist['company_id'] ?? 0));
-        $accountingPeriodId = (int)((array)($checklist['accounting_period'] ?? [])['id']
-            ?? ($company['accounting_period_id'] ?? 0));
-        if ($companyId <= 0 || $accountingPeriodId <= 0) {
-            return '';
-        }
-
         return '<div class="actions-row actions-row-right"><form method="post" action="?page=year_end" data-ajax="true">'
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="YearEnd">'
             . '<input type="hidden" name="intent" value="refresh_year_end_review_caches">'
-            . '<input type="hidden" name="company_id" value="' . $companyId . '">'
-            . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
             . '<button class="button danger" type="submit" title="Developer only" data-chicken-check="true" data-chicken-title="Refresh Year End review caches" data-chicken-message="Invalidate and rebuild all Year End review caches for this accounting period and dependent later periods?<br><br>This does not change accounting data or review approvals." data-chicken-confirm-text="Refresh caches" data-chicken-button-class="button danger">Refresh Year End Review Caches</button>'
             . '</form></div>';
     }

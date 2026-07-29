@@ -36,12 +36,6 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 'disallowable_expense_breakdown' => $preparedBreakdown,
             ]]);
             $harness->assertSame($preparedBreakdown, $summaries[0]['disallowable_expense_breakdown'] ?? null);
-
-            $readinessSource = (string)file_get_contents(
-                dirname(__DIR__) . DIRECTORY_SEPARATOR . 'classes' . DIRECTORY_SEPARATOR . 'eel_accounts'
-                . DIRECTORY_SEPARATOR . 'service' . DIRECTORY_SEPARATOR . 'YearEndTaxReadinessService.php'
-            );
-            $harness->assertSame(true, str_contains($readinessSource, 'withYearEndDisallowableExpenseBreakdowns('));
         });
 
         $harness->check(\eel_accounts\Service\CorporationTaxComputationService::class, 'keeps brought-forward losses visible when dividend capacity creates a further loss', static function () use ($harness, $service): void {

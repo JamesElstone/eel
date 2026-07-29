@@ -17,7 +17,9 @@ $harness->run(\eel_accounts\Service\TaxRateRuleService::class, static function (
             APP_ROOT . 'classes' . DIRECTORY_SEPARATOR . 'eel_accounts',
             APP_ROOT . 'content',
         ];
-        $forbidden = '/\b(?:0\.015|0\.06|0\.14|0\.18|0\.19|0\.20|0\.25|0\.30)\b|(?:3\s*\/\s*200|11\s*\/\s*400|6%|14%|18%|19%|20%|25%|30%)/';
+        $forbidden = '/\b(?:0\.015|0\.06|0\.14|0\.18|0\.19|0\.20|0\.25|0\.30)\b'
+            . '|(?:3\s*\/\s*200|11\s*\/\s*400)'
+            . '|(?<![0-9])(?:6|14|18|19|20|25|30)%(?![0-9])/';
         $violations = [];
 
         foreach ($roots as $root) {

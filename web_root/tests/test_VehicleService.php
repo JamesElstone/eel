@@ -428,8 +428,8 @@ function vehicleServiceInsertAsset(int $companyId, int $periodId, string $code, 
 function vehicleServiceInsertAssetWithId(int $assetId, int $companyId, int $periodId, string $code, string $category, int $nominalId, float $cost, string $purchaseDate, ?int $journalId, ?int $transactionId, ?int $expenseLineId): void
 {
     \InterfaceDB::prepareExecute(
-        'INSERT INTO asset_register (id, company_id, asset_code, description, category, nominal_account_id, accum_dep_nominal_id, purchase_date, cost, useful_life_years, depreciation_method, residual_value, status, linked_journal_id, linked_transaction_id, linked_expense_claim_line_id)
-         VALUES (:id, :company_id, :asset_code, :description, :category, :nominal_account_id, :accum_dep_nominal_id, :purchase_date, :cost, 3, :method, 0.00, :status, :journal_id, :transaction_id, :expense_line_id)',
+        'INSERT INTO asset_register (id, company_id, asset_code, description, category, nominal_account_id, accum_dep_nominal_id, purchase_date, available_for_use_date, available_for_use_evidence, cost, useful_life_years, depreciation_method, residual_value, status, linked_journal_id, linked_transaction_id, linked_expense_claim_line_id)
+         VALUES (:id, :company_id, :asset_code, :description, :category, :nominal_account_id, :accum_dep_nominal_id, :purchase_date, :available_for_use_date, :available_for_use_evidence, :cost, 3, :method, 0.00, :status, :journal_id, :transaction_id, :expense_line_id)',
         [
             'id' => $assetId,
             'company_id' => $companyId,
@@ -439,6 +439,8 @@ function vehicleServiceInsertAssetWithId(int $assetId, int $companyId, int $peri
             'nominal_account_id' => $nominalId,
             'accum_dep_nominal_id' => vehicleServiceNominalId('1350'),
             'purchase_date' => $purchaseDate,
+            'available_for_use_date' => $purchaseDate,
+            'available_for_use_evidence' => 'Vehicle service fixture acquisition evidence',
             'cost' => $cost,
             'method' => 'straight_line',
             'status' => 'active',

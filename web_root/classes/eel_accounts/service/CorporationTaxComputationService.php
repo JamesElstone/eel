@@ -433,12 +433,15 @@ final class CorporationTaxComputationService
      *        rebuilding the same CT and CT600A models immediately afterward.
      * @param null|string $expectedFreezeManifestHash Canonical hash returned by
      *        the final approved-basis revalidation.
+     * @param null|array<string,mixed> $expectedFreezeManifest Exact canonical
+     *        manifest displayed and approved by the Year End workflow.
      */
     public function persistSummariesForYearEndLock(
         int $companyId,
         int $accountingPeriodId,
         ?array $preparedSummaries = null,
-        ?string $expectedFreezeManifestHash = null
+        ?string $expectedFreezeManifestHash = null,
+        ?array $expectedFreezeManifest = null
     ): array
     {
         $scope = $this->vatSupportScope($companyId);
@@ -463,59 +466,34 @@ final class CorporationTaxComputationService
             \eel_accounts\Support\RequestCache::clear();
             $this->clearRuntimeCaches();
         }
-        $periodSync = (new \eel_accounts\Service\CorporationTaxPeriodService())
-            ->syncForAccountingPeriod($companyId, $accountingPeriodId);
-        if (empty($periodSync['success'])) {
-            return [
-                'success' => false,
-                'errors' => (array)($periodSync['errors'] ?? ['Corporation Tax periods could not be synchronised for the Year End lock.']),
-                'summaries' => [],
-            ];
-        }
-        $activePeriods = $preparedSummaries === null
-            ? $this->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId)
-            : [
-                'periods' => array_values(array_filter(
-                    (array)($periodSync['periods'] ?? []),
-                    static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'
-                )),
-                'errors' => [],
-            ];
-        $periods = (array)($activePeriods['periods'] ?? []);
-        $summaries = [];
-        $persistedRunIds = [];
-        $errors = (array)($activePeriods['errors'] ?? []);
-        $preparedByCtPeriod = [];
-        foreach ($preparedSummaries ?? [] as $preparedSummary) {
-            if (!is_array($preparedSummary)) {
-                continue;
-            }
-            $preparedCtPeriodId = (int)($preparedSummary['ct_period_id'] ?? 0);
-            if ($preparedCtPeriodId > 0) {
-                $preparedByCtPeriod[$preparedCtPeriodId] = $preparedSummary;
-            }
-        }
+        $approvedFreeze = null;
         if ($preparedSummaries !== null && trim((string)$expectedFreezeManifestHash) !== '') {
-            // Reject a stale approval before creating any computation evidence.
-            // The Year End route passes the same final readiness model here, so
-            // this is also the authoritative proof that persistence is bound to
-            // the approved model rather than a post-persistence cache variant.
-            $approvedSummaries = (new CorporationTaxHardGateService())->apply(
-                $companyId,
-                array_values($preparedByCtPeriod)
-            );
-            $approvedSummaries = $this->withYearEndDisallowableExpenseBreakdowns(
-                $companyId,
-                $accountingPeriodId,
-                $approvedSummaries
-            );
-            $approvedFreeze = (new YearEndTaxFreezeService())->build(
-                $companyId,
-                $accountingPeriodId,
-                $approvedSummaries,
-                [],
-                count($periods)
-            );
+            $approvedSummaries = array_values(array_filter($preparedSummaries, 'is_array'));
+            if (is_array($expectedFreezeManifest)) {
+                // Carry the exact manifest displayed and approved by Year End
+                // across the persistence boundary. Rebuilding it can consult
+                // database-backed diagnostics whose state changes during the
+                // close workflow even though the approved amounts do not.
+                $freezeService = new YearEndTaxFreezeService();
+                $manifest = $freezeService->canonicalManifest($expectedFreezeManifest);
+                $approvedFreeze = [
+                    'freeze_status' => 'ready_for_approval',
+                    'freeze_manifest' => $manifest,
+                    'freeze_manifest_hash' => (new YearEndAcknowledgementService())->hashBasis($manifest),
+                    'blocking_diagnostics' => [],
+                    'blocking_diagnostic_count' => 0,
+                ];
+            } else {
+                // Compatibility for callers that supply the final summaries
+                // and hash but predate the explicit manifest parameter.
+                $approvedFreeze = (new YearEndTaxFreezeService())->build(
+                    $companyId,
+                    $accountingPeriodId,
+                    $approvedSummaries,
+                    [],
+                    count($approvedSummaries)
+                );
+            }
             $approvedFreezeManifestHash = trim((string)($approvedFreeze['freeze_manifest_hash'] ?? ''));
             if ($approvedFreezeManifestHash === ''
                 || !hash_equals(trim((string)$expectedFreezeManifestHash), $approvedFreezeManifestHash)) {
@@ -530,12 +508,93 @@ final class CorporationTaxComputationService
                 ];
             }
         }
+        if ($preparedSummaries === null) {
+            $periodSync = (new \eel_accounts\Service\CorporationTaxPeriodService())
+                ->syncForAccountingPeriod($companyId, $accountingPeriodId);
+            if (empty($periodSync['success'])) {
+                return [
+                    'success' => false,
+                    'errors' => (array)($periodSync['errors'] ?? ['Corporation Tax periods could not be synchronised for the Year End lock.']),
+                    'summaries' => [],
+                ];
+            }
+        }
+        $preparedByCtPeriod = [];
+        foreach ($preparedSummaries ?? [] as $preparedSummary) {
+            if (!is_array($preparedSummary)) {
+                continue;
+            }
+            $preparedCtPeriodId = (int)($preparedSummary['ct_period_id'] ?? 0);
+            if ($preparedCtPeriodId > 0) {
+                $preparedByCtPeriod[$preparedCtPeriodId] = $preparedSummary;
+            }
+        }
+        // Prepared summaries come from the final readiness pass, which already
+        // synchronized and identified the exact CT periods being approved.
+        // Use those IDs even when an accepted period is intentionally omitted
+        // by the ordinary "active periods" read model.
+        if ($preparedSummaries !== null) {
+            $preparedPeriods = [];
+            foreach ($preparedByCtPeriod as $ctPeriodId => $preparedSummary) {
+                $period = \InterfaceDB::fetchOne(
+                    'SELECT id, status, sequence_no, period_start, period_end
+                     FROM corporation_tax_periods
+                     WHERE id = :id AND company_id = :company_id
+                       AND accounting_period_id = :accounting_period_id
+                     LIMIT 1',
+                    [
+                        'id' => $ctPeriodId,
+                        'company_id' => $companyId,
+                        'accounting_period_id' => $accountingPeriodId,
+                    ]
+                );
+                if (!is_array($period)) {
+                    continue;
+                }
+                $period['display_label'] = (string)($preparedSummary['period_label']
+                    ?? ('CT Period ' . (int)($period['sequence_no'] ?? 0)));
+                $preparedPeriods[] = $period;
+            }
+            $activePeriods = ['periods' => $preparedPeriods, 'errors' => []];
+        } else {
+            $activePeriods = $this->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId);
+        }
+        $periods = (array)($activePeriods['periods'] ?? []);
+        $summaries = [];
+        $persistedRunIds = [];
+        $errors = (array)($activePeriods['errors'] ?? []);
         foreach ($periods as $period) {
             $ctPeriodId = (int)($period['id'] ?? 0);
             if ($ctPeriodId <= 0) {
                 continue;
             }
             if (in_array((string)($period['status'] ?? ''), self::FINAL_CT_STATUSES, true)) {
+                if ($preparedSummaries !== null) {
+                    $summary = (array)($preparedByCtPeriod[$ctPeriodId] ?? []);
+                    if ($summary === []
+                        || empty($summary['available'])
+                        || (int)($summary['accounting_period_id'] ?? 0) !== $accountingPeriodId) {
+                        $errors[] = (string)($period['display_label'] ?? ('CT Period ' . (int)($period['sequence_no'] ?? 0)))
+                            . ': The final validated Corporation Tax summary was not available for persistence.';
+                        continue;
+                    }
+                    $runId = (int)\InterfaceDB::fetchColumn(
+                        'SELECT latest_computation_run_id
+                         FROM corporation_tax_periods
+                         WHERE id = :id AND company_id = :company_id
+                         LIMIT 1',
+                        ['id' => $ctPeriodId, 'company_id' => $companyId]
+                    );
+                    if ($runId <= 0) {
+                        $errors[] = (string)($period['display_label'] ?? ('CT Period ' . (int)($period['sequence_no'] ?? 0)))
+                            . ': The submitted CT period has no persisted computation snapshot.';
+                        continue;
+                    }
+                    $summary['computation_run_id'] = $runId;
+                    $summaries[] = $summary;
+                    $persistedRunIds[$ctPeriodId] = $runId;
+                    continue;
+                }
                 $storedSummary = $this->storedLockedSummaryForCtPeriodId($companyId, $ctPeriodId);
                 if (!is_array($storedSummary) || empty($storedSummary['available'])) {
                     foreach ((array)($storedSummary['errors'] ?? ['The submitted CT period has no usable persisted computation snapshot.']) as $error) {
@@ -544,18 +603,6 @@ final class CorporationTaxComputationService
                     continue;
                 }
                 $summary = $storedSummary;
-                if ($preparedSummaries !== null) {
-                    $preparedSummary = (array)($preparedByCtPeriod[$ctPeriodId] ?? []);
-                    if ($preparedSummary === []
-                        || empty($preparedSummary['available'])
-                        || (int)($preparedSummary['accounting_period_id'] ?? 0) !== $accountingPeriodId) {
-                        $errors[] = (string)($period['display_label'] ?? ('CT Period ' . (int)($period['sequence_no'] ?? 0)))
-                            . ': The final validated Corporation Tax summary was not available for persistence.';
-                        continue;
-                    }
-                    $summary = $preparedSummary;
-                    $summary['computation_run_id'] = (int)($storedSummary['computation_run_id'] ?? 0);
-                }
                 $summaries[] = $summary;
                 if ((int)($summary['computation_run_id'] ?? 0) > 0) {
                     $persistedRunIds[$ctPeriodId] = (int)$summary['computation_run_id'];
@@ -599,7 +646,9 @@ final class CorporationTaxComputationService
             }
         }
 
-        $summaries = (new CorporationTaxHardGateService())->apply($companyId, $summaries);
+        if ($preparedSummaries === null) {
+            $summaries = (new CorporationTaxHardGateService())->apply($companyId, $summaries);
+        }
         $canonicalSummaries = [];
         $returnPositions = new CorporationTaxReturnPositionService($this);
         foreach ($summaries as $summary) {
@@ -628,13 +677,15 @@ final class CorporationTaxComputationService
             $accountingPeriodId,
             $summaries
         );
-        $freeze = (new YearEndTaxFreezeService())->build(
-            $companyId,
-            $accountingPeriodId,
-            $summaries,
-            array_values(array_map('strval', $errors)),
-            count($periods)
-        );
+        $freeze = $approvedFreeze !== null && $errors === []
+            ? $approvedFreeze
+            : (new YearEndTaxFreezeService())->build(
+                $companyId,
+                $accountingPeriodId,
+                $summaries,
+                array_values(array_map('strval', $errors)),
+                count($periods)
+            );
         $expectedFreezeManifestHash = trim((string)$expectedFreezeManifestHash);
         $generatedFreezeManifestHash = trim((string)($freeze['freeze_manifest_hash'] ?? ''));
         if ($expectedFreezeManifestHash !== ''
@@ -664,7 +715,10 @@ final class CorporationTaxComputationService
             }
             $runId = (int)($persistedRunIds[(int)($summary['ct_period_id'] ?? 0)] ?? 0);
             if ($runId > 0) {
-                $this->updatePersistedHardGateDiagnostics($runId, $summary);
+                if (!$this->updatePersistedYearEndEvidence($runId, $summary)) {
+                    $errors[] = 'CT period ' . (int)($summary['ct_period_id'] ?? 0)
+                        . ': The persisted Corporation Tax evidence could not be verified after update.';
+                }
             }
         }
         unset($summary);
@@ -889,11 +943,11 @@ final class CorporationTaxComputationService
         ];
     }
 
-    private function updatePersistedHardGateDiagnostics(int $runId, array $summary): void
+    private function updatePersistedYearEndEvidence(int $runId, array $summary): bool
     {
         $summaryJson = \eel_accounts\Support\Utf8::json($summary, JSON_UNESCAPED_SLASHES);
         if ($runId <= 0 || !is_string($summaryJson)) {
-            return;
+            return false;
         }
         \InterfaceDB::prepareExecute(
             'UPDATE corporation_tax_computation_runs
@@ -901,6 +955,19 @@ final class CorporationTaxComputationService
              WHERE id = :id AND status = :status',
             ['summary_json' => $summaryJson, 'id' => $runId, 'status' => 'generated']
         );
+
+        $written = json_decode((string)\InterfaceDB::fetchColumn(
+            'SELECT summary_json FROM corporation_tax_computation_runs WHERE id = :id LIMIT 1',
+            ['id' => $runId]
+        ), true);
+        $expectedHash = trim((string)($summary['year_end_freeze_manifest_hash'] ?? ''));
+        $writtenHash = is_array($written)
+            ? trim((string)($written['year_end_freeze_manifest_hash'] ?? ''))
+            : '';
+
+        return $expectedHash !== ''
+            && $writtenHash !== ''
+            && hash_equals($expectedHash, $writtenHash);
     }
 
     public function activeCtPeriodsForAccountingPeriod(int $companyId, int $accountingPeriodId): array

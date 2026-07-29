@@ -258,11 +258,36 @@ $harness->check('GoldenTaxControlMatrix', 'persists the exact loss checkpoint us
         $harness->assertSame('600.00', goldenTaxControlMoney($preparedBreakdown['expected_amount'] ?? 0));
         $harness->assertSame(true, (bool)($preparedBreakdown['reconciled'] ?? false));
 
+        $runCountBeforeMismatch = InterfaceDB::countWhere('corporation_tax_computation_runs', [
+            'company_id' => $companyId,
+            'accounting_period_id' => 9112,
+        ]);
+        $mismatch = $computation->persistSummariesForYearEndLock(
+            $companyId,
+            9112,
+            (array)($readiness['periods'] ?? []),
+            str_repeat('f', 64),
+            (array)($readiness['freeze_manifest'] ?? [])
+        );
+        $harness->assertSame(false, (bool)($mismatch['success'] ?? true));
+        $harness->assertTrue(str_contains(
+            implode(' ', array_map('strval', (array)($mismatch['errors'] ?? []))),
+            'does not match the final approved Year End tax basis'
+        ));
+        $harness->assertSame(
+            $runCountBeforeMismatch,
+            InterfaceDB::countWhere('corporation_tax_computation_runs', [
+                'company_id' => $companyId,
+                'accounting_period_id' => 9112,
+            ])
+        );
+
         $persisted = $computation->persistSummariesForYearEndLock(
             $companyId,
             9112,
             (array)($readiness['periods'] ?? []),
-            (string)($readiness['freeze_manifest_hash'] ?? '')
+            (string)($readiness['freeze_manifest_hash'] ?? ''),
+            (array)($readiness['freeze_manifest'] ?? [])
         );
         goldenTaxControlRequireSuccess($persisted);
         $harness->assertCount(1, (array)($persisted['summaries'] ?? []));

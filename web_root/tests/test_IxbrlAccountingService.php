@@ -183,6 +183,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(str_contains($style, 'margin: 12mm 14mm 14mm;'));
             $harness->assertTrue(str_contains($style, '.page-header {'));
             $harness->assertTrue(str_contains($style, 'table-layout: fixed;'));
+            $harness->assertTrue(str_contains($style, '.page-header-number-column { width: 36%; }'));
+            $harness->assertFalse(str_contains($style, 'calc(3 * 12%)'));
             $harness->assertFalse(str_contains($style, 'display: grid;'));
             $harness->assertFalse(str_contains($style, 'grid-template-columns:'));
             $harness->assertFalse(preg_match(

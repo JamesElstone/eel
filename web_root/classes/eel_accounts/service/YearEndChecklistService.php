@@ -492,7 +492,8 @@ final class YearEndChecklistService
                 $companyId,
                 $accountingPeriodId,
                 (array)(($finalTaxFreeze['tax_readiness'] ?? [])['periods'] ?? []),
-                (string)($finalTaxFreeze['freeze_manifest_hash'] ?? '')
+                (string)($finalTaxFreeze['freeze_manifest_hash'] ?? ''),
+                (array)(($finalTaxFreeze['tax_readiness'] ?? [])['freeze_manifest'] ?? [])
             );
             if (empty($taxPersistenceResult['success'])) {
                 return $this->rollbackLockTransaction($transaction, [
@@ -697,6 +698,7 @@ final class YearEndChecklistService
             'success' => true,
             'tax_readiness' => $taxReadiness,
             'freeze_manifest_hash' => (string)($taxReadiness['freeze_manifest_hash'] ?? ''),
+            'freeze_manifest' => (array)($taxReadiness['freeze_manifest'] ?? []),
         ];
     }
 

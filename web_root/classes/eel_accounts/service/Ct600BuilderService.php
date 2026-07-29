@@ -383,26 +383,10 @@ final class Ct600BuilderService
         if ($this->positive($values, $taxChargeablePath)) {
             $this->element($document, $outstanding, 'TaxChargeable', $values[$taxChargeablePath]);
         }
-        $taxPayable = $this->mapped(
+        $this->element($document, $outstanding, 'TaxPayable', $this->mapped(
             $values,
             'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/TaxPayable'
-        );
-        // CT600 box 300 is mandatory whenever box 235 (tax chargeable) is
-        // populated.  A frozen model can legitimately omit the derived
-        // payable figure, but it must not produce a schematron-invalid return.
-        if ((float)$taxPayable <= 0.0 && (float)$netCorporationTax > 0.0) {
-            $taxPayable = $netCorporationTax;
-        }
-        if ((float)$taxPayable <= 0.0 && $serializedGrossTax > 0.0) {
-            $taxPayable = $this->poundPence(
-                $serializedGrossTax,
-                'CalculationOfTaxOutstandingOrOverpaid/TaxPayable'
-            );
-        }
-        if ($this->positive($values, $taxChargeablePath) && (float)$taxPayable <= 0.0) {
-            $taxPayable = $values[$taxChargeablePath];
-        }
-        $this->element($document, $outstanding, 'TaxPayable', $taxPayable);
+        ));
 
         $aiaPath = 'IRenvelope/CompanyTaxReturn/AllowancesAndCharges/AIACapitalAllowancesInc';
         $specialAllowancePath = 'IRenvelope/CompanyTaxReturn/AllowancesAndCharges/'

@@ -55,7 +55,11 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
             $harness->assertSame('0.00', directorLoanStatementMoney($grossStatement['desired_reclassification'] ?? 0));
             $harness->assertSame('353.00', directorLoanStatementMoney($grossStatement['potential_s455_exposure'] ?? 0));
             $harness->assertSame('0.00', directorLoanStatementMoney($grossDisclosure['total_amounts_legally_set_off'] ?? 0));
-            $harness->assertSame('353.00', directorLoanStatementMoney($grossDisclosure['closing_company_to_director_balance'] ?? 0));
+            // Gross advances drive the potential s455 exposure, while the
+            // legal closing receivable respects each party's running account.
+            // The primary party's funding cannot offset the other party's
+            // £100 company advance.
+            $harness->assertSame('100.00', directorLoanStatementMoney($grossDisclosure['closing_company_to_director_balance'] ?? 0));
 
             $savedEvidence = (new \eel_accounts\Service\ParticipatorLoanPartyTermsService())->save(
                 (int)$fixture['company_id'],
@@ -63,9 +67,7 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
                 [
                     'interest_rate_percent' => 0,
                     'security_type' => 'unsecured',
-                    'repayable_on_demand' => false,
-                    'repayment_timing' => 'after_12_months',
-                    'deferment_right_confirmed' => false,
+                    'repayment_basis' => 'within_12_months',
                     'set_off_right_confirmed' => true,
                     'settlement_intention' => 'simultaneous',
                 ],
@@ -124,7 +126,7 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
 
             $advanceEvidence = (new \eel_accounts\Service\ParticipatorLoanPartyTermsService())->save(
                 (int)$fixture['company_id'],
-                $primaryPartyId,
+                $otherPartyId,
                 [
                     'interest_rate_percent' => 0,
                     'security_type' => 'unsecured',
@@ -144,13 +146,20 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
             );
             $confirmedText = (new \eel_accounts\Service\IxbrlTaxonomyProfileService())
                 ->directorLoanStatementText($confirmedDisclosure);
-            $confirmedRows = array_values((array)($confirmedDisclosure['disclosures'] ?? []));
-            $harness->assertSame('Unsecured.', (string)($confirmedRows[0]['main_terms'] ?? ''));
+            $confirmedRows = [];
+            foreach ((array)($confirmedDisclosure['disclosures'] ?? []) as $row) {
+                $confirmedRows[(int)($row['director_id'] ?? 0)] = $row;
+            }
+            $confirmedOther = (array)($confirmedRows[$otherPartyId] ?? []);
+            $harness->assertSame('Unsecured.', (string)($confirmedOther['main_terms'] ?? ''));
             $harness->assertSame(
                 'Unsecured. Interest rate: 0%. No fixed repayment date was agreed.',
-                (string)($confirmedRows[0]['main_conditions'] ?? '')
+                (string)($confirmedOther['main_conditions'] ?? '')
             );
-            $harness->assertSame(1, substr_count($confirmedText, 'Interest rate: 0%.'));
+            $harness->assertSame(
+                count($confirmedRows),
+                substr_count($confirmedText, 'Interest rate: 0%.')
+            );
             $harness->assertTrue(str_contains(
                 $confirmedText,
                 'Repayment conditions: No fixed repayment date was agreed.'

@@ -9,6 +9,25 @@ declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
+function directorLoanTermsCardXpath(string $html): DOMXPath
+{
+    $previous = libxml_use_internal_errors(true);
+    libxml_clear_errors();
+    $document = new DOMDocument();
+    if (!$document->loadHTML(
+        '<!doctype html><html><body>' . $html . '</body></html>',
+        LIBXML_NONET | LIBXML_NOBLANKS | LIBXML_NOERROR | LIBXML_NOWARNING
+    )) {
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        throw new RuntimeException('The Director Loan terms card HTML could not be parsed.');
+    }
+    libxml_clear_errors();
+    libxml_use_internal_errors($previous);
+
+    return new DOMXPath($document);
+}
+
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(_director_loan_termsCard::class, static function (GeneratedServiceClassTestHarness $harness, _director_loan_termsCard $card): void {
     $context = [
@@ -85,22 +104,24 @@ $harness->run(_director_loan_termsCard::class, static function (GeneratedService
 
     $harness->check(_director_loan_termsCard::class, 'uses one required canonical repayment-basis control', static function () use ($harness, $card, $context): void {
         $html = $card->render($context);
+        $xpath = directorLoanTermsCardXpath($html);
+        $creditorSelect = '//form[@id="participator-loan-terms-add"]'
+            . '//select[@name="repayment_basis"]';
 
         $harness->assertTrue(str_contains($html, 'name="csrf_token"'));
-        $harness->assertTrue(str_contains($html, 'name="repayment_basis" data-no-submit-on-change="true" required'));
-        $harness->assertTrue(str_contains($html, '<option value="" selected>Select repayment basis…</option>'));
-        $harness->assertSame(1, preg_match(
-            '~<select[^>]*name="repayment_basis"[^>]*>.*?<option value="on_demand"~s',
-            $html
-        ));
-        $harness->assertSame(1, preg_match(
-            '~<select[^>]*name="repayment_basis"[^>]*>.*?<option value="within_12_months"~s',
-            $html
-        ));
-        $harness->assertSame(1, preg_match(
-            '~<select[^>]*name="repayment_basis"[^>]*>.*?<option value="after_12_months"~s',
-            $html
-        ));
+        $harness->assertSame(1, $xpath->query($creditorSelect)?->length);
+        $harness->assertSame(1, $xpath->query($creditorSelect . '[@required]')?->length);
+        foreach (['', 'on_demand', 'within_12_months', 'after_12_months'] as $value) {
+            $harness->assertSame(1, $xpath->query(
+                $creditorSelect . '/option[@value="' . $value . '"]'
+            )?->length);
+        }
+        $harness->assertSame(1, $xpath->query(
+            $creditorSelect . '/option[@value="" and @selected]'
+        )?->length);
+        $harness->assertSame(0, $xpath->query(
+            $creditorSelect . '/option[@value="fixed_date" or @value="no_fixed_date"]'
+        )?->length);
         $harness->assertSame(false, str_contains($html, 'Applies to the entire party balance at the accounting-period end.'));
         $harness->assertSame(false, str_contains($html, 'name="repayable_on_demand"'));
         $harness->assertSame(false, str_contains($html, 'name="repayment_timing"'));
@@ -135,15 +156,37 @@ $harness->run(_director_loan_termsCard::class, static function (GeneratedService
 
     $harness->check(_director_loan_termsCard::class, 'separates creditor and statutory-disclosure terms registers', static function () use ($harness, $card, $context): void {
         $html = $card->render($context);
-        $text = preg_replace('/\\s+/', ' ', html_entity_decode(strip_tags($html))) ?? '';
+        $xpath = directorLoanTermsCardXpath($html);
+        $creditorTable = '//h3[normalize-space(.)="Participator-to-company funding (creditor) terms register"]'
+            . '/parent::section//table[1]';
+        $advanceTable = '//h3[normalize-space(.)="Company-to-participator advance (statutory disclosure) terms register"]'
+            . '/parent::section//table[1]';
 
-        $harness->assertTrue(str_contains($html, 'Participator-to-company funding (creditor) terms register'));
-        $harness->assertTrue(str_contains($html, 'Company-to-participator advance (statutory disclosure) terms register'));
+        $harness->assertSame(1, $xpath->query($creditorTable)?->length);
+        $harness->assertSame(1, $xpath->query($advanceTable)?->length);
         $harness->assertSame(false, str_contains($html, 'Complete this only from the advance agreement.'));
-        $harness->assertTrue(str_contains($text, 'Advance repayment condition'));
-        $harness->assertTrue(str_contains($text, 'Fixed repayment date'));
-        $harness->assertTrue(str_contains($text, 'Repayable on demand'));
-        $harness->assertTrue(str_contains($text, '2027-04-05'));
-        $harness->assertTrue(str_contains($text, 'Not confirmed'));
+        $harness->assertSame(0, $xpath->query(
+            $creditorTable . '//th[normalize-space(.)="Advance repayment condition"]'
+        )?->length);
+        $harness->assertSame(1, $xpath->query(
+            $advanceTable . '//th[normalize-space(.)="Advance repayment condition"]'
+        )?->length);
+        $harness->assertSame(1, $xpath->query(
+            $advanceTable . '//th[normalize-space(.)="Fixed repayment date"]'
+        )?->length);
+        $harness->assertSame(1, $xpath->query(
+            $advanceTable . '//tr[td[1][normalize-space(.)="On-demand party"]]'
+                . '/td[5][normalize-space(.)="Fixed repayment date"]'
+        )?->length);
+        $harness->assertSame(1, $xpath->query(
+            $advanceTable . '//tr[td[1][normalize-space(.)="On-demand party"]]'
+                . '/td[6][normalize-space(.)="2027-04-05"]'
+        )?->length);
+        $harness->assertTrue($xpath->query(
+            $advanceTable . '//td[5][normalize-space(.)="Not confirmed"]'
+        )?->length > 0);
+        $harness->assertSame(0, $xpath->query(
+            $advanceTable . '//td[normalize-space(.)="Repayable on demand"]'
+        )?->length);
     });
 });

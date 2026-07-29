@@ -235,31 +235,20 @@ function ct600_builder_test_assert_official_business_rules(
         throw new RuntimeException('The GovTalk test wrapper has no Body.');
     }
     $body->appendChild($document->importNode($inner->documentElement, true));
-    $xpath = new DOMXPath($document);
-    $xpath->registerNamespace('hd', 'http://www.govtalk.gov.uk/CM/envelope');
-    $xpath->registerNamespace('ct', \eel_accounts\Service\Ct600BuilderService::CT_NAMESPACE);
-    $return = $xpath->query('/hd:GovTalkMessage/hd:Body/ct:IRenvelope/ct:CompanyTaxReturn');
-    if ($return instanceof DOMNodeList && $return->item(0) instanceof DOMElement) {
-        $attached = $document->createElementNS(\eel_accounts\Service\Ct600BuilderService::CT_NAMESPACE, 'AttachedFiles');
-        $submission = $document->createElementNS(\eel_accounts\Service\Ct600BuilderService::CT_NAMESPACE, 'XBRLsubmission');
-        foreach (['Accounts', 'Computation'] as $type) {
-            $item = $document->createElementNS(\eel_accounts\Service\Ct600BuilderService::CT_NAMESPACE, $type);
-            $instance = $document->createElementNS(\eel_accounts\Service\Ct600BuilderService::CT_NAMESPACE, 'Instance');
-            $encoded = $document->createElementNS(\eel_accounts\Service\Ct600BuilderService::CT_NAMESPACE, 'EncodedInlineXBRLDocument', base64_encode('<html/>'));
-            $encoded->setAttribute('Filename', strtolower($type) . '.xhtml');
-            $encoded->setAttribute('entryPoint', 'yes');
-            $instance->appendChild($encoded);
-            $item->appendChild($instance);
-            $submission->appendChild($item);
-        }
-        $attached->appendChild($submission);
-        $return->item(0)->appendChild($attached);
-    }
     $service = new \eel_accounts\Service\HmrcCt600ValidationService();
     $method = new ReflectionMethod($service, 'schematronDiagnostics');
     $method->setAccessible(true);
     $diagnostics = (array)$method->invoke($service, $document, $transform);
-    $harness->assertSame([], $diagnostics);
+    // The builder owns only the IR envelope. Package assembly supplies the
+    // two mandatory iXBRL documents and has its own integration regression.
+    // No other business-rule diagnostic may be hidden here.
+    $harness->assertSame(
+        ['9113', '9965'],
+        array_values(array_map(
+            static fn(array $diagnostic): string => (string)($diagnostic['code'] ?? ''),
+            $diagnostics
+        ))
+    );
 }
 
 (new GeneratedServiceClassTestHarness())->run(
@@ -593,6 +582,39 @@ function ct600_builder_test_assert_official_business_rules(
                     '6900.00',
                     $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/'
                         . 'ct:CompanyTaxCalculation/ct:CorporationTax)')
+                );
+                ct600_builder_test_assert_official_schema($harness, (string)$result['xml']);
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Service\Ct600BuilderService::class,
+            'keeps frozen tax payable separate from chargeable and calculated tax',
+            static function () use ($harness): void {
+                $return = ct600_builder_test_return([
+                    'chargeable_profits' => '30000',
+                    'net_corporation_tax' => '6900.00',
+                    'net_corporation_tax_liability' => '6900.00',
+                    'tax_chargeable' => '6900.00',
+                    'tax_payable' => '0.00',
+                    'trading_profit' => '30000',
+                    'net_trading_profits' => '30000',
+                    'profits_before_other_deductions' => '30000',
+                    'profits_before_donations' => '30000',
+                ], []);
+                $result = ct600_builder_test_build($return, 997020);
+
+                $harness->assertSame(true, (bool)($result['ok'] ?? false));
+                $xpath = ct600_builder_test_xpath((string)$result['xml']);
+                $harness->assertSame(
+                    '6900.00',
+                    $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/'
+                        . 'ct:CalculationOfTaxOutstandingOrOverpaid/ct:TaxChargeable)')
+                );
+                $harness->assertSame(
+                    '0.00',
+                    $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/'
+                        . 'ct:CalculationOfTaxOutstandingOrOverpaid/ct:TaxPayable)')
                 );
                 ct600_builder_test_assert_official_schema($harness, (string)$result['xml']);
             }

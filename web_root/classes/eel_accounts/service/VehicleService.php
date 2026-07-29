@@ -119,10 +119,36 @@ final class VehicleService
         }
 
         $periodExpression = 'COALESCE(t.accounting_period_id, ec.accounting_period_id, j.accounting_period_id, 0)';
-        $periodClause = $accountingPeriodId > 0 ? ' AND ' . $periodExpression . ' = :accounting_period_id' : '';
+        $periodClause = '';
         $params = ['company_id' => $companyId];
         if ($accountingPeriodId > 0) {
-            $params['accounting_period_id'] = $accountingPeriodId;
+            // Compare bound values directly with typed columns. SQLite gives
+            // COALESCE expressions no column affinity, so comparing that
+            // expression with a string-bound integer silently returns no rows.
+            $periodClause = ' AND (
+                (t.accounting_period_id IS NOT NULL
+                    AND t.accounting_period_id = :transaction_period_id)
+                OR (t.accounting_period_id IS NULL
+                    AND ec.accounting_period_id IS NOT NULL
+                    AND ec.accounting_period_id = :expense_period_id)
+                OR (t.accounting_period_id IS NULL
+                    AND ec.accounting_period_id IS NULL
+                    AND j.accounting_period_id = :journal_period_id)
+            )';
+            $params['transaction_period_id'] = $accountingPeriodId;
+            $params['expense_period_id'] = $accountingPeriodId;
+            $params['journal_period_id'] = $accountingPeriodId;
+        }
+
+        $vehicleNominalInClauses = [];
+        foreach (['asset', 'transaction', 'expense'] as $source) {
+            $placeholders = [];
+            foreach ($vehicleNominalIds as $index => $nominalId) {
+                $key = 'vehicle_' . $source . '_nominal_id_' . $index;
+                $placeholders[] = ':' . $key;
+                $params[$key] = $nominalId;
+            }
+            $vehicleNominalInClauses[$source] = implode(', ', $placeholders);
         }
 
         $rows = \InterfaceDB::fetchAll(
@@ -168,19 +194,15 @@ final class VehicleService
              LEFT JOIN nominal_accounts en ON en.id = ecl.nominal_account_id
              LEFT JOIN journals j ON j.id = ar.linked_journal_id
              WHERE ar.company_id = :company_id' . $periodClause . '
+               AND (
+                   na.id IN (' . $vehicleNominalInClauses['asset'] . ')
+                   OR tn.id IN (' . $vehicleNominalInClauses['transaction'] . ')
+                   OR en.id IN (' . $vehicleNominalInClauses['expense'] . ')
+                   OR vd.asset_id IS NOT NULL
+               )
              ORDER BY ar.purchase_date DESC, ar.id DESC',
             $params
         ) ?: [];
-        // Apply the configured nominal comparison after the joined read.
-        // This avoids reusing a variable-length set of named PDO bindings
-        // across three source columns, which is not portable to native
-        // prepares and previously hid custom company mappings.
-        $rows = array_values(array_filter($rows, static function (array $row) use ($vehicleNominalIds): bool {
-            return trim((string)($row['vehicle_type'] ?? '')) !== ''
-                || in_array((int)($row['nominal_account_id'] ?? 0), $vehicleNominalIds, true)
-                || in_array((int)($row['transaction_nominal_id'] ?? 0), $vehicleNominalIds, true)
-                || in_array((int)($row['expense_nominal_id'] ?? 0), $vehicleNominalIds, true);
-        }));
 
         $warnings = [];
         foreach ($rows as $index => $row) {

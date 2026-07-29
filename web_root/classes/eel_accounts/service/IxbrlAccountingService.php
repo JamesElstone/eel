@@ -759,7 +759,7 @@ body {
     font-size: 9pt;
 }
 .page-header-name-column { width: 64%; }
-.page-header-number-column { width: calc(3 * 12%); }
+.page-header-number-column { width: 36%; }
 .page-header td { padding: 0; vertical-align: top; }
 .page-header-name { font-weight: bold; text-transform: uppercase; }
 .page-header-number { text-align: right; white-space: nowrap; }

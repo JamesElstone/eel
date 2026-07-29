@@ -17,6 +17,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 GoldenAccountsFixture::build();
+goldenYearEndRecoverInterruptedLocks();
 
 $harness->check('GoldenYearEndLifecycle', 'does not leak stale persisted AP80 asset rows into a transient capital-allowance view', static function () use ($harness): void {
     $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
@@ -167,7 +168,15 @@ $harness->check('GoldenYearEndLifecycle', 'previews the split-period CT provisio
             throw new RuntimeException('Initial split-period CT evidence failed: '
                 . implode(' ', array_map('strval', (array)($initialEvidence['errors'] ?? []))));
         }
-        $acceptedPeriod = InterfaceDB::fetchOne(
+        $capitalAllowanceEvidence = (new \eel_accounts\Service\CapitalAllowanceService())
+            ->persistForAccountingPeriod($companyId, $accountingPeriodId);
+        if (empty($capitalAllowanceEvidence['success'])) {
+            throw new RuntimeException(
+                'Initial split-period capital allowance evidence failed: '
+                . implode(' ', array_map('strval', (array)($capitalAllowanceEvidence['errors'] ?? [])))
+            );
+        }
+        $firstPeriod = InterfaceDB::fetchOne(
             'SELECT id, latest_computation_run_id
              FROM corporation_tax_periods
              WHERE company_id = :company_id
@@ -175,13 +184,16 @@ $harness->check('GoldenYearEndLifecycle', 'previews the split-period CT provisio
                AND sequence_no = 1',
             ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
         );
-        $acceptedCtPeriodId = (int)($acceptedPeriod['id'] ?? 0);
-        $acceptedRunId = (int)($acceptedPeriod['latest_computation_run_id'] ?? 0);
-        $harness->assertTrue($acceptedCtPeriodId > 0);
-        $harness->assertTrue($acceptedRunId > 0);
-        InterfaceDB::execute(
-            'UPDATE corporation_tax_periods SET status = :status WHERE id = :id',
-            ['status' => 'accepted', 'id' => $acceptedCtPeriodId]
+        $firstCtPeriodId = (int)($firstPeriod['id'] ?? 0);
+        $firstRunId = (int)($firstPeriod['latest_computation_run_id'] ?? 0);
+        $harness->assertTrue($firstCtPeriodId > 0);
+        $harness->assertTrue($firstRunId > 0);
+        $harness->assertSame(
+            'generated',
+            (string)InterfaceDB::fetchColumn(
+                'SELECT status FROM corporation_tax_computation_runs WHERE id = :id',
+                ['id' => $firstRunId]
+            )
         );
         $harness->assertSame(
             2,
@@ -266,12 +278,25 @@ $harness->check('GoldenYearEndLifecycle', 'previews the split-period CT provisio
         }
         $finalReadiness = (new \eel_accounts\Service\YearEndTaxReadinessService())
             ->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
+        $finalReadinessPeriodIds = array_map(
+            static fn(array $period): int => (int)($period['ct_period_id'] ?? 0),
+            (array)($finalReadiness['periods'] ?? [])
+        );
+        if (count($finalReadinessPeriodIds) !== 2) {
+            throw new RuntimeException(
+                'Final split-period readiness did not retain both CT periods: '
+                . implode(' ', array_map('strval', (array)($finalReadiness['errors'] ?? [])))
+            );
+        }
+        $harness->assertCount(2, $finalReadinessPeriodIds);
+        $harness->assertTrue(in_array($firstCtPeriodId, $finalReadinessPeriodIds, true));
         $rejectedEvidence = (new \eel_accounts\Service\CorporationTaxComputationService())
             ->persistSummariesForYearEndLock(
                 $companyId,
                 $accountingPeriodId,
                 (array)($finalReadiness['periods'] ?? []),
-                str_repeat('0', 64)
+                str_repeat('0', 64),
+                (array)($finalReadiness['freeze_manifest'] ?? [])
             );
         $harness->assertSame(false, (bool)($rejectedEvidence['success'] ?? true));
         $harness->assertTrue(str_contains(
@@ -283,24 +308,28 @@ $harness->check('GoldenYearEndLifecycle', 'previews the split-period CT provisio
                 $companyId,
                 $accountingPeriodId,
                 (array)($finalReadiness['periods'] ?? []),
-                (string)($finalReadiness['freeze_manifest_hash'] ?? '')
+                (string)($finalReadiness['freeze_manifest_hash'] ?? ''),
+                (array)($finalReadiness['freeze_manifest'] ?? [])
             );
         if (empty($finalEvidence['success'])) {
             throw new RuntimeException('Final split-period CT evidence failed: '
                 . implode(' ', array_map('strval', (array)($finalEvidence['errors'] ?? []))));
         }
+        $finalEvidencePeriodIds = array_map(
+            static fn(array $period): int => (int)($period['ct_period_id'] ?? 0),
+            (array)($finalEvidence['summaries'] ?? [])
+        );
+        $harness->assertTrue(in_array($firstCtPeriodId, $finalEvidencePeriodIds, true));
         $harness->assertSame(
             (string)($finalReadiness['freeze_manifest_hash'] ?? ''),
             (string)($finalEvidence['freeze_manifest_hash'] ?? '')
         );
-        $acceptedSummary = json_decode((string)InterfaceDB::fetchColumn(
-            'SELECT summary_json FROM corporation_tax_computation_runs WHERE id = :id',
-            ['id' => $acceptedRunId]
-        ), true);
-        $harness->assertSame(
-            (string)($finalEvidence['freeze_manifest_hash'] ?? ''),
-            (string)($acceptedSummary['year_end_freeze_manifest_hash'] ?? '')
-        );
+        foreach (goldenYearEndPersistedFreezeHashes($companyId, $accountingPeriodId) as $persistedHash) {
+            $harness->assertSame(
+                (string)($finalEvidence['freeze_manifest_hash'] ?? ''),
+                $persistedHash
+            );
+        }
         $statutoryProvision = round(
             (float)($postingBasis['estimated_corporation_tax'] ?? 0),
             2
@@ -419,6 +448,7 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
     $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
     $periods = [9111, 9112, 9113];
     $initialFilingApprovalIds = [];
+    $initialFreezeHashes = [];
     goldenYearEndSavePartyLoanTerms($companyId);
     foreach ($periods as $periodId) {
         $sync = (new \eel_accounts\Service\CorporationTaxPeriodService())
@@ -449,6 +479,7 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
     goldenAssertFollowingPeriodComplete($harness, $followingPeriodOutputsBefore);
 
     foreach ($periods as $periodId) {
+        goldenYearEndConfirmEligibleEmptyMonths($companyId, $periodId);
         $expected = GoldenLedgerSpecification::yearEndAssetExpectations()[$periodId];
         $depreciation = (new \eel_accounts\Service\AssetService())->runDepreciation($companyId, $periodId);
         if (empty($depreciation['success'])) {
@@ -612,6 +643,7 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         $harness->assertTrue(!empty($lock['success']));
         $harness->assertSame(count($ctPeriods), count((array)(($lock['corporation_tax_filing_basis'] ?? [])['sealed_periods'] ?? [])));
         $harness->assertTrue((new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $periodId));
+        $initialFreezeHashes[$periodId] = goldenYearEndPersistedFreezeHashes($companyId, $periodId);
         ixbrl_test_complete_disclosures($companyId, $periodId, 'golden_year_end_test');
         $filingApproval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
             ->approveAndBuildFacts($companyId, $periodId, 'golden_year_end_test', 'Golden lifecycle filing approval.');
@@ -681,29 +713,20 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         $harness->assertSame(
             'stale',
             (string)((new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
-                ->status($companyId, $periodId)['status'] ?? '')
+                ->status($companyId, $periodId)['state'] ?? '')
         );
     }
 
     foreach ($periods as $periodId) {
-        $blockedRelock = $checklist->lockPeriod($companyId, $periodId, 'golden_year_end_test', true);
-        $harness->assertFalse(!empty($blockedRelock['success']));
-        $harness->assertTrue(str_contains(
-            implode(' ', array_map('strval', (array)($blockedRelock['errors'] ?? []))),
-            'Cut-off journals review'
-        ));
-
-        goldenYearEndApproveSection(
-            $companyId,
-            $periodId,
-            'cut_off_journals_review',
-            'golden_year_end_test'
-        );
         $relock = $checklist->lockPeriod($companyId, $periodId, 'golden_year_end_test', true);
         if (empty($relock['success'])) {
             throw new RuntimeException('AP ' . $periodId . ' re-lock failed: ' . implode(' ', (array)($relock['errors'] ?? [])));
         }
         $harness->assertTrue(!empty($relock['success']));
+        $harness->assertSame(
+            (array)($initialFreezeHashes[$periodId] ?? []),
+            goldenYearEndPersistedFreezeHashes($companyId, $periodId)
+        );
         ixbrl_test_complete_disclosures($companyId, $periodId, 'golden_year_end_test');
         $renewedApproval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
             ->approveAndBuildFacts($companyId, $periodId, 'golden_year_end_test', 'Golden lifecycle re-lock filing approval.');
@@ -713,7 +736,7 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         $harness->assertSame(
             'current',
             (string)((new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
-                ->status($companyId, $periodId)['status'] ?? '')
+                ->status($companyId, $periodId)['state'] ?? '')
         );
     }
 
@@ -746,10 +769,72 @@ function goldenYearEndVerifiedBackupCreator(): \eel_accounts\Contract\DatabaseBa
     };
 }
 
+function goldenYearEndRecoverInterruptedLocks(): void
+{
+    $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
+    $lockService = new \eel_accounts\Service\YearEndLockService();
+    $checklist = new \eel_accounts\Service\YearEndChecklistService(
+        backupCreator: goldenYearEndVerifiedBackupCreator()
+    );
+    foreach ([9115, 9114, 9113, 9112, 9111] as $periodId) {
+        if (!$lockService->isLocked($companyId, $periodId)) {
+            continue;
+        }
+        $result = $checklist->unlockPeriod(
+            $companyId,
+            $periodId,
+            'golden_year_end_test_recovery',
+            'Recover an interrupted Golden lifecycle run before rebuilding its baseline.',
+            null,
+            true
+        );
+        if (empty($result['success'])) {
+            throw new RuntimeException(
+                'Golden lifecycle could not recover locked AP ' . $periodId . ': '
+                . implode(' ', array_map('strval', (array)($result['errors'] ?? [])))
+            );
+        }
+    }
+    \eel_accounts\Support\RequestCache::clear();
+}
+
 function goldenYearEndApproveAllSections(int $companyId, int $accountingPeriodId, string $actor): void
 {
     foreach (goldenYearEndApprovalCodes($companyId, $accountingPeriodId) as $checkCode) {
         goldenYearEndApproveSection($companyId, $accountingPeriodId, $checkCode, $actor);
+    }
+}
+
+function goldenYearEndConfirmEligibleEmptyMonths(int $companyId, int $accountingPeriodId): void
+{
+    $service = new \eel_accounts\Service\EmptyMonthConfirmationService();
+    $context = $service->fetchContext($companyId, $accountingPeriodId);
+    if (empty($context['available'])) {
+        throw new RuntimeException('Golden empty-month context is unavailable: '
+            . implode(' ', array_map('strval', (array)($context['errors'] ?? []))));
+    }
+
+    $monthStarts = [];
+    foreach ((array)($context['months'] ?? []) as $month) {
+        if (is_array($month) && !empty($month['can_confirm'])) {
+            $monthStarts[] = (string)($month['month_start'] ?? '');
+        }
+    }
+    $monthStarts = array_values(array_filter($monthStarts, static fn(string $month): bool => $month !== ''));
+    if ($monthStarts === []) {
+        return;
+    }
+
+    $result = $service->confirmMonths(
+        $companyId,
+        $accountingPeriodId,
+        $monthStarts,
+        'Golden lifecycle explicitly confirms eligible no-activity months.',
+        'golden_year_end_test'
+    );
+    if (empty($result['success'])) {
+        throw new RuntimeException('Golden empty-month confirmation failed: '
+            . implode(' ', array_map('strval', (array)($result['errors'] ?? []))));
     }
 }
 
@@ -810,11 +895,17 @@ function goldenYearEndApprovalAnswers(array $questions): array
         }
         $options = (array)($question['options'] ?? []);
         if ($options !== []) {
+            if (count($options) !== 1) {
+                throw new RuntimeException(
+                    'Golden lifecycle question ' . $id
+                    . ' has multiple choices but no explicit required value.'
+                );
+            }
             $answers[$id] = (string)array_key_first($options);
             continue;
         }
         if (!empty($question['required'])) {
-            $answers[$id] = 'Golden lifecycle approval.';
+            $answers[$id] = 'Golden lifecycle evidence confirmation for ' . $id . '.';
         }
     }
     return $answers;
@@ -849,11 +940,35 @@ function goldenAssertYearEndApprovalsAfterUnlock(
             || $checkCode === 'companies_house_no_filing_acknowledgement'
             ? $approvals->fetchCompaniesHouseReview($companyId, $accountingPeriodId)
             : $approvals->fetchReview($companyId, $accountingPeriodId, $checkCode);
-        $harness->assertSame(
-            $checkCode !== 'cut_off_journals_review',
-            !empty($review['acknowledgement_current'])
-        );
+        $harness->assertTrue(!empty($review['acknowledgement_current']));
     }
+}
+
+/** @return array<int,string> */
+function goldenYearEndPersistedFreezeHashes(int $companyId, int $accountingPeriodId): array
+{
+    $rows = InterfaceDB::fetchAll(
+        'SELECT ctp.id AS ct_period_id, run.summary_json
+         FROM corporation_tax_periods ctp
+         INNER JOIN corporation_tax_computation_runs run ON run.id = ctp.latest_computation_run_id
+         WHERE ctp.company_id = :company_id
+           AND ctp.accounting_period_id = :accounting_period_id
+           AND ctp.status <> :superseded
+         ORDER BY ctp.sequence_no, ctp.id',
+        [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'superseded' => 'superseded',
+        ]
+    );
+    $hashes = [];
+    foreach ($rows as $row) {
+        $summary = json_decode((string)($row['summary_json'] ?? ''), true);
+        $hashes[(int)($row['ct_period_id'] ?? 0)] = is_array($summary)
+            ? (string)($summary['year_end_freeze_manifest_hash'] ?? '')
+            : '';
+    }
+    return $hashes;
 }
 
 function goldenYearEndSavePartyLoanTerms(int $companyId): void

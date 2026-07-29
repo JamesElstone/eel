@@ -319,5 +319,67 @@ function hmrcPackageTestIxbrl(string $startDate, string $endDate, bool $includeU
                 $harness->assertFalse(str_contains($packageJson, '\\u00e9'));
             }
         );
+
+        $harness->check(
+            \eel_accounts\Service\HmrcSubmissionPackageService::class,
+            'assembles the real accounts and computation iXBRL attachments',
+            static function () use ($harness, $service): void {
+                $accountsPath = tempnam(test_tmp_directory(), 'ct600-accounts-');
+                $computationPath = tempnam(test_tmp_directory(), 'ct600-computation-');
+                if (!is_string($accountsPath) || !is_string($computationPath)) {
+                    throw new RuntimeException('Unable to create package attachment fixtures.');
+                }
+                $accountsBytes = hmrcPackageTestIxbrl('2024-01-01', '2024-12-31', false);
+                $computationBytes = hmrcPackageTestIxbrl('2024-01-01', '2024-12-31', true);
+                file_put_contents($accountsPath, $accountsBytes);
+                file_put_contents($computationPath, $computationBytes);
+
+                try {
+                    $method = new ReflectionMethod($service, 'attachIxbrl');
+                    $method->setAccessible(true);
+                    $xml = (string)$method->invoke(
+                        $service,
+                        '<IRenvelope xmlns="' . \eel_accounts\Service\Ct600BuilderService::CT_NAMESPACE
+                            . '"><CompanyTaxReturn/></IRenvelope>',
+                        ['path' => $accountsPath, 'filename' => 'accounts.xhtml'],
+                        ['path' => $computationPath, 'filename' => 'computation.xhtml']
+                    );
+                    $document = new DOMDocument();
+                    $harness->assertSame(true, $document->loadXML($xml, LIBXML_NONET | LIBXML_NOBLANKS));
+                    $xpath = new DOMXPath($document);
+                    $xpath->registerNamespace('ct', \eel_accounts\Service\Ct600BuilderService::CT_NAMESPACE);
+                    $root = '/ct:IRenvelope/ct:CompanyTaxReturn/ct:AttachedFiles/ct:XBRLsubmission';
+                    $harness->assertSame(1, $xpath->query($root . '/ct:Accounts/ct:Instance/ct:EncodedInlineXBRLDocument')?->length);
+                    $harness->assertSame(1, $xpath->query($root . '/ct:Computation/ct:Instance/ct:EncodedInlineXBRLDocument')?->length);
+                    $harness->assertSame(
+                        $accountsBytes,
+                        base64_decode((string)$xpath->evaluate(
+                            'string(' . $root . '/ct:Accounts/ct:Instance/ct:EncodedInlineXBRLDocument)'
+                        ), true)
+                    );
+                    $harness->assertSame(
+                        $computationBytes,
+                        base64_decode((string)$xpath->evaluate(
+                            'string(' . $root . '/ct:Computation/ct:Instance/ct:EncodedInlineXBRLDocument)'
+                        ), true)
+                    );
+                    $harness->assertSame(
+                        'accounts.xhtml',
+                        (string)$xpath->evaluate(
+                            'string(' . $root . '/ct:Accounts/ct:Instance/ct:EncodedInlineXBRLDocument/@Filename)'
+                        )
+                    );
+                    $harness->assertSame(
+                        'computation.xhtml',
+                        (string)$xpath->evaluate(
+                            'string(' . $root . '/ct:Computation/ct:Instance/ct:EncodedInlineXBRLDocument/@Filename)'
+                        )
+                    );
+                } finally {
+                    @unlink($accountsPath);
+                    @unlink($computationPath);
+                }
+            }
+        );
     }
 );

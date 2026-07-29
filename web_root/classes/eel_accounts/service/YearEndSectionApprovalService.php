@@ -1294,10 +1294,14 @@ final class YearEndSectionApprovalService
                 $tokens[$table] = $token;
             }
         }
-        // Party-term facts are represented canonically in the director-loan
-        // bundle itself. Do not fingerprint their audit or lock-snapshot rows:
-        // taking an equivalent snapshot must preserve a current approval,
-        // while an actual live-terms edit changes the canonical bundle hash.
+        // Live terms affect the approval immediately, including ordinary
+        // fetchReview() reads that can otherwise reuse a persisted bundle.
+        // Audit and lock-snapshot rows are deliberately excluded: recording
+        // history or taking an equivalent snapshot must not stale approval.
+        $termsToken = $this->companyTableToken('participator_loan_party_terms', $companyId);
+        if ($termsToken !== null) {
+            $tokens['participator_loan_party_terms'] = $termsToken;
+        }
         $ct600aToken = $this->companyPeriodTableToken('corporation_tax_ct600a_events', $companyId, $accountingPeriodId);
         if ($ct600aToken !== null) {
             $tokens['ct600a_events'] = $ct600aToken;

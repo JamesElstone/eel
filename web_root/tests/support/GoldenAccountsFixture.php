@@ -299,6 +299,29 @@ final class GoldenAccountsFixture
             'effective_to' => null,
             'source_note' => 'Synthetic golden participator fixture.',
         ]);
+        self::insert('company_incorporation_share_classes', [
+            'id' => 910301,
+            'company_id' => self::GOLDEN_COMPANY_ID,
+            'issued_at' => '2022-09-05 00:00:00',
+            'share_class' => 'Ordinary',
+            'currency' => 'GBP',
+            'quantity' => 1,
+            'nominal_value_per_share' => '1.000000',
+            'paid_value_per_share' => '1.000000',
+            'unpaid_value_per_share' => '0.000000',
+            'source_note' => 'Synthetic golden issued-share fixture.',
+            'status' => 'paid',
+        ]);
+        self::insert('company_shareholdings', [
+            'id' => 910401,
+            'company_id' => self::GOLDEN_COMPANY_ID,
+            'party_id' => self::GOLDEN_PARTY_ID,
+            'share_class_id' => 910301,
+            'quantity' => 1,
+            'effective_from' => '2022-09-05',
+            'effective_to' => null,
+            'source_note' => 'Synthetic golden shareholding fixture.',
+        ]);
         self::insert('company_accounts', [
             'id' => 9120, 'company_id' => self::GOLDEN_COMPANY_ID, 'account_name' => 'Golden Current Account',
             'account_type' => 'bank', 'institution_name' => 'Synthetic Test Bank',

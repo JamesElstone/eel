@@ -10,6 +10,8 @@ function ixbrlTaxComputationModel(array $overrides = []): array
         'accounting_profit' => -118.66,
         'disallowable_add_backs' => 0.00,
         'capital_add_backs' => 0.00,
+        'capital_expenditure_add_backs' => 0.00,
+        'disposal_profit_or_loss_adjustment' => 0.00,
         'depreciation_add_back' => 184.28,
         'capital_allowances' => 628.84,
         'taxable_before_losses' => -563.21,
@@ -32,6 +34,8 @@ function ixbrlTaxComputationModel(array $overrides = []): array
                 'accounting_profit' => -127.11,
                 'disallowable_add_backs' => 0.00,
                 'capital_add_backs' => 0.00,
+                'capital_expenditure_add_backs' => 0.00,
+                'disposal_profit_or_loss_adjustment' => 0.00,
                 'depreciation_add_back' => 197.41,
                 'adjusted_result_before_capital_allowances' => 70.30,
             ],
@@ -108,7 +112,8 @@ function ixbrlTaxComputationMappings(array $model): array
         ['ct_period.end_date', 'EndOfPeriodCoveredByReturn', 'date', 'instant', 'identity'],
         ['computation.summary.accounting_profit', 'ProfitLossPerAccounts', 'numeric', 'duration', 'detailed_profit_and_loss'],
         ['computation.summary.disallowable_add_backs', 'AdjustmentsMiscellaneousExpensesPerAccounts', 'numeric', 'duration', 'accounts_adjustments'],
-        ['computation.summary.capital_add_backs', 'AdjustmentsCapitalExpenditure', 'numeric', 'duration', 'accounts_adjustments'],
+        ['computation.summary.capital_expenditure_add_backs', 'AdjustmentsCapitalExpenditure', 'numeric', 'duration', 'accounts_adjustments'],
+        ['computation.summary.disposal_profit_or_loss_adjustment', 'AdjustmentsLossOrProfitOnSale', 'numeric', 'duration', 'accounts_adjustments'],
         ['computation.summary.depreciation_add_back', 'AdjustmentsDepreciation', 'numeric', 'duration', 'accounts_adjustments'],
         ['computation.summary.capital_allowances', 'TotalCapitalAllowances', 'numeric', 'duration', 'capital_allowances'],
         ['computation.summary.taxable_before_losses', 'ProfitsBeforeOtherDeductionsAndReliefs', 'numeric', 'duration', 'losses'],
@@ -126,7 +131,7 @@ function ixbrlTaxComputationMappings(array $model): array
     foreach ($specs as $index => [$key, $localName, $type, $periodType, $section]) {
         $trade = in_array($localName, [
             'ProfitLossPerAccounts', 'AdjustmentsMiscellaneousExpensesPerAccounts',
-            'AdjustmentsCapitalExpenditure', 'AdjustmentsDepreciation', 'TotalCapitalAllowances',
+            'AdjustmentsCapitalExpenditure', 'AdjustmentsLossOrProfitOnSale', 'AdjustmentsDepreciation', 'TotalCapitalAllowances',
             'TradingLossesBroughtForward', 'TradingLossesBroughtForwardAmountUsedAgainstTotalProfits',
             'BalanceOfLossesBroughtForwardCarriedForward',
         ], true);
@@ -576,6 +581,73 @@ function ixbrlTaxComputationMappings(array $model): array
         $carriedForwardContext = (string)$carriedForward?->getAttribute('contextRef');
         $h->assertSame('2025-09-30', $xpath->evaluate('string(//xbrli:context[@id="' . $carriedForwardContext . '"]/xbrli:period/xbrli:instant)'));
         $h->assertSame(0, $xpath->query('//ix:nonFraction[@name="ct:ProfitsBeforeOtherDeductionsAndReliefs"]')->length);
+    });
+    $h->check($service::class, 'tags a frozen disposal loss with the dedicated HMRC concept', static function () use ($h, $service): void {
+        $model = ixbrlTaxComputationModel([
+            'period_start' => '2023-10-01',
+            'period_end' => '2024-09-30',
+            'summary' => [
+                'accounting_profit' => -4903.62,
+                'disallowable_add_backs' => 1056.14,
+                'capital_add_backs' => 112.57,
+                'capital_expenditure_add_backs' => 0.00,
+                'disposal_profit_or_loss_adjustment' => 112.57,
+                'depreciation_add_back' => 1087.39,
+                'capital_allowances' => 4375.29,
+                'taxable_before_losses' => -7022.81,
+                'loss_created_in_period' => 7022.81,
+                'losses_brought_forward' => 595.61,
+                'losses_used' => 0.00,
+                'losses_carried_forward' => 7618.42,
+                'accounting_allocation_basis' => [
+                    'method' => 'journal_date_within_single_ct_period',
+                    'time_apportioned' => false,
+                    'ct_period_days' => 366,
+                    'accounting_period_days' => 366,
+                    'rounding' => 'pennies_half_up',
+                ],
+            ],
+        ]);
+        $method = new ReflectionMethod($service::class, 'renderMappedDocument');
+        $method->setAccessible(true);
+        $xhtml = (string)($method->invoke(
+            $service,
+            new \eel_accounts\Service\IxbrlGeneratorService(),
+            $model,
+            ixbrlTaxComputationMappings($model),
+            'http://www.hmrc.gov.uk/schemas/ct/comp/2024-01-01/ct-comp-2024.xsd'
+        ))['xhtml'];
+        $document = new DOMDocument();
+        $h->assertTrue($document->loadXML($xhtml));
+        $xpath = new DOMXPath($document);
+        $xpath->registerNamespace('ix', \eel_accounts\Service\IxbrlGeneratorService::IX_NAMESPACE);
+        $fact = $xpath->query('//ix:nonFraction[@name="ct:AdjustmentsLossOrProfitOnSale"]')->item(0);
+        $h->assertSame('112.57', $fact?->textContent);
+        $h->assertTrue(str_contains((string)$document->textContent, 'Loss on disposal of fixed assets added back'));
+        $capital = $xpath->query('//ix:nonFraction[@name="ct:AdjustmentsCapitalExpenditure"]')->item(0);
+        $h->assertSame('0.00', $capital?->textContent);
+    });
+    $h->check($service::class, 'derives the disposal fact from a pre-split frozen audit basis', static function () use ($h, $service): void {
+        $model = ixbrlTaxComputationModel([
+            'summary' => [
+                'capital_add_backs' => 112.57,
+            ],
+        ]);
+        unset(
+            $model['model']['computation']['summary']['capital_expenditure_add_backs'],
+            $model['model']['computation']['summary']['disposal_profit_or_loss_adjustment']
+        );
+        $model['model']['audit']['depreciation_capital']['rows'] = [
+            ['nominal_code' => '6210', 'tax_adjustment_amount' => 45.61],
+            ['nominal_code' => '6210', 'tax_adjustment_amount' => 66.96],
+        ];
+
+        $method = new ReflectionMethod($service::class, 'withSemanticCapitalAdjustmentFacts');
+        $method->setAccessible(true);
+        $derived = (array)$method->invoke($service, $model);
+
+        $h->assertSame(0.00, $derived['facts']['computation.summary.capital_expenditure_add_backs']);
+        $h->assertSame(112.57, $derived['facts']['computation.summary.disposal_profit_or_loss_adjustment']);
     });
     $h->check($service::class, 'renders the CT period 1 main-pool bridge with distinct WDV instants', static function () use ($h, $service): void {
         $model = ixbrlTaxComputationModel();

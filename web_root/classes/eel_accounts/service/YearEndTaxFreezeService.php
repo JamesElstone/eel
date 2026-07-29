@@ -169,6 +169,12 @@ final class YearEndTaxFreezeService
             'accounting_profit' => $this->money($period['accounting_profit'] ?? 0),
             'disallowable_add_backs' => $this->money($period['disallowable_add_backs'] ?? 0),
             'capital_add_backs' => $this->money($period['capital_add_backs'] ?? 0),
+            'capital_expenditure_add_backs' => $this->money(
+                $period['capital_expenditure_add_backs'] ?? $period['capital_add_backs'] ?? 0
+            ),
+            'disposal_profit_or_loss_adjustment' => $this->money(
+                $period['disposal_profit_or_loss_adjustment'] ?? 0
+            ),
             'depreciation_add_back' => $this->money($period['depreciation_add_back'] ?? 0),
             'capital_allowances' => $this->money($period['capital_allowances'] ?? 0),
             'taxable_before_losses' => $this->money($period['taxable_before_losses'] ?? 0),

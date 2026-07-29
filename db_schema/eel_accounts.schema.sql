@@ -4303,6 +4303,17 @@ INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_29_001_asset_impairment_entries.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_29_002_asset_available_for_use.sql');
+UPDATE ct_filing_canonical_sources
+SET is_required = 0,
+    source_label = 'Legacy aggregate capital add-backs (historic bases only)'
+WHERE canonical_key = 'computation.summary.capital_add_backs';
+INSERT IGNORE INTO ct_filing_canonical_sources
+  (target_scope, canonical_key, source_label, value_type, source_section, is_required)
+VALUES
+  ('computation_ixbrl', 'computation.summary.capital_expenditure_add_backs', 'Capital expenditure add-backs', 'numeric', 'accounts_adjustments', 1),
+  ('computation_ixbrl', 'computation.summary.disposal_profit_or_loss_adjustment', 'Loss or profit on disposal of fixed assets', 'numeric', 'accounts_adjustments', 0);
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_29_004_ct_disposal_result_ixbrl.sql');
 
 DROP TRIGGER IF EXISTS `trg_journals_append_only_update`;
 CREATE TRIGGER `trg_journals_append_only_update`

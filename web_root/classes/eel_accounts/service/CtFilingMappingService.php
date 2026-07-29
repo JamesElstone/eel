@@ -105,7 +105,7 @@ final class CtFilingMappingService
         if ($targetType === self::TARGET_COMPUTATION
             && in_array($version, ['2024', '2025'], true) && $artifactVersion === 'V1.0.0') {
             return [
-                'profile_name' => 'reviewed_ct_computation_' . $version . '_v1_0_0_return_v3',
+                'profile_name' => 'reviewed_ct_computation_' . $version . '_v1_0_0_return_v4',
                 'natural_identity' => ['taxonomy_version' => $version, 'artifact_version' => 'V1.0.0'],
                 'mappings' => [
                     ['canonical_key' => 'identity.company_name', 'local_name' => 'CompanyName', 'period_type' => 'instant', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
@@ -114,7 +114,8 @@ final class CtFilingMappingService
                     ['canonical_key' => 'ct_period.end_date', 'local_name' => 'EndOfPeriodCoveredByReturn', 'period_type' => 'instant', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
                     ['canonical_key' => 'computation.summary.accounting_profit', 'local_name' => 'ProfitLossPerAccounts', 'context_profile' => self::CONTEXT_HMRC_CT_UK_TRADE],
                     ['canonical_key' => 'computation.summary.disallowable_add_backs', 'local_name' => 'AdjustmentsMiscellaneousExpensesPerAccounts', 'context_profile' => self::CONTEXT_HMRC_CT_UK_TRADE],
-                    ['canonical_key' => 'computation.summary.capital_add_backs', 'local_name' => 'AdjustmentsCapitalExpenditure', 'context_profile' => self::CONTEXT_HMRC_CT_UK_TRADE],
+                    ['canonical_key' => 'computation.summary.capital_expenditure_add_backs', 'local_name' => 'AdjustmentsCapitalExpenditure', 'context_profile' => self::CONTEXT_HMRC_CT_UK_TRADE],
+                    ['canonical_key' => 'computation.summary.disposal_profit_or_loss_adjustment', 'local_name' => 'AdjustmentsLossOrProfitOnSale', 'context_profile' => self::CONTEXT_HMRC_CT_UK_TRADE],
                     ['canonical_key' => 'computation.summary.depreciation_add_back', 'local_name' => 'AdjustmentsDepreciation', 'context_profile' => self::CONTEXT_HMRC_CT_UK_TRADE],
                     ['canonical_key' => 'computation.summary.capital_allowances', 'local_name' => 'TotalCapitalAllowances', 'context_profile' => self::CONTEXT_HMRC_CT_UK_TRADE],
                     ['canonical_key' => 'computation.summary.taxable_before_losses', 'local_name' => 'ProfitsBeforeOtherDeductionsAndReliefs', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],

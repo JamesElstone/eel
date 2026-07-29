@@ -56,7 +56,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $h->assertTrue(is_array($computation));
         $computation2024 = $service->reviewedTemplate(\eel_accounts\Service\CtFilingMappingService::TARGET_COMPUTATION, '2024', 'V1.0.0');
         $h->assertTrue(is_array($computation2024));
-        $h->assertSame('reviewed_ct_computation_2024_v1_0_0_return_v3', (string)$computation2024['profile_name']);
+        $h->assertSame('reviewed_ct_computation_2024_v1_0_0_return_v4', (string)$computation2024['profile_name']);
         $h->assertSame(
             ['taxonomy_version' => '2024', 'artifact_version' => 'V1.0.0'],
             (array)$computation2024['natural_identity']
@@ -66,6 +66,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         foreach ((array)$computation2024['mappings'] as $mapping) {
             $computationMappings[(string)$mapping['local_name']] = $mapping;
         }
+        $h->assertSame(
+            'computation.summary.capital_expenditure_add_backs',
+            (string)$computationMappings['AdjustmentsCapitalExpenditure']['canonical_key']
+        );
+        $h->assertSame(
+            'computation.summary.disposal_profit_or_loss_adjustment',
+            (string)$computationMappings['AdjustmentsLossOrProfitOnSale']['canonical_key']
+        );
         $h->assertSame(
             \eel_accounts\Service\CtFilingMappingService::CONTEXT_HMRC_CT_UK_TRADE,
             (string)$computationMappings['ProfitLossPerAccounts']['context_profile']

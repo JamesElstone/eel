@@ -43,6 +43,8 @@ final class PreTaxProfitLossService
         $postedCt = 0.0;
         $disallowable = 0.0;
         $capital = 0.0;
+        $capitalExpenditure = 0.0;
+        $disposalProfitOrLoss = 0.0;
         $otherCount = 0;
         $unknownCount = 0;
         $otherAmount = 0.0;
@@ -91,19 +93,22 @@ final class PreTaxProfitLossService
                     $unknownAmount = round($unknownAmount + $absoluteAmount, 2);
                 }
             }
-            if ((string)($row['account_type'] ?? '') === 'income') {
-                if ($taxTreatment === 'capital') {
-                    // A credit income movement is negative on the signed
-                    // debit-minus-credit bridge, removing the gain from
-                    // taxable trading profit at its actual journal date.
-                    $capital += $amount;
+            if ($taxTreatment === 'capital') {
+                // A credit income movement is negative on the signed
+                // debit-minus-credit bridge, removing a disposal gain from
+                // taxable trading profit at its actual journal date.
+                $capital += $amount;
+                if ($rules->isAssetDisposalResult($row)) {
+                    $disposalProfitOrLoss += $amount;
+                } else {
+                    $capitalExpenditure += $amount;
                 }
+            }
+            if ((string)($row['account_type'] ?? '') === 'income') {
                 continue;
             }
             if ($taxTreatment === 'disallowable') {
                 $disallowable += $amount;
-            } elseif ($taxTreatment === 'capital') {
-                $capital += $amount;
             }
         }
         $postedOperatingExpenses = $operatingExpenses;
@@ -156,6 +161,11 @@ final class PreTaxProfitLossService
                 $disallowable += $amount;
             } elseif ($taxTreatment === 'capital') {
                 $capital += $amount;
+                if ($rules->isAssetDisposalResult($row)) {
+                    $disposalProfitOrLoss += $amount;
+                } else {
+                    $capitalExpenditure += $amount;
+                }
             }
         }
         $depreciationPreview ??= (new AssetService())->previewDepreciationRun($companyId, $accountingPeriodId);
@@ -196,6 +206,8 @@ final class PreTaxProfitLossService
             'profit_before_tax' => $profitBeforeTax,
             'disallowable_add_backs' => round($disallowable, 2),
             'capital_add_backs' => round($capital, 2),
+            'capital_expenditure_add_backs' => round($capitalExpenditure, 2),
+            'disposal_profit_or_loss_adjustment' => round($disposalProfitOrLoss, 2),
             'other_treatment_count' => $otherCount,
             'unknown_treatment_count' => $unknownCount,
             'other_treatment_amount' => round($otherAmount, 2),

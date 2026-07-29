@@ -59,6 +59,16 @@ final class CorporationTaxTreatmentRuleService
     }
 
     /**
+     * Whether a capital treatment is the accounting profit or loss created by
+     * derecognising a fixed asset.  Callers use this to present the adjustment
+     * under the dedicated HMRC computation concept rather than as expenditure.
+     */
+    public function isAssetDisposalResult(array $nominal): bool
+    {
+        return $this->isAssetDisposalLoss($nominal) || $this->isAssetDisposalGain($nominal);
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     public function fetchRules(bool $includeInactive = true): array

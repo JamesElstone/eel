@@ -724,6 +724,12 @@ final class YearEndMetricsService
             'profit_before_tax' => round((float)$result['profit_before_tax'], 2),
             'disallowable_add_backs' => round((float)$result['disallowable_add_backs'], 2),
             'capital_add_backs' => round((float)$result['capital_add_backs'], 2),
+            'capital_expenditure_add_backs' => round((float)(
+                $result['capital_expenditure_add_backs'] ?? $result['capital_add_backs']
+            ), 2),
+            'disposal_profit_or_loss_adjustment' => round((float)(
+                $result['disposal_profit_or_loss_adjustment'] ?? 0
+            ), 2),
             'depreciation_expense' => round((float)$result['depreciation_expense'], 2),
             'prepayment_preview_reliable' => !array_key_exists('prepayment_preview_reliable', $result)
                 || !empty($result['prepayment_preview_reliable']),

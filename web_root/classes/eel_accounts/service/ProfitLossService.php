@@ -927,6 +927,12 @@ final class ProfitLossService
                         'profit_before_tax' => (float)($preTax['profit_before_tax'] ?? 0),
                         'disallowable_add_backs' => (float)($preTax['disallowable_add_backs'] ?? 0),
                         'capital_add_backs' => (float)($preTax['capital_add_backs'] ?? 0),
+                        'capital_expenditure_add_backs' => (float)(
+                            $preTax['capital_expenditure_add_backs'] ?? $preTax['capital_add_backs'] ?? 0
+                        ),
+                        'disposal_profit_or_loss_adjustment' => (float)(
+                            $preTax['disposal_profit_or_loss_adjustment'] ?? 0
+                        ),
                         'other_treatment_count' => (int)($preTax['other_treatment_count'] ?? 0),
                         'unknown_treatment_count' => (int)($preTax['unknown_treatment_count'] ?? 0),
                         'other_treatment_amount' => round((float)($preTax['other_treatment_amount'] ?? 0), 2),

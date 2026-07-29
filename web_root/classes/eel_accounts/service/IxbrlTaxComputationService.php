@@ -22,7 +22,8 @@ final class IxbrlTaxComputationService
         'ct_period.end_date' => 'Period end',
         'computation.summary.accounting_profit' => 'Profit or loss per accounts',
         'computation.summary.disallowable_add_backs' => 'Disallowable expenses added back',
-        'computation.summary.capital_add_backs' => 'Capital expenditure added back',
+        'computation.summary.capital_expenditure_add_backs' => 'Capital expenditure added back',
+        'computation.summary.disposal_profit_or_loss_adjustment' => 'Loss or profit on disposal of fixed assets',
         'computation.summary.depreciation_add_back' => 'Depreciation added back',
         'report.accounts_adjustment.revised_figure_before_tax' => 'Revised figure before tax',
         'report.accounts_adjustment.adjusted_loss_of_period' => 'Adjusted loss of period',
@@ -66,6 +67,7 @@ final class IxbrlTaxComputationService
         'ProfitLossPerAccounts',
         'AdjustmentsMiscellaneousExpensesPerAccounts',
         'AdjustmentsCapitalExpenditure',
+        'AdjustmentsLossOrProfitOnSale',
         'AdjustmentsDepreciation',
         'TotalCapitalAllowances',
     ];
@@ -77,6 +79,7 @@ final class IxbrlTaxComputationService
         'ProfitLossPerAccounts',
         'AdjustmentsMiscellaneousExpensesPerAccounts',
         'AdjustmentsCapitalExpenditure',
+        'AdjustmentsLossOrProfitOnSale',
         'AdjustmentsDepreciation',
         'TotalCapitalAllowances',
         'ProfitsBeforeOtherDeductionsAndReliefs',
@@ -127,6 +130,7 @@ final class IxbrlTaxComputationService
         // the previous reviewed mapping profile.
         $mappingModel['facts']['computation.summary.s455_tax'] = $ct600aTax;
         $mappingModel['facts']['computation.summary.estimated_corporation_tax'] = round($ordinaryTax + $ct600aTax, 2);
+        $mappingModel = $this->withSemanticCapitalAdjustmentFacts($mappingModel);
         $mappedFacts = (new CtFilingMappingService())->mapFrozenFacts(
             CtFilingMappingService::TARGET_COMPUTATION,
             $mappingModel,
@@ -153,7 +157,7 @@ final class IxbrlTaxComputationService
             $validationResources = $catalogue->validationResources($package);
             $rendered = $this->renderMappedDocument(
                 $generator,
-                $model,
+                $mappingModel,
                 (array)$mappedFacts['mappings'],
                 (string)$validationResources['schema_ref'],
                 (string)$evidenceArtifact['display_id']
@@ -444,7 +448,7 @@ final class IxbrlTaxComputationService
             }
             $facts[$canonicalKey] = [
                 'canonical_key' => $canonicalKey,
-                'label' => $this->presentationLabel($canonicalKey),
+                'label' => $this->presentationLabel($canonicalKey, $value),
                 'value' => $value,
                 'numeric' => $numeric,
                 'html' => $generator->renderFact($fact),
@@ -926,8 +930,13 @@ final class IxbrlTaxComputationService
             . $body . '</tbody></table></div>';
     }
 
-    private function presentationLabel(string $canonicalKey): string
+    private function presentationLabel(string $canonicalKey, mixed $value = null): string
     {
+        if ($canonicalKey === 'computation.summary.disposal_profit_or_loss_adjustment') {
+            return (float)$value < 0
+                ? 'Profit on disposal of fixed assets deducted'
+                : 'Loss on disposal of fixed assets added back';
+        }
         $label = self::PRESENTATION_LABELS[$canonicalKey] ?? '';
         if ($label === '') {
             throw new \RuntimeException(
@@ -935,6 +944,42 @@ final class IxbrlTaxComputationService
             );
         }
         return $label;
+    }
+
+    /**
+     * Derive presentation-only semantic components from the verified frozen
+     * basis. Pre-split bases retain audited 6210/4200 source rows, allowing a
+     * regenerated computation to use the correct taxonomy without changing
+     * its calculation or approval hashes.
+     */
+    private function withSemanticCapitalAdjustmentFacts(array $filing): array
+    {
+        $summary = (array)($filing['model']['computation']['summary'] ?? []);
+        $total = round((float)($summary['capital_add_backs'] ?? 0), 2);
+        $hasSplit = array_key_exists('capital_expenditure_add_backs', $summary)
+            || array_key_exists('disposal_profit_or_loss_adjustment', $summary);
+        $disposal = $hasSplit
+            ? round((float)($summary['disposal_profit_or_loss_adjustment'] ?? 0), 2)
+            : 0.0;
+        if (!$hasSplit) {
+            foreach ((array)($filing['model']['audit']['depreciation_capital']['rows'] ?? []) as $row) {
+                $code = trim((string)($row['nominal_code'] ?? $row['metadata']['nominal_code'] ?? ''));
+                if (!in_array($code, ['6210', '4200'], true)) {
+                    continue;
+                }
+                $disposal = round($disposal + (float)($row['tax_adjustment_amount'] ?? 0), 2);
+            }
+        }
+        $capitalExpenditure = $hasSplit
+            ? round((float)($summary['capital_expenditure_add_backs'] ?? ($total - $disposal)), 2)
+            : round($total - $disposal, 2);
+
+        $filing['model']['computation']['summary']['capital_expenditure_add_backs'] = $capitalExpenditure;
+        $filing['model']['computation']['summary']['disposal_profit_or_loss_adjustment'] = $disposal;
+        $filing['facts']['computation.summary.capital_expenditure_add_backs'] = $capitalExpenditure;
+        $filing['facts']['computation.summary.disposal_profit_or_loss_adjustment'] = $disposal;
+
+        return $filing;
     }
 
     private function factHtml(array $facts, string $canonicalKey): string
@@ -1258,7 +1303,7 @@ CSS;
         $sections = [];
         foreach ($included as $mapping) {
             $canonicalKey = (string)$mapping['canonical_key'];
-            $label = $this->presentationLabel($canonicalKey);
+            $label = $this->presentationLabel($canonicalKey, $mapping['source_value']);
             $section = (string)$mapping['presentation_section'];
             $sections[$section][] = [
                 'canonical_key' => $canonicalKey,

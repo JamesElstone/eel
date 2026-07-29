@@ -85,7 +85,11 @@ final class HmrcCtComputationReportProfile
             $wholeSourceValues = [
                 'computation.summary.accounting_profit' => $this->money($whole['accounting_profit']),
                 'computation.summary.disallowable_add_backs' => $this->money($whole['disallowable_add_backs']),
-                'computation.summary.capital_add_backs' => $this->money($whole['capital_add_backs']),
+                'computation.summary.capital_expenditure_add_backs' => $this->money(
+                    $whole['capital_expenditure_add_backs']
+                        ?? ((float)$whole['capital_add_backs'] - (float)($whole['disposal_profit_or_loss_adjustment'] ?? 0))
+                ),
+                'computation.summary.disposal_profit_or_loss_adjustment' => $this->money($whole['disposal_profit_or_loss_adjustment'] ?? 0),
                 'computation.summary.depreciation_add_back' => $this->money($whole['depreciation_add_back']),
             ];
         }
@@ -100,7 +104,8 @@ final class HmrcCtComputationReportProfile
         $accountsKeys = [
             'computation.summary.accounting_profit',
             'computation.summary.disallowable_add_backs',
-            'computation.summary.capital_add_backs',
+            'computation.summary.capital_expenditure_add_backs',
+            'computation.summary.disposal_profit_or_loss_adjustment',
             'computation.summary.depreciation_add_back',
         ];
         foreach ($accountsKeys as $key) {
@@ -194,7 +199,8 @@ final class HmrcCtComputationReportProfile
         $rows = [
             $this->row('accounts_profit_loss', 'computation.summary.accounting_profit', $timeApportioned ? 'Profit/(loss) before tax per statutory accounts' : 'Profit or loss per accounts', 'normal', $sourceRole, $sourceReference . 'profit_before_tax'),
             $this->row('accounting_disallowable_expenses', 'computation.summary.disallowable_add_backs', $timeApportioned ? 'Accounting adjustment for disallowable expenses' : 'Disallowable expenses added back', 'normal', $sourceRole, $sourceReference . 'disallowable_add_backs'),
-            $this->row('accounting_capital_expenditure', 'computation.summary.capital_add_backs', $timeApportioned ? 'Accounting adjustment for capital expenditure' : 'Capital expenditure added back', 'normal', $sourceRole, $sourceReference . 'capital_add_backs'),
+            $this->row('accounting_capital_expenditure', 'computation.summary.capital_expenditure_add_backs', $timeApportioned ? 'Accounting adjustment for capital expenditure' : 'Capital expenditure added back', 'normal', $sourceRole, $sourceReference . 'capital_expenditure_add_backs'),
+            $this->row('accounting_disposal_profit_or_loss', 'computation.summary.disposal_profit_or_loss_adjustment', 'Loss or profit on disposal of fixed assets', 'normal', $sourceRole, $sourceReference . 'disposal_profit_or_loss_adjustment'),
             $this->row('accounting_depreciation', 'computation.summary.depreciation_add_back', $timeApportioned ? 'Accounting adjustment for depreciation' : 'Depreciation added back', 'normal', $sourceRole, $sourceReference . 'depreciation_add_back'),
             $this->row('revised_figure_before_tax', 'report.accounts_adjustment.revised_figure_before_tax', $timeApportioned ? 'Revised figure before tax' : 'Adjusted profit or loss before capital allowances', 'normal', $sourceRole, $sourceReference . 'adjusted_result_before_capital_allowances', 'subtotal'),
         ];

@@ -127,6 +127,8 @@ final class CorporationTaxComputationService
             'accounting_profit' => round((float)$current['accounting_profit'], 2),
             'disallowable_add_backs' => round((float)$current['disallowable_add_backs'], 2),
             'capital_add_backs' => round((float)($current['capital_add_backs'] ?? 0), 2),
+            'capital_expenditure_add_backs' => round((float)($current['capital_expenditure_add_backs'] ?? $current['capital_add_backs'] ?? 0), 2),
+            'disposal_profit_or_loss_adjustment' => round((float)($current['disposal_profit_or_loss_adjustment'] ?? 0), 2),
             'depreciation_add_back' => round((float)$current['depreciation_add_back'], 2),
             'capital_allowances' => round((float)$current['capital_allowances'], 2),
             'taxable_before_losses' => round((float)$current['taxable_before_losses'], 2),
@@ -152,17 +154,17 @@ final class CorporationTaxComputationService
             'calculation_status' => 'estimate',
             'confidence_status' => $warnings === [] ? 'ready_for_review' : 'review_required',
             'confidence_label' => $warnings === [] ? 'Ready for review' : 'Review required',
-            'steps' => [
+            'steps' => array_merge([
                 ['label' => 'Accounting profit or loss', 'amount' => round((float)$current['accounting_profit'], 2)],
                 ['label' => 'Add back disallowable expenses', 'amount' => round((float)$current['disallowable_add_backs'], 2)],
-                ['label' => 'Add back capital expenditure', 'amount' => round((float)($current['capital_add_backs'] ?? 0), 2)],
+            ], $this->capitalAdjustmentSteps($current), [
                 ['label' => 'Add back depreciation', 'amount' => round((float)$current['depreciation_add_back'], 2)],
                 ['label' => 'Deduct capital allowances', 'amount' => round(0 - (float)$current['capital_allowances'], 2)],
                 ['label' => 'Taxable result before losses', 'amount' => round((float)$current['taxable_before_losses'], 2)],
                 ['label' => 'Less losses brought forward utilised', 'amount' => round(0 - (float)$current['loss_utilised'], 2)],
                 ['label' => 'Taxable profit after losses', 'amount' => round((float)$current['taxable_profit'], 2)],
                 ['label' => 'Corporation tax on profits', 'amount' => round((float)($current['ordinary_corporation_tax'] ?? $current['estimated_corporation_tax']), 2)],
-            ],
+            ]),
             'schedule' => array_values(array_map(
                 static fn(array $row): array => [
                     'accounting_period_id' => (int)$row['accounting_period_id'],
@@ -308,6 +310,8 @@ final class CorporationTaxComputationService
             'accounting_profit' => (float)($pnl['profit_before_tax'] ?? 0),
             'disallowable' => (float)($pnl['disallowable_add_backs'] ?? 0),
             'capital_add_backs' => (float)($pnl['capital_add_backs'] ?? 0),
+            'capital_expenditure_add_backs' => (float)($pnl['capital_expenditure_add_backs'] ?? $pnl['capital_add_backs'] ?? 0),
+            'disposal_profit_or_loss_adjustment' => (float)($pnl['disposal_profit_or_loss_adjustment'] ?? 0),
             'depreciation' => (float)$assetAdjustments['depreciation_add_back'],
             'allowances' => (float)$assetAdjustments['capital_allowances'],
             'loss_bf' => (float)$losses['brought_forward'],
@@ -333,6 +337,8 @@ final class CorporationTaxComputationService
             'accounting_profit' => round((float)($pnl['profit_before_tax'] ?? 0), 2),
             'disallowable_add_backs' => round((float)($pnl['disallowable_add_backs'] ?? 0), 2),
             'capital_add_backs' => round((float)($pnl['capital_add_backs'] ?? 0), 2),
+            'capital_expenditure_add_backs' => round((float)($pnl['capital_expenditure_add_backs'] ?? $pnl['capital_add_backs'] ?? 0), 2),
+            'disposal_profit_or_loss_adjustment' => round((float)($pnl['disposal_profit_or_loss_adjustment'] ?? 0), 2),
             'depreciation_add_back' => round((float)$assetAdjustments['depreciation_add_back'], 2),
             'capital_allowances' => round((float)$assetAdjustments['capital_allowances'], 2),
             'taxable_before_losses' => $taxableBeforeLosses,
@@ -1086,6 +1092,8 @@ final class CorporationTaxComputationService
                     'accounting_profit' => (float)($pnl['profit_before_tax'] ?? 0),
                     'disallowable' => (float)($pnl['disallowable_add_backs'] ?? 0),
                     'capital_add_backs' => (float)($pnl['capital_add_backs'] ?? 0),
+                    'capital_expenditure_add_backs' => (float)($pnl['capital_expenditure_add_backs'] ?? $pnl['capital_add_backs'] ?? 0),
+                    'disposal_profit_or_loss_adjustment' => (float)($pnl['disposal_profit_or_loss_adjustment'] ?? 0),
                     'depreciation' => (float)$assetAdjustments['depreciation_add_back'],
                     'allowances' => (float)$assetAdjustments['capital_allowances'],
                     'loss_bf' => $lossBf,
@@ -1104,6 +1112,8 @@ final class CorporationTaxComputationService
                     'accounting_profit' => round((float)($pnl['profit_before_tax'] ?? 0), 2),
                     'disallowable_add_backs' => round((float)($pnl['disallowable_add_backs'] ?? 0), 2),
                     'capital_add_backs' => round((float)($pnl['capital_add_backs'] ?? 0), 2),
+                    'capital_expenditure_add_backs' => round((float)($pnl['capital_expenditure_add_backs'] ?? $pnl['capital_add_backs'] ?? 0), 2),
+                    'disposal_profit_or_loss_adjustment' => round((float)($pnl['disposal_profit_or_loss_adjustment'] ?? 0), 2),
                     'depreciation_add_back' => round((float)$assetAdjustments['depreciation_add_back'], 2),
                     'capital_allowances' => round((float)$assetAdjustments['capital_allowances'], 2),
                     'taxable_before_losses' => $taxableBeforeLosses,
@@ -1274,14 +1284,18 @@ final class CorporationTaxComputationService
 
         $profitPence = (int)round((float)($fullPnl['profit_before_tax'] ?? 0) * 100, 0, PHP_ROUND_HALF_UP);
         $disallowablePence = (int)round((float)($fullPnl['disallowable_add_backs'] ?? 0) * 100, 0, PHP_ROUND_HALF_UP);
-        $capitalAddBackPence = (int)round((float)($fullPnl['capital_add_backs'] ?? 0) * 100, 0, PHP_ROUND_HALF_UP);
+        $capitalExpenditurePence = (int)round((float)(
+            $fullPnl['capital_expenditure_add_backs'] ?? $fullPnl['capital_add_backs'] ?? 0
+        ) * 100, 0, PHP_ROUND_HALF_UP);
+        $disposalProfitOrLossPence = (int)round((float)($fullPnl['disposal_profit_or_loss_adjustment'] ?? 0) * 100, 0, PHP_ROUND_HALF_UP);
         $depreciationPence = (int)round((float)($fullAssetAdjustments['depreciation_add_back'] ?? 0) * 100, 0, PHP_ROUND_HALF_UP);
 
         $componentAllocations = $this->allocateAccountingComponentsByInclusiveDays(
             [
                 'accounting_profit' => $profitPence,
                 'disallowable_add_backs' => $disallowablePence,
-                'capital_add_backs' => $capitalAddBackPence,
+                'capital_expenditure_add_backs' => $capitalExpenditurePence,
+                'disposal_profit_or_loss_adjustment' => $disposalProfitOrLossPence,
                 'depreciation_add_back' => $depreciationPence,
             ],
             $periodDays,
@@ -1292,7 +1306,12 @@ final class CorporationTaxComputationService
         $pnl = $fullPnl;
         $pnl['profit_before_tax'] = round((int)($selectedAllocation['accounting_profit'] ?? 0) / 100, 2);
         $pnl['disallowable_add_backs'] = round((int)($selectedAllocation['disallowable_add_backs'] ?? 0) / 100, 2);
-        $pnl['capital_add_backs'] = round((int)($selectedAllocation['capital_add_backs'] ?? 0) / 100, 2);
+        $pnl['capital_expenditure_add_backs'] = round((int)($selectedAllocation['capital_expenditure_add_backs'] ?? 0) / 100, 2);
+        $pnl['disposal_profit_or_loss_adjustment'] = round((int)($selectedAllocation['disposal_profit_or_loss_adjustment'] ?? 0) / 100, 2);
+        $pnl['capital_add_backs'] = round(
+            (float)$pnl['capital_expenditure_add_backs'] + (float)$pnl['disposal_profit_or_loss_adjustment'],
+            2
+        );
         $adjustedResult = round(
             (int)($selectedAllocation['adjusted_result_before_capital_allowances'] ?? 0) / 100,
             2
@@ -1327,17 +1346,25 @@ final class CorporationTaxComputationService
             'whole_period_values' => [
                 'accounting_profit' => round($profitPence / 100, 2),
                 'disallowable_add_backs' => round($disallowablePence / 100, 2),
-                'capital_add_backs' => round($capitalAddBackPence / 100, 2),
+                'capital_add_backs' => round(($capitalExpenditurePence + $disposalProfitOrLossPence) / 100, 2),
+                'capital_expenditure_add_backs' => round($capitalExpenditurePence / 100, 2),
+                'disposal_profit_or_loss_adjustment' => round($disposalProfitOrLossPence / 100, 2),
                 'depreciation_add_back' => round($depreciationPence / 100, 2),
                 'adjusted_result_before_capital_allowances' => round(
-                    ($profitPence + $disallowablePence + $capitalAddBackPence + $depreciationPence) / 100,
+                    ($profitPence + $disallowablePence + $capitalExpenditurePence + $disposalProfitOrLossPence + $depreciationPence) / 100,
                     2
                 ),
             ],
             'allocated_values' => [
                 'accounting_profit' => round((int)($selectedAllocation['accounting_profit'] ?? 0) / 100, 2),
                 'disallowable_add_backs' => round((int)($selectedAllocation['disallowable_add_backs'] ?? 0) / 100, 2),
-                'capital_add_backs' => round((int)($selectedAllocation['capital_add_backs'] ?? 0) / 100, 2),
+                'capital_add_backs' => round(
+                    ((int)($selectedAllocation['capital_expenditure_add_backs'] ?? 0)
+                        + (int)($selectedAllocation['disposal_profit_or_loss_adjustment'] ?? 0)) / 100,
+                    2
+                ),
+                'capital_expenditure_add_backs' => round((int)($selectedAllocation['capital_expenditure_add_backs'] ?? 0) / 100, 2),
+                'disposal_profit_or_loss_adjustment' => round((int)($selectedAllocation['disposal_profit_or_loss_adjustment'] ?? 0) / 100, 2),
                 'depreciation_add_back' => round((int)($selectedAllocation['depreciation_add_back'] ?? 0) / 100, 2),
                 'component_subtotal' => $componentSubtotal,
                 'adjusted_result_before_capital_allowances' => $adjustedResult,
@@ -1416,7 +1443,8 @@ final class CorporationTaxComputationService
         $componentKeys = [
             'accounting_profit',
             'disallowable_add_backs',
-            'capital_add_backs',
+            'capital_expenditure_add_backs',
+            'disposal_profit_or_loss_adjustment',
             'depreciation_add_back',
         ];
         $componentAllocations = [];
@@ -1692,7 +1720,7 @@ final class CorporationTaxComputationService
             'locked_snapshot' => true,
         ];
 
-        return $summary;
+        return $this->withStoredCapitalAdjustmentPresentation($summary, $runId);
     }
 
     /**
@@ -1742,7 +1770,7 @@ final class CorporationTaxComputationService
             ),
         ];
 
-        return $summary;
+        return $this->withStoredCapitalAdjustmentPresentation($summary, $runId);
     }
 
     private function withComputationPersistenceState(int $companyId, int $ctPeriodId, array $summary): array
@@ -2034,9 +2062,10 @@ final class CorporationTaxComputationService
         $steps = [
             ['label' => 'Accounting profit or loss', 'amount' => round((float)$current['accounting_profit'], 2)],
             ['label' => 'Add back disallowable expenses', 'amount' => round((float)$current['disallowable_add_backs'], 2)],
-            ['label' => 'Add back capital expenditure', 'amount' => round((float)($current['capital_add_backs'] ?? 0), 2)],
-            ['label' => 'Add back depreciation', 'amount' => round((float)$current['depreciation_add_back'], 2)],
         ];
+        $steps = array_merge($steps, $this->capitalAdjustmentSteps($current), [
+            ['label' => 'Add back depreciation', 'amount' => round((float)$current['depreciation_add_back'], 2)],
+        ]);
         $roundingAdjustment = round((float)($current['apportionment_rounding_adjustment'] ?? 0), 2);
         if (abs($roundingAdjustment) >= 0.005) {
             $steps[] = ['label' => 'Apportionment rounding adjustment', 'amount' => $roundingAdjustment];
@@ -2054,6 +2083,8 @@ final class CorporationTaxComputationService
             'accounting_profit' => round((float)$current['accounting_profit'], 2),
             'disallowable_add_backs' => round((float)$current['disallowable_add_backs'], 2),
             'capital_add_backs' => round((float)($current['capital_add_backs'] ?? 0), 2),
+            'capital_expenditure_add_backs' => round((float)($current['capital_expenditure_add_backs'] ?? $current['capital_add_backs'] ?? 0), 2),
+            'disposal_profit_or_loss_adjustment' => round((float)($current['disposal_profit_or_loss_adjustment'] ?? 0), 2),
             'depreciation_add_back' => round((float)$current['depreciation_add_back'], 2),
             'capital_allowances' => round((float)$current['capital_allowances'], 2),
             'taxable_before_losses' => round((float)$current['taxable_before_losses'], 2),
@@ -2096,6 +2127,102 @@ final class CorporationTaxComputationService
                 $schedule
             )),
         ];
+    }
+
+    /** @return list<array{label:string,amount:float}> */
+    private function capitalAdjustmentSteps(array $summary): array
+    {
+        $disposal = round((float)($summary['disposal_profit_or_loss_adjustment'] ?? 0), 2);
+        $capitalExpenditure = round((float)(
+            $summary['capital_expenditure_add_backs']
+                ?? ((float)($summary['capital_add_backs'] ?? 0) - $disposal)
+        ), 2);
+        $steps = [];
+        if (abs($disposal) >= 0.005) {
+            $steps[] = [
+                'label' => $disposal > 0
+                    ? 'Add back loss on disposal of fixed assets'
+                    : 'Deduct profit on disposal of fixed assets',
+                'amount' => $disposal,
+            ];
+        }
+        if (abs($capitalExpenditure) >= 0.005 || $steps === []) {
+            $steps[] = ['label' => 'Add back capital expenditure', 'amount' => $capitalExpenditure];
+        }
+        return $steps;
+    }
+
+    /**
+     * Historic computation snapshots predate the separate capital-expenditure
+     * and disposal-result fields.  The frozen audit rows remain authoritative,
+     * so derive presentation fields from them without mutating the snapshot.
+     */
+    private function withStoredCapitalAdjustmentPresentation(array $summary, int $computationRunId): array
+    {
+        $total = round((float)($summary['capital_add_backs'] ?? 0), 2);
+        $hasSplit = array_key_exists('capital_expenditure_add_backs', $summary)
+            || array_key_exists('disposal_profit_or_loss_adjustment', $summary);
+        $disposal = $hasSplit
+            ? round((float)($summary['disposal_profit_or_loss_adjustment'] ?? 0), 2)
+            : $this->storedDisposalAdjustmentAmount($computationRunId);
+
+        $summary['capital_expenditure_add_backs'] = $hasSplit
+            ? round((float)($summary['capital_expenditure_add_backs'] ?? ($total - $disposal)), 2)
+            : round($total - $disposal, 2);
+        $summary['disposal_profit_or_loss_adjustment'] = $disposal;
+
+        $steps = [];
+        foreach ((array)($summary['steps'] ?? []) as $step) {
+            if (!is_array($step) || (string)($step['label'] ?? '') !== 'Add back capital expenditure') {
+                $steps[] = $step;
+                continue;
+            }
+            foreach ($this->capitalAdjustmentSteps($summary) as $capitalStep) {
+                $steps[] = $capitalStep;
+            }
+        }
+        if ($steps !== []) {
+            $summary['steps'] = $steps;
+        }
+
+        return $summary;
+    }
+
+    private function storedDisposalAdjustmentAmount(int $computationRunId): float
+    {
+        if ($computationRunId <= 0
+            || !$this->tableExists('corporation_tax_audit_snapshots')
+            || !$this->tableExists('corporation_tax_audit_areas')) {
+            return 0.0;
+        }
+
+        $row = \InterfaceDB::fetchOne(
+            'SELECT a.detail_json
+             FROM corporation_tax_audit_snapshots s
+             INNER JOIN corporation_tax_audit_areas a ON a.snapshot_id = s.id
+             WHERE s.computation_run_id = :computation_run_id
+               AND a.area_code = :area_code
+             LIMIT 1',
+            ['computation_run_id' => $computationRunId, 'area_code' => 'depreciation_capital']
+        );
+        $detail = is_array($row) ? json_decode((string)($row['detail_json'] ?? ''), true) : null;
+        if (!is_array($detail)) {
+            return 0.0;
+        }
+
+        $amount = 0.0;
+        foreach ((array)($detail['rows'] ?? []) as $auditRow) {
+            if (!is_array($auditRow)) {
+                continue;
+            }
+            $code = trim((string)($auditRow['nominal_code'] ?? $auditRow['metadata']['nominal_code'] ?? ''));
+            if (!in_array($code, ['6210', '4200'], true)) {
+                continue;
+            }
+            $amount += (float)($auditRow['tax_adjustment_amount'] ?? 0);
+        }
+
+        return round($amount, 2);
     }
 
     public function fetchCurrentPeriodEstimate(
@@ -2157,23 +2284,29 @@ final class CorporationTaxComputationService
         $warnings = array_values(array_unique(array_filter($warnings, static fn(string $warning): bool => trim($warning) !== '')));
         $confidenceStatus = $warnings === [] ? 'ready_for_review' : 'review_required';
 
-        $steps = [
+        $steps = array_merge([
             ['label' => 'Accounting profit or loss', 'amount' => round((float)($profitAndLoss['profit_before_tax'] ?? 0), 2)],
             ['label' => 'Add back disallowable expenses', 'amount' => round((float)($profitAndLoss['disallowable_add_backs'] ?? 0), 2)],
-            ['label' => 'Add back capital expenditure', 'amount' => round((float)($profitAndLoss['capital_add_backs'] ?? 0), 2)],
+        ], $this->capitalAdjustmentSteps($profitAndLoss), [
             ['label' => 'Add back depreciation', 'amount' => round((float)$assetAdjustments['depreciation_add_back'], 2)],
             ['label' => 'Deduct capital allowances', 'amount' => round(0 - (float)$assetAdjustments['capital_allowances'], 2)],
             ['label' => 'Taxable result before losses', 'amount' => $taxableBeforeLosses],
             ['label' => 'Less losses brought forward utilised', 'amount' => round(0 - $lossesUsed, 2)],
             ['label' => 'Taxable profit after losses', 'amount' => $taxableProfit],
             ['label' => 'Estimated corporation tax', 'amount' => round((float)$rateCalculation['liability'], 2)],
-        ];
+        ]);
 
         return [
             'available' => true,
             'accounting_profit' => round((float)($profitAndLoss['profit_before_tax'] ?? 0), 2),
             'disallowable_add_backs' => round((float)($profitAndLoss['disallowable_add_backs'] ?? 0), 2),
             'capital_add_backs' => round((float)($profitAndLoss['capital_add_backs'] ?? 0), 2),
+            'capital_expenditure_add_backs' => round((float)(
+                $profitAndLoss['capital_expenditure_add_backs'] ?? $profitAndLoss['capital_add_backs'] ?? 0
+            ), 2),
+            'disposal_profit_or_loss_adjustment' => round((float)(
+                $profitAndLoss['disposal_profit_or_loss_adjustment'] ?? 0
+            ), 2),
             'depreciation_add_back' => round((float)$assetAdjustments['depreciation_add_back'], 2),
             'capital_allowances' => round((float)$assetAdjustments['capital_allowances'], 2),
             'taxable_before_losses' => $taxableBeforeLosses,

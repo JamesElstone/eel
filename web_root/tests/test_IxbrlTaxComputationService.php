@@ -278,11 +278,6 @@ function ixbrlTaxComputationMappings(array $model): array
             'TradingLossesBroughtForward' => '0.00',
             'TradingLossesOfThisOrLaterAP' => '563.21',
             'TradingLossesBroughtForwardAmountUsedAgainstTotalProfits' => '0.00',
-            'BalanceOfLossesBroughtForwardCarriedForward' => '563.21',
-            'DeductionAllowance' => '5000000.00',
-            'ProfitsThatCanBeCoveredByBroughtForwardLosses' => '0.00',
-            'TradingLossesBroughtForwardValueClaimedAgainstTotalProfits' => '0.00',
-            'CalculatedLossRestriction' => '0.00',
         ] as $name => $value) {
             $fact = $xpath->query('//ix:nonFraction[@name="ct:' . $name . '"]');
             $h->assertSame(1, $fact->length);
@@ -293,6 +288,18 @@ function ixbrlTaxComputationMappings(array $model): array
             $context = (string)$element?->getAttribute('contextRef');
             $h->assertSame('2022-09-05', $xpath->evaluate('string(//xbrli:context[@id="' . $context . '"]/xbrli:period/xbrli:startDate)'));
             $h->assertSame('2023-09-04', $xpath->evaluate('string(//xbrli:context[@id="' . $context . '"]/xbrli:period/xbrli:endDate)'));
+        }
+        $carriedForward = $xpath->query('//ix:nonFraction[@name="ct:BalanceOfLossesBroughtForwardCarriedForward"]')->item(0);
+        $h->assertSame('563.21', $carriedForward?->textContent);
+        $carriedForwardContext = (string)$carriedForward?->getAttribute('contextRef');
+        $h->assertSame('2023-09-04', $xpath->evaluate('string(//xbrli:context[@id="' . $carriedForwardContext . '"]/xbrli:period/xbrli:instant)'));
+        foreach ([
+            'DeductionAllowance',
+            'ProfitsThatCanBeCoveredByBroughtForwardLosses',
+            'TradingLossesBroughtForwardValueClaimedAgainstTotalProfits',
+            'CalculatedLossRestriction',
+        ] as $name) {
+            $h->assertSame(0, $xpath->query('//ix:nonFraction[@name="ct:' . $name . '"]')->length);
         }
         $zeroFact = $xpath->query('//ix:nonFraction[@name="ct:TradingLossesBroughtForward"]')->item(0);
         $h->assertSame('', $zeroFact?->getAttribute('sign'));
@@ -404,8 +411,7 @@ function ixbrlTaxComputationMappings(array $model): array
             'TradingLossesBroughtForward' => '563.21',
             'TradingLossesOfThisOrLaterAP' => '0.00',
             'TradingLossesBroughtForwardAmountUsedAgainstTotalProfits' => '4.67',
-            'BalanceOfLossesBroughtForwardCarriedForward' => '558.54',
-            'DeductionAllowance' => '356164.38',
+            'DeductionAllowance' => '356,164.38',
             'ProfitsThatCanBeCoveredByBroughtForwardLosses' => '4.67',
             'TradingLossesBroughtForwardValueClaimedAgainstTotalProfits' => '4.67',
             'CalculatedLossRestriction' => '0.00',
@@ -420,6 +426,10 @@ function ixbrlTaxComputationMappings(array $model): array
             $h->assertSame('2023-09-05', $xpath->evaluate('string(//xbrli:context[@id="' . $context . '"]/xbrli:period/xbrli:startDate)'));
             $h->assertSame('2023-09-30', $xpath->evaluate('string(//xbrli:context[@id="' . $context . '"]/xbrli:period/xbrli:endDate)'));
         }
+        $carriedForward = $xpath->query('//ix:nonFraction[@name="ct:BalanceOfLossesBroughtForwardCarriedForward"]')->item(0);
+        $h->assertSame('558.54', $carriedForward?->textContent);
+        $carriedForwardContext = (string)$carriedForward?->getAttribute('contextRef');
+        $h->assertSame('2023-09-30', $xpath->evaluate('string(//xbrli:context[@id="' . $carriedForwardContext . '"]/xbrli:period/xbrli:instant)'));
         $body = (string)$xpath->evaluate('string(/*[local-name()="html"]/*[local-name()="body"])');
         $h->assertTrue(str_contains($body, '26 / 391 days'));
         $h->assertTrue(str_contains($body, 'Time apportionment figure (26 / 391 days)'));
@@ -447,6 +457,125 @@ function ixbrlTaxComputationMappings(array $model): array
         $h->assertSame(1, $xpath->query('//*[local-name()="h2" and normalize-space(.)="Trading losses"]')->length);
         $h->assertSame(1, $xpath->query('//*[local-name()="h2" and normalize-space(.)="Tax liability"]')->length);
         $h->assertFalse(str_contains($body, 'Main pool'));
+    });
+    $h->check($service::class, 'uses the complete loss tagging profile for a single-period loss computation', static function () use ($h, $service): void {
+        $model = ixbrlTaxComputationModel([
+            'period_start' => '2023-10-01',
+            'period_end' => '2024-09-30',
+            'summary' => [
+                'accounting_profit' => -4903.62,
+                'disallowable_add_backs' => 1056.14,
+                'capital_add_backs' => 112.57,
+                'depreciation_add_back' => 1087.39,
+                'capital_allowances' => 4375.29,
+                'taxable_before_losses' => -7022.81,
+                'loss_created_in_period' => 7022.81,
+                'losses_brought_forward' => 595.61,
+                'losses_used' => 0.00,
+                'losses_carried_forward' => 7618.42,
+                'accounting_allocation_basis' => [
+                    'method' => 'journal_date_within_single_ct_period',
+                    'time_apportioned' => false,
+                    'ct_period_days' => 366,
+                    'accounting_period_days' => 366,
+                    'rounding' => 'pennies_half_up',
+                ],
+            ],
+        ]);
+        $method = new ReflectionMethod($service::class, 'renderMappedDocument');
+        $method->setAccessible(true);
+        $xhtml = (string)($method->invoke(
+            $service,
+            new \eel_accounts\Service\IxbrlGeneratorService(),
+            $model,
+            ixbrlTaxComputationMappings($model),
+            'http://www.hmrc.gov.uk/schemas/ct/comp/2024-01-01/ct-comp-2024.xsd'
+        ))['xhtml'];
+        $document = new DOMDocument();
+        $h->assertTrue($document->loadXML($xhtml));
+        $xpath = new DOMXPath($document);
+        $xpath->registerNamespace('ix', \eel_accounts\Service\IxbrlGeneratorService::IX_NAMESPACE);
+        $xpath->registerNamespace('xbrli', 'http://www.xbrl.org/2003/instance');
+
+        $revised = $xpath->query('//ix:nonFraction[@name="ct:AdjustedProfitOrLossBeforeAccountingPeriodAdjustments"]')->item(0);
+        $h->assertSame('2,647.52', $revised?->textContent);
+        $h->assertSame('-', $revised?->getAttribute('sign'));
+        foreach ([
+            'AdjustedLossOfPeriod' => '7,022.81',
+            'TradingLossesOfThisOrLaterAP' => '7,022.81',
+        ] as $name => $value) {
+            $fact = $xpath->query('//ix:nonFraction[@name="ct:' . $name . '"]')->item(0);
+            $h->assertSame($value, $fact?->textContent);
+            $h->assertSame('GBP', $fact?->getAttribute('unitRef'));
+            $h->assertSame('2', $fact?->getAttribute('decimals'));
+            $context = (string)$fact?->getAttribute('contextRef');
+            $h->assertSame('2023-10-01', $xpath->evaluate('string(//xbrli:context[@id="' . $context . '"]/xbrli:period/xbrli:startDate)'));
+            $h->assertSame('2024-09-30', $xpath->evaluate('string(//xbrli:context[@id="' . $context . '"]/xbrli:period/xbrli:endDate)'));
+        }
+        $carriedForward = $xpath->query('//ix:nonFraction[@name="ct:BalanceOfLossesBroughtForwardCarriedForward"]')->item(0);
+        $h->assertSame('7,618.42', $carriedForward?->textContent);
+        $carriedForwardContext = (string)$carriedForward?->getAttribute('contextRef');
+        $h->assertSame('2024-09-30', $xpath->evaluate('string(//xbrli:context[@id="' . $carriedForwardContext . '"]/xbrli:period/xbrli:instant)'));
+        $h->assertSame(0, $xpath->query('//ix:nonFraction[@name="ct:ProfitsBeforeOtherDeductionsAndReliefs"]')->length);
+    });
+    $h->check($service::class, 'uses the complete loss tagging profile for a single-period profit computation', static function () use ($h, $service): void {
+        $model = ixbrlTaxComputationModel([
+            'period_start' => '2024-10-01',
+            'period_end' => '2025-09-30',
+            'summary' => [
+                'accounting_profit' => 1749.32,
+                'disallowable_add_backs' => 0.00,
+                'capital_add_backs' => 0.00,
+                'depreciation_add_back' => 0.00,
+                'capital_allowances' => 0.00,
+                'taxable_before_losses' => 1749.32,
+                'loss_created_in_period' => 0.00,
+                'losses_brought_forward' => 7618.42,
+                'losses_used' => 1749.32,
+                'losses_carried_forward' => 5869.10,
+                'accounting_allocation_basis' => [
+                    'method' => 'journal_date_within_single_ct_period',
+                    'time_apportioned' => false,
+                    'ct_period_days' => 365,
+                    'accounting_period_days' => 365,
+                    'rounding' => 'pennies_half_up',
+                ],
+            ],
+        ]);
+        $method = new ReflectionMethod($service::class, 'renderMappedDocument');
+        $method->setAccessible(true);
+        $xhtml = (string)($method->invoke(
+            $service,
+            new \eel_accounts\Service\IxbrlGeneratorService(),
+            $model,
+            ixbrlTaxComputationMappings($model),
+            'http://www.hmrc.gov.uk/schemas/ct/comp/2024-01-01/ct-comp-2024.xsd'
+        ))['xhtml'];
+        $document = new DOMDocument();
+        $h->assertTrue($document->loadXML($xhtml));
+        $xpath = new DOMXPath($document);
+        $xpath->registerNamespace('ix', \eel_accounts\Service\IxbrlGeneratorService::IX_NAMESPACE);
+        $xpath->registerNamespace('xbrli', 'http://www.xbrl.org/2003/instance');
+
+        foreach ([
+            'AdjustedProfitOrLossBeforeAccountingPeriodAdjustments' => '1,749.32',
+            'AdjustedProfitForThePeriod' => '1,749.32',
+            'ProfitsThatCanBeCoveredByBroughtForwardLosses' => '1,749.32',
+            'TradingLossesBroughtForwardValueClaimedAgainstTotalProfits' => '1,749.32',
+        ] as $name => $value) {
+            $fact = $xpath->query('//ix:nonFraction[@name="ct:' . $name . '"]')->item(0);
+            $h->assertSame($value, $fact?->textContent);
+            $h->assertSame('GBP', $fact?->getAttribute('unitRef'));
+            $h->assertSame('2', $fact?->getAttribute('decimals'));
+            $context = (string)$fact?->getAttribute('contextRef');
+            $h->assertSame('2024-10-01', $xpath->evaluate('string(//xbrli:context[@id="' . $context . '"]/xbrli:period/xbrli:startDate)'));
+            $h->assertSame('2025-09-30', $xpath->evaluate('string(//xbrli:context[@id="' . $context . '"]/xbrli:period/xbrli:endDate)'));
+        }
+        $carriedForward = $xpath->query('//ix:nonFraction[@name="ct:BalanceOfLossesBroughtForwardCarriedForward"]')->item(0);
+        $h->assertSame('5,869.10', $carriedForward?->textContent);
+        $carriedForwardContext = (string)$carriedForward?->getAttribute('contextRef');
+        $h->assertSame('2025-09-30', $xpath->evaluate('string(//xbrli:context[@id="' . $carriedForwardContext . '"]/xbrli:period/xbrli:instant)'));
+        $h->assertSame(0, $xpath->query('//ix:nonFraction[@name="ct:ProfitsBeforeOtherDeductionsAndReliefs"]')->length);
     });
     $h->check($service::class, 'renders the CT period 1 main-pool bridge with distinct WDV instants', static function () use ($h, $service): void {
         $model = ixbrlTaxComputationModel();

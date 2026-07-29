@@ -13,7 +13,7 @@ namespace eel_accounts\Service;
  */
 final class HmrcCtComputationReportProfile
 {
-    public const VERSION = 'hmrc-ct-computations-format-1.1/loss-and-allowance-tagging-v1';
+    public const VERSION = 'hmrc-ct-computations-format-1.1/loss-and-allowance-tagging-v2';
 
     /**
      * Visible support rows intentionally left as text or display-only values.
@@ -54,39 +54,42 @@ final class HmrcCtComputationReportProfile
     {
         $summary = (array)($filing['model']['computation']['summary'] ?? []);
         $allocation = (array)($summary['accounting_allocation_basis'] ?? []);
-        if (empty($allocation['time_apportioned'])) {
-            return [
-                'mappings' => $mappings,
-                'accounts_adjustment_rows' => [],
-                'main_pool_rows' => [],
-                'loss_schedule_rows' => [],
-                'untagged_row_allowlist' => self::UNTAGGED_ROW_ALLOWLIST,
-                'format_version' => self::VERSION,
-            ];
-        }
-
-        $whole = (array)($allocation['whole_period_values'] ?? []);
-        $requiredWholeValues = [
-            'accounting_profit', 'disallowable_add_backs', 'capital_add_backs',
-            'depreciation_add_back', 'adjusted_result_before_capital_allowances',
-        ];
-        foreach ($requiredWholeValues as $key) {
-            if (!array_key_exists($key, $whole) || !is_numeric($whole[$key])) {
-                throw new \RuntimeException('The frozen long-period filing basis is missing whole-period value ' . $key . '.');
-            }
-        }
-        foreach (['accounting_period_days', 'ct_period_days'] as $key) {
-            if ((int)($allocation[$key] ?? 0) <= 0) {
-                throw new \RuntimeException('The frozen long-period filing basis is missing valid ' . $key . '.');
-            }
-        }
-
-        $adjustedWholePeriod = $this->money($whole['adjusted_result_before_capital_allowances']);
-        $allocated = (array)($allocation['allocated_values'] ?? []);
-        $apportioned = $this->money($allocated['adjusted_result_before_capital_allowances'] ?? null);
+        $timeApportioned = !empty($allocation['time_apportioned']);
         $capitalAllowances = $this->money($summary['capital_allowances'] ?? null);
         $finalResult = $this->money($summary['taxable_before_losses'] ?? null);
-        if (abs($apportioned - ($finalResult + $capitalAllowances)) > 0.009) {
+        $adjustedCtPeriod = round($finalResult + $capitalAllowances, 2);
+
+        $adjustedWholePeriod = null;
+        $apportioned = null;
+        $wholeSourceValues = [];
+        if ($timeApportioned) {
+            $whole = (array)($allocation['whole_period_values'] ?? []);
+            $requiredWholeValues = [
+                'accounting_profit', 'disallowable_add_backs', 'capital_add_backs',
+                'depreciation_add_back', 'adjusted_result_before_capital_allowances',
+            ];
+            foreach ($requiredWholeValues as $key) {
+                if (!array_key_exists($key, $whole) || !is_numeric($whole[$key])) {
+                    throw new \RuntimeException('The frozen long-period filing basis is missing whole-period value ' . $key . '.');
+                }
+            }
+            foreach (['accounting_period_days', 'ct_period_days'] as $key) {
+                if ((int)($allocation[$key] ?? 0) <= 0) {
+                    throw new \RuntimeException('The frozen long-period filing basis is missing valid ' . $key . '.');
+                }
+            }
+
+            $adjustedWholePeriod = $this->money($whole['adjusted_result_before_capital_allowances']);
+            $allocated = (array)($allocation['allocated_values'] ?? []);
+            $apportioned = $this->money($allocated['adjusted_result_before_capital_allowances'] ?? null);
+            $wholeSourceValues = [
+                'computation.summary.accounting_profit' => $this->money($whole['accounting_profit']),
+                'computation.summary.disallowable_add_backs' => $this->money($whole['disallowable_add_backs']),
+                'computation.summary.capital_add_backs' => $this->money($whole['capital_add_backs']),
+                'computation.summary.depreciation_add_back' => $this->money($whole['depreciation_add_back']),
+            ];
+        }
+        if ($timeApportioned && abs((float)$apportioned - $adjustedCtPeriod) > 0.009) {
             throw new \RuntimeException('The frozen long-period adjusted result does not reconcile to capital allowances and the final adjusted result.');
         }
 
@@ -113,12 +116,6 @@ final class HmrcCtComputationReportProfile
             throw new \RuntimeException('The active computation mapping profile has no usable HMRC taxonomy namespace.');
         }
 
-        $wholeSourceValues = [
-            'computation.summary.accounting_profit' => $this->money($whole['accounting_profit']),
-            'computation.summary.disallowable_add_backs' => $this->money($whole['disallowable_add_backs']),
-            'computation.summary.capital_add_backs' => $this->money($whole['capital_add_backs']),
-            'computation.summary.depreciation_add_back' => $this->money($whole['depreciation_add_back']),
-        ];
         $outputMappings = [];
         foreach ($mappings as $mapping) {
             $key = (string)($mapping['canonical_key'] ?? '');
@@ -170,8 +167,8 @@ final class HmrcCtComputationReportProfile
         $outputMappings[] = $synthetic(
             'report.accounts_adjustment.revised_figure_before_tax',
             'AdjustedProfitOrLossBeforeAccountingPeriodAdjustments',
-            $adjustedWholePeriod,
-            'statutory_accounts_period',
+            $timeApportioned ? (float)$adjustedWholePeriod : $adjustedCtPeriod,
+            $timeApportioned ? 'statutory_accounts_period' : 'ct_period',
             45
         );
         if ($finalResult < -0.004) {
@@ -192,13 +189,17 @@ final class HmrcCtComputationReportProfile
             );
         }
 
+        $sourceRole = $timeApportioned ? 'statutory_accounts_period' : 'ct_period';
+        $sourceReference = $timeApportioned ? 'whole_period_' : 'frozen_ct_period_';
         $rows = [
-            $this->row('accounts_profit_loss', 'computation.summary.accounting_profit', 'Profit/(loss) before tax per statutory accounts', 'normal', 'statutory_accounts_period', 'whole_period_profit_before_tax'),
-            $this->row('accounting_disallowable_expenses', 'computation.summary.disallowable_add_backs', 'Accounting adjustment for disallowable expenses', 'normal', 'statutory_accounts_period', 'whole_period_disallowable_add_backs'),
-            $this->row('accounting_capital_expenditure', 'computation.summary.capital_add_backs', 'Accounting adjustment for capital expenditure', 'normal', 'statutory_accounts_period', 'whole_period_capital_add_backs'),
-            $this->row('accounting_depreciation', 'computation.summary.depreciation_add_back', 'Accounting adjustment for depreciation', 'normal', 'statutory_accounts_period', 'whole_period_depreciation_add_back'),
-            $this->row('revised_figure_before_tax', 'report.accounts_adjustment.revised_figure_before_tax', 'Revised figure before tax', 'normal', 'statutory_accounts_period', 'whole_period_adjusted_result_before_capital_allowances', 'subtotal'),
-            [
+            $this->row('accounts_profit_loss', 'computation.summary.accounting_profit', $timeApportioned ? 'Profit/(loss) before tax per statutory accounts' : 'Profit or loss per accounts', 'normal', $sourceRole, $sourceReference . 'profit_before_tax'),
+            $this->row('accounting_disallowable_expenses', 'computation.summary.disallowable_add_backs', $timeApportioned ? 'Accounting adjustment for disallowable expenses' : 'Disallowable expenses added back', 'normal', $sourceRole, $sourceReference . 'disallowable_add_backs'),
+            $this->row('accounting_capital_expenditure', 'computation.summary.capital_add_backs', $timeApportioned ? 'Accounting adjustment for capital expenditure' : 'Capital expenditure added back', 'normal', $sourceRole, $sourceReference . 'capital_add_backs'),
+            $this->row('accounting_depreciation', 'computation.summary.depreciation_add_back', $timeApportioned ? 'Accounting adjustment for depreciation' : 'Depreciation added back', 'normal', $sourceRole, $sourceReference . 'depreciation_add_back'),
+            $this->row('revised_figure_before_tax', 'report.accounts_adjustment.revised_figure_before_tax', $timeApportioned ? 'Revised figure before tax' : 'Adjusted profit or loss before capital allowances', 'normal', $sourceRole, $sourceReference . 'adjusted_result_before_capital_allowances', 'subtotal'),
+        ];
+        if ($timeApportioned) {
+            $rows[] = [
                 'id' => 'time_apportionment_figure',
                 'label' => 'Time apportionment figure (' . (int)$allocation['ct_period_days'] . ' / ' . (int)$allocation['accounting_period_days'] . ' days)',
                 'amount' => $apportioned,
@@ -208,13 +209,13 @@ final class HmrcCtComputationReportProfile
                 'visibility' => 'always',
                 'nil_rule' => 'untagged_no_exact_taxonomy_concept',
                 'source_calculation_reference' => 'whole_period_adjusted_result_time_apportionment',
-            ],
-            $this->row('capital_allowances', 'computation.summary.capital_allowances', 'Capital allowances', 'deduction', 'ct_period', 'frozen_ct_period_capital_allowances'),
-        ];
+            ];
+        }
+        $rows[] = $this->row('capital_allowances', 'computation.summary.capital_allowances', 'Capital allowances', 'deduction', 'ct_period', 'frozen_ct_period_capital_allowances');
         if ($finalResult < -0.004) {
-            $rows[] = $this->row('adjusted_loss_of_period', 'report.accounts_adjustment.adjusted_loss_of_period', 'Adjusted loss of period', 'normal', 'ct_period', 'frozen_ct_period_adjusted_loss', 'final-total');
+            $rows[] = $this->row('adjusted_loss_of_period', 'report.accounts_adjustment.adjusted_loss_of_period', $timeApportioned ? 'Adjusted loss of period' : 'Trading profit or loss for the period', 'normal', 'ct_period', 'frozen_ct_period_adjusted_loss', 'final-total');
         } elseif ($finalResult > 0.004) {
-            $rows[] = $this->row('adjusted_profit_for_period', 'report.accounts_adjustment.adjusted_profit_for_period', 'Adjusted profit for the period', 'normal', 'ct_period', 'frozen_ct_period_adjusted_profit', 'final-total');
+            $rows[] = $this->row('adjusted_profit_for_period', 'report.accounts_adjustment.adjusted_profit_for_period', $timeApportioned ? 'Adjusted profit for the period' : 'Trading profit or loss for the period', 'normal', 'ct_period', 'frozen_ct_period_adjusted_profit', 'final-total');
         }
         $mappedByKey = [];
         foreach ($outputMappings as $mapping) {

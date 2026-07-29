@@ -72,6 +72,10 @@ $harness->run(_companies_house_transmitCard::class, static function (
 
             $harness->assertTrue(str_contains($html, 'Next submission number'));
             $harness->assertTrue(str_contains($html, '000001'));
+            $harness->assertTrue(str_contains(
+                $html,
+                '</div><div class="summary-grid"><div class="summary-card"><div class="summary-label">Next submission number</div>'
+            ));
             $harness->assertTrue(str_contains($html, 'Companies House Connection'));
             $harness->assertTrue(str_contains($html, '>Test<'));
             $harness->assertTrue(str_contains($html, 'Configure Companies House XML environment'));
@@ -85,8 +89,18 @@ $harness->run(_companies_house_transmitCard::class, static function (
             $harness->assertFalse(str_contains($html, 'Status / StatusAck lock'));
             $harness->assertFalse(str_contains($html, 'Protocol migration'));
             $harness->assertFalse(str_contains($html, 'Allocated on send'));
+            $harness->assertTrue(str_contains($html, '>Companies House iXBRL</button>'));
+            $harness->assertFalse(str_contains($html, 'Download Companies House iXBRL'));
+            $harness->assertTrue(str_contains($html, 'value="download_accounts_ixbrl"'));
+            $harness->assertFalse(str_contains($html, '<div class="summary-label">Artifact SHA-256</div>'));
+            $harness->assertFalse(str_contains($html, 'revised-accounts.xhtml'));
             $harness->assertTrue(str_contains($html, 'action="?page=transmit"'));
             $harness->assertTrue(str_contains($html, 'value="submit_accounts"'));
+            $harness->assertTrue(str_contains(
+                $html,
+                '<section class="panel-soft"><h3 class="card-title">Submit accounts</h3>'
+                . '<form method="post" action="?page=transmit" data-ajax="true" class="settings-stack">'
+            ));
             $harness->assertTrue(str_contains($html, 'Original'));
             $harness->assertFalse(str_contains($html, $secret));
         }
@@ -205,6 +219,11 @@ $harness->run(_companies_house_transmitCard::class, static function (
                 ]);
                 $harness->assertTrue(str_contains($html, 'Send / continue TEST filing'));
                 $harness->assertTrue(str_contains($html, 'Send CompanyData preflight'));
+                $harness->assertTrue(str_contains(
+                    $html,
+                    '<section class="panel-soft"><h3 class="card-title">Developer step controls</h3>'
+                ));
+                $harness->assertFalse(str_contains($html, '<h4 class="card-title">Developer step controls</h4>'));
                 $harness->assertTrue(str_contains($html, 'Developer XML exchange timeline'));
                 $harness->assertTrue(str_contains($html, 'value="download_protocol_evidence"'));
                 $harness->assertTrue(str_contains($html, 'maxlength="6"'));

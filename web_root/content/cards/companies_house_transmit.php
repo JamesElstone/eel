@@ -87,6 +87,8 @@ final class _companies_house_transmitCard extends CardBaseFramework
                 (string)($feature['mode'] ?? 'DISABLED'),
                 !empty($feature['credentials_configured'])
             )
+            . '</div>'
+            . '<div class="summary-grid">'
             . $this->metric('Next submission number', (string)($sequence['next_number'] ?? 'Unavailable'))
             . $this->metric('Last issued number', (string)($sequence['last_issued_number'] ?? 'None'))
             . '</div></section>';
@@ -109,8 +111,11 @@ final class _companies_house_transmitCard extends CardBaseFramework
             }
             $html .= '<div class="summary-grid">'
                 . $this->metric('Filing classification', ucfirst($filingKind))
-                . $this->metric('Artifact', (string)($artifact['filename'] ?? basename((string)($submission['artifact_path'] ?? $submission['revised_artifact_path'] ?? ''))))
-                . $this->metric('Artifact SHA-256', (string)($artifact['sha256'] ?? $submission['artifact_sha256'] ?? $submission['revised_artifact_sha256'] ?? ''))
+                . $this->artifactDownloadMetric(
+                    $companyId,
+                    $accountingPeriodId,
+                    $artifactCurrent
+                )
                 . $this->metric('Private archive', $archive !== [] ? 'Captured and hashed' : 'Created on send')
                 . $this->metric(
                     'CompanyData preflight',
@@ -217,7 +222,8 @@ final class _companies_house_transmitCard extends CardBaseFramework
                 . '<input type="text" name="live_confirmation_phrase" required autocomplete="off"></label>'
             : '';
 
-        return '<form method="post" action="?page=transmit" data-ajax="true" class="settings-stack">'
+        return '<section class="panel-soft"><h3 class="card-title">Submit accounts</h3>'
+            . '<form method="post" action="?page=transmit" data-ajax="true" class="settings-stack">'
             . $this->hidden($companyId, $accountingPeriodId, 'submit_accounts')
             . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
             . '<label>Company authentication code'
@@ -228,7 +234,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
             . 'data-chicken-title="Send ' . \eel_accounts\Support\Utf8::html($filingLabel) . ' accounts" '
             . 'data-chicken-message="Send this immutable ' . \eel_accounts\Support\Utf8::html($filingKind) . '-accounts package to Companies House '
             . \eel_accounts\Support\Utf8::html($mode) . '?" data-chicken-confirm-text="Send accounts">Send / continue '
-            . \eel_accounts\Support\Utf8::html($mode) . ' filing</button></form>';
+            . \eel_accounts\Support\Utf8::html($mode) . ' filing</button></form></section>';
     }
 
     private function refreshForm(
@@ -253,7 +259,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
         bool $bindingConfigured,
         string $filingKind
     ): string {
-        $html = '<section class="panel-soft"><h4 class="card-title">Developer step controls</h4>'
+        $html = '<section class="panel-soft"><h3 class="card-title">Developer step controls</h3>'
             . '<div class="helper">Each button performs one XML send/receive pair and then pauses.</div>';
         if (!$bindingConfigured) {
             return $html . '<div class="notice warning">The preflight binding key could not be prepared for '
@@ -303,7 +309,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
         ?array $statusCycle
     ): string {
         $state = strtolower((string)($statusCycle['acknowledgement_state'] ?? 'acknowledged'));
-        $html = '<section class="panel-soft"><h4 class="card-title">Developer step controls</h4>';
+        $html = '<section class="panel-soft"><h3 class="card-title">Developer step controls</h3>';
         if ($state === 'required'
             || ($state === 'failed' && trim((string)($statusCycle['result_json'] ?? '')) !== '')) {
             $html .= $this->simpleProtocolForm(
@@ -518,6 +524,19 @@ final class _companies_house_transmitCard extends CardBaseFramework
         }
 
         return '<div class="notice warning">' . \eel_accounts\Support\Utf8::html($message) . '</div>';
+    }
+
+    private function artifactDownloadMetric(
+        int $companyId,
+        int $accountingPeriodId,
+        bool $available
+    ): string {
+        return '<div class="summary-card"><div class="summary-label">Artifact</div>'
+            . '<form method="post" action="?page=transmit" class="actions-row">'
+            . $this->hidden($companyId, $accountingPeriodId, 'download_accounts_ixbrl')
+            . '<button class="button compact primary" type="submit"'
+            . ($available ? '' : ' disabled')
+            . '>Companies House iXBRL</button></form></div>';
     }
 
     private function metric(string $label, string $value, string $explanation = ''): string

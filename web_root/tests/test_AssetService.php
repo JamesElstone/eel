@@ -1175,6 +1175,69 @@ if (!class_exists(\eel_accounts\Service\FormattingFramework::class, false)) {
             $harness->assertSame(0.0, assetServiceTestJournalLineAmount($assetJournalId, $fixture['bank_nominal_id'], 'debit'));
         });
 
+        $harness->check(\eel_accounts\Service\AssetService::class, 'rebuilds the legacy AP80 disposal pattern from recorded depreciation without changing the tax basis', static function () use ($harness, $service): void {
+            assetServiceTestRequireDisposalSchema($harness);
+            $fixture = assetServiceTestCreateDisposalFixture('ap80-disposal-rebuild');
+            assetServiceTestSetDisposedAsset($fixture, 116.24, 0.00);
+            assetServiceTestInsertDepreciationEntry($fixture, '2026-01-10', '2026-03-31', 37.76);
+            assetServiceTestInsertDepreciationEntry($fixture, '2026-04-01', '2026-07-03', 32.87);
+            $legacyJournalId = assetServiceTestInsertLegacyDisposalJournal($fixture, 116.24);
+
+            $result = $service->rebuildDisposalJournal($fixture['company_id'], $fixture['asset_id'], 'golden_test');
+            $harness->assertSame(true, (bool)($result['success'] ?? false));
+            $harness->assertSame(true, (bool)($result['updated'] ?? false));
+            $harness->assertSame($legacyJournalId, (int)($result['source_journal_id'] ?? 0));
+            $harness->assertSame('45.61', number_format((float)($result['profit'] ?? 0), 2, '.', ''));
+
+            $replacementJournalId = (int)($result['replacement_journal_id'] ?? 0);
+            $harness->assertTrue($replacementJournalId > 0);
+            $harness->assertSame(1, InterfaceDB::countWhere('journal_reversals', [
+                'source_journal_id' => $legacyJournalId,
+                'replacement_journal_id' => $replacementJournalId,
+            ]));
+            $harness->assertSame('70.63', number_format(assetServiceTestJournalLineAmount($replacementJournalId, assetServiceTestNominalId('1330'), 'debit'), 2, '.', ''));
+            $harness->assertSame('45.61', number_format(assetServiceTestJournalLineAmount($replacementJournalId, assetServiceTestNominalId('6210'), 'debit'), 2, '.', ''));
+            $harness->assertSame('116.24', number_format(assetServiceTestJournalLineAmount($replacementJournalId, assetServiceTestNominalId('1300'), 'credit'), 2, '.', ''));
+            $harness->assertSame('116.24', number_format(assetServiceTestJournalLineAmount($legacyJournalId, assetServiceTestNominalId('6210'), 'debit'), 2, '.', ''));
+            $harness->assertSame(
+                '0.00',
+                number_format((-116.24 + 116.24) - (-45.61 + 45.61), 2, '.', '')
+            );
+
+            $retry = $service->rebuildDisposalJournal($fixture['company_id'], $fixture['asset_id'], 'golden_test');
+            $harness->assertSame(true, (bool)($retry['success'] ?? false));
+            $harness->assertSame(false, (bool)($retry['updated'] ?? true));
+            $harness->assertSame(1, InterfaceDB::countWhere('journal_reversals', ['source_journal_id' => $legacyJournalId]));
+        });
+
+        $harness->check(\eel_accounts\Service\AssetService::class, 'rebuilds disposal gains and losses for nil, below-NBV, at-NBV, above-NBV and fully-written-off assets', static function () use ($harness, $service): void {
+            assetServiceTestRequireDisposalSchema($harness);
+            foreach ([
+                ['nil', 67.39, 0.43, 0.00, 66.96, 0.00],
+                ['below', 100.00, 60.00, 20.00, 40.00, 0.00],
+                ['at-nbv', 100.00, 60.00, 40.00, 0.00, 0.00],
+                ['above', 100.00, 60.00, 70.00, 0.00, 30.00],
+                ['fully-written-off', 100.00, 100.00, 0.00, 0.00, 0.00],
+            ] as [$suffix, $cost, $accumulatedDepreciation, $proceeds, $expectedLoss, $expectedGain]) {
+                $fixture = assetServiceTestCreateDisposalFixture('rebuild-' . $suffix);
+                assetServiceTestSetDisposedAsset($fixture, (float)$cost, (float)$proceeds);
+                if ((float)$accumulatedDepreciation > 0.0) {
+                    assetServiceTestInsertDepreciationEntry($fixture, '2026-01-10', '2026-07-03', (float)$accumulatedDepreciation);
+                }
+                $legacyJournalId = assetServiceTestInsertLegacyDisposalJournal($fixture, (float)$cost);
+                $result = $service->rebuildDisposalJournal($fixture['company_id'], $fixture['asset_id'], 'matrix_test');
+                $replacementJournalId = (int)($result['replacement_journal_id'] ?? 0);
+
+                $harness->assertSame(true, (bool)($result['success'] ?? false));
+                $harness->assertSame(number_format((float)$expectedGain - (float)$expectedLoss, 2, '.', ''), number_format((float)($result['profit'] ?? 0), 2, '.', ''));
+                $harness->assertSame(number_format((float)$accumulatedDepreciation, 2, '.', ''), number_format(assetServiceTestJournalLineAmount($replacementJournalId, assetServiceTestNominalId('1330'), 'debit'), 2, '.', ''));
+                $harness->assertSame(number_format((float)$expectedLoss, 2, '.', ''), number_format(assetServiceTestJournalLineAmount($replacementJournalId, assetServiceTestNominalId('6210'), 'debit'), 2, '.', ''));
+                $harness->assertSame(number_format((float)$expectedGain, 2, '.', ''), number_format(assetServiceTestJournalLineAmount($replacementJournalId, assetServiceTestNominalId('4200'), 'credit'), 2, '.', ''));
+                $harness->assertSame(number_format((float)$proceeds, 2, '.', ''), number_format(assetServiceTestJournalLineAmount($replacementJournalId, assetServiceTestNominalId('1490'), 'debit'), 2, '.', ''));
+                $harness->assertSame(1, InterfaceDB::countWhere('journal_reversals', ['source_journal_id' => $legacyJournalId]));
+            }
+        });
+
         $harness->check(\eel_accounts\Service\AssetService::class, 'disposal posts exact pending depreciation before derecognition without duplicates', static function () use ($harness, $service): void {
             assetServiceTestRequireDisposalSchema($harness);
             $fixture = assetServiceTestCreateDisposalFixture('pending-depreciation');
@@ -1950,6 +2013,98 @@ function assetServiceTestCreateDisposalFixture(string $suffix): array
         'bank_nominal_id' => $bankNominalId,
         'marker' => $marker,
     ];
+}
+
+function assetServiceTestSetDisposedAsset(array $fixture, float $cost, float $proceeds): void
+{
+    InterfaceDB::prepareExecute(
+        'UPDATE asset_register
+         SET cost = :cost,
+             status = :status,
+             disposal_date = :disposal_date,
+             disposal_proceeds = :disposal_proceeds,
+             disposal_event_type = :disposal_event_type,
+             disposal_reason = :disposal_reason
+         WHERE id = :id',
+        [
+            'cost' => round($cost, 2),
+            'status' => 'disposed',
+            'disposal_date' => '2026-07-03',
+            'disposal_proceeds' => round($proceeds, 2),
+            'disposal_event_type' => $proceeds > 0 ? 'sale_receipt' : 'scrapped_no_proceeds',
+            'disposal_reason' => $proceeds > 0 ? 'Legacy sale record' : 'Legacy nil-value disposal record',
+            'id' => $fixture['asset_id'],
+        ]
+    );
+}
+
+function assetServiceTestInsertDepreciationEntry(array $fixture, string $periodStart, string $periodEnd, float $amount): void
+{
+    InterfaceDB::prepareExecute(
+        'INSERT INTO asset_depreciation_entries (
+            asset_id, accounting_period_id, period_start, period_end, amount
+         ) VALUES (
+            :asset_id, :accounting_period_id, :period_start, :period_end, :amount
+         )',
+        [
+            'asset_id' => $fixture['asset_id'],
+            'accounting_period_id' => $fixture['accounting_period_id'],
+            'period_start' => $periodStart,
+            'period_end' => $periodEnd,
+            'amount' => round($amount, 2),
+        ]
+    );
+}
+
+function assetServiceTestInsertLegacyDisposalJournal(array $fixture, float $legacyLoss): int
+{
+    InterfaceDB::prepareExecute(
+        'INSERT INTO journals (
+            company_id, accounting_period_id, source_type, source_ref,
+            journal_date, description, is_posted
+         ) VALUES (
+            :company_id, :accounting_period_id, :source_type, :source_ref,
+            :journal_date, :description, 1
+         )',
+        [
+            'company_id' => $fixture['company_id'],
+            'accounting_period_id' => $fixture['accounting_period_id'],
+            'source_type' => 'asset_disposal',
+            'source_ref' => 'asset:' . $fixture['asset_id'] . ':disposal',
+            'journal_date' => '2026-07-03',
+            'description' => 'Legacy incorrect asset disposal',
+        ]
+    );
+    $journalId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM journals
+         WHERE company_id = :company_id
+           AND source_type = :source_type
+           AND source_ref = :source_ref
+         ORDER BY id DESC LIMIT 1',
+        [
+            'company_id' => $fixture['company_id'],
+            'source_type' => 'asset_disposal',
+            'source_ref' => 'asset:' . $fixture['asset_id'] . ':disposal',
+        ]
+    );
+    foreach ([
+        [assetServiceTestNominalId('6210'), $legacyLoss, 0.00, 'Legacy full-cost disposal loss'],
+        [assetServiceTestNominalId('1300'), 0.00, $legacyLoss, 'Legacy asset cost derecognition'],
+    ] as [$nominalAccountId, $debit, $credit, $description]) {
+        InterfaceDB::prepareExecute(
+            'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit, line_description)
+             VALUES (:journal_id, :nominal_account_id, :debit, :credit, :line_description)',
+            [
+                'journal_id' => $journalId,
+                'nominal_account_id' => $nominalAccountId,
+                'debit' => $debit,
+                'credit' => $credit,
+                'line_description' => $description,
+            ]
+        );
+    }
+
+    return $journalId;
 }
 
 function assetServiceTestInsertTransaction(array $fixture, int $offset, string $date, float $amount, string $description, int $isInternalTransfer = 0): int

@@ -528,7 +528,7 @@ $harness->run(
                         [
                             'id' => $disposalJournalId,
                             'source_type' => 'asset_disposal',
-                            'source_ref' => 'asset:' . $disposedAssetId . ':disposal',
+                            'source_ref' => 'asset:' . $disposedAssetId . ':disposal:revision-of:123',
                             'journal_date' => '2025-09-30',
                             'debit_total' => 90.00,
                             'credit_total' => 90.00,

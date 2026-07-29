@@ -59,7 +59,7 @@ final class JournalSourceEvidenceService
                 continue;
             }
 
-            if ($sourceType === 'asset_disposal' && preg_match('/^asset:(\d+):disposal$/', $sourceRef, $matches) === 1) {
+            if ($sourceType === 'asset_disposal' && preg_match('/^asset:(\d+):disposal(?:\:revision-of:\d+)?$/', $sourceRef, $matches) === 1) {
                 $disposalAssets[$journalId] = (int)$matches[1];
                 continue;
             }

@@ -1681,6 +1681,88 @@ final class AssetService
         return $this->disposalSuccessResponse($summary);
     }
 
+    /**
+     * Correct a previously posted disposal without mutating the source journal.
+     *
+     * Older disposal journals can contain the asset cost as the loss even where
+     * accumulated depreciation had already been posted.  The register and its
+     * depreciation entries are the accounting source of truth, so rebuild the
+     * active disposal journal from those facts using the append-only correction
+     * lifecycle.
+     *
+     * @return array<string,mixed>
+     */
+    public function rebuildDisposalJournal(int $companyId, int $assetId, string $changedBy = 'web_app'): array
+    {
+        if (!$this->hasRequiredSchema()) {
+            return ['success' => false, 'errors' => ['Run the fixed asset migration before rebuilding disposal journals.']];
+        }
+
+        $asset = $this->fetchAsset($companyId, $assetId);
+        $disposalDate = trim((string)($asset['disposal_date'] ?? ''));
+        if ($asset === null || (string)($asset['status'] ?? '') !== 'disposed' || !$this->isIsoDate($disposalDate)) {
+            return ['success' => false, 'errors' => ['The selected asset does not have a recorded disposal date.']];
+        }
+
+        $accountingPeriodId = $this->resolveAccountingPeriodIdForDate($companyId, $disposalDate);
+        if ($accountingPeriodId <= 0) {
+            return ['success' => false, 'errors' => ['No accounting period exists for the recorded disposal date.']];
+        }
+
+        $sourceJournal = $this->findActiveDisposalJournal($companyId, $assetId);
+        if ($sourceJournal === null) {
+            return ['success' => false, 'errors' => ['No active disposal journal could be found for this asset.']];
+        }
+
+        $accounting = $this->disposalAccounting(
+            $asset,
+            $disposalDate,
+            (float)($asset['disposal_proceeds'] ?? 0.0)
+        );
+        $lines = $this->disposalJournalLines($asset, $accounting, $this->findNominalIdByCode(self::DISPOSAL_CLEARING_NOMINAL_CODE));
+        if ($this->disposalJournalMatches((int)$sourceJournal['id'], $lines)) {
+            return [
+                'success' => true,
+                'updated' => false,
+                'source_journal_id' => (int)$sourceJournal['id'],
+                'messages' => ['The active disposal journal already matches the recorded asset facts.'],
+            ];
+        }
+
+        $correction = (new \eel_accounts\Service\JournalCorrectionService())->reverseAndReplaceJournal(
+            $companyId,
+            (int)$sourceJournal['id'],
+            $accountingPeriodId,
+            $disposalDate,
+            'Asset disposal rebuilt from the recorded asset cost, accumulated depreciation, impairment and proceeds.',
+            [
+                'accounting_period_id' => $accountingPeriodId,
+                'journal_tag' => 'asset_disposal_rebuild',
+                'journal_key' => 'asset:' . $assetId . ':disposal:' . (int)$sourceJournal['id'],
+                'journal_date' => $disposalDate,
+                'description' => 'Corrected asset disposal ' . (string)$asset['asset_code'],
+                'lines' => $lines,
+                'entry_mode' => 'system_generated',
+                'source_type' => 'asset_disposal',
+                'source_ref' => 'asset:' . $assetId . ':disposal:revision-of:' . (int)$sourceJournal['id'],
+                'notes' => 'Append-only replacement generated from the asset register disposal facts.',
+            ],
+            $changedBy,
+            'asset-disposal-rebuild:' . (int)$sourceJournal['id']
+        );
+        if (empty($correction['success'])) {
+            return $correction;
+        }
+
+        \eel_accounts\Support\RequestCache::clear();
+        $correction['updated'] = true;
+        $correction['nbv'] = $accounting['carrying_amount'];
+        $correction['profit'] = $accounting['profit'];
+        $correction['messages'] = ['The disposal journal was reversed and rebuilt from the recorded asset facts.'];
+
+        return $correction;
+    }
+
     public function fetchTaxView(int $companyId, int $accountingPeriodId): ?array {
         if (!$this->hasRequiredSchema()) {
             return null;
@@ -1861,9 +1943,7 @@ final class AssetService
             $accountingPeriodId,
             $disposalDate
         );
-        $accumulatedDepreciation = $this->sumDepreciationToDate($assetId, $disposalDate);
-        $nbv = round(max(0.0, (float)$asset['cost'] - $accumulatedDepreciation), 2);
-        $profit = round($proceeds - $nbv, 2);
+        $accounting = $this->disposalAccounting($asset, $disposalDate, $proceeds);
 
         $journalId = $this->insertJournal([
             'company_id' => $companyId,
@@ -1874,32 +1954,148 @@ final class AssetService
             'description' => 'Asset disposal ' . (string)$asset['asset_code'],
         ]);
 
-        if ($proceeds > 0) {
-            if ($clearingNominalId === null || $clearingNominalId <= 0) {
-                throw new \RuntimeException('The asset disposal clearing nominal is missing.');
-            }
-            $this->insertJournalLine($journalId, $clearingNominalId, $proceeds, 0.0, 'Clear disposal proceeds');
-        }
-        if ($accumulatedDepreciation > 0) {
-            $this->insertJournalLine($journalId, (int)$asset['accum_dep_nominal_id'], $accumulatedDepreciation, 0.0, 'Remove accumulated depreciation');
-        }
-        if ($profit < 0) {
-            $this->insertJournalLine($journalId, $this->findNominalIdByCode('6210'), abs($profit), 0.0, 'Loss on disposal');
-        }
-
-        $this->insertJournalLine($journalId, (int)$asset['nominal_account_id'], 0.0, (float)$asset['cost'], 'Derecognise asset cost');
-
-        if ($profit > 0) {
-            $this->insertJournalLine($journalId, $this->findNominalIdByCode('4200'), 0.0, $profit, 'Profit on disposal');
+        foreach ($this->disposalJournalLines($asset, $accounting, $clearingNominalId) as $line) {
+            $this->insertJournalLine(
+                $journalId,
+                (int)$line['nominal_account_id'],
+                (float)$line['debit'],
+                (float)$line['credit'],
+                (string)$line['line_description']
+            );
         }
 
         $this->markAssetDisposed($companyId, $assetId, $disposalDate, $proceeds, $disposalEventType, $disposalReason);
 
         return [
-            'nbv' => $nbv,
-            'proceeds' => $proceeds,
-            'profit' => $profit,
+            'nbv' => $accounting['carrying_amount'],
+            'proceeds' => $accounting['proceeds'],
+            'profit' => $accounting['profit'],
         ];
+    }
+
+    /** @return array{proceeds: float, accumulated_depreciation: float, impairment: float, accumulated_write_offs: float, carrying_amount: float, profit: float} */
+    private function disposalAccounting(array $asset, string $disposalDate, float $proceeds): array
+    {
+        $assetId = (int)($asset['id'] ?? 0);
+        $accumulatedDepreciation = $this->sumDepreciationToDate($assetId, $disposalDate);
+        $impairment = $this->sumImpairmentToDate($assetId, $disposalDate);
+        $accumulatedWriteOffs = round($accumulatedDepreciation + $impairment, 2);
+        $carryingAmount = round(max(0.0, (float)($asset['cost'] ?? 0.0) - $accumulatedWriteOffs), 2);
+        $proceeds = round(max(0.0, $proceeds), 2);
+
+        return [
+            'proceeds' => $proceeds,
+            'accumulated_depreciation' => $accumulatedDepreciation,
+            'impairment' => $impairment,
+            'accumulated_write_offs' => $accumulatedWriteOffs,
+            'carrying_amount' => $carryingAmount,
+            'profit' => round($proceeds - $carryingAmount, 2),
+        ];
+    }
+
+    /** @param array{proceeds: float, accumulated_depreciation: float, impairment: float, accumulated_write_offs: float, carrying_amount: float, profit: float} $accounting
+     *  @return list<array{nominal_account_id: int, debit: float, credit: float, line_description: string}> */
+    private function disposalJournalLines(array $asset, array $accounting, ?int $clearingNominalId): array
+    {
+        $proceeds = (float)$accounting['proceeds'];
+        if ($proceeds > 0.0 && ($clearingNominalId === null || $clearingNominalId <= 0)) {
+            throw new \RuntimeException('The asset disposal clearing nominal is missing.');
+        }
+
+        $lines = [];
+        if ($proceeds > 0.0) {
+            $lines[] = [
+                'nominal_account_id' => (int)$clearingNominalId,
+                'debit' => $proceeds,
+                'credit' => 0.0,
+                'line_description' => 'Clear disposal proceeds',
+            ];
+        }
+        if ((float)$accounting['accumulated_write_offs'] > 0.0) {
+            $lines[] = [
+                'nominal_account_id' => (int)$asset['accum_dep_nominal_id'],
+                'debit' => (float)$accounting['accumulated_write_offs'],
+                'credit' => 0.0,
+                'line_description' => 'Remove accumulated depreciation and impairment',
+            ];
+        }
+        if ((float)$accounting['profit'] < 0.0) {
+            $lines[] = [
+                'nominal_account_id' => $this->findNominalIdByCode('6210'),
+                'debit' => abs((float)$accounting['profit']),
+                'credit' => 0.0,
+                'line_description' => 'Loss on disposal',
+            ];
+        }
+
+        $lines[] = [
+            'nominal_account_id' => (int)$asset['nominal_account_id'],
+            'debit' => 0.0,
+            'credit' => round((float)$asset['cost'], 2),
+            'line_description' => 'Derecognise asset cost',
+        ];
+
+        if ((float)$accounting['profit'] > 0.0) {
+            $lines[] = [
+                'nominal_account_id' => $this->findNominalIdByCode('4200'),
+                'debit' => 0.0,
+                'credit' => (float)$accounting['profit'],
+                'line_description' => 'Profit on disposal',
+            ];
+        }
+
+        return $lines;
+    }
+
+    private function findActiveDisposalJournal(int $companyId, int $assetId): ?array
+    {
+        $reversalClause = \InterfaceDB::tableExists('journal_reversals')
+            ? ' AND NOT EXISTS (SELECT 1 FROM journal_reversals jr WHERE jr.source_journal_id = j.id)'
+            : '';
+        $row = \InterfaceDB::fetchOne(
+            'SELECT j.id, j.accounting_period_id, j.journal_date
+             FROM journals j
+             WHERE j.company_id = :company_id
+               AND j.source_type = :source_type
+               AND j.source_ref LIKE :source_ref' . $reversalClause . '
+             ORDER BY j.id DESC
+             LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'source_type' => 'asset_disposal',
+                'source_ref' => 'asset:' . $assetId . ':disposal%',
+            ]
+        );
+
+        return is_array($row) ? $row : null;
+    }
+
+    /** @param list<array{nominal_account_id: int, debit: float, credit: float, line_description: string}> $expectedLines */
+    private function disposalJournalMatches(int $journalId, array $expectedLines): bool
+    {
+        $actual = \InterfaceDB::fetchAll(
+            'SELECT nominal_account_id, debit, credit
+             FROM journal_lines
+             WHERE journal_id = :journal_id
+             ORDER BY id ASC',
+            ['journal_id' => $journalId]
+        ) ?: [];
+        if (count($actual) !== count($expectedLines)) {
+            return false;
+        }
+
+        $normalise = static function (array $lines): array {
+            $rows = array_map(static fn(array $line): string => implode(':', [
+                (int)($line['nominal_account_id'] ?? 0),
+                number_format((float)($line['debit'] ?? 0.0), 2, '.', ''),
+                number_format((float)($line['credit'] ?? 0.0), 2, '.', ''),
+            ]), $lines);
+            sort($rows, SORT_STRING);
+
+            return $rows;
+        };
+
+        return $normalise($actual) === $normalise($expectedLines);
     }
 
     private function postPendingDepreciationThroughDisposalDate(
@@ -2685,6 +2881,21 @@ final class AssetService
             'to_date' => $toDate,
         ]);
         return round((float)$stmt->fetchColumn(), 2);
+    }
+
+    private function sumImpairmentToDate(int $assetId, string $toDate): float
+    {
+        if ($assetId <= 0 || !\InterfaceDB::tableExists('asset_impairment_entries')) {
+            return 0.0;
+        }
+
+        return round((float)\InterfaceDB::fetchColumn(
+            'SELECT COALESCE(SUM(amount), 0)
+             FROM asset_impairment_entries
+             WHERE asset_id = :asset_id
+               AND impairment_date <= :to_date',
+            ['asset_id' => $assetId, 'to_date' => $toDate]
+        ), 2);
     }
 
     private function normaliseAssetPayload(int $companyId, array $payload, array $defaults = []): array {

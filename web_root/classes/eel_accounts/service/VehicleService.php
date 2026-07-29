@@ -75,7 +75,10 @@ final class VehicleService
             return $registrationMark;
         }
 
-        if (preg_match('/\\(' . preg_quote($registrationMark, '/') . '\\)\\s*$/i', $description) === 1) {
+        $registrationCharacters = (string)preg_replace('/[^A-Z0-9]/i', '', $registrationMark);
+        $registrationPattern = implode('[^A-Z0-9]*', str_split($registrationCharacters));
+        if ($registrationCharacters !== ''
+            && preg_match('/(?<![A-Z0-9])' . $registrationPattern . '(?![A-Z0-9])/i', $description) === 1) {
             return $description;
         }
 

@@ -21,6 +21,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $harness->check(\eel_accounts\Service\VehicleService::class, 'formats vehicle display descriptions without changing source text', static function () use ($harness): void {
             $harness->assertSame('TCS THATCHAM CAR SALES (PK59ZPJ)', \eel_accounts\Service\VehicleService::assetDisplayDescription('TCS THATCHAM CAR SALES', 'pk59zpj'));
             $harness->assertSame('TCS THATCHAM CAR SALES (PK59ZPJ)', \eel_accounts\Service\VehicleService::assetDisplayDescription('TCS THATCHAM CAR SALES (PK59ZPJ)', 'PK59ZPJ'));
+            $harness->assertSame('Citroën Dispatch van, registration PK59 ZPJ', \eel_accounts\Service\VehicleService::assetDisplayDescription('Citroën Dispatch van, registration PK59 ZPJ', 'PK59ZPJ'));
             $harness->assertSame('TCS THATCHAM CAR SALES', \eel_accounts\Service\VehicleService::assetDisplayDescription('TCS THATCHAM CAR SALES', null));
         });
 

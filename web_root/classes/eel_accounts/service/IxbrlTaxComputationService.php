@@ -585,20 +585,20 @@ final class IxbrlTaxComputationService
             }
         }
         $postBroughtForward = isset($facts['computation.summary.loss_restriction.post_2017_trading_losses.brought_forward'])
-            ? $this->factHtml($facts, 'computation.summary.loss_restriction.post_2017_trading_losses.brought_forward')
+            ? $this->factMoneyHtml($generator, $facts, 'computation.summary.loss_restriction.post_2017_trading_losses.brought_forward')
             : (isset($facts['computation.summary.losses_brought_forward'])
-                ? $this->factHtml($facts, 'computation.summary.losses_brought_forward')
+                ? $this->factMoneyHtml($generator, $facts, 'computation.summary.losses_brought_forward')
                 : $this->moneyHtml($generator, (float)$postLosses['brought_forward']));
         $postUsed = isset($facts['computation.summary.loss_restriction.post_2017_trading_losses.used'])
-            ? $this->factHtml($facts, 'computation.summary.loss_restriction.post_2017_trading_losses.used')
+            ? $this->factMoneyHtml($generator, $facts, 'computation.summary.loss_restriction.post_2017_trading_losses.used')
             : (isset($facts['computation.summary.losses_used'])
-                ? $this->factHtml($facts, 'computation.summary.losses_used')
+                ? $this->factMoneyHtml($generator, $facts, 'computation.summary.losses_used')
                 : $this->moneyHtml($generator, (float)$postLosses['used']));
         $postCarriedForward = isset($facts['computation.summary.loss_restriction.post_2017_trading_losses.carried_forward'])
-            ? $this->factHtml($facts, 'computation.summary.loss_restriction.post_2017_trading_losses.carried_forward')
+            ? $this->factMoneyHtml($generator, $facts, 'computation.summary.loss_restriction.post_2017_trading_losses.carried_forward')
             : $this->moneyHtml($generator, (float)$postLosses['carried_forward']);
         $postArising = isset($facts['report.loss.post_2017_trading_loss_arising'])
-            ? $this->factHtml($facts, 'report.loss.post_2017_trading_loss_arising')
+            ? $this->factMoneyHtml($generator, $facts, 'report.loss.post_2017_trading_loss_arising')
             : $this->moneyHtml($generator, (float)$postLosses['arising']);
         $html .= '<div class="ct-section loss-section keep-together"><h2>Trading losses</h2>'
             . '<p>Post-1 April 2017 trading losses are available for relief against total profits.</p>'
@@ -702,26 +702,26 @@ final class IxbrlTaxComputationService
         $allowance = (array)($lossRestriction['deduction_allowance'] ?? []);
         $allowanceAmount = round((float)($allowance['amount'] ?? 0), 2);
         $allowanceHtml = isset($facts['computation.summary.loss_restriction.deduction_allowance.amount'])
-            ? $this->factHtml($facts, 'computation.summary.loss_restriction.deduction_allowance.amount')
+            ? $this->factMoneyHtml($generator, $facts, 'computation.summary.loss_restriction.deduction_allowance.amount')
             : $this->moneyHtml($generator, $allowanceAmount);
         $restriction = round((float)($lossRestriction['calculated_loss_restriction'] ?? 0), 2);
         $restrictionHtml = isset($facts['computation.summary.loss_restriction.calculated_loss_restriction'])
-            ? $this->factHtml($facts, 'computation.summary.loss_restriction.calculated_loss_restriction')
+            ? $this->factMoneyHtml($generator, $facts, 'computation.summary.loss_restriction.calculated_loss_restriction')
             : $this->moneyHtml($generator, $restriction);
         $qualifyingProfits = round((float)($lossRestriction['qualifying_profits'] ?? 0), 2);
         $qualifyingProfitsHtml = isset($facts['report.loss.qualifying_profits'])
-            ? $this->factHtml($facts, 'report.loss.qualifying_profits')
+            ? $this->factMoneyHtml($generator, $facts, 'report.loss.qualifying_profits')
             : $this->moneyHtml($generator, $qualifyingProfits);
         $reliefClaimed = round((float)($lossRestriction['carried_forward_loss_relief_claimed'] ?? 0), 2);
         $reliefClaimedHtml = isset($facts['report.loss.carried_forward_relief_claimed'])
-            ? $this->factHtml($facts, 'report.loss.carried_forward_relief_claimed')
+            ? $this->factMoneyHtml($generator, $facts, 'report.loss.carried_forward_relief_claimed')
             : $this->moneyHtml($generator, $reliefClaimed);
         $days = (int)($allowance['period_days'] ?? 0);
         $daysInYear = (int)($allowance['days_in_year'] ?? 365);
         if ($days <= 0 || $daysInYear <= 0) {
             throw new \RuntimeException('The frozen deductions allowance has invalid period days.');
         }
-        $restrictionText = $restriction < 0.005 ? 'None' : '£' . number_format($restriction, 2, '.', ',');
+        $restrictionText = $restriction < 0.005 ? 'None' : $this->moneyHtml($generator, $restriction, false, '£');
         return '<div class="deductions-allowance keep-together"><h3>Deductions allowance</h3>'
             . '<p>Non-group deductions allowance, apportioned for the ' . $days . '-day CT period ('
             . $days . ' / ' . $daysInYear . ' of £5,000,000).</p><table class="financial-table"><tbody>'
@@ -732,7 +732,7 @@ final class IxbrlTaxComputationService
             . $reliefClaimedHtml
             . '</td></tr><tr><th scope="row">Calculated loss restriction</th><td class="amount">'
             . $restrictionHtml . '</td></tr><tr class="final-total"><th scope="row">Loss restriction</th><td class="amount">'
-            . $generator->escape($restrictionText) . '</td></tr></tbody></table></div>';
+            . ($restrictionText === 'None' ? $generator->escape($restrictionText) : $restrictionText) . '</td></tr></tbody></table></div>';
     }
 
     /**
@@ -828,8 +828,8 @@ final class IxbrlTaxComputationService
             $claimTotal += $claim;
             $rows .= '<tr><td>' . $generator->escape($description) . '</td><td>'
                 . $generator->escape($this->longDate($purchaseDate)) . '</td><td class="amount">'
-                . $generator->escape(number_format($addition, 2, '.', ',')) . '</td><td class="amount">'
-                . $generator->escape(number_format($claim, 2, '.', ',')) . '</td></tr>';
+                . $this->moneyHtml($generator, $addition) . '</td><td class="amount">'
+                . $this->moneyHtml($generator, $claim) . '</td></tr>';
         }
         $claimTotal = round($claimTotal, 2);
         if (abs($claimTotal - $expected) > 0.009) {
@@ -840,8 +840,8 @@ final class IxbrlTaxComputationService
             . '<th scope="col">Qualifying expenditure date</th><th scope="col" class="amount">Expenditure (£)</th>'
             . '<th scope="col" class="amount">AIA claimed (£)</th></tr></thead><tbody>' . $rows
             . '<tr class="final-total"><th scope="row" colspan="2">Total</th><td class="amount">'
-            . $generator->escape(number_format(round($expenditureTotal, 2), 2, '.', ','))
-            . '</td><td class="amount">' . $generator->escape(number_format($claimTotal, 2, '.', ','))
+            . $this->moneyHtml($generator, round($expenditureTotal, 2))
+            . '</td><td class="amount">' . $this->moneyHtml($generator, $claimTotal)
             . '</td></tr></tbody></table></div>';
     }
 
@@ -864,7 +864,12 @@ final class IxbrlTaxComputationService
                 if (!isset($facts[$factKey])) {
                     throw new \RuntimeException('The main-pool report model refers to an unavailable fact ' . $factKey . '.');
                 }
-                $value = $this->factHtml($facts, $factKey);
+                $value = $this->factMoneyHtml(
+                    $generator,
+                    $facts,
+                    $factKey,
+                    (string)($row['direction'] ?? '') === 'deduction'
+                );
             } elseif ((string)($row['display_type'] ?? 'money') === 'percent') {
                 if (!is_numeric($row['amount'] ?? null)) {
                     throw new \RuntimeException('The main-pool percentage row has no amount.');
@@ -894,9 +899,9 @@ final class IxbrlTaxComputationService
             $html .= $this->supportingTable($generator, 'Part 2 — relief within nine months', (array)($ct600a['part2']['rows'] ?? []), null);
             $html .= $this->supportingTable($generator, 'Part 3 — relief due now', (array)($ct600a['part3']['rows'] ?? []), null);
             $html .= '<table class="financial-table"><tbody><tr><th scope="row">A75 total outstanding</th><td class="amount">'
-                . $generator->escape(number_format((float)($ct600a['total_loans_outstanding'] ?? 0), 2, '.', ','))
+                . $this->moneyHtml($generator, (float)($ct600a['total_loans_outstanding'] ?? 0))
                 . '</td></tr><tr class="final-total"><th scope="row">A80 tax payable</th><td class="amount">'
-                . $generator->escape(number_format((float)($ct600a['tax_payable'] ?? 0), 2, '.', ','))
+                . $this->moneyHtml($generator, (float)($ct600a['tax_payable'] ?? 0))
                 . '</td></tr></tbody></table></div>';
         }
         return $html;
@@ -913,7 +918,7 @@ final class IxbrlTaxComputationService
             $displayDate = $date !== '' ? $this->longDate($date) : '';
             $body .= '<tr><td>' . $generator->escape((string)($row['name'] ?? 'Participator')) . '</td><td>'
                 . $generator->escape($displayDate) . '</td><td class="amount">'
-                . $generator->escape(number_format($amount, 2, '.', ',')) . '</td></tr>';
+                . $this->moneyHtml($generator, $amount) . '</td></tr>';
         }
         return '<div class="keep-together"><h3>' . $generator->escape($title)
             . '</h3><table class="financial-table"><thead><tr><th scope="col">Participator or associate</th>'
@@ -940,9 +945,49 @@ final class IxbrlTaxComputationService
         return (string)$facts[$canonicalKey]['html'];
     }
 
-    private function moneyHtml(IxbrlGeneratorService $generator, float $amount): string
-    {
-        return $generator->escape(number_format(abs(round($amount, 2)), 2, '.', ','));
+    /**
+     * Formats a visible CT monetary amount without altering a nested Inline
+     * XBRL fact. Parentheses are actual XHTML text, so copied, non-CSS and
+     * assistive-technology views retain the negative presentation.
+     */
+    private function monetaryDisplayHtml(
+        IxbrlGeneratorService $generator,
+        float $amount,
+        ?string $factHtml = null,
+        bool $deduction = false,
+        string $currencyPrefix = ''
+    ): string {
+        $amount = round($amount, 2);
+        $display = $factHtml ?? $generator->escape(number_format(abs($amount), 2, '.', ','));
+        if ($currencyPrefix !== '') {
+            $display = $generator->escape($currencyPrefix) . $display;
+        }
+        if ($amount < -0.004 || ($deduction && $amount > 0.004)) {
+            return '<span class="accounting-negative">(' . $display . ')</span>';
+        }
+        return $display;
+    }
+
+    private function moneyHtml(
+        IxbrlGeneratorService $generator,
+        float $amount,
+        bool $deduction = false,
+        string $currencyPrefix = ''
+    ): string {
+        return $this->monetaryDisplayHtml($generator, $amount, null, $deduction, $currencyPrefix);
+    }
+
+    private function factMoneyHtml(
+        IxbrlGeneratorService $generator,
+        array $facts,
+        string $canonicalKey,
+        bool $deduction = false
+    ): string {
+        if (!isset($facts[$canonicalKey]) || empty($facts[$canonicalKey]['numeric'])) {
+            throw new \RuntimeException('The computation report is missing required monetary fact ' . $canonicalKey . '.');
+        }
+        $fact = (array)$facts[$canonicalKey];
+        return $this->monetaryDisplayHtml($generator, (float)$fact['value'], (string)$fact['html'], $deduction);
     }
 
     private function factMoneyRow(
@@ -956,11 +1001,7 @@ final class IxbrlTaxComputationService
             throw new \RuntimeException('The computation report is missing required monetary fact ' . $canonicalKey . '.');
         }
         $fact = (array)$facts[$canonicalKey];
-        $value = (float)$fact['value'];
-        $display = (string)$fact['html'];
-        if ($value < -0.004 || ($deduction && $value > 0.004)) {
-            $display = '<span class="accounting-negative">(' . $display . ')</span>';
-        }
+        $display = $this->factMoneyHtml($generator, $facts, $canonicalKey, $deduction);
         return '<tr' . ($class !== '' ? ' class="' . $generator->escape($class) . '"' : '') . '><th scope="row">'
             . $generator->escape((string)$fact['label']) . '</th><td class="amount">' . $display . '</td></tr>';
     }
@@ -981,7 +1022,9 @@ final class IxbrlTaxComputationService
                     throw new \RuntimeException('The computation report profile refers to an unavailable fact ' . $factKey . '.');
                 }
                 $html .= '<tr' . ($class !== '' ? ' class="' . $generator->escape($class) . '"' : '') . '><th scope="row">'
-                    . $generator->escape($label) . '</th><td class="amount">' . $this->factHtml($facts, $factKey) . '</td></tr>';
+                    . $generator->escape($label) . '</th><td class="amount">'
+                    . $this->factMoneyHtml($generator, $facts, $factKey, (string)($row['direction'] ?? '') === 'deduction')
+                    . '</td></tr>';
                 continue;
             }
             if (!is_numeric($row['amount'] ?? null)) {
@@ -1005,11 +1048,7 @@ final class IxbrlTaxComputationService
         bool $deduction = false,
         string $class = ''
     ): string {
-        $negative = $value < -0.004 || ($deduction && $value > 0.004);
-        $display = $generator->escape(number_format(abs($value), 2, '.', ','));
-        if ($negative) {
-            $display = '<span class="accounting-negative">(' . $display . ')</span>';
-        }
+        $display = $this->moneyHtml($generator, $value, $deduction);
         return '<tr' . ($class !== '' ? ' class="' . $generator->escape($class) . '"' : '') . '><th scope="row">'
             . $generator->escape($label) . '</th><td class="amount">' . $display . '</td></tr>';
     }

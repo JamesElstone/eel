@@ -13,6 +13,7 @@ $harness = new GeneratedServiceClassTestHarness();
 $harness->check(\eel_accounts\Store\AccountingConfigurationStore::class, 'normalises runtime mode defaults', static function () use ($harness): void {
     $harness->assertSame('TEST', \eel_accounts\Store\AccountingConfigurationStore::companiesHouseMode());
     $harness->assertSame('TEST', \eel_accounts\Store\AccountingConfigurationStore::hmrcMode());
+    $harness->assertSame('DISABLED', \eel_accounts\Store\AccountingConfigurationStore::hmrcXmlMode());
 });
 
 $harness->check(\eel_accounts\Store\AccountingConfigurationStore::class, 'returns array-backed configuration sections', static function () use ($harness): void {

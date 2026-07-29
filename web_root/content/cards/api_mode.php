@@ -25,6 +25,7 @@ final class _api_modeCard extends CardBaseFramework
         $companiesHouseApiMode = \eel_accounts\Store\AccountingConfigurationStore::companiesHouseMode();
         $companiesHouseAccountsFilingMode = \eel_accounts\Store\AccountingConfigurationStore::companiesHouseAccountsFilingMode();
         $hmrcApiMode = \eel_accounts\Store\AccountingConfigurationStore::hmrcMode();
+        $hmrcXmlMode = \eel_accounts\Store\AccountingConfigurationStore::hmrcXmlMode();
 
         $apiCredentialCheckResults = (array)($page['api_credential_check_results'] ?? []);
         $messages = (array)($page['api_mode_messages'] ?? []);
@@ -60,12 +61,20 @@ final class _api_modeCard extends CardBaseFramework
                         </select>
                     </div>
                     <div class="form-row">
-                        <label for="hmrc_api_mode">HMRC Environment</label>
+                        <label for="hmrc_api_mode">HMRC REST Environment</label>
                         <select class="select" id="hmrc_api_mode" name="hmrc_api_mode" data-state-default="' . \eel_accounts\Support\Utf8::html($hmrcApiMode) . '">
                             <option value="TEST"' . ($hmrcApiMode === 'TEST' ? ' selected' : '') . '>TEST</option>
                             <option value="LIVE"' . ($hmrcApiMode === 'LIVE' ? ' selected' : '') . '>LIVE</option>
                         </select>
                         <A class="button" href="https://developer.service.hmrc.gov.uk/developer/login" target="_blank" rel="noopener noreferrer" type="button">HMRC Developer Portal</A>
+                    </div>
+                    <div class="form-row">
+                        <label for="hmrc_xml_mode">HMRC XML Environment</label>
+                        <select class="select" id="hmrc_xml_mode" name="hmrc_xml_mode" data-state-default="' . \eel_accounts\Support\Utf8::html($hmrcXmlMode) . '">
+                            <option value="DISABLED"' . ($hmrcXmlMode === 'DISABLED' ? ' selected' : '') . '>DISABLED</option>
+                            <option value="TEST"' . ($hmrcXmlMode === 'TEST' ? ' selected' : '') . '>TEST</option>
+                            <option value="LIVE"' . ($hmrcXmlMode === 'LIVE' ? ' selected' : '') . '>LIVE</option>
+                        </select>
                     </div>
                 </div>
             </form>

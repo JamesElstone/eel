@@ -14,19 +14,19 @@ $harness = new GeneratedServiceClassTestHarness();
 
 $harness->run(_hmrc::class, static function (GeneratedServiceClassTestHarness $harness, _hmrc $page): void {
     $harness->check(_hmrc::class, 'keeps HMRC filing controls off the obligations page', static function () use ($harness, $page): void {
-        $harness->assertFalse(in_array('hmrc_submission_unavailable', $page->cards(), true));
+        $harness->assertFalse(in_array('hmrc_submission', $page->cards(), true));
     });
 });
 
 $harness->run(_transmit::class, static function (GeneratedServiceClassTestHarness $harness, _transmit $page): void {
     $harness->check(_transmit::class, 'separates HMRC and Companies House transmission cards', static function () use ($harness, $page): void {
         $harness->assertSame(
-            ['hmrc_submission_unavailable', 'companies_house_transmission'],
+            ['hmrc_submission', 'companies_house_transmission'],
             $page->cards()
         );
         $harness->assertSame('HMRC', (string)($page->cardLayout()[0]['tab'] ?? ''));
         $harness->assertSame(
-            ['hmrc_submission_unavailable'],
+            ['hmrc_submission'],
             (array)($page->cardLayout()[0]['cards'] ?? [])
         );
         $harness->assertSame('Companies House', (string)($page->cardLayout()[1]['tab'] ?? ''));
@@ -37,11 +37,11 @@ $harness->run(_transmit::class, static function (GeneratedServiceClassTestHarnes
     });
 });
 
-$harness->run(_hmrc_submission_unavailableCard::class, static function (
+$harness->run(_hmrc_submissionCard::class, static function (
     GeneratedServiceClassTestHarness $harness,
-    _hmrc_submission_unavailableCard $card
+    _hmrc_submissionCard $card
 ): void {
-    $harness->check(_hmrc_submission_unavailableCard::class, 'declares the accounting-period CT600 status read model', static function () use ($harness, $card): void {
+    $harness->check(_hmrc_submissionCard::class, 'declares the accounting-period CT600 status read model', static function () use ($harness, $card): void {
         $services = $card->services();
         $harness->assertSame('hmrc_ct600_status', (string)($services[0]['key'] ?? ''));
         $harness->assertSame(\eel_accounts\Service\HmrcCorporationTaxSubmissionService::class, (string)($services[0]['service'] ?? ''));
@@ -50,11 +50,12 @@ $harness->run(_hmrc_submission_unavailableCard::class, static function (
         $harness->assertSame(':company.accounting_period_id', (string)($services[0]['params']['accountingPeriodId'] ?? ''));
     });
 
-    $harness->check(_hmrc_submission_unavailableCard::class, 'renders one independently gated panel per CT period', static function () use ($harness, $card): void {
+    $harness->check(_hmrc_submissionCard::class, 'renders one independently gated panel per CT period', static function () use ($harness, $card): void {
         $html = $card->render([
             'company' => ['id' => 49, 'accounting_period_id' => 79],
             'services' => ['hmrc_ct600_status' => [
                 'success' => true,
+                'xml_environment' => 'LIVE',
                 'test_environment' => 'TIL',
                 'live_environment' => 'LIVE',
                 'environments' => [
@@ -63,50 +64,121 @@ $harness->run(_hmrc_submission_unavailableCard::class, static function (
                 ],
                 'periods' => [[
                     'ct_period_id' => 6,
+                    'sequence_no' => 1,
                     'period_start' => '2022-09-05',
                     'period_end' => '2023-09-04',
                     'test_ready' => true,
                     'live_ready' => false,
                     'latest_test' => [],
+                    'latest_test_attempt' => [],
+                    'latest_til_attempt' => [],
+                    'latest_live_attempt' => [],
                     'latest_live' => [],
                     'blockers' => [],
                     'live_blockers' => ['Run HMRC Test in Live for the current filing body.'],
                 ], [
                     'ct_period_id' => 7,
+                    'sequence_no' => 2,
                     'period_start' => '2023-09-05',
                     'period_end' => '2023-09-30',
                     'test_ready' => true,
                     'live_ready' => true,
                     'latest_test' => ['business_outcome' => 'accepted', 'irmark' => 'IRMARK-7'],
                     'latest_live' => [],
+                    'latest_test_attempt' => ['business_outcome' => 'sandbox_passed', 'hmrc_submission_reference' => 'TEST-7'],
+                    'latest_til_attempt' => ['business_outcome' => 'til_validated', 'hmrc_submission_reference' => 'TIL-7', 'irmark' => 'IRMARK-7'],
+                    'latest_live_attempt' => [],
                     'blockers' => [],
                 ]],
             ]],
         ]);
 
-        $harness->assertSame(2, substr_count($html, '<h3 class="card-title">CT period '));
-        $harness->assertTrue(str_contains($html, 'CT period 2022-09-05 to 2023-09-04'));
-        $harness->assertTrue(str_contains($html, 'CT period 2023-09-05 to 2023-09-30'));
+        $harness->assertSame(2, substr_count($html, '<h3 class="card-title">CT Period '));
+        $harness->assertTrue(str_contains($html, 'CT Period 1 (2022-09-05 to 2023-09-04):'));
+        $harness->assertTrue(str_contains($html, 'CT Period 2 (2023-09-05 to 2023-09-30):'));
         $harness->assertSame(2, substr_count($html, 'name="intent" value="hmrc_submit_test"'));
         $harness->assertSame(2, substr_count($html, 'name="intent" value="hmrc_submit_live"'));
-        $harness->assertTrue(str_contains($html, '<div class="summary-label">Test mode</div><div class="summary-value">TIL</div>'));
-        $harness->assertTrue(str_contains($html, '<div class="summary-label">TIL credentials</div><div class="summary-value">Configured</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-card warn"><div class="summary-label">Environment</div><div class="summary-value">Live</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-card success"><div class="summary-label">Credentials</div><div class="summary-value">Configured</div>'));
+        $harness->assertFalse(str_contains($html, 'Test path'));
+        $harness->assertFalse(str_contains($html, 'Live path'));
+        $harness->assertFalse(str_contains($html, 'Connection blocker'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Test In Live State</div><div class="summary-value">Successful</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Submission Result</div><div class="summary-value">Not attempted</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Test Result</div><div class="summary-value">Successful</div>'));
+        $harness->assertTrue(str_contains($html, 'HMRC TIL Reference'));
+        $harness->assertTrue(str_contains($html, 'HMRC Live Reference'));
+        $harness->assertTrue(str_contains($html, 'Test Reference'));
         $harness->assertTrue(str_contains($html, 'Run HMRC Test in Live for the current filing body.'));
         $harness->assertTrue(str_contains($html, 'IRMARK-7'));
         $harness->assertTrue(str_contains($html, 'data-chicken-check="true"'));
         $harness->assertTrue(str_contains($html, 'data-chicken-confirm-text="Submit Tax Return"'));
         foreach (['declaration_name', 'declaration_status', 'original_unfiled_confirmed',
-                  'supplementary_scope_confirmed', 'authority_confirmed', 'declaration_confirmed'] as $field) {
+                  'authority_confirmed', 'declaration_confirmed'] as $field) {
             $harness->assertTrue(str_contains($html, 'name="' . $field . '"'));
         }
+        $harness->assertFalse(str_contains($html, 'supplementary_scope_confirmed'));
+        $harness->assertFalse(str_contains($html, 'A successful TIL result for the current body and source manifest is required before LIVE submission.'));
         $harness->assertSame(1, preg_match('/name="ct_period_id" value="6"[\s\S]*?<button class="button danger" type="submit" name="intent" value="hmrc_submit_live" disabled/', $html));
         $harness->assertSame(1, preg_match('/name="ct_period_id" value="7"[\s\S]*?<button class="button danger" type="submit" name="intent" value="hmrc_submit_live" data-chicken-check/', $html));
     });
 
-    $harness->check(_hmrc_submission_unavailableCard::class, 'shows status polling only for a pending submission', static function () use ($harness, $card): void {
+    $harness->check(_hmrc_submissionCard::class, 'shows missing selected-profile credentials as danger helper text', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'services' => ['hmrc_ct600_status' => [
+                'xml_environment' => 'TEST',
+                'test_environment' => 'TEST',
+                'live_environment' => 'DISABLED',
+                'environments' => ['TEST' => ['credentials_configured' => false, 'blockers' => []]],
+                'periods' => [],
+            ]],
+        ]);
+        $harness->assertTrue(str_contains($html, '<div class="summary-card success"><div class="summary-label">Environment</div><div class="summary-value">Test</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-card danger"><div class="summary-label">Credentials</div><div class="helper">HMRC / XML / CT600_XML / TEST Credentials Missing</div>'));
+        $harness->assertFalse(str_contains($html, 'HMRC TEST does not file the return.'));
+    });
+
+    $harness->check(_hmrc_submissionCard::class, 'disables every filing control when HMRC XML is disabled', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'services' => ['hmrc_ct600_status' => [
+                'xml_environment' => 'DISABLED',
+                'test_environment' => 'DISABLED',
+                'live_environment' => 'DISABLED',
+                'environments' => [
+                    'DISABLED' => [
+                        'ready' => false,
+                        'credentials_configured' => false,
+                        'blockers' => ['HMRC XML transmission is disabled in Application API Credentials.'],
+                    ],
+                ],
+                'periods' => [[
+                    'ct_period_id' => 6,
+                    'period_start' => '2025-01-01',
+                    'period_end' => '2025-12-31',
+                    'test_ready' => false,
+                    'live_ready' => false,
+                    'blockers' => ['HMRC XML transmission is disabled in Application API Credentials.'],
+                ]],
+            ]],
+        ]);
+
+        $harness->assertTrue(str_contains($html, '<strong>HMRC XML transmission is disabled.</strong>'));
+        $harness->assertTrue(str_contains($html, 'name="declaration_name" type="text" value="" required disabled'));
+        $harness->assertTrue(str_contains($html, 'name="original_unfiled_confirmed" type="checkbox" value="1" required disabled'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="hmrc_submit_test" disabled'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="hmrc_submit_live" disabled'));
+        $harness->assertFalse(str_contains($html, 'name="intent" value="hmrc_poll"'));
+    });
+
+    $harness->check(_hmrc_submissionCard::class, 'shows status polling only for a pending submission', static function () use ($harness, $card): void {
         $base = [
             'company' => ['id' => 49, 'accounting_period_id' => 79],
             'services' => ['hmrc_ct600_status' => [
+                'xml_environment' => 'LIVE',
+                'test_environment' => 'TIL',
+                'live_environment' => 'LIVE',
                 'environments' => [],
                 'periods' => [[
                     'ct_period_id' => 6,
@@ -212,7 +284,7 @@ $harness->run(HmrcSubmissionAction::class, static function (
             $harness->assertTrue(str_contains($source, $call));
         }
         foreach (['declaration_name', 'declaration_status', 'declaration_confirmed', 'authority_confirmed',
-                  'supplementary_scope_confirmed', 'original_unfiled_confirmed'] as $field) {
+                  'original_unfiled_confirmed'] as $field) {
             $harness->assertTrue(str_contains($source, "'" . $field . "'"));
         }
         $harness->assertTrue(str_contains($source, 'submitTest($companyId, $ctPeriodId, $actor, $declaration)'));

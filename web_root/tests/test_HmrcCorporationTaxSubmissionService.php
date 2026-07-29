@@ -17,9 +17,12 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
     public int $submitCalls = 0;
     public int $pollCalls = 0;
     public int $deleteCalls = 0;
+    /** @var list<string> */
+    public array $configurationEnvironments = [];
 
     public function configurationStatus(string $environment): array
     {
+        $this->configurationEnvironments[] = $environment;
         return [
             'ready' => true,
             'credentials_configured' => true,
@@ -165,6 +168,45 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
         \eel_accounts\Service\HmrcCorporationTaxSubmissionService $unused
     ): void {
         unset($unused);
+
+        $h->check(
+            \eel_accounts\Service\HmrcCorporationTaxSubmissionService::class,
+            'selects TEST TIL and LIVE paths from the fail-closed HMRC XML environment',
+            static function () use ($h): void {
+                $disabledTransport = new HmrcCtTestTransport();
+                $disabled = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService(
+                    transport: $disabledTransport,
+                    xmlEnvironmentResolver: static fn(): string => 'DISABLED'
+                );
+                $disabledStatus = $disabled->status(0, 0);
+                $h->assertSame('DISABLED', $disabledStatus['xml_environment']);
+                $h->assertSame([], $disabledTransport->configurationEnvironments);
+                $blocked = $disabled->submitTest(0, 0);
+                $h->assertFalse((bool)$blocked['success']);
+                $h->assertTrue(str_contains(implode(' ', $blocked['errors']), 'disabled'));
+                $h->assertSame(0, $disabledTransport->submitCalls);
+
+                $testTransport = new HmrcCtTestTransport();
+                $test = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService(
+                    transport: $testTransport,
+                    xmlEnvironmentResolver: static fn(): string => 'TEST'
+                );
+                $testStatus = $test->status(0, 0);
+                $h->assertSame('TEST', $testStatus['test_environment']);
+                $h->assertSame('DISABLED', $testStatus['live_environment']);
+                $h->assertSame(['TEST'], $testTransport->configurationEnvironments);
+
+                $liveTransport = new HmrcCtTestTransport();
+                $live = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService(
+                    transport: $liveTransport,
+                    xmlEnvironmentResolver: static fn(): string => 'LIVE'
+                );
+                $liveStatus = $live->status(0, 0);
+                $h->assertSame('TIL', $liveStatus['test_environment']);
+                $h->assertSame('LIVE', $liveStatus['live_environment']);
+                $h->assertSame(['TIL', 'LIVE'], $liveTransport->configurationEnvironments);
+            }
+        );
 
         $h->check(
             \eel_accounts\Service\HmrcCorporationTaxSubmissionService::class,
@@ -367,7 +409,8 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         },
                         $artifactRoot,
                         $package,
-                        $currentManifest
+                        $currentManifest,
+                        xmlEnvironmentResolver: static fn(): string => 'LIVE'
                     );
                     $declaration = [
                         'declaration_name' => 'Jane Director',
@@ -597,7 +640,8 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                             test_tmp_directory() . DIRECTORY_SEPARATOR . 'hmrc-uncertain-' . bin2hex(random_bytes(4))
                         ),
                         $package,
-                        $resolver
+                        $resolver,
+                        xmlEnvironmentResolver: static fn(): string => 'LIVE'
                     );
                     $declaration = [
                         'declaration_name' => 'Jane Director',

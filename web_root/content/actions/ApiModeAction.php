@@ -17,6 +17,7 @@ final class ApiModeAction implements ActionInterfaceFramework
         $current_chMode = \eel_accounts\Store\AccountingConfigurationStore::companiesHouseMode();
         $current_chAccountsFilingMode = \eel_accounts\Store\AccountingConfigurationStore::companiesHouseAccountsFilingMode();
         $current_hmrcMode = \eel_accounts\Store\AccountingConfigurationStore::hmrcMode();
+        $current_hmrcXmlMode = \eel_accounts\Store\AccountingConfigurationStore::hmrcXmlMode();
 
         switch ($intent) {
             case 'check':
@@ -52,6 +53,10 @@ final class ApiModeAction implements ActionInterfaceFramework
                 if (!in_array($requested_chAccountsFilingMode, ['DISABLED', 'TEST', 'LIVE'], true)) {
                     $requested_chAccountsFilingMode = 'DISABLED';
                 }
+                $requested_hmrcXmlMode = strtoupper(trim((string)$request->input('hmrc_xml_mode')));
+                if (!in_array($requested_hmrcXmlMode, ['DISABLED', 'TEST', 'LIVE'], true)) {
+                    $requested_hmrcXmlMode = 'DISABLED';
+                }
 
                 $changed = false;
 
@@ -70,7 +75,13 @@ final class ApiModeAction implements ActionInterfaceFramework
 
                 if ($current_hmrcMode <> $requested_hmrcMode) {
                     \eel_accounts\Store\AccountingConfigurationStore::setHmrcMode($requested_hmrcMode);
-                    $flashMessages[] = 'HMRC API mode saved as ' . $requested_hmrcMode . '.';
+                    $flashMessages[] = 'HMRC REST environment saved as ' . $requested_hmrcMode . '.';
+                    $changed = true;
+                }
+
+                if ($current_hmrcXmlMode <> $requested_hmrcXmlMode) {
+                    \eel_accounts\Store\AccountingConfigurationStore::setHmrcXmlMode($requested_hmrcXmlMode);
+                    $flashMessages[] = 'HMRC XML environment saved as ' . $requested_hmrcXmlMode . '.';
                     $changed = true;
                 }
 

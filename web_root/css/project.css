@@ -1105,6 +1105,15 @@
   background: var(--panel-soft);
 }
 
+.summary-card.primary {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+}
+
+.hmrc-connection-credential-helper {
+  margin-block: 12px;
+}
+
 .summary-card.warn {
   background: var(--warning-soft);
   border-color: #f5d08a;

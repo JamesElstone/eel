@@ -39,6 +39,9 @@ final class HmrcCorporationTaxSubmissionService
     /** @var null|\Closure(int,int): array */
     private ?\Closure $manifestResolver;
 
+    /** @var null|\Closure(): string */
+    private ?\Closure $xmlEnvironmentResolver;
+
     private string $artifactRoot;
     private TransmissionArchiveService $archives;
 
@@ -49,7 +52,8 @@ final class HmrcCorporationTaxSubmissionService
         ?string $artifactRoot = null,
         ?callable $packagePreparer = null,
         ?callable $manifestResolver = null,
-        ?TransmissionArchiveService $archiveService = null
+        ?TransmissionArchiveService $archiveService = null,
+        ?callable $xmlEnvironmentResolver = null
     ) {
         $this->transport = $transport ?? new HmrcCtTransactionEngineClient();
         $this->packages = $packages ?? new HmrcSubmissionPackageService();
@@ -60,6 +64,9 @@ final class HmrcCorporationTaxSubmissionService
         $this->manifestResolver = $manifestResolver === null
             ? null
             : \Closure::fromCallable($manifestResolver);
+        $this->xmlEnvironmentResolver = $xmlEnvironmentResolver === null
+            ? null
+            : \Closure::fromCallable($xmlEnvironmentResolver);
         $this->artifactRoot = $this->resolveArtifactRoot($artifactRoot);
         $this->archives = $archiveService ?? new TransmissionArchiveService($this->artifactRoot);
     }
@@ -67,17 +74,27 @@ final class HmrcCorporationTaxSubmissionService
     /** @return array<string, mixed> */
     public function status(int $companyId, int $accountingPeriodId): array
     {
-        $environments = [
-            'TEST' => $this->transport->configurationStatus('TEST'),
-            'TIL' => $this->transport->configurationStatus('TIL'),
-            'LIVE' => $this->transport->configurationStatus('LIVE'),
-        ];
+        $xmlEnvironment = $this->xmlEnvironment();
+        $testEnvironment = match ($xmlEnvironment) {
+            'TEST' => 'TEST',
+            'LIVE' => 'TIL',
+            default => 'DISABLED',
+        };
+        $liveEnvironment = $xmlEnvironment === 'LIVE' ? 'LIVE' : 'DISABLED';
+        $environments = ['DISABLED' => $this->disabledConfiguration()];
+        if ($xmlEnvironment === 'TEST') {
+            $environments['TEST'] = $this->transport->configurationStatus('TEST');
+        } elseif ($xmlEnvironment === 'LIVE') {
+            $environments['TIL'] = $this->transport->configurationStatus('TIL');
+            $environments['LIVE'] = $this->transport->configurationStatus('LIVE');
+        }
         $base = [
             'success' => false,
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
-            'test_environment' => 'TIL',
-            'live_environment' => 'LIVE',
+            'xml_environment' => $xmlEnvironment,
+            'test_environment' => $testEnvironment,
+            'live_environment' => $liveEnvironment,
             'environments' => $environments,
             'periods' => [],
             'errors' => [],
@@ -109,21 +126,28 @@ final class HmrcCorporationTaxSubmissionService
         foreach ($periods as $period) {
             $ctPeriodId = (int)$period['id'];
             $submissions = $this->fetchForCtPeriod($companyId, $ctPeriodId);
-            $latestTest = $this->firstMode($submissions, 'TIL');
+            $latestTest = $testEnvironment === 'DISABLED'
+                ? null
+                : $this->firstMode($submissions, $testEnvironment);
             $latestLive = $this->firstMode($submissions, 'LIVE');
             $pending = $this->firstPending($submissions);
             $manifest = $this->safeCurrentManifest($companyId, $ctPeriodId);
             $manifestHash = (string)($manifest['source_manifest_sha256'] ?? '');
             $bodyHash = (string)($manifest['body_sha256'] ?? '');
+            $latestTestAttempt = $this->firstModeForBody($submissions, 'TEST', $bodyHash);
+            $latestTilAttempt = $this->firstModeForBody($submissions, 'TIL', $bodyHash);
+            $latestLiveAttempt = $this->firstModeForBody($submissions, 'LIVE', $bodyHash);
 
             $testBlockers = array_values(array_map(
                 'strval',
-                (array)($environments['TIL']['blockers'] ?? [])
+                (array)($environments[$testEnvironment]['blockers'] ?? [])
             ));
-            $liveBlockers = array_values(array_map(
-                'strval',
-                (array)($environments['LIVE']['blockers'] ?? [])
-            ));
+            $liveBlockers = $xmlEnvironment === 'LIVE'
+                ? array_values(array_map(
+                    'strval',
+                    (array)($environments[$liveEnvironment]['blockers'] ?? [])
+                ))
+                : [];
             if (empty($manifest['ok'])) {
                 $errors = (array)($manifest['errors'] ?? ['The current filing source manifest is not ready.']);
                 $testBlockers = array_merge($testBlockers, array_map('strval', $errors));
@@ -136,12 +160,20 @@ final class HmrcCorporationTaxSubmissionService
                 $testBlockers[] = $message;
                 $liveBlockers[] = $message;
             }
-            if ($this->matchesSuccessfulTest($latestTest, $manifestHash, $bodyHash)) {
-                $testBlockers[] = 'This exact filing body has already passed HMRC Test in Live.';
+            if ($this->matchesSuccessfulTest($latestTest, $manifestHash, $bodyHash, $testEnvironment)) {
+                $testBlockers[] = $testEnvironment === 'TEST'
+                    ? 'This exact filing body has already passed the HMRC TEST service.'
+                    : 'This exact filing body has already passed HMRC Test in Live.';
             }
-            $testGate = $this->successfulTestForHashes($companyId, $ctPeriodId, $manifestHash, $bodyHash);
-            if (!is_array($testGate)) {
-                $liveBlockers[] = 'The exact current filing body must pass HMRC Test in Live before LIVE filing.';
+            if ($xmlEnvironment === 'LIVE') {
+                $testGate = $this->successfulTestForHashes($companyId, $ctPeriodId, $manifestHash, $bodyHash);
+                if (!is_array($testGate)) {
+                    $liveBlockers[] = 'The exact current filing body must pass HMRC Test in Live before LIVE filing.';
+                }
+            } else {
+                if ($xmlEnvironment === 'DISABLED') {
+                    $liveBlockers[] = 'HMRC XML transmission is disabled in Application API Credentials.';
+                }
             }
             if (is_array($latestLive) && (string)$latestLive['business_outcome'] === 'live_accepted') {
                 $liveBlockers[] = 'HMRC has already accepted a LIVE return for this CT period.';
@@ -153,12 +185,17 @@ final class HmrcCorporationTaxSubmissionService
                 'period_start' => (string)$period['period_start'],
                 'period_end' => (string)$period['period_end'],
                 'ct_period_status' => (string)$period['status'],
-                'test_environment' => 'TIL',
-                'live_environment' => 'LIVE',
+                'xml_environment' => $xmlEnvironment,
+                'test_environment' => $testEnvironment,
+                'live_environment' => $liveEnvironment,
                 'current_manifest_sha256' => $manifestHash,
                 'current_body_sha256' => $bodyHash,
                 'latest_test' => $latestTest,
                 'latest_live' => $latestLive,
+                'latest_test_attempt' => $latestTestAttempt,
+                'latest_til_attempt' => $latestTilAttempt,
+                'latest_live_attempt' => $latestLiveAttempt,
+                'filing_dependencies' => $this->filingDependencies($manifest),
                 'latest_submission' => $submissions[0] ?? null,
                 'pending_submission' => $pending,
                 'declaration' => [
@@ -182,14 +219,25 @@ final class HmrcCorporationTaxSubmissionService
         return $base;
     }
 
-    /** Test means HMRC Test in Live (TIL), never ETS, for this user workflow. */
+    /** TEST mode uses ETS; LIVE mode requires Test in Live before statutory filing. */
     public function submitTest(
         int $companyId,
         int $ctPeriodId,
         int|string|null $actor = null,
         array $declaration = []
     ): array {
-        return $this->submitMode($companyId, $ctPeriodId, 'TIL', $actor, $declaration);
+        $xmlEnvironment = $this->xmlEnvironment();
+        if ($xmlEnvironment === 'DISABLED') {
+            return $this->failure('HMRC XML transmission is disabled in Application API Credentials.');
+        }
+
+        return $this->submitMode(
+            $companyId,
+            $ctPeriodId,
+            $xmlEnvironment === 'TEST' ? 'TEST' : 'TIL',
+            $actor,
+            $declaration
+        );
     }
 
     public function submitLive(
@@ -203,6 +251,10 @@ final class HmrcCorporationTaxSubmissionService
 
     public function poll(int $submissionId, int|string|null $actor = null): array
     {
+        $xmlEnvironment = $this->xmlEnvironment();
+        if ($xmlEnvironment === 'DISABLED') {
+            return $this->failure('HMRC XML transmission is disabled in Application API Credentials.');
+        }
         $schemaError = $this->schemaError();
         if ($schemaError !== null) {
             return $this->failure($schemaError);
@@ -210,6 +262,13 @@ final class HmrcCorporationTaxSubmissionService
         $submission = $this->fetchById($submissionId);
         if (!is_array($submission)) {
             return $this->failure('The HMRC submission does not exist.');
+        }
+        if (!$this->environmentPermitted((string)$submission['environment'], $xmlEnvironment)) {
+            return $this->failure(
+                'The pending HMRC conversation does not belong to the selected HMRC XML environment.',
+                $submissionId,
+                $submission
+            );
         }
         $state = (string)$submission['protocol_state'];
         if ($state === 'transport_uncertain') {
@@ -308,6 +367,12 @@ final class HmrcCorporationTaxSubmissionService
         int|string|null $actor,
         array $declaration
     ): array {
+        $xmlEnvironment = $this->xmlEnvironment();
+        if (!$this->environmentPermitted($mode, $xmlEnvironment)) {
+            return $this->failure($xmlEnvironment === 'DISABLED'
+                ? 'HMRC XML transmission is disabled in Application API Credentials.'
+                : 'The requested HMRC transmission is not permitted by the selected HMRC XML environment.');
+        }
         $schemaError = $this->schemaError();
         if ($schemaError !== null) {
             return $this->failure($schemaError);
@@ -1212,15 +1277,56 @@ final class HmrcCorporationTaxSubmissionService
         return is_array($row) ? $this->normaliseSubmission($row) : null;
     }
 
-    private function matchesSuccessfulTest(?array $row, string $manifestHash, string $bodyHash): bool
+    private function matchesSuccessfulTest(
+        ?array $row,
+        string $manifestHash,
+        string $bodyHash,
+        string $environment
+    ): bool
     {
+        $expectedOutcome = $environment === 'TEST' ? 'sandbox_passed' : 'til_validated';
+
         return is_array($row)
-            && (string)($row['business_outcome'] ?? '') === 'til_validated'
+            && (string)($row['business_outcome'] ?? '') === $expectedOutcome
             && (string)($row['protocol_state'] ?? '') === 'closed'
             && $manifestHash !== ''
             && $bodyHash !== ''
             && hash_equals($manifestHash, (string)($row['source_manifest_sha256'] ?? ''))
             && hash_equals($bodyHash, (string)($row['body_sha256'] ?? ''));
+    }
+
+    private function xmlEnvironment(): string
+    {
+        $mode = $this->xmlEnvironmentResolver instanceof \Closure
+            ? ($this->xmlEnvironmentResolver)()
+            : \eel_accounts\Store\AccountingConfigurationStore::hmrcXmlMode();
+        $mode = strtoupper(trim((string)$mode));
+
+        return in_array($mode, ['TEST', 'LIVE'], true) ? $mode : 'DISABLED';
+    }
+
+    private function environmentPermitted(string $environment, string $xmlEnvironment): bool
+    {
+        $environment = strtoupper(trim($environment));
+
+        return ($xmlEnvironment === 'TEST' && $environment === 'TEST')
+            || ($xmlEnvironment === 'LIVE' && in_array($environment, ['TIL', 'LIVE'], true));
+    }
+
+    /** @return array<string,mixed> */
+    private function disabledConfiguration(): array
+    {
+        return [
+            'ready' => false,
+            'credentials_configured' => false,
+            'environment' => 'DISABLED',
+            'credential_environment' => 'DISABLED',
+            'class' => '',
+            'endpoint' => '',
+            'poll_endpoint' => '',
+            'statutory' => false,
+            'blockers' => ['HMRC XML transmission is disabled in Application API Credentials.'],
+        ];
     }
 
     private function normaliseDeclaration(array $declaration): array
@@ -1234,9 +1340,7 @@ final class HmrcCorporationTaxSubmissionService
             )),
             'declaration_confirmed' => $this->truthy($declaration['declaration_confirmed'] ?? false),
             'authority_confirmed' => $this->truthy($declaration['authority_confirmed'] ?? false),
-            'supplementary_scope_confirmed' => $this->truthy(
-                $declaration['supplementary_scope_confirmed'] ?? false
-            ),
+            'supplementary_scope_confirmed' => true,
             'original_unfiled_confirmed' => $this->truthy(
                 $declaration['original_unfiled_confirmed'] ?? false
             ),
@@ -1261,9 +1365,6 @@ final class HmrcCorporationTaxSubmissionService
         }
         if (!$declaration['declaration_confirmed']) {
             $errors[] = 'Confirm the Company Tax Return declaration.';
-        }
-        if (!$declaration['supplementary_scope_confirmed']) {
-            $errors[] = 'Confirm the assessed supplementary-page scope.';
         }
         if (!$declaration['original_unfiled_confirmed']) {
             $errors[] = 'Confirm that this is the original unfiled return for the CT period.';
@@ -1298,6 +1399,52 @@ final class HmrcCorporationTaxSubmissionService
         }
 
         return null;
+    }
+
+    private function firstModeForBody(array $rows, string $mode, string $bodyHash): ?array
+    {
+        if (!preg_match('/^[a-f0-9]{64}$/D', $bodyHash)) {
+            return null;
+        }
+        foreach ($rows as $row) {
+            if ((string)$row['environment'] === $mode
+                && hash_equals($bodyHash, (string)($row['body_sha256'] ?? ''))) {
+                return $row;
+            }
+        }
+
+        return null;
+    }
+
+    /** @return list<array{label:string,ready:bool,message:string}> */
+    private function filingDependencies(array $manifest): array
+    {
+        $errors = array_values(array_filter(array_map('strval', (array)($manifest['errors'] ?? []))));
+        $text = strtolower(implode(' ', $errors));
+        $definitions = [
+            ['CT600 source model', ['ct600 source model', 'filing source manifest']],
+            ['CT-period filing basis', ['ct-period filing basis']],
+            ['Disclosures and filing basis', ['current disclosures and filing basis']],
+        ];
+        $dependencies = [];
+        foreach ($definitions as [$label, $needles]) {
+            $message = '';
+            foreach ($errors as $error) {
+                foreach ($needles as $needle) {
+                    if (str_contains(strtolower($error), $needle)) {
+                        $message = $error;
+                        break 2;
+                    }
+                }
+            }
+            $dependencies[] = [
+                'label' => $label,
+                'ready' => $message === '' && !empty($manifest['ok']),
+                'message' => $message,
+            ];
+        }
+
+        return $dependencies;
     }
 
     private function firstPending(array $rows): ?array

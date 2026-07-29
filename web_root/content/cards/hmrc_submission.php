@@ -7,15 +7,15 @@
  */
 declare(strict_types=1);
 
-final class _hmrc_submission_unavailableCard extends CardBaseFramework
+final class _hmrc_submissionCard extends CardBaseFramework
 {
-    public function key(): string { return 'hmrc_submission_unavailable'; }
+    public function key(): string { return 'hmrc_submission'; }
 
     public function title(): string { return 'HMRC Corporation Tax transmission'; }
 
     public function helper(array $context): string
     {
-        return 'Test each CT600 through HMRC Test in Live, then submit the unchanged filing to LIVE only after every local and HMRC gate passes.';
+        return 'Transmit CT600 XML using the HMRC XML environment selected in Application API Credentials.';
     }
 
     public function services(): array
@@ -54,9 +54,17 @@ final class _hmrc_submission_unavailableCard extends CardBaseFramework
 
         $status = (array)(($context['services'] ?? [])['hmrc_ct600_status'] ?? []);
         $periods = (array)($status['periods'] ?? []);
+        $xmlEnvironment = strtoupper(trim((string)($status['xml_environment'] ?? 'DISABLED')));
+        $controlsDisabled = $xmlEnvironment === 'DISABLED';
+        $workflowNotice = match ($xmlEnvironment) {
+            'TEST' => '',
+            'LIVE' => '<div class="notice warning"><strong>HMRC Test in Live does not file the return.</strong> '
+                . 'The LIVE action remains locked unless TIL accepted the same filing body and source manifest.</div>',
+            default => '<div class="notice warning"><strong>HMRC XML transmission is disabled.</strong> '
+                . 'Enable TEST or LIVE in Application API Credentials before using these controls.</div>',
+        };
         $html = '<div class="settings-stack">'
-            . '<div class="notice warning"><strong>HMRC Test in Live does not file the return.</strong> '
-            . 'The LIVE action remains locked unless TIL accepted the same filing body and source manifest.</div>'
+            . $workflowNotice
             . $this->environmentSummary($status);
 
         foreach ($this->messages((array)($status['errors'] ?? [])) as $error) {
@@ -68,7 +76,12 @@ final class _hmrc_submission_unavailableCard extends CardBaseFramework
         }
 
         foreach ($periods as $period) {
-            $html .= $this->periodPanel((array)$period, $companyId, $accountingPeriodId);
+            $html .= $this->periodPanel(
+                (array)$period,
+                $companyId,
+                $accountingPeriodId,
+                $controlsDisabled
+            );
         }
 
         return $html . '</div>';
@@ -77,76 +90,88 @@ final class _hmrc_submission_unavailableCard extends CardBaseFramework
     private function environmentSummary(array $status): string
     {
         $environments = (array)($status['environments'] ?? []);
-        $testName = strtoupper(trim((string)($status['test_environment'] ?? 'TIL')));
-        $liveName = strtoupper(trim((string)($status['live_environment'] ?? 'LIVE')));
-        $test = (array)($environments[$testName] ?? []);
-        $live = (array)($environments[$liveName] ?? []);
+        $xmlEnvironment = strtoupper(trim((string)($status['xml_environment'] ?? 'DISABLED')));
+        $profile = (array)($environments[$xmlEnvironment === 'LIVE' ? 'TIL' : $xmlEnvironment] ?? []);
+        $environmentClass = match ($xmlEnvironment) {
+            'TEST' => 'success',
+            'LIVE' => 'warn',
+            default => 'primary',
+        };
+        $environmentLabel = match ($xmlEnvironment) {
+            'TEST' => 'Test',
+            'LIVE' => 'Live',
+            default => 'Disabled',
+        };
+        $html = '<section class="panel-soft"><div class="status-head"><h3 class="card-title">HMRC connection</h3></div>';
 
-        $html = '<section class="panel-soft"><div class="status-head"><h3 class="card-title">HMRC connection</h3></div>'
-            . '<div class="summary-grid">'
-            . $this->metric('Test mode', $testName)
-            . $this->metric('TIL credentials', $this->credentialLabel($test))
-            . $this->metric('Live mode', $liveName)
-            . $this->metric('LIVE credentials', $this->credentialLabel($live))
-            . '</div>';
-
-        $environmentBlockers = array_merge(
-            $this->messages((array)($test['blockers'] ?? [])),
-            $this->messages((array)($live['blockers'] ?? []))
-        );
+        $environmentBlockers = $this->messages((array)($profile['blockers'] ?? []));
         foreach (array_values(array_unique($environmentBlockers)) as $blocker) {
-            $html .= '<div class="helper"><span class="badge warning">Connection blocker</span> '
+            $classes = 'helper' . ($this->isXmlCredentialBlocker($blocker)
+                ? ' hmrc-connection-credential-helper'
+                : '');
+            $html .= '<div class="' . $classes . '">'
                 . \eel_accounts\Support\Utf8::html($blocker) . '</div>';
         }
 
-        return $html . '</section>';
+        $html .= '<div class="summary-grid">'
+            . $this->metric('Environment', $environmentLabel, $environmentClass);
+        if ($xmlEnvironment !== 'DISABLED') {
+            $html .= $this->credentialMetric($xmlEnvironment, $profile);
+        }
+
+        return $html . '</div></section>';
     }
 
-    private function periodPanel(array $period, int $companyId, int $accountingPeriodId): string
+    private function periodPanel(
+        array $period,
+        int $companyId,
+        int $accountingPeriodId,
+        bool $controlsDisabled
+    ): string
     {
         $ctPeriodId = (int)($period['ct_period_id'] ?? $period['id'] ?? 0);
         $start = trim((string)($period['period_start'] ?? ''));
         $end = trim((string)($period['period_end'] ?? ''));
         $testReady = !empty($period['test_ready']);
         $liveReady = !empty($period['live_ready']);
-        $latestTest = (array)($period['latest_test'] ?? []);
-        $latestLive = (array)($period['latest_live'] ?? []);
+        $latestTest = (array)($period['latest_test_attempt'] ?? $period['latest_test'] ?? []);
+        $latestTil = (array)($period['latest_til_attempt'] ?? $period['latest_test'] ?? []);
+        $latestLive = (array)($period['latest_live_attempt'] ?? $period['latest_live'] ?? []);
         $pending = (array)($period['pending_submission'] ?? []);
         $pendingId = (int)($pending['submission_id'] ?? $pending['id'] ?? 0);
         $pendingState = strtolower(trim((string)($pending['protocol_state'] ?? '')));
-        $canPoll = $pendingId > 0 && (!empty($pending['needs_poll'])
+        $canPoll = !$controlsDisabled && $pendingId > 0 && (!empty($pending['needs_poll'])
             || in_array($pendingState, ['awaiting_poll', 'delete_pending'], true));
         [$badgeClass, $badgeLabel] = $this->periodBadge($period);
 
-        $reference = trim((string)($latestLive['hmrc_reference']
-            ?? $latestLive['hmrc_submission_reference']
-            ?? $latestLive['hmrc_correlation_id']
-            ?? $latestLive['correlation_id']
-            ?? $latestTest['hmrc_reference']
-            ?? $latestTest['hmrc_submission_reference']
-            ?? $latestTest['hmrc_correlation_id']
-            ?? $latestTest['correlation_id']
-            ?? ''));
-        $irmark = trim((string)($latestLive['irmark'] ?? $latestTest['irmark'] ?? ''));
-        $archiveSubmission = $pending !== [] ? $pending : ($latestLive !== [] ? $latestLive : $latestTest);
+        $irmark = trim((string)($latestLive['irmark'] ?? $latestTil['irmark'] ?? $latestTest['irmark'] ?? ''));
+        $archiveSubmission = $pending !== [] ? $pending : ($latestLive !== [] ? $latestLive : ($latestTil !== [] ? $latestTil : $latestTest));
         $archive = (array)($archiveSubmission['transmission_archive'] ?? []);
-        $html = '<section class="panel-soft"><div class="status-head"><h3 class="card-title">CT period '
-            . \eel_accounts\Support\Utf8::html($start) . ' to ' . \eel_accounts\Support\Utf8::html($end)
+        $sequence = max(1, (int)($period['sequence_no'] ?? 0));
+        $html = '<section class="panel-soft"><div class="status-head"><h3 class="card-title">CT Period '
+            . $sequence . ' (' . \eel_accounts\Support\Utf8::html($start) . ' to ' . \eel_accounts\Support\Utf8::html($end) . '):'
             . '</h3><span class="badge ' . $badgeClass . '">' . \eel_accounts\Support\Utf8::html($badgeLabel) . '</span></div>'
             . '<div class="summary-grid">'
-            . $this->metric('Last TIL result', $this->submissionLabel($latestTest))
-            . $this->metric('LIVE result', $this->submissionLabel($latestLive))
-            . $this->metric('IRmark', $irmark !== '' ? $irmark : 'Not generated')
-            . $this->metric('HMRC reference', $reference !== '' ? $reference : 'Not issued')
-            . $this->metric('Private archive', $archive !== [] ? 'Captured and hashed' : 'Created on send')
+            . $this->submissionStateMetric('Test In Live State', $latestTil)
+            . $this->submissionStateMetric('Submission Result', $latestLive)
+            . $this->submissionStateMetric('Test Result', $latestTest)
+            . '</div><div class="summary-grid">'
+            . $this->metric('HMRC TIL Reference', $this->reference($latestTil))
+            . $this->metric('HMRC Live Reference', $this->reference($latestLive))
+            . $this->metric('Test Reference', $this->reference($latestTest))
+            . '</div><div class="summary-grid">'
+            . $this->metric('IRMARK', $irmark !== '' ? $irmark : 'Not generated')
+            . $this->metric('Private Archive', $archive !== [] ? 'Captured and hashed' : 'Not created')
             . '</div>';
+
+        $html .= '<div class="summary-grid">' . $this->dependencyMetrics((array)($period['filing_dependencies'] ?? [])) . '</div>';
 
         $blockers = array_values(array_unique(array_merge(
             $this->messages((array)($period['blockers'] ?? [])),
             $this->messages((array)($period['test_blockers'] ?? [])),
             $this->messages((array)($period['live_blockers'] ?? []))
         )));
-        foreach ($blockers as $blocker) {
+        foreach (array_filter($blockers, fn(string $blocker): bool => !$this->isCardDependency($blocker) && !$this->isXmlCredentialBlocker($blocker)) as $blocker) {
             $html .= '<div class="notice warning">' . \eel_accounts\Support\Utf8::html($blocker) . '</div>';
         }
 
@@ -158,7 +183,8 @@ final class _hmrc_submission_unavailableCard extends CardBaseFramework
             $end,
             $testReady,
             $liveReady,
-            $period
+            $period,
+            $controlsDisabled
         );
         if ($canPoll) {
             $html .= '<div class="form-row-actions">'
@@ -196,29 +222,30 @@ final class _hmrc_submission_unavailableCard extends CardBaseFramework
         string $end,
         bool $testEnabled,
         bool $liveEnabled,
-        array $period
+        array $period,
+        bool $controlsDisabled
     ): string {
-        $testDisabled = $testEnabled ? '' : ' disabled';
-        $liveDisabled = $liveEnabled ? '' : ' disabled';
+        $testDisabled = $testEnabled && !$controlsDisabled ? '' : ' disabled';
+        $liveDisabled = $liveEnabled && !$controlsDisabled ? '' : ' disabled';
+        $fieldDisabled = $controlsDisabled ? ' disabled' : '';
         $periodLabel = trim($start . ' to ' . $end);
         $declaration = (array)($period['declaration'] ?? []);
         $declarationName = trim((string)($declaration['declaration_name'] ?? $period['declaration_name'] ?? ''));
         $declarationStatus = trim((string)($declaration['declaration_status'] ?? $period['declaration_status'] ?? ''));
 
-        return '<form method="post" action="?page=transmit" data-ajax="true" class="settings-stack">'
+        return '<section class="panel-soft"><form method="post" action="?page=transmit" data-ajax="true" class="settings-stack">'
             . $this->hiddenFields($companyId, $accountingPeriodId, $ctPeriodId)
             . '<h4>Return declaration</h4>'
             . '<div class="helper">These details form part of the tested filing body. Leave them unchanged between a successful TIL test and LIVE submission.</div>'
             . '<div class="form-row half"><label for="hmrc-declaration-name-' . $ctPeriodId . '">Declarant name</label>'
             . '<input class="input" id="hmrc-declaration-name-' . $ctPeriodId . '" name="declaration_name" type="text" value="'
-            . \eel_accounts\Support\Utf8::html($declarationName) . '" required></div>'
+            . \eel_accounts\Support\Utf8::html($declarationName) . '" required' . $fieldDisabled . '></div>'
             . '<div class="form-row half"><label for="hmrc-declaration-status-' . $ctPeriodId . '">Declarant status or capacity</label>'
             . '<input class="input" id="hmrc-declaration-status-' . $ctPeriodId . '" name="declaration_status" type="text" value="'
-            . \eel_accounts\Support\Utf8::html($declarationStatus) . '" required></div>'
-            . $this->confirmation('original_unfiled_confirmed', $ctPeriodId, 'This is an original return and has not already been filed for this CT period.')
-            . $this->confirmation('supplementary_scope_confirmed', $ctPeriodId, 'I confirm the supported return does not require a supplementary page.')
-            . $this->confirmation('authority_confirmed', $ctPeriodId, 'I am authorised to file this Corporation Tax return for the company.')
-            . $this->confirmation('declaration_confirmed', $ctPeriodId, 'I declare that the information in this return is correct and complete to the best of my knowledge and belief.')
+            . \eel_accounts\Support\Utf8::html($declarationStatus) . '" required' . $fieldDisabled . '></div>'
+            . $this->confirmation('original_unfiled_confirmed', $ctPeriodId, 'This is an original return and has not already been filed for this CT period.', $controlsDisabled)
+            . $this->confirmation('authority_confirmed', $ctPeriodId, 'I am authorised to file this Corporation Tax return for the company.', $controlsDisabled)
+            . $this->confirmation('declaration_confirmed', $ctPeriodId, 'I declare that the information in this return is correct and complete to the best of my knowledge and belief.', $controlsDisabled)
             . '<div class="actions-row">'
             . '<button class="button primary" type="submit" name="intent" value="hmrc_submit_test"' . $testDisabled . '>Test</button>'
             . '<button class="button danger" type="submit" name="intent" value="hmrc_submit_live"' . $liveDisabled
@@ -226,15 +253,15 @@ final class _hmrc_submission_unavailableCard extends CardBaseFramework
             . ' data-chicken-message="Submit the CT600 for ' . \eel_accounts\Support\Utf8::html($periodLabel)
             . ' to HMRC LIVE?&lt;br&gt;&lt;br&gt;This is a statutory filing and cannot be undone in this application."'
             . ' data-chicken-confirm-text="Submit Tax Return">Submit Tax Return</button></div>'
-            . ($liveEnabled ? '' : '<div class="helper">A successful TIL result for the current body and source manifest is required before LIVE submission.</div>')
-            . '</form>';
+            . '</form></section>';
     }
 
-    private function confirmation(string $name, int $ctPeriodId, string $label): string
+    private function confirmation(string $name, int $ctPeriodId, string $label, bool $disabled): string
     {
         $id = 'hmrc-' . str_replace('_', '-', $name) . '-' . $ctPeriodId;
         return '<label class="checkbox-row" for="' . $id . '"><input id="' . $id . '" name="'
-            . \eel_accounts\Support\Utf8::html($name) . '" type="checkbox" value="1" required> '
+            . \eel_accounts\Support\Utf8::html($name) . '" type="checkbox" value="1" required'
+            . ($disabled ? ' disabled' : '') . '> '
             . \eel_accounts\Support\Utf8::html($label) . '</label>';
     }
 
@@ -285,18 +312,83 @@ final class _hmrc_submission_unavailableCard extends CardBaseFramework
         };
     }
 
-    private function credentialLabel(array $environment): string
+    private function submissionStateMetric(string $label, array $submission): string
     {
-        if ($environment === [] || !array_key_exists('credentials_configured', $environment)) {
-            return 'Unavailable';
-        }
-        return !empty($environment['credentials_configured']) ? 'Configured' : 'Unavailable';
+        $outcome = strtolower(trim((string)($submission['business_outcome'] ?? '')));
+        $successful = in_array($outcome, ['sandbox_passed', 'til_validated', 'live_accepted', 'accepted'], true);
+        $value = $submission === [] ? 'Not attempted' : ($successful ? 'Successful' : 'Not successful');
+
+        return $this->metric($label, $value, $successful ? 'success' : 'warn');
     }
 
-    private function metric(string $label, string $value): string
+    private function reference(array $submission): string
     {
-        return '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label)
-            . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div></div>';
+        return trim((string)($submission['hmrc_reference']
+            ?? $submission['hmrc_submission_reference']
+            ?? $submission['hmrc_correlation_id']
+            ?? $submission['correlation_id']
+            ?? '')) ?: 'Not issued';
+    }
+
+    private function dependencyMetrics(array $dependencies): string
+    {
+        $byLabel = [];
+        foreach ($dependencies as $dependency) {
+            if (is_array($dependency)) {
+                $byLabel[(string)($dependency['label'] ?? '')] = $dependency;
+            }
+        }
+        $html = '';
+        foreach (['CT600 source model', 'CT-period filing basis', 'Disclosures and filing basis'] as $label) {
+            $dependency = (array)($byLabel[$label] ?? []);
+            $ready = !empty($dependency['ready']);
+            $message = trim((string)($dependency['message'] ?? ''));
+            $html .= $this->metric(
+                $label,
+                $ready ? 'Present' : ($message !== '' ? $message : 'Required'),
+                $ready ? 'success' : 'danger',
+                !$ready
+            );
+        }
+
+        return $html;
+    }
+
+    private function isCardDependency(string $message): bool
+    {
+        $message = strtolower($message);
+        return str_contains($message, 'ct600 source model')
+            || str_contains($message, 'filing source manifest')
+            || str_contains($message, 'ct-period filing basis')
+            || str_contains($message, 'current disclosures and filing basis');
+    }
+
+    private function isXmlCredentialBlocker(string $message): bool
+    {
+        return str_starts_with(strtolower(trim($message)), 'api credential not found for hmrc / xml / ct600_xml /');
+    }
+
+    private function credentialMetric(string $environment, array $profile): string
+    {
+        if (!empty($profile['credentials_configured'])) {
+            return $this->metric('Credentials', 'Configured', 'success');
+        }
+
+        return $this->metric(
+            'Credentials',
+            'HMRC / XML / CT600_XML / ' . $environment . ' Credentials Missing',
+            'danger',
+            true
+        );
+    }
+
+    private function metric(string $label, string $value, string $class = '', bool $helper = false): string
+    {
+        $classes = 'summary-card' . ($class !== '' ? ' ' . $class : '');
+        $contentClass = $helper ? 'helper' : 'summary-value';
+        return '<div class="' . \eel_accounts\Support\Utf8::html($classes) . '"><div class="summary-label">'
+            . \eel_accounts\Support\Utf8::html($label) . '</div><div class="' . $contentClass . '">'
+            . \eel_accounts\Support\Utf8::html($value) . '</div></div>';
     }
 
     /** @return list<string> */

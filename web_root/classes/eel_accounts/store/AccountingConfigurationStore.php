@@ -15,6 +15,9 @@ final class AccountingConfigurationStore
     public const CH_ACCOUNTS_FILING_DISABLED = 'DISABLED';
     public const CH_ACCOUNTS_FILING_TEST = 'TEST';
     public const CH_ACCOUNTS_FILING_LIVE = 'LIVE';
+    public const HMRC_XML_DISABLED = 'DISABLED';
+    public const HMRC_XML_TEST = 'TEST';
+    public const HMRC_XML_LIVE = 'LIVE';
 
     public static function companiesHouseMode(bool $reload = false): string
     {
@@ -81,6 +84,35 @@ final class AccountingConfigurationStore
     public static function setHmrcMode(string $mode): array
     {
         return \AppConfigurationStore::set('runtime.hmrc_mode', \HelperFramework::normaliseEnvironmentMode($mode));
+    }
+
+    /** A missing or invalid HMRC XML filing mode always fails closed. */
+    public static function hmrcXmlMode(bool $reload = false): string
+    {
+        $mode = strtoupper(trim((string)\AppConfigurationStore::get(
+            'runtime.hmrc_xml_mode',
+            self::HMRC_XML_DISABLED,
+            $reload
+        )));
+
+        return in_array($mode, [
+            self::HMRC_XML_TEST,
+            self::HMRC_XML_LIVE,
+        ], true) ? $mode : self::HMRC_XML_DISABLED;
+    }
+
+    public static function setHmrcXmlMode(string $mode): array
+    {
+        $mode = strtoupper(trim($mode));
+        if (!in_array($mode, [
+            self::HMRC_XML_DISABLED,
+            self::HMRC_XML_TEST,
+            self::HMRC_XML_LIVE,
+        ], true)) {
+            $mode = self::HMRC_XML_DISABLED;
+        }
+
+        return \AppConfigurationStore::set('runtime.hmrc_xml_mode', $mode);
     }
 
     public static function uploads(): array

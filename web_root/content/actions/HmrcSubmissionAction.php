@@ -156,7 +156,7 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
             'declaration_status' => trim((string)$request->input('declaration_status', '')),
             'declaration_confirmed' => $this->confirmed($request->input('declaration_confirmed', null)),
             'authority_confirmed' => $this->confirmed($request->input('authority_confirmed', null)),
-            'supplementary_scope_confirmed' => $this->confirmed($request->input('supplementary_scope_confirmed', null)),
+            'supplementary_scope_confirmed' => true,
             'original_unfiled_confirmed' => $this->confirmed($request->input('original_unfiled_confirmed', null)),
         ];
     }
@@ -172,7 +172,6 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
         }
         $confirmations = [
             'original_unfiled_confirmed' => 'Confirm that this is an original, unfiled return.',
-            'supplementary_scope_confirmed' => 'Confirm that no supplementary page is required.',
             'authority_confirmed' => 'Confirm your authority to file this return.',
             'declaration_confirmed' => 'Confirm the Corporation Tax return declaration.',
         ];

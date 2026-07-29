@@ -1064,17 +1064,20 @@ thead th { border-bottom: 1px solid #7b858f; color: #39434d; }
 .identity-table th { width: 34%; color: #4c5661; }
 .financial-table th:first-child { width: auto; }
 .financial-table .amount { width: 31mm; }
-.amount { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums lining-nums; }
+.amount { text-align: right; font-variant-numeric: tabular-nums lining-nums; }
+.accounting-negative, td.amount { white-space: nowrap; }
 .subtotal th, .subtotal td { border-top: 1px solid #68727c; font-weight: 700; }
 .final-total th, .final-total td { border-top: 3px double #273444; border-bottom: 1px solid #273444; font-weight: 700; }
 .aia-table th:nth-child(2), .aia-table td:nth-child(2) { width: 35mm; }
 .aia-table th:nth-child(3), .aia-table td:nth-child(3),
 .aia-table th:nth-child(4), .aia-table td:nth-child(4) { width: 27mm; }
-.accounting-negative { white-space: nowrap; }
 .keep-together { break-inside: avoid; page-break-inside: avoid; }
 @media print {
-  html, body { width: 210mm; min-height: 297mm; }
-  .ct-report { max-width: none; }
+  html, body { width: auto; max-width: 100%; min-height: 0; margin: 0; padding: 0; }
+  .ct-report { box-sizing: border-box; width: 100%; max-width: 100%; margin: 0; }
+  .ct-report table, .ct-report th, .ct-report td { box-sizing: border-box; max-width: 100%; }
+  .ct-report th, .ct-report td:not(.amount) { overflow-wrap: anywhere; word-wrap: break-word; }
+  .ct-report th.amount { white-space: normal; }
   .ct-section, table, tr, .keep-together { break-inside: avoid; page-break-inside: avoid; }
   h1, h2, h3 { break-after: avoid; page-break-after: avoid; }
 }

@@ -161,6 +161,20 @@ function ixbrlTaxComputationMappings(array $model): array
         $result = $service->generateFilingExport(0, 0, 0);
         $h->assertSame(false, $result['success']);
     });
+    $h->check($service::class, 'keeps the print layout within the A4 content box', static function () use ($h, $service): void {
+        $method = new ReflectionMethod($service::class, 'stylesheet');
+        $method->setAccessible(true);
+        $stylesheet = (string)$method->invoke($service);
+
+        $h->assertTrue(str_contains($stylesheet, '@page { size: A4 portrait; margin: 18mm 16mm 18mm 16mm; }'));
+        $h->assertTrue(str_contains($stylesheet, 'html, body { width: auto; max-width: 100%; min-height: 0; margin: 0; padding: 0; }'));
+        $h->assertTrue(str_contains($stylesheet, '.ct-report { box-sizing: border-box; width: 100%; max-width: 100%; margin: 0; }'));
+        $h->assertTrue(str_contains($stylesheet, '.ct-report table, .ct-report th, .ct-report td { box-sizing: border-box; max-width: 100%; }'));
+        $h->assertTrue(str_contains($stylesheet, '.ct-report th.amount { white-space: normal; }'));
+        $h->assertTrue(str_contains($stylesheet, 'td.amount { white-space: nowrap; }'));
+        $h->assertFalse(str_contains($stylesheet, 'width: 210mm'));
+        $h->assertFalse(str_contains($stylesheet, '.ct-report { max-width: none; }'));
+    });
     $h->check($service::class, 'renders deductions allowance only for a relevant loss claim or restriction', static function () use ($h, $service): void {
         $method = new ReflectionMethod($service::class, 'renderDeductionsAllowance');
         $method->setAccessible(true);

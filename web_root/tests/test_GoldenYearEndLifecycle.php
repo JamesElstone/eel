@@ -75,6 +75,10 @@ $harness->check('GoldenYearEndLifecycle', 'does not leak stale persisted AP80 as
 });
 
 $harness->check('GoldenYearEndLifecycle', 'previews the split-period CT provision that Year End will actually post', static function () use ($harness): void {
+    // Earlier Golden controls use rolled-back transactions. Clear their
+    // request-scoped computed models before asserting this independent close
+    // scenario.
+    \eel_accounts\Support\RequestCache::clear();
     $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
     $accountingPeriodId = 9111;
 
@@ -411,8 +415,10 @@ $harness->check('GoldenYearEndLifecycle', 'keeps a following-period profit estim
 });
 
 $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves reporting semantics when completed periods are locked', static function () use ($harness): void {
+    \eel_accounts\Support\RequestCache::clear();
     $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
     $periods = [9111, 9112, 9113];
+    $initialFilingApprovalIds = [];
     goldenYearEndSavePartyLoanTerms($companyId);
     foreach ($periods as $periodId) {
         $sync = (new \eel_accounts\Service\CorporationTaxPeriodService())
@@ -611,6 +617,7 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
             ->approveAndBuildFacts($companyId, $periodId, 'golden_year_end_test', 'Golden lifecycle filing approval.');
         $harness->assertTrue((int)($filingApproval['approval_id'] ?? 0) > 0);
         $harness->assertTrue((int)($filingApproval['fact_run_id'] ?? 0) > 0);
+        $initialFilingApprovalIds[$periodId] = (int)$filingApproval['approval_id'];
         foreach ($ctPeriods as $ctPeriod) {
             $filingModel = (new \eel_accounts\Service\CtPeriodFilingModelService())
                 ->build($companyId, $periodId, (int)$ctPeriod['id']);
@@ -671,6 +678,11 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
             ['company_id' => $companyId, 'period_id' => $periodId]
         );
         $harness->assertSame('reopened', $evidenceStatus);
+        $harness->assertSame(
+            'stale',
+            (string)((new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
+                ->status($companyId, $periodId)['status'] ?? '')
+        );
     }
 
     foreach ($periods as $periodId) {
@@ -697,6 +709,12 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
             ->approveAndBuildFacts($companyId, $periodId, 'golden_year_end_test', 'Golden lifecycle re-lock filing approval.');
         $harness->assertTrue((int)($renewedApproval['approval_id'] ?? 0) > 0);
         $harness->assertTrue((int)($renewedApproval['fact_run_id'] ?? 0) > 0);
+        $harness->assertTrue((int)$renewedApproval['approval_id'] !== (int)($initialFilingApprovalIds[$periodId] ?? 0));
+        $harness->assertSame(
+            'current',
+            (string)((new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
+                ->status($companyId, $periodId)['status'] ?? '')
+        );
     }
 
     foreach (array_reverse($periods) as $periodId) {

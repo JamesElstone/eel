@@ -79,6 +79,75 @@ require_once PROJECT_ROOT . 'third_party' . DIRECTORY_SEPARATOR . 'arelle' . DIR
             ));
         });
 
+        $harness->check(ArelleIxbrlValidator::class, 'parses detailed diagnostics from both streams and deduplicates exact repeats', static function () use ($harness): void {
+            $fixture = arelleValidatorFixture('success');
+            $validator = new ArelleIxbrlValidator($fixture['config'], $fixture['root']);
+            $method = new ReflectionMethod($validator, 'parseDiagnostics');
+            $method->setAccessible(true);
+            $result = $method->invoke(
+                $validator,
+                "[xbrldie:PrimaryItemDimensionallyInvalidError] Fact tax:TradingLossesOfThisOrLaterAP context Ctx1 has invalid dimensional context\r\n"
+                . "[xmlSchema:SomeError] C:\\filing\\accounts.xhtml:12:7: Fact core:Turnover is invalid\n"
+                . "[xbrl.5.2.5.2:calcInconsistency] Calculation inconsistency",
+                "[xbrldie:PrimaryItemDimensionallyInvalidError] Fact tax:TradingLossesOfThisOrLaterAP context Ctx1 has invalid dimensional context\n"
+                . "[SomeNamespace:SomeWarning] Warning, review /tmp/report.xhtml line 9, column 2"
+            );
+            $diagnostics = (array)($result['diagnostics'] ?? []);
+
+            $harness->assertSame(4, count($diagnostics));
+            $harness->assertSame('xbrldie:PrimaryItemDimensionallyInvalidError', $diagnostics[0]['code'] ?? '');
+            $harness->assertSame('error', $diagnostics[0]['severity'] ?? '');
+            $harness->assertSame('tax:TradingLossesOfThisOrLaterAP (context Ctx1)', $diagnostics[0]['fact_reference'] ?? '');
+            $harness->assertSame('xmlSchema:SomeError', $diagnostics[1]['code'] ?? '');
+            $harness->assertSame('C:\\filing\\accounts.xhtml', $diagnostics[1]['source_document'] ?? '');
+            $harness->assertSame(12, $diagnostics[1]['line'] ?? 0);
+            $harness->assertSame(7, $diagnostics[1]['column'] ?? 0);
+            $harness->assertSame('error', $diagnostics[2]['severity'] ?? '');
+            $harness->assertSame('warning', $diagnostics[3]['severity'] ?? '');
+        });
+
+        $harness->check(ArelleIxbrlValidator::class, 'returns detailed errors instead of an exit-code fallback', static function () use ($harness): void {
+            $fixture = arelleValidatorFixture('dimensional_error');
+            $result = (new ArelleIxbrlValidator($fixture['config'], $fixture['root']))->validate($fixture['ixbrl']);
+            $stderrFixture = arelleValidatorFixture('stderr_detailed_error');
+            $stderrResult = (new ArelleIxbrlValidator($stderrFixture['config'], $stderrFixture['root']))->validate($stderrFixture['ixbrl']);
+
+            $harness->assertSame(false, $result['ok'] ?? true);
+            $harness->assertSame('failed', $result['status'] ?? '');
+            $harness->assertSame(3, $result['exit_code'] ?? 0);
+            $harness->assertSame(1, count((array)($result['error_diagnostics'] ?? [])));
+            $harness->assertTrue(str_contains((string)($result['errors'][0] ?? ''), 'PrimaryItemDimensionallyInvalidError'));
+            $harness->assertFalse(str_contains(implode(' ', (array)($result['errors'] ?? [])), 'Arelle exited with code 3.'));
+            $harness->assertTrue(str_contains((string)($result['raw_stdout'] ?? ''), 'TradingLossesOfThisOrLaterAP'));
+            $harness->assertSame('', $result['raw_stderr'] ?? 'not empty');
+            $harness->assertSame('', $stderrResult['raw_stdout'] ?? 'not empty');
+            $harness->assertSame('stderr', $stderrResult['error_diagnostics'][0]['stream'] ?? '');
+        });
+
+        $harness->check(ArelleIxbrlValidator::class, 'keeps warnings successful and fails zero-exit detailed errors', static function () use ($harness): void {
+            $warning = arelleValidatorFixture('warning_only');
+            $warningResult = (new ArelleIxbrlValidator($warning['config'], $warning['root']))->validate($warning['ixbrl']);
+            $error = arelleValidatorFixture('detailed_error_zero');
+            $errorResult = (new ArelleIxbrlValidator($error['config'], $error['root']))->validate($error['ixbrl']);
+
+            $harness->assertSame(true, $warningResult['ok'] ?? false);
+            $harness->assertSame('passed', $warningResult['status'] ?? '');
+            $harness->assertSame(1, count((array)($warningResult['warning_diagnostics'] ?? [])));
+            $harness->assertSame(false, $errorResult['ok'] ?? true);
+            $harness->assertSame('failed', $errorResult['status'] ?? '');
+            $harness->assertSame(0, $errorResult['exit_code'] ?? -1);
+        });
+
+        $harness->check(ArelleIxbrlValidator::class, 'uses the exit-code message only when no diagnostic can be parsed', static function () use ($harness): void {
+            $fixture = arelleValidatorFixture('unparsed_failure');
+            $result = (new ArelleIxbrlValidator($fixture['config'], $fixture['root']))->validate($fixture['ixbrl']);
+
+            $harness->assertSame(false, $result['ok'] ?? true);
+            $harness->assertSame(['Arelle exited with code 3.'], $result['errors'] ?? []);
+            $harness->assertSame([], $result['diagnostics'] ?? []);
+            $harness->assertTrue(str_contains((string)($result['raw_stderr'] ?? ''), 'validation terminated unexpectedly'));
+        });
+
         $harness->check(ArelleIxbrlValidator::class, 'uses project-local package cache and offline flags', static function () use ($harness): void {
             $fixture = arelleValidatorFixture('success');
             $validator = new ArelleIxbrlValidator($fixture['config'], $fixture['root']);
@@ -130,6 +199,11 @@ function arelleValidatorFixture(string $mode = 'success'): array
         'bracketed_critical' => "echo [critical] validation aborted\r\nexit /b 0\r\n",
         'traceback' => "echo Traceback:\r\nexit /b 0\r\n",
         'bracketed_warning' => "echo [ix11.8.1.2:headerDisplayNone] Warning, ix:header display recommendation\r\nexit /b 0\r\n",
+        'dimensional_error' => "echo [xbrldie:PrimaryItemDimensionallyInvalidError] Fact tax:TradingLossesOfThisOrLaterAP context Ctx1 has invalid dimensional context\r\nexit /b 3\r\n",
+        'warning_only' => "echo [SomeNamespace:SomeWarning] Warning, additional review suggested\r\nexit /b 0\r\n",
+        'detailed_error_zero' => "echo [xmlSchema:SomeError] validation failed\r\nexit /b 0\r\n",
+        'stderr_detailed_error' => "echo [xbrldie:PrimaryItemDimensionallyInvalidError] Fact tax:TradingLossesOfThisOrLaterAP context Ctx1 has invalid dimensional context 1>&2\r\nexit /b 3\r\n",
+        'unparsed_failure' => "echo validation terminated unexpectedly 1>&2\r\nexit /b 3\r\n",
         default => "echo validation passed\r\nexit /b 0\r\n",
     };
     file_put_contents($cmd, $body);

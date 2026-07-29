@@ -141,6 +141,126 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $harness->assertSame('missing', $result['basis'] ?? 'missing');
         $harness->assertSame(true, str_contains((string)(($result['errors'] ?? [])[0] ?? ''), 'could not be found'));
     });
+
+    $harness->check(\eel_accounts\Service\JournalCutOffReviewService::class, 'keeps the approved cut-off review current through expected lock journals and stales it again when reopened', static function () use ($harness): void {
+        foreach (['companies', 'accounting_periods', 'journals', 'journal_lines', 'nominal_accounts', 'year_end_reviews', 'year_end_review_acknowledgements', 'year_end_section_review_bundles'] as $table) {
+            if (!InterfaceDB::tableExists($table)) {
+                $harness->skip($table . ' table is not available.');
+            }
+        }
+
+        $nominalAccountId = (int)InterfaceDB::fetchColumn('SELECT id FROM nominal_accounts ORDER BY id LIMIT 1');
+        if ($nominalAccountId <= 0) {
+            $harness->skip('A nominal account is required for the cut-off lock regression fixture.');
+        }
+
+        InterfaceDB::beginTransaction();
+        try {
+            $marker = substr(hash('sha256', __FILE__ . microtime(true) . random_int(1, PHP_INT_MAX)), 0, 10);
+            $companyNumber = 'JCL' . $marker;
+            InterfaceDB::prepareExecute(
+                'INSERT INTO companies (company_name, company_number, is_active)
+                 VALUES (:company_name, :company_number, 1)',
+                ['company_name' => 'Journal Cut Off Lock Fixture ' . $marker, 'company_number' => $companyNumber]
+            );
+            $companyId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM companies WHERE company_number = :company_number',
+                ['company_number' => $companyNumber]
+            );
+            InterfaceDB::prepareExecute(
+                'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+                 VALUES (:company_id, :label, :period_start, :period_end)',
+                [
+                    'company_id' => $companyId,
+                    'label' => 'Journal Cut Off Lock ' . $marker,
+                    'period_start' => '2025-01-01',
+                    'period_end' => '2025-12-31',
+                ]
+            );
+            $accountingPeriodId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM accounting_periods WHERE company_id = :company_id ORDER BY id DESC LIMIT 1',
+                ['company_id' => $companyId]
+            );
+
+            $approvals = new \eel_accounts\Service\YearEndSectionApprovalService();
+            $approved = $approvals->approve($companyId, $accountingPeriodId, 'cut_off_journals_review', [], 'lock-regression-test');
+            $harness->assertSame(true, (bool)($approved['success'] ?? false));
+            $before = (new \eel_accounts\Service\YearEndAcknowledgementService())
+                ->fetch($companyId, $accountingPeriodId, 'cut_off_journals_review');
+            $harness->assertSame(true, is_array($before));
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO journals (company_id, accounting_period_id, source_type, source_ref, journal_date, description, is_posted)
+                 VALUES (:company_id, :accounting_period_id, :source_type, :source_ref, :journal_date, :description, 1)',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'source_type' => 'director_loan_offset',
+                    'source_ref' => 'lock-regression-offset-' . $marker,
+                    'journal_date' => '2025-12-31',
+                    'description' => 'Expected Director Loan lock journal',
+                ]
+            );
+            $journalId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM journals WHERE company_id = :company_id AND source_ref = :source_ref LIMIT 1',
+                ['company_id' => $companyId, 'source_ref' => 'lock-regression-offset-' . $marker]
+            );
+            foreach ([[25.00, 0.00], [0.00, 25.00]] as [$debit, $credit]) {
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit, line_description)
+                     VALUES (:journal_id, :nominal_account_id, :debit, :credit, :line_description)',
+                    [
+                        'journal_id' => $journalId,
+                        'nominal_account_id' => $nominalAccountId,
+                        'debit' => $debit,
+                        'credit' => $credit,
+                        'line_description' => 'Expected lock journal regression fixture',
+                    ]
+                );
+            }
+            InterfaceDB::prepareExecute(
+                'INSERT INTO year_end_reviews (company_id, accounting_period_id, is_locked)
+                 VALUES (:company_id, :accounting_period_id, 1)',
+                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            );
+            \eel_accounts\Support\RequestCache::clear();
+
+            $approvedPreClosePosition = new ReflectionMethod($approvals, 'approvedPreClosePosition');
+            $harness->assertSame(true, (bool)$approvedPreClosePosition->invoke($approvals, $companyId, $accountingPeriodId, 'cut_off_journals_review'));
+            $harness->assertSame(true, (bool)$approvedPreClosePosition->invoke($approvals, $companyId, $accountingPeriodId, 'tax_readiness_acknowledgement'));
+            $harness->assertSame(true, (bool)$approvedPreClosePosition->invoke($approvals, $companyId, $accountingPeriodId, 'companies_house_mismatch_acknowledgement'));
+            $harness->assertSame(false, (bool)$approvedPreClosePosition->invoke($approvals, $companyId, $accountingPeriodId, 'director_loan_year_end_review'));
+
+            $lockedReview = $approvals->fetchReview($companyId, $accountingPeriodId, 'cut_off_journals_review');
+            $harness->assertSame(true, (bool)($lockedReview['acknowledgement_current'] ?? false));
+            $lockedChecklist = (new \eel_accounts\Service\YearEndChecklistService())->fetchChecklist($companyId, $accountingPeriodId);
+            $lockedCheck = array_values(array_filter(
+                (array)($lockedChecklist['checks_flat'] ?? []),
+                static fn(array $check): bool => (string)($check['check_code'] ?? '') === 'cut_off_journals_review'
+            ))[0] ?? [];
+            $harness->assertSame('pass', (string)($lockedCheck['status'] ?? ''));
+            $harness->assertSame(false, str_contains((string)($lockedCheck['detail_text'] ?? ''), 'underlying data changed'));
+
+            $after = (new \eel_accounts\Service\YearEndAcknowledgementService())
+                ->fetch($companyId, $accountingPeriodId, 'cut_off_journals_review');
+            $harness->assertSame((string)($before['acknowledged_at'] ?? ''), (string)($after['acknowledged_at'] ?? ''));
+            $harness->assertSame((string)($before['acknowledged_by'] ?? ''), (string)($after['acknowledged_by'] ?? ''));
+
+            InterfaceDB::prepareExecute(
+                'UPDATE year_end_reviews SET is_locked = 0 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            );
+            \eel_accounts\Support\RequestCache::clear();
+            $reopenedReview = $approvals->fetchReview($companyId, $accountingPeriodId, 'cut_off_journals_review');
+            $harness->assertSame(false, (bool)($reopenedReview['acknowledgement_current'] ?? true));
+            $harness->assertSame('stale', (string)($reopenedReview['acknowledgement_state'] ?? ''));
+        } finally {
+            \eel_accounts\Support\RequestCache::reset();
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
 });
 
 function journalCutOffReviewQuestions(): int

@@ -25,6 +25,28 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(false, $status['blocking'] ?? true);
         });
 
+        $harness->check(\eel_accounts\Service\IxbrlExternalValidationService::class, 'prefers structured Arelle diagnostics when preparing validation results for storage', static function () use ($harness, $service): void {
+            $method = new ReflectionMethod($service, 'storedDiagnostics');
+            $method->setAccessible(true);
+            $diagnostic = [
+                'severity' => 'error',
+                'code' => 'xbrldie:PrimaryItemDimensionallyInvalidError',
+                'message' => 'Fact tax:TradingLossesOfThisOrLaterAP has an invalid dimensional context.',
+                'stream' => 'stderr',
+                'source_document' => null,
+                'line' => null,
+                'column' => null,
+                'fact_reference' => 'tax:TradingLossesOfThisOrLaterAP (context Ctx1)',
+                'raw_line' => '[xbrldie:PrimaryItemDimensionallyInvalidError] Fact tax:TradingLossesOfThisOrLaterAP has an invalid dimensional context.',
+            ];
+            $stored = $method->invoke($service, [
+                'errors' => ['Arelle exited with code 3.'],
+                'error_diagnostics' => [$diagnostic],
+            ], 'error');
+
+            $harness->assertSame([$diagnostic], $stored);
+        });
+
         $harness->check(\eel_accounts\Service\IxbrlExternalValidationService::class, 'stores the Arelle version returned by the validation run', static function () use ($harness, $service): void {
             InterfaceDB::beginTransaction();
             $fixture = ixbrlExternalValidationFixture();

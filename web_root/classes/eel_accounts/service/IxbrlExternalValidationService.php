@@ -246,8 +246,8 @@ final class IxbrlExternalValidationService
                 'validator' => (string)($result['validator'] ?? 'arelle'),
                 'validator_version' => trim((string)($result['version'] ?? '')) ?: null,
                 'status' => (string)($result['status'] ?? 'error'),
-                'errors' => \eel_accounts\Support\Utf8::json((array)($result['errors'] ?? []), JSON_UNESCAPED_SLASHES),
-                'warnings' => \eel_accounts\Support\Utf8::json((array)($result['warnings'] ?? []), JSON_UNESCAPED_SLASHES),
+                'errors' => \eel_accounts\Support\Utf8::json($this->storedDiagnostics($result, 'error'), JSON_UNESCAPED_SLASHES),
+                'warnings' => \eel_accounts\Support\Utf8::json($this->storedDiagnostics($result, 'warning'), JSON_UNESCAPED_SLASHES),
                 'log_path' => (string)($result['log_path'] ?? ''),
                 'validated_sha256' => ($result['validated_sha256'] ?? null) !== null
                     ? (string)$result['validated_sha256']
@@ -257,6 +257,18 @@ final class IxbrlExternalValidationService
                 'id' => $runId,
             ]
         );
+    }
+
+    /** @return list<mixed> */
+    private function storedDiagnostics(array $result, string $kind): array
+    {
+        $diagnostics = $result[$kind . '_diagnostics'] ?? null;
+        if (is_array($diagnostics) && $diagnostics !== []) {
+            return array_values($diagnostics);
+        }
+
+        $messages = $result[$kind === 'error' ? 'errors' : 'warnings'] ?? [];
+        return is_array($messages) ? array_values($messages) : [];
     }
 
     private function runHashesMatch(array $run): bool

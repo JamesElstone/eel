@@ -72,6 +72,19 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             \eel_accounts\Service\CtFilingMappingService::CONTEXT_HMRC_CT_LOSS_RESTRICTION,
             (string)$computationMappings['DeductionAllowance']['context_profile']
         );
+        foreach ([
+            'TradingLossesBroughtForward',
+            'TradingLossesBroughtForwardAmountUsedAgainstTotalProfits',
+        ] as $aggregateLossConcept) {
+            $h->assertSame(
+                \eel_accounts\Service\CtFilingMappingService::CONTEXT_HMRC_CT_COMPANY,
+                (string)$computationMappings[$aggregateLossConcept]['context_profile']
+            );
+        }
+        $h->assertSame(
+            \eel_accounts\Service\CtFilingMappingService::CONTEXT_HMRC_CT_UK_TRADE,
+            (string)$computationMappings['BalanceOfLossesBroughtForwardCarriedForward']['context_profile']
+        );
         $h->assertSame(null, $service->reviewedTemplate(\eel_accounts\Service\CtFilingMappingService::TARGET_COMPUTATION, '2026', 'V1.0.0'));
     });
     $h->check($service::class, 'fails both targets closed without a sealed frozen model', static function () use ($h, $service): void {

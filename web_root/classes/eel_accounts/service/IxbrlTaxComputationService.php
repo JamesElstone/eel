@@ -225,8 +225,8 @@ final class IxbrlTaxComputationService
                     'external_validator' => 'arelle',
                     'external_validator_version' => $validatorVersion !== '' ? $validatorVersion : null,
                     'external_status' => $externalStatus,
-                    'external_errors' => \eel_accounts\Support\Utf8::json((array)($external['errors'] ?? []), JSON_UNESCAPED_SLASHES),
-                    'external_warnings' => \eel_accounts\Support\Utf8::json((array)($external['warnings'] ?? []), JSON_UNESCAPED_SLASHES),
+                    'external_errors' => \eel_accounts\Support\Utf8::json($this->externalDiagnosticsForStorage($external, 'error'), JSON_UNESCAPED_SLASHES),
+                    'external_warnings' => \eel_accounts\Support\Utf8::json($this->externalDiagnosticsForStorage($external, 'warning'), JSON_UNESCAPED_SLASHES),
                     'external_log' => ($external['log_path'] ?? null) ?: null,
                     'output_sha256' => $artifact['sha256'],
                     'validated_sha256' => ($external['validated_sha256'] ?? null) ?: null,
@@ -343,9 +343,21 @@ final class IxbrlTaxComputationService
              external_validation_status = :external_status, external_validation_errors_json = :external_errors,
              external_validation_warnings_json = :external_warnings, external_validation_log_path = :external_log,
              external_validated_at = CURRENT_TIMESTAMP, external_validated_sha256 = :validated_sha256 WHERE id = :id',
-            ['ixbrl_status' => $passed ? 'validated' : 'validation_failed', 'validation_status' => 'passed', 'validation_errors' => \eel_accounts\Support\Utf8::json([], JSON_UNESCAPED_SLASHES), 'validator' => 'arelle', 'validator_version' => $validatorVersion !== '' ? $validatorVersion : null, 'external_status' => (string)($external['status'] ?? 'error'), 'external_errors' => \eel_accounts\Support\Utf8::json((array)($external['errors'] ?? []), JSON_UNESCAPED_SLASHES), 'external_warnings' => \eel_accounts\Support\Utf8::json((array)($external['warnings'] ?? []), JSON_UNESCAPED_SLASHES), 'external_log' => ($external['log_path'] ?? null) ?: null, 'validated_sha256' => ($external['validated_sha256'] ?? null) ?: null, 'id' => (int)$run['id']]
+            ['ixbrl_status' => $passed ? 'validated' : 'validation_failed', 'validation_status' => 'passed', 'validation_errors' => \eel_accounts\Support\Utf8::json([], JSON_UNESCAPED_SLASHES), 'validator' => 'arelle', 'validator_version' => $validatorVersion !== '' ? $validatorVersion : null, 'external_status' => (string)($external['status'] ?? 'error'), 'external_errors' => \eel_accounts\Support\Utf8::json($this->externalDiagnosticsForStorage($external, 'error'), JSON_UNESCAPED_SLASHES), 'external_warnings' => \eel_accounts\Support\Utf8::json($this->externalDiagnosticsForStorage($external, 'warning'), JSON_UNESCAPED_SLASHES), 'external_log' => ($external['log_path'] ?? null) ?: null, 'validated_sha256' => ($external['validated_sha256'] ?? null) ?: null, 'id' => (int)$run['id']]
         );
         return ['success' => $passed, 'errors' => $passed ? [] : ((array)($external['errors'] ?? []) !== [] ? (array)$external['errors'] : ['Arelle validation did not return a complete validator identity and matching artifact hash.']), 'warnings' => (array)($external['warnings'] ?? [])];
+    }
+
+    /** @return list<mixed> */
+    private function externalDiagnosticsForStorage(array $external, string $kind): array
+    {
+        $diagnostics = $external[$kind . '_diagnostics'] ?? null;
+        if (is_array($diagnostics) && $diagnostics !== []) {
+            return array_values($diagnostics);
+        }
+
+        $messages = $external[$kind === 'error' ? 'errors' : 'warnings'] ?? [];
+        return is_array($messages) ? array_values($messages) : [];
     }
 
     private function renderMappedDocument(

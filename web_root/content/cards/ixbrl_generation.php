@@ -575,11 +575,53 @@ final class _ixbrl_generationCard extends CardBaseFramework
             }
             $html .= '<h5>' . $label . '</h5><ul>';
             foreach (array_slice($messages, 0, 20) as $message) {
-                $html .= '<li>' . \eel_accounts\Support\Utf8::html(is_scalar($message) ? (string)$message : (string)\eel_accounts\Support\Utf8::json($message)) . '</li>';
+                $html .= '<li>' . $this->arelleDiagnosticHtml($message) . '</li>';
             }
             $html .= '</ul>';
         }
+        $logPath = trim((string)($result['external_validation_log_path'] ?? $result['log_path'] ?? ''));
+        if ($logPath !== '') {
+            $html .= '<details class="ixbrl-arelle-raw-log"><summary>Raw Arelle diagnostic log</summary>'
+                . '<div class="helper">The complete unparsed stdout and stderr are retained in the server diagnostic log for authorised support access.</div>'
+                . '</details>';
+        }
         return $html . '</section>';
+    }
+
+    private function arelleDiagnosticHtml(mixed $diagnostic): string
+    {
+        if (!is_array($diagnostic) || trim((string)($diagnostic['code'] ?? '')) === '') {
+            return \eel_accounts\Support\Utf8::html(
+                is_scalar($diagnostic) ? (string)$diagnostic : (string)\eel_accounts\Support\Utf8::json($diagnostic)
+            );
+        }
+        $severity = trim((string)($diagnostic['severity'] ?? 'unknown'));
+        $code = trim((string)$diagnostic['code']);
+        $message = trim((string)($diagnostic['message'] ?? ''));
+        $location = [];
+        $document = trim((string)($diagnostic['source_document'] ?? ''));
+        if ($document !== '') {
+            $location[] = 'File: ' . basename(str_replace('\\', '/', $document));
+        }
+        $line = (int)($diagnostic['line'] ?? 0);
+        $column = (int)($diagnostic['column'] ?? 0);
+        if ($line > 0) {
+            $location[] = 'Line ' . $line . ($column > 0 ? ', column ' . $column : '');
+        }
+        $fact = trim((string)($diagnostic['fact_reference'] ?? ''));
+        if ($fact !== '') {
+            $location[] = 'Fact: ' . $fact;
+        }
+        $html = '<strong>' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($severity, '_')) . '</strong> '
+            . '<code>' . \eel_accounts\Support\Utf8::html($code) . '</code>';
+        if ($message !== '') {
+            $html .= ' ' . \eel_accounts\Support\Utf8::html($message);
+        }
+        if ($location !== []) {
+            $html .= '<div class="helper">' . \eel_accounts\Support\Utf8::html(implode(' · ', $location)) . '</div>';
+        }
+
+        return $html;
     }
 
     /** @return list<mixed> */

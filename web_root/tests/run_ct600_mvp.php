@@ -22,6 +22,7 @@ $patterns = [
     'test_HmrcSubmissionPackageService.php',
     'test_HmrcSubmissionUi.php',
     'test_IxbrlBuilderCards.php',
+    'test_GoldenCtComputationIxbrlArelle.php',
     'test_IxbrlTaxComputationService.php',
     'test_PageArchitecture.php',
 ];

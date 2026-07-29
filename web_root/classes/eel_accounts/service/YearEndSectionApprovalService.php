@@ -43,10 +43,20 @@ final class YearEndSectionApprovalService
         $acknowledgement = $acknowledgements->fetch($companyId, $accountingPeriodId, $checkCode);
         $answers = $this->storedAnswers($acknowledgement);
         $basis = $this->approvalBasis($bundle, $answers);
+        // A successful Year End lock freezes the approved pre-close position.
+        // The lock workflow can append expected closing journals after the
+        // user has signed the review, so re-comparing those live facts would
+        // incorrectly make the approval stale. Director Loan remains live:
+        // its lock-time reclassification has dedicated final validation.
+        $approvedPreClosePosition = $this->approvedPreClosePosition(
+            $companyId,
+            $accountingPeriodId,
+            $checkCode
+        );
         $evaluation = $acknowledgements->evaluate(
             $acknowledgement,
             $basis,
-            false,
+            $approvedPreClosePosition,
             self::CONTRACT_VERSION
         );
         if (empty($evaluation['current'])
@@ -75,6 +85,15 @@ final class YearEndSectionApprovalService
             'scope_gate' => !empty($bundle['scope_gate']),
             'scope_ready' => !empty($bundle['scope_ready']),
         ];
+    }
+
+    private function approvedPreClosePosition(
+        int $companyId,
+        int $accountingPeriodId,
+        string $checkCode
+    ): bool {
+        return $checkCode !== 'director_loan_year_end_review'
+            && (new YearEndLockService())->isLocked($companyId, $accountingPeriodId);
     }
 
     /** Resolve the existing Companies House check code without exposing two UI approvals. */

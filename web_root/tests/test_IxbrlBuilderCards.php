@@ -506,6 +506,46 @@ $harness->run(_ixbrl_facts_previewCard::class, static function (GeneratedService
 });
 
 $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceClassTestHarness $harness, _ixbrl_generationCard $card): void {
+    $harness->check(_ixbrl_generationCard::class, 'renders structured Arelle diagnostics safely with the retained raw-log detail', static function () use ($harness, $card): void {
+        $context = [
+            'company' => ['id' => 1, 'accounting_period_id' => 1],
+            'ixbrl' => [
+                'readiness' => ['arelle_status' => ['installed' => true]],
+                'latest_run' => [
+                    'status' => 'generated',
+                    'external_validation_status' => 'failed',
+                    'external_validation_errors_json' => json_encode([[
+                        'severity' => 'error',
+                        'code' => 'xbrldie:PrimaryItemDimensionallyInvalidError',
+                        'message' => 'Fact <script>alert(1)</script> has an invalid dimensional context.',
+                        'source_document' => 'C:\\private\\filing.xhtml',
+                        'line' => 14,
+                        'column' => 6,
+                        'fact_reference' => 'tax:TradingLossesOfThisOrLaterAP (context Ctx1)',
+                    ]]),
+                    'external_validation_warnings_json' => json_encode([[
+                        'severity' => 'warning',
+                        'code' => 'SomeNamespace:SomeWarning',
+                        'message' => 'Review this optional disclosure.',
+                    ]]),
+                    'external_validation_log_path' => 'C:\\private\\arelle_validation.log',
+                ],
+                'computation_periods' => [],
+            ],
+            'services' => ['companies_house_ixbrl' => ['filing_required' => false]],
+        ];
+        $html = $card->render($context);
+
+        $harness->assertTrue(str_contains($html, 'xbrldie:PrimaryItemDimensionallyInvalidError'));
+        $harness->assertTrue(str_contains($html, 'Fact &lt;script&gt;alert(1)&lt;/script&gt; has an invalid dimensional context.'));
+        $harness->assertFalse(str_contains($html, '<script>alert(1)</script>'));
+        $harness->assertTrue(str_contains($html, 'File: filing.xhtml'));
+        $harness->assertFalse(str_contains($html, 'C:\\private'));
+        $harness->assertTrue(str_contains($html, 'SomeNamespace:SomeWarning'));
+        $harness->assertTrue(str_contains($html, 'Raw Arelle diagnostic log'));
+        $harness->assertFalse(str_contains($html, 'Arelle exited with code 3.'));
+    });
+
     $harness->check(_ixbrl_generationCard::class, 'uses shared capabilities and withholds filing download until fully ready', static function () use ($harness, $card): void {
         $path = tempnam(test_tmp_directory(), 'ixbrl-card-');
         if ($path === false) {

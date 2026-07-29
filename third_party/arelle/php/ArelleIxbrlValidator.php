@@ -77,18 +77,35 @@ final class ArelleIxbrlValidator
         );
         $execution = $this->runCommand($command, $timeout);
         $logPath = $this->writeLog($logsPath, $command, $execution);
-        $output = trim((string)$execution['stdout'] . "\n" . (string)$execution['stderr']);
-        $errors = $this->matchingLines(
-            $output,
-            '/(?:^|[\s\[])(?:error|exception|traceback|critical)(?=$|[\s:\]])/i'
+        $parsed = $this->parseDiagnostics(
+            (string)($execution['stdout'] ?? ''),
+            (string)($execution['stderr'] ?? '')
         );
-        $warnings = $this->matchingLines(
-            $output,
-            '/(?:^|[\s\[])(?:warning|warn)(?=$|[\s:,\]])/i'
-        );
+        $diagnostics = $parsed['diagnostics'];
+        $errorDiagnostics = array_values(array_filter(
+            $diagnostics,
+            static fn(array $diagnostic): bool => in_array((string)$diagnostic['severity'], ['fatal', 'error'], true)
+        ));
+        $warningDiagnostics = array_values(array_filter(
+            $diagnostics,
+            static fn(array $diagnostic): bool => (string)$diagnostic['severity'] === 'warning'
+        ));
+        $errors = array_map([$this, 'diagnosticMessage'], $errorDiagnostics);
+        $warnings = array_map([$this, 'diagnosticMessage'], $warningDiagnostics);
 
         if (!empty($execution['timed_out'])) {
-            return $this->result(false, 'error', ['Arelle validation timed out after ' . $timeout . ' seconds.'], $warnings, $logPath, $started);
+            return $this->result(
+                false,
+                'error',
+                ['Arelle validation timed out after ' . $timeout . ' seconds.'],
+                $warnings,
+                $logPath,
+                $started,
+                $execution,
+                $diagnostics,
+                [],
+                $warningDiagnostics
+            );
         }
 
         $exitCode = (int)($execution['exit_code'] ?? 1);
@@ -97,10 +114,32 @@ final class ArelleIxbrlValidator
                 $errors[] = 'Arelle exited with code ' . $exitCode . '.';
             }
 
-            return $this->result(false, 'failed', $errors, $warnings, $logPath, $started);
+            return $this->result(
+                false,
+                'failed',
+                $errors,
+                $warnings,
+                $logPath,
+                $started,
+                $execution,
+                $diagnostics,
+                $errorDiagnostics,
+                $warningDiagnostics
+            );
         }
 
-        return $this->result(true, 'passed', [], $warnings, $logPath, $started);
+        return $this->result(
+            true,
+            'passed',
+            [],
+            $warnings,
+            $logPath,
+            $started,
+            $execution,
+            $diagnostics,
+            [],
+            $warningDiagnostics
+        );
     }
 
     /** Check installation/configuration without requiring a generated artifact. */
@@ -272,17 +311,149 @@ final class ArelleIxbrlValidator
         return $path;
     }
 
-    private function matchingLines(string $text, string $pattern): array
+    /**
+     * Extract bracketed Arelle diagnostics without losing either process stream.
+     *
+     * @return array{diagnostics: list<array<string, mixed>>}
+     */
+    private function parseDiagnostics(string $stdout, string $stderr): array
     {
-        $matches = [];
-        foreach (preg_split('/\R/', $text) ?: [] as $line) {
-            $line = trim((string)$line);
-            if ($line !== '' && preg_match($pattern, $line) === 1) {
-                $matches[] = $line;
+        $diagnostics = [];
+        $seen = [];
+        foreach (['stdout' => $stdout, 'stderr' => $stderr] as $stream => $output) {
+            foreach (preg_split('/\r\n|\n|\r/', $output) ?: [] as $rawLine) {
+                $diagnostic = $this->parseDiagnosticLine((string)$rawLine, $stream);
+                if ($diagnostic === null) {
+                    continue;
+                }
+                $key = implode("\x1F", [
+                    (string)$diagnostic['severity'],
+                    strtolower((string)$diagnostic['code']),
+                    (string)$diagnostic['message'],
+                    (string)($diagnostic['source_document'] ?? ''),
+                    (string)($diagnostic['line'] ?? ''),
+                    (string)($diagnostic['column'] ?? ''),
+                    (string)($diagnostic['fact_reference'] ?? ''),
+                ]);
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $diagnostics[] = $diagnostic;
             }
         }
 
-        return array_values(array_unique($matches));
+        return ['diagnostics' => $diagnostics];
+    }
+
+    /** @return array<string, mixed>|null */
+    private function parseDiagnosticLine(string $rawLine, string $stream): ?array
+    {
+        $line = trim($rawLine);
+        if ($line === '') {
+            return null;
+        }
+
+        $code = '';
+        $message = '';
+        $explicitSeverity = '';
+        if (preg_match('/^(?:(?<severity>fatal|critical|error|exception|traceback|warning|warn|information|info)\s*[:\-]?\s*)?\[(?<code>[^\]]+)\]\s*(?<message>.*)$/i', $line, $matches) === 1) {
+            $code = trim((string)$matches['code']);
+            $message = trim((string)$matches['message']);
+            $explicitSeverity = trim((string)($matches['severity'] ?? ''));
+        } elseif (preg_match('/^(?<severity>fatal|critical|error|exception|traceback|warning|warn|information|info)\b\s*:?[[:space:]]*(?<message>.*)$/i', $line, $matches) === 1) {
+            $explicitSeverity = trim((string)$matches['severity']);
+            $code = $explicitSeverity;
+            $message = trim((string)$matches['message']);
+        } else {
+            return null;
+        }
+
+        if ($code === '') {
+            return null;
+        }
+        if ($message === '') {
+            $message = $line;
+        }
+        $severity = $this->diagnosticSeverity($code, $explicitSeverity, $message);
+        $location = $this->diagnosticLocation($message);
+
+        return [
+            'severity' => $severity,
+            'code' => $code,
+            'message' => $message,
+            'stream' => $stream,
+            'source_document' => $location['source_document'],
+            'line' => $location['line'],
+            'column' => $location['column'],
+            'fact_reference' => $location['fact_reference'],
+            'raw_line' => $rawLine,
+        ];
+    }
+
+    private function diagnosticSeverity(string $code, string $explicitSeverity, string $message = ''): string
+    {
+        $value = strtolower($explicitSeverity !== '' ? $explicitSeverity : $code);
+        if ($explicitSeverity === '' && preg_match('/^(fatal|critical|error|exception|traceback|warning|warn|information|info)\b/i', $message, $matches) === 1) {
+            $value = strtolower((string)$matches[1]);
+        }
+        if (preg_match('/fatal|critical|exception|traceback/', $value) === 1) {
+            return 'fatal';
+        }
+        if (preg_match('/warning|warn/', $value) === 1) {
+            return 'warning';
+        }
+        if (preg_match('/error|invalid|inconsistency|failure|missing/', $value) === 1) {
+            return 'error';
+        }
+        if (preg_match('/information|info/', $value) === 1) {
+            return 'information';
+        }
+
+        return 'unknown';
+    }
+
+    /** @return array{source_document: ?string, line: ?int, column: ?int, fact_reference: ?string} */
+    private function diagnosticLocation(string $message): array
+    {
+        $sourceDocument = null;
+        $lineNumber = null;
+        $columnNumber = null;
+        if (preg_match('/(?<document>(?:[A-Za-z]:[\\\\\/]|\/)[^:\r\n]+):(?<line>\d+)(?::(?<column>\d+))?/', $message, $matches) === 1) {
+            $sourceDocument = (string)$matches['document'];
+            $lineNumber = (int)$matches['line'];
+            $columnNumber = isset($matches['column']) && $matches['column'] !== '' ? (int)$matches['column'] : null;
+        } elseif (preg_match('/(?<document>(?:[A-Za-z]:[\\\\\/]|\/)[^\r\n]*?)(?=\s+(?:line\s+\d+|at\b)|$)/i', $message, $matches) === 1) {
+            $sourceDocument = trim((string)$matches['document']);
+        }
+        if ($lineNumber === null && preg_match('/\bline\s+(?<line>\d+)(?:\s*(?:,|:)?\s*column\s+(?<column>\d+))?/i', $message, $matches) === 1) {
+            $lineNumber = (int)$matches['line'];
+            $columnNumber = isset($matches['column']) && $matches['column'] !== '' ? (int)$matches['column'] : null;
+        }
+
+        $factReference = null;
+        if (preg_match('/\bFact\s+(?<fact>[^\s,;]+)(?:\s+context\s+(?<context>[^\s,;.]+))?/i', $message, $matches) === 1) {
+            $factReference = (string)$matches['fact'];
+            if (isset($matches['context']) && $matches['context'] !== '') {
+                $factReference .= ' (context ' . (string)$matches['context'] . ')';
+            }
+        }
+
+        return [
+            'source_document' => $sourceDocument,
+            'line' => $lineNumber,
+            'column' => $columnNumber,
+            'fact_reference' => $factReference,
+        ];
+    }
+
+    /** @param array<string, mixed> $diagnostic */
+    private function diagnosticMessage(array $diagnostic): string
+    {
+        $prefix = ucfirst((string)$diagnostic['severity']) . ' [' . (string)$diagnostic['code'] . ']';
+        $message = trim((string)$diagnostic['message']);
+
+        return $message === '' ? $prefix : $prefix . ' ' . $message;
     }
 
     private function detectVersion(string $arelleCommand): string
@@ -296,7 +467,18 @@ final class ArelleIxbrlValidator
         return $line === '' ? '' : substr($line, 0, 100);
     }
 
-    private function result(bool $ok, string $status, array $errors, array $warnings, string $logPath, float $started): array
+    private function result(
+        bool $ok,
+        string $status,
+        array $errors,
+        array $warnings,
+        string $logPath,
+        float $started,
+        array $execution = [],
+        array $diagnostics = [],
+        array $errorDiagnostics = [],
+        array $warningDiagnostics = []
+    ): array
     {
         return [
             'ok' => $ok,
@@ -305,6 +487,12 @@ final class ArelleIxbrlValidator
             'version' => $this->validatorVersion,
             'errors' => array_values($errors),
             'warnings' => array_values($warnings),
+            'diagnostics' => array_values($diagnostics),
+            'error_diagnostics' => array_values($errorDiagnostics),
+            'warning_diagnostics' => array_values($warningDiagnostics),
+            'exit_code' => array_key_exists('exit_code', $execution) ? (int)$execution['exit_code'] : null,
+            'raw_stdout' => (string)($execution['stdout'] ?? ''),
+            'raw_stderr' => (string)($execution['stderr'] ?? ''),
             'log_path' => $logPath,
             'duration_ms' => (int)round((microtime(true) - $started) * 1000),
         ];

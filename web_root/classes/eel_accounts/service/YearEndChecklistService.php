@@ -2667,6 +2667,12 @@ final class YearEndChecklistService
         int $companyId,
         int $accountingPeriodId
     ): array {
+        // Once the period is locked, approvals describe the validated
+        // pre-close position. The lock itself may add expected journals, so
+        // canonical checks must use the same frozen evaluation as the legacy
+        // acknowledgement path rather than treating those entries as edits.
+        $isLocked = (new \eel_accounts\Service\YearEndLockService())
+            ->isLocked($companyId, $accountingPeriodId);
         foreach ($sections as $sectionKey => $checks) {
             foreach ((array)$checks as $index => $check) {
                 $check = (array)$check;
@@ -2706,7 +2712,7 @@ final class YearEndChecklistService
                         ->evaluate(
                             $acknowledgement,
                             $currentBasis,
-                            false,
+                            $isLocked && $checkCode !== 'director_loan_year_end_review',
                             \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION
                         );
                     $current = !empty($evaluation['current']);

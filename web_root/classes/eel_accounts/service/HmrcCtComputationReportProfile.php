@@ -301,7 +301,7 @@ final class HmrcCtComputationReportProfile
                 'ct_period',
                 230,
                 'duration',
-                CtFilingMappingService::CONTEXT_HMRC_CT_UK_TRADE,
+                CtFilingMappingService::CONTEXT_HMRC_CT_COMPANY,
                 'losses'
             ),
             $synthetic(
@@ -311,7 +311,7 @@ final class HmrcCtComputationReportProfile
                 'ct_period',
                 240,
                 'duration',
-                CtFilingMappingService::CONTEXT_HMRC_CT_UK_TRADE,
+                CtFilingMappingService::CONTEXT_HMRC_CT_COMPANY,
                 'losses'
             ),
             $synthetic(

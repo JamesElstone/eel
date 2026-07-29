@@ -138,11 +138,19 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
                 'test'
             );
             $harness->assertSame(true, (bool)($advanceEvidence['success'] ?? false));
+            $confirmedDisclosure = $service->fetchDisclosureSummary(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id']
+            );
             $confirmedText = (new \eel_accounts\Service\IxbrlTaxonomyProfileService())
-                ->directorLoanStatementText($service->fetchDisclosureSummary(
-                    (int)$fixture['company_id'],
-                    (int)$fixture['accounting_period_id']
-                ));
+                ->directorLoanStatementText($confirmedDisclosure);
+            $confirmedRows = array_values((array)($confirmedDisclosure['disclosures'] ?? []));
+            $harness->assertSame('Unsecured.', (string)($confirmedRows[0]['main_terms'] ?? ''));
+            $harness->assertSame(
+                'Unsecured. Interest rate: 0%. No fixed repayment date was agreed.',
+                (string)($confirmedRows[0]['main_conditions'] ?? '')
+            );
+            $harness->assertSame(1, substr_count($confirmedText, 'Interest rate: 0%.'));
             $harness->assertTrue(str_contains(
                 $confirmedText,
                 'Repayment conditions: No fixed repayment date was agreed.'

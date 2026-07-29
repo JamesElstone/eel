@@ -468,6 +468,62 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             }
             $harness->assertTrue($thrown);
         });
+
+        $harness->check(\eel_accounts\Service\IxbrlAccountingService::class, 'keeps the current director-advance narrative identical in HMRC and revised accounts', static function () use ($harness, $service): void {
+            $narrative = (new \eel_accounts\Service\IxbrlTaxonomyProfileService())->directorLoanStatementText([
+                'disclosures' => [[
+                    'director_name' => 'Fixture Director',
+                    'advances' => 120.00,
+                    'cash_repayments' => 20.00,
+                    'amounts_legally_set_off' => 0.00,
+                    'amounts_written_off' => 0.00,
+                    'amounts_waived' => 0.00,
+                    'closing_company_to_director_balance' => 100.00,
+                    'interest_rate' => '0%',
+                    'main_terms' => 'Unsecured',
+                    'repayment_conditions' => 'No fixed repayment date was agreed',
+                ]],
+            ]);
+            $facts = ixbrlRenderFixtureFacts();
+            foreach ($facts as &$fact) {
+                if ((string)($fact['fact_key'] ?? '') === 'no_director_advances_or_credits') {
+                    $fact['text_value'] = $narrative;
+                }
+            }
+            unset($fact);
+            $render = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'renderXhtml');
+            $render->setAccessible(true);
+            $hmrc = (string)$render->invoke($service, $facts, false);
+            $revised = (new \eel_accounts\Service\IxbrlRevisedAccountsArtifactService())->transform($hmrc, [
+                'replaces_statement' => 'These revised accounts replace the previously filed report.',
+                'statutory_accounts_statement' => 'These are now the statutory accounts.',
+                'prepared_as_statement' => 'Prepared by reference to the original accounts.',
+                'non_compliance_explanation' => 'The original report contained an error.',
+                'significant_amendments' => 'The comparative figures were corrected.',
+                'original_approval_date' => '2025-05-29',
+                'revision_approval_date' => '2026-03-01',
+            ]);
+            $harness->assertTrue((bool)($revised['success'] ?? false));
+            $directorAdvanceFact = static function (string $xhtml): string {
+                $document = new DOMDocument();
+                if (!$document->loadXML($xhtml, LIBXML_NONET)) {
+                    throw new RuntimeException('The generated accounts iXBRL is not well-formed XML.');
+                }
+                $xpath = new DOMXPath($document);
+                $xpath->registerNamespace('ix', 'http://www.xbrl.org/2013/inlineXBRL');
+                $facts = $xpath->query('//ix:nonNumeric[@name="direp:GeneralDescriptionAdvancesCreditsToDirectorsIncludingTermsInterestRates"]');
+                if (($facts?->length ?? 0) !== 1) {
+                    throw new RuntimeException('The current director-advance narrative fact is missing or duplicated.');
+                }
+                return trim((string)$facts?->item(0)?->textContent);
+            };
+            $hmrcNarrative = $directorAdvanceFact($hmrc);
+            $revisedNarrative = $directorAdvanceFact((string)$revised['xhtml']);
+            $harness->assertSame($narrative, $hmrcNarrative);
+            $harness->assertSame($hmrcNarrative, $revisedNarrative);
+            $harness->assertSame(1, substr_count($hmrcNarrative, 'Interest rate: 0%.'));
+            $harness->assertSame(1, substr_count($revisedNarrative, 'Interest rate: 0%.'));
+        });
     }
 );
 

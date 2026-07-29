@@ -111,5 +111,41 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             ));
             $harness->assertSame(false, str_contains($statement, 'repaid or settled'));
         });
+
+        $harness->check($service::class, 'composes each director-advance narrative term once', static function () use ($harness, $service): void {
+            $statement = static function (array $overrides = []) use ($service): string {
+                return $service->directorLoanStatementText([
+                    'disclosures' => [array_replace([
+                        'director_name' => 'Fixture Director',
+                        'advances' => 120.0,
+                        'cash_repayments' => 20.0,
+                        'amounts_legally_set_off' => 0.0,
+                        'amounts_written_off' => 0.0,
+                        'amounts_waived' => 0.0,
+                        'closing_company_to_director_balance' => 100.0,
+                        'interest_rate' => '0%',
+                        'main_terms' => 'Unsecured',
+                        'repayment_conditions' => 'No fixed repayment date was agreed',
+                    ], $overrides)],
+                ]);
+            };
+
+            $zeroInterest = $statement();
+            $harness->assertSame(1, substr_count($zeroInterest, 'Interest rate: 0%.'));
+            $harness->assertSame(1, substr_count($zeroInterest, 'Unsecured.'));
+            $harness->assertSame(1, substr_count($zeroInterest, 'No fixed repayment date was agreed.'));
+            $harness->assertTrue(str_contains(
+                $zeroInterest,
+                'Main terms: Unsecured. Interest rate: 0%. Repayment conditions: No fixed repayment date was agreed.'
+            ));
+
+            $nonZeroInterest = $statement(['interest_rate' => '3.5%']);
+            $harness->assertSame(1, substr_count($nonZeroInterest, 'Interest rate: 3.5%.'));
+            $harness->assertSame(0, substr_count($nonZeroInterest, 'Interest rate: 0%.'));
+
+            $noSecurity = $statement(['main_terms' => 'No security was provided']);
+            $harness->assertSame(1, substr_count($noSecurity, 'Main terms: No security was provided.'));
+            $harness->assertSame(0, substr_count($noSecurity, 'Main terms: .'));
+        });
     }
 );

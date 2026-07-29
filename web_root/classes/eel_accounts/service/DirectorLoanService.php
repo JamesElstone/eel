@@ -469,15 +469,16 @@ final class DirectorLoanService
             $presentation = (array)($position['party_terms'] ?? []);
             $advanceTerms = (array)($presentation['advance_terms'] ?? []);
             $advanceTermsExplicit = !empty($presentation['advance_terms_explicit']) && $advanceTerms !== [];
+            $interestRate = DirectorLoanReportingPresentationService::formatInterestRate(
+                (float)($advanceTerms['interest_rate_percent'] ?? 0)
+            );
             // A creditor maturity classification is never used as evidence of
             // the historical terms on a company-to-participator advance.
             if ($advanceTermsExplicit) {
-                $mainTerms = ucfirst((string)($advanceTerms['security_type'] ?? 'unsecured'))
-                    . '. Interest rate: '
-                    . DirectorLoanReportingPresentationService::formatInterestRate(
-                        (float)($advanceTerms['interest_rate_percent'] ?? 0)
-                    )
-                    . '.';
+                // Keep each disclosure component separate. The shared iXBRL
+                // narrative builder supplies the labelled interest-rate
+                // sentence from interest_rate, so main_terms is security only.
+                $mainTerms = ucfirst((string)($advanceTerms['security_type'] ?? 'unsecured')) . '.';
                 $repaymentConditions = match ((string)($advanceTerms['repayment_basis'] ?? '')) {
                     'on_demand' => 'Repayable on demand.',
                     'no_fixed_date' => 'No fixed repayment date was agreed.',
@@ -487,6 +488,12 @@ final class DirectorLoanService
             } else {
                 $mainTerms = 'Company-to-participator advance terms require filing review.';
                 $repaymentConditions = 'No advance repayment condition has been confirmed.';
+            }
+            $mainConditions = $mainTerms . ' ' . $repaymentConditions;
+            if ($advanceTermsExplicit) {
+                // Preserve the complete human-facing terms summary used outside
+                // iXBRL while retaining distinct data components for the fact.
+                $mainConditions = $mainTerms . ' Interest rate: ' . $interestRate . '. ' . $repaymentConditions;
             }
             $row = [
                 'director_id' => $position['director_id'] ?? null,
@@ -511,12 +518,10 @@ final class DirectorLoanService
                 'closing_company_to_director_balance' => $closingReceivable,
                 'closing_company_liability' => $closingLiability,
                 'interest_rate_percent' => (float)($advanceTerms['interest_rate_percent'] ?? 0),
-                'interest_rate' => DirectorLoanReportingPresentationService::formatInterestRate(
-                    (float)($advanceTerms['interest_rate_percent'] ?? 0)
-                ),
+                'interest_rate' => $interestRate,
                 'main_terms' => $mainTerms,
                 'repayment_conditions' => $repaymentConditions,
-                'main_conditions' => $mainTerms . ' ' . $repaymentConditions,
+                'main_conditions' => $mainConditions,
                 'advance_terms_explicit' => $advanceTermsExplicit,
                 'set_off_permitted' => !empty($position['set_off_permitted']),
                 'section_413_required' => $hasDisclosure,

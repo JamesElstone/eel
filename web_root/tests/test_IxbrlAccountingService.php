@@ -697,6 +697,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $xhtml = (string)$method->invoke($service, $facts, false, '');
 
                 $harness->assertTrue(str_contains($xhtml, 'id="hmrc-revision-explanation"'));
+                $harness->assertFalse(str_contains($xhtml, 'data-revision-explanation'));
                 $harness->assertSame(1, substr_count(
                     $xhtml,
                     'name="bus:StatementRespectsInWhichPreviouslyFiledReportDidNotComplyWithCompaniesAct2006"'

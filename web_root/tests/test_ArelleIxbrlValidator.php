@@ -124,6 +124,22 @@ require_once PROJECT_ROOT . 'third_party' . DIRECTORY_SEPARATOR . 'arelle' . DIR
             $harness->assertSame('stderr', $stderrResult['error_diagnostics'][0]['stream'] ?? '');
         });
 
+        $harness->check(ArelleIxbrlValidator::class, 'returns schema diagnostics with non-severity codes as detailed errors', static function () use ($harness): void {
+            $fixture = arelleValidatorFixture('lxml_schema_error');
+            $result = (new ArelleIxbrlValidator($fixture['config'], $fixture['root']))->validate($fixture['ixbrl']);
+
+            $harness->assertSame(false, $result['ok'] ?? true);
+            $harness->assertSame('failed', $result['status'] ?? '');
+            $harness->assertSame(1, count((array)($result['error_diagnostics'] ?? [])));
+            $harness->assertSame('lxml.SCHEMAV_CVC_COMPLEX_TYPE_3_2_1', $result['error_diagnostics'][0]['code'] ?? '');
+            $harness->assertSame('error', $result['error_diagnostics'][0]['severity'] ?? '');
+            $harness->assertTrue(str_contains(
+                (string)($result['errors'][0] ?? ''),
+                'attribute \'data-revision-explanation\' is not allowed'
+            ));
+            $harness->assertFalse(str_contains(implode(' ', (array)($result['errors'] ?? [])), 'Arelle exited with code 3.'));
+        });
+
         $harness->check(ArelleIxbrlValidator::class, 'keeps warnings successful and fails zero-exit detailed errors', static function () use ($harness): void {
             $warning = arelleValidatorFixture('warning_only');
             $warningResult = (new ArelleIxbrlValidator($warning['config'], $warning['root']))->validate($warning['ixbrl']);
@@ -202,6 +218,7 @@ function arelleValidatorFixture(string $mode = 'success'): array
         'dimensional_error' => "echo [xbrldie:PrimaryItemDimensionallyInvalidError] Fact tax:TradingLossesOfThisOrLaterAP context Ctx1 has invalid dimensional context\r\nexit /b 3\r\n",
         'warning_only' => "echo [SomeNamespace:SomeWarning] Warning, additional review suggested\r\nexit /b 0\r\n",
         'detailed_error_zero' => "echo [xmlSchema:SomeError] validation failed\r\nexit /b 0\r\n",
+        'lxml_schema_error' => "echo [lxml.SCHEMAV_CVC_COMPLEX_TYPE_3_2_1] XML file syntax error Element '{http://www.w3.org/1999/xhtml}div', attribute 'data-revision-explanation': The attribute 'data-revision-explanation' is not allowed., line 201\r\nexit /b 3\r\n",
         'stderr_detailed_error' => "echo [xbrldie:PrimaryItemDimensionallyInvalidError] Fact tax:TradingLossesOfThisOrLaterAP context Ctx1 has invalid dimensional context 1>&2\r\nexit /b 3\r\n",
         'unparsed_failure' => "echo validation terminated unexpectedly 1>&2\r\nexit /b 3\r\n",
         default => "echo validation passed\r\nexit /b 0\r\n",

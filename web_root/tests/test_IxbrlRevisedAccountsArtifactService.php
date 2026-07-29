@@ -56,7 +56,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 . '<ix:nonFraction name="core:FixedAssets" contextRef="current_period_end" unitRef="GBP" decimals="2" format="ixt:numdotdecimal">100.00</ix:nonFraction>'
                 . '<ix:nonFraction name="core:Creditors" contextRef="current_period_end_creditors_within_one_year" unitRef="GBP" decimals="2" format="ixt:numdotdecimal">279.00</ix:nonFraction>'
                 . '<ix:nonFraction name="core:Creditors" contextRef="current_period_end_creditors_after_one_year" unitRef="GBP" decimals="2" format="ixt:numdotdecimal">1035.63</ix:nonFraction></div>'
-                . '<div id="hmrc-revision-explanation" data-revision-explanation="companies-house"><p><ix:nonNumeric name="bus:StatementRespectsInWhichPreviouslyFiledReportDidNotComplyWithCompaniesAct2006" contextRef="current_period_duration">The original report contained an error.</ix:nonNumeric></p></div>'
+                . '<div id="hmrc-revision-explanation"><p><ix:nonNumeric name="bus:StatementRespectsInWhichPreviouslyFiledReportDidNotComplyWithCompaniesAct2006" contextRef="current_period_duration">The original report contained an error.</ix:nonNumeric></p></div>'
                 . '</body></html>';
             $oldDeclarations = [
                 'replaces_statement' => 'These revised accounts replace the previously filed report.',
@@ -110,6 +110,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(str_contains($xhtml, 'Micro-entity accounts'));
             $harness->assertTrue(str_contains($xhtml, 'class="accountspage pagebreak revision-page"'));
             $harness->assertFalse(str_contains($xhtml, 'id="hmrc-revision-explanation"'));
+            $harness->assertFalse(str_contains($xhtml, 'data-revision-explanation'));
             $harness->assertTrue(str_contains($xhtml, 'These revised accounts were approved on '));
             $harness->assertTrue(str_contains($xhtml, 'ReportAnAmendedRevisedVersionPreviouslyFiledReportTruefalse'));
             $harness->assertTrue(str_contains($xhtml, 'dimension="bus:OriginalRevisedDataDimension">bus:Superseded'));
@@ -124,6 +125,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $factXpath->registerNamespace('xhtml', 'http://www.w3.org/1999/xhtml');
             $revisionPage = $factXpath->query('//xhtml:div[@id="revised-accounts-statements"]')->item(0);
             $harness->assertTrue($revisionPage instanceof DOMElement);
+            $harness->assertTrue(str_contains($revisionPage->textContent, 'The original report contained an error.'));
             $harness->assertSame(1, $factXpath->query(
                 '//ix:nonNumeric[@name="bus:StatementRespectsInWhichPreviouslyFiledReportDidNotComplyWithCompaniesAct2006"]'
             )->length);

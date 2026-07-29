@@ -414,7 +414,7 @@ final class IxbrlRevisedAccountsArtifactService
      */
     private function removeHmrcRevisionExplanation(\DOMXPath $xpath): void
     {
-        $notes = $xpath->query('//*[@id="hmrc-revision-explanation" and @data-revision-explanation="companies-house"]');
+        $notes = $xpath->query('//*[@id="hmrc-revision-explanation"]');
         if ($notes === false) {
             return;
         }

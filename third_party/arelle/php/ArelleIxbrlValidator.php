@@ -393,7 +393,7 @@ final class ArelleIxbrlValidator
 
     private function diagnosticSeverity(string $code, string $explicitSeverity, string $message = ''): string
     {
-        $value = strtolower($explicitSeverity !== '' ? $explicitSeverity : $code);
+        $value = strtolower($explicitSeverity !== '' ? $explicitSeverity : $code . ' ' . $message);
         if ($explicitSeverity === '' && preg_match('/^(fatal|critical|error|exception|traceback|warning|warn|information|info)\b/i', $message, $matches) === 1) {
             $value = strtolower((string)$matches[1]);
         }

@@ -79,6 +79,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertFalse(str_contains($xhtml, '<section'));
             $harness->assertFalse(str_contains($xhtml, ' lang="en"'));
             $harness->assertTrue(str_contains($xhtml, ' xml:lang="en"'));
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                '<table class="note-table director-loan-table"><colgroup><col class="description-column"/>'
+                . '<col class="amount-column"/></colgroup>'
+            ));
 
             $document = new DOMDocument();
             $harness->assertTrue($document->loadXML($xhtml, LIBXML_NONET));
@@ -429,7 +434,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(450.0, $netCurrent);
         });
 
-        $harness->check(\eel_accounts\Service\IxbrlAccountingService::class, 'renders the prior locked period employee disclosure as a comparative', static function () use ($harness, $service): void {
+        $harness->check(\eel_accounts\Service\IxbrlAccountingService::class, 'renders director-loan and employee comparative facts in their notes', static function () use ($harness, $service): void {
             $facts = ixbrlRenderFixtureFacts();
             $comparativeKeys = [];
             foreach ((new \eel_accounts\Service\IxbrlTaxonomyProfileService())->mappings() as $mapping) {
@@ -447,6 +452,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 if ((string)$fact['fact_key'] === 'average_number_employees') {
                     $comparative['numeric_value'] = 3.0;
                 }
+                if (in_array((string)$fact['fact_key'], [
+                    'director_advances_made',
+                    'director_cash_repayments',
+                ], true)) {
+                    $comparative['numeric_value'] = 253.0;
+                }
                 $facts[] = $comparative;
             }
             $method = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'renderXhtml');
@@ -454,6 +465,44 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $xhtml = (string)$method->invoke($service, $facts);
             $harness->assertTrue(str_contains($xhtml, 'name="core:AverageNumberEmployeesDuringPeriod" contextRef="comparative_period_duration"'));
             $harness->assertTrue(str_contains($xhtml, '(comparative period:'));
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                '<table class="note-table director-loan-table"><colgroup><col class="description-column"/>'
+                . '<col class="amount-column"/><col class="amount-column"/></colgroup>'
+            ));
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                '<th class="amount" scope="col">2025<br/><span>£</span></th>'
+                . '<th class="amount" scope="col">2024<br/><span>£</span></th>'
+            ));
+            foreach ([
+                'direp:AdvancesCreditsMadeInPeriodDirectors' => 'comparative_period_duration',
+                'direp:AdvancesCreditsRepaidInPeriodDirectors' => 'comparative_period_duration',
+                'direp:AdvancesCreditsDirectors' => 'comparative_period_end',
+            ] as $concept => $contextRef) {
+                $harness->assertTrue(str_contains(
+                    $xhtml,
+                    'name="' . $concept . '" contextRef="' . $contextRef . '"'
+                ));
+            }
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                'name="direp:AdvancesCreditsMadeInPeriodDirectors" contextRef="comparative_period_duration"'
+                . ' unitRef="GBP" decimals="2" format="ixt:numdotdecimal">253.00</ix:nonFraction>'
+            ));
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                'name="direp:AdvancesCreditsRepaidInPeriodDirectors" contextRef="comparative_period_duration"'
+                . ' unitRef="GBP" decimals="2" format="ixt:numdotdecimal">253.00</ix:nonFraction>'
+            ));
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                'name="direp:AdvancesCreditsDirectors" contextRef="comparative_period_end"'
+                . ' unitRef="GBP" decimals="2" format="ixt:zerodash">-</ix:nonFraction>'
+            ));
+            $validator = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'validateInlineXbrl');
+            $validator->setAccessible(true);
+            $harness->assertSame([], $validator->invoke($service, $xhtml));
         });
 
         $harness->check(\eel_accounts\Service\IxbrlAccountingService::class, 'rejects a missing comparative fact when a prior locked period exists', static function () use ($harness, $service): void {

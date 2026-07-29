@@ -583,18 +583,41 @@ final class IxbrlAccountingService
         if ($available === []) {
             return '';
         }
+        $hasComparative = $this->hasComparative($indexed);
+        $periodEnd = $this->factValue($this->currentFact($indexed, 'period_end'));
+        $comparativePeriod = $hasComparative ? $this->comparativePeriodFromIndex($indexed) : null;
         $html = '<table class="note-table director-loan-table"><colgroup><col class="description-column"/>'
-            . '<col class="amount-column"/></colgroup><thead><tr><th class="description" scope="col"></th>'
-            . '<th class="amount" scope="col">£</th></tr></thead><tbody>';
+            . '<col class="amount-column"/>'
+            . ($hasComparative ? '<col class="amount-column"/>' : '')
+            . '</colgroup><thead><tr><th class="description" scope="col"></th>'
+            . '<th class="amount" scope="col">' . $this->e($this->yearOf($periodEnd))
+            . '<br/><span>£</span></th>'
+            . ($hasComparative
+                ? '<th class="amount" scope="col">'
+                    . $this->e($this->yearOf((string)($comparativePeriod['period_end'] ?? '')))
+                    . '<br/><span>£</span></th>'
+                : '')
+            . '</tr></thead><tbody>';
         foreach ($available as $row) {
+            $key = (string)$row['key'];
             $html .= '<tr><th class="description" scope="row">' . $this->e((string)$row['label'])
                 . '</th><td class="amount">'
-                . $this->inlineFact($this->currentFact($indexed, (string)$row['key']), [
+                . $this->inlineFact($this->currentFact($indexed, $key), [
                     'accounting' => true,
                     'brackets' => !empty($row['brackets']),
                     'zero_dash' => true,
                 ])
-                . '</td></tr>';
+                . '</td>';
+            if ($hasComparative) {
+                $html .= '<td class="amount">'
+                    . $this->inlineFact($this->comparativeFact($indexed, $key), [
+                        'accounting' => true,
+                        'brackets' => !empty($row['brackets']),
+                        'zero_dash' => true,
+                    ])
+                    . '</td>';
+            }
+            $html .= '</tr>';
         }
         $html .= '</tbody></table>';
 

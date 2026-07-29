@@ -105,7 +105,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             \eel_accounts\Service\IxbrlArtifactDownloadService::class,
             'checks the stored validation hashes against the download file',
             static function () use ($harness, $invoke): void {
-                $path = tempnam(sys_get_temp_dir(), 'ixbrl-download-');
+                $path = tempnam(test_tmp_directory(), 'ixbrl-download-');
                 if ($path === false) {
                     throw new RuntimeException('Unable to create test artifact.');
                 }

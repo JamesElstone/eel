@@ -31,8 +31,8 @@ $harness->run(_pl_tradingCard::class, static function (GeneratedServiceClassTest
     $harness->check(_pl_tradingCard::class, 'renders the accounting-period sales heatmap', static function () use ($harness, $html): void {
         $harness->assertTrue(str_contains($html, 'class="calendar-heatmap"'));
         $harness->assertTrue(str_contains($html, 'Sales by day'));
-        $harness->assertTrue(str_contains($html, '&#163;1,250.50 sales on 15 January 2025'));
-        $harness->assertTrue(str_contains($html, '<strong>Total sales:</strong> &#163;1,750.50'));
+        $harness->assertTrue(str_contains($html, '£1,250.50 sales on 15 January 2025'));
+        $harness->assertTrue(str_contains($html, '<strong>Total sales:</strong> £1,750.50'));
         $harness->assertSame(false, str_contains($html, 'calendar-heatmap-year-select'));
     });
 });
@@ -289,7 +289,7 @@ $harness->run(_pl_summaryCard::class, static function (GeneratedServiceClassTest
         $harness->assertTrue($profitMarginPosition !== false && $profitBeforeTaxPosition < $profitMarginPosition);
         $harness->assertTrue($incomePosition !== false && $profitMarginPosition < $incomePosition);
         $harness->assertTrue(str_contains($html, '<div class="summary-label">Income</div><div class="summary-value">$ 1,200.00</div>'));
-        $harness->assertTrue(str_contains($html, 'Ordinary Corporation Tax [CT600 box 475]'));
+        $harness->assertTrue(str_contains($html, 'Net Corporation Tax liability [CT600 box 475]'));
         $harness->assertTrue(str_contains($html, 'CT600A net tax payable [A80]'));
         $harness->assertTrue(str_contains($html, 'Total Corporation Tax payable'));
         $harness->assertTrue(str_contains($html, 'L2P relief receivable'));

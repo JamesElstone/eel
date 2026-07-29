@@ -493,28 +493,65 @@ function goldenCt600aCt600Mappings(array $facts): array
 /** @return list<array<string,mixed>> */
 function goldenCt600aIxbrlMappings(array $filing): array
 {
-    return [
-        [
-            'id' => 1, 'sort_order' => 1,
-            'canonical_key' => 'identity.company_name', 'taxonomy_concept' => 'ct:CompanyName',
-            'namespace_uri' => 'http://www.hmrc.gov.uk/schemas/ct/comp/2024-01-01', 'local_name' => 'CompanyName',
-            'value_type' => 'text', 'period_type' => 'instant',
-            'context_profile' => \eel_accounts\Service\CtFilingMappingService::CONTEXT_HMRC_CT_COMPANY,
-            'unit_ref' => null, 'decimals_value' => null, 'dimensions_json' => null, 'sign_multiplier' => 1,
-            'presentation_section' => 'identity', 'presentation_label' => 'Company name',
-            'source_value' => (string)($filing['facts']['identity.company_name'] ?? ''),
-        ],
-        [
-            'id' => 2, 'sort_order' => 2,
-            'canonical_key' => 'return_position.tax_payable', 'taxonomy_concept' => 'ct:NetTaxPayable',
-            'namespace_uri' => 'http://www.hmrc.gov.uk/schemas/ct/comp/2024-01-01', 'local_name' => 'NetTaxPayable',
-            'value_type' => 'numeric', 'period_type' => 'duration',
-            'context_profile' => \eel_accounts\Service\CtFilingMappingService::CONTEXT_HMRC_CT_COMPANY,
-            'unit_ref' => 'GBP', 'decimals_value' => '2', 'dimensions_json' => null, 'sign_multiplier' => 1,
-            'presentation_section' => 'tax_liability', 'presentation_label' => 'Net tax payable',
-            'source_value' => (float)($filing['facts']['return_position.tax_payable'] ?? 0),
-        ],
+    $specs = [
+        ['identity.company_name', 'CompanyName', 'text', 'instant', 'identity'],
+        ['filing_identity.utr', 'TaxReference', 'text', 'instant', 'identity'],
+        ['ct_period.start_date', 'StartOfPeriodCoveredByReturn', 'date', 'instant', 'identity'],
+        ['ct_period.end_date', 'EndOfPeriodCoveredByReturn', 'date', 'instant', 'identity'],
+        ['computation.summary.accounting_profit', 'ProfitLossPerAccounts', 'numeric', 'duration', 'accounts_adjustments'],
+        ['computation.summary.disallowable_add_backs', 'AdjustmentsMiscellaneousExpensesPerAccounts', 'numeric', 'duration', 'accounts_adjustments'],
+        ['computation.summary.capital_expenditure_add_backs', 'AdjustmentsCapitalExpenditure', 'numeric', 'duration', 'accounts_adjustments'],
+        ['computation.summary.disposal_profit_or_loss_adjustment', 'AdjustmentsLossOrProfitOnSale', 'numeric', 'duration', 'accounts_adjustments'],
+        ['computation.summary.depreciation_add_back', 'AdjustmentsDepreciation', 'numeric', 'duration', 'accounts_adjustments'],
+        ['computation.summary.capital_allowances', 'TotalCapitalAllowances', 'numeric', 'duration', 'capital_allowances'],
+        ['computation.summary.taxable_before_losses', 'ProfitsBeforeOtherDeductionsAndReliefs', 'numeric', 'duration', 'losses'],
+        ['computation.summary.loss_restriction.post_2017_trading_losses.brought_forward', 'TradingLossesBroughtForward', 'numeric', 'duration', 'losses'],
+        ['computation.summary.loss_restriction.post_2017_trading_losses.used', 'TradingLossesBroughtForwardAmountUsedAgainstTotalProfits', 'numeric', 'duration', 'losses'],
+        ['computation.summary.loss_restriction.post_2017_trading_losses.carried_forward', 'BalanceOfLossesBroughtForwardCarriedForward', 'numeric', 'instant', 'losses'],
+        ['computation.summary.loss_restriction.deduction_allowance.amount', 'DeductionAllowance', 'numeric', 'duration', 'losses'],
+        ['computation.summary.loss_restriction.calculated_loss_restriction', 'CalculatedLossRestriction', 'numeric', 'duration', 'losses'],
+        ['computation.summary.taxable_profit', 'TotalProfitsChargeableToCorporationTax', 'numeric', 'duration', 'tax_liability'],
+        ['computation.summary.ordinary_corporation_tax', 'CorporationTaxChargeable', 'numeric', 'duration', 'tax_liability'],
+        ['return_position.ct600a_a80', 'TaxPayableOnLoansToParticipators', 'numeric', 'duration', 'tax_liability'],
+        ['return_position.tax_payable', 'NetTaxPayable', 'numeric', 'duration', 'tax_liability'],
     ];
+    $facts = (array)($filing['facts'] ?? []);
+    $mappings = [];
+    foreach ($specs as $index => [$key, $localName, $type, $periodType, $section]) {
+        $mappings[] = [
+            'id' => $index + 1,
+            'sort_order' => ($index + 1) * 10,
+            'canonical_key' => $key,
+            'taxonomy_concept' => 'ct:' . $localName,
+            'namespace_uri' => 'http://www.hmrc.gov.uk/schemas/ct/comp/2024-01-01',
+            'local_name' => $localName,
+            'value_type' => $type,
+            'period_type' => $periodType,
+            'context_profile' => in_array($localName, ['DeductionAllowance', 'CalculatedLossRestriction'], true)
+                ? \eel_accounts\Service\CtFilingMappingService::CONTEXT_HMRC_CT_LOSS_RESTRICTION
+                : (in_array($localName, [
+                    'ProfitLossPerAccounts',
+                    'AdjustmentsMiscellaneousExpensesPerAccounts',
+                    'AdjustmentsCapitalExpenditure',
+                    'AdjustmentsLossOrProfitOnSale',
+                    'AdjustmentsDepreciation',
+                    'TotalCapitalAllowances',
+                    'TradingLossesBroughtForward',
+                    'TradingLossesBroughtForwardAmountUsedAgainstTotalProfits',
+                    'BalanceOfLossesBroughtForwardCarriedForward',
+                ], true)
+                    ? \eel_accounts\Service\CtFilingMappingService::CONTEXT_HMRC_CT_UK_TRADE
+                    : \eel_accounts\Service\CtFilingMappingService::CONTEXT_HMRC_CT_COMPANY),
+            'unit_ref' => $type === 'numeric' ? 'GBP' : null,
+            'decimals_value' => $type === 'numeric' ? '2' : null,
+            'dimensions_json' => null,
+            'sign_multiplier' => 1,
+            'presentation_section' => $section,
+            'presentation_label' => $key,
+            'source_value' => $facts[$key] ?? ($type === 'numeric' ? 0.0 : ''),
+        ];
+    }
+    return $mappings;
 }
 
 /** @return array<string,mixed> */

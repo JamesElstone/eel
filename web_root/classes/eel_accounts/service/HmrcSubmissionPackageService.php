@@ -36,6 +36,17 @@ final class HmrcSubmissionPackageService
             : (new IxbrlStatutoryAccountsArtifactService())->locate($companyId, $accountingPeriodId);
     }
 
+    /**
+     * Fast, approval-pinned evidence for a status card. Submission preparation
+     * deliberately uses locateAccountsIxbrl() and performs the full rebuild.
+     */
+    public function locateAccountsIxbrlForStatus(int $companyId, int $accountingPeriodId): array
+    {
+        return $this->accountsLocator !== null
+            ? (array)($this->accountsLocator)($companyId, $accountingPeriodId)
+            : (new IxbrlStatutoryAccountsArtifactService())->locate($companyId, $accountingPeriodId, true);
+    }
+
     public function locateComputationsIxbrl(int $companyId, int $accountingPeriodId): array
     {
         if ($companyId <= 0 || $accountingPeriodId <= 0 || !\InterfaceDB::tableExists('corporation_tax_periods')) {
@@ -122,12 +133,56 @@ final class HmrcSubmissionPackageService
         ];
     }
 
+    /** Lightweight immutable-run check used only while rendering status. */
+    public function locateComputationsIxbrlForStatus(int $companyId, int $ctPeriodId): array
+    {
+        if ($this->computationLocator !== null) {
+            return (array)($this->computationLocator)($companyId, $ctPeriodId);
+        }
+        $run = \InterfaceDB::fetchOne(
+            'SELECT r.*, ctp.accounting_period_id
+             FROM corporation_tax_periods ctp
+             LEFT JOIN corporation_tax_computation_runs r ON r.id = ctp.latest_computation_run_id
+             WHERE ctp.id = :id AND ctp.company_id = :company_id AND ctp.status <> :superseded LIMIT 1',
+            ['id' => $ctPeriodId, 'company_id' => $companyId, 'superseded' => 'superseded']
+        );
+        if (!is_array($run) || (int)($run['id'] ?? 0) <= 0) {
+            return $this->artifactFailure('missing', 'No current computation iXBRL run exists for this CT period.');
+        }
+        if ((string)($run['ixbrl_status'] ?? '') !== 'validated'
+            || (string)($run['validation_status'] ?? '') !== 'passed'
+            || (string)($run['external_validation_status'] ?? '') !== 'passed') {
+            return $this->artifactFailure('not_ready', 'The current computation iXBRL artifact has not passed validation.');
+        }
+        $path = trim((string)($run['generated_path'] ?? ''));
+        $hash = strtolower(trim((string)($run['output_sha256'] ?? '')));
+        if ($path === '' || !is_file($path) || $hash === ''
+            || !hash_equals($hash, strtolower(trim((string)($run['external_validated_sha256'] ?? ''))))
+            || !hash_equals($hash, (string)(new IxbrlArtifactFingerprintService())->sha256($path))) {
+            return $this->artifactFailure('missing', 'The current computation iXBRL artifact is missing or has changed.');
+        }
+        return [
+            'ok' => true, 'state' => 'ready', 'run_id' => (int)$run['id'],
+            'ct_period_id' => $ctPeriodId, 'accounting_period_id' => (int)$run['accounting_period_id'],
+            'path' => $path, 'filename' => (string)$run['generated_filename'], 'hash' => $hash,
+            'basis_hash' => (string)($run['filing_basis_hash'] ?? ''),
+            'mapping_profile_id' => (int)($run['ixbrl_mapping_profile_id'] ?? 0),
+            'mapping_hash' => (string)($run['ixbrl_mapping_hash'] ?? ''),
+            'taxonomy_package_id' => (int)($run['computation_taxonomy_package_id'] ?? 0),
+            'taxonomy_package_hash' => (string)($run['computation_taxonomy_package_hash'] ?? ''),
+            'validation_status' => (string)($run['external_validation_status'] ?? ''), 'warnings' => [], 'errors' => [],
+        ];
+    }
+
     /** @return array<string,mixed> */
     public function prepareForSubmission(
         int $companyId,
         int $ctPeriodId,
         string $mode,
-        array $declaration
+        array $declaration,
+        ?array $returnOverride = null,
+        ?array $accountsOverride = null,
+        ?array $computationOverride = null
     ): array {
         $mode = strtoupper(trim($mode));
         if (!in_array($mode, ['TEST', 'TIL', 'LIVE'], true)) {
@@ -141,14 +196,20 @@ final class HmrcSubmissionPackageService
 
         $builder = $this->ct600Builder !== null
             ? (array)($this->ct600Builder)($companyId, $accountingPeriodId, $ctPeriodId, $declaration)
-            : (new Ct600BuilderService())->buildForIds($companyId, $accountingPeriodId, $ctPeriodId, $declaration);
+            : (new Ct600BuilderService())->buildForIds(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId,
+                $declaration,
+                $returnOverride
+            );
         if (empty($builder['ok'])) {
             return $this->failure('The CT600 filing body is not ready.', (array)($builder['errors'] ?? []));
         }
         $return = (array)$builder['return_model'];
         $filingModel = (array)($return['filing_model']['model'] ?? []);
-        $accounts = $this->locateAccountsIxbrl($companyId, $accountingPeriodId);
-        $computation = $this->locateComputationsIxbrlForCtPeriod($companyId, $ctPeriodId);
+        $accounts = $accountsOverride ?? $this->locateAccountsIxbrl($companyId, $accountingPeriodId);
+        $computation = $computationOverride ?? $this->locateComputationsIxbrlForCtPeriod($companyId, $ctPeriodId);
         $artifactErrors = [];
         if (empty($accounts['ok'])) {
             $artifactErrors = array_merge($artifactErrors, (array)($accounts['errors'] ?? ['The accounts iXBRL artifact is not ready.']));
@@ -296,20 +357,27 @@ final class HmrcSubmissionPackageService
      * rebuilds the exact current body for TIL/LIVE byte matching.
      * @return array<string,mixed>
      */
-    public function currentSourceManifest(int $companyId, int $ctPeriodId): array
+    public function currentSourceManifest(
+        int $companyId,
+        int $ctPeriodId,
+        ?array $returnOverride = null,
+        ?array $accountsOverride = null,
+        ?array $computationOverride = null,
+        bool $includeCurrentBody = true
+    ): array
     {
         $period = $this->period($companyId, $ctPeriodId);
         if (!is_array($period)) {
             return $this->failure('The selected CT period is unavailable.');
         }
         $accountingPeriodId = (int)$period['accounting_period_id'];
-        $return = (new Ct600ReturnModelService())->build($companyId, $accountingPeriodId, $ctPeriodId);
+        $return = $returnOverride ?? (new Ct600ReturnModelService())->build($companyId, $accountingPeriodId, $ctPeriodId);
         if (empty($return['ok'])) {
             return $this->failure('The current CT600 source model is not ready.', (array)($return['errors'] ?? []));
         }
         $filingModel = (array)($return['filing_model']['model'] ?? []);
-        $accounts = $this->locateAccountsIxbrl($companyId, $accountingPeriodId);
-        $computation = $this->locateComputationsIxbrlForCtPeriod($companyId, $ctPeriodId);
+        $accounts = $accountsOverride ?? $this->locateAccountsIxbrl($companyId, $accountingPeriodId);
+        $computation = $computationOverride ?? $this->locateComputationsIxbrlForCtPeriod($companyId, $ctPeriodId);
         if (empty($accounts['ok']) || empty($computation['ok'])) {
             return $this->failure('The current filing iXBRL artifacts are not ready.', array_merge(
                 (array)($accounts['errors'] ?? []),
@@ -367,7 +435,7 @@ final class HmrcSubmissionPackageService
         $manifestHash = hash('sha256', $this->canonicalJson($manifest));
 
         $bodyHash = hash('sha256', 'pending-declaration|' . $manifestHash);
-        if (\InterfaceDB::tableExists('hmrc_ct600_submissions')) {
+        if ($includeCurrentBody && \InterfaceDB::tableExists('hmrc_ct600_submissions')) {
             $row = \InterfaceDB::fetchOne(
                 'SELECT environment, declarant_name, declarant_status, declaration_confirmed,
                         authority_confirmed,
@@ -386,7 +454,7 @@ final class HmrcSubmissionPackageService
                     'authority_confirmed' => !empty($row['authority_confirmed']),
                     'supplementary_scope_confirmed' => !empty($row['supplementary_scope_confirmed']),
                     'original_unfiled_confirmed' => !empty($row['original_unfiled_confirmed']),
-                ]);
+                ], $return, $accounts, $computation);
                 if (!empty($prepared['ok'])) {
                     $manifest = (array)$prepared['source_manifest'];
                     $manifestHash = (string)$prepared['source_manifest_sha256'];
@@ -400,7 +468,7 @@ final class HmrcSubmissionPackageService
             'warnings' => [],
             'source_manifest' => $manifest,
             'source_manifest_sha256' => $manifestHash,
-            'body_sha256' => $bodyHash,
+            'body_sha256' => $includeCurrentBody ? $bodyHash : '',
             'package_hash' => hash('sha256', $manifestHash . '|' . $bodyHash),
         ];
     }

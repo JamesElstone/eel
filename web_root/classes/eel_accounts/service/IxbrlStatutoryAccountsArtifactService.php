@@ -21,11 +21,11 @@ final class IxbrlStatutoryAccountsArtifactService
         $this->revisedLocator = $revisedLocator !== null ? \Closure::fromCallable($revisedLocator) : null;
     }
 
-    public function locate(int $companyId, int $accountingPeriodId): array
+    public function locate(int $companyId, int $accountingPeriodId, bool $approvalPinnedOnly = false): array
     {
         $ordinary = $this->ordinaryLocator !== null
             ? (array)($this->ordinaryLocator)($companyId, $accountingPeriodId)
-            : (new IxbrlFilingArtifactService())->locate($companyId, $accountingPeriodId);
+            : (new IxbrlFilingArtifactService())->locate($companyId, $accountingPeriodId, $approvalPinnedOnly);
         if (empty($ordinary['ok'])) {
             return $ordinary;
         }

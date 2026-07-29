@@ -510,6 +510,9 @@ final class S455ReviewService
             return ['rows' => [], 'errors' => ['Configure the Participator Loan control nominals.']];
         }
         $placeholders = implode(',', array_fill(0, count($allIds), '?'));
+        $advanceNominalId = (int)($settings['participator_loan_asset_nominal_id'] ?? 0);
+        $unsupportedIds = $advanceNominalId > 0 ? [$advanceNominalId] : $allIds;
+        $unsupportedPlaceholders = implode(',', array_fill(0, count($unsupportedIds), '?'));
         $sqlite = \InterfaceDB::driverName() === 'sqlite';
         $transactionSource = $sqlite
             ? "'transaction:' || t.id"
@@ -658,7 +661,7 @@ final class S455ReviewService
                AND j.journal_date <= ?
                AND j.created_at <= ?
                AND j.updated_at <= ?
-               AND jl.nominal_account_id IN (' . $placeholders . ')
+               AND jl.nominal_account_id IN (' . $unsupportedPlaceholders . ')
                 AND NOT (j.source_type = \'bank_csv\' AND ' . $unsupportedBankTransactionCondition . ')
                AND NOT EXISTS (
                    SELECT 1 FROM journal_entry_metadata jem
@@ -671,7 +674,7 @@ final class S455ReviewService
                 min(substr($cutoff, 0, 10), $windowEnd),
                 $cutoff,
                 $cutoff,
-            ], $allIds)
+            ], $unsupportedIds)
         );
         $unsupportedCount = count($unsupportedMovements);
         if ($unsupportedCount > 0) {

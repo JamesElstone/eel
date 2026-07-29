@@ -401,6 +401,17 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     $artifactRoot = test_register_cleanup_path(
                         test_tmp_directory() . DIRECTORY_SEPARATOR . 'hmrc-ct-service-' . bin2hex(random_bytes(4))
                     );
+                    $filingReadiness = static fn(int $requestedCompanyId, int $requestedPeriodId, int $requestedCtPeriodId): array => [
+                        ['label' => 'Disclosures and filing basis', 'ready' => true, 'message' => ''],
+                        ['label' => 'CT-period filing basis', 'ready' => true, 'message' => ''],
+                        ['label' => 'CT600 source model', 'ready' => true, 'message' => ''],
+                        [
+                            'label' => 'Filing iXBRL artifacts',
+                            'ready' => false,
+                            'message' => 'The current filing iXBRL artifacts are not ready.',
+                            'detail' => 'The computation artifact filing basis is stale.',
+                        ],
+                    ];
                     $service = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService(
                         $transport,
                         null,
@@ -410,7 +421,8 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         $artifactRoot,
                         $package,
                         $currentManifest,
-                        xmlEnvironmentResolver: static fn(): string => 'LIVE'
+                        xmlEnvironmentResolver: static fn(): string => 'LIVE',
+                        filingReadinessResolver: $filingReadiness
                     );
                     $declaration = [
                         'declaration_name' => 'Jane Director',
@@ -478,9 +490,15 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
 
                     $status = $service->status($companyId, $accountingPeriodId);
                     $h->assertTrue((bool)$status['success']);
+                    $dependencies = (array)($status['periods'][0]['filing_dependencies'] ?? []);
+                    $h->assertSame(true, (bool)($dependencies[0]['ready'] ?? false));
+                    $h->assertSame(true, (bool)($dependencies[1]['ready'] ?? false));
+                    $h->assertSame(true, (bool)($dependencies[2]['ready'] ?? false));
+                    $h->assertSame(false, (bool)($dependencies[3]['ready'] ?? true));
+                    $h->assertSame('The computation artifact filing basis is stale.', (string)($dependencies[3]['detail'] ?? ''));
                     $h->assertSame('Jane Director', (string)$status['periods'][0]['declaration']['declaration_name']);
                     $h->assertFalse((bool)$status['periods'][0]['declaration']['declaration_confirmed']);
-                    $h->assertTrue((bool)$status['periods'][0]['live_ready']);
+                    $h->assertFalse((bool)$status['periods'][0]['live_ready']);
 
                     $transport->submitResponses[] = [
                         'success' => true,

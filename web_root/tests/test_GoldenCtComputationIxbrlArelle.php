@@ -335,6 +335,15 @@ function goldenCtIxbrlEnsureTaxonomySchema(): void
         substitution_group TEXT NULL, is_abstract INTEGER NOT NULL DEFAULT 0, is_dimension INTEGER NOT NULL DEFAULT 0,
         is_required INTEGER NOT NULL DEFAULT 0
     )');
+    if (!InterfaceDB::tableExists('ct_filing_mapping_profiles')) {
+        InterfaceDB::execute('CREATE TABLE ct_filing_mapping_profiles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, target_type TEXT NOT NULL, rim_package_id INTEGER NULL,
+            computation_package_id INTEGER NULL, profile_name TEXT NOT NULL, revision_no INTEGER NOT NULL,
+            status TEXT NOT NULL, content_hash TEXT NOT NULL, compatibility_status TEXT NOT NULL,
+            compatibility_report_json TEXT NULL, supersedes_profile_id INTEGER NULL, approved_by TEXT NULL,
+            approved_at TEXT NULL, created_by TEXT NULL, created_at TEXT NULL, updated_at TEXT NULL
+        )');
+    }
 }
 
 function goldenCtIxbrlSeedTaxonomyCatalogue(\eel_accounts\Service\HmrcCtComputationCatalogueService $catalogue, string $directory): int

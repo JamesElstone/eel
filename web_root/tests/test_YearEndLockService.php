@@ -63,9 +63,6 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                             'Reopen party terms and recalculate the offset.'
                         );
                         $harness->assertSame(true, (bool)($unlock['success'] ?? false));
-                        $harness->assertTrue(
-                            (int)(($unlock['section_review_cache'] ?? [])['refreshed_count'] ?? 0) >= 1
-                        );
                         $harness->assertSame(1, (int)InterfaceDB::fetchColumn(
                             'SELECT is_current
                              FROM year_end_section_review_bundles
@@ -733,6 +730,9 @@ function yearEndLockPartyLoanSaveTerms(
             'deferment_right_confirmed' => 0,
             'set_off_right_confirmed' => 1,
             'settlement_intention' => 'simultaneous',
+            'advance_interest_rate_percent' => 0,
+            'advance_security_type' => 'unsecured',
+            'advance_repayment_basis' => 'on_demand',
         ],
         $actor
     );

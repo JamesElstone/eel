@@ -42,6 +42,10 @@ function createTestPageServiceFramework(): PageServiceFramework
 {
     return new PageServiceFramework(
         new AppService(testPageServiceUploadBasePath()),
-        new SiteContextCoordinatorFramework(new \eel_accounts\Service\AccountingContextService(), true)
+        new SiteContextCoordinatorFramework(new \eel_accounts\Service\AccountingContextService(), true),
+        new ActionProgressFramework(static function (string $line): void {
+            // Action progress is asserted by the focused framework tests; keep
+            // downstream action-test output reserved for harness results.
+        }, false)
     );
 }

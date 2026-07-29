@@ -90,7 +90,7 @@ function revised_accounts_write_reports(
                 );
             }
         }
-        if (!rename($stagingBundle, $finalBundle)) {
+        if (!revised_accounts_validation_publish_directory($stagingBundle, $finalBundle)) {
             throw new RuntimeException(
                 'The complete validation report bundle could not be published.'
             );
@@ -111,6 +111,23 @@ function revised_accounts_write_reports(
         $files[$key] = $finalBundle . DIRECTORY_SEPARATOR . basename($path);
     }
     return $files;
+}
+
+function revised_accounts_validation_publish_directory(string $source, string $target): bool
+{
+    for ($attempt = 0; $attempt < 6; $attempt++) {
+        if (@rename($source, $target)) {
+            return true;
+        }
+        clearstatcache(true, $source);
+        clearstatcache(true, $target);
+        if (is_dir($target) && !is_dir($source)) {
+            return true;
+        }
+        usleep(50000);
+    }
+
+    return false;
 }
 
 /** @param array<string, mixed> $report */

@@ -87,11 +87,6 @@ final class _companies_house_transmitCard extends CardBaseFramework
                 (string)($feature['mode'] ?? 'DISABLED'),
                 !empty($feature['credentials_configured'])
             )
-            . $this->metric(
-                'CompanyData XML Output',
-                !empty($feature['company_data_credentials_configured']) ? 'Configured' : 'Unavailable',
-                'Credentials used to request CompanyData and verify the company authentication code before filing.'
-            )
             . $this->metric('Next submission number', (string)($sequence['next_number'] ?? 'Unavailable'))
             . $this->metric('Last issued number', (string)($sequence['last_issued_number'] ?? 'None'))
             . '</div></section>';
@@ -107,13 +102,12 @@ final class _companies_house_transmitCard extends CardBaseFramework
                 ? !empty($artifact['filename'])
                 : (!empty($artifact['current']) || (string)$artifact['state'] === 'current');
             if (!$artifactCurrent && $lifecycle === 'prepared') {
-                $html .= '<div class="notice warning">'
-                    . \eel_accounts\Support\Utf8::html((string)(($artifact['errors'] ?? [])[0]
-                        ?? 'This prepared artifact is historical and cannot be submitted for the current filing basis.'))
-                    . '</div>';
+                $html .= $this->transmissionMessage(
+                    (string)(($artifact['errors'] ?? [])[0]
+                        ?? 'This prepared artifact is historical and cannot be submitted for the current filing basis.')
+                );
             }
             $html .= '<div class="summary-grid">'
-                . $this->metric('Submission number', (string)($submission['submission_number'] ?? 'Allocated on send'))
                 . $this->metric('Filing classification', ucfirst($filingKind))
                 . $this->metric('Artifact', (string)($artifact['filename'] ?? basename((string)($submission['artifact_path'] ?? $submission['revised_artifact_path'] ?? ''))))
                 . $this->metric('Artifact SHA-256', (string)($artifact['sha256'] ?? $submission['artifact_sha256'] ?? $submission['revised_artifact_sha256'] ?? ''))
@@ -135,7 +129,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
                 )
                 . '</div>';
             foreach ((array)($model['submission_blockers'] ?? []) as $blocker) {
-                $html .= '<div class="notice warning">' . \eel_accounts\Support\Utf8::html((string)$blocker) . '</div>';
+                $html .= $this->transmissionMessage((string)$blocker);
             }
             if ($lifecycle === 'prepared' && !empty($model['can_submit'])) {
                 $html .= $this->submitForm(
@@ -497,7 +491,10 @@ final class _companies_house_transmitCard extends CardBaseFramework
         if ($configured) {
             return '<div class="summary-card success hmrc-credential-summary-card">'
                 . '<div class="summary-label">Credentials</div>'
-                . '<div class="summary-value">Configured</div></div>';
+                . '<div class="summary-value">Configured</div>'
+                . '<div class="actions-row actions-row-right hmrc-credential-summary-actions">'
+                . '<a class="button" href="?page=settings&amp;show_card=api_keys_editor">'
+                . 'Configure Companies House XML credentials</a></div></div>';
         }
 
         $environment = strtoupper(trim($environment));
@@ -510,6 +507,17 @@ final class _companies_house_transmitCard extends CardBaseFramework
             . '<div class="actions-row actions-row-right hmrc-credential-summary-actions">'
             . '<a class="button" href="?page=settings&amp;show_card=api_keys_editor">'
             . 'Configure Companies House XML credentials</a></div></div>';
+    }
+
+    private function transmissionMessage(string $message): string
+    {
+        $message = trim($message);
+        if ($message === 'The prepared Companies House iXBRL artifact is missing.') {
+            return '<div class="helper companies-house-artifact-missing-helper">'
+                . \eel_accounts\Support\Utf8::html($message) . '</div>';
+        }
+
+        return '<div class="notice warning">' . \eel_accounts\Support\Utf8::html($message) . '</div>';
     }
 
     private function metric(string $label, string $value, string $explanation = ''): string

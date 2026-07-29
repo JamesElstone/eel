@@ -28,27 +28,12 @@ $harness->run(\eel_accounts\Service\TaxWorkingsService::class, static function (
     });
 
     $harness->check(\eel_accounts\Service\TaxWorkingsService::class, 'fails closed for a transient split CT period without persisting CT metadata', static function () use ($harness, $service): void {
-        $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
-        $accountingPeriodId = 9111;
-        $transientCtPeriodId = \eel_accounts\Service\CorporationTaxPeriodService::transientReferenceId(
-            $accountingPeriodId,
-            2
-        );
         InterfaceDB::beginTransaction();
         try {
-            InterfaceDB::prepareExecute(
-                'DELETE FROM filing_evidence_bundles
-                 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
-                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
-            );
-            InterfaceDB::prepareExecute(
-                'DELETE FROM corporation_tax_periods
-                 WHERE company_id = :company_id
-                   AND accounting_period_id = :accounting_period_id',
-                [
-                    'company_id' => $companyId,
-                    'accounting_period_id' => $accountingPeriodId,
-                ]
+            [$companyId, $accountingPeriodId] = taxWorkingsTransientFixture();
+            $transientCtPeriodId = \eel_accounts\Service\CorporationTaxPeriodService::transientReferenceId(
+                $accountingPeriodId,
+                2
             );
             $before = InterfaceDB::fetchAll(
                 'SELECT *
@@ -84,32 +69,16 @@ $harness->run(\eel_accounts\Service\TaxWorkingsService::class, static function (
     });
 
     $harness->check(_corporation_tax::class, 'GET context derives and selects transient CT periods without synchronising metadata', static function () use ($harness): void {
-        $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
-        $accountingPeriodId = 9111;
-        $transientCtPeriodId = \eel_accounts\Service\CorporationTaxPeriodService::transientReferenceId(
-            $accountingPeriodId,
-            2
-        );
-        $firstTransientCtPeriodId = \eel_accounts\Service\CorporationTaxPeriodService::transientReferenceId(
-            $accountingPeriodId,
-            1
-        );
-
         InterfaceDB::beginTransaction();
         try {
-            InterfaceDB::prepareExecute(
-                'DELETE FROM filing_evidence_bundles
-                 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
-                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            [$companyId, $accountingPeriodId] = taxWorkingsTransientFixture();
+            $transientCtPeriodId = \eel_accounts\Service\CorporationTaxPeriodService::transientReferenceId(
+                $accountingPeriodId,
+                2
             );
-            InterfaceDB::prepareExecute(
-                'DELETE FROM corporation_tax_periods
-                 WHERE company_id = :company_id
-                   AND accounting_period_id = :accounting_period_id',
-                [
-                    'company_id' => $companyId,
-                    'accounting_period_id' => $accountingPeriodId,
-                ]
+            $firstTransientCtPeriodId = \eel_accounts\Service\CorporationTaxPeriodService::transientReferenceId(
+                $accountingPeriodId,
+                1
             );
             $before = InterfaceDB::fetchAll(
                 'SELECT *
@@ -365,3 +334,40 @@ $harness->run(\eel_accounts\Service\TaxWorkingsService::class, static function (
         }
     });
 });
+
+/** @return array{0:int,1:int} */
+function taxWorkingsTransientFixture(): array
+{
+    $marker = substr(hash('sha256', __FILE__ . microtime(true) . random_int(1, PHP_INT_MAX)), 0, 12);
+    $companyNumber = 'TWT' . $marker;
+    InterfaceDB::prepareExecute(
+        'INSERT INTO companies (company_name, company_number, incorporation_date)
+         VALUES (:company_name, :company_number, :incorporation_date)',
+        [
+            'company_name' => 'Transient Tax Workings Fixture Limited',
+            'company_number' => $companyNumber,
+            'incorporation_date' => '2022-09-05',
+        ]
+    );
+    $companyId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM companies WHERE company_number = :company_number',
+        ['company_number' => $companyNumber]
+    );
+    $label = 'Transient CT split ' . $marker;
+    InterfaceDB::prepareExecute(
+        'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+         VALUES (:company_id, :label, :period_start, :period_end)',
+        [
+            'company_id' => $companyId,
+            'label' => $label,
+            'period_start' => '2022-09-05',
+            'period_end' => '2023-09-30',
+        ]
+    );
+    $accountingPeriodId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label',
+        ['company_id' => $companyId, 'label' => $label]
+    );
+
+    return [$companyId, $accountingPeriodId];
+}

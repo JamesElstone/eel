@@ -190,6 +190,38 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             }
         });
 
+        $harness->check(get_class($service), 'does not classify creditor-only funding as an unsupported s455 advance', static function () use ($harness, $service): void {
+            InterfaceDB::beginTransaction();
+            try {
+                $fixture = s455CorrectionAwareFixture();
+                s455CorrectionAwareManualControlMovement(
+                    $fixture,
+                    $fixture['liability_nominal_id'],
+                    0.00,
+                    250.00,
+                    '2024-06-16',
+                    'Participator-funded company expense'
+                );
+
+                $result = $service->calculate(
+                    $fixture['company_id'],
+                    $fixture['accounting_period_id'],
+                    $fixture['ct_period_id'],
+                    '2099-12-31 23:59:59'
+                );
+
+                $harness->assertSame([], (array)($result['unsupported_movements'] ?? []));
+                $harness->assertFalse(str_contains(
+                    implode(' ', array_map('strval', (array)($result['errors'] ?? []))),
+                    'non-cash or unsupported loan movement'
+                ));
+            } finally {
+                if (InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
+                }
+            }
+        });
+
         $harness->check(get_class($service), 'memoizes only within a request and refreshes after invalidation', static function () use ($harness, $service): void {
             InterfaceDB::beginTransaction();
             $scope = null;

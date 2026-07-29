@@ -97,12 +97,13 @@ final class Ct600BuilderService
         int $companyId,
         int $accountingPeriodId,
         int $ctPeriodId,
-        array $declaration = []
+        array $declaration = [],
+        ?array $returnOverride = null
     ): array {
         try {
-            $return = $this->returnModelBuilder !== null
+            $return = $returnOverride ?? ($this->returnModelBuilder !== null
                 ? (array)($this->returnModelBuilder)($companyId, $accountingPeriodId, $ctPeriodId)
-                : (new Ct600ReturnModelService())->build($companyId, $accountingPeriodId, $ctPeriodId);
+                : (new Ct600ReturnModelService())->build($companyId, $accountingPeriodId, $ctPeriodId));
         } catch (\Throwable $exception) {
             return $this->failure('The CT600 return model could not be built.', [$exception->getMessage()]);
         }

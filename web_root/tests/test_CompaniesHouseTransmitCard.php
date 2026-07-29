@@ -77,11 +77,14 @@ $harness->run(_companies_house_transmitCard::class, static function (
             $harness->assertTrue(str_contains($html, 'Configure Companies House XML environment'));
             $harness->assertTrue(str_contains($html, '<div class="summary-label">Credentials</div>'));
             $harness->assertTrue(str_contains($html, 'summary-card success hmrc-credential-summary-card'));
+            $harness->assertTrue(str_contains($html, 'Configure Companies House XML credentials'));
+            $harness->assertTrue(str_contains($html, 'show_card=api_keys_editor'));
             $harness->assertFalse(str_contains($html, 'XML Input'));
+            $harness->assertFalse(str_contains($html, 'CompanyData XML Output'));
             $harness->assertFalse(str_contains($html, 'Transport lock'));
             $harness->assertFalse(str_contains($html, 'Status / StatusAck lock'));
             $harness->assertFalse(str_contains($html, 'Protocol migration'));
-            $harness->assertTrue(str_contains($html, 'Allocated on send'));
+            $harness->assertFalse(str_contains($html, 'Allocated on send'));
             $harness->assertTrue(str_contains($html, 'action="?page=transmit"'));
             $harness->assertTrue(str_contains($html, 'value="submit_accounts"'));
             $harness->assertTrue(str_contains($html, 'Original'));
@@ -120,6 +123,42 @@ $harness->run(_companies_house_transmitCard::class, static function (
 
     $harness->check(
         _companies_house_transmitCard::class,
+        'renders a missing prepared iXBRL artifact as a spaced helper',
+        static function () use ($harness, $card): void {
+            $message = 'The prepared Companies House iXBRL artifact is missing.';
+            $html = $card->render([
+                'company' => ['id' => 49, 'accounting_period_id' => 80],
+                'services' => [
+                    'companies_house_transmit_context' => [
+                        'feature' => ['mode' => 'TEST', 'credentials_configured' => true],
+                        'sequence' => ['next_number' => '000001'],
+                        'submission' => [
+                            'id' => 712,
+                            'lifecycle' => 'prepared',
+                            'filing_kind' => 'original',
+                        ],
+                        'prepared_artifact' => [
+                            'state' => 'missing',
+                            'current' => false,
+                            'errors' => [$message],
+                        ],
+                        'submission_blockers' => [$message],
+                        'can_submit' => false,
+                    ],
+                    'companies_house_transmit_history' => [],
+                ],
+            ]);
+
+            $harness->assertTrue(str_contains(
+                $html,
+                '<div class="helper companies-house-artifact-missing-helper">' . $message . '</div>'
+            ));
+            $harness->assertFalse(str_contains($html, '<div class="notice warning">' . $message));
+        }
+    );
+
+    $harness->check(
+        _companies_house_transmitCard::class,
         'adds one-exchange controls and exact XML evidence only in developer mode',
         static function () use ($harness, $card): void {
             $previous = AppConfigurationStore::get('developer_options', false);
@@ -132,7 +171,6 @@ $harness->run(_companies_house_transmitCard::class, static function (
                             'feature' => [
                                 'mode' => 'TEST',
                                 'credentials_configured' => true,
-                                'company_data_credentials_configured' => true,
                                 'protocol_ready' => true,
                                 'developer_binding_configured' => true,
                             ],

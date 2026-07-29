@@ -38,6 +38,26 @@ final class Ct600ReturnModelService
     /** @return array<string,mixed> */
     public function build(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
     {
+        // Injected collaborators are used by focused tests; cache only the
+        // production path, whose result is immutable for the request.
+        if ($this->filingModelLoader !== null
+            || $this->rimResolver !== null
+            || $this->profileResolver !== null
+            || $this->factMapper !== null) {
+            return $this->buildUncached($companyId, $accountingPeriodId, $ctPeriodId);
+        }
+
+        $cacheKey = \eel_accounts\Support\RequestCache::key($companyId, $accountingPeriodId, $ctPeriodId);
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'ct600.return-model',
+            $cacheKey,
+            fn(): array => $this->buildUncached($companyId, $accountingPeriodId, $ctPeriodId)
+        );
+    }
+
+    /** @return array<string,mixed> */
+    private function buildUncached(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
+    {
         if ($companyId <= 0 || $accountingPeriodId <= 0 || $ctPeriodId <= 0) {
             return $this->failure('Select a company, accounting period and CT period.');
         }

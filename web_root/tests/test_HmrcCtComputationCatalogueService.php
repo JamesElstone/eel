@@ -162,6 +162,7 @@ XML);
                     artifact_version TEXT NOT NULL,
                     applicable_from TEXT NOT NULL,
                     applicable_to TEXT NULL,
+                    source_url TEXT NOT NULL,
                     entry_point_path TEXT NULL,
                     combined_dpl_entry_point_path TEXT NULL,
                     package_state TEXT NOT NULL
@@ -172,27 +173,35 @@ XML);
             test_tmp_directory() . DIRECTORY_SEPARATOR . 'ct-2024-resolution-entry-point-' . bin2hex(random_bytes(4)) . '.xsd'
         );
         file_put_contents($entryPoint, '<?xml version="1.0"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"/>');
-        InterfaceDB::prepareExecute(
-            'INSERT INTO hmrc_ct_computation_packages
-             (taxonomy_version, artifact_version, applicable_from, applicable_to, entry_point_path, package_state)
-             VALUES (:taxonomy, :artifact, :applicable_from, :applicable_to, :entry_point, :state)',
-            [
-                'taxonomy' => '2024-test-boundaries',
-                'artifact' => 'V1.0.0',
-                'applicable_from' => '2015-04-01',
-                'applicable_to' => '2026-03-31',
-                'entry_point' => $entryPoint,
-                'state' => 'verified',
-            ]
-        );
-        $id = (int)InterfaceDB::fetchColumn('SELECT last_insert_rowid()');
+        InterfaceDB::beginTransaction();
         try {
+            InterfaceDB::prepareExecute(
+                'UPDATE hmrc_ct_computation_packages SET package_state = :state',
+                ['state' => 'not_downloaded']
+            );
+            InterfaceDB::prepareExecute(
+                'INSERT INTO hmrc_ct_computation_packages
+                 (taxonomy_version, artifact_version, applicable_from, applicable_to, source_url, entry_point_path, package_state)
+                 VALUES (:taxonomy, :artifact, :applicable_from, :applicable_to, :source_url, :entry_point, :state)',
+                [
+                    'taxonomy' => '2024-test-boundaries',
+                    'artifact' => 'V1.0.0',
+                    'applicable_from' => '2015-04-01',
+                    'applicable_to' => '2026-03-31',
+                    'source_url' => \eel_accounts\Service\HmrcCtComputationCatalogueService::SOURCE_URL,
+                    'entry_point' => $entryPoint,
+                    'state' => 'verified',
+                ]
+            );
+            $id = (int)InterfaceDB::fetchColumn('SELECT last_insert_rowid()');
             $inside = $service->resolveForPeriod('2015-04-01', '2026-03-31');
             $h->assertSame($id, (int)($inside['id'] ?? 0));
             $h->assertSame(null, $service->resolveForPeriod('2015-03-31', '2026-03-31'));
             $h->assertSame(null, $service->resolveForPeriod('2015-04-01', '2026-04-01'));
         } finally {
-            InterfaceDB::prepareExecute('DELETE FROM hmrc_ct_computation_packages WHERE id = :id', ['id' => $id]);
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
             if ($createdTable) {
                 InterfaceDB::prepareExecute('DROP TABLE hmrc_ct_computation_packages');
             }

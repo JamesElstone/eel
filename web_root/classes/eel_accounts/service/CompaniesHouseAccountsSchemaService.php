@@ -97,7 +97,7 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
             $this->ensureDirectory(dirname($snapshotPath));
             if (is_dir($snapshotPath)) {
                 $this->removeTree($staging);
-            } elseif (!rename($staging, $snapshotPath)) {
+            } elseif (!$this->renameDirectoryAtomically($staging, $snapshotPath)) {
                 throw new \RuntimeException('The verified Companies House schema snapshot could not be activated atomically.');
             }
             $snapshotId = $this->persistSnapshot($manifest, $catalogueHash, $snapshotPath, $files, $edges);
@@ -109,6 +109,23 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
             }
             throw $exception;
         }
+    }
+
+    private function renameDirectoryAtomically(string $source, string $target): bool
+    {
+        for ($attempt = 0; $attempt < 6; $attempt++) {
+            if (@rename($source, $target)) {
+                return true;
+            }
+            clearstatcache(true, $source);
+            clearstatcache(true, $target);
+            if (is_dir($target) && !is_dir($source)) {
+                return true;
+            }
+            usleep(50000);
+        }
+
+        return false;
     }
 
     /** @return array{0:array<string,array<string,mixed>>,1:list<array<string,string>>} */

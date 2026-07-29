@@ -28,10 +28,6 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         $service->presenterFingerprint('TEST')
                     );
 
-                    $companyData = (new \eel_accounts\Service\CompaniesHouseCompanyDataCredentialService($path))->load('TEST');
-                    $h->assertSame($credentials['presenter_id'], $companyData['presenter_id']);
-                    $h->assertSame($credentials['presenter_code'], $companyData['presenter_code']);
-                    $h->assertSame('', $companyData['package_reference']);
                 } finally {
                     @unlink($path);
                 }

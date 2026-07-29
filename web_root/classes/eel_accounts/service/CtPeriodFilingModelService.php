@@ -11,6 +11,17 @@ final class CtPeriodFilingModelService
 
     public function build(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
     {
+        $cacheKey = \eel_accounts\Support\RequestCache::key($companyId, $accountingPeriodId, $ctPeriodId);
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'ct-period.filing-model',
+            $cacheKey,
+            fn(): array => $this->buildUncached($companyId, $accountingPeriodId, $ctPeriodId)
+        );
+    }
+
+    /** @return array<string,mixed> */
+    private function buildUncached(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
+    {
         if ($companyId <= 0 || $accountingPeriodId <= 0 || $ctPeriodId <= 0) {
             return $this->failure('Select a company, accounting period and CT period.');
         }

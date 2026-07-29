@@ -167,7 +167,7 @@ function page_profile_base_context(int $companyId, int $accountingPeriodId, int 
             'settings' => AppConfigurationStore::config(),
         ],
         'tax' => $ct,
-        'hmrc_submission' => [
+        'hmrc_transmit' => [
             'mode' => 'TEST',
             'settings' => [],
             'ct_periods' => $ct['ct_periods'],

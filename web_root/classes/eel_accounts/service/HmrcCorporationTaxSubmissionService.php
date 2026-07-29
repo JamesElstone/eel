@@ -42,6 +42,9 @@ final class HmrcCorporationTaxSubmissionService
     /** @var null|\Closure(): string */
     private ?\Closure $xmlEnvironmentResolver;
 
+    /** @var null|\Closure(int,int,int): list<array{label:string,ready:bool,message:string,detail?:string}> */
+    private ?\Closure $filingReadinessResolver;
+
     private string $artifactRoot;
     private TransmissionArchiveService $archives;
 
@@ -53,7 +56,8 @@ final class HmrcCorporationTaxSubmissionService
         ?callable $packagePreparer = null,
         ?callable $manifestResolver = null,
         ?TransmissionArchiveService $archiveService = null,
-        ?callable $xmlEnvironmentResolver = null
+        ?callable $xmlEnvironmentResolver = null,
+        ?callable $filingReadinessResolver = null
     ) {
         $this->transport = $transport ?? new HmrcCtTransactionEngineClient();
         $this->packages = $packages ?? new HmrcSubmissionPackageService();
@@ -67,6 +71,9 @@ final class HmrcCorporationTaxSubmissionService
         $this->xmlEnvironmentResolver = $xmlEnvironmentResolver === null
             ? null
             : \Closure::fromCallable($xmlEnvironmentResolver);
+        $this->filingReadinessResolver = $filingReadinessResolver === null
+            ? null
+            : \Closure::fromCallable($filingReadinessResolver);
         $this->artifactRoot = $this->resolveArtifactRoot($artifactRoot);
         $this->archives = $archiveService ?? new TransmissionArchiveService($this->artifactRoot);
     }
@@ -123,6 +130,7 @@ final class HmrcCorporationTaxSubmissionService
                 'superseded' => 'superseded',
             ]
         );
+        $ctPeriodService = new CorporationTaxPeriodService();
         foreach ($periods as $period) {
             $ctPeriodId = (int)$period['id'];
             $submissions = $this->fetchForCtPeriod($companyId, $ctPeriodId);
@@ -131,12 +139,30 @@ final class HmrcCorporationTaxSubmissionService
                 : $this->firstMode($submissions, $testEnvironment);
             $latestLive = $this->firstMode($submissions, 'LIVE');
             $pending = $this->firstPending($submissions);
-            $manifest = $this->safeCurrentManifest($companyId, $ctPeriodId);
+            $filingSnapshot = $this->filingSnapshot($companyId, $accountingPeriodId, $ctPeriodId);
+            $filingDependencies = (array)($filingSnapshot['dependencies'] ?? []);
+            $manifest = $this->safeCurrentManifest($companyId, $ctPeriodId, $filingSnapshot);
             $manifestHash = (string)($manifest['source_manifest_sha256'] ?? '');
             $bodyHash = (string)($manifest['body_sha256'] ?? '');
-            $latestTestAttempt = $this->firstModeForBody($submissions, 'TEST', $bodyHash);
-            $latestTilAttempt = $this->firstModeForBody($submissions, 'TIL', $bodyHash);
-            $latestLiveAttempt = $this->firstModeForBody($submissions, 'LIVE', $bodyHash);
+            $latestTestAttempt = $bodyHash === ''
+                ? $this->firstMode($submissions, 'TEST')
+                : $this->firstModeForBody($submissions, 'TEST', $bodyHash);
+            $latestTilAttempt = $bodyHash === ''
+                ? $this->firstMode($submissions, 'TIL')
+                : $this->firstModeForBody($submissions, 'TIL', $bodyHash);
+            $latestLiveAttempt = $bodyHash === ''
+                ? $this->firstMode($submissions, 'LIVE')
+                : $this->firstModeForBody($submissions, 'LIVE', $bodyHash);
+            $readinessBlockers = [];
+            foreach ($filingDependencies as $dependency) {
+                if (!empty($dependency['ready'])) {
+                    continue;
+                }
+                $message = trim((string)($dependency['message'] ?? ''));
+                if ($message !== '') {
+                    $readinessBlockers[] = $message;
+                }
+            }
 
             $testBlockers = array_values(array_map(
                 'strval',
@@ -153,6 +179,8 @@ final class HmrcCorporationTaxSubmissionService
                 $testBlockers = array_merge($testBlockers, array_map('strval', $errors));
                 $liveBlockers = array_merge($liveBlockers, array_map('strval', $errors));
             }
+            $testBlockers = array_merge($testBlockers, $readinessBlockers);
+            $liveBlockers = array_merge($liveBlockers, $readinessBlockers);
             if (is_array($pending)) {
                 $message = (string)$pending['protocol_state'] === 'transport_uncertain'
                     ? 'The last transmission has an uncertain outcome and must not be resubmitted.'
@@ -182,6 +210,11 @@ final class HmrcCorporationTaxSubmissionService
             $row = [
                 'ct_period_id' => $ctPeriodId,
                 'sequence_no' => (int)$period['sequence_no'],
+                'display_sequence_no' => $ctPeriodService->displaySequenceNo(
+                    $companyId,
+                    $accountingPeriodId,
+                    (int)$period['sequence_no']
+                ),
                 'period_start' => (string)$period['period_start'],
                 'period_end' => (string)$period['period_end'],
                 'ct_period_status' => (string)$period['status'],
@@ -195,7 +228,7 @@ final class HmrcCorporationTaxSubmissionService
                 'latest_test_attempt' => $latestTestAttempt,
                 'latest_til_attempt' => $latestTilAttempt,
                 'latest_live_attempt' => $latestLiveAttempt,
-                'filing_dependencies' => $this->filingDependencies($manifest),
+                'filing_dependencies' => $filingDependencies,
                 'latest_submission' => $submissions[0] ?? null,
                 'pending_submission' => $pending,
                 'declaration' => [
@@ -1183,7 +1216,7 @@ final class HmrcCorporationTaxSubmissionService
         ]);
     }
 
-    private function safeCurrentManifest(int $companyId, int $ctPeriodId): array
+    private function safeCurrentManifest(int $companyId, int $ctPeriodId, array $filingSnapshot = []): array
     {
         if (!$this->manifestResolver instanceof \Closure
             && !method_exists($this->packages, 'currentSourceManifest')) {
@@ -1192,7 +1225,14 @@ final class HmrcCorporationTaxSubmissionService
         try {
             $current = $this->manifestResolver instanceof \Closure
                 ? ($this->manifestResolver)($companyId, $ctPeriodId)
-                : $this->packages->currentSourceManifest($companyId, $ctPeriodId);
+                : $this->packages->currentSourceManifest(
+                    $companyId,
+                    $ctPeriodId,
+                    isset($filingSnapshot['return']) ? (array)$filingSnapshot['return'] : null,
+                    isset($filingSnapshot['accounts']) ? (array)$filingSnapshot['accounts'] : null,
+                    isset($filingSnapshot['computations']) ? (array)$filingSnapshot['computations'] : null,
+                    false
+                );
         } catch (\Throwable $exception) {
             return ['ok' => false, 'errors' => [$exception->getMessage()]];
         }
@@ -1211,28 +1251,13 @@ final class HmrcCorporationTaxSubmissionService
         if ($provided !== '' && !hash_equals($manifestHash, $provided)) {
             return ['ok' => false, 'errors' => ['The current source-manifest hash is inconsistent.']];
         }
-        $ctPeriod = \InterfaceDB::fetchOne(
-            'SELECT accounting_period_id FROM corporation_tax_periods
-             WHERE id = :ct_period_id AND company_id = :company_id LIMIT 1',
-            ['ct_period_id' => $ctPeriodId, 'company_id' => $companyId]
-        );
-        if (is_array($ctPeriod)) {
-            try {
-                $bundle = (new FilingEvidenceService())->currentBundle(
-                    $companyId,
-                    (int)$ctPeriod['accounting_period_id'],
-                    true
-                );
-                $manifest['filing_evidence_id'] = (string)$bundle['evidence_id'];
-                $manifestHash = hash('sha256', $this->canonicalJson($manifest));
-            } catch (\Throwable) {
-                // Status remains available before a legacy locked period has
-                // lazily received its first evidence bundle.
-            }
-        }
+        // Building a FilingEvidence bundle re-runs the complete accounts
+        // evidence pipeline. That belongs to submission preparation, not the
+        // read-only status card: the package itself is still evidence-bound
+        // immediately before transmission.
         $bodyHash = strtolower(trim((string)($current['body_sha256'] ?? '')));
-        if (!preg_match('/^[a-f0-9]{64}$/D', $bodyHash)) {
-            return ['ok' => false, 'errors' => ['The current CT600 body hash is missing.']];
+        if ($bodyHash !== '' && !preg_match('/^[a-f0-9]{64}$/D', $bodyHash)) {
+            return ['ok' => false, 'errors' => ['The current CT600 body hash is invalid.']];
         }
 
         return array_replace($current, [
@@ -1416,35 +1441,97 @@ final class HmrcCorporationTaxSubmissionService
         return null;
     }
 
-    /** @return list<array{label:string,ready:bool,message:string}> */
-    private function filingDependencies(array $manifest): array
+    /** @return array{dependencies:list<array{label:string,ready:bool,message:string,detail?:string}>,return?:array<string,mixed>,accounts?:array<string,mixed>,computations?:array<string,mixed>} */
+    private function filingSnapshot(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
     {
-        $errors = array_values(array_filter(array_map('strval', (array)($manifest['errors'] ?? []))));
-        $text = strtolower(implode(' ', $errors));
-        $definitions = [
-            ['CT600 source model', ['ct600 source model', 'filing source manifest']],
-            ['CT-period filing basis', ['ct-period filing basis']],
-            ['Disclosures and filing basis', ['current disclosures and filing basis']],
-        ];
-        $dependencies = [];
-        foreach ($definitions as [$label, $needles]) {
-            $message = '';
-            foreach ($errors as $error) {
-                foreach ($needles as $needle) {
-                    if (str_contains(strtolower($error), $needle)) {
-                        $message = $error;
-                        break 2;
-                    }
-                }
-            }
-            $dependencies[] = [
-                'label' => $label,
-                'ready' => $message === '' && !empty($manifest['ok']),
-                'message' => $message,
-            ];
+        if ($this->filingReadinessResolver instanceof \Closure) {
+            return ['dependencies' => (array)($this->filingReadinessResolver)($companyId, $accountingPeriodId, $ctPeriodId)];
         }
 
-        return $dependencies;
+        $approval = $this->safeReadinessCheck(
+            fn(): array => (new IxbrlAccountsFilingApprovalService())->status($companyId, $accountingPeriodId),
+            'The current disclosures and filing basis could not be verified.'
+        );
+        $basis = $this->safeReadinessCheck(
+            fn(): array => (new CtPeriodFilingModelService())->build($companyId, $accountingPeriodId, $ctPeriodId),
+            'The current CT-period filing basis could not be verified.'
+        );
+        $return = $this->safeReadinessCheck(
+            fn(): array => (new Ct600ReturnModelService())->build($companyId, $accountingPeriodId, $ctPeriodId),
+            'The current CT600 source model could not be verified.'
+        );
+        $accounts = $this->safeReadinessCheck(
+            fn(): array => $this->packages->locateAccountsIxbrlForStatus($companyId, $accountingPeriodId),
+            'The accounts iXBRL artifact could not be verified.'
+        );
+        $computations = $this->safeReadinessCheck(
+            fn(): array => $this->packages->locateComputationsIxbrlForStatus($companyId, $ctPeriodId),
+            'The computations iXBRL artifact could not be verified.'
+        );
+
+        $approvalReady = (string)($approval['state'] ?? '') === 'current';
+        $basisReady = !empty($basis['available']);
+        $returnReady = !empty($return['ok']);
+        $artifactsReady = !empty($accounts['ok']) && !empty($computations['ok']);
+        $artifactErrors = array_values(array_unique(array_filter(array_merge(
+            array_map('strval', (array)($accounts['errors'] ?? [])),
+            array_map('strval', (array)($computations['errors'] ?? []))
+        ), static fn(string $error): bool => trim($error) !== '')));
+
+        return [
+            'return' => $return,
+            'accounts' => $accounts,
+            'computations' => $computations,
+            'dependencies' => [[
+                'label' => 'Disclosures and filing basis',
+                'ready' => $approvalReady,
+                'message' => $approvalReady ? '' : $this->firstDiagnostic(
+                    $approval,
+                    'Approve the current disclosures and filing basis before preparing CT filing output.'
+                ),
+            ], [
+                'label' => 'CT-period filing basis',
+                'ready' => $basisReady,
+                'message' => $basisReady ? '' : $this->firstDiagnostic(
+                    $basis,
+                    'A current approved CT-period filing basis is required.'
+                ),
+            ], [
+                'label' => 'CT600 source model',
+                'ready' => $returnReady,
+                'message' => $returnReady ? '' : $this->firstDiagnostic(
+                    $return,
+                    'The current CT600 source model is not ready.'
+                ),
+            ], [
+                'label' => 'Filing iXBRL artifacts',
+                'ready' => $artifactsReady,
+                'message' => $artifactsReady ? '' : 'The current filing iXBRL artifacts are not ready.',
+                'detail' => $artifactsReady ? '' : (string)($artifactErrors[0] ?? 'The filing iXBRL artifacts could not be verified.'),
+            ]],
+        ];
+    }
+
+    private function firstDiagnostic(array $result, string $fallback): string
+    {
+        foreach ((array)($result['errors'] ?? []) as $error) {
+            $error = trim((string)$error);
+            if ($error !== '') {
+                return $error;
+            }
+        }
+
+        return $fallback;
+    }
+
+    /** @param callable(): array<string,mixed> $check */
+    private function safeReadinessCheck(callable $check, string $fallback): array
+    {
+        try {
+            return (array)$check();
+        } catch (\Throwable $exception) {
+            return ['ok' => false, 'available' => false, 'state' => 'error', 'errors' => [$fallback, $exception->getMessage()]];
+        }
     }
 
     private function firstPending(array $rows): ?array

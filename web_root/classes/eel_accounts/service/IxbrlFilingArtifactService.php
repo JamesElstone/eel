@@ -12,7 +12,7 @@ namespace eel_accounts\Service;
 /** Locates the one immutable accounts artifact that is safe to hand to a filing provider. */
 final class IxbrlFilingArtifactService
 {
-    public function locate(int $companyId, int $accountingPeriodId): array
+    public function locate(int $companyId, int $accountingPeriodId, bool $approvalPinnedOnly = false): array
     {
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return $this->failure('missing', 'Select a valid company and accounting period.');
@@ -46,7 +46,9 @@ final class IxbrlFilingArtifactService
             );
         }
 
-        $freshness = (new IxbrlFactBuilderService())->getRunFreshness($runId);
+        $freshness = $approvalPinnedOnly
+            ? $this->approvalPinnedFreshness($row)
+            : (new IxbrlFactBuilderService())->getRunFreshness($runId);
         if ((string)($freshness['state'] ?? '') !== 'current') {
             return $this->failure(
                 'stale',
@@ -143,6 +145,45 @@ final class IxbrlFilingArtifactService
             'errors' => [$message],
             'hash' => null,
             'basis_hash' => null,
+        ];
+    }
+
+    /**
+     * Read-model check for status cards. A current filing approval already
+     * recomputes the accounts/disclosures source basis, so confirming that the
+     * generated artifact is pinned to that approval is sufficient here. The
+     * full source rebuild remains mandatory when a package is prepared.
+     *
+     * @param array<string,mixed> $run
+     * @return array{state:string,detail:string,built_hash?:string}
+     */
+    private function approvalPinnedFreshness(array $run): array
+    {
+        $approval = (new IxbrlAccountsFilingApprovalService())->status(
+            (int)($run['company_id'] ?? 0),
+            (int)($run['accounting_period_id'] ?? 0)
+        );
+        $current = (array)($approval['approval'] ?? []);
+        $builtHash = trim((string)($run['basis_hash'] ?? ''));
+        if ($builtHash === ''
+            || (string)($run['basis_version'] ?? '') !== IxbrlTaxonomyProfileService::BASIS_VERSION
+            || (string)($approval['state'] ?? '') !== 'current'
+            || (int)($run['filing_approval_id'] ?? 0) !== (int)($current['id'] ?? 0)
+            || !hash_equals(
+                (string)($run['filing_approval_hash'] ?? ''),
+                (string)($current['basis_hash'] ?? '')
+            )) {
+            return [
+                'state' => 'stale',
+                'detail' => 'The facts do not belong to the current approved filing basis. Approve the disclosures again.',
+                'built_hash' => $builtHash,
+            ];
+        }
+
+        return [
+            'state' => 'current',
+            'detail' => 'The iXBRL facts are pinned to the current approved filing basis.',
+            'built_hash' => $builtHash,
         ];
     }
 }

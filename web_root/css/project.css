@@ -1122,6 +1122,22 @@
   margin-block: 12px;
 }
 
+.card-body .hmrc-ct-period-status-helper {
+  margin: 12px 0;
+}
+
+.hmrc-credential-summary-card,
+.hmrc-connection-summary-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.hmrc-credential-summary-actions,
+.hmrc-connection-summary-actions {
+  margin-top: auto;
+  padding-top: 12px;
+}
+
 .summary-card.warn {
   background: var(--warning-soft);
   border-color: #f5d08a;
@@ -3474,6 +3490,10 @@
 .card-body .companies-house-revised-disclosure-helper {
   margin-top: 1rem;
   margin-bottom: 1rem;
+}
+
+.card-body .companies-house-artifact-missing-helper {
+  margin-block: 1rem;
 }
 
 .card-body .companies-house-variance-actions {

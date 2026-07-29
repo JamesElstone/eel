@@ -22,13 +22,13 @@ final class _transmit extends PageContextFramework
 
     public function cards(): array
     {
-        return ['hmrc_submission', 'companies_house_transmit'];
+        return ['hmrc_transmit', 'companies_house_transmit'];
     }
 
     public function cardLayout(): array
     {
         return [
-            ['tab' => 'HMRC', 'cards' => ['hmrc_submission']],
+            ['tab' => 'HMRC', 'cards' => ['hmrc_transmit']],
             ['tab' => 'Companies House', 'cards' => ['companies_house_transmit']],
         ];
     }

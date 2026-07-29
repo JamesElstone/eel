@@ -28,7 +28,6 @@ final class CompaniesHouseAccountsSubmissionService
         private readonly ?CompaniesHouseAccountsCredentialService $credentialService = null,
         private readonly ?CompaniesHouseSubmissionSequenceService $sequenceService = null,
         private readonly ?TransmissionArchiveService $archiveService = null,
-        private readonly ?CompaniesHouseCompanyDataCredentialService $companyDataCredentialService = null,
         private readonly ?CompaniesHouseProtocolConversationService $conversationService = null,
         private readonly ?IxbrlTaxonomyCompatibilityService $taxonomyCompatibilityService = null,
         private readonly ?IxbrlOriginalAccountsArtifactService $originalArtifactService = null,
@@ -58,8 +57,6 @@ final class CompaniesHouseAccountsSubmissionService
         $mode = AccountingConfigurationStore::companiesHouseAccountsFilingMode();
         $featureEnabled = in_array($mode, ['TEST', 'LIVE'], true);
         $credentialsConfigured = $featureEnabled && $this->credentialsConfigured($mode);
-        $companyDataCredentialsConfigured = $featureEnabled
-            && $this->companyDataCredentials()->configured($mode);
         $protocolReady = $this->conversation()->schemaReady();
         $sequence = [
             'configured' => false,
@@ -188,9 +185,6 @@ final class CompaniesHouseAccountsSubmissionService
         } elseif (!$credentialsConfigured) {
             $submissionBlockers[] = 'Companies House accounts filing credentials are not configured for ' . $mode . '.';
         }
-        if ($featureEnabled && !$companyDataCredentialsConfigured) {
-            $submissionBlockers[] = 'Companies House CompanyData XML Output credentials are not configured for ' . $mode . '.';
-        }
         if (!$protocolReady) {
             $submissionBlockers[] = 'Run the Companies House protocol-conversation migration before filing.';
         }
@@ -240,7 +234,6 @@ final class CompaniesHouseAccountsSubmissionService
                 'mode' => $mode,
                 'enabled' => $featureEnabled,
                 'credentials_configured' => $credentialsConfigured,
-                'company_data_credentials_configured' => $companyDataCredentialsConfigured,
                 'protocol_ready' => $protocolReady,
                 'developer_binding_configured' => $featureEnabled
                     && $this->conversation()->bindingConfigured($mode),
@@ -3327,11 +3320,6 @@ final class CompaniesHouseAccountsSubmissionService
         );
     }
 
-    private function companyDataCredentials(): CompaniesHouseCompanyDataCredentialService
-    {
-        return $this->companyDataCredentialService ?? new CompaniesHouseCompanyDataCredentialService();
-    }
-
     private function conversation(): CompaniesHouseProtocolConversationService
     {
         return $this->conversationService ?? new CompaniesHouseProtocolConversationService($this->archiveService);
@@ -3346,13 +3334,13 @@ final class CompaniesHouseAccountsSubmissionService
         string $schemaManifestSha256,
         bool $developerStep
     ): array {
-        $outputCredentials = $this->companyDataCredentials()->load($environment);
+        $presenterCredentials = $this->credentials()->load($environment);
         $preflight = $this->conversation()->beginPreflight(
             $submission,
             $environment,
             $schemaSnapshotId,
             $schemaManifestSha256,
-            hash('sha256', strtoupper((string)$outputCredentials['presenter_id'])),
+            hash('sha256', strtoupper((string)$presenterCredentials['presenter_id'])),
             $companyAuthCode,
             $actor,
             $developerStep
@@ -3597,7 +3585,6 @@ final class CompaniesHouseAccountsSubmissionService
                 'mode' => 'DISABLED',
                 'enabled' => false,
                 'credentials_configured' => false,
-                'company_data_credentials_configured' => false,
                 'protocol_ready' => false,
                 'developer_binding_configured' => false,
                 'live_approved' => false,

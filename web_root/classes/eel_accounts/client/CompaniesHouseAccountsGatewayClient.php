@@ -39,9 +39,6 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
     /** @var null|\Closure(string): array */
     private ?\Closure $credentialLoader;
 
-    /** @var null|\Closure(string): array */
-    private ?\Closure $outputCredentialLoader;
-
     /** @var null|\Closure(): string */
     private ?\Closure $transactionIdFactory;
 
@@ -59,8 +56,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         ?callable $credentialLoader = null,
         ?callable $transactionIdFactory = null,
         array $config = [],
-        ?callable $requestValidator = null,
-        ?callable $outputCredentialLoader = null
+        ?callable $requestValidator = null
     ) {
         $this->httpTransport = $httpTransport === null ? null : \Closure::fromCallable($httpTransport);
         $this->credentialLoader = $credentialLoader === null ? null : \Closure::fromCallable($credentialLoader);
@@ -68,9 +64,6 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             ? null
             : \Closure::fromCallable($transactionIdFactory);
         $this->requestValidator = $requestValidator === null ? null : \Closure::fromCallable($requestValidator);
-        $this->outputCredentialLoader = $outputCredentialLoader === null
-            ? null
-            : \Closure::fromCallable($outputCredentialLoader);
         $this->timeoutSeconds = max(1, (int)($config['timeout_seconds'] ?? 30));
         $this->maxResponseBytes = max(1, (int)($config['max_response_bytes'] ?? 42000000));
         $this->minimumIntervalMicroseconds = max(
@@ -472,22 +465,8 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
 
     private function outputCredentials(string $environment): array
     {
-        $credentials = $this->outputCredentialLoader instanceof \Closure
-            ? ($this->outputCredentialLoader)($environment)
-            : (new \eel_accounts\Service\CompaniesHouseCompanyDataCredentialService())->load($environment);
-        if (!is_array($credentials)) {
-            throw new \RuntimeException('Companies House CompanyData XML Output credentials could not be loaded.');
-        }
-        $credentials = [
-            'presenter_id' => trim((string)($credentials['presenter_id'] ?? '')),
-            'presenter_code' => trim((string)($credentials['presenter_code'] ?? '')),
-            'package_reference' => '',
-        ];
-        if ($credentials['presenter_id'] === '' || $credentials['presenter_code'] === '') {
-            throw new \RuntimeException(
-                'Companies House CompanyData XML Output credentials are not configured for ' . $environment . '.'
-            );
-        }
+        $credentials = $this->credentials($environment, false);
+        $credentials['package_reference'] = '';
 
         return $credentials;
     }

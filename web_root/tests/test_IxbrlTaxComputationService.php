@@ -647,6 +647,9 @@ function ixbrlTaxComputationMappings(array $model): array
             ],
         ]);
         $model['model']['audit']['expense_treatments'] = ixbrlTaxComputationDisallowableAudit();
+        $enrich = new ReflectionMethod($service::class, 'withSemanticCapitalAdjustmentFacts');
+        $enrich->setAccessible(true);
+        $model = (array)$enrich->invoke($service, $model);
         $method = new ReflectionMethod($service::class, 'renderMappedDocument');
         $method->setAccessible(true);
         $xhtml = (string)($method->invoke(

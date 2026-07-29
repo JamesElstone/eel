@@ -165,7 +165,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             \eel_accounts\Client\CompaniesHouseAccountsGatewayClient::class,
-            'performs CompanyData before allocation using separate Output credentials',
+            'performs CompanyData before allocation using the shared presenter credentials',
             static function () use (
                 $harness,
                 $credentials,
@@ -191,11 +191,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $credentials,
                     $transactionId,
                     $config,
-                    $validator,
-                    static fn(string $environment): array => [
-                        'presenter_id' => 'OUTPUT-PRESENTER',
-                        'presenter_code' => 'OUTPUT-CODE',
-                    ]
+                    $validator
                 );
                 $result = $client->checkCompanyAuthentication(
                     '14337285',
@@ -210,10 +206,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame('CompanyDataRequest', $xmlText($requestXml, 'Class'));
                 $harness->assertSame('14337285', $xmlText($requestXml, 'CompanyNumber'));
                 $harness->assertSame('ABC123', $xmlText($requestXml, 'CompanyAuthenticationCode'));
-                $harness->assertSame('md5#' . md5('OUTPUT-PRESENTER'), $xmlText($requestXml, 'SenderID'));
+                $harness->assertSame('md5#' . md5('TEST-PRESENTER'), $xmlText($requestXml, 'SenderID'));
                 $harness->assertTrue(str_contains($requestXml, '/schema/CompanyData-v3-6.xsd'));
                 $harness->assertFalse(str_contains((string)$result['request_xml'], 'ABC123'));
-                $harness->assertFalse(str_contains((string)$result['request_xml'], 'OUTPUT-CODE'));
+                $harness->assertFalse(str_contains((string)$result['request_xml'], 'TEST-CODE'));
             }
         );
 

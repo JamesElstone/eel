@@ -172,6 +172,34 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             $service::class,
+            'blocks a revised approval date that is not later than the original accounts approval date',
+            static function () use ($harness, $service, $invokePrivate): void {
+                $error = $invokePrivate(
+                    $service,
+                    'revisionApprovalDateError',
+                    '2025-06-28',
+                    '2025-06-28'
+                );
+
+                $harness->assertTrue(is_string($error));
+                $harness->assertTrue(str_contains(
+                    (string)$error,
+                    'must be later than the original accounts approval date'
+                ));
+                $harness->assertSame(
+                    null,
+                    $invokePrivate(
+                        $service,
+                        'revisionApprovalDateError',
+                        '2025-06-28',
+                        '2026-07-17'
+                    )
+                );
+            }
+        );
+
+        $harness->check(
+            $service::class,
             'rejects supplied or current approval dates that conflict with the frozen basis',
             static function () use ($harness, $service, $invokePrivate): void {
                 $approval = [

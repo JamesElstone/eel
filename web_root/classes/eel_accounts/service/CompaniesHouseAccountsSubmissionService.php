@@ -1035,6 +1035,22 @@ final class CompaniesHouseAccountsSubmissionService
             return $this->failure('LIVE Companies House accounts filing has not been explicitly approved.');
         }
         $filingKind = (string)($submission['filing_type'] ?? 'revised');
+        if ($filingKind === 'revised') {
+            $declarations = json_decode((string)($submission['revision_declarations_json'] ?? ''), true);
+            $dateError = is_array($declarations)
+                ? $this->revisionApprovalDateError(
+                    (string)($declarations['original_approval_date'] ?? ''),
+                    (string)($declarations['revision_approval_date'] ?? '')
+                )
+                : 'The prepared revised-accounts declarations cannot be read.';
+            if ($dateError !== null) {
+                return $this->failure(
+                    $dateError
+                    . ' This prepared artifact cannot be filed; update and approve the current Accounts approval date, '
+                    . 'then regenerate the Accounting iXBRL and revised accounts.'
+                );
+            }
+        }
         if ($mode === 'LIVE' && !$this->testAccepted(
             (int)$submission['company_id'],
             (int)$submission['accounting_period_id'],
@@ -2327,6 +2343,15 @@ final class CompaniesHouseAccountsSubmissionService
             $originalDocumentId,
             $periodEnd
         );
+        $originalApprovalDate = (string)$originalApprovalEvidence['approval_date'];
+        $dateError = $this->revisionApprovalDateError($originalApprovalDate, $approvalDate);
+        if ($dateError !== null) {
+            throw new \RuntimeException(
+                $dateError
+                . ' Set the current Accounts approval date to the actual later revision approval date, '
+                . 'approve that disclosure basis, and regenerate the Accounting iXBRL before preparing revised accounts.'
+            );
+        }
         if ($originalDocumentId > 0) {
             try {
                 $supersededFacts = (new IxbrlSupersededFactsService())->facts(
@@ -2350,7 +2375,7 @@ final class CompaniesHouseAccountsSubmissionService
             'non_compliance_explanation' => $disclosures['non_compliance_explanation'],
             'original_non_compliance_explanation' => $disclosures['non_compliance_explanation'],
             'significant_amendments' => $disclosures['significant_amendments'],
-            'original_approval_date' => (string)$originalApprovalEvidence['approval_date'],
+            'original_approval_date' => $originalApprovalDate,
             'original_approval_evidence' => $originalApprovalEvidence,
             'revision_approval_date' => $approvalDate,
             'original_software_filing_confirmed' => true,
@@ -2459,7 +2484,8 @@ final class CompaniesHouseAccountsSubmissionService
             if ($candidate !== $approvalDate) {
                 throw new \RuntimeException(
                     'The ' . $label . ' conflicts with the frozen accounts approval date. '
-                    . 'Approve one consistent statutory date before preparing revised accounts.'
+                    . 'Set the current Accounts approval date to the actual revision approval date and '
+                    . 'approve that disclosure basis before preparing revised accounts.'
                 );
             }
         }
@@ -2476,6 +2502,24 @@ final class CompaniesHouseAccountsSubmissionService
         }
 
         return $approvalDate;
+    }
+
+    private function revisionApprovalDateError(string $originalApprovalDate, string $revisionApprovalDate): ?string
+    {
+        $originalApprovalDate = trim($originalApprovalDate);
+        $revisionApprovalDate = trim($revisionApprovalDate);
+        if (!$this->validStatutoryDate($originalApprovalDate)) {
+            return 'The original accounts approval date is missing or invalid.';
+        }
+        if (!$this->validStatutoryDate($revisionApprovalDate)) {
+            return 'The revision approval date is missing or invalid.';
+        }
+        if ($revisionApprovalDate <= $originalApprovalDate) {
+            return 'The revision approval date must be later than the original accounts approval date ('
+                . $originalApprovalDate . ').';
+        }
+
+        return null;
     }
 
     /** @return array{non_compliance_explanation:string, significant_amendments:string} */

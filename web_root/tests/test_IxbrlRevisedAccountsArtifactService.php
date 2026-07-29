@@ -14,6 +14,23 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue((array)($result['errors'] ?? []) !== []);
         });
 
+        $harness->check($service::class, 'rejects a revision approval date that is not later than the original approval date', static function () use ($harness, $service): void {
+            $method = new ReflectionMethod($service, 'inputErrors');
+            $method->setAccessible(true);
+            $errors = (array)$method->invoke($service, 49, 80, [
+                'original_document_id' => 89,
+                'original_approval_date' => '2025-06-28',
+                'revision_approval_date' => '2025-06-28',
+                'non_compliance_explanation' => 'The original report contained an error.',
+                'significant_amendments' => 'The reported amounts were corrected.',
+            ]);
+
+            $harness->assertTrue(str_contains(
+                implode(' ', $errors),
+                'must be later than the original accounts approval date'
+            ));
+        });
+
         $harness->check($service::class, 'creates a separate revised page and hidden superseded facts without weakening the XML envelope', static function () use ($harness, $service): void {
             $source = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>' . "\n"
                 . '<html xmlns="http://www.w3.org/1999/xhtml"'

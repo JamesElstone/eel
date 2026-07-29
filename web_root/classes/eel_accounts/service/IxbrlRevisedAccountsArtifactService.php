@@ -699,6 +699,8 @@ final class IxbrlRevisedAccountsArtifactService
         $approvalDate = trim((string)($input['revision_approval_date'] ?? ''));
         if (!$this->validDate($approvalDate)) {
             $errors[] = 'Enter a valid revision approval date.';
+        } elseif ($this->validDate($originalApprovalDate) && $approvalDate <= $originalApprovalDate) {
+            $errors[] = 'The revision approval date must be later than the original accounts approval date.';
         }
 
         return $errors;

@@ -277,6 +277,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
                 </label>
                 <label>Revision approval date
                     <input type="date" name="revision_approval_date" required' . $disabled . '>
+                    <span class="helper">Enter the actual later date on which the revised accounts were approved. It must match the current Accounts approval date; update and approve that disclosure basis first.</span>
                 </label>
                 <label class="checkbox-row">
                     <input type="checkbox" name="original_software_filing_confirmed" value="1" required' . $disabled . '>

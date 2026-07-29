@@ -575,6 +575,10 @@ final class IxbrlTaxComputationService
         $html .= '<div class="ct-section trading-section"><h2>Trading profit or loss computation</h2>'
             . '<table class="financial-table"><thead><tr><th scope="col">Trading computation</th>'
             . '<th scope="col" class="amount">£</th></tr></thead><tbody>' . $tradingRows . '</tbody></table></div>';
+        $html .= $this->renderDisallowableExpenseSchedule(
+            $generator,
+            (array)($report['disallowable_expense_breakdown'] ?? [])
+        );
 
         $html .= $this->renderAiaSchedule($generator, $model);
         $html .= $this->renderMainPoolSchedule($generator, $report, $facts);
@@ -632,6 +636,44 @@ final class IxbrlTaxComputationService
             . $this->renderSupportingSchedules($generator, $filing)
             . '</div>';
         return $html;
+    }
+
+    /** Render source evidence without creating unsupported category-level iXBRL facts. */
+    private function renderDisallowableExpenseSchedule(IxbrlGeneratorService $generator, array $breakdown): string
+    {
+        $categories = (array)($breakdown['categories'] ?? []);
+        if ($categories === []) {
+            return '';
+        }
+        $categoryRows = '';
+        $sourceRows = '';
+        foreach ($categories as $category) {
+            if (!is_array($category)) {
+                continue;
+            }
+            $label = trim((string)($category['nominal_code'] ?? '') . ' ' . (string)($category['nominal_name'] ?? ''));
+            $categoryRows .= '<tr><th scope="row">' . $generator->escape($label) . '</th><td class="amount">'
+                . $this->moneyHtml($generator, (float)($category['amount'] ?? 0)) . '</td></tr>';
+            foreach ((array)($category['sources'] ?? []) as $source) {
+                if (!is_array($source)) {
+                    continue;
+                }
+                $description = trim((string)($source['description'] ?? ''));
+                $reference = trim((string)($source['source_reference'] ?? ''));
+                $sourceRows .= '<tr><td>' . $generator->escape((string)($source['source_date'] ?? '')) . '</td><td>'
+                    . $generator->escape($label) . '</td><td>'
+                    . $generator->escape(trim($reference . ($description !== '' ? ($reference !== '' ? ' — ' : '') . $description : '')))
+                    . '</td><td class="amount">' . $this->moneyHtml($generator, (float)($source['amount'] ?? 0)) . '</td></tr>';
+            }
+        }
+        $total = (float)($breakdown['amount'] ?? 0);
+        return '<div class="ct-section disallowable-expenses-section"><h2>Disallowable expense supporting analysis</h2>'
+            . '<p>These source rows support the aggregate disallowable-expenses adjustment above. The HMRC computation taxonomy provides an aggregate fact for this adjustment, so the category and source analysis is intentionally not separately tagged.</p>'
+            . '<table class="financial-table"><thead><tr><th scope="col">Category</th><th scope="col" class="amount">£</th></tr></thead><tbody>'
+            . $categoryRows . '<tr class="final-total"><th scope="row">Total disallowable expenses added back</th><td class="amount">'
+            . $this->moneyHtml($generator, $total) . '</td></tr></tbody></table>'
+            . '<table class="financial-table"><thead><tr><th scope="col">Date</th><th scope="col">Category</th><th scope="col">Source evidence</th><th scope="col" class="amount">£</th></tr></thead><tbody>'
+            . $sourceRows . '</tbody></table></div>';
     }
 
     private function renderSection455Narrative(IxbrlGeneratorService $generator, array $ct600a): string
@@ -1294,6 +1336,13 @@ CSS;
         ] as $key) {
             $this->money($summary, $key);
         }
+        $disallowableBreakdown = (new DisallowableExpenseBreakdownService())->fromFrozenAudit(
+            (array)($frozen['audit']['expense_treatments'] ?? []),
+            $this->money($summary, 'disallowable_add_backs')
+        );
+        if (empty($disallowableBreakdown['reconciled'])) {
+            throw new \RuntimeException('The frozen disallowable-expense source schedule does not reconcile to the aggregate add-back.');
+        }
         $profile = (new HmrcCtComputationReportProfile())->apply($model, $mappings);
         $included = array_values(array_filter((array)$profile['mappings'], static fn(array $mapping): bool => array_key_exists('source_value', $mapping)));
         usort($included, fn(array $a, array $b): int => [self::SECTION_ORDER[(string)$a['presentation_section']] ?? 999, (int)$a['sort_order'], (int)$a['id']] <=> [self::SECTION_ORDER[(string)$b['presentation_section']] ?? 999, (int)$b['sort_order'], (int)$b['id']]);
@@ -1324,6 +1373,7 @@ CSS;
             'sections' => $sections,
             'mappings' => $included,
             'accounts_adjustment_rows' => (array)$profile['accounts_adjustment_rows'],
+            'disallowable_expense_breakdown' => $disallowableBreakdown,
             'main_pool_rows' => (array)$profile['main_pool_rows'],
             'loss_schedule_rows' => (array)$profile['loss_schedule_rows'],
             'untagged_row_allowlist' => (array)$profile['untagged_row_allowlist'],

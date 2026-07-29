@@ -41,7 +41,13 @@ final class YearEndTaxFreezeService
         }
         unset($period);
 
-        $blockingDiagnostics = $this->blockingDiagnostics($periods, $errors, $expectedPeriodCount);
+        $blockingDiagnostics = $this->blockingDiagnostics(
+            $companyId,
+            $accountingPeriodId,
+            $periods,
+            $errors,
+            $expectedPeriodCount
+        );
         $manifestPeriods = array_map(fn(array $period): array => $this->periodBasis($period), $periods);
         $manifest = [
             'basis_version' => self::BASIS_VERSION,
@@ -197,6 +203,9 @@ final class YearEndTaxFreezeService
             'accounting_allocation_basis' => $this->stableNestedData((array)($period['accounting_allocation_basis'] ?? [])),
             'capital_allowance_breakdown' => $this->stableNestedData((array)($period['capital_allowance_breakdown'] ?? [])),
             'rate_bands' => $this->stableNestedData((array)($period['ct_rate_bands'] ?? [])),
+            'disallowable_expense_breakdown' => $this->stableNestedData(
+                (array)($period['disallowable_expense_breakdown'] ?? [])
+            ),
             'blocking_diagnostic_codes' => $diagnosticCodes,
         ];
     }
@@ -206,7 +215,13 @@ final class YearEndTaxFreezeService
      * @param list<string> $errors
      * @return list<array<string, mixed>>
      */
-    private function blockingDiagnostics(array $periods, array $errors, ?int $expectedPeriodCount): array
+    private function blockingDiagnostics(
+        int $companyId,
+        int $accountingPeriodId,
+        array $periods,
+        array $errors,
+        ?int $expectedPeriodCount
+    ): array
     {
         $diagnostics = [];
         foreach ($periods as $period) {
@@ -238,6 +253,31 @@ final class YearEndTaxFreezeService
                 'ct_computation_' . substr(hash('sha256', $message), 0, 12),
                 $message
             );
+        }
+
+        foreach ($periods as $period) {
+            if (!array_key_exists('disallowable_expense_breakdown', $period)) {
+                continue;
+            }
+            $diagnostic = $this->disallowableBreakdownDiagnostic(
+                $companyId,
+                $accountingPeriodId,
+                (int)($period['ct_period_id'] ?? 0),
+                (float)($period['disallowable_add_backs'] ?? 0),
+                false,
+                (array)$period['disallowable_expense_breakdown']
+            );
+            if ($diagnostic !== null) {
+                $diagnostics[] = $diagnostic;
+            }
+            if ((float)($period['losses_brought_forward'] ?? $period['loss_brought_forward'] ?? 0) >= 0.005) {
+                foreach ($this->predecessorBreakdownDiagnostics(
+                    $companyId,
+                    (string)($period['period_start'] ?? '')
+                ) as $predecessorDiagnostic) {
+                    $diagnostics[] = $predecessorDiagnostic;
+                }
+            }
         }
 
         if ($expectedPeriodCount !== null && count($periods) !== $expectedPeriodCount) {
@@ -277,6 +317,94 @@ final class YearEndTaxFreezeService
         }
         ksort($unique, SORT_STRING);
         return array_values($unique);
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function predecessorBreakdownDiagnostics(int $companyId, string $periodStart): array
+    {
+        $diagnostics = [];
+        $visited = [];
+        while ($periodStart !== '') {
+            $predecessor = \InterfaceDB::fetchOne(
+                'SELECT id, accounting_period_id, period_start, period_end
+                 FROM corporation_tax_periods
+                 WHERE company_id = :company_id AND period_end < :period_start
+                   AND status <> :superseded
+                 ORDER BY period_end DESC, id DESC LIMIT 1',
+                ['company_id' => $companyId, 'period_start' => $periodStart, 'superseded' => 'superseded']
+            );
+            if (!is_array($predecessor) || (int)($predecessor['id'] ?? 0) <= 0) {
+                break;
+            }
+            $ctPeriodId = (int)$predecessor['id'];
+            if (isset($visited[$ctPeriodId])) {
+                break;
+            }
+            $visited[$ctPeriodId] = true;
+            $summary = (new CorporationTaxComputationService())->fetchSummaryForCtPeriodId($companyId, $ctPeriodId);
+            if (empty($summary['available'])) {
+                break;
+            }
+            $diagnostic = $this->disallowableBreakdownDiagnostic(
+                $companyId,
+                (int)$predecessor['accounting_period_id'],
+                $ctPeriodId,
+                (float)($summary['disallowable_add_backs'] ?? 0),
+                true
+            );
+            if ($diagnostic !== null) {
+                $diagnostics[] = $diagnostic;
+            }
+            if ((float)($summary['losses_brought_forward'] ?? 0) < 0.005) {
+                break;
+            }
+            $periodStart = (string)($predecessor['period_start'] ?? '');
+        }
+        return $diagnostics;
+    }
+
+    /** @return array<string,mixed>|null */
+    private function disallowableBreakdownDiagnostic(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        float $expectedAmount,
+        bool $predecessor,
+        ?array $knownBreakdown = null
+    ): ?array {
+        if ($ctPeriodId <= 0 || $accountingPeriodId <= 0) {
+            return $this->structuralDiagnostic(
+                'disallowable_expense_breakdown_missing_' . $ctPeriodId,
+                'The Corporation Tax period has no identifiable disallowable-expense source breakdown.',
+                $ctPeriodId
+            );
+        }
+        $breakdown = $knownBreakdown;
+        if ($breakdown === null) {
+            try {
+                $workings = (new TaxWorkingsService())->fetchWorkings($companyId, $accountingPeriodId, $ctPeriodId);
+                $breakdown = (new DisallowableExpenseBreakdownService())->fromTaxWorkings(
+                    (array)($workings['disallowable_add_backs'] ?? []),
+                    $expectedAmount
+                );
+            } catch (\Throwable) {
+                $breakdown = ['reconciled' => false, 'expected_amount' => $expectedAmount, 'amount' => 0.0, 'difference' => $expectedAmount];
+            }
+        }
+        if (!empty($breakdown['reconciled'])) {
+            return null;
+        }
+        $message = 'Disallowable expense source rows do not reconcile to the £'
+            . number_format((float)($breakdown['expected_amount'] ?? $expectedAmount), 2, '.', '')
+            . ' aggregate add-back';
+        if ($predecessor) {
+            $message .= ' in a predecessor period carrying losses into this period';
+        }
+        return $this->structuralDiagnostic(
+            'disallowable_expense_breakdown_unreconciled_' . $ctPeriodId,
+            $message . '.',
+            $ctPeriodId
+        );
     }
 
     /** @return array<string, mixed> */

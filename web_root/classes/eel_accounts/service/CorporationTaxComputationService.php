@@ -576,6 +576,16 @@ final class CorporationTaxComputationService
             $canonicalSummaries[] = array_merge($summary, $position);
         }
         $summaries = $canonicalSummaries;
+        foreach ($summaries as &$summary) {
+            $ctPeriodId = (int)($summary['ct_period_id'] ?? 0);
+            $workings = (new TaxWorkingsService())->fetchWorkings($companyId, $accountingPeriodId, $ctPeriodId);
+            $summary['disallowable_expense_breakdown'] = (new DisallowableExpenseBreakdownService())
+                ->fromTaxWorkings(
+                    (array)($workings['disallowable_add_backs'] ?? []),
+                    (float)($summary['disallowable_add_backs'] ?? 0)
+                );
+        }
+        unset($summary);
         $freeze = (new YearEndTaxFreezeService())->build(
             $companyId,
             $accountingPeriodId,

@@ -160,6 +160,29 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(in_array('ct_period_computation_count', array_column((array)($blocked['blocking_diagnostics'] ?? []), 'code'), true));
         });
 
+        $harness->check(\eel_accounts\Service\YearEndTaxFreezeService::class, 'blocks approval when disallowable sources do not cross-cast to the aggregate', static function () use ($harness, $service): void {
+            $periods = yearEndTaxFreezePeriods();
+            $periods[0]['disallowable_add_backs'] = 550.00;
+            $periods[0]['disallowable_expense_breakdown'] = [
+                'expected_amount' => 550.00,
+                'amount' => 0.00,
+                'difference' => 550.00,
+                'reconciled' => false,
+                'categories' => [],
+                'source_count' => 0,
+                'incomplete_source_rows' => [],
+            ];
+            $blocked = $service->build(49, 79, $periods, [], 2);
+            $codes = array_column((array)($blocked['blocking_diagnostics'] ?? []), 'code');
+
+            $harness->assertSame('blocked', (string)($blocked['freeze_status'] ?? ''));
+            $harness->assertTrue(in_array(
+                'disallowable_expense_breakdown_unreconciled_' . (int)$periods[0]['ct_period_id'],
+                $codes,
+                true
+            ));
+        });
+
         $harness->check(\eel_accounts\Service\YearEndTaxFreezeService::class, 'produces an acknowledgement basis only for a ready calculation', static function () use ($harness, $service): void {
             $ready = $service->build(49, 79, yearEndTaxFreezePeriods(), [], 2);
             $basis = $service->approvalBasis($ready);

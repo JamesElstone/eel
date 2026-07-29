@@ -359,7 +359,7 @@ final class TaxAuditBasisService
 
         $rows = match ($areaCode) {
             'accounting_profit' => $this->ledgerRows($companyId, $accountingPeriodId, $ctPeriodId, $summary, false),
-            'expense_treatments' => $this->ledgerRows($companyId, $accountingPeriodId, $ctPeriodId, $summary, true),
+            'expense_treatments' => $this->disallowableExpenseRows($companyId, $accountingPeriodId, $ctPeriodId, $summary),
             'depreciation_capital' => $this->depreciationCapitalRows($workings),
             'capital_allowances' => $this->capitalAllowanceRows($workings),
             'losses' => $this->lossRows($workings, $ctPeriodId),
@@ -559,6 +559,33 @@ final class TaxAuditBasisService
                     'source_label' => $sourceLabel,
                     'rule_source' => (string)($resolved['source'] ?? ''),
                 ]
+            );
+        }
+        return $rows;
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function disallowableExpenseRows(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        array $summary
+    ): array {
+        $workings = (new TaxWorkingsService())->fetchWorkings($companyId, $accountingPeriodId, $ctPeriodId);
+        $rows = [];
+        foreach ((array)($workings['disallowable_add_backs'] ?? []) as $index => $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $journalId = (int)($row['journal_id'] ?? 0);
+            $rows[] = $this->auditRow(
+                (string)($row['source'] ?? 'posted_ledger'),
+                $journalId > 0 ? $journalId : $index + 1,
+                (string)($row['journal_date'] ?? ''),
+                trim((string)($row['line_description'] ?? $row['journal_description'] ?? '')),
+                $row['amount'] ?? 0,
+                $row['amount'] ?? 0,
+                $row
             );
         }
         return $rows;

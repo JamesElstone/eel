@@ -84,7 +84,22 @@ function ixbrlTaxComputationModel(array $overrides = []): array
             ],
             'filing_decisions' => ['aia_claimed_in_trade' => 0.00],
             'computation' => ['summary' => $summary],
-            'audit' => ['capital_allowances' => ['rows' => []]],
+            'audit' => [
+                'capital_allowances' => ['rows' => []],
+                'expense_treatments' => abs((float)$summary['disallowable_add_backs']) < 0.005 ? ['rows' => []] : [
+                    'rows' => [[
+                        'tax_treatment' => 'disallowable',
+                        'tax_adjustment_amount' => (float)$summary['disallowable_add_backs'],
+                        'nominal_code' => 'TEST-DIS',
+                        'nominal_name' => 'Test disallowable expense',
+                        'source_type' => 'journal',
+                        'source_id' => 1,
+                        'source_date' => $periodEnd,
+                        'source_label' => 'Journal #1',
+                        'label' => 'Test disallowable expense',
+                    ]],
+                ],
+            ],
             'ct600a' => array_replace(['required' => false], (array)($overrides['ct600a'] ?? [])),
         ],
     ];
@@ -101,6 +116,15 @@ function ixbrlTaxComputationValue(array $model, string $key): mixed
         $value = is_array($value) && array_key_exists($part, $value) ? $value[$part] : null;
     }
     return $value;
+}
+
+function ixbrlTaxComputationDisallowableAudit(): array
+{
+    return ['rows' => [
+        ['tax_treatment' => 'disallowable', 'tax_adjustment_amount' => 406.14, 'nominal_code' => '6130', 'nominal_name' => 'Client Entertainment', 'source_type' => 'journal', 'source_id' => 2401, 'source_date' => '2024-09-04', 'source_label' => 'Journal #2401', 'label' => 'Client entertainment'],
+        ['tax_treatment' => 'disallowable', 'tax_adjustment_amount' => 100.00, 'nominal_code' => '6230', 'nominal_name' => 'HMRC Penalties', 'source_type' => 'journal', 'source_id' => 2412, 'source_date' => '2024-09-20', 'source_label' => 'Journal #2412', 'label' => 'HMRC penalty'],
+        ['tax_treatment' => 'disallowable', 'tax_adjustment_amount' => 550.00, 'nominal_code' => '6240', 'nominal_name' => 'Parking Fines and Penalties', 'source_type' => 'journal', 'source_id' => 2417, 'source_date' => '2024-09-25', 'source_label' => 'Journal #2417', 'label' => 'TFL ROAD CHG-PENALTY W', 'metadata' => ['journal_id' => 2417, 'journal_line_id' => 5220]],
+    ]];
 }
 
 function ixbrlTaxComputationMappings(array $model): array
@@ -487,6 +511,7 @@ function ixbrlTaxComputationMappings(array $model): array
                 ],
             ],
         ]);
+        $model['model']['audit']['expense_treatments'] = ixbrlTaxComputationDisallowableAudit();
         $method = new ReflectionMethod($service::class, 'renderMappedDocument');
         $method->setAccessible(true);
         $xhtml = (string)($method->invoke(
@@ -519,6 +544,10 @@ function ixbrlTaxComputationMappings(array $model): array
         }
         $carriedForward = $xpath->query('//ix:nonFraction[@name="ct:BalanceOfLossesBroughtForwardCarriedForward"]')->item(0);
         $h->assertSame('7,618.42', $carriedForward?->textContent);
+        $h->assertTrue(str_contains((string)$document->textContent, 'Disallowable expense supporting analysis'));
+        $h->assertTrue(str_contains((string)$document->textContent, 'Parking Fines and Penalties'));
+        $h->assertTrue(str_contains((string)$document->textContent, 'TFL ROAD CHG-PENALTY W'));
+        $h->assertSame(1, $xpath->query('//ix:nonFraction[@name="ct:AdjustmentsMiscellaneousExpensesPerAccounts"]')->length);
         $carriedForwardContext = (string)$carriedForward?->getAttribute('contextRef');
         $h->assertSame('2024-09-30', $xpath->evaluate('string(//xbrli:context[@id="' . $carriedForwardContext . '"]/xbrli:period/xbrli:instant)'));
         $h->assertSame(0, $xpath->query('//ix:nonFraction[@name="ct:ProfitsBeforeOtherDeductionsAndReliefs"]')->length);
@@ -608,6 +637,7 @@ function ixbrlTaxComputationMappings(array $model): array
                 ],
             ],
         ]);
+        $model['model']['audit']['expense_treatments'] = ixbrlTaxComputationDisallowableAudit();
         $method = new ReflectionMethod($service::class, 'renderMappedDocument');
         $method->setAccessible(true);
         $xhtml = (string)($method->invoke(

@@ -357,6 +357,27 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             $harness->assertSame(true, $confirmation->isSuccess());
             $harness->assertSame('no', (string)($basis['answers']['ct600a.missing_parties'] ?? ''));
             $harness->assertSame(true, is_array($basis['questions'] ?? null));
+            $ct600aReview = (new \eel_accounts\Service\Ct600aService())->fetchReviewForAccountingPeriod(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id']
+            );
+            $harness->assertSame(true, (bool)($ct600aReview['review']['current'] ?? false));
+            $harness->assertSame('no', (string)($ct600aReview['review']['answers']['missing_parties'] ?? ''));
+
+            $revoke = yearEndActionTestInstanceWithDirectorCount(1)->handle(
+                yearEndActionDirectorLoanTestRequest(
+                    (int)$fixture['company_id'],
+                    (int)$fixture['accounting_period_id'],
+                    'revoke_section_review',
+                    ['check_code' => 'director_loan_year_end_review']
+                ),
+                createTestPageServiceFramework()
+            );
+            $harness->assertSame(true, $revoke->isSuccess());
+            $harness->assertSame(0, InterfaceDB::countWhere('corporation_tax_ct600a_accounting_reviews', [
+                'company_id' => (int)$fixture['company_id'],
+                'accounting_period_id' => (int)$fixture['accounting_period_id'],
+            ]));
         });
     });
 
@@ -664,6 +685,20 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
                 )
             );
         });
+    });
+
+    $harness->check('YearEndAction', 'refreshes CT600A and loan review cards after the canonical loan confirmation changes', static function () use ($harness): void {
+        $action = new YearEndAction();
+        $method = new ReflectionMethod($action, 'changedFacts');
+        $facts = (array)$method->invoke(
+            $action,
+            'approve_section_review',
+            'director_loan_year_end_review'
+        );
+
+        foreach (['director.loan.state', 'tax.ct600a', 'tax.s455', 'ct.filing', 'year.end.checklist'] as $fact) {
+            $harness->assertTrue(in_array($fact, $facts, true));
+        }
     });
 
     $harness->check('YearEndAction', 'acknowledges and reopens review checks without director guard', static function () use ($harness): void {

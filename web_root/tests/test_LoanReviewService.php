@@ -18,6 +18,27 @@ $harness->run(\eel_accounts\Service\LoanReviewService::class, static function (
 ): void {
     $harness->check(
         \eel_accounts\Service\LoanReviewService::class,
+        'routes stale Section 464A confirmation messages away from the evidence-only CT600A card',
+        static function () use ($harness, $service): void {
+            $method = new ReflectionMethod($service, 'isSection464aConfirmationMessage');
+
+            $harness->assertSame(true, (bool)$method->invoke(
+                $service,
+                'The section 464A review is stale because its underlying evidence changed.'
+            ));
+            $harness->assertSame(true, (bool)$method->invoke(
+                $service,
+                'Complete and approve the section 464A review.'
+            ));
+            $harness->assertSame(false, (bool)$method->invoke(
+                $service,
+                'The nine-month CT600A evidence window remains open.'
+            ));
+        }
+    );
+
+    $harness->check(
+        \eel_accounts\Service\LoanReviewService::class,
         'matches reconciliation when a relevant party has no saved terms',
         static function () use ($harness, $service): void {
             loanReviewStatusWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
@@ -119,6 +140,15 @@ $harness->run(\eel_accounts\Service\LoanReviewService::class, static function (
                     || in_array('close_company_status', $kinds, true)
                     || in_array('section_464a_review', $kinds, true)
                     || in_array('ct600a_evidence', $kinds, true)
+                );
+                $sectionReviewItems = array_values(array_filter(
+                    (array)($review['items'] ?? []),
+                    static fn(array $item): bool => (string)($item['kind'] ?? '') === 'section_464a_review'
+                ));
+                $harness->assertCount(1, $sectionReviewItems);
+                $harness->assertSame(
+                    '?page=loans&show_card=year_end_loan_confirmation',
+                    (string)($sectionReviewItems[0]['action_url'] ?? '')
                 );
             });
         }

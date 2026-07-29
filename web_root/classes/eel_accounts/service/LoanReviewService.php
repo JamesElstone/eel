@@ -196,7 +196,7 @@ final class LoanReviewService
             foreach ((array)($ctPeriod['blocking_errors'] ?? []) as $error) {
                 $message = trim((string)$error);
                 if ($message === ''
-                    || str_contains($message, 'Complete and approve the section 464A review')
+                    || $this->isSection464aConfirmationMessage($message)
                     || str_contains($message, 'require party attribution')
                     || str_contains($message, 'non-cash or unsupported loan movement')) {
                     continue;
@@ -235,10 +235,10 @@ final class LoanReviewService
                 'detail' => $reviewErrors === []
                     ? 'Complete the Section 464A and 464C declaration for the current participator-loan evidence.'
                     : implode(' ', $reviewErrors),
-                'source_label' => 'CT600A declaration',
+                'source_label' => 'CT600A evidence',
                 'source_url' => '?page=loans&show_card=director_loan_ct600a',
-                'action_label' => 'Complete tax review',
-                'action_url' => '?page=loans&show_card=director_loan_ct600a',
+                'action_label' => 'Complete Year End Confirmation',
+                'action_url' => '?page=loans&show_card=year_end_loan_confirmation',
             ]);
         }
         $hasUnresolvedReview = $items !== [];
@@ -293,6 +293,14 @@ final class LoanReviewService
                 'tax_relevant' => $ct600aTaxRelevant,
             ],
         ];
+    }
+
+    private function isSection464aConfirmationMessage(string $message): bool
+    {
+        $message = strtolower(trim($message));
+
+        return str_contains($message, 'complete and approve the section 464a review')
+            || str_contains($message, 'section 464a review is stale');
     }
 
     private function s455Ready(array $s455): bool

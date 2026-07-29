@@ -220,6 +220,25 @@ final class YearEndSectionApprovalService
         if (empty($result['success'])) {
             return $result;
         }
+        if ($checkCode === 'director_loan_year_end_review') {
+            $ct600aReview = (new Ct600aService())->saveReview(
+                $companyId,
+                $accountingPeriodId,
+                $this->ct600aReviewAnswers((array)$validation['answers']),
+                'director',
+                $actor,
+                $note
+            );
+            if (empty($ct600aReview['success'])) {
+                $acknowledgements->revoke($companyId, $accountingPeriodId, $checkCode);
+                return [
+                    'success' => false,
+                    'errors' => (array)($ct600aReview['errors'] ?? [
+                        'The Section 464A and 464C evidence state could not be synchronized.',
+                    ]),
+                ];
+            }
+        }
         if (!$this->usesJournalCutOffCacheValidation($checkCode)) {
             $this->invalidate(
                 $companyId,
@@ -252,6 +271,17 @@ final class YearEndSectionApprovalService
         $result = $acknowledgements->revoke($companyId, $accountingPeriodId, $checkCode);
         if (empty($result['success'])) {
             return $result;
+        }
+        if ($checkCode === 'director_loan_year_end_review') {
+            $ct600aReview = (new Ct600aService())->revokeReview($companyId, $accountingPeriodId);
+            if (empty($ct600aReview['success'])) {
+                return [
+                    'success' => false,
+                    'errors' => (array)($ct600aReview['errors'] ?? [
+                        'The Section 464A and 464C evidence state could not be reopened.',
+                    ]),
+                ];
+            }
         }
         $this->invalidateSectionFromAccountingPeriod(
             $companyId,
@@ -1518,6 +1548,17 @@ final class YearEndSectionApprovalService
             'check_code' => $checkCode,
             'questions' => $questions,
         ]));
+    }
+
+    /** @return array<string,string> */
+    private function ct600aReviewAnswers(array $approvalAnswers): array
+    {
+        $answers = [];
+        foreach ((new Ct600aService())->reviewQuestions() as $key => $_prompt) {
+            $answers[(string)$key] = (string)($approvalAnswers['ct600a.' . (string)$key] ?? 'yes');
+        }
+
+        return $answers;
     }
 
     private function decodeBundle(array $row): array

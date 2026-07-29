@@ -153,53 +153,6 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
         </section>';
     }
 
-    private function ct600aDeclarations(array $context, int $companyId, int $accountingPeriodId, bool $locked): string
-    {
-        $directorLoanReview = (array)($context['services']['directorLoanReview'] ?? []);
-        $ct600a = (array)($directorLoanReview['ct600a'] ?? []);
-        if (empty($ct600a['available'])) {
-            return '';
-        }
-        $questions = (array)($ct600a['questions'] ?? []);
-        $review = (array)($ct600a['review'] ?? []);
-        $fields = '';
-        foreach ($questions as $key => $question) {
-            $value = (string)($review['answers'][$key] ?? 'yes');
-            if (!in_array($value, ['yes', 'no'], true)) {
-                $value = 'yes';
-            }
-            $fields .= '<fieldset class="panel-soft"><legend>' . \eel_accounts\Support\Utf8::html((string)$question) . '</legend><div class="actions-row">'
-                . $this->ct600aRadio((string)$key, 'no', 'No', $value, $locked)
-                . $this->ct600aRadio((string)$key, 'yes', 'Yes', $value, $locked) . '</div></fieldset>';
-        }
-        $saveLabel = !empty($review['stored']) && empty($review['current'])
-            ? 'Re-approve declaration using these answers'
-            : 'Save Section 464A and 464C declaration';
-        $saveAction = !$locked
-            ? '<div class="actions-row"><button class="button primary" type="submit">' . \eel_accounts\Support\Utf8::html($saveLabel) . '</button></div>'
-            : '';
-
-        return '<section class="settings-stack"><form class="settings-stack" method="post" action="?page=loans" data-ajax="true">'
-            . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
-            . '<input type="hidden" name="card_action" value="Ct600a"><input type="hidden" name="intent" value="save_ct600a_review">'
-            . '<input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
-            . $fields
-            . $saveAction
-            . '<div class="helper">'
-            . ($locked
-                ? 'Selections are locked because the Year End Confirmation has been recorded. No further changes can be made.'
-                : 'Choose every answer, then save the declaration once. The Year End Confirmation below is the single acknowledgement for this loan and CT600A position.')
-            . '</div></form></section>';
-    }
-
-    private function ct600aRadio(string $name, string $value, string $label, string $selected, bool $locked): string
-    {
-        $id = 'ct600a_' . $name . '_' . $value;
-        return '<label for="' . $id . '"><input id="' . $id . '" type="radio" name="' . \eel_accounts\Support\Utf8::html($name)
-            . '" value="' . $value . '"' . ($locked ? ' disabled' : '')
-            . ($selected === $value ? ' checked' : '') . ' required> ' . $label . '</label>';
-    }
-
     private function positionsTable(array $positions, array $taxReview, array $settings, array $review): string
     {
         $visiblePositions = array_values(array_filter(

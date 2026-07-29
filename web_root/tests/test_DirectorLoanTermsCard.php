@@ -92,7 +92,7 @@ $harness->run(_director_loan_termsCard::class, static function (GeneratedService
         $harness->assertSame(1, substr_count($html, '<option value="on_demand"'));
         $harness->assertSame(1, substr_count($html, '<option value="within_12_months"'));
         $harness->assertSame(1, substr_count($html, '<option value="after_12_months"'));
-        $harness->assertTrue(str_contains($html, 'Applies to the entire party balance at the accounting-period end.'));
+        $harness->assertSame(false, str_contains($html, 'Applies to the entire party balance at the accounting-period end.'));
         $harness->assertSame(false, str_contains($html, 'name="repayable_on_demand"'));
         $harness->assertSame(false, str_contains($html, 'name="repayment_timing"'));
         $harness->assertSame(false, str_contains($html, 'name="deferment_right_confirmed"'));
@@ -129,6 +129,7 @@ $harness->run(_director_loan_termsCard::class, static function (GeneratedService
 
         $harness->assertTrue(str_contains($html, 'Participator-to-company funding (creditor) terms register'));
         $harness->assertTrue(str_contains($html, 'Company-to-participator advance (statutory disclosure) terms register'));
+        $harness->assertSame(false, str_contains($html, 'Complete this only from the advance agreement.'));
         $harness->assertTrue(str_contains($html, '>Advance repayment condition</th>'));
         $harness->assertTrue(str_contains($html, '>Fixed repayment date</th>'));
         $harness->assertTrue(str_contains($html, '>Repayable on demand</td>'));

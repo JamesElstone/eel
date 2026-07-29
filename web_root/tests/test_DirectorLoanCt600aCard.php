@@ -41,5 +41,43 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(str_contains($html, 'Tax period 3 — 2023-10-01 to 2024-09-30'));
             $harness->assertTrue(!str_contains($html, 'Tax period 1 — 2023-10-01 to 2024-09-30'));
         });
+
+        $harness->check(_director_loan_ct600aCard::class, 'keeps stale CT600A evidence read only and routes confirmation to Year End', static function () use ($harness, $card): void {
+            $html = $card->render(directorLoanCt600aCardContext([
+                'stored' => true,
+                'current' => false,
+                'complete' => false,
+            ]));
+
+            $harness->assertTrue(str_contains($html, 'The underlying evidence has changed.'));
+            $harness->assertTrue(str_contains($html, '?page=loans&amp;show_card=year_end_loan_confirmation'));
+            $harness->assertTrue(str_contains($html, 'Review in Year End Confirmation'));
+            $harness->assertFalse(str_contains($html, 'name="intent" value="save_ct600a_review"'));
+        });
+
     }
 );
+
+/** @param array<string,mixed> $review */
+function directorLoanCt600aCardContext(array $review): array
+{
+    return [
+        'company' => [
+            'id' => 49,
+            'accounting_period_id' => 80,
+            'settings' => ['currency_symbol' => '£', 'currency_decimals' => 2],
+        ],
+        'page' => ['page_cards' => ['director_loan_ct600a']],
+        'services' => [
+            'ct600a' => [
+                'available' => true,
+                'questions' => [
+                    'missing_parties' => 'Are any participators missing?',
+                    'unrecorded_value' => 'Was any value transferred outside the recorded loan accounts?',
+                ],
+                'review' => $review,
+                'periods' => [],
+            ],
+        ],
+    ];
+}

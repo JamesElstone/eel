@@ -679,6 +679,31 @@ final class Ct600aService
         return ['success' => true, 'errors' => [], 'review' => $status];
     }
 
+    /** @return array{success:bool,errors:list<string>} */
+    public function revokeReview(int $companyId, int $accountingPeriodId): array
+    {
+        (new YearEndLockService())->assertUnlocked(
+            $companyId,
+            $accountingPeriodId,
+            'revoke the Director Loan Year End Confirmation'
+        );
+        if (!$this->schemaReady()) {
+            return [
+                'success' => false,
+                'errors' => ['Apply database migration 2026_07_21_005_ct600a_accounting_period_review.sql.'],
+            ];
+        }
+
+        \InterfaceDB::prepareExecute(
+            'DELETE FROM corporation_tax_ct600a_accounting_reviews
+             WHERE company_id = :company_id AND accounting_period_id = :period_id',
+            ['company_id' => $companyId, 'period_id' => $accountingPeriodId]
+        );
+        $this->invalidateReadCache();
+
+        return ['success' => true, 'errors' => []];
+    }
+
     /** @return array<string,mixed> */
     public function saveEvent(array $input): array
     {

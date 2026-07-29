@@ -68,6 +68,22 @@ $harness->run(\eel_accounts\Service\YearEndSectionApprovalService::class, static
         $harness->assertSame('no', (string)$approved['answers']['ct600a.missing_parties']);
     });
 
+    $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'maps canonical Year End answers to the internal CT600A evidence review', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod($service, 'ct600aReviewAnswers');
+        $answers = (array)$method->invoke($service, [
+            'ct600a.missing_parties' => 'no',
+            'ct600a.unrecorded_value' => 'no',
+            'ct600a.indirect_benefit' => 'no',
+            'ct600a.noncommercial_value' => 'no',
+            'ct600a.tax_avoidance_arrangement' => 'no',
+            'ct600a.replacement_extraction' => 'no',
+        ]);
+
+        $harness->assertSame('no', (string)$answers['missing_parties']);
+        $harness->assertSame('no', (string)$answers['replacement_extraction']);
+        $harness->assertSame(false, array_key_exists('ct600a.missing_parties', $answers));
+    });
+
     $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'requires a Yes Companies House XML Gateway eligibility answer', static function () use ($harness, $service): void {
         $method = new ReflectionMethod($service, 'validateAnswers');
         $questionsMethod = new ReflectionMethod($service, 'companiesHouseQuestions');

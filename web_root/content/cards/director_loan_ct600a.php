@@ -46,15 +46,13 @@ final class _director_loan_ct600aCard extends CardBaseFramework
             return '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)(($data['errors'] ?? [])[0] ?? 'CT600A evidence is unavailable.')) . '</div>';
         }
         $company = (array)($context['company'] ?? []);
-        $companyId = (int)($company['id'] ?? 0);
-        $periodId = (int)($company['accounting_period_id'] ?? 0);
         $html = '<div class="settings-stack"><div class="actions-row">
             <a class="button button-inline" target="_blank" rel="noopener noreferrer" href="https://www.gov.uk/guidance/supplementary-pages-ct600a-2015-version-3-close-company-loans-and-arrangements-to-confer-benefits-on-participators">HMRC: CT600A guidance</a>
             <a class="button button-inline" target="_blank" rel="noopener noreferrer" href="https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm61570">HMRC: section 464A</a>
             <a class="button button-inline" target="_blank" rel="noopener noreferrer" href="https://www.legislation.gov.uk/ukpga/2010/4/section/464C">Legislation: section 464C</a>
         </div>';
+        $html .= $this->reviewEvidenceStatus((array)($data['review'] ?? []));
         foreach ((array)$data['periods'] as $ct) {
-            $ctId = (int)($ct['ct_period_id'] ?? 0);
             $errors = (array)($ct['blocking_errors'] ?? []);
             $complete = !array_key_exists('complete', $ct) ? $errors === [] : !empty($ct['complete']);
             $html .= '<section class="panel-soft settings-stack"><div class="status-head"><h3 class="card-title">Tax period '
@@ -76,38 +74,24 @@ final class _director_loan_ct600aCard extends CardBaseFramework
         return $html . '</div>';
     }
 
-    private function reviewForm(array $questions, array $review, int $ctId, int $companyId, int $periodId): string
+    private function reviewEvidenceStatus(array $review): string
     {
-        $answers = (array)($review['answers'] ?? []);
-        $fields = '';
-        foreach ($questions as $key => $question) {
-            $value = (string)($answers[$key] ?? 'yes');
-            if (!in_array($value, ['yes', 'no'], true)) {
-                $value = 'yes';
-            }
-            $fields .= '<fieldset class="panel-soft"><legend>' . \eel_accounts\Support\Utf8::html((string)$question) . '</legend><div class="actions-row">'
-                . $this->radio((string)$key, 'no', 'No', $value) . $this->radio((string)$key, 'yes', 'Yes', $value)
-                . '</div></fieldset>';
-        }
-        return '<form class="settings-stack" method="post" action="?page=loans" data-ajax="true">'
-            . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-                <input type="hidden" name="card_action" value="Ct600a"><input type="hidden" name="intent" value="save_ct600a_review">
-                <input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $periodId . '">
-                <input type="hidden" name="ct_period_id" value="' . $ctId . '"><h4 class="card-title">Section 464A and 464C declaration</h4>
-                <div class="helper">Answer the risk questions from the company records and posted transaction or journal evidence. This review does not create tax evidence.</div>'
-            . $fields . '<div class="form-grid"><div class="form-row"><label>Approver name</label><input class="input" name="approved_by" value="'
-            . \eel_accounts\Support\Utf8::html((string)($review['approved_by'] ?? '')) . '" required></div><div class="form-row"><label>Approver role</label>
-                <select class="input" name="approver_role"><option value="director"' . ((string)($review['approver_role'] ?? 'director') === 'director' ? ' selected' : '')
-            . '>Director</option><option value="adviser"' . ((string)($review['approver_role'] ?? '') === 'adviser' ? ' selected' : '')
-            . '>Adviser</option></select></div></div><div class="form-row"><label>Evidence or conclusion note</label><textarea class="input" name="confirmation_note" rows="3">'
-            . \eel_accounts\Support\Utf8::html((string)($review['confirmation_note'] ?? '')) . '</textarea></div><button class="button primary" type="submit">Approve section 464A review</button></form>';
-    }
-
-    private function radio(string $name, string $value, string $label, string $selected): string
-    {
-        $id = 'ct600a_' . $name . '_' . $value;
-        return '<label for="' . $id . '"><input id="' . $id . '" type="radio" name="' . \eel_accounts\Support\Utf8::html($name)
-            . '" value="' . $value . '"' . ($selected === $value ? ' checked' : '') . ' required> ' . $label . '</label>';
+        $stored = !empty($review['stored']);
+        $current = !empty($review['current']);
+        $complete = !empty($review['complete']);
+        $badge = $current && $complete
+            ? '<span class="badge success">Reviewed</span>'
+            : '<span class="badge danger">' . ($stored ? 'Review required' : 'Not approved') . '</span>';
+        $detail = $stored && !$current
+            ? 'The underlying evidence has changed. Review the declaration answers and approve it again.'
+            : ($current && $complete
+                ? 'The declaration is current for the participator-loan evidence shown below.'
+                : 'Complete the declaration before approving the Corporation Tax filing basis.');
+        return '<section class="panel-soft settings-stack"><div class="summary-card-header"><h3 class="card-title">Section 464A and 464C evidence status</h3>'
+            . $badge . '</div><div class="helper">' . \eel_accounts\Support\Utf8::html($detail) . '</div>'
+            . '<div class="actions-row"><a class="button primary" href="?page=loans&amp;show_card=year_end_loan_confirmation">'
+            . ($stored ? 'Review in Year End Confirmation' : 'Complete Year End Confirmation')
+            . '</a></div></section>';
     }
     private function summaryTable(array $ct, array $company): TableFramework
     {

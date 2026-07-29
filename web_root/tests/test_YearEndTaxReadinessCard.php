@@ -61,6 +61,26 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertTrue((int)strrpos($html, 'Corporation Tax Filing Scope Check') < (int)strpos($html, 'Tax Basis Review And Approval'));
     });
 
+    $harness->check(_year_end_tax_readinessCard::class, 'links a Section 464 review blocker to the Director Loan Year End Confirmation', static function () use ($harness, $card): void {
+        $context = yearEndTaxReadinessCardContext([
+            'available' => true,
+            'provision' => ['available' => true, 'status' => 'not_required'],
+            'periods' => [],
+            'blocking_diagnostics' => [[
+                'code' => 'section_464a_review_required',
+                'message' => 'The section 464A review is stale because its underlying evidence changed.',
+            ]],
+        ]);
+
+        $html = $card->render($context);
+
+        $harness->assertTrue(str_contains($html, 'Corporation Tax Items Requiring Review'));
+        $harness->assertTrue(str_contains($html, 'The section 464A review is stale because its underlying evidence changed.'));
+        $harness->assertTrue(str_contains($html, '?page=loans&amp;show_card=year_end_loan_confirmation'));
+        $harness->assertTrue(str_contains($html, 'Open Director Loan Year End Confirmation'));
+        $harness->assertSame(1, substr_count($html, 'Open Director Loan Year End Confirmation'));
+    });
+
     $harness->check(_year_end_tax_readinessCard::class, 'locks filing-scope decisions while the Year End Confirmation is approved', static function () use ($harness, $card): void {
         $context = yearEndTaxReadinessCardContext([
             'available' => true,

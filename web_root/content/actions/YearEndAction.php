@@ -333,6 +333,14 @@ final class YearEndAction implements ActionInterfaceFramework
             && trim($checkCode) === 'cut_off_journals_review') {
             return ['cut.off.journals', 'year.end.state', 'year.end.checklist', 'year.end.audit.log'];
         }
+        if (in_array($intent, ['approve_section_review', 'revoke_section_review'], true)
+            && trim($checkCode) === 'director_loan_year_end_review') {
+            return [
+                'director.loan.state', 'tax.ct600a', 'tax.s455', 'tax.workings',
+                'ct.filing', 'ixbrl.readiness', 'year.end.state', 'year.end.checklist',
+                'year.end.audit.log',
+            ];
+        }
 
         if ($intent === 'save_notes') {
             return ['year.end.notes', 'year.end.state', 'year.end.checklist', 'year.end.audit.log'];

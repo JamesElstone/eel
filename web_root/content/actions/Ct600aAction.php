@@ -13,14 +13,11 @@ final class Ct600aAction implements ActionInterfaceFramework
             return $this->result(false,['The submitted company or period does not match the authenticated accounting context.']);
         }
         $intent=trim((string)$request->input('intent',''));
-        $service=new \eel_accounts\Service\Ct600aService();
         try{
             if($intent==='save_ct600a_review'){
-                $answers=[];
-                foreach(array_keys($service->reviewQuestions()) as $key){$answers[$key]=$request->input($key,'yes');}
-                $result=$service->saveReview($companyId,$periodId,$answers,
-                    'director',$this->actor($request),'');
-                return $this->result(!empty($result['success']),(array)($result['errors']??[]),!empty($result['success'])?'Section 464A and 464C declaration saved. The filing basis must be approved again.':'');
+                return $this->result(false,[
+                    'Complete the Section 464A and 464C questions within the Director Loan Year End Confirmation.',
+                ]);
             }
             return $this->result(false,['Unknown CT600A action.']);
         }catch(Throwable $exception){return $this->result(false,[$exception->getMessage()]);}
@@ -37,19 +34,4 @@ final class Ct600aAction implements ActionInterfaceFramework
         ],$flashes);
     }
 
-    private function actor(RequestFramework $request): string
-    {
-        try {
-            $session = new SessionAuthenticationService();
-            $session->startSession();
-            $deviceId = trim((string)AntiFraudService::instance($request)->requestValue('Client-Device-ID'));
-            $userId = $session->authenticatedUserId($deviceId !== '' ? $deviceId : null);
-            if ($userId > 0) {
-                return 'user:' . $userId;
-            }
-        } catch (Throwable) {
-        }
-
-        return 'web_app';
-    }
 }

@@ -217,7 +217,8 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
                 (array)($taxReadiness['blocking_diagnostics'] ?? []),
                 'Corporation Tax Items Requiring Review',
                 $blockerCount === 0 ? 'No amount-affecting Corporation Tax issues remain.' : '',
-                false
+                false,
+                true
             ) . '
         </section>';
     }
@@ -380,25 +381,46 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         );
     }
 
-    private function diagnosticsHtml(array $diagnostics, string $title, string $emptyMessage, bool $includeTitle = true): string
+    private function diagnosticsHtml(
+        array $diagnostics,
+        string $title,
+        string $emptyMessage,
+        bool $includeTitle = true,
+        bool $includeLoanConfirmationLink = false
+    ): string
     {
-        $messages = array_values(array_filter(array_map(
-            static fn(mixed $diagnostic): string => is_array($diagnostic)
-                ? trim((string)($diagnostic['message'] ?? ''))
-                : '',
-            $diagnostics
-        ), static fn(string $message): bool => $message !== ''));
+        $diagnostics = array_values(array_filter(
+            $diagnostics,
+            static fn(mixed $diagnostic): bool => is_array($diagnostic)
+                && trim((string)($diagnostic['message'] ?? '')) !== ''
+        ));
 
-        if ($messages === []) {
+        if ($diagnostics === []) {
             return '<div class="helper">' . $this->badge('success', 'Ready') . ' ' . \eel_accounts\Support\Utf8::html($emptyMessage) . '</div>';
         }
 
         $html = '<section class="stack">' . ($includeTitle ? '<h3 class="card-title">' . \eel_accounts\Support\Utf8::html($title) . '</h3>' : '');
-        foreach ($messages as $message) {
+        foreach ($diagnostics as $diagnostic) {
+            $message = trim((string)$diagnostic['message']);
             $html .= '<div class="helper">' . \eel_accounts\Support\Utf8::html($message) . '</div>';
+            if ($includeLoanConfirmationLink && $this->requiresSection464Review($diagnostic)) {
+                $html .= '<div class="actions-row"><a class="button button-inline" href="?page=loans&amp;show_card=year_end_loan_confirmation">'
+                    . 'Open Director Loan Year End Confirmation</a></div>';
+            }
         }
 
         return $html . '</section>';
+    }
+
+    private function requiresSection464Review(array $diagnostic): bool
+    {
+        $text = strtolower(
+            (string)($diagnostic['code'] ?? '') . ' ' . (string)($diagnostic['message'] ?? '')
+        );
+
+        return str_contains($text, '464a')
+            || str_contains($text, '464c')
+            || str_contains($text, 's464');
     }
 
     private function reviewApprovalHtml(string $acknowledgementForm): string

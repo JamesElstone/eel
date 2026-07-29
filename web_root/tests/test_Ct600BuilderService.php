@@ -161,6 +161,7 @@ function ct600_builder_test_xpath(string $xml): DOMXPath
         throw new RuntimeException('The generated CT600 XML could not be parsed by the test.');
     }
     $xpath = new DOMXPath($document);
+    $xpath->registerNamespace('hd', 'http://www.govtalk.gov.uk/CM/envelope');
     $xpath->registerNamespace('ct', \eel_accounts\Service\Ct600BuilderService::CT_NAMESPACE);
     return $xpath;
 }
@@ -223,12 +224,37 @@ function ct600_builder_test_assert_official_business_rules(
     if (!$inner->loadXML($xml, LIBXML_NONET | LIBXML_NOBLANKS)) {
         throw new RuntimeException('The CT600 XML could not be wrapped for business-rule validation.');
     }
-    $document->loadXML('<GovTalkMessage xmlns="http://www.govtalk.gov.uk/CM/envelope"><Body/></GovTalkMessage>');
+    $utr = (string)(new DOMXPath($inner))->evaluate('string(/*[local-name()="IRenvelope"]/*[local-name()="IRheader"]/*[local-name()="Keys"]/*[local-name()="Key"][@Type="UTR"])');
+    $document->loadXML(
+        '<GovTalkMessage xmlns="http://www.govtalk.gov.uk/CM/envelope">'
+        . '<GovTalkDetails><Keys><Key Type="UTR">' . htmlspecialchars($utr, ENT_XML1) . '</Key></Keys></GovTalkDetails>'
+        . '<Body/></GovTalkMessage>'
+    );
     $body = $document->documentElement?->lastChild;
     if (!$body instanceof DOMElement) {
         throw new RuntimeException('The GovTalk test wrapper has no Body.');
     }
     $body->appendChild($document->importNode($inner->documentElement, true));
+    $xpath = new DOMXPath($document);
+    $xpath->registerNamespace('hd', 'http://www.govtalk.gov.uk/CM/envelope');
+    $xpath->registerNamespace('ct', \eel_accounts\Service\Ct600BuilderService::CT_NAMESPACE);
+    $return = $xpath->query('/hd:GovTalkMessage/hd:Body/ct:IRenvelope/ct:CompanyTaxReturn');
+    if ($return instanceof DOMNodeList && $return->item(0) instanceof DOMElement) {
+        $attached = $document->createElementNS(\eel_accounts\Service\Ct600BuilderService::CT_NAMESPACE, 'AttachedFiles');
+        $submission = $document->createElementNS(\eel_accounts\Service\Ct600BuilderService::CT_NAMESPACE, 'XBRLsubmission');
+        foreach (['Accounts', 'Computation'] as $type) {
+            $item = $document->createElementNS(\eel_accounts\Service\Ct600BuilderService::CT_NAMESPACE, $type);
+            $instance = $document->createElementNS(\eel_accounts\Service\Ct600BuilderService::CT_NAMESPACE, 'Instance');
+            $encoded = $document->createElementNS(\eel_accounts\Service\Ct600BuilderService::CT_NAMESPACE, 'EncodedInlineXBRLDocument', base64_encode('<html/>'));
+            $encoded->setAttribute('Filename', strtolower($type) . '.xhtml');
+            $encoded->setAttribute('entryPoint', 'yes');
+            $instance->appendChild($encoded);
+            $item->appendChild($instance);
+            $submission->appendChild($item);
+        }
+        $attached->appendChild($submission);
+        $return->item(0)->appendChild($attached);
+    }
     $service = new \eel_accounts\Service\HmrcCt600ValidationService();
     $method = new ReflectionMethod($service, 'schematronDiagnostics');
     $method->setAccessible(true);

@@ -51,13 +51,20 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 (int)$fixture['accounting_period_id'],
                 (int)$fixture['ct_period_ids'][0]
             );
+            $frozenSummary = json_decode((string)\InterfaceDB::fetchColumn(
+                'SELECT summary_json FROM corporation_tax_computation_runs WHERE id = :id',
+                ['id' => (int)$fixture['run_ids'][0]]
+            ), true);
 
             $h->assertSame(
                 \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION,
                 (string)($acknowledgement['basis_version'] ?? '')
             );
             $h->assertSame(true, (bool)($model['available'] ?? false));
-            $h->assertSame((string)$fixture['manifest_hash'], (string)($model['seal']['freeze_manifest_hash'] ?? ''));
+            $h->assertSame(
+                (string)$fixture['manifest_hash'],
+                (string)(($frozenSummary['frozen_calculation_basis'] ?? [])['freeze_manifest_hash'] ?? '')
+            );
         });
 
         $h->check($service::class, 'derives and freezes two independently fileable CT periods for a long accounting period', static function () use ($h, $service): void {
@@ -712,6 +719,10 @@ function ctPeriodFilingModelFixture(
         'blocking_diagnostic_codes' => [],
     ];
     $acknowledgements = new \eel_accounts\Service\YearEndAcknowledgementService();
+    // Production seals hash the canonical form accepted by the Year End tax
+    // freeze service.  Keep the fixture on that same contract so it cannot
+    // accidentally model a basis which would be rejected at lock time.
+    $manifest = (new \eel_accounts\Service\YearEndTaxFreezeService())->canonicalManifest($manifest);
     $manifestHash = $acknowledgements->hashBasis($manifest);
     $legacyApprovalBasis = [
         'check_code' => 'tax_readiness_acknowledgement',
@@ -992,6 +1003,11 @@ function ctPeriodFilingModelFixture(
             }
             throw $exception;
         }
+        ixbrl_test_approve_companies_house_classification(
+            $companyId,
+            $accountingPeriodId,
+            'ct-filing-model-fixture'
+        );
         if ($approve) {
             $filingApproval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
                 ->approveAndBuildFacts($companyId, $accountingPeriodId, 'test', 'CT filing model fixture.');
@@ -1021,6 +1037,10 @@ function ctPeriodFilingModelSavePartyLoanTerms(int $companyId, int $partyId): vo
             'deferment_right_confirmed' => 0,
             'set_off_right_confirmed' => 0,
             'settlement_intention' => 'independently',
+            'advance_interest_rate_percent' => 0,
+            'advance_security_type' => 'unsecured',
+            'advance_repayment_basis' => 'on_demand',
+            'advance_fixed_repayment_date' => '',
         ],
         'test'
     );

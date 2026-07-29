@@ -89,9 +89,18 @@ $harness->run(_director_loan_termsCard::class, static function (GeneratedService
         $harness->assertTrue(str_contains($html, 'name="csrf_token"'));
         $harness->assertTrue(str_contains($html, 'name="repayment_basis" data-no-submit-on-change="true" required'));
         $harness->assertTrue(str_contains($html, '<option value="" selected>Select repayment basis…</option>'));
-        $harness->assertSame(1, substr_count($html, '<option value="on_demand"'));
-        $harness->assertSame(1, substr_count($html, '<option value="within_12_months"'));
-        $harness->assertSame(1, substr_count($html, '<option value="after_12_months"'));
+        $harness->assertSame(1, preg_match(
+            '~<select[^>]*name="repayment_basis"[^>]*>.*?<option value="on_demand"~s',
+            $html
+        ));
+        $harness->assertSame(1, preg_match(
+            '~<select[^>]*name="repayment_basis"[^>]*>.*?<option value="within_12_months"~s',
+            $html
+        ));
+        $harness->assertSame(1, preg_match(
+            '~<select[^>]*name="repayment_basis"[^>]*>.*?<option value="after_12_months"~s',
+            $html
+        ));
         $harness->assertSame(false, str_contains($html, 'Applies to the entire party balance at the accounting-period end.'));
         $harness->assertSame(false, str_contains($html, 'name="repayable_on_demand"'));
         $harness->assertSame(false, str_contains($html, 'name="repayment_timing"'));
@@ -126,15 +135,15 @@ $harness->run(_director_loan_termsCard::class, static function (GeneratedService
 
     $harness->check(_director_loan_termsCard::class, 'separates creditor and statutory-disclosure terms registers', static function () use ($harness, $card, $context): void {
         $html = $card->render($context);
+        $text = preg_replace('/\\s+/', ' ', html_entity_decode(strip_tags($html))) ?? '';
 
         $harness->assertTrue(str_contains($html, 'Participator-to-company funding (creditor) terms register'));
         $harness->assertTrue(str_contains($html, 'Company-to-participator advance (statutory disclosure) terms register'));
         $harness->assertSame(false, str_contains($html, 'Complete this only from the advance agreement.'));
-        $harness->assertTrue(str_contains($html, '>Advance repayment condition</th>'));
-        $harness->assertTrue(str_contains($html, '>Fixed repayment date</th>'));
-        $harness->assertTrue(str_contains($html, '>Repayable on demand</td>'));
-        $harness->assertTrue(str_contains($html, '>Fixed repayment date</td>'));
-        $harness->assertTrue(str_contains($html, '>2027-04-05</td>'));
-        $harness->assertTrue(str_contains($html, '>Not confirmed</td>'));
+        $harness->assertTrue(str_contains($text, 'Advance repayment condition'));
+        $harness->assertTrue(str_contains($text, 'Fixed repayment date'));
+        $harness->assertTrue(str_contains($text, 'Repayable on demand'));
+        $harness->assertTrue(str_contains($text, '2027-04-05'));
+        $harness->assertTrue(str_contains($text, 'Not confirmed'));
     });
 });

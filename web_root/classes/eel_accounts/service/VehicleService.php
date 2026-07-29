@@ -125,13 +125,20 @@ final class VehicleService
             $params['accounting_period_id'] = $accountingPeriodId;
         }
 
-        $vehicleNominalPlaceholders = [];
-        foreach ($vehicleNominalIds as $index => $nominalId) {
-            $key = 'vehicle_nominal_id_' . $index;
-            $vehicleNominalPlaceholders[] = ':' . $key;
-            $params[$key] = $nominalId;
+        // PDO drivers do not all permit a named placeholder to occur more
+        // than once in a prepared statement.  Each source column needs its
+        // own bindings, otherwise configured company defaults can silently
+        // disappear from the register query on native prepares.
+        $vehicleNominalInClauses = [];
+        foreach (['asset', 'transaction', 'expense'] as $source) {
+            $placeholders = [];
+            foreach ($vehicleNominalIds as $index => $nominalId) {
+                $key = 'vehicle_' . $source . '_nominal_id_' . $index;
+                $placeholders[] = ':' . $key;
+                $params[$key] = $nominalId;
+            }
+            $vehicleNominalInClauses[$source] = implode(', ', $placeholders);
         }
-        $vehicleNominalInClause = implode(', ', $vehicleNominalPlaceholders);
 
         $rows = \InterfaceDB::fetchAll(
             'SELECT ar.id,
@@ -177,9 +184,9 @@ final class VehicleService
              LEFT JOIN journals j ON j.id = ar.linked_journal_id
              WHERE ar.company_id = :company_id' . $periodClause . '
                AND (
-                   na.id IN (' . $vehicleNominalInClause . ')
-                   OR tn.id IN (' . $vehicleNominalInClause . ')
-                   OR en.id IN (' . $vehicleNominalInClause . ')
+                   na.id IN (' . $vehicleNominalInClauses['asset'] . ')
+                   OR tn.id IN (' . $vehicleNominalInClauses['transaction'] . ')
+                   OR en.id IN (' . $vehicleNominalInClauses['expense'] . ')
                    OR vd.asset_id IS NOT NULL
                )
              ORDER BY ar.purchase_date DESC, ar.id DESC',

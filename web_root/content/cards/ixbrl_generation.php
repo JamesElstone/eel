@@ -306,8 +306,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     continue;
                 }
 
-                $ctPeriodNumber = (int)($period['sequence_no'] ?? $period['ct_period_sequence_no']
-                    ?? $period['ct_period_id'] ?? $period['id'] ?? 0);
+                $ctPeriodNumber = $this->ctPeriodDisplayNumber($period);
                 $label = $ctPeriodNumber > 0
                     ? 'Corporation Tax Period ' . $ctPeriodNumber . ' iXBRL'
                     : 'Corporation Tax iXBRL';
@@ -368,7 +367,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             $status = (array)($item['status'] ?? []);
             $run = (array)($status['run'] ?? []);
             $ctPeriodId = (int)($period['ct_period_id'] ?? $period['id'] ?? 0);
-            $ctPeriodNumber = (int)($period['sequence_no'] ?? $period['ct_period_sequence_no'] ?? $ctPeriodId);
+            $ctPeriodNumber = $this->ctPeriodDisplayNumber($period);
             $ctPeriodLabel = 'Corporation Tax Period ' . $ctPeriodNumber;
             $start = (string)($period['period_start'] ?? '');
             $end = (string)($period['period_end'] ?? '');
@@ -424,6 +423,16 @@ final class _ixbrl_generationCard extends CardBaseFramework
             $html .= '</div></section>';
         }
         return $html;
+    }
+
+    private function ctPeriodDisplayNumber(array $period): int
+    {
+        return (int)($period['display_sequence_no']
+            ?? $period['sequence_no']
+            ?? $period['ct_period_sequence_no']
+            ?? $period['ct_period_id']
+            ?? $period['id']
+            ?? 0);
     }
 
     private function allComputationPeriodsReady(array $context): bool

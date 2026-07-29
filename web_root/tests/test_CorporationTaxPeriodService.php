@@ -333,6 +333,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     array_map(static fn(int $displaySequence): string => 'CT Period ' . $displaySequence, $expectedDisplaySequences[$index]),
                     array_map(static fn(array $period): string => (string)$period['display_label'], $periods)
                 );
+
+                $projection = $service->projectForAccountingPeriod($companyId, $accountingPeriodId);
+                $harness->assertSame(true, (bool)($projection['success'] ?? false));
+                $harness->assertSame(
+                    $expectedDisplaySequences[$index],
+                    array_map(
+                        static fn(array $period): int => (int)$period['display_sequence_no'],
+                        (array)($projection['periods'] ?? [])
+                    )
+                );
             }
 
             $harness->assertSame(5, $service->displaySequenceNo($companyId, $accountingPeriodIds[3], 1));

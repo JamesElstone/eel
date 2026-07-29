@@ -569,6 +569,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                     'ct_period' => [
                         'id' => 6,
                         'sequence_no' => 1,
+                        'display_sequence_no' => 3,
                         'period_start' => '2025-01-01',
                         'period_end' => '2025-12-31',
                     ],
@@ -923,6 +924,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                     'ct_period' => [
                         'id' => 6,
                         'sequence_no' => 1,
+                        'display_sequence_no' => 3,
                         'period_start' => '2025-01-01',
                         'period_end' => '2025-12-31',
                     ],
@@ -938,9 +940,10 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         ];
 
         $html = $card->render($context);
-        $ctPosition = strpos($html, 'Corporation Tax Period 1 iXBRL');
+        $ctPosition = strpos($html, 'Corporation Tax Period 3 iXBRL');
         $companiesHousePosition = strpos($html, 'Companies House Revised Accounting iXBRL');
         $harness->assertTrue($ctPosition !== false);
+        $harness->assertFalse(str_contains($html, 'Corporation Tax Period 1 iXBRL'));
         $harness->assertTrue($companiesHousePosition !== false);
         $harness->assertTrue($companiesHousePosition > $ctPosition);
     });

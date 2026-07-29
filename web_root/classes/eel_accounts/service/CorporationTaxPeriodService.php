@@ -437,7 +437,7 @@ final class CorporationTaxPeriodService
 
         return [
             'success' => $errors === [],
-            'periods' => $periods,
+            'periods' => $this->withDisplaySequences($companyId, $periods),
             'errors' => $errors,
             'requires_sync' => $requiresSync,
         ];

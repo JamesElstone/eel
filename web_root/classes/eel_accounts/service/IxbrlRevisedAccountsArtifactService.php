@@ -251,7 +251,7 @@ final class IxbrlRevisedAccountsArtifactService
             || ($xpath->query('//ix:resources')->length ?? 0) !== 1) {
             return ['success' => false, 'errors' => ['The Inline XBRL hidden or resources block is missing or ambiguous.'], 'warnings' => []];
         }
-        $this->removeHmrcRevisionExplanation($xpath);
+        $this->removeLegacyHmrcRevisionExplanation($xpath);
         foreach (self::REVISION_FACTS as $concept) {
             if (($xpath->query('//*[@name="bus:' . $concept . '"]')->length ?? 0) > 0) {
                 return ['success' => false, 'errors' => ['The source artifact already contains revised-report facts.'], 'warnings' => []];
@@ -408,12 +408,11 @@ final class IxbrlRevisedAccountsArtifactService
     }
 
     /**
-     * The HMRC Accounting artifact carries the approved explanation as a
-     * standalone note. The Companies House derivative replaces that note with
-     * its complete revised-accounts page, which carries the same taxonomy fact
-     * alongside the other statutory revision declarations.
+     * Artifacts generated before the HMRC/Companies House split was corrected
+     * may contain this Companies House-only fact. Remove that legacy note before
+     * adding the authoritative revised-accounts page.
      */
-    private function removeHmrcRevisionExplanation(\DOMXPath $xpath): void
+    private function removeLegacyHmrcRevisionExplanation(\DOMXPath $xpath): void
     {
         $notes = $xpath->query('//*[@id="hmrc-revision-explanation"]');
         if ($notes === false) {

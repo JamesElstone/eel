@@ -678,7 +678,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         });
         $harness->check(
             \eel_accounts\Service\IxbrlAccountingService::class,
-            'renders the approved Companies House revision explanation once when present',
+            'does not render a Companies House revision explanation in the HMRC accounting artifact',
             static function () use ($harness, $service): void {
                 $method = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'renderXhtml');
                 $method->setAccessible(true);
@@ -696,13 +696,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 );
                 $xhtml = (string)$method->invoke($service, $facts, false, '');
 
-                $harness->assertTrue(str_contains($xhtml, 'id="hmrc-revision-explanation"'));
-                $harness->assertFalse(str_contains($xhtml, 'data-revision-explanation'));
-                $harness->assertSame(1, substr_count(
+                $harness->assertFalse(str_contains($xhtml, 'id="hmrc-revision-explanation"'));
+                $harness->assertFalse(str_contains(
                     $xhtml,
                     'name="bus:StatementRespectsInWhichPreviouslyFiledReportDidNotComplyWithCompaniesAct2006"'
                 ));
-                $harness->assertSame(1, substr_count($xhtml, 'The originally filed accounts omitted fixed assets.'));
+                $harness->assertFalse(str_contains($xhtml, 'The originally filed accounts omitted fixed assets.'));
             }
         );
     }

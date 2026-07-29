@@ -13,7 +13,7 @@ namespace eel_accounts\Service;
 final class IxbrlAccountsReportService
 {
     /** Increment whenever the deterministic report-basis construction changes. */
-    public const BASIS_VERSION = 'ixbrl-accounts-report-v6';
+    public const BASIS_VERSION = 'ixbrl-accounts-report-v7';
 
     public function build(int $companyId, int $accountingPeriodId): array
     {
@@ -290,7 +290,6 @@ final class IxbrlAccountsReportService
         }
 
         $acknowledgement = (array)($review['acknowledgement'] ?? []);
-        $answers = (array)($review['answers'] ?? []);
         return [
             'filing_kind' => $filingKind,
             'filing_reason' => (string)($comparison['filing_reason'] ?? ''),
@@ -301,12 +300,6 @@ final class IxbrlAccountsReportService
             'approval_basis_hash' => (string)($acknowledgement['basis_hash'] ?? ''),
             'approved_at' => (string)($review['acknowledged_at'] ?? ''),
             'approved_by' => (string)($review['acknowledged_by'] ?? ''),
-            // This is an approved Year End answer, not a free-form filing input.
-            // Carry it in the report basis so an edit invalidates every dependent
-            // accounts artifact before it can be used again.
-            'variance_explanation' => $filingKind === 'revised'
-                ? trim((string)($answers['companies_house.variance_explanation'] ?? ''))
-                : '',
         ];
     }
 

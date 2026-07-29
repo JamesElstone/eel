@@ -36,15 +36,15 @@ final class _year_end_checklistCard extends CardBaseFramework
             return '<div class="helper">Year-end checklist is not available for the selected accounting period.</div>';
         }
 
-        return $this->renderOverallStatus($checklist)
+        return $this->renderOverallStatus($context, $checklist)
             . $this->renderBookkeepingSection($checklist)
             . $this->renderCheckSections($checklist);
     }
 
-    private function renderOverallStatus(array $checklist): string
+    private function renderOverallStatus(array $context, array $checklist): string
     {
         $status = (string)($checklist['overall_status'] ?? '');
-        $developerCacheRefresh = $this->developerCacheRefreshHtml($checklist);
+        $developerCacheRefresh = $this->developerCacheRefreshHtml($context, $checklist);
 
         return '<section class="panel-soft settings-stack">
             <div class="status-head">
@@ -55,14 +55,16 @@ final class _year_end_checklistCard extends CardBaseFramework
         </section>';
     }
 
-    private function developerCacheRefreshHtml(array $checklist): string
+    private function developerCacheRefreshHtml(array $context, array $checklist): string
     {
         if (!(bool)AppConfigurationStore::get('developer_options', false)) {
             return '';
         }
 
-        $companyId = (int)($checklist['company_id'] ?? 0);
-        $accountingPeriodId = (int)((array)($checklist['accounting_period'] ?? [])['id'] ?? 0);
+        $company = (array)($context['company'] ?? []);
+        $companyId = (int)($company['id'] ?? ($checklist['company_id'] ?? 0));
+        $accountingPeriodId = (int)((array)($checklist['accounting_period'] ?? [])['id']
+            ?? ($company['accounting_period_id'] ?? 0));
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return '';
         }

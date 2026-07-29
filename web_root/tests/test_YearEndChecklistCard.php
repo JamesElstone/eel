@@ -17,6 +17,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
         try {
             AppConfigurationStore::set('developer_options', true);
             $html = $card->render([
+                'company' => ['id' => 12, 'accounting_period_id' => 34],
                 'year_end' => ['checklist' => [
                     'company_id' => 12,
                     'accounting_period' => ['id' => 34],
@@ -34,6 +35,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
 
             AppConfigurationStore::set('developer_options', false);
             $harness->assertFalse(str_contains($card->render([
+                'company' => ['id' => 12, 'accounting_period_id' => 34],
                 'year_end' => ['checklist' => [
                     'company_id' => 12,
                     'accounting_period' => ['id' => 34],
@@ -41,6 +43,27 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
                     'sections' => [],
                 ]],
             ]), 'refresh_year_end_review_caches'));
+        } finally {
+            AppConfigurationStore::set('developer_options', $previous);
+        }
+    });
+
+    $harness->check(_year_end_checklistCard::class, 'uses the active company context for the developer cache refresh action', static function () use ($harness, $card): void {
+        $previous = (bool)AppConfigurationStore::get('developer_options', false);
+        try {
+            AppConfigurationStore::set('developer_options', true);
+            $html = $card->render([
+                'company' => ['id' => 49, 'accounting_period_id' => 79],
+                'year_end' => ['checklist' => [
+                    'company_id' => 12,
+                    'accounting_period' => ['id' => 79],
+                    'overall_status' => 'in_progress',
+                    'sections' => [],
+                ]],
+            ]);
+
+            $harness->assertTrue(str_contains($html, 'name="company_id" value="49"'));
+            $harness->assertFalse(str_contains($html, 'name="company_id" value="12"'));
         } finally {
             AppConfigurationStore::set('developer_options', $previous);
         }

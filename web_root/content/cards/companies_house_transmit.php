@@ -7,9 +7,9 @@
  */
 declare(strict_types=1);
 
-final class _companies_house_transmissionCard extends CardBaseFramework
+final class _companies_house_transmitCard extends CardBaseFramework
 {
-    public function key(): string { return 'companies_house_transmission'; }
+    public function key(): string { return 'companies_house_transmit'; }
 
     public function title(): string { return 'Companies House accounts transmission'; }
 
@@ -22,7 +22,7 @@ final class _companies_house_transmissionCard extends CardBaseFramework
     {
         return [
             [
-                'key' => 'companies_house_transmission_context',
+                'key' => 'companies_house_transmit_context',
                 'service' => \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
                 'method' => 'fetchContext',
                 'params' => [
@@ -31,7 +31,7 @@ final class _companies_house_transmissionCard extends CardBaseFramework
                 ],
             ],
             [
-                'key' => 'companies_house_transmission_history',
+                'key' => 'companies_house_transmit_history',
                 'service' => \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
                 'method' => 'submissionHistory',
                 'params' => [
@@ -61,8 +61,8 @@ final class _companies_house_transmissionCard extends CardBaseFramework
             return '<div class="notice warning">Select a company and accounting period before transmitting accounts.</div>';
         }
 
-        $model = (array)(($context['services'] ?? [])['companies_house_transmission_context'] ?? []);
-        $history = (array)(($context['services'] ?? [])['companies_house_transmission_history'] ?? []);
+        $model = (array)(($context['services'] ?? [])['companies_house_transmit_context'] ?? []);
+        $history = (array)(($context['services'] ?? [])['companies_house_transmit_history'] ?? []);
         if ($model === []) {
             return '<div class="notice warning">The Companies House transmission status could not be loaded.</div>';
         }
@@ -78,37 +78,22 @@ final class _companies_house_transmissionCard extends CardBaseFramework
         $developerOptions = (bool)AppConfigurationStore::get('developer_options', false);
         $lifecycle = strtolower(trim((string)($submission['lifecycle'] ?? 'not_prepared')));
         $html = '<div class="settings-stack">'
-            . '<section class="panel-soft"><div class="status-head"><h3 class="card-title">Connection and sequence</h3>'
+            . '<section class="panel-soft"><div class="status-head"><h3 class="card-title">Companies House Connection</h3>'
             . '<span class="badge ' . (!empty($feature['credentials_configured']) ? 'success' : 'warning') . '">'
             . (!empty($feature['credentials_configured']) ? 'Configured' : 'Unavailable') . '</span></div>'
             . '<div class="summary-grid">'
-            . $this->metric('Environment', (string)($feature['mode'] ?? 'DISABLED'))
-            . $this->metric(
-                'XML Input',
-                !empty($feature['credentials_configured']) ? 'Configured' : 'Unavailable'
+            . $this->environmentMetric((string)($feature['mode'] ?? 'DISABLED'))
+            . $this->credentialMetric(
+                (string)($feature['mode'] ?? 'DISABLED'),
+                !empty($feature['credentials_configured'])
             )
             . $this->metric(
                 'CompanyData XML Output',
-                !empty($feature['company_data_credentials_configured']) ? 'Configured' : 'Unavailable'
-            )
-            . $this->metric(
-                'Protocol migration',
-                !empty($feature['protocol_ready']) ? 'Ready' : 'Required'
+                !empty($feature['company_data_credentials_configured']) ? 'Configured' : 'Unavailable',
+                'Credentials used to request CompanyData and verify the company authentication code before filing.'
             )
             . $this->metric('Next submission number', (string)($sequence['next_number'] ?? 'Unavailable'))
             . $this->metric('Last issued number', (string)($sequence['last_issued_number'] ?? 'None'))
-            . $this->metric(
-                'Transport lock',
-                (int)($sequence['in_flight_submission_id'] ?? 0) > 0
-                    ? 'Submission ' . (int)$sequence['in_flight_submission_id']
-                    : 'Clear'
-            )
-            . $this->metric(
-                'Status / StatusAck lock',
-                (int)($sequence['status_in_flight_submission_id'] ?? 0) > 0
-                    ? 'Submission ' . (int)$sequence['status_in_flight_submission_id']
-                    : 'Clear'
-            )
             . '</div></section>';
 
         $html .= '<section class="panel-soft"><div class="status-head"><h3 class="card-title">Prepared transmission</h3>'
@@ -448,8 +433,14 @@ final class _companies_house_transmissionCard extends CardBaseFramework
 
     private function history(array $history): string
     {
+        $history = array_values(array_filter(
+            $history,
+            static fn(mixed $submission): bool => is_array($submission)
+                && (trim((string)($submission['submission_number'] ?? '')) !== ''
+                    || trim((string)($submission['submitted_at'] ?? '')) !== '')
+        ));
         if ($history === []) {
-            return '<section class="panel-soft"><h3 class="card-title">Submission history</h3>'
+            return '<section class="panel-soft"><h3 class="card-title">Submission History</h3>'
                 . '<div class="helper">No Companies House submission attempts are recorded.</div></section>';
         }
         $rows = '';
@@ -458,11 +449,11 @@ final class _companies_house_transmissionCard extends CardBaseFramework
             $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)($submission['submission_number'] ?? 'Not sent'))
                 . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($submission['environment'] ?? ''))
                 . '</td><td>' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)($submission['lifecycle'] ?? ''), '_'))
-                . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($submission['submitted_at'] ?? $submission['prepared_at'] ?? ''))
+                . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($submission['submitted_at'] ?? ''))
                 . '</td><td>' . ($archive !== [] ? 'Captured' : '—') . '</td></tr>';
         }
 
-        return '<section class="panel-soft"><h3 class="card-title">Submission history</h3>'
+        return '<section class="panel-soft"><h3 class="card-title">Submission History</h3>'
             . '<div class="table-scroll"><table><thead><tr><th>Number</th><th>Environment</th>'
             . '<th>Status</th><th>When</th><th>Evidence</th></tr></thead><tbody>'
             . $rows . '</tbody></table></div></section>';
@@ -479,11 +470,57 @@ final class _companies_house_transmissionCard extends CardBaseFramework
         };
     }
 
-    private function metric(string $label, string $value): string
+    private function environmentMetric(string $environment): string
+    {
+        $environment = strtoupper(trim($environment));
+        $class = match ($environment) {
+            'TEST' => 'success',
+            'LIVE' => 'warn',
+            default => 'primary',
+        };
+        $label = match ($environment) {
+            'TEST' => 'Test',
+            'LIVE' => 'Live',
+            default => 'Disabled',
+        };
+
+        return '<div class="summary-card ' . $class . ' hmrc-connection-summary-card">'
+            . '<div class="summary-label">Environment</div>'
+            . '<div class="summary-value">' . $label . '</div>'
+            . '<div class="actions-row actions-row-right hmrc-connection-summary-actions">'
+            . '<a class="button" href="?page=settings&amp;show_card=api_mode">'
+            . 'Configure Companies House XML environment</a></div></div>';
+    }
+
+    private function credentialMetric(string $environment, bool $configured): string
+    {
+        if ($configured) {
+            return '<div class="summary-card success hmrc-credential-summary-card">'
+                . '<div class="summary-label">Credentials</div>'
+                . '<div class="summary-value">Configured</div></div>';
+        }
+
+        $environment = strtoupper(trim($environment));
+        $environment = in_array($environment, ['TEST', 'LIVE'], true) ? $environment : 'selected';
+
+        return '<div class="summary-card danger hmrc-credential-summary-card">'
+            . '<div class="summary-label">Credentials</div>'
+            . '<div class="helper">Companies House XML accounts filing credentials are missing for the '
+            . \eel_accounts\Support\Utf8::html($environment) . ' environment.</div>'
+            . '<div class="actions-row actions-row-right hmrc-credential-summary-actions">'
+            . '<a class="button" href="?page=settings&amp;show_card=api_keys_editor">'
+            . 'Configure Companies House XML credentials</a></div></div>';
+    }
+
+    private function metric(string $label, string $value, string $explanation = ''): string
     {
         $value = trim($value) !== '' ? $value : '—';
         return '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label)
-            . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div></div>';
+            . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div>'
+            . ($explanation !== ''
+                ? '<div class="helper">' . \eel_accounts\Support\Utf8::html($explanation) . '</div>'
+                : '')
+            . '</div>';
     }
 
     private function utcTimestamp(string $value): int

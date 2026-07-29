@@ -21,7 +21,7 @@ $harness->run(_hmrc::class, static function (GeneratedServiceClassTestHarness $h
 $harness->run(_transmit::class, static function (GeneratedServiceClassTestHarness $harness, _transmit $page): void {
     $harness->check(_transmit::class, 'separates HMRC and Companies House transmission cards', static function () use ($harness, $page): void {
         $harness->assertSame(
-            ['hmrc_submission', 'companies_house_transmission'],
+            ['hmrc_submission', 'companies_house_transmit'],
             $page->cards()
         );
         $harness->assertSame('HMRC', (string)($page->cardLayout()[0]['tab'] ?? ''));
@@ -31,7 +31,7 @@ $harness->run(_transmit::class, static function (GeneratedServiceClassTestHarnes
         );
         $harness->assertSame('Companies House', (string)($page->cardLayout()[1]['tab'] ?? ''));
         $harness->assertSame(
-            ['companies_house_transmission'],
+            ['companies_house_transmit'],
             (array)($page->cardLayout()[1]['cards'] ?? [])
         );
     });

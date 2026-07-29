@@ -4063,7 +4063,7 @@ SELECT DISTINCT `role_id`, 'api_keys_editor'
 FROM `role_card_permissions`
 WHERE `card_key` = 'api_mode';
 INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
-SELECT DISTINCT `role_id`, 'companies_house_transmission'
+SELECT DISTINCT `role_id`, 'companies_house_transmit'
 FROM `role_card_permissions`
 WHERE `card_key` = 'year_end_companies_house_comparison';
 INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
@@ -4318,6 +4318,14 @@ INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_29_005_ixbrl_companies_house_revision_explanation.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_29_006_remove_hmrc_companies_house_revision_mapping.sql');
+INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
+SELECT DISTINCT `role_id`, 'companies_house_transmit'
+FROM `role_card_permissions`
+WHERE `card_key` = 'companies_house_transmission';
+DELETE FROM `role_card_permissions`
+WHERE `card_key` = 'companies_house_transmission';
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_29_007_rename_companies_house_transmit_card.sql');
 
 DROP TRIGGER IF EXISTS `trg_journals_append_only_update`;
 CREATE TRIGGER `trg_journals_append_only_update`

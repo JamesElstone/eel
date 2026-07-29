@@ -10,36 +10,36 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-$harness->run(_companies_house_transmissionCard::class, static function (
+$harness->run(_companies_house_transmitCard::class, static function (
     GeneratedServiceClassTestHarness $harness,
-    _companies_house_transmissionCard $card
+    _companies_house_transmitCard $card
 ): void {
     $harness->check(
-        _companies_house_transmissionCard::class,
+        _companies_house_transmitCard::class,
         'declares read services for transmission status and history',
         static function () use ($harness, $card): void {
             $services = $card->services();
             $harness->assertCount(2, $services);
-            $harness->assertSame('companies_house_transmission_context', (string)$services[0]['key']);
+            $harness->assertSame('companies_house_transmit_context', (string)$services[0]['key']);
             $harness->assertSame(
                 \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
                 (string)$services[0]['service']
             );
             $harness->assertSame('fetchContext', (string)$services[0]['method']);
-            $harness->assertSame('companies_house_transmission_history', (string)$services[1]['key']);
+            $harness->assertSame('companies_house_transmit_history', (string)$services[1]['key']);
             $harness->assertSame('submissionHistory', (string)$services[1]['method']);
         }
     );
 
     $harness->check(
-        _companies_house_transmissionCard::class,
+        _companies_house_transmitCard::class,
         'shows the next presenter-wide number and allocates only on send',
         static function () use ($harness, $card): void {
             $secret = 'DO-NOT-RENDER-THIS-AUTHENTICATION-VALUE';
             $html = $card->render([
                 'company' => ['id' => 49, 'accounting_period_id' => 80],
                 'services' => [
-                    'companies_house_transmission_context' => [
+                    'companies_house_transmit_context' => [
                         'feature' => [
                             'mode' => 'TEST',
                             'credentials_configured' => true,
@@ -66,12 +66,21 @@ $harness->run(_companies_house_transmissionCard::class, static function (
                         'can_submit' => true,
                         'submission_blockers' => [],
                     ],
-                    'companies_house_transmission_history' => [],
+                    'companies_house_transmit_history' => [],
                 ],
             ]);
 
             $harness->assertTrue(str_contains($html, 'Next submission number'));
             $harness->assertTrue(str_contains($html, '000001'));
+            $harness->assertTrue(str_contains($html, 'Companies House Connection'));
+            $harness->assertTrue(str_contains($html, '>Test<'));
+            $harness->assertTrue(str_contains($html, 'Configure Companies House XML environment'));
+            $harness->assertTrue(str_contains($html, '<div class="summary-label">Credentials</div>'));
+            $harness->assertTrue(str_contains($html, 'summary-card success hmrc-credential-summary-card'));
+            $harness->assertFalse(str_contains($html, 'XML Input'));
+            $harness->assertFalse(str_contains($html, 'Transport lock'));
+            $harness->assertFalse(str_contains($html, 'Status / StatusAck lock'));
+            $harness->assertFalse(str_contains($html, 'Protocol migration'));
             $harness->assertTrue(str_contains($html, 'Allocated on send'));
             $harness->assertTrue(str_contains($html, 'action="?page=transmit"'));
             $harness->assertTrue(str_contains($html, 'value="submit_accounts"'));
@@ -81,7 +90,36 @@ $harness->run(_companies_house_transmissionCard::class, static function (
     );
 
     $harness->check(
-        _companies_house_transmissionCard::class,
+        _companies_house_transmitCard::class,
+        'shows a danger credential card and configuration action when XML credentials are missing',
+        static function () use ($harness, $card): void {
+            $html = $card->render([
+                'company' => ['id' => 49, 'accounting_period_id' => 80],
+                'services' => [
+                    'companies_house_transmit_context' => [
+                        'feature' => [
+                            'mode' => 'TEST',
+                            'credentials_configured' => false,
+                        ],
+                        'sequence' => ['next_number' => 'Unavailable'],
+                        'submission' => null,
+                    ],
+                    'companies_house_transmit_history' => [],
+                ],
+            ]);
+
+            $harness->assertTrue(str_contains($html, 'summary-card danger hmrc-credential-summary-card'));
+            $harness->assertTrue(str_contains(
+                $html,
+                'Companies House XML accounts filing credentials are missing for the TEST environment.'
+            ));
+            $harness->assertTrue(str_contains($html, 'Configure Companies House XML credentials'));
+            $harness->assertTrue(str_contains($html, 'show_card=api_keys_editor'));
+        }
+    );
+
+    $harness->check(
+        _companies_house_transmitCard::class,
         'adds one-exchange controls and exact XML evidence only in developer mode',
         static function () use ($harness, $card): void {
             $previous = AppConfigurationStore::get('developer_options', false);
@@ -90,7 +128,7 @@ $harness->run(_companies_house_transmissionCard::class, static function (
                 $html = $card->render([
                     'company' => ['id' => 49, 'accounting_period_id' => 80],
                     'services' => [
-                        'companies_house_transmission_context' => [
+                        'companies_house_transmit_context' => [
                             'feature' => [
                                 'mode' => 'TEST',
                                 'credentials_configured' => true,
@@ -124,7 +162,7 @@ $harness->run(_companies_house_transmissionCard::class, static function (
                             'can_submit' => true,
                             'submission_blockers' => [],
                         ],
-                        'companies_house_transmission_history' => [],
+                        'companies_house_transmit_history' => [],
                     ],
                 ]);
                 $harness->assertTrue(str_contains($html, 'Send / continue TEST filing'));
@@ -136,6 +174,45 @@ $harness->run(_companies_house_transmissionCard::class, static function (
             } finally {
                 AppConfigurationStore::set('developer_options', (bool)$previous);
             }
+        }
+    );
+
+    $harness->check(
+        _companies_house_transmitCard::class,
+        'shows only attempted filings in Submission History',
+        static function () use ($harness, $card): void {
+            $html = $card->render([
+                'company' => ['id' => 49, 'accounting_period_id' => 80],
+                'services' => [
+                    'companies_house_transmit_context' => [
+                        'feature' => ['mode' => 'TEST'],
+                        'sequence' => ['next_number' => '000002'],
+                        'submission' => null,
+                    ],
+                    'companies_house_transmit_history' => [
+                        [
+                            'id' => 711,
+                            'lifecycle' => 'prepared',
+                            'environment' => 'TEST',
+                            'submission_number' => null,
+                            'prepared_at' => '2026-07-27 10:00:00',
+                        ],
+                        [
+                            'id' => 712,
+                            'lifecycle' => 'rejected',
+                            'environment' => 'TEST',
+                            'submission_number' => '000001',
+                            'submitted_at' => '2026-07-28 10:00:00',
+                        ],
+                    ],
+                ],
+            ]);
+
+            $harness->assertTrue(str_contains($html, 'Submission History'));
+            $harness->assertTrue(str_contains($html, '000001'));
+            $harness->assertTrue(str_contains($html, '2026-07-28 10:00:00'));
+            $harness->assertFalse(str_contains($html, '2026-07-27 10:00:00'));
+            $harness->assertFalse(str_contains($html, 'Not sent'));
         }
     );
 });

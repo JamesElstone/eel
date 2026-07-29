@@ -100,8 +100,53 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
         ]), createTestPageServiceFramework());
 
         $harness->assertSame(true, $prepared->isSuccess());
-        $harness->assertSame('prepareAccounts', (string)($service->calls[0]['method'] ?? ''));
-        $harness->assertSame([], (array)($service->calls[0]['input'] ?? ['not-empty']));
+        $preparationCalls = array_values(array_filter(
+            $service->calls,
+            static fn(array $call): bool => (string)($call['method'] ?? '') === 'prepareAccounts'
+        ));
+        $harness->assertCount(1, $preparationCalls);
+        $harness->assertSame([
+            'non_compliance_explanation' => '',
+            'significant_amendments' => '',
+            'revision_approval_date' => '',
+            'original_software_filing_confirmed' => false,
+        ], (array)($preparationCalls[0]['input'] ?? []));
+    });
+
+    $harness->check(CompaniesHouseAccountsAction::class, 'blocks an invalid revised approval date before Accounting generation', static function () use ($harness): void {
+        $service = new CompaniesHouseAccountsActionFakeService();
+        $accountingCalls = 0;
+        $action = companiesHouseAccountsTestAction(
+            $service,
+            null,
+            [12, 34],
+            true,
+            static function () use (&$accountingCalls): array {
+                $accountingCalls++;
+                return ['success' => true, 'errors' => []];
+            },
+            static fn(): array => [
+                'applicable' => true,
+                'ready' => false,
+                'errors' => [
+                    'The revision approval date must be later than the original accounts approval date (2025-06-28).',
+                ],
+            ]
+        );
+        $result = $action->handle(companiesHouseAccountsActionRequest([
+            'intent' => 'prepare_accounts',
+        ]), createTestPageServiceFramework());
+
+        $harness->assertFalse($result->isSuccess());
+        $harness->assertSame(0, $accountingCalls);
+        $harness->assertSame([], array_values(array_filter(
+            $service->calls,
+            static fn(array $call): bool => (string)($call['method'] ?? '') === 'prepareAccounts'
+        )));
+        $harness->assertTrue(str_contains(
+            companiesHouseAccountsActionFlash($result),
+            'must be later than the original accounts approval date'
+        ));
     });
 
     $harness->check(CompaniesHouseAccountsAction::class, 'keeps TEST submission separate from LIVE confirmation', static function () use ($harness): void {
@@ -228,6 +273,8 @@ final class CompaniesHouseAccountsActionFakeService
 
     public array $context = [
         'feature' => ['mode' => 'TEST', 'enabled' => true, 'live_approved' => false],
+        'can_prepare' => true,
+        'can_prepare_after_accounts_generation' => true,
     ];
 
     public function recordEligibility(
@@ -319,7 +366,9 @@ function companiesHouseAccountsTestAction(
     CompaniesHouseAccountsActionFakeService $service,
     ?string $securityError = null,
     array $context = [12, 34],
-    bool $locked = true
+    bool $locked = true,
+    ?callable $accountingPrerequisite = null,
+    ?callable $revisionPrerequisite = null
 ): CompaniesHouseAccountsAction {
     return new CompaniesHouseAccountsAction(
         $service,
@@ -327,10 +376,15 @@ function companiesHouseAccountsTestAction(
         static fn(): array => $context,
         static fn(int $companyId, int $accountingPeriodId): bool => $locked,
         static fn(RequestFramework $request): string => 'user:test-admin',
-        static fn(int $companyId, int $accountingPeriodId, ActionProgressFramework $progress): array => [
-            'success' => true,
-            'errors' => [],
-        ]
+        $accountingPrerequisite ?? static fn(int $companyId, int $accountingPeriodId, ActionProgressFramework $progress): array => [
+                'success' => true,
+                'errors' => [],
+            ],
+        $revisionPrerequisite ?? static fn(int $companyId, int $accountingPeriodId): array => [
+                'applicable' => false,
+                'ready' => true,
+                'errors' => [],
+            ],
     );
 }
 

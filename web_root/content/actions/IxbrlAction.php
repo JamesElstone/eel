@@ -177,11 +177,11 @@ final class IxbrlAction implements ActionInterfaceFramework
             }
 
             if ($intent === 'generate_all_filing_ixbrl') {
-                $result = $this->generateAllFilingIxbrl(
+                $result = (new \eel_accounts\Service\IxbrlFilingSetGenerationService())->generate(
                     $companyId,
                     $accountingPeriodId,
-                    $services->actionProgress(),
-                    $this->actor($request)
+                    $this->actor($request),
+                    $services->actionProgress()
                 );
             } elseif ($intent === 'sync_missing_ixbrl_runs') {
                 if (!(bool)AppConfigurationStore::get('developer_options', false)) {
@@ -207,28 +207,58 @@ final class IxbrlAction implements ActionInterfaceFramework
                     $progress = $services->actionProgress();
                     @set_time_limit(0);
                     $progress->report('Generating the Corporation Tax period iXBRL…', 0);
-                    $result = $this->generateComputation(
+                    $result = $this->withFilingLock(
                         $companyId,
                         $accountingPeriodId,
-                        $ctPeriodId,
-                        static function () use ($progress): void {
-                            $progress->report('Running Arelle validation for the Corporation Tax period iXBRL…', 70);
-                        }
+                        fn(): array => $this->generateComputation(
+                            $companyId,
+                            $accountingPeriodId,
+                            $ctPeriodId,
+                            static function () use ($progress): void {
+                                $progress->report('Running Arelle validation for the Corporation Tax period iXBRL…', 70);
+                            }
+                        )
                     );
                 } else {
-                    $result = $this->validateComputation($companyId, $accountingPeriodId, $ctPeriodId);
+                    $result = $this->withFilingLock(
+                        $companyId,
+                        $accountingPeriodId,
+                        fn(): array => $this->validateComputation(
+                            $companyId,
+                            $accountingPeriodId,
+                            $ctPeriodId
+                        )
+                    );
                 }
             } else {
                 $readiness = (new \eel_accounts\Service\IxbrlReadinessService())->getReadiness($companyId, $accountingPeriodId);
                 $result = match ($intent) {
                     'build_ixbrl_facts' => !empty($readiness['can_build_facts'])
-                        ? $this->buildFacts($companyId, $accountingPeriodId)
+                        ? $this->withFilingLock(
+                            $companyId,
+                            $accountingPeriodId,
+                            fn(): array => $this->buildFacts($companyId, $accountingPeriodId)
+                        )
                         : ['success' => false, 'errors' => (array)($readiness['blocking_errors'] ?? ['iXBRL facts cannot be built yet.'])],
                     'generate_ixbrl_preview' => !empty($readiness['can_generate'])
-                        ? $this->generatePreview($companyId, $accountingPeriodId, $services->actionProgress(), 0, 70)
+                        ? $this->withFilingLock(
+                            $companyId,
+                            $accountingPeriodId,
+                            fn(): array => $this->generatePreview(
+                                $companyId,
+                                $accountingPeriodId,
+                                $services->actionProgress(),
+                                0,
+                                70
+                            )
+                        )
                         : ['success' => false, 'errors' => (array)($readiness['generation_errors'] ?? ['The iXBRL filing export cannot be generated yet.'])],
                     'validate_ixbrl_external' => !empty($readiness['can_validate'])
-                        ? $this->validateExternal($companyId, $accountingPeriodId)
+                        ? $this->withFilingLock(
+                            $companyId,
+                            $accountingPeriodId,
+                            fn(): array => $this->validateExternal($companyId, $accountingPeriodId)
+                        )
                         : ['success' => false, 'errors' => ['Generate a current iXBRL export before running Arelle validation.']],
                     default => ['success' => false, 'errors' => ['Unknown iXBRL builder action.']],
                 };
@@ -396,187 +426,6 @@ final class IxbrlAction implements ActionInterfaceFramework
         return $result;
     }
 
-    private function generateAllFilingIxbrl(
-        int $companyId,
-        int $accountingPeriodId,
-        ActionProgressFramework $progress,
-        string $actor
-    ): array
-    {
-        @set_time_limit(0);
-        $progress->report('Checking accounts iXBRL filing readiness…', 0);
-        $readiness = (new \eel_accounts\Service\IxbrlReadinessService())
-            ->getReadiness($companyId, $accountingPeriodId);
-        if (empty($readiness['can_generate'])) {
-            return [
-                'success' => false,
-                'errors' => (array)($readiness['generation_errors'] ?? ['The accounts iXBRL is not ready to generate.']),
-            ];
-        }
-
-        $progress->report('Checking Corporation Tax period readiness…', 15);
-        $projection = (new \eel_accounts\Service\CorporationTaxPeriodService())
-            ->projectForAccountingPeriod($companyId, $accountingPeriodId);
-        $periods = array_values(array_filter(
-            (array)($projection['periods'] ?? []),
-            static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'
-        ));
-        if ($periods === []) {
-            return ['success' => false, 'errors' => ['No current CT periods are available for computations generation.']];
-        }
-
-        $companiesHouse = (new \eel_accounts\Service\CompaniesHouseAccountsSubmissionService())
-            ->fetchContext($companyId, $accountingPeriodId);
-        $companiesHouseRequired = !empty($companiesHouse['filing_required']);
-        $companiesHouseFilingKind = (string)($companiesHouse['filing_kind'] ?? '');
-        $companiesHouseArtifact = (array)($companiesHouse['prepared_artifact'] ?? []);
-        $companiesHousePrepared = (!empty($companiesHouseArtifact['current'])
-                || (string)($companiesHouseArtifact['state'] ?? '') === 'current')
-            && trim((string)($companiesHouseArtifact['filename'] ?? '')) !== '';
-        if ($companiesHouseRequired
-            && !$companiesHousePrepared
-            && empty($companiesHouse['can_prepare'])
-            && !$this->companiesHousePreparationResolvableByAccountsGeneration($companiesHouse)) {
-            return [
-                'success' => false,
-                'errors' => (array)($companiesHouse['preparation_blockers'] ?? ['The Companies House accounts iXBRL is not ready to prepare.']),
-            ];
-        }
-
-        $errors = [];
-        $periodIds = [];
-        $computationService = new \eel_accounts\Service\IxbrlTaxComputationService();
-        foreach ($periods as $period) {
-            $ctPeriodId = (int)($period['ct_period_id'] ?? $period['id'] ?? 0);
-            if ($ctPeriodId <= 0) {
-                $errors[] = 'A projected CT period has no valid identifier.';
-                continue;
-            }
-
-            $status = $computationService->status($companyId, $accountingPeriodId, $ctPeriodId);
-            if (empty($status['ready'])) {
-                $periodErrors = array_values(array_unique(array_merge(
-                    (array)($status['errors'] ?? []),
-                    (array)($status['artifact_errors'] ?? [])
-                )));
-                $errors[] = 'CT period #' . $ctPeriodId . ': '
-                    . (string)($periodErrors[0] ?? 'the computation iXBRL is not ready to generate.');
-                continue;
-            }
-            $periodIds[] = $ctPeriodId;
-        }
-        if ($errors !== []) {
-            return ['success' => false, 'errors' => array_values(array_unique($errors))];
-        }
-
-        $accounts = $this->generatePreview($companyId, $accountingPeriodId, $progress, 30, 42);
-        if (empty($accounts['success'])) {
-            return $accounts;
-        }
-        \eel_accounts\Support\RequestCache::clear();
-
-        $warnings = (array)($accounts['warnings'] ?? []);
-        $messages = [$warnings === []
-            ? 'Accounts iXBRL generated and validated.'
-            : 'Accounts iXBRL generated; review its external-validation warning.'];
-        $generatedPeriods = 0;
-        $periodCount = count($periodIds);
-        foreach ($periodIds as $periodIndex => $ctPeriodId) {
-            $generationPercent = 45 + (int)floor(($periodIndex / $periodCount) * 50);
-            $validationPercent = 45 + (int)floor((($periodIndex + 0.5) / $periodCount) * 50);
-            $progress->report(
-                'Generating iXBRL for Corporation Tax period '
-                . ($periodIndex + 1) . ' of ' . $periodCount . '…',
-                $generationPercent
-            );
-            $computation = $this->generateComputation(
-                $companyId,
-                $accountingPeriodId,
-                $ctPeriodId,
-                static function () use ($progress, $periodIndex, $periodCount, $validationPercent): void {
-                    $progress->report(
-                        'Running Arelle validation for Corporation Tax period '
-                        . ($periodIndex + 1) . ' of ' . $periodCount . '…',
-                        $validationPercent
-                    );
-                }
-            );
-            if (empty($computation['success'])) {
-                foreach ((array)($computation['errors'] ?? ['Computations iXBRL generation failed.']) as $error) {
-                    $errors[] = 'CT period #' . $ctPeriodId . ': ' . (string)$error;
-                }
-                continue;
-            }
-            $generatedPeriods++;
-            $warnings = array_merge($warnings, (array)($computation['warnings'] ?? []));
-        }
-
-        if ($errors !== []) {
-            $warnings[] = 'Some filing artifacts were generated successfully; resolve the errors and use this action again.';
-            return [
-                'success' => false,
-                'errors' => array_values(array_unique($errors)),
-                'warnings' => array_values(array_unique($warnings)),
-            ];
-        }
-
-        if ($companiesHouseRequired) {
-            $companiesHouse = (new \eel_accounts\Service\CompaniesHouseAccountsSubmissionService())
-                ->fetchContext($companyId, $accountingPeriodId);
-            $companiesHouseArtifact = (array)($companiesHouse['prepared_artifact'] ?? []);
-            $companiesHousePrepared = (!empty($companiesHouseArtifact['current'])
-                    || (string)($companiesHouseArtifact['state'] ?? '') === 'current')
-                && trim((string)($companiesHouseArtifact['filename'] ?? '')) !== '';
-        }
-        if ($companiesHouseRequired && !$companiesHousePrepared) {
-            $progress->report('Preparing the Companies House ' . $companiesHouseFilingKind . '-accounts iXBRL…', 94);
-            $companiesHouseResult = (new \eel_accounts\Service\CompaniesHouseAccountsSubmissionService())
-                ->prepareAccounts($companyId, $accountingPeriodId, [], $actor);
-            if (empty($companiesHouseResult['success'])) {
-                return [
-                    'success' => false,
-                    'errors' => (array)($companiesHouseResult['errors'] ?? ['Companies House accounts iXBRL preparation failed.']),
-                    'warnings' => array_values(array_unique($warnings)),
-                ];
-            }
-            $messages[] = 'Companies House ' . ucfirst($companiesHouseFilingKind) . ' accounts iXBRL prepared.';
-        } elseif ($companiesHouseRequired) {
-            $messages[] = 'Companies House accounts iXBRL is already prepared for the current basis.';
-        } else {
-            $messages[] = 'No Companies House filing artifact is required for this accounting period.';
-        }
-
-        $progress->report('Finalising the filing iXBRL set…', 98);
-        $messages[] = $generatedPeriods === 1
-            ? 'The computation iXBRL for 1 CT period was generated and validated.'
-            : 'The computation iXBRLs for ' . $generatedPeriods . ' CT periods were generated and validated.';
-
-        return [
-            'success' => true,
-            'errors' => [],
-            'messages' => $messages,
-            'warnings' => array_values(array_unique($warnings)),
-        ];
-    }
-
-    private function companiesHousePreparationResolvableByAccountsGeneration(array $context): bool
-    {
-        $resolvable = [
-            'Generate the HMRC Accounting iXBRL; internal and Arelle validation run automatically.',
-            'Generate the current HMRC Accounting iXBRL export.',
-        ];
-        $blockers = array_values(array_filter(array_map(
-            static fn(mixed $blocker): string => trim((string)$blocker),
-            (array)($context['preparation_blockers'] ?? [])
-        ), static fn(string $blocker): bool => $blocker !== ''));
-
-        return $blockers !== [] && array_values(array_filter(
-            $blockers,
-            static fn(string $blocker): bool => !in_array($blocker, $resolvable, true)
-                && !str_starts_with($blocker, 'Latest export failed Arelle external validation.')
-        )) === [];
-    }
-
     private function validateComputation(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
     {
         $result = (new \eel_accounts\Service\IxbrlTaxComputationService())
@@ -640,6 +489,22 @@ final class IxbrlAction implements ActionInterfaceFramework
         }
 
         return new ActionResultFramework($success, $changedFacts, $flash);
+    }
+
+    private function withFilingLock(
+        int $companyId,
+        int $accountingPeriodId,
+        callable $operation
+    ): array {
+        try {
+            return (array)(new \eel_accounts\Service\IxbrlFilingOperationLockService())->execute(
+                $companyId,
+                $accountingPeriodId,
+                $operation
+            );
+        } catch (Throwable $exception) {
+            return ['success' => false, 'errors' => [$exception->getMessage()]];
+        }
     }
 
     private function accountingContextError(int $companyId, int $accountingPeriodId): ?string

@@ -144,8 +144,31 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             $service::class,
-            'uses the frozen disclosure basis as the authoritative revised-accounts approval date',
+            'classifies legacy revised artifacts with invalid approval dates as invalid',
             static function () use ($harness, $service, $invokePrivate): void {
+                $state = $invokePrivate($service, 'preparedArtifactState', [
+                    'filing_type' => 'revised',
+                    'revision_declarations' => [
+                        'original_approval_date' => '2025-06-28',
+                        'revision_approval_date' => '2025-06-28',
+                    ],
+                    'artifact_path' => 'missing-legacy-revised-artifact.xhtml',
+                ]);
+
+                $harness->assertSame('invalid', (string)$state['state']);
+                $harness->assertFalse((bool)$state['current']);
+                $harness->assertTrue(str_contains(
+                    implode(' ', (array)$state['errors']),
+                    'must be later than the original accounts approval date'
+                ));
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'uses the frozen disclosure basis as the authoritative revised-accounts approval date',
+            static function () use ($harness): void {
+                $policy = new \eel_accounts\Service\CompaniesHouseRevisedAccountsReadinessService();
                 $approval = [
                     'approved_at' => '2026-07-17 09:30:00',
                     'basis_json' => json_encode([
@@ -157,12 +180,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ], JSON_THROW_ON_ERROR),
                 ];
 
-                $date = $invokePrivate(
-                    $service,
-                    'authoritativeRevisionApprovalDate',
+                $date = $policy->resolveApprovalDate(
                     $approval,
                     ['revision_approval_date' => '2026-07-24'],
-                    '2026-07-24'
+                    '2026-07-24',
+                    '2025-06-28'
                 );
 
                 $harness->assertSame('2026-07-24', $date);
@@ -173,10 +195,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $harness->check(
             $service::class,
             'blocks a revised approval date that is not later than the original accounts approval date',
-            static function () use ($harness, $service, $invokePrivate): void {
-                $error = $invokePrivate(
-                    $service,
-                    'revisionApprovalDateError',
+            static function () use ($harness): void {
+                $policy = new \eel_accounts\Service\CompaniesHouseRevisedAccountsReadinessService();
+                $error = $policy->revisionApprovalDateError(
                     '2025-06-28',
                     '2025-06-28'
                 );
@@ -188,9 +209,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 ));
                 $harness->assertSame(
                     null,
-                    $invokePrivate(
-                        $service,
-                        'revisionApprovalDateError',
+                    $policy->revisionApprovalDateError(
                         '2025-06-28',
                         '2026-07-17'
                     )
@@ -201,7 +220,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $harness->check(
             $service::class,
             'rejects supplied or current approval dates that conflict with the frozen basis',
-            static function () use ($harness, $service, $invokePrivate): void {
+            static function () use ($harness): void {
+                $policy = new \eel_accounts\Service\CompaniesHouseRevisedAccountsReadinessService();
                 $approval = [
                     'approved_at' => '2026-07-17 09:30:00',
                     'basis_json' => json_encode([
@@ -215,12 +235,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
                 $suppliedConflict = null;
                 try {
-                    $invokePrivate(
-                        $service,
-                        'authoritativeRevisionApprovalDate',
+                    $policy->resolveApprovalDate(
                         $approval,
                         ['revision_approval_date' => '2026-07-17'],
-                        '2026-07-24'
+                        '2026-07-24',
+                        '2025-06-28'
                     );
                 } catch (RuntimeException $exception) {
                     $suppliedConflict = $exception;
@@ -233,12 +252,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
                 $currentConflict = null;
                 try {
-                    $invokePrivate(
-                        $service,
-                        'authoritativeRevisionApprovalDate',
+                    $policy->resolveApprovalDate(
                         $approval,
                         [],
-                        '2026-07-17'
+                        '2026-07-17',
+                        '2025-06-28'
                     );
                 } catch (RuntimeException $exception) {
                     $currentConflict = $exception;
@@ -254,7 +272,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $harness->check(
             $service::class,
             'rejects an invalid approval date in the frozen filing basis',
-            static function () use ($harness, $service, $invokePrivate): void {
+            static function () use ($harness): void {
+                $policy = new \eel_accounts\Service\CompaniesHouseRevisedAccountsReadinessService();
                 $approval = [
                     'approved_at' => '2026-07-24 09:30:00',
                     'basis_json' => json_encode([
@@ -268,12 +287,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
                 $caught = null;
                 try {
-                    $invokePrivate(
-                        $service,
-                        'authoritativeRevisionApprovalDate',
+                    $policy->resolveApprovalDate(
                         $approval,
                         [],
-                        '2026-02-28'
+                        '2026-02-28',
+                        '2025-06-28'
                     );
                 } catch (RuntimeException $exception) {
                     $caught = $exception;

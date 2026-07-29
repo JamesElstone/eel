@@ -699,6 +699,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         }
 
         $context['services']['companies_house_ixbrl']['can_prepare'] = false;
+        $context['services']['companies_house_ixbrl']['can_prepare_after_accounts_generation'] = true;
         $context['services']['companies_house_ixbrl']['filing_required'] = true;
         $context['services']['companies_house_ixbrl']['revision_required'] = true;
         $context['services']['companies_house_ixbrl']['preparation_blockers'] = [
@@ -719,6 +720,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         }
 
         $context['services']['companies_house_ixbrl']['preparation_blockers'][] = 'Record Companies House written confirmation.';
+        $context['services']['companies_house_ixbrl']['can_prepare_after_accounts_generation'] = false;
         $genuineBlocker = $card->render($context);
         $harness->assertTrue($buttonDisabled($genuineBlocker, 'Generate All Filing iXBRLs'));
         $harness->assertTrue($buttonDisabled($genuineBlocker, 'Generate Companies House iXBRL'));
@@ -1044,22 +1046,14 @@ $harness->run(_ixbrl_historyCard::class, static function (GeneratedServiceClassT
 });
 
 $harness->run(IxbrlAction::class, static function (GeneratedServiceClassTestHarness $harness, IxbrlAction $action): void {
-    $harness->check(IxbrlAction::class, 'delegates combined filing generation to the existing accounts and per-period generators', static function () use ($harness): void {
+    $harness->check(IxbrlAction::class, 'delegates combined filing generation to the resumable filing-set service', static function () use ($harness): void {
         $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content'
             . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'IxbrlAction.php');
         $harness->assertTrue(str_contains($source, "\$intent === 'generate_all_filing_ixbrl'"));
-        $harness->assertTrue(str_contains($source, '$this->generatePreview('));
-        $harness->assertTrue(str_contains(
-            $source,
-            'HMRC Accounting iXBRL failed Arelle validation. Corporation Tax and Companies House generation will not run.'
-        ));
-        $harness->assertTrue(str_contains($source, '$this->generateComputation('));
-        $harness->assertTrue(str_contains($source, 'CompaniesHouseAccountsSubmissionService'));
-        $harness->assertTrue(str_contains($source, 'prepareAccounts($companyId, $accountingPeriodId, [], $actor)'));
-        $harness->assertTrue(str_contains($source, 'projectForAccountingPeriod($companyId, $accountingPeriodId)'));
+        $harness->assertTrue(str_contains($source, 'IxbrlFilingSetGenerationService'));
+        $harness->assertTrue(str_contains($source, ')->generate('));
         $harness->assertTrue(str_contains($source, '$services->actionProgress()'));
-        $harness->assertTrue(str_contains($source, 'companiesHousePreparationResolvableByAccountsGeneration'));
-        $harness->assertTrue(str_contains($source, 'RequestCache::clear()'));
+        $harness->assertFalse(str_contains($source, 'companiesHousePreparationResolvableByAccountsGeneration'));
     });
 
     $harness->check(IxbrlAction::class, 'guards missing-artifact cleanup behind developer options', static function () use ($harness): void {

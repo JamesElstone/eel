@@ -251,6 +251,12 @@ final class IxbrlAccountsFilingApprovalService
             $errors = (array)($disclosureStatus['profile_errors'] ?? $disclosureStatus['missing_labels'] ?? []);
             throw new \RuntimeException((string)($errors[0] ?? 'Complete all supported accounts disclosures before approval.'));
         }
+        $revisedAccounts = (new CompaniesHouseRevisedAccountsReadinessService())
+            ->assess($companyId, $accountingPeriodId);
+        if (!empty($revisedAccounts['applicable']) && empty($revisedAccounts['ready'])) {
+            throw new \RuntimeException((string)(($revisedAccounts['errors'] ?? [])[0]
+                ?? 'Resolve the Companies House revised-accounts approval date before approval.'));
+        }
         $profile = (new Frs105YearEndProfileService())->fetch($companyId, $accountingPeriodId);
         if (empty($profile['available']) || empty($profile['pass'])) {
             throw new \RuntimeException((string)(($profile['errors'] ?? [])[0] ?? 'The FRS 105 filing profile is not supported.'));

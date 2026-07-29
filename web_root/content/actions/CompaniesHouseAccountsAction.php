@@ -25,6 +25,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
     private ?Closure $lockChecker;
     private ?Closure $actorResolver;
     private ?Closure $accountingPrerequisite;
+    private ?Closure $revisionPrerequisite;
 
     public function __construct(
         private ?object $submissionService = null,
@@ -33,6 +34,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         ?callable $lockChecker = null,
         ?callable $actorResolver = null,
         ?callable $accountingPrerequisite = null,
+        ?callable $revisionPrerequisite = null,
     ) {
         $this->securityCheck = $securityCheck !== null ? Closure::fromCallable($securityCheck) : null;
         $this->contextResolver = $contextResolver !== null ? Closure::fromCallable($contextResolver) : null;
@@ -40,6 +42,9 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         $this->actorResolver = $actorResolver !== null ? Closure::fromCallable($actorResolver) : null;
         $this->accountingPrerequisite = $accountingPrerequisite !== null
             ? Closure::fromCallable($accountingPrerequisite)
+            : null;
+        $this->revisionPrerequisite = $revisionPrerequisite !== null
+            ? Closure::fromCallable($revisionPrerequisite)
             : null;
     }
 
@@ -226,26 +231,59 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         ActionProgressFramework $progress
     ): array {
         @set_time_limit(0);
-        $prerequisite = $this->accountingPrerequisite !== null
-            ? ($this->accountingPrerequisite)($companyId, $accountingPeriodId, $progress)
-            : $this->ensureAccountingIxbrlReady($companyId, $accountingPeriodId, $progress);
-        if (empty($prerequisite['success'])) {
-            return $prerequisite;
-        }
+        try {
+            return (array)(new \eel_accounts\Service\IxbrlFilingOperationLockService())->execute(
+                $companyId,
+                $accountingPeriodId,
+                function () use ($request, $companyId, $accountingPeriodId, $progress): array {
+                    $revisionReadiness = $this->revisionPrerequisite !== null
+                        ? (array)($this->revisionPrerequisite)($companyId, $accountingPeriodId)
+                        : (new \eel_accounts\Service\CompaniesHouseRevisedAccountsReadinessService())
+                            ->assess($companyId, $accountingPeriodId);
+                    if (!empty($revisionReadiness['applicable'])
+                        && empty($revisionReadiness['ready'])) {
+                        return [
+                            'success' => false,
+                            'errors' => (array)($revisionReadiness['errors'] ?? [
+                                'The revised accounts approval date is not ready.',
+                            ]),
+                        ];
+                    }
+                    $context = $this->service()->fetchContext($companyId, $accountingPeriodId);
+                    if (empty($context['can_prepare'])
+                        && empty($context['can_prepare_after_accounts_generation'])) {
+                        return [
+                            'success' => false,
+                            'errors' => (array)($context['preparation_blockers'] ?? [
+                                'The Companies House accounts iXBRL is not ready to prepare.',
+                            ]),
+                        ];
+                    }
+                    $prerequisite = $this->accountingPrerequisite !== null
+                        ? ($this->accountingPrerequisite)($companyId, $accountingPeriodId, $progress)
+                        : $this->ensureAccountingIxbrlReady($companyId, $accountingPeriodId, $progress);
+                    if (empty($prerequisite['success'])) {
+                        return $prerequisite;
+                    }
 
-        $progress->report('Preparing the Companies House accounts iXBRL…', 65);
-        return $this->service()->prepareAccounts(
-            $companyId,
-            $accountingPeriodId,
-            [
-                'non_compliance_explanation' => trim((string)$request->input('non_compliance_explanation', '')),
-                'significant_amendments' => trim((string)$request->input('significant_amendments', '')),
-                'revision_approval_date' => trim((string)$request->input('revision_approval_date', '')),
-                'original_software_filing_confirmed' => (bool)$request->input('original_software_filing_confirmed', false),
-            ],
-            $this->actor($request),
-            $progress
-        );
+                    $progress->report('Preparing the Companies House accounts iXBRL…', 65);
+                    return $this->service()->prepareAccounts(
+                        $companyId,
+                        $accountingPeriodId,
+                        [
+                            'non_compliance_explanation' => trim((string)$request->input('non_compliance_explanation', '')),
+                            'significant_amendments' => trim((string)$request->input('significant_amendments', '')),
+                            'revision_approval_date' => trim((string)$request->input('revision_approval_date', '')),
+                            'original_software_filing_confirmed' => (bool)$request->input('original_software_filing_confirmed', false),
+                        ],
+                        $this->actor($request),
+                        $progress
+                    );
+                }
+            );
+        } catch (Throwable $exception) {
+            return ['success' => false, 'errors' => [$exception->getMessage()]];
+        }
     }
 
     private function ensureAccountingIxbrlReady(

@@ -468,24 +468,8 @@ final class _ixbrl_generationCard extends CardBaseFramework
 
     private function companiesHouseCanPrepare(array $filing): bool
     {
-        if (!empty($filing['can_prepare'])) {
-            return true;
-        }
-
-        $resolvable = [
-            'Generate the HMRC Accounting iXBRL; internal and Arelle validation run automatically.',
-            'Generate the current HMRC Accounting iXBRL export.',
-        ];
-        $blockers = array_values(array_filter(array_map(
-            static fn(mixed $blocker): string => trim((string)$blocker),
-            (array)($filing['preparation_blockers'] ?? [])
-        ), static fn(string $blocker): bool => $blocker !== ''));
-
-        return $blockers !== [] && array_values(array_filter(
-            $blockers,
-            static fn(string $blocker): bool => !in_array($blocker, $resolvable, true)
-                && !str_starts_with($blocker, 'Latest export failed Arelle external validation.')
-        )) === [];
+        return !empty($filing['can_prepare'])
+            || !empty($filing['can_prepare_after_accounts_generation']);
     }
 
     private function metric(string $label, string $value): string

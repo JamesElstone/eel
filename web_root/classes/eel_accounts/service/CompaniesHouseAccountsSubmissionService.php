@@ -32,6 +32,7 @@ final class CompaniesHouseAccountsSubmissionService
         private readonly ?CompaniesHouseProtocolConversationService $conversationService = null,
         private readonly ?IxbrlTaxonomyCompatibilityService $taxonomyCompatibilityService = null,
         private readonly ?IxbrlOriginalAccountsArtifactService $originalArtifactService = null,
+        private readonly ?CompaniesHouseRevisedAccountsReadinessService $revisedReadinessService = null,
     ) {
     }
 
@@ -80,6 +81,14 @@ final class CompaniesHouseAccountsSubmissionService
         $liveApproved = AccountingConfigurationStore::companiesHouseAccountsLiveApproved();
         $testAccepted = $this->testAccepted($companyId, $accountingPeriodId, $filingKind);
         $needsRevision = $filingKind === 'revised' && $correctionRequired;
+        $revisedReadiness = $needsRevision
+            ? $this->revisedReadiness()->assess($companyId, $accountingPeriodId)
+            : [
+                'applicable' => false,
+                'ready' => true,
+                'checks' => [],
+                'errors' => [],
+            ];
         $taxonomyCompatibility = $this->taxonomyCompatibilityForPeriod(
             (array)$selection['accounting_period'],
             date('Y-m-d')
@@ -115,6 +124,12 @@ final class CompaniesHouseAccountsSubmissionService
         if ($needsRevision && !$revisedDisclosureConfirmed) {
             $preparationBlockers[] = 'Confirm the Companies House revised-accounts public-register disclosure before approving iXBRL.';
         }
+        foreach ((array)($revisedReadiness['errors'] ?? []) as $revisedReadinessError) {
+            $revisedReadinessError = trim((string)$revisedReadinessError);
+            if ($revisedReadinessError !== '') {
+                $preparationBlockers[] = $revisedReadinessError;
+            }
+        }
         $ixbrlPreparationBlocker = $this->ixbrlPreparationBlocker($readiness);
         if ($ixbrlPreparationBlocker !== '') {
             $preparationBlockers[] = $ixbrlPreparationBlocker;
@@ -126,6 +141,42 @@ final class CompaniesHouseAccountsSubmissionService
                 'accepted' => 'Companies House has already accepted accounts for this filing basis.',
                 default => 'A Companies House accounts submission is already active and must be resolved before preparing another.',
             };
+        }
+        $canPrepareAfterAccountsGeneration = $preparationBlockers === []
+            || ($ixbrlPreparationBlocker !== ''
+                && count($preparationBlockers) === 1
+                && hash_equals($ixbrlPreparationBlocker, (string)$preparationBlockers[0]));
+        $preparationChecks = array_values((array)($revisedReadiness['checks'] ?? []));
+        $knownCheckMessages = array_map(
+            static fn(array $check): string => trim((string)($check['message'] ?? '')),
+            array_filter($preparationChecks, 'is_array')
+        );
+        if ($ixbrlPreparationBlocker !== '') {
+            $preparationChecks[] = [
+                'key' => 'accounting_ixbrl_filing_ready',
+                'complete' => false,
+                'resolution_stage' => 'accounts_generation',
+                'message' => $ixbrlPreparationBlocker,
+            ];
+            $knownCheckMessages[] = $ixbrlPreparationBlocker;
+        } else {
+            $preparationChecks[] = [
+                'key' => 'accounting_ixbrl_filing_ready',
+                'complete' => true,
+                'resolution_stage' => 'accounts_generation',
+                'message' => 'The Accounting iXBRL is current and filing-ready.',
+            ];
+        }
+        foreach ($preparationBlockers as $preparationBlocker) {
+            if (in_array($preparationBlocker, $knownCheckMessages, true)) {
+                continue;
+            }
+            $preparationChecks[] = [
+                'key' => 'companies_house_prerequisite_' . substr(hash('sha256', $preparationBlocker), 0, 12),
+                'complete' => false,
+                'resolution_stage' => 'user_input',
+                'message' => $preparationBlocker,
+            ];
         }
 
         $submissionBlockers = [];
@@ -203,6 +254,8 @@ final class CompaniesHouseAccountsSubmissionService
             'correction_required' => $correctionRequired,
             'taxonomy_compatibility' => $taxonomyCompatibility,
             'revision_required' => $needsRevision,
+            'revised_accounts_readiness' => $revisedReadiness,
+            'preparation_checks' => $preparationChecks,
             'readiness' => $readiness,
             'submission' => $submission,
             'preflight' => $submission === null
@@ -218,6 +271,7 @@ final class CompaniesHouseAccountsSubmissionService
             'revised_validation' => $revisedValidation,
             'sequence' => $sequence,
             'can_prepare' => $preparationBlockers === [],
+            'can_prepare_after_accounts_generation' => $canPrepareAfterAccountsGeneration,
             'can_submit' => $submissionBlockers === [],
             'preparation_blockers' => array_values(array_unique($preparationBlockers)),
             'submission_blockers' => array_values(array_unique($submissionBlockers)),
@@ -584,6 +638,11 @@ final class CompaniesHouseAccountsSubmissionService
         $this->reportProgress($progress, 'Checking Companies House iXBRL preparation requirements…', 0);
         if (!\InterfaceDB::tableExists(self::SUBMISSIONS_TABLE)) {
             return $this->failure('The Companies House accounts-filing migration has not been applied.');
+        }
+        $revisedReadiness = $this->revisedReadiness()->assess($companyId, $accountingPeriodId);
+        if (!empty($revisedReadiness['applicable']) && empty($revisedReadiness['ready'])) {
+            return $this->failure((string)(($revisedReadiness['errors'] ?? [])[0]
+                ?? 'The revised accounts approval date is not ready.'));
         }
         $context = $this->fetchContext($companyId, $accountingPeriodId);
         if (empty($context['can_prepare'])) {
@@ -1037,15 +1096,16 @@ final class CompaniesHouseAccountsSubmissionService
         $filingKind = (string)($submission['filing_type'] ?? 'revised');
         if ($filingKind === 'revised') {
             $declarations = json_decode((string)($submission['revision_declarations_json'] ?? ''), true);
-            $dateError = is_array($declarations)
-                ? $this->revisionApprovalDateError(
-                    (string)($declarations['original_approval_date'] ?? ''),
-                    (string)($declarations['revision_approval_date'] ?? '')
-                )
-                : 'The prepared revised-accounts declarations cannot be read.';
-            if ($dateError !== null) {
+            $declarationValidation = is_array($declarations)
+                ? $this->revisedReadiness()->validateStoredDeclarations($declarations)
+                : [
+                    'valid' => false,
+                    'errors' => ['The prepared revised-accounts declarations cannot be read.'],
+                ];
+            if (empty($declarationValidation['valid'])) {
                 return $this->failure(
-                    $dateError
+                    (string)(($declarationValidation['errors'] ?? [])[0]
+                        ?? 'The prepared revised-accounts declarations are invalid.')
                     . ' This prepared artifact cannot be filed; update and approve the current Accounts approval date, '
                     . 'then regenerate the Accounting iXBRL and revised accounts.'
                 );
@@ -2299,23 +2359,13 @@ final class CompaniesHouseAccountsSubmissionService
             throw new \RuntimeException('Approve the current accounts disclosure basis before preparing revised accounts.');
         }
 
-        $currentDisclosureStatus = (new IxbrlAccountsDisclosureService())->fetch(
+        $dateBasis = $this->revisedReadiness()->resolveApprovedDeclarations(
             $companyId,
-            $accountingPeriodId
-        );
-        $currentDisclosureDate = trim((string)(
-            ((array)($currentDisclosureStatus['disclosures'] ?? []))['accounts_approval_date'] ?? ''
-        ));
-        if ($currentDisclosureDate === '') {
-            throw new \RuntimeException(
-                'The current accounts approval disclosure is unavailable; approve the disclosure basis again.'
-            );
-        }
-        $approvalDate = $this->authoritativeRevisionApprovalDate(
+            $accountingPeriodId,
             (array)$approval['approval'],
-            $input,
-            $currentDisclosureDate
+            $input
         );
+        $approvalDate = (string)$dateBasis['revision_approval_date'];
 
         $comparison = [];
         try {
@@ -2330,7 +2380,7 @@ final class CompaniesHouseAccountsSubmissionService
         } catch (\Throwable) {
         }
         $supersededFacts = [];
-        $originalDocumentId = (int)($eligibility['original_document_id'] ?? 0);
+        $originalDocumentId = (int)$dateBasis['original_document_id'];
         $periodEnd = trim((string)\InterfaceDB::fetchColumn(
             'SELECT period_end FROM accounting_periods WHERE id = :id AND company_id = :company_id LIMIT 1',
             ['id' => $accountingPeriodId, 'company_id' => $companyId]
@@ -2338,20 +2388,8 @@ final class CompaniesHouseAccountsSubmissionService
         if (!$this->validStatutoryDate($periodEnd)) {
             throw new \RuntimeException('The accounting period does not have a valid period end date.');
         }
-        $originalApprovalEvidence = $this->originalApprovalEvidence(
-            $companyId,
-            $originalDocumentId,
-            $periodEnd
-        );
-        $originalApprovalDate = (string)$originalApprovalEvidence['approval_date'];
-        $dateError = $this->revisionApprovalDateError($originalApprovalDate, $approvalDate);
-        if ($dateError !== null) {
-            throw new \RuntimeException(
-                $dateError
-                . ' Set the current Accounts approval date to the actual later revision approval date, '
-                . 'approve that disclosure basis, and regenerate the Accounting iXBRL before preparing revised accounts.'
-            );
-        }
+        $originalApprovalEvidence = (array)$dateBasis['original_approval_evidence'];
+        $originalApprovalDate = (string)$dateBasis['original_approval_date'];
         if ($originalDocumentId > 0) {
             try {
                 $supersededFacts = (new IxbrlSupersededFactsService())->facts(
@@ -2371,7 +2409,7 @@ final class CompaniesHouseAccountsSubmissionService
         );
 
         return array_replace($input, [
-            'original_document_id' => (int)($eligibility['original_document_id'] ?? 0),
+            'original_document_id' => $originalDocumentId,
             'non_compliance_explanation' => $disclosures['non_compliance_explanation'],
             'original_non_compliance_explanation' => $disclosures['non_compliance_explanation'],
             'significant_amendments' => $disclosures['significant_amendments'],
@@ -2380,146 +2418,6 @@ final class CompaniesHouseAccountsSubmissionService
             'revision_approval_date' => $approvalDate,
             'original_software_filing_confirmed' => true,
         ]);
-    }
-
-    /** @return array{approval_date:string,document_id:int,external_document_id:string,fact_id:int,raw_value:string,context_ref:string,source_hash:string} */
-    private function originalApprovalEvidence(int $companyId, int $documentId, string $periodEnd): array
-    {
-        if ($documentId <= 0) {
-            throw new \RuntimeException('Select the exact original Companies House filing.');
-        }
-        foreach (['companies_house_documents', 'companies_house_document_facts', 'companies_house_document_contexts', 'companies_house_taxonomy_concepts'] as $table) {
-            if (!\InterfaceDB::tableExists($table)) {
-                throw new \RuntimeException('The parsed Companies House filing facts are unavailable. Refresh the original filing.');
-            }
-        }
-        $rows = \InterfaceDB::fetchAll(
-            'SELECT d.id AS document_id, d.document_id AS external_document_id, d.raw_content_hash AS source_hash,
-                    f.id AS fact_id, f.raw_value, f.normalised_date, ctx.context_ref
-             FROM companies_house_documents d
-             INNER JOIN companies_house_document_facts f ON f.document_fk = d.id
-             INNER JOIN companies_house_document_contexts ctx ON ctx.id = f.context_fk
-             INNER JOIN companies_house_taxonomy_concepts concept ON concept.id = f.concept_fk
-             WHERE d.id = :document_id
-               AND (d.company_id = :company_id OR d.company_id IS NULL)
-               AND concept.short_name = :concept
-               AND f.is_latest_year_fact = 1
-               AND (ctx.instant_date = :period_end_instant OR ctx.period_end = :period_end_duration)
-             ORDER BY f.id',
-            [
-                'document_id' => $documentId,
-                'company_id' => $companyId,
-                'concept' => 'DateAuthorisationFinancialStatementsForIssue',
-                'period_end_instant' => $periodEnd,
-                'period_end_duration' => $periodEnd,
-            ]
-        );
-        $dates = [];
-        foreach ($rows as $row) {
-            $date = trim((string)($row['normalised_date'] ?? ''));
-            if (!$this->validStatutoryDate($date)) {
-                throw new \RuntimeException('The original filing contains an invalid original accounts approval date.');
-            }
-            $dates[$date] = $row;
-        }
-        if ($dates === []) {
-            throw new \RuntimeException('The selected original filing has no approval date for this accounting period. Refresh the original iXBRL filing.');
-        }
-        if (count($dates) !== 1) {
-            throw new \RuntimeException('The selected original filing contains conflicting approval dates.');
-        }
-        $row = array_values($dates)[0];
-        return [
-            'approval_date' => (string)$row['normalised_date'],
-            'document_id' => (int)$row['document_id'],
-            'external_document_id' => (string)$row['external_document_id'],
-            'fact_id' => (int)$row['fact_id'],
-            'raw_value' => (string)($row['raw_value'] ?? ''),
-            'context_ref' => (string)($row['context_ref'] ?? ''),
-            'source_hash' => (string)($row['source_hash'] ?? ''),
-        ];
-    }
-
-    private function authoritativeRevisionApprovalDate(
-        array $approval,
-        array $input,
-        string $currentDisclosureDate
-    ): string {
-        $basisJson = trim((string)($approval['basis_json'] ?? ''));
-        if ($basisJson === '') {
-            throw new \RuntimeException(
-                'The frozen filing-approval basis does not contain an accounts approval date.'
-            );
-        }
-        try {
-            $basis = json_decode($basisJson, true, 512, JSON_THROW_ON_ERROR);
-        } catch (\JsonException $exception) {
-            throw new \RuntimeException(
-                'The frozen filing-approval basis cannot be read: ' . $exception->getMessage()
-            );
-        }
-        $approvalDate = is_array($basis)
-            ? trim((string)($basis['disclosures']['values']['accounts_approval_date'] ?? ''))
-            : '';
-        if (!$this->validStatutoryDate($approvalDate)) {
-            throw new \RuntimeException(
-                'The frozen filing-approval basis does not contain a valid accounts approval date.'
-            );
-        }
-
-        $datesToCheck = [
-            'revision_approval_date' => 'supplied revision approval date',
-            'accounts_approval_date' => 'supplied accounts approval date',
-            'board_approval_date' => 'supplied board approval date',
-            'date_signed' => 'supplied signing date',
-        ];
-        foreach ($datesToCheck as $key => $label) {
-            $candidate = trim((string)($input[$key] ?? ''));
-            if ($candidate === '') {
-                continue;
-            }
-            if (!$this->validStatutoryDate($candidate)) {
-                throw new \RuntimeException('The ' . $label . ' is not a valid date.');
-            }
-            if ($candidate !== $approvalDate) {
-                throw new \RuntimeException(
-                    'The ' . $label . ' conflicts with the frozen accounts approval date. '
-                    . 'Set the current Accounts approval date to the actual revision approval date and '
-                    . 'approve that disclosure basis before preparing revised accounts.'
-                );
-            }
-        }
-
-        $currentDisclosureDate = trim($currentDisclosureDate);
-        if (!$this->validStatutoryDate($currentDisclosureDate)) {
-            throw new \RuntimeException('The current accounts approval disclosure is not a valid date.');
-        }
-        if ($currentDisclosureDate !== $approvalDate) {
-            throw new \RuntimeException(
-                'The current accounts approval disclosure conflicts with the frozen filing-approval basis. '
-                . 'Approve the current disclosure basis again before preparing revised accounts.'
-            );
-        }
-
-        return $approvalDate;
-    }
-
-    private function revisionApprovalDateError(string $originalApprovalDate, string $revisionApprovalDate): ?string
-    {
-        $originalApprovalDate = trim($originalApprovalDate);
-        $revisionApprovalDate = trim($revisionApprovalDate);
-        if (!$this->validStatutoryDate($originalApprovalDate)) {
-            return 'The original accounts approval date is missing or invalid.';
-        }
-        if (!$this->validStatutoryDate($revisionApprovalDate)) {
-            return 'The revision approval date is missing or invalid.';
-        }
-        if ($revisionApprovalDate <= $originalApprovalDate) {
-            return 'The revision approval date must be later than the original accounts approval date ('
-                . $originalApprovalDate . ').';
-        }
-
-        return null;
     }
 
     /** @return array{non_compliance_explanation:string, significant_amendments:string} */
@@ -3172,6 +3070,21 @@ final class CompaniesHouseAccountsSubmissionService
             'errors' => [],
         ];
 
+        if (strtolower(trim((string)($submission['filing_type'] ?? ''))) === 'revised') {
+            $declarations = is_array($submission['revision_declarations'] ?? null)
+                ? (array)$submission['revision_declarations']
+                : json_decode((string)($submission['revision_declarations_json'] ?? ''), true);
+            $declarationValidation = is_array($declarations)
+                ? $this->revisedReadiness()->validateStoredDeclarations($declarations)
+                : ['valid' => false, 'errors' => ['The prepared revised-accounts declarations cannot be read.']];
+            if (empty($declarationValidation['valid'])) {
+                $result['state'] = 'invalid';
+                $result['errors'] = (array)($declarationValidation['errors'] ?? [
+                    'The prepared revised-accounts declarations are invalid.',
+                ]);
+                return $result;
+            }
+        }
         if ($path === '' || !is_file($path)) {
             $result['state'] = 'missing';
             $result['errors'] = ['The prepared Companies House iXBRL artifact is missing.'];
@@ -3377,6 +3290,11 @@ final class CompaniesHouseAccountsSubmissionService
     private function credentials(): CompaniesHouseAccountsCredentialService
     {
         return $this->credentialService ?? new CompaniesHouseAccountsCredentialService();
+    }
+
+    private function revisedReadiness(): CompaniesHouseRevisedAccountsReadinessService
+    {
+        return $this->revisedReadinessService ?? new CompaniesHouseRevisedAccountsReadinessService();
     }
 
     /** @return array<string, mixed> */

@@ -29,6 +29,13 @@ $harness->run(_director_loan_termsCard::class, static function (GeneratedService
                             'deferment_right_confirmed' => 1,
                             'set_off_right_confirmed' => 1,
                             'settlement_intention' => 'net',
+                            'advance_terms' => [
+                                'interest_rate_percent' => 3.25,
+                                'security_type' => 'secured',
+                                'repayment_basis' => 'fixed_date',
+                                'fixed_repayment_date' => '2027-04-05',
+                            ],
+                            'advance_terms_explicit' => true,
                         ],
                         'explicit' => true,
                     ],
@@ -115,5 +122,18 @@ $harness->run(_director_loan_termsCard::class, static function (GeneratedService
         $harness->assertSame(false, str_contains($projectJs, "setChecked('repayable_on_demand'"));
         $harness->assertSame(false, str_contains($projectJs, "setValue('repayment_timing'"));
         $harness->assertSame(false, str_contains($projectJs, "setChecked('deferment_right_confirmed'"));
+    });
+
+    $harness->check(_director_loan_termsCard::class, 'separates creditor and statutory-disclosure terms registers', static function () use ($harness, $card, $context): void {
+        $html = $card->render($context);
+
+        $harness->assertTrue(str_contains($html, 'Participator-to-company funding (creditor) terms register'));
+        $harness->assertTrue(str_contains($html, 'Company-to-participator advance (statutory disclosure) terms register'));
+        $harness->assertTrue(str_contains($html, '>Advance repayment condition</th>'));
+        $harness->assertTrue(str_contains($html, '>Fixed repayment date</th>'));
+        $harness->assertTrue(str_contains($html, '>Repayable on demand</td>'));
+        $harness->assertTrue(str_contains($html, '>Fixed repayment date</td>'));
+        $harness->assertTrue(str_contains($html, '>2027-04-05</td>'));
+        $harness->assertTrue(str_contains($html, '>Not confirmed</td>'));
     });
 });

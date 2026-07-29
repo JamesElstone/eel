@@ -18,9 +18,18 @@ final class _director_loan_termsCard extends CardBaseFramework
         if (empty($workspace['success'])) return '<section class="panel-soft settings-stack">'.$this->errors((array)($workspace['errors']??['Participator loan terms are unavailable.'])).'</section>';
         $parties=(array)($workspace['parties']??[]);
         if ($parties===[]) return '<section class="panel-soft settings-stack"><div class="eyebrow">Participator loan terms</div><div class="helper">No historic or current attributed Participator Loan entries exist. Assign an entry on the Participant Loan Assignment tab first.</div></section>';
+        $periodStatus = !empty($workspace['is_locked'])
+            ? 'This period is locked, so its saved snapshot is read only.'
+            : 'This period is open, so changes apply to reporting until it is locked.';
         $html='<section class="settings-stack director-loan-reporting-presentation">'
-            . '<section class="panel-soft settings-stack"><h3 class="card-title">Entity Terms Register</h3><div class="helper">Terms belong to the party across accounting periods. This period '.(!empty($workspace['is_locked'])?'is locked, so its saved snapshot is read only.':'is open, so changes apply to reporting until it is locked.').'</div>'
+            . '<section class="panel-soft settings-stack"><h3 class="card-title">Participator-to-company funding (creditor) terms register</h3><div class="helper">Terms belong to the party across accounting periods. ' . $periodStatus . '</div>'
             . $this->termsTable($parties)->render($context, [
+                'cards[]' => (array)($context['page']['page_cards'] ?? [$this->key()]),
+                'company_id' => $companyId,
+                'accounting_period_id' => $periodId,
+            ]) . '</section>'
+            . '<section class="panel-soft settings-stack"><h3 class="card-title">Company-to-participator advance (statutory disclosure) terms register</h3><div class="helper">Separate evidence for advances made by the company. ' . $periodStatus . '</div>'
+            . $this->advanceTermsTable($parties)->render($context, [
                 'cards[]' => (array)($context['page']['page_cards'] ?? [$this->key()]),
                 'company_id' => $companyId,
                 'accounting_period_id' => $periodId,
@@ -127,6 +136,42 @@ final class _director_loan_termsCard extends CardBaseFramework
             );
     }
 
+    private function advanceTermsTable(array $entries): TableFramework
+    {
+        $rows = array_map(function (array $entry): array {
+            $party = (array)($entry['party'] ?? []);
+            $terms = (array)($entry['terms'] ?? []);
+            $advanceTerms = (array)($terms['advance_terms'] ?? []);
+            $hasAdvanceTerms = !empty($entry['advance_terms_explicit']) || !empty($terms['advance_terms_explicit']);
+            return [
+                'party' => (string)($party['legal_name'] ?? 'Participator'),
+                'entity_type' => HelperFramework::labelFromKey((string)($party['party_type'] ?? ''), '_'),
+                'interest_rate' => $hasAdvanceTerms
+                    ? number_format((float)($advanceTerms['interest_rate_percent'] ?? 0), 4, '.', '') . '%'
+                    : 'Not recorded',
+                'security' => $hasAdvanceTerms
+                    ? HelperFramework::labelFromKey((string)($advanceTerms['security_type'] ?? 'unsecured'), '_')
+                    : 'Not recorded',
+                'repayment_basis' => $hasAdvanceTerms
+                    ? $this->advanceRepaymentBasisLabel((string)($advanceTerms['repayment_basis'] ?? ''))
+                    : 'Not confirmed',
+                'fixed_repayment_date' => $hasAdvanceTerms && (string)($advanceTerms['fixed_repayment_date'] ?? '') !== ''
+                    ? (string)$advanceTerms['fixed_repayment_date']
+                    : '—',
+            ];
+        }, $entries);
+        return \eel_accounts\Support\Utf8Table::make('participator_loan_advance_terms', $rows)
+            ->filename('participator-loan-advance-terms')
+            ->exportLimit(5000)
+            ->empty('No participator loan parties are available.')
+            ->textColumn('party', 'Entity')
+            ->textColumn('entity_type', 'Type')
+            ->textColumn('interest_rate', 'Interest rate')
+            ->textColumn('security', 'Security')
+            ->textColumn('repayment_basis', 'Advance repayment condition')
+            ->textColumn('fixed_repayment_date', 'Fixed repayment date');
+    }
+
     private function repaymentBasis(array $terms): string
     {
         if (!empty($terms['repayable_on_demand'])) {
@@ -147,6 +192,16 @@ final class _director_loan_termsCard extends CardBaseFramework
             'on_demand' => 'On demand',
             'after_12_months' => 'Repayable after more than 12 months',
             default => 'Within 12 months',
+        };
+    }
+
+    private function advanceRepaymentBasisLabel(string $repaymentBasis): string
+    {
+        return match ($repaymentBasis) {
+            'on_demand' => 'Repayable on demand',
+            'no_fixed_date' => 'No fixed repayment date was agreed',
+            'fixed_date' => 'Fixed repayment date',
+            default => 'Not confirmed',
         };
     }
 

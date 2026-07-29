@@ -170,6 +170,14 @@
   margin: 16px 0;
 }
 
+.card-body .ixbrl-companies-house-prepare-blocker {
+  margin: 16px 0;
+}
+
+.card-body .ixbrl-arelle-log-download {
+  margin-top: 16px;
+}
+
 .ixbrl-mapping-assumptions {
   display: grid;
   gap: 8px;
@@ -3473,7 +3481,7 @@
 }
 
 .ixbrl-developer-cleanup-action {
-  justify-content: flex-end;
+  margin-left: auto;
 }
 
 .director-loan-per-party-position {

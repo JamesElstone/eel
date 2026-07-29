@@ -77,6 +77,14 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . '</form>'
             : '';
         $artifact = $download !== '' ? $download : 'Not generated';
+        $accountingStatusMessage = $this->accountingStatusMessage(
+            $readiness,
+            $run,
+            $runFreshness,
+            $stale,
+            $readyForFiling,
+            $fileExists
+        );
         return '<div class="settings-stack">
             ' . $generationBlockerPanel . '
             <section class="panel-soft">
@@ -86,22 +94,24 @@ final class _ixbrl_generationCard extends CardBaseFramework
                         <div class="helper ixbrl-complete-filing-set-helper">Generate and validate the Accounting iXBRL, every Corporation Tax iXBRL, and the required Companies House original or revised accounts iXBRL.</div>
                     </div>
                 </div>
-                ' . ($developerOptions ? '<div class="actions-row ixbrl-developer-cleanup-action"><form method="post" action="?page=disclosures" data-ajax="true">'
-                    . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
-                    . '<input type="hidden" name="card_action" value="Ixbrl">'
-                    . '<input type="hidden" name="intent" value="sync_missing_ixbrl_runs">'
-                    . '<input type="hidden" name="company_id" value="' . $companyId . '">'
-                    . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
-                    . '<button class="button danger" type="submit" title="Developer only" data-chicken-check="true" data-chicken-title="Synchronise missing iXBRL runs" data-chicken-message="Synchronise accounts iXBRL artifacts that no longer exist on disk?<br><br>Approved fact snapshots are retained and returned to generation-ready state. Empty run records and unsent Companies House drafts are removed. Filing approvals, evidence bundles, and runs used by transmitted or in-flight Companies House filings are retained. No files are deleted." data-chicken-confirm-text="Synchronise" data-chicken-button-class="button danger">Synchronise missing iXBRL runs</button>'
-                    . '</form></div>' : '') . '
-                <form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">
-                    ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-                    <input type="hidden" name="card_action" value="Ixbrl">
-                    <input type="hidden" name="intent" value="generate_all_filing_ixbrl">
-                    <input type="hidden" name="company_id" value="' . $companyId . '">
-                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                    <button class="button primary" type="submit"' . ($canGenerateAll ? '' : ' disabled') . '>Generate All Filing iXBRLs</button>
-                </form>
+                <div class="actions-row ixbrl-complete-filing-actions">
+                    <form method="post" action="?page=disclosures" data-ajax="true">
+                        ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
+                        <input type="hidden" name="card_action" value="Ixbrl">
+                        <input type="hidden" name="intent" value="generate_all_filing_ixbrl">
+                        <input type="hidden" name="company_id" value="' . $companyId . '">
+                        <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                        <button class="button primary" type="submit"' . ($canGenerateAll ? '' : ' disabled') . '>Generate All Filing iXBRLs</button>
+                    </form>
+                    ' . ($developerOptions ? '<form method="post" action="?page=disclosures" data-ajax="true" class="ixbrl-developer-cleanup-action">'
+                        . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+                        . '<input type="hidden" name="card_action" value="Ixbrl">'
+                        . '<input type="hidden" name="intent" value="sync_missing_ixbrl_runs">'
+                        . '<input type="hidden" name="company_id" value="' . $companyId . '">'
+                        . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
+                        . '<button class="button danger" type="submit" title="Developer only" data-chicken-check="true" data-chicken-title="Synchronise missing iXBRL files" data-chicken-message="Synchronise accounts iXBRL artifacts that no longer exist on disk?<br><br>Approved fact snapshots are retained and returned to generation-ready state. Empty run records and unsent Companies House drafts are removed. Filing approvals, evidence bundles, and runs used by transmitted or in-flight Companies House filings are retained. No files are deleted." data-chicken-confirm-text="Synchronise" data-chicken-button-class="button danger">Synchronise missing iXBRL files</button>'
+                        . '</form>' : '') . '
+                </div>
                 ' . ($canGenerateAll ? '' : '<div class="helper">Approve a generation-ready accounts basis, resolve every CT-period computation blocker, and complete the Companies House filing prerequisites when required.</div>') . '
             </section>
             <section class="panel-soft">
@@ -121,12 +131,9 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     ' . $this->metric('Arelle Validated At', (string)($run['external_validated_at'] ?? '')) . '
                     ' . $this->metricHtml('Artifact', $artifact) . '
                 </div>
+                <div class="helper ixbrl-computation-helper ixbrl-accounting-status-helper">'
+                    . \eel_accounts\Support\Utf8::html($accountingStatusMessage) . '</div>
                 <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($run['error_message'] ?? '')) . '</div>
-                ' . ($stale
-                    ? '<div class="helper ixbrl-rebuild-required-helper"><span class="badge warning">Rebuild required</span> '
-                        . \eel_accounts\Support\Utf8::html((string)($runFreshness['detail'] ?? 'The latest facts are stale.'))
-                        . '</div>'
-                    : '') . '
                 ' . $this->internalValidationDetails($run) . '
                 ' . $this->arelleOutput($run, [
                     'company_id' => $companyId,
@@ -152,6 +159,56 @@ final class _ixbrl_generationCard extends CardBaseFramework
             ' . $this->computationPeriods($context, $companyId, $accountingPeriodId) . '
             ' . $this->companiesHouseArtifact($context, $companyId, $accountingPeriodId) . '
         </div>';
+    }
+
+    private function accountingStatusMessage(
+        array $readiness,
+        array $run,
+        array $runFreshness,
+        bool $stale,
+        bool $readyForFiling,
+        bool $fileExists
+    ): string {
+        if ($readyForFiling && $fileExists) {
+            return 'HMRC Accounting iXBRL is current and filing-ready.';
+        }
+        if ($stale) {
+            $reason = rtrim(trim((string)($runFreshness['detail']
+                ?? 'The latest facts are no longer current')), '.');
+            $reason = lcfirst($reason);
+            return 'HMRC Accounting iXBRL needs to be regenerated because ' . $reason . '.';
+        }
+
+        $generatedPath = trim((string)($run['generated_path'] ?? ''));
+        if ($generatedPath === '') {
+            return 'HMRC Accounting iXBRL has not been generated for the current approved filing basis.';
+        }
+        if (!$fileExists) {
+            return 'HMRC Accounting iXBRL needs to be regenerated because its artifact file is missing.';
+        }
+
+        $externalStatus = strtolower(trim((string)($run['external_validation_status'] ?? 'not_run')));
+        if ($externalStatus !== 'passed') {
+            $reason = match ($externalStatus) {
+                'failed' => 'did not pass',
+                'error' => 'could not be completed',
+                'tampered' => 'does not match the current artifact',
+                default => 'has not passed',
+            };
+            return 'HMRC Accounting iXBRL needs to be regenerated because its Arelle validation '
+                . $reason . '.';
+        }
+        if ((string)($run['validation_status'] ?? 'not_run') !== 'passed') {
+            return 'HMRC Accounting iXBRL needs to be regenerated because its internal validation has not passed.';
+        }
+
+        $filingErrors = array_values(array_filter(array_map(
+            static fn(mixed $message): string => trim((string)$message),
+            (array)($readiness['filing_errors'] ?? [])
+        )));
+        return $filingErrors !== []
+            ? 'HMRC Accounting iXBRL is not filing-ready: ' . $filingErrors[0]
+            : 'HMRC Accounting iXBRL needs to be regenerated for the current approved filing basis.';
     }
 
     private function companiesHouseArtifact(array $context, int $companyId, int $accountingPeriodId): string
@@ -181,16 +238,20 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 $blockersHtml .= '<div class="helper ixbrl-companies-house-prepare-blocker">' . \eel_accounts\Support\Utf8::html($blocker) . '</div>';
             }
             return '<section class="panel-soft"><div class="status-head">'
-                . '<h3 class="card-title">Companies House ' . \eel_accounts\Support\Utf8::html($filingLabel) . ' Accounting iXBRL</h3>'
+                . '<h3 class="card-title">Companies House Accounting iXBRL</h3>'
                 . '<span class="badge muted">Not Generated</span></div>'
-                . '<div class="helper ixbrl-complete-filing-set-helper">Prepare the Companies House-specific accounts iXBRL from the approved '
-                . \eel_accounts\Support\Utf8::html($filingLabel) . ' filing basis. This does not transmit it.</div>'
-                . $this->arelleOutput($revisedValidation, [
-                    'company_id' => $companyId,
-                    'accounting_period_id' => $accountingPeriodId,
-                    'scope' => 'companies_house',
-                    'submission_id' => (int)($submission['id'] ?? 0),
-                ])
+                . '<div class="helper ixbrl-complete-filing-set-helper">Prepares the Companies House-specific accounts iXBRL from the approved filing basis. This does not transmit it, it creates the file it will send.</div>'
+                . '<div class="summary-grid">'
+                . $this->metric('Generated At', 'Not Generated')
+                . $this->metric('Facts', '0')
+                . $this->metric('Export Type', 'Companies House')
+                . $this->metric('Validation', 'Not Run')
+                . $this->metric('Arelle Status', !empty($arelleStatus['installed']) ? 'Installed' : 'Not Installed')
+                . $this->metric('Arelle Validation', 'Not Run')
+                . $this->metric('Arelle Validated At', '')
+                . $this->metric('Submission number', 'Allocated on send')
+                . $this->metricHtml('Artifact', 'Not Generated')
+                . '</div>'
                 . $blockersHtml
                 . '<form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">'
                 . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
@@ -228,7 +289,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             default => 'info',
         };
         return '<section class="panel-soft"><div class="status-head">'
-            . '<h3 class="card-title">Companies House ' . \eel_accounts\Support\Utf8::html($filingLabel) . ' Accounting iXBRL</h3>'
+            . '<h3 class="card-title">Companies House Accounting iXBRL</h3>'
             . '<span class="badge ' . $badge . '">'
             . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($lifecycle, '_')) . '</span></div>'
             . '<div class="helper ixbrl-complete-filing-set-helper">This is the prepared Companies House '
@@ -358,6 +419,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
     {
         $periods = (array)($context['ixbrl']['computation_periods'] ?? []);
         $accountsGenerationReady = !empty($context['ixbrl']['readiness']['can_generate']);
+        $arelleStatus = (array)($context['ixbrl']['readiness']['arelle_status'] ?? []);
         $html = '';
         if ($periods === []) {
             return $html . '<div class="notice warning">No CT periods are available for computations generation.</div>';
@@ -393,7 +455,9 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . '<div class="summary-grid four">'
                 . $this->metric('CT period', $start . ' to ' . $end)
                 . $this->metric('Internal validation', $this->validationLabel((string)($run['validation_status'] ?? 'not_run')))
+                . $this->metric('Arelle Status', !empty($arelleStatus['installed']) ? 'Installed' : 'Not Installed')
                 . $this->metric('Arelle validation', $this->validationLabel((string)($run['external_validation_status'] ?? 'not_run')))
+                . $this->metric('Arelle Validated At', (string)($run['external_validated_at'] ?? ''))
                 . $this->metricHtml('Artifact', $artifact)
                 . '</div>'
                 . $this->arelleOutput($run, [

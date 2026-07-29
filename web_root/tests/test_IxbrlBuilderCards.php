@@ -675,12 +675,21 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $harness->assertTrue(str_contains($draftHtml, 'Arelle Validation') && str_contains($draftHtml, 'Failed'));
             $harness->assertTrue(str_contains($draftHtml, '<h3 class="card-title">HMRC Accounting iXBRL</h3>'));
             $harness->assertTrue(str_contains($draftHtml, 'Generate the approved HMRC accounts iXBRL export and review its structural and Arelle validation results.'));
-            $harness->assertTrue(str_contains($draftHtml, 'Prepare the Companies House-specific accounts iXBRL from the approved Revised filing basis.'));
+            $harness->assertTrue(str_contains(
+                $draftHtml,
+                'Prepares the Companies House-specific accounts iXBRL from the approved filing basis. '
+                    . 'This does not transmit it, it creates the file it will send.'
+            ));
             $harness->assertTrue(str_contains($draftHtml, '<h3>Internal errors</h3>'));
             $harness->assertTrue(str_contains($draftHtml, 'These are structural checks performed before external Arelle validation.'));
             $harness->assertFalse(str_contains($draftHtml, 'Arelle validation output'));
             $harness->assertTrue(str_contains($draftHtml, 'Accounting schema failure from Arelle.'));
             $harness->assertTrue(str_contains($draftHtml, 'Companies House schema failure from Arelle.'));
+            $harness->assertTrue(str_contains(
+                $draftHtml,
+                'HMRC Accounting iXBRL needs to be regenerated because its Arelle validation did not pass.'
+            ));
+            $harness->assertTrue(str_contains($draftHtml, 'ixbrl-accounting-status-helper'));
             $harness->assertTrue(str_contains($draftHtml, 'Review draft only'));
             $harness->assertTrue(str_contains($draftHtml, '<div class="summary-label">Artifact</div>'));
             $harness->assertTrue(str_contains($draftHtml, '<div class="summary-value">Not generated</div>'));
@@ -694,10 +703,21 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $harness->assertTrue(str_contains($readyHtml, 'Arelle version: 2.37.0'));
             $harness->assertFalse(str_contains($readyHtml, 'Arelle validation: Passed'));
             $harness->assertTrue(str_contains($readyHtml, 'Download Accounting iXBRL'));
+            $harness->assertTrue(str_contains(
+                $readyHtml,
+                'HMRC Accounting iXBRL is current and filing-ready.'
+            ));
             $harness->assertTrue(str_contains($readyHtml, 'Generate Companies House iXBRL'));
             $harness->assertTrue(str_contains($readyHtml, 'name="card_action" value="CompaniesHouseAccounts"'));
             $harness->assertTrue(str_contains($readyHtml, 'name="intent" value="sync_missing_ixbrl_runs"'));
-            $harness->assertTrue(str_contains($readyHtml, 'data-chicken-title="Synchronise missing iXBRL runs"'));
+            $harness->assertTrue(str_contains($readyHtml, 'data-chicken-title="Synchronise missing iXBRL files"'));
+            $harness->assertTrue(str_contains($readyHtml, '>Synchronise missing iXBRL files</button>'));
+            $harness->assertFalse(str_contains($readyHtml, 'Synchronise missing iXBRL runs'));
+            $harness->assertTrue(preg_match(
+                '/<div class="actions-row ixbrl-complete-filing-actions">.*'
+                    . 'Generate All Filing iXBRLs.*Synchronise missing iXBRL files.*<\/div>/s',
+                $readyHtml
+            ) === 1);
             $harness->assertTrue(str_contains($readyHtml, 'Filing approvals, evidence bundles, and runs used by transmitted or in-flight Companies House filings are retained.'));
             $developerOptions = (bool)AppConfigurationStore::get('developer_options', false);
             try {
@@ -774,6 +794,10 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             throw new RuntimeException('The combined action should resolve the Accounting iXBRL prerequisite.');
         }
         $harness->assertTrue($buttonDisabled($prerequisiteGeneratedByAction, 'Generate Companies House iXBRL'));
+        $harness->assertTrue(str_contains(
+            $prerequisiteGeneratedByAction,
+            'class="helper ixbrl-companies-house-prepare-blocker"'
+        ));
 
         $context['services']['companies_house_ixbrl']['preparation_blockers'] = [
             'Latest export failed Arelle external validation.',
@@ -905,6 +929,11 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
 
         $html = $card->render($context);
         $harness->assertTrue(str_contains($html, '<span class="badge muted">Not Generated</span>'));
+        $harness->assertTrue(str_contains($html, '<h3 class="card-title">Companies House Accounting iXBRL</h3>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-grid">'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Generated At</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-value">Not Generated</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Artifact</div>'));
         $harness->assertFalse(str_contains($html, 'panel-soft warn'));
         $harness->assertFalse(str_contains($html, 'Rebuild required'));
         $harness->assertFalse(str_contains($html, 'Historical Base Run'));
@@ -941,7 +970,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
 
         $html = $card->render($context);
         $ctPosition = strpos($html, 'Corporation Tax Period 3 iXBRL');
-        $companiesHousePosition = strpos($html, 'Companies House Revised Accounting iXBRL');
+        $companiesHousePosition = strpos($html, 'Companies House Accounting iXBRL');
         $harness->assertTrue($ctPosition !== false);
         $harness->assertFalse(str_contains($html, 'Corporation Tax Period 1 iXBRL'));
         $harness->assertTrue($companiesHousePosition !== false);
@@ -1002,6 +1031,45 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         $ready = $card->render($context);
         $harness->assertTrue(str_contains($ready, 'download_computation_ixbrl'));
         $harness->assertTrue(str_contains($ready, 'Download Corporation Tax Period 6 iXBRL</button>'));
+    });
+    $harness->check(_ixbrl_generationCard::class, 'shows Arelle availability and validation time for each CT period', static function () use ($harness, $card): void {
+        $context = [
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'ixbrl' => [
+                'readiness' => [
+                    'can_generate' => true,
+                    'arelle_status' => ['installed' => true],
+                ],
+                'latest_run' => [],
+                'computation_periods' => [[
+                    'ct_period' => [
+                        'id' => 6,
+                        'display_sequence_no' => 3,
+                        'period_start' => '2025-01-01',
+                        'period_end' => '2025-12-31',
+                    ],
+                    'status' => [
+                        'ready' => true,
+                        'fresh' => true,
+                        'fileable' => true,
+                        'run' => [
+                            'id' => 202,
+                            'validation_status' => 'passed',
+                            'external_validation_status' => 'passed',
+                            'external_validated_at' => '2026-07-29 18:43:22',
+                        ],
+                    ],
+                ]],
+            ],
+            'services' => ['companies_house_ixbrl' => ['filing_required' => false]],
+        ];
+
+        $html = $card->render($context);
+        $harness->assertTrue(str_contains($html, 'Corporation Tax Period 3 iXBRL'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Arelle Status</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-value">Installed</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Arelle Validated At</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-value">2026-07-29 18:43:22</div>'));
     });
     $harness->check(_ixbrl_generationCard::class, 'offers one combined filing generation action only when every artifact can be built', static function () use ($harness, $card): void {
         $context = [

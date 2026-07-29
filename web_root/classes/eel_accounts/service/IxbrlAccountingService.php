@@ -342,6 +342,13 @@ final class IxbrlAccountingService
         }
 
         $notes = $this->notes($indexed, $periodEnd);
+        $revisionExplanation = $this->currentFact($indexed, 'companies_house_revision_explanation');
+        if ($revisionExplanation !== []) {
+            $notes .= '<div class="note keepTogether" id="hmrc-revision-explanation"'
+                . ' data-revision-explanation="companies-house"><h3>Companies House revision explanation</h3><p>'
+                . $this->inlineFact($revisionExplanation)
+                . '</p></div>' . "\n";
+        }
 
         $namespaceAttributes = '';
         foreach (IxbrlTaxonomyProfileService::NAMESPACES as $prefix => $uri) {

@@ -25,6 +25,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 json_decode((string)$mappings['accounts_type']['dimensions_json'], true)
             );
             $harness->assertSame('duration', (string)$mappings['accounts_type']['period_type']);
+            $harness->assertSame(
+                'bus:StatementRespectsInWhichPreviouslyFiledReportDidNotComplyWithCompaniesAct2006',
+                (string)$mappings['companies_house_revision_explanation']['taxonomy_concept']
+            );
+            $harness->assertSame(0, (int)$mappings['companies_house_revision_explanation']['is_required']);
             $harness->assertSame('duration_accounts_type', (string)$mappings['accounts_type']['context_profile']);
             $harness->assertSame(
                 'core:CalledUpShareCapitalNotPaidNotExpressedAsCurrentAsset',

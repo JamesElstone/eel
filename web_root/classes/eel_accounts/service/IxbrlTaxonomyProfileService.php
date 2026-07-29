@@ -18,7 +18,7 @@ namespace eel_accounts\Service;
 final class IxbrlTaxonomyProfileService
 {
     public const PROFILE = 'frc-2026-frs-105';
-    public const BASIS_VERSION = 'ixbrl-accounts-v6';
+    public const BASIS_VERSION = 'ixbrl-accounts-v7';
     public const SCHEMA_REF = 'https://xbrl.frc.org.uk/FRS-102/2026-01-01/FRS-102-2026-01-01.xsd';
 
     public const NAMESPACES = [
@@ -60,6 +60,7 @@ final class IxbrlTaxonomyProfileService
             $this->mapping('period_end', 'bus', 'EndDateForPeriodCoveredByReport', 'Period end', 'date', 'period_field', 'period_end', 'instant_end', null, null, null, false, 40),
             $this->mapping('balance_sheet_date', 'bus', 'BalanceSheetDate', 'Balance sheet date', 'date', 'period_field', 'period_end', 'instant_end', null, null, null, false, 50),
             $this->mapping('accounts_approval_date', 'core', 'DateAuthorisationFinancialStatementsForIssue', 'Accounts approval date', 'date', 'disclosure_field', 'accounts_approval_date', 'instant_end', null, null, null, false, 60),
+            $this->mapping('companies_house_revision_explanation', 'bus', 'StatementRespectsInWhichPreviouslyFiledReportDidNotComplyWithCompaniesAct2006', 'Companies House revision explanation', 'text', 'companies_house_revision_explanation', null, 'duration', null, null, null, false, 65, false),
             $this->mapping('approving_director_name', 'bus', 'NameEntityOfficer', 'Director approving the financial statements', 'text', 'disclosure_field', 'approving_director_name', 'duration_director_1', null, null, [
                 'bus:EntityOfficersDimension' => 'bus:Director1',
             ], false, 70),
@@ -210,7 +211,8 @@ final class IxbrlTaxonomyProfileService
         ?string $decimals,
         ?array $dimensions,
         bool $comparativeEnabled,
-        int $sortOrder
+        int $sortOrder,
+        bool $isRequired = true
     ): array {
         return [
             'fact_key' => $factKey,
@@ -230,7 +232,7 @@ final class IxbrlTaxonomyProfileService
                 ? \eel_accounts\Support\Utf8::json($dimensions, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)
                 : null,
             'comparative_enabled' => $comparativeEnabled ? 1 : 0,
-            'is_required' => 1,
+            'is_required' => $isRequired ? 1 : 0,
             'sort_order' => $sortOrder,
             'is_active' => 1,
         ];

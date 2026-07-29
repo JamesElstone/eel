@@ -335,6 +335,10 @@ final class IxbrlFactBuilderService
             'period_field' => $period[$sourceKey] ?? '',
             'derived' => $buckets[$sourceKey] ?? 0,
             'disclosure_field' => $disclosures[$sourceKey] ?? null,
+            'companies_house_revision_explanation' => !$comparative
+                && strtolower(trim((string)(($report['companies_house_filing'] ?? [])['filing_kind'] ?? ''))) === 'revised'
+                ? ($this->nonEmptyText((($report['companies_house_filing'] ?? [])['variance_explanation'] ?? null)))
+                : null,
             'application_value' => $sourceKey === 'app_version'
                 ? ($report['application_version'] ?? IxbrlTaxonomyProfileService::BASIS_VERSION)
                 : ($report['application_name'] ?? 'EEL Accounts'),
@@ -442,6 +446,12 @@ final class IxbrlFactBuilderService
                 ) ? $directorLoanYearEndApproval : [],
             ],
         ];
+    }
+
+    private function nonEmptyText(mixed $value): ?string
+    {
+        $value = trim((string)$value);
+        return $value === '' ? null : $value;
     }
 
     private function contextRef(string $profile, bool $comparative): string

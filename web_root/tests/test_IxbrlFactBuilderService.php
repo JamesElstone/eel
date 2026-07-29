@@ -189,12 +189,35 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $periodEnd = $method->invoke($service, $mappings['period_end'], $report, false);
             $approval = $method->invoke($service, $mappings['accounts_approval_date'], $report, false);
             $accountsType = $method->invoke($service, $mappings['accounts_type'], $report, false);
+            $report['companies_house_filing'] = [
+                'filing_kind' => 'revised',
+                'variance_explanation' => 'The original accounts omitted fixed assets.',
+            ];
+            $revisionExplanation = $method->invoke(
+                $service,
+                $mappings['companies_house_revision_explanation'],
+                $report,
+                false
+            );
+            $report['companies_house_filing']['filing_kind'] = 'original';
+            $originalExplanation = $method->invoke(
+                $service,
+                $mappings['companies_house_revision_explanation'],
+                $report,
+                false
+            );
             $harness->assertSame('2025-01-01', (string)$periodStart['date_value']);
             $harness->assertSame('2026-01-31', (string)$approval['date_value']);
             foreach ([$periodStart, $periodEnd, $approval] as $fact) {
                 $harness->assertSame('current_period_end', (string)$fact['context_ref']);
             }
             $harness->assertSame('', (string)$accountsType['text_value']);
+            $harness->assertSame(
+                'The original accounts omitted fixed assets.',
+                (string)$revisionExplanation['text_value']
+            );
+            $harness->assertSame('current_period_duration', (string)$revisionExplanation['context_ref']);
+            $harness->assertSame(null, $originalExplanation);
             $harness->assertSame('current_period_duration_accounts_type', (string)$accountsType['context_ref']);
             $harness->assertSame(
                 ['bus:AccountsTypeDimension' => 'bus:FullAccounts'],

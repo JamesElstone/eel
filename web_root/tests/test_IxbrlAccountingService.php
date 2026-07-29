@@ -676,6 +676,34 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(1, substr_count($hmrcNarrative, 'Interest rate: 0%.'));
             $harness->assertSame(1, substr_count($revisedNarrative, 'Interest rate: 0%.'));
         });
+        $harness->check(
+            \eel_accounts\Service\IxbrlAccountingService::class,
+            'renders the approved Companies House revision explanation once when present',
+            static function () use ($harness, $service): void {
+                $method = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'renderXhtml');
+                $method->setAccessible(true);
+                $facts = ixbrlRenderFixtureFacts();
+                $facts[] = ixbrlRenderFact(
+                    'companies_house_revision_explanation',
+                    'bus:StatementRespectsInWhichPreviouslyFiledReportDidNotComplyWithCompaniesAct2006',
+                    'text',
+                    null,
+                    'The originally filed accounts omitted fixed assets.',
+                    null,
+                    null,
+                    null,
+                    'current_period_duration'
+                );
+                $xhtml = (string)$method->invoke($service, $facts, false, '');
+
+                $harness->assertTrue(str_contains($xhtml, 'id="hmrc-revision-explanation"'));
+                $harness->assertSame(1, substr_count(
+                    $xhtml,
+                    'name="bus:StatementRespectsInWhichPreviouslyFiledReportDidNotComplyWithCompaniesAct2006"'
+                ));
+                $harness->assertSame(1, substr_count($xhtml, 'The originally filed accounts omitted fixed assets.'));
+            }
+        );
     }
 );
 

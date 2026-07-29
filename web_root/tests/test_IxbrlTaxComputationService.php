@@ -645,6 +645,142 @@ function ixbrlTaxComputationMappings(array $model): array
         $h->assertSame('2022-09-05', $xpath->evaluate('string(//xbrli:context[@id="' . $openingContext . '"]/xbrli:period/xbrli:instant)'));
         $h->assertSame('2023-09-04', $xpath->evaluate('string(//xbrli:context[@id="' . $closingContext . '"]/xbrli:period/xbrli:instant)'));
     });
+    $h->check($service::class, 'renders and tags an AIA-only main-pool bridge for a standard CT period', static function () use ($h, $service): void {
+        $model = ixbrlTaxComputationModel([
+            'period_start' => '2023-10-01',
+            'period_end' => '2024-09-30',
+            'summary' => [
+                'accounting_profit' => -4903.62,
+                'disallowable_add_backs' => 1056.14,
+                'capital_add_backs' => 112.57,
+                'depreciation_add_back' => 1087.39,
+                'capital_allowances' => 4375.29,
+                'taxable_before_losses' => -7022.81,
+                'loss_created_in_period' => 7022.81,
+                'losses_brought_forward' => 595.61,
+                'losses_used' => 0.00,
+                'losses_carried_forward' => 7618.42,
+                'accounting_allocation_basis' => [
+                    'method' => 'journal_date_within_single_ct_period',
+                    'time_apportioned' => false,
+                    'ct_period_days' => 366,
+                    'accounting_period_days' => 366,
+                    'rounding' => 'pennies_half_up',
+                ],
+            ],
+        ]);
+        $model['model']['filing_decisions']['aia_claimed_in_trade'] = 4375.29;
+        $model['model']['computation']['summary']['capital_allowance_breakdown'] = [
+            'rows' => [[
+                'pool_type' => 'main_pool', 'opening_wdv' => 0.00, 'additions' => 0.00,
+                'aia_claimed' => 4375.29, 'fya_claimed' => 0.00, 'disposal_value' => 0.00,
+                'wda_claimed' => 0.00, 'balancing_charge' => 0.00, 'balancing_allowance' => 0.00,
+                'closing_wdv' => 0.00,
+            ]],
+            'asset_calculations' => [[
+                'asset_id' => 80, 'pool_type' => 'main_pool', 'allowance_type' => 'aia',
+                'addition_amount' => 4375.29, 'allowance_amount' => 4375.29, 'disposal_value' => 0.00,
+            ]],
+        ];
+        $model['model']['audit']['capital_allowances']['rows'] = [[
+            'source_date' => '2024-02-15', 'tax_adjustment_amount' => 4375.29,
+            'metadata' => [
+                'asset_id' => 80, 'description' => 'AP80 qualifying plant and machinery', 'purchase_date' => '2024-02-15',
+                'allowance_type' => 'aia', 'addition_amount' => 4375.29, 'allowance_amount' => 4375.29,
+            ],
+        ]];
+        $method = new ReflectionMethod($service::class, 'renderMappedDocument');
+        $method->setAccessible(true);
+        $xhtml = (string)($method->invoke(
+            $service,
+            new \eel_accounts\Service\IxbrlGeneratorService(),
+            $model,
+            ixbrlTaxComputationMappings($model),
+            'http://www.hmrc.gov.uk/schemas/ct/comp/2024-01-01/ct-comp-2024.xsd'
+        ))['xhtml'];
+        $document = new DOMDocument();
+        $h->assertTrue($document->loadXML($xhtml));
+        $xpath = new DOMXPath($document);
+        $xpath->registerNamespace('ix', \eel_accounts\Service\IxbrlGeneratorService::IX_NAMESPACE);
+        $xpath->registerNamespace('xbrli', 'http://www.xbrl.org/2003/instance');
+        $body = (string)$xpath->evaluate('string(/*[local-name()="html"]/*[local-name()="body"])');
+        $h->assertSame(1, $xpath->query('//*[local-name()="h2" and text()="Main pool"]')->length);
+        $h->assertTrue(str_contains($body, 'Qualifying expenditure added to the pool'));
+        $h->assertTrue(str_contains($body, 'AIA claimed'));
+        $h->assertTrue(str_contains($body, 'Unrelieved qualifying expenditure carried forward'));
+        foreach ([
+            'MainPoolExpenditureQualifyingForAnnualInvestmentAllowance' => '4,375.29',
+            'MainPoolExpenditureQualifyingForWritingDownAllowance' => '0.00',
+            'MainPoolTotalQualifyingExpenditure' => '4,375.29',
+            'MainPoolAnnualInvestmentAllowance' => '4,375.29',
+            'MainPoolTotalDisposalReceipts' => '0.00',
+            'MainPoolWritingDownAllowances' => '0.00',
+            'MainPoolBalancingAllowances' => '0.00',
+            'MainPoolBalancingCharges' => '0.00',
+            'MainPoolTotalFYAAndWDA' => '0.00',
+            'MainPoolTotalAllowances' => '4,375.29',
+        ] as $name => $value) {
+            $fact = $xpath->query('//ix:nonFraction[@name="ct:' . $name . '"]');
+            $h->assertSame(1, $fact->length);
+            $h->assertSame($value, $fact->item(0)?->textContent);
+        }
+        $wdv = $xpath->query('//ix:nonFraction[@name="ct:MainPoolWrittenDownValue"]');
+        $h->assertSame(2, $wdv->length);
+        $openingContext = (string)$wdv->item(0)?->getAttribute('contextRef');
+        $closingContext = (string)$wdv->item(1)?->getAttribute('contextRef');
+        $h->assertSame('2023-10-01', $xpath->evaluate('string(//xbrli:context[@id="' . $openingContext . '"]/xbrli:period/xbrli:instant)'));
+        $h->assertSame('2024-09-30', $xpath->evaluate('string(//xbrli:context[@id="' . $closingContext . '"]/xbrli:period/xbrli:instant)'));
+        $h->assertSame([], (new \eel_accounts\Service\IxbrlGeneratorService())->validateStructure(
+            $xhtml,
+            ['http://www.hmrc.gov.uk/schemas/ct/comp/2024-01-01/ct-comp-2024.xsd']
+        ));
+    });
+    $h->check($service::class, 'omits an inactive main pool for a standard CT period', static function () use ($h, $service): void {
+        $model = ixbrlTaxComputationModel([
+            'period_start' => '2024-10-01',
+            'period_end' => '2025-09-30',
+            'summary' => [
+                'accounting_profit' => 1749.32,
+                'capital_allowances' => 0.00,
+                'taxable_before_losses' => 1749.32,
+                'loss_created_in_period' => 0.00,
+                'losses_brought_forward' => 7618.42,
+                'losses_used' => 1749.32,
+                'losses_carried_forward' => 5869.10,
+                'accounting_allocation_basis' => [
+                    'method' => 'journal_date_within_single_ct_period',
+                    'time_apportioned' => false,
+                    'ct_period_days' => 365,
+                    'accounting_period_days' => 365,
+                    'rounding' => 'pennies_half_up',
+                ],
+            ],
+        ]);
+        $model['model']['computation']['summary']['capital_allowance_breakdown'] = [
+            'rows' => [[
+                'pool_type' => 'main_pool', 'opening_wdv' => 0.00, 'additions' => 0.00,
+                'aia_claimed' => 0.00, 'fya_claimed' => 0.00, 'disposal_value' => 0.00,
+                'wda_claimed' => 0.00, 'balancing_charge' => 0.00, 'balancing_allowance' => 0.00,
+                'closing_wdv' => 0.00,
+            ]],
+            'asset_calculations' => [],
+        ];
+        $method = new ReflectionMethod($service::class, 'renderMappedDocument');
+        $method->setAccessible(true);
+        $xhtml = (string)($method->invoke(
+            $service,
+            new \eel_accounts\Service\IxbrlGeneratorService(),
+            $model,
+            ixbrlTaxComputationMappings($model),
+            'http://www.hmrc.gov.uk/schemas/ct/comp/2024-01-01/ct-comp-2024.xsd'
+        ))['xhtml'];
+        $document = new DOMDocument();
+        $h->assertTrue($document->loadXML($xhtml));
+        $xpath = new DOMXPath($document);
+        $xpath->registerNamespace('ix', \eel_accounts\Service\IxbrlGeneratorService::IX_NAMESPACE);
+        $h->assertSame(0, $xpath->query('//*[local-name()="h2" and text()="Main pool"]')->length);
+        $h->assertSame(0, $xpath->query('//ix:nonFraction[contains(@name, "MainPool")]')->length);
+    });
     $h->check($service::class, 'renders the Section 455 repayment narrative in its qualifying CT period only', static function () use ($h, $service): void {
         $firstPeriod = ixbrlTaxComputationModel([
             'ct600a' => [

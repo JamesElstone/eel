@@ -1473,6 +1473,85 @@ if (!class_exists(\eel_accounts\Service\FormattingFramework::class, false)) {
             ));
         });
 
+        $harness->check(\eel_accounts\Service\AssetService::class, 'edits and detaches an operational relationship with an evidenced standalone date', static function () use ($harness, $service): void {
+            $fixture = assetServiceTestCreateDisposalFixture('relationship-detach');
+            $componentAssetId = (int)$fixture['asset_id'] + 1;
+            InterfaceDB::prepareExecute(
+                'UPDATE asset_register
+                 SET cost = :cost, purchase_date = :purchase_date, depreciation_method = :depreciation_method
+                 WHERE id = :id',
+                [
+                    'cost' => 50.00,
+                    'purchase_date' => '2026-01-01',
+                    'depreciation_method' => 'straight_line',
+                    'id' => $fixture['asset_id'],
+                ]
+            );
+            InterfaceDB::prepareExecute(
+                'INSERT INTO asset_register (
+                    id, company_id, asset_code, description, category, nominal_account_id,
+                    accum_dep_nominal_id, purchase_date, cost, useful_life_years,
+                    depreciation_method, residual_value, status
+                 ) VALUES (
+                    :id, :company_id, :asset_code, :description, :category, :nominal_account_id,
+                    :accum_dep_nominal_id, :purchase_date, :cost, :useful_life_years,
+                    :depreciation_method, :residual_value, :status
+                 )',
+                [
+                    'id' => $componentAssetId,
+                    'company_id' => $fixture['company_id'],
+                    'asset_code' => 'FA-D-' . $fixture['marker'],
+                    'description' => 'Relationship component ' . $fixture['marker'],
+                    'category' => 'tools_equipment',
+                    'nominal_account_id' => assetServiceTestNominalId('1300'),
+                    'accum_dep_nominal_id' => assetServiceTestNominalId('1330'),
+                    'purchase_date' => '2026-01-02',
+                    'cost' => 20.00,
+                    'useful_life_years' => 3,
+                    'depreciation_method' => 'straight_line',
+                    'residual_value' => 0.00,
+                    'status' => 'active',
+                ]
+            );
+            $created = $service->saveAvailableForUseRelationship(
+                $fixture['company_id'], $fixture['asset_id'], '2026-01-05', [$componentAssetId], [],
+                $fixture['accounting_period_id'], 'golden_test', 'Installation confirmed the operational date.'
+            );
+            $harness->assertSame(true, (bool)($created['success'] ?? false));
+            $beforeDetach = $service->fetchAssetRelationshipData($fixture['company_id'], $fixture['accounting_period_id'], $fixture['asset_id']);
+            $harness->assertSame(1, count((array)($beforeDetach['relationships'] ?? [])));
+            $harness->assertSame('70.00', number_format((float)($beforeDetach['relationships'][0]['accounting_cost'] ?? 0), 2, '.', ''));
+
+            $missingDate = $service->saveAvailableForUseRelationship(
+                $fixture['company_id'], $fixture['asset_id'], '2026-01-05', [], [],
+                $fixture['accounting_period_id'], 'golden_test', 'Component must be separately operational.'
+            );
+            $harness->assertSame(false, (bool)($missingDate['success'] ?? true));
+            $harness->assertTrue(str_contains((string)(($missingDate['errors'] ?? [])[0] ?? ''), 'every component being detached'));
+
+            $detached = $service->saveAvailableForUseRelationship(
+                $fixture['company_id'], $fixture['asset_id'], '2026-01-05', [], [$componentAssetId => '2026-02-01'],
+                $fixture['accounting_period_id'], 'golden_test', 'Component separately available for use from 1 February.'
+            );
+            $harness->assertSame(true, (bool)($detached['success'] ?? false));
+            $component = InterfaceDB::fetchOne(
+                'SELECT parent_asset_id, component_role, available_for_use_date, cost, purchase_date
+                 FROM asset_register WHERE id = :id',
+                ['id' => $componentAssetId]
+            ) ?: [];
+            $harness->assertSame(0, (int)($component['parent_asset_id'] ?? 0));
+            $harness->assertSame('standalone', (string)($component['component_role'] ?? ''));
+            $harness->assertSame('2026-02-01', (string)($component['available_for_use_date'] ?? ''));
+            $harness->assertSame('20.00', number_format((float)($component['cost'] ?? 0), 2, '.', ''));
+            $harness->assertSame('2026-01-02', (string)($component['purchase_date'] ?? ''));
+            $afterDetach = $service->fetchAssetRelationshipData($fixture['company_id'], $fixture['accounting_period_id'], $fixture['asset_id']);
+            $harness->assertSame(0, count((array)($afterDetach['relationships'] ?? [])));
+            $harness->assertTrue(in_array($componentAssetId, array_map(
+                static fn(array $asset): int => (int)($asset['id'] ?? 0),
+                (array)($afterDetach['component_candidates'] ?? [])
+            ), true));
+        });
+
         $harness->check(\eel_accounts\Service\AssetService::class, 'rebuilds disposal gains and losses for nil, below-NBV, at-NBV, above-NBV and fully-written-off assets', static function () use ($harness, $service): void {
             assetServiceTestRequireDisposalSchema($harness);
             foreach ([

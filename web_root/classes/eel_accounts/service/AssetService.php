@@ -1818,6 +1818,38 @@ final class AssetService
         string $changedBy = 'web_app',
         string $evidence = ''
     ): array {
+        return $this->saveAvailableForUseRelationship(
+            $companyId,
+            $assetId,
+            $availableForUseDate,
+            $directlyAttributableAssetIds,
+            [],
+            $accountingPeriodId,
+            $changedBy,
+            $evidence
+        );
+    }
+
+    /**
+     * Save the operational-parent relationship for an asset. Removed
+     * components must be given their own evidenced available-for-use date so
+     * that they can resume independent depreciation without altering source
+     * expenditure or capital-allowance records.
+     *
+     * @param list<int> $directlyAttributableAssetIds
+     * @param array<int|string,string> $detachedAvailableForUseDates
+     * @return array<string,mixed>
+     */
+    public function saveAvailableForUseRelationship(
+        int $companyId,
+        int $assetId,
+        string $availableForUseDate,
+        array $directlyAttributableAssetIds,
+        array $detachedAvailableForUseDates,
+        int $accountingPeriodId,
+        string $changedBy = 'web_app',
+        string $evidence = ''
+    ): array {
         if (!\InterfaceDB::columnExists('asset_register', 'available_for_use_date')
             || !\InterfaceDB::columnExists('asset_register', 'parent_asset_id')
             || !\InterfaceDB::tableExists('asset_depreciation_adjustments')) {
@@ -1826,14 +1858,49 @@ final class AssetService
         if (!$this->isIsoDate($availableForUseDate)) {
             return ['success' => false, 'errors' => ['Record a valid available-for-use date.']];
         }
+        if (trim($evidence) === '') {
+            return ['success' => false, 'errors' => ['Record evidence for the available-for-use date.']];
+        }
 
         $asset = $this->fetchAsset($companyId, $assetId);
         if ($asset === null) {
             return ['success' => false, 'errors' => ['The parent asset could not be found.']];
         }
+        if (trim((string)($asset['purchase_date'] ?? '')) > $availableForUseDate) {
+            return ['success' => false, 'errors' => ['The parent asset cannot be available for use before it was acquired.']];
+        }
         (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'change available-for-use asset evidence in this period');
 
         $componentIds = array_values(array_unique(array_filter(array_map('intval', $directlyAttributableAssetIds), static fn(int $id): bool => $id > 0 && $id !== $assetId)));
+        $existingComponentIds = array_values(array_filter(array_map(
+            static fn(array $row): int => (int)($row['id'] ?? 0),
+            \InterfaceDB::fetchAll(
+                'SELECT id FROM asset_register
+                 WHERE company_id = :company_id
+                   AND parent_asset_id = :parent_asset_id
+                   AND component_role = :component_role',
+                [
+                    'company_id' => $companyId,
+                    'parent_asset_id' => $assetId,
+                    'component_role' => 'directly_attributable_pre_use',
+                ]
+            ) ?: []
+        )));
+        $detachedComponentIds = array_values(array_diff($existingComponentIds, $componentIds));
+        $detachedDates = [];
+        foreach ($detachedComponentIds as $componentId) {
+            $date = trim((string)($detachedAvailableForUseDates[$componentId]
+                ?? $detachedAvailableForUseDates[(string)$componentId]
+                ?? ''));
+            if (!$this->isIsoDate($date)) {
+                return ['success' => false, 'errors' => ['Record an available-for-use date for every component being detached.']];
+            }
+            $component = $this->fetchAsset($companyId, (int)$componentId);
+            if ($component === null || trim((string)($component['purchase_date'] ?? '')) > $date) {
+                return ['success' => false, 'errors' => ['A detached component cannot be available for use before it was acquired.']];
+            }
+            $detachedDates[$componentId] = $date;
+        }
         $transaction = $this->beginAssetMutationTransaction('asset_available_for_use');
         try {
             \InterfaceDB::prepareExecute(
@@ -1856,6 +1923,13 @@ final class AssetService
                 if ($component === null) {
                     throw new \RuntimeException('A directly attributable asset record could not be found.');
                 }
+                $existingParentAssetId = (int)($component['parent_asset_id'] ?? 0);
+                if ($existingParentAssetId > 0 && $existingParentAssetId !== $assetId) {
+                    throw new \RuntimeException('A component linked to another operational asset must be detached before it can be reassigned.');
+                }
+                if ((string)($component['component_role'] ?? '') === 'operational_parent') {
+                    throw new \RuntimeException('An operational parent cannot be linked as a pre-use component.');
+                }
                 $componentPurchaseDate = trim((string)($component['purchase_date'] ?? ''));
                 if (!$this->isIsoDate($componentPurchaseDate) || $componentPurchaseDate > $availableForUseDate) {
                     throw new \RuntimeException(
@@ -1872,6 +1946,25 @@ final class AssetService
                     [
                         'parent_asset_id' => $assetId,
                         'component_role' => 'directly_attributable_pre_use',
+                        'id' => $componentId,
+                        'company_id' => $companyId,
+                    ]
+                );
+            }
+
+            foreach ($detachedDates as $componentId => $detachedDate) {
+                \InterfaceDB::prepareExecute(
+                    'UPDATE asset_register
+                     SET parent_asset_id = NULL,
+                         component_role = :component_role,
+                         available_for_use_date = :available_for_use_date,
+                         available_for_use_evidence = :available_for_use_evidence,
+                         updated_at = CURRENT_TIMESTAMP
+                     WHERE id = :id AND company_id = :company_id',
+                    [
+                        'component_role' => 'standalone',
+                        'available_for_use_date' => $detachedDate,
+                        'available_for_use_evidence' => trim($evidence),
                         'id' => $componentId,
                         'company_id' => $companyId,
                     ]
@@ -1898,6 +1991,27 @@ final class AssetService
                 );
             }
 
+            $detachedAdjustments = [];
+            foreach (array_keys($detachedDates) as $componentId) {
+                $detachedAsset = $this->fetchAsset($companyId, (int)$componentId);
+                if ($detachedAsset === null) {
+                    throw new \RuntimeException('A detached component could not be loaded.');
+                }
+                $expectedDetachedDepreciation = $this->calculateDepreciationToDateAmount($detachedAsset, $periodEnd);
+                $postedDetachedDepreciation = $this->sumDepreciationToDate((int)$componentId, $periodEnd);
+                $detachedAdjustment = round($expectedDetachedDepreciation - $postedDetachedDepreciation, 2);
+                if (abs($detachedAdjustment) >= 0.005) {
+                    $this->postAvailableForUseDepreciationAdjustment(
+                        $companyId,
+                        $detachedAsset,
+                        $accountingPeriodId,
+                        $periodEnd,
+                        $detachedAdjustment
+                    );
+                }
+                $detachedAdjustments[(int)$componentId] = $detachedAdjustment;
+            }
+
             $this->commitAssetMutationTransaction($transaction);
             \eel_accounts\Support\RequestCache::clear();
 
@@ -1909,6 +2023,7 @@ final class AssetService
                 'accounting_cost' => $this->depreciableCost($parent),
                 'expected_depreciation' => $expected,
                 'depreciation_adjustment' => $adjustment,
+                'detached_component_adjustments' => $detachedAdjustments,
                 'journal_id' => $journalId ?: null,
             ];
         } catch (\Throwable $exception) {
@@ -1916,6 +2031,103 @@ final class AssetService
 
             return ['success' => false, 'errors' => [$exception->getMessage()]];
         }
+    }
+
+    /** @return array<string,mixed> */
+    public function fetchAssetRelationshipData(int $companyId, int $accountingPeriodId, int $selectedParentAssetId = 0): array
+    {
+        if ($companyId <= 0 || !\InterfaceDB::columnExists('asset_register', 'parent_asset_id')) {
+            return ['schema_ready' => false, 'parent_candidates' => [], 'component_candidates' => [], 'relationships' => [], 'selected_parent' => null];
+        }
+
+        $parents = \InterfaceDB::fetchAll(
+            'SELECT id, asset_code, description, purchase_date, cost, available_for_use_date, available_for_use_evidence, component_role
+             FROM asset_register
+             WHERE company_id = :company_id
+               AND status = :status
+               AND parent_asset_id IS NULL
+             ORDER BY purchase_date ASC, id ASC',
+            ['company_id' => $companyId, 'status' => 'active']
+        ) ?: [];
+        $selectedParent = null;
+        foreach ($parents as $parent) {
+            if ((int)($parent['id'] ?? 0) === $selectedParentAssetId) {
+                $selectedParent = $parent;
+                break;
+            }
+        }
+
+        $componentCandidates = [];
+        if ($selectedParent !== null) {
+            $componentCandidates = \InterfaceDB::fetchAll(
+                'SELECT id, asset_code, description, purchase_date, cost, parent_asset_id, component_role, available_for_use_date
+                 FROM asset_register
+                 WHERE company_id = :company_id
+                   AND status = :status
+                   AND id <> :parent_asset_id
+                   AND (parent_asset_id = :parent_asset_id
+                        OR (parent_asset_id IS NULL AND component_role <> :operational_parent_role))
+                 ORDER BY purchase_date ASC, id ASC',
+                [
+                    'company_id' => $companyId,
+                    'status' => 'active',
+                    'parent_asset_id' => $selectedParentAssetId,
+                    'operational_parent_role' => 'operational_parent',
+                ]
+            ) ?: [];
+            foreach ($componentCandidates as &$candidate) {
+                $candidate['linked_to_selected_parent'] = (int)($candidate['parent_asset_id'] ?? 0) === $selectedParentAssetId
+                    && (string)($candidate['component_role'] ?? '') === 'directly_attributable_pre_use';
+            }
+            unset($candidate);
+        }
+
+        $relationships = [];
+        foreach (\InterfaceDB::fetchAll(
+            'SELECT p.id, p.asset_code, p.description, p.available_for_use_date, p.available_for_use_evidence, p.cost
+             FROM asset_register p
+             WHERE p.company_id = :company_id
+               AND p.status = :status
+               AND p.parent_asset_id IS NULL
+               AND p.component_role = :component_role
+               AND EXISTS (
+                    SELECT 1 FROM asset_register c
+                    WHERE c.parent_asset_id = p.id
+                      AND c.component_role = :child_role
+               )
+             ORDER BY p.available_for_use_date ASC, p.id ASC',
+            [
+                'company_id' => $companyId,
+                'status' => 'active',
+                'component_role' => 'operational_parent',
+                'child_role' => 'directly_attributable_pre_use',
+            ]
+        ) ?: [] as $relationship) {
+            $components = \InterfaceDB::fetchAll(
+                'SELECT id, asset_code, description, purchase_date, cost
+                 FROM asset_register
+                 WHERE parent_asset_id = :parent_asset_id
+                   AND component_role = :component_role
+                 ORDER BY purchase_date ASC, id ASC',
+                ['parent_asset_id' => (int)$relationship['id'], 'component_role' => 'directly_attributable_pre_use']
+            ) ?: [];
+            $relationship['components'] = $components;
+            $relationship['component_count'] = count($components);
+            $relationship['accounting_cost'] = round((float)($relationship['cost'] ?? 0) + array_sum(array_map(
+                static fn(array $component): float => (float)($component['cost'] ?? 0),
+                $components
+            )), 2);
+            $relationships[] = $relationship;
+        }
+
+        return [
+            'schema_ready' => true,
+            'parent_candidates' => $parents,
+            'component_candidates' => $componentCandidates,
+            'relationships' => $relationships,
+            'selected_parent' => $selectedParent,
+            'accounting_period_id' => $accountingPeriodId,
+        ];
     }
 
     public function fetchTaxView(int $companyId, int $accountingPeriodId): ?array {

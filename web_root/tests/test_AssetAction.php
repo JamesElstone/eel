@@ -37,7 +37,7 @@ $harness->run(AssetAction::class, static function (GeneratedServiceClassTestHarn
         $result = $action->handle($request, createTestPageServiceFramework());
 
         $harness->assertSame(true, $result->isSuccess());
-        $harness->assertSame(['asset.create', 'asset.reconcile_manual', 'asset.register', 'asset.tax', 'asset.not_an_asset', 'expense.claim.editor', 'expenses.state', 'transactions.imported', 'page.context', 'year.end.checklist'], $result->changedFacts());
+        $harness->assertSame(['asset.create', 'asset.reconcile_manual', 'asset.register', 'asset.relationships', 'asset.tax', 'asset.not_an_asset', 'expense.claim.editor', 'expenses.state', 'transactions.imported', 'page.context', 'year.end.checklist'], $result->changedFacts());
         $harness->assertSame('2026-07-01', (string)($result->context()['asset_disposal_search_date'] ?? ''));
         $harness->assertSame(12, (int)($result->context()['asset_disposal_search_asset_id'] ?? 0));
         $harness->assertSame(12, (int)($result->context()['asset_disposal_method_asset_id'] ?? 0));
@@ -68,6 +68,28 @@ $harness->run(AssetAction::class, static function (GeneratedServiceClassTestHarn
         $harness->assertSame('at_nil_value', (string)($result->context()['asset_disposal_method'] ?? ''));
         $harness->assertSame(false, array_key_exists('asset_disposal_search_date', $result->context()));
         $harness->assertSame(false, array_key_exists('asset_disposal_search_asset_id', $result->context()));
+    });
+
+    $harness->check(AssetAction::class, 'relationship parent selector preserves selected parent context', static function () use ($harness, $action): void {
+        $request = new RequestFramework(
+            [],
+            [
+                'card_action' => 'Asset',
+                'intent' => 'select_asset_relationship_parent',
+                'company_id' => '49',
+                'accounting_period_id' => '80',
+                'asset_relationship_parent_id' => '21',
+            ],
+            ['REQUEST_METHOD' => 'POST'],
+            [],
+            [],
+            null
+        );
+
+        $result = $action->handle($request, createTestPageServiceFramework());
+        $harness->assertSame(true, $result->isSuccess());
+        $harness->assertSame(21, (int)($result->context()['asset_relationship_parent_id'] ?? 0));
+        $harness->assertTrue(in_array('asset.relationships', $result->changedFacts(), true));
     });
 
     $harness->check(AssetAction::class, 'empty disposal form submission preserves method context without error', static function () use ($harness, $action): void {

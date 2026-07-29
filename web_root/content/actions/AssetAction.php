@@ -20,6 +20,9 @@ final class AssetAction implements ActionInterfaceFramework
         $searchContext = in_array($intent, ['set_asset_disposal_method', 'search_asset_disposal_receipts', 'dispose_asset_with_transaction', 'dispose_asset_nil'], true) || $isDisposalUiNoop
             ? $this->searchContext($request, $isDisposalUiNoop ? 'set_asset_disposal_method' : $intent)
             : [];
+        $relationshipContext = in_array($intent, ['select_asset_relationship_parent', 'save_asset_relationship'], true)
+            ? ['asset_relationship_parent_id' => max(0, (int)$request->input('asset_relationship_parent_id', 0))]
+            : [];
 
         try {
             if ($intent === 'save_potential_asset_threshold') {
@@ -78,6 +81,17 @@ final class AssetAction implements ActionInterfaceFramework
                     (string)$request->input('disposal_event_type', ''),
                     (string)$request->input('disposal_reason', '')
                 ),
+                'select_asset_relationship_parent' => ['success' => true],
+                'save_asset_relationship' => $service->saveAvailableForUseRelationship(
+                    $companyId,
+                    (int)$request->input('asset_relationship_parent_id', 0),
+                    (string)$request->input('available_for_use_date', ''),
+                    (array)$request->input('component_asset_ids', []),
+                    (array)$request->input('detached_available_for_use_dates', []),
+                    (int)$request->input('accounting_period_id', 0),
+                    'web_app',
+                    (string)$request->input('available_for_use_evidence', '')
+                ),
                 'save_potential_asset_threshold' => $service->savePotentialAssetThreshold(
                     $companyId,
                     $request->input('potential_asset_threshold', 250)
@@ -92,13 +106,16 @@ final class AssetAction implements ActionInterfaceFramework
         if (in_array($intent, ['dispose_asset_with_transaction', 'dispose_asset_nil'], true) && !empty($result['success'])) {
             $searchContext = [];
         }
+        if ($intent === 'save_asset_relationship' && !empty($result['success'])) {
+            $relationshipContext['asset_relationship_parent_id'] = (int)($result['asset_id'] ?? 0);
+        }
 
         return new ActionResultFramework(
             !empty($result['success']),
-            ['asset.create', 'asset.reconcile_manual', 'asset.register', 'asset.tax', 'asset.not_an_asset', 'expense.claim.editor', 'expenses.state', 'transactions.imported', 'page.context', 'year.end.checklist'],
+            ['asset.create', 'asset.reconcile_manual', 'asset.register', 'asset.relationships', 'asset.tax', 'asset.not_an_asset', 'expense.claim.editor', 'expenses.state', 'transactions.imported', 'page.context', 'year.end.checklist'],
             $this->flashMessages($intent, $result),
-            $searchContext,
-            $searchContext
+            $searchContext + $relationshipContext,
+            $searchContext + $relationshipContext
         );
     }
 
@@ -154,6 +171,8 @@ final class AssetAction implements ActionInterfaceFramework
             $messages[] = match ($intent) {
                 'save_potential_asset_threshold' => 'Potential asset threshold saved.',
                 'convert_non_asset_to_asset' => 'Non-asset converted to an asset.',
+                'select_asset_relationship_parent' => '',
+                'save_asset_relationship' => 'Asset relationship saved.',
                 default => '',
             };
         }

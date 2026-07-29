@@ -350,7 +350,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             ['Taxable result before losses', $this->money($companySettings, $period['taxable_before_losses'] ?? 0)],
             ['Less losses used', $this->money($companySettings, 0 - (float)($period['losses_used'] ?? $period['loss_utilised'] ?? 0))],
             ['Taxable profit after losses', $this->money($companySettings, $period['taxable_profit'] ?? 0)],
-            ['Ordinary Corporation Tax [CT600 box 475]', $this->money($companySettings, $period['ordinary_corporation_tax'] ?? 0)],
+            ['Net Corporation Tax liability [CT600 box 475]', $this->money($companySettings, $period['ordinary_corporation_tax'] ?? 0)],
         ]);
     }
 

@@ -49,7 +49,7 @@ final class _nominals_categoriesCard extends CardBaseFramework
 
     private function table(array $context): TableFramework
     {
-        return TableFramework::make($this->key(), $this->rows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->rows($context))
             ->filename('nominal-categories')
             ->exportLimit(1000)
             ->empty('No nominal categories were found.')
@@ -59,7 +59,7 @@ final class _nominals_categoriesCard extends CardBaseFramework
             ->column(
                 'sort_order',
                 'Sort',
-                html: static fn(array $row): string => HelperFramework::escape((string)(int)($row['sort_order'] ?? 0)),
+                html: static fn(array $row): string => \eel_accounts\Support\Utf8::html((string)(int)($row['sort_order'] ?? 0)),
                 export: static fn(array $row): int => (int)($row['sort_order'] ?? 0),
                 exportType: 'number'
             )
@@ -94,7 +94,7 @@ final class _nominals_categoriesCard extends CardBaseFramework
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Nominals">
             <input type="hidden" name="intent" value="edit_nominal_subtype">
-            <input type="hidden" name="page" value="' . HelperFramework::escape($pageId) . '">
+            <input type="hidden" name="page" value="' . \eel_accounts\Support\Utf8::html($pageId) . '">
             <input type="hidden" name="show_card" value="nominals_add_category">
             <input type="hidden" name="edit_subtype_id" value="' . (int)($subtype['id'] ?? 0) . '">
             <button class="button" type="submit">Edit</button>

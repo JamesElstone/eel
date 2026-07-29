@@ -251,6 +251,37 @@ function ct600_builder_test_assert_official_business_rules(
 
         $harness->check(
             \eel_accounts\Service\Ct600BuilderService::class,
+            'normalizes legacy Windows-1252 text in DOM-generated CT600 XML',
+            static function () use ($harness): void {
+                $return = ct600_builder_test_return(
+                    [
+                        'chargeable_profits' => '0',
+                        'net_corporation_tax' => '0',
+                        'tax_payable' => '0',
+                    ],
+                    []
+                );
+                foreach ($return['mapping']['mappings'] as &$mapping) {
+                    if (str_ends_with((string)($mapping['target_xpath'] ?? ''), '/CompanyName')) {
+                        $mapping['serialized_value'] = 'Citro' . chr(0xEB) . 'n Limited';
+                    }
+                }
+                unset($mapping);
+
+                $result = ct600_builder_test_build($return, 991101);
+                $harness->assertSame(true, $result['ok'] ?? false);
+                $xml = (string)($result['xml'] ?? '');
+                $harness->assertTrue(str_contains($xml, 'Citroën Limited'));
+                $xpath = ct600_builder_test_xpath($xml);
+                $harness->assertSame(
+                    'Citroën Limited',
+                    trim((string)$xpath->evaluate('string(//ct:CompanyInformation/ct:CompanyName)'))
+                );
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Service\Ct600BuilderService::class,
             'is deterministic and accepts an uppercase V artifact version',
             static function () use ($harness): void {
                 $artifactRoot = test_register_cleanup_path(

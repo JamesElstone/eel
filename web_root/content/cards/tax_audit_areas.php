@@ -60,7 +60,7 @@ final class _tax_audit_areasCard extends CardBaseFramework
                 $label .= ' — ' . (string)$period['period_start'] . ' to ' . (string)$period['period_end'];
             }
             $periodOptions .= '<option value="' . $id . '"' . ($id === $selectedPeriodId ? ' selected' : '') . '>'
-                . HelperFramework::escape($label) . '</option>';
+                . \eel_accounts\Support\Utf8::html($label) . '</option>';
         }
         $selector = '<form method="post" action="?page=tax_audit" data-ajax="true" class="toolbar">
             ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
@@ -74,7 +74,7 @@ final class _tax_audit_areasCard extends CardBaseFramework
 
         if (empty($index['available'])) {
             $message = (string)(($index['errors'] ?? [])[0] ?? 'Select a CT period to inspect its audit areas.');
-            return $selector . '<div class="helper">' . HelperFramework::escape($message) . '</div>';
+            return $selector . '<div class="helper">' . \eel_accounts\Support\Utf8::html($message) . '</div>';
         }
 
         $rows = '';
@@ -84,9 +84,9 @@ final class _tax_audit_areasCard extends CardBaseFramework
             $selected = $code === $selectedArea;
             $sourceCount = $area['source_count'] ?? null;
             $rows .= '<tr' . ($selected ? ' class="is-selected"' : '') . '>
-                <td><strong>' . HelperFramework::escape((string)($area['area_label'] ?? $code)) . '</strong></td>
-                <td>' . HelperFramework::escape($this->money($context, $area['amount'] ?? 0)) . '</td>
-                <td><span class="badge ' . ($status === 'reconciled' ? 'success' : 'danger') . '">' . HelperFramework::escape(HelperFramework::labelFromKey($status)) . '</span></td>
+                <td><strong>' . \eel_accounts\Support\Utf8::html((string)($area['area_label'] ?? $code)) . '</strong></td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->money($context, $area['amount'] ?? 0)) . '</td>
+                <td><span class="badge ' . ($status === 'reconciled' ? 'success' : 'danger') . '">' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($status)) . '</span></td>
                 <td>' . ($sourceCount === null ? '<span class="helper">On demand</span>' : (int)$sourceCount) . '</td>
                 <td class="cell-fit">
                     <form method="post" action="?page=tax_audit" data-ajax="true" class="actions-row actions-row-nowrap">
@@ -94,7 +94,7 @@ final class _tax_audit_areasCard extends CardBaseFramework
                         ' . $hiddenCards . '
                         <input type="hidden" name="action" value="select-tax-audit-area">
                         <input type="hidden" name="ct_period_id" value="' . $selectedPeriodId . '">
-                        <input type="hidden" name="tax_audit_area" value="' . HelperFramework::escape($code) . '">
+                        <input type="hidden" name="tax_audit_area" value="' . \eel_accounts\Support\Utf8::html($code) . '">
                         <button class="button button-inline' . ($selected ? ' primary' : '') . '" type="submit">View details</button>
                     </form>
                 </td>
@@ -102,7 +102,7 @@ final class _tax_audit_areasCard extends CardBaseFramework
         }
         $mode = (string)($index['mode'] ?? 'live');
         $modeClass = $mode === 'frozen' ? 'success' : ($mode === 'reconstructed' ? 'warning' : 'info');
-        return '<div class="helper tax-audit-mode-pill"><span class="badge ' . $modeClass . '">' . HelperFramework::escape((string)($index['mode_label'] ?? 'Audit preview')) . '</span><a class="button button-inline" href="https://www.gov.uk/guidance/company-expenses-you-can-deduct-before-paying-corporation-tax" target="_blank" rel="noopener noreferrer">HMRC expense guidance</a></div>'
+        return '<div class="helper tax-audit-mode-pill"><span class="badge ' . $modeClass . '">' . \eel_accounts\Support\Utf8::html((string)($index['mode_label'] ?? 'Audit preview')) . '</span><a class="button button-inline" href="https://www.gov.uk/guidance/company-expenses-you-can-deduct-before-paying-corporation-tax" target="_blank" rel="noopener noreferrer">HMRC expense guidance</a></div>'
             . $selector
             . '<div class="table-scroll"><table><thead><tr><th>Tax area</th><th>Amount</th><th>Reconciliation</th><th>Sources</th><th>Action</th></tr></thead><tbody>'
             . $rows . '</tbody></table></div>';
@@ -112,7 +112,7 @@ final class _tax_audit_areasCard extends CardBaseFramework
     {
         $html = '';
         foreach ((array)($context['page']['page_cards'] ?? []) as $cardKey) {
-            $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+            $html .= '<input type="hidden" name="cards[]" value="' . \eel_accounts\Support\Utf8::html((string)$cardKey) . '">';
         }
         return $html;
     }

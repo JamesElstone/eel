@@ -49,26 +49,26 @@ final class _application_settingsCard extends CardBaseFramework
             <form method="post" action="?page=settings" data-ajax="true" class="form-grid application-settings-form">
                 ' . $this->hiddenFields($context) . '
                 <input type="hidden" name="card_action" value="ApplicationSettings">
-                <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
+                <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
 
                 <fieldset class="form-row full settings-fieldset">
                     <legend>Branding</legend>
                     <div class="form-grid">
                         <div class="form-row half">
                             <label for="settings-app-name">Application name</label>
-                            <input class="input" id="settings-app-name" name="app_name" type="text" value="' . HelperFramework::escape((string)($config['app_name'] ?? '')) . '" required>
+                            <input class="input" id="settings-app-name" name="app_name" type="text" value="' . \eel_accounts\Support\Utf8::html((string)($config['app_name'] ?? '')) . '" required>
                         </div>
                         <div class="form-row half">
                             <label for="settings-brand-mark">Brand mark</label>
-                            <input class="input" id="settings-brand-mark" name="brand_mark" type="text" value="' . HelperFramework::escape((string)($config['brand-mark'] ?? '')) . '" maxlength="255" required>
+                            <input class="input" id="settings-brand-mark" name="brand_mark" type="text" value="' . \eel_accounts\Support\Utf8::html((string)($config['brand-mark'] ?? '')) . '" maxlength="255" required>
                         </div>
                         <div class="form-row full">
                             <label for="settings-app-strapline">Application strapline</label>
-                            <input class="input" id="settings-app-strapline" name="app_strapline" type="text" value="' . HelperFramework::escape((string)($config['app_strapline'] ?? '')) . '">
+                            <input class="input" id="settings-app-strapline" name="app_strapline" type="text" value="' . \eel_accounts\Support\Utf8::html((string)($config['app_strapline'] ?? '')) . '">
                         </div>
                         <div class="form-row full">
                             <label for="settings-app-footer">Application footer</label>
-                            <input class="input" id="settings-app-footer" name="app_footer" type="text" value="' . HelperFramework::escape((string)($config['app_footer'] ?? '')) . '" maxlength="255">
+                            <input class="input" id="settings-app-footer" name="app_footer" type="text" value="' . \eel_accounts\Support\Utf8::html((string)($config['app_footer'] ?? '')) . '" maxlength="255">
                         </div>
                         <div class="form-row full">
                             <button class="button primary" type="submit" data-processing-text="Saving" data-processing-state="disabled">Save</button>
@@ -177,23 +177,23 @@ final class _application_settingsCard extends CardBaseFramework
             $isOrphan = empty($row['exists']);
             $orphanBadge = $isOrphan ? '<span class="badge warning">Orphan</span>' : '';
             $removeButton = $isOrphan
-                ? '<button class="button button-inline danger" type="submit" name="navigation_order_action" value="remove:' . HelperFramework::escape($pageKey) . '">Remove orphan</button>'
+                ? '<button class="button button-inline danger" type="submit" name="navigation_order_action" value="remove:' . \eel_accounts\Support\Utf8::html($pageKey) . '">Remove orphan</button>'
                 : '';
             $topbarChecked = isset($topbarDisabledLookup[$pageKey]) ? '' : ' checked';
 
             $html .= '<div class="settings-order-row">
-                <input type="hidden" name="navigation_order_keys[]" value="' . HelperFramework::escape($pageKey) . '">
+                <input type="hidden" name="navigation_order_keys[]" value="' . \eel_accounts\Support\Utf8::html($pageKey) . '">
                 <div class="settings-order-label">
-                    <strong>' . HelperFramework::escape((string)$row['label']) . '</strong>
+                    <strong>' . \eel_accounts\Support\Utf8::html((string)$row['label']) . '</strong>
                     ' . $orphanBadge . '
                 </div>
                 <div class="settings-order-actions">
-                    <label class="settings-order-topbar-toggle" for="settings-topbar-enabled-' . HelperFramework::escape($pageKey) . '">
-                        <input id="settings-topbar-enabled-' . HelperFramework::escape($pageKey) . '" name="topbar_enabled_pages[]" type="checkbox" value="' . HelperFramework::escape($pageKey) . '" data-submit-on-change="true"' . $topbarChecked . '>
+                    <label class="settings-order-topbar-toggle" for="settings-topbar-enabled-' . \eel_accounts\Support\Utf8::html($pageKey) . '">
+                        <input id="settings-topbar-enabled-' . \eel_accounts\Support\Utf8::html($pageKey) . '" name="topbar_enabled_pages[]" type="checkbox" value="' . \eel_accounts\Support\Utf8::html($pageKey) . '" data-submit-on-change="true"' . $topbarChecked . '>
                         <span>Topbar</span>
                     </label>
-                    <button class="button button-inline" type="' . ($isFirst ? 'button' : 'submit') . '" name="navigation_order_action" value="up:' . HelperFramework::escape($pageKey) . '"' . ($isFirst ? ' disabled' : '') . ' title="Move up" aria-label="Move ' . HelperFramework::escape((string)$row['label']) . ' up">+</button>
-                    <button class="button button-inline" type="' . ($isLast ? 'button' : 'submit') . '" name="navigation_order_action" value="down:' . HelperFramework::escape($pageKey) . '"' . ($isLast ? ' disabled' : '') . ' title="Move down" aria-label="Move ' . HelperFramework::escape((string)$row['label']) . ' down">-</button>
+                    <button class="button button-inline" type="' . ($isFirst ? 'button' : 'submit') . '" name="navigation_order_action" value="up:' . \eel_accounts\Support\Utf8::html($pageKey) . '"' . ($isFirst ? ' disabled' : '') . ' title="Move up" aria-label="Move ' . \eel_accounts\Support\Utf8::html((string)$row['label']) . ' up">+</button>
+                    <button class="button button-inline" type="' . ($isLast ? 'button' : 'submit') . '" name="navigation_order_action" value="down:' . \eel_accounts\Support\Utf8::html($pageKey) . '"' . ($isLast ? ' disabled' : '') . ' title="Move down" aria-label="Move ' . \eel_accounts\Support\Utf8::html((string)$row['label']) . ' down">-</button>
                     ' . $removeButton . '
                 </div>
             </div>';
@@ -272,8 +272,8 @@ final class _application_settingsCard extends CardBaseFramework
     private function textField(string $id, string $label, string $name, string $value): string
     {
         return '<div class="form-row half">
-            <label for="' . HelperFramework::escape($id) . '">' . HelperFramework::escape($label) . '</label>
-            <input class="input" id="' . HelperFramework::escape($id) . '" name="' . HelperFramework::escape($name) . '" type="text" value="' . HelperFramework::escape($value) . '">
+            <label for="' . \eel_accounts\Support\Utf8::html($id) . '">' . \eel_accounts\Support\Utf8::html($label) . '</label>
+            <input class="input" id="' . \eel_accounts\Support\Utf8::html($id) . '" name="' . \eel_accounts\Support\Utf8::html($name) . '" type="text" value="' . \eel_accounts\Support\Utf8::html($value) . '">
         </div>';
     }
 
@@ -282,7 +282,7 @@ final class _application_settingsCard extends CardBaseFramework
         return '<div class="form-row half">
             <label for="settings-vendor-public-ip">Vendor public IP</label>
             <div class="input-action-row">
-                <input class="input" id="settings-vendor-public-ip" name="antifraud_vendor_public_ip" type="text" value="' . HelperFramework::escape($value) . '">
+                <input class="input" id="settings-vendor-public-ip" name="antifraud_vendor_public_ip" type="text" value="' . \eel_accounts\Support\Utf8::html($value) . '">
                 <button class="button button-inline primary" type="submit" name="lookup_vendor_public_ip" value="1" data-processing-text="Looking up" data-processing-state="disabled">Lookup IP</button>
             </div>
         </div>';
@@ -292,7 +292,7 @@ final class _application_settingsCard extends CardBaseFramework
     {
         $selected = strcasecmp($value, $currentValue) === 0 ? ' selected' : '';
 
-        return '<option value="' . HelperFramework::escape($value) . '"' . $selected . '>' . HelperFramework::escape($label) . '</option>';
+        return '<option value="' . \eel_accounts\Support\Utf8::html($value) . '"' . $selected . '>' . \eel_accounts\Support\Utf8::html($label) . '</option>';
     }
 
     private function cookieSecureDisplayValue(mixed $value): string
@@ -320,7 +320,7 @@ final class _application_settingsCard extends CardBaseFramework
         $html = '';
 
         foreach ((array)($context['page']['page_cards'] ?? []) as $cardKey) {
-            $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+            $html .= '<input type="hidden" name="cards[]" value="' . \eel_accounts\Support\Utf8::html((string)$cardKey) . '">';
         }
 
         return $html;

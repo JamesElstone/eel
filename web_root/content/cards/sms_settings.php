@@ -42,7 +42,7 @@ final class _sms_settingsCard extends CardBaseFramework
         return '<form method="post" action="?page=settings" data-ajax="true" class="form-grid">
             ' . $this->hiddenFields($context) . '
             <input type="hidden" name="card_action" value="SmsSettings">
-            <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
+            <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
             <fieldset class="form-row full settings-fieldset">
                 <legend>SMS API</legend>
                 <label class="checkbox-item" for="sms-enabled">
@@ -66,19 +66,19 @@ final class _sms_settingsCard extends CardBaseFramework
                 </div>
             </fieldset>
         </form>
-        <form id="' . HelperFramework::escape($testFormId) . '" method="post" action="?page=settings" data-ajax="true">
+        <form id="' . \eel_accounts\Support\Utf8::html($testFormId) . '" method="post" action="?page=settings" data-ajax="true">
             ' . $this->hiddenFields($context) . '
             <input type="hidden" name="card_action" value="SmsTest">
-            <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
+            <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
         </form>';
     }
 
     private function input(string $id, string $label, string $name, string $value, string $type = 'text', bool $full = false, string $placeholder = '', string $hint = ''): string
     {
         return '<div class="form-row ' . ($full ? 'full' : 'half') . '">
-            <label for="' . HelperFramework::escape($id) . '">' . HelperFramework::escape($label) . '</label>
-            ' . ($hint !== '' ? '<small class="helper">' . HelperFramework::escape($hint) . '</small>' : '') . '
-            <input class="input" id="' . HelperFramework::escape($id) . '" name="' . HelperFramework::escape($name) . '" type="' . HelperFramework::escape($type) . '" value="' . HelperFramework::escape($value) . '"' . ($placeholder !== '' ? ' placeholder="' . HelperFramework::escape($placeholder) . '"' : '') . '>
+            <label for="' . \eel_accounts\Support\Utf8::html($id) . '">' . \eel_accounts\Support\Utf8::html($label) . '</label>
+            ' . ($hint !== '' ? '<small class="helper">' . \eel_accounts\Support\Utf8::html($hint) . '</small>' : '') . '
+            <input class="input" id="' . \eel_accounts\Support\Utf8::html($id) . '" name="' . \eel_accounts\Support\Utf8::html($name) . '" type="' . \eel_accounts\Support\Utf8::html($type) . '" value="' . \eel_accounts\Support\Utf8::html($value) . '"' . ($placeholder !== '' ? ' placeholder="' . \eel_accounts\Support\Utf8::html($placeholder) . '"' : '') . '>
         </div>';
     }
 
@@ -86,7 +86,7 @@ final class _sms_settingsCard extends CardBaseFramework
     {
         $html = '';
         foreach ((array)($context['page']['page_cards'] ?? []) as $cardKey) {
-            $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+            $html .= '<input type="hidden" name="cards[]" value="' . \eel_accounts\Support\Utf8::html((string)$cardKey) . '">';
         }
 
         return $html;
@@ -94,10 +94,10 @@ final class _sms_settingsCard extends CardBaseFramework
 
     private function testButton(string $disabledReason, string $formId): string
     {
-        $formAttribute = ' form="' . HelperFramework::escape($formId) . '"';
+        $formAttribute = ' form="' . \eel_accounts\Support\Utf8::html($formId) . '"';
         if ($disabledReason !== '') {
-            return '<span title="' . HelperFramework::escape($disabledReason) . '">
-                <button class="button" type="submit"' . $formAttribute . ' disabled title="' . HelperFramework::escape($disabledReason) . '">Test SMS Gateway</button>
+            return '<span title="' . \eel_accounts\Support\Utf8::html($disabledReason) . '">
+                <button class="button" type="submit"' . $formAttribute . ' disabled title="' . \eel_accounts\Support\Utf8::html($disabledReason) . '">Test SMS Gateway</button>
             </span>';
         }
 

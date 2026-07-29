@@ -38,7 +38,7 @@ final class _pl_net_profit_bridgeCard extends CardBaseFramework
         ];
         $html = '';
         foreach ($rows as $row) {
-            $html .= '<tr><td>' . ($row[2] === 'strong' ? '<strong>' : '') . HelperFramework::escape((string)$row[0]) . ($row[2] === 'strong' ? '</strong>' : '') . '</td><td>' . HelperFramework::escape($this->money($companySettings, $row[1])) . '</td></tr>';
+            $html .= '<tr><td>' . ($row[2] === 'strong' ? '<strong>' : '') . \eel_accounts\Support\Utf8::html((string)$row[0]) . ($row[2] === 'strong' ? '</strong>' : '') . '</td><td>' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $row[1])) . '</td></tr>';
         }
         return '<div class="table-scroll"><table><tbody>' . $html . '</tbody></table></div>';
     }

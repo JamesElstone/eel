@@ -72,17 +72,17 @@ final class _tax_thresholds_vatCard extends CardBaseFramework
 
     private function table(array $rules): TableFramework
     {
-        return TableFramework::make($this->key(), $rules)
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $rules)
             ->filename('hmrc-vat-thresholds')
             ->exportLimit(5000)
             ->empty('No HMRC VAT thresholds are stored. Use Import Live HMRC VAT Thresholds to populate this table.')
             ->classes(wrapperClass: 'table-scroll tax-thresholds-vat-table')
-            ->column('period', 'Period', html: fn(array $row): string => HelperFramework::escape($this->period($row)), export: fn(array $row): string => $this->period($row))
-            ->column('threshold_type', 'Type', html: fn(array $row): string => HelperFramework::escape($this->typeLabel($row)), export: fn(array $row): string => $this->typeLabel($row))
+            ->column('period', 'Period', html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->period($row)), export: fn(array $row): string => $this->period($row))
+            ->column('threshold_type', 'Type', html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->typeLabel($row)), export: fn(array $row): string => $this->typeLabel($row))
             ->column(
                 'registration_threshold',
                 'Registration Threshold / Annual Limit',
-                html: fn(array $row): string => HelperFramework::escape($this->money($row['registration_threshold'] ?? null)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($row['registration_threshold'] ?? null)),
                 export: static fn(array $row): string => ($row['registration_threshold'] ?? null) === null ? '' : number_format((float)$row['registration_threshold'], 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -90,7 +90,7 @@ final class _tax_thresholds_vatCard extends CardBaseFramework
             ->column(
                 'deregistration_threshold',
                 'Deregistration Threshold',
-                html: fn(array $row): string => HelperFramework::escape($this->money($row['deregistration_threshold'] ?? null)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($row['deregistration_threshold'] ?? null)),
                 export: static fn(array $row): string => ($row['deregistration_threshold'] ?? null) === null ? '' : number_format((float)$row['deregistration_threshold'], 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -116,7 +116,7 @@ final class _tax_thresholds_vatCard extends CardBaseFramework
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="TaxThresholdsVat">'
             . '<input type="hidden" name="intent" value="refresh_hmrc_vat_thresholds">'
-            . '<button class="button ' . ($empty ? 'danger' : 'primary') . '" type="submit">' . HelperFramework::escape($label) . '</button>'
+            . '<button class="button ' . ($empty ? 'danger' : 'primary') . '" type="submit">' . \eel_accounts\Support\Utf8::html($label) . '</button>'
             . '</form>';
     }
 
@@ -127,9 +127,9 @@ final class _tax_thresholds_vatCard extends CardBaseFramework
         }
         $row = $rules[0];
         $url = trim((string)($row['source_url'] ?? \eel_accounts\Service\VatThresholdRuleService::NOTICE_URL));
-        return '<div class="helper">Source updated: ' . HelperFramework::escape((string)($row['source_updated_at'] ?? 'Unknown'))
-            . '. Checked: ' . HelperFramework::escape((string)($row['source_checked_at'] ?? 'Unknown'))
-            . '. <a class="button button-inline" href="' . HelperFramework::escape($url) . '" target="_blank" rel="noopener noreferrer">HMRC - VAT Thresholds</a></div>';
+        return '<div class="helper">Source updated: ' . \eel_accounts\Support\Utf8::html((string)($row['source_updated_at'] ?? 'Unknown'))
+            . '. Checked: ' . \eel_accounts\Support\Utf8::html((string)($row['source_checked_at'] ?? 'Unknown'))
+            . '. <a class="button button-inline" href="' . \eel_accounts\Support\Utf8::html($url) . '" target="_blank" rel="noopener noreferrer">HMRC - VAT Thresholds</a></div>';
     }
 
     private function auditWarnings(array $rules): string
@@ -142,7 +142,7 @@ final class _tax_thresholds_vatCard extends CardBaseFramework
             return '';
         }
         return '<div class="helper"><strong>Source audit notes</strong><ul><li>'
-            . implode('</li><li>', array_map(static fn(string $note): string => HelperFramework::escape($note), $notes))
+            . implode('</li><li>', array_map(static fn(string $note): string => \eel_accounts\Support\Utf8::html($note), $notes))
             . '</li></ul></div>';
     }
 

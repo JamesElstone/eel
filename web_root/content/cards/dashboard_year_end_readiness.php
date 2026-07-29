@@ -120,10 +120,10 @@ final class _dashboard_year_end_readinessCard extends CardBaseFramework
 
     private function statCard(string $label, string $value, string $foot, string $state): string
     {
-        return '<article class="card stat-card stat-card-status-' . HelperFramework::escape($state) . '">
-            <div class="eyebrow">' . HelperFramework::escape($label) . '</div>
-            <div class="stat-value">' . HelperFramework::escape($value) . '</div>
-            <div class="stat-foot">' . HelperFramework::escape($foot) . '</div>
+        return '<article class="card stat-card stat-card-status-' . \eel_accounts\Support\Utf8::html($state) . '">
+            <div class="eyebrow">' . \eel_accounts\Support\Utf8::html($label) . '</div>
+            <div class="stat-value">' . \eel_accounts\Support\Utf8::html($value) . '</div>
+            <div class="stat-foot">' . \eel_accounts\Support\Utf8::html($foot) . '</div>
         </article>';
     }
 

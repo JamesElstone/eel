@@ -92,7 +92,7 @@ final class IxbrlAccountingService
                     'export_type' => 'filing_export',
                     'taxonomy_profile' => IxbrlTaxonomyProfileService::PROFILE,
                     'validation_status' => 'passed',
-                    'validation_errors_json' => json_encode([], JSON_UNESCAPED_SLASHES),
+                    'validation_errors_json' => \eel_accounts\Support\Utf8::json([], JSON_UNESCAPED_SLASHES),
                     'external_validation_status' => 'not_validated',
                     'filename' => $filename,
                     'path' => $path,
@@ -144,7 +144,7 @@ final class IxbrlAccountingService
                     'status' => 'failed',
                     'taxonomy_profile' => IxbrlTaxonomyProfileService::PROFILE,
                     'validation_status' => 'failed',
-                    'errors' => json_encode([$exception->getMessage()], JSON_UNESCAPED_SLASHES),
+                    'errors' => \eel_accounts\Support\Utf8::json([$exception->getMessage()], JSON_UNESCAPED_SLASHES),
                     'external_validation_status' => 'not_validated',
                     'error_message' => $exception->getMessage(),
                     'id' => (int)$run['id'],
@@ -1639,6 +1639,6 @@ CSS;
 
     private function e(string $value): string
     {
-        return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        return \eel_accounts\Support\Utf8::html($value);
     }
 }

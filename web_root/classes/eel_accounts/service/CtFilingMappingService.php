@@ -514,7 +514,7 @@ final class CtFilingMappingService
         \InterfaceDB::prepareExecute(
             'UPDATE ct_filing_mapping_profiles SET status = :status, compatibility_status = :result,
              compatibility_json = :json, validated_by = :actor, validated_at = CURRENT_TIMESTAMP WHERE id = :id',
-            ['status' => $errors === [] ? 'validated' : 'draft', 'result' => $result, 'json' => json_encode($inventory, JSON_UNESCAPED_SLASHES), 'actor' => $actor, 'id' => $profileId]
+            ['status' => $errors === [] ? 'validated' : 'draft', 'result' => $result, 'json' => \eel_accounts\Support\Utf8::json($inventory, JSON_UNESCAPED_SLASHES), 'actor' => $actor, 'id' => $profileId]
         );
         $this->refreshContentHash($profileId);
         $this->audit($profileId, 'validated', $actor, $inventory);
@@ -784,7 +784,7 @@ final class CtFilingMappingService
             unset($row['id'], $row['created_at'], $row['updated_at']);
         }
         unset($row);
-        \InterfaceDB::prepareExecute('UPDATE ct_filing_mapping_profiles SET content_hash = :hash WHERE id = :id', ['hash' => hash('sha256', (string)json_encode($rows, JSON_UNESCAPED_SLASHES)), 'id' => $profileId]);
+        \InterfaceDB::prepareExecute('UPDATE ct_filing_mapping_profiles SET content_hash = :hash WHERE id = :id', ['hash' => hash('sha256', (string)\eel_accounts\Support\Utf8::json($rows, JSON_UNESCAPED_SLASHES)), 'id' => $profileId]);
     }
 
     private function lastInsertId(): int
@@ -808,7 +808,7 @@ final class CtFilingMappingService
     {
         \InterfaceDB::prepareExecute(
             'INSERT INTO ct_filing_mapping_events (profile_id, event_type, actor, detail_json) VALUES (:profile_id, :event_type, :actor, :details)',
-            ['profile_id' => $profileId, 'event_type' => $event, 'actor' => $actor, 'details' => json_encode($details, JSON_UNESCAPED_SLASHES)]
+            ['profile_id' => $profileId, 'event_type' => $event, 'actor' => $actor, 'details' => \eel_accounts\Support\Utf8::json($details, JSON_UNESCAPED_SLASHES)]
         );
     }
 

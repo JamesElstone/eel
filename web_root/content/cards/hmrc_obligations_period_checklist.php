@@ -27,10 +27,10 @@ final class _hmrc_obligations_period_checklistCard extends CardBaseFramework
             $complete = !empty($item['complete']);
             $html .= '<div class="summary-card">
                 <div class="status-head">
-                    <div class="summary-label">' . HelperFramework::escape((string)($item['label'] ?? 'Checklist item')) . '</div>
+                    <div class="summary-label">' . \eel_accounts\Support\Utf8::html((string)($item['label'] ?? 'Checklist item')) . '</div>
                     <span class="badge ' . ($complete ? 'success' : 'warning') . '">' . ($complete ? 'Done' : 'Needs work') . '</span>
                 </div>
-                <div class="helper">' . HelperFramework::escape((string)($item['detail'] ?? '')) . '</div>
+                <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($item['detail'] ?? '')) . '</div>
             </div>';
         }
 

@@ -42,9 +42,9 @@ final class YearEndApprovalRenderer
 
         return '<section class="panel-soft success settings-stack">
             <h3>Year End Confirmation</h3>
-            ' . ($note !== '' ? '<div class="summary-value">' . \HelperFramework::escape($note) . '</div>' : '') . '
+            ' . ($note !== '' ? '<div class="summary-value">' . \eel_accounts\Support\Utf8::html($note) . '</div>' : '') . '
             ' . self::approvedQuestionSummary((array)($options['questions'] ?? []), (array)($options['answers'] ?? [])) . '
-            <div class="stat-foot">' . \HelperFramework::escape(self::approvedFoot(
+            <div class="stat-foot">' . \eel_accounts\Support\Utf8::html(self::approvedFoot(
                 (string)($options['approvedAt'] ?? $options['acknowledgedAt'] ?? ''),
                 (string)($options['approvedBy'] ?? $options['acknowledgedBy'] ?? '')
             )) . '</div>
@@ -84,7 +84,7 @@ final class YearEndApprovalRenderer
         $clientScopeGate = !empty($options['clientScopeGate']);
         unset($approveFields[$checkboxName]);
         $buttonAttributes = $disabled
-            ? ' disabled' . ($disabledReason !== '' ? ' title="' . \HelperFramework::escape($disabledReason) . '"' : '')
+            ? ' disabled' . ($disabledReason !== '' ? ' title="' . \eel_accounts\Support\Utf8::html($disabledReason) . '"' : '')
             : ' disabled data-year-end-ack-submit';
         $confirmationText = trim((string)($options['confirmationText'] ?? ''));
         if ($confirmationText === '') {
@@ -101,11 +101,11 @@ final class YearEndApprovalRenderer
                         . self::questionBlockingNotice($questions)
                     : '') . '
                 <label class="checkbox-row full">
-                    <input type="checkbox" name="' . \HelperFramework::escape($checkboxName) . '" value="1" required data-year-end-ack-checkbox' . ($disabled ? ' disabled' : '') . '>
-                    <span>' . \HelperFramework::escape($confirmationText) . '</span>
+                    <input type="checkbox" name="' . \eel_accounts\Support\Utf8::html($checkboxName) . '" value="1" required data-year-end-ack-checkbox' . ($disabled ? ' disabled' : '') . '>
+                    <span>' . \eel_accounts\Support\Utf8::html($confirmationText) . '</span>
                 </label>
                 ' . self::noteField($options, $noteMode, $disabled) . '
-                ' . ($disabledReason !== '' ? '<div class="helper full">' . \HelperFramework::escape($disabledReason) . '</div>' : '') . '
+                ' . ($disabledReason !== '' ? '<div class="helper full">' . \eel_accounts\Support\Utf8::html($disabledReason) . '</div>' : '') . '
                 <div class="actions-row"><button class="button primary" type="submit"' . $buttonAttributes . '>Approve for Year End</button></div>
             </form>
         </section>';
@@ -128,9 +128,9 @@ final class YearEndApprovalRenderer
 
         return '<section class="panel-soft warn full settings-stack">
             <h3>Previous Year End Confirmation</h3>
-            <div class="summary-value">' . \HelperFramework::escape($message) . '</div>
-            ' . ($note !== '' ? '<div class="helper">Original note: ' . \HelperFramework::escape($note) . '</div>' : '') . '
-            <div class="stat-foot">' . \HelperFramework::escape(self::approvedFoot($approvedAt, $approvedBy)) . '</div>
+            <div class="summary-value">' . \eel_accounts\Support\Utf8::html($message) . '</div>
+            ' . ($note !== '' ? '<div class="helper">Original note: ' . \eel_accounts\Support\Utf8::html($note) . '</div>' : '') . '
+            <div class="stat-foot">' . \eel_accounts\Support\Utf8::html(self::approvedFoot($approvedAt, $approvedBy)) . '</div>
         </section>';
     }
 
@@ -157,8 +157,8 @@ final class YearEndApprovalRenderer
 
         $noteId = trim((string)($options['noteId'] ?? self::fieldId($noteName)));
         return '<div class="form-row full">
-            <label for="' . \HelperFramework::escape($noteId) . '">Confirmation notes</label>
-            <textarea class="input" id="' . \HelperFramework::escape($noteId) . '" name="' . \HelperFramework::escape($noteName) . '" rows="3"' . ($noteMode === self::NOTE_REQUIRED ? ' required' : '') . ($disabled ? ' disabled' : '') . '></textarea>
+            <label for="' . \eel_accounts\Support\Utf8::html($noteId) . '">Confirmation notes</label>
+            <textarea class="input" id="' . \eel_accounts\Support\Utf8::html($noteId) . '" name="' . \eel_accounts\Support\Utf8::html($noteName) . '" rows="3"' . ($noteMode === self::NOTE_REQUIRED ? ' required' : '') . ($disabled ? ' disabled' : '') . '></textarea>
         </div>';
     }
 
@@ -181,24 +181,24 @@ final class YearEndApprovalRenderer
             $required = !empty($question['required']) ? ' required' : '';
             $disabledAttribute = $disabled ? ' disabled' : '';
             if ((string)($question['type'] ?? '') === 'text') {
-                $html .= '<div class="form-row full year-end-approval-question"><label>' . \HelperFramework::escape($prompt)
-                    . '<textarea class="input" name="' . \HelperFramework::escape($field) . '" rows="3"'
-                    . $required . $disabledAttribute . '>' . \HelperFramework::escape((string)$value) . '</textarea></label></div>';
+                $html .= '<div class="form-row full year-end-approval-question"><label>' . \eel_accounts\Support\Utf8::html($prompt)
+                    . '<textarea class="input" name="' . \eel_accounts\Support\Utf8::html($field) . '" rows="3"'
+                    . $required . $disabledAttribute . '>' . \eel_accounts\Support\Utf8::html((string)$value) . '</textarea></label></div>';
                 continue;
             }
 
             $options = (array)($question['options'] ?? []);
             $requiredValue = array_key_exists('required_value', $question)
-                ? ' data-year-end-approval-required-value="' . \HelperFramework::escape((string)$question['required_value']) . '"'
+                ? ' data-year-end-approval-required-value="' . \eel_accounts\Support\Utf8::html((string)$question['required_value']) . '"'
                 : '';
-            $html .= '<fieldset class="panel-soft full year-end-approval-question"' . $requiredValue . '><legend>' . \HelperFramework::escape($prompt) . '</legend><div class="actions-row">';
+            $html .= '<fieldset class="panel-soft full year-end-approval-question"' . $requiredValue . '><legend>' . \eel_accounts\Support\Utf8::html($prompt) . '</legend><div class="actions-row">';
             foreach ($options as $optionValue => $optionLabel) {
                 $inputId = self::fieldId($id . '-' . (string)$optionValue);
-                $html .= '<label for="' . \HelperFramework::escape($inputId) . '"><input id="'
-                    . \HelperFramework::escape($inputId) . '" type="radio" name="' . \HelperFramework::escape($field)
-                    . '" value="' . \HelperFramework::escape((string)$optionValue) . '"'
+                $html .= '<label for="' . \eel_accounts\Support\Utf8::html($inputId) . '"><input id="'
+                    . \eel_accounts\Support\Utf8::html($inputId) . '" type="radio" name="' . \eel_accounts\Support\Utf8::html($field)
+                    . '" value="' . \eel_accounts\Support\Utf8::html((string)$optionValue) . '"'
                     . ((string)$value === (string)$optionValue ? ' checked' : '') . $required . $disabledAttribute . '> '
-                    . \HelperFramework::escape((string)$optionLabel) . '</label>';
+                    . \eel_accounts\Support\Utf8::html((string)$optionLabel) . '</label>';
             }
             $html .= '</div></fieldset>';
         }
@@ -230,8 +230,8 @@ final class YearEndApprovalRenderer
             $options = (array)($question['options'] ?? []);
             $answer = (string)$answers[$id];
             $label = (string)($options[$answer] ?? $answer);
-            $rows .= '<tr><td>' . \HelperFramework::escape((string)($question['prompt'] ?? $id)) . '</td><td>'
-                . \HelperFramework::escape($label) . '</td></tr>';
+            $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)($question['prompt'] ?? $id)) . '</td><td>'
+                . \eel_accounts\Support\Utf8::html($label) . '</td></tr>';
         }
         return $rows !== ''
             ? '<div class="table-scroll-mini"><table class="table-condensed"><thead><tr><th>Question</th><th>Answer</th></tr></thead><tbody>'
@@ -265,7 +265,7 @@ final class YearEndApprovalRenderer
             return $html;
         }
 
-        return '<input type="hidden" name="' . \HelperFramework::escape($name) . '" value="' . \HelperFramework::escape((string)$value) . '">';
+        return '<input type="hidden" name="' . \eel_accounts\Support\Utf8::html($name) . '" value="' . \eel_accounts\Support\Utf8::html((string)$value) . '">';
     }
 
     private static function approvedFoot(string $approvedAt, string $approvedBy): string

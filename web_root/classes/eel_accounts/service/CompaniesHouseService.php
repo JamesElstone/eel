@@ -220,7 +220,7 @@ final class CompaniesHouseService
             'active_director_count' => $directorCount,
             'total_results' => $totalResults,
         ];
-        $json = json_encode($payload, JSON_UNESCAPED_SLASHES);
+        $json = \eel_accounts\Support\Utf8::json($payload, JSON_UNESCAPED_SLASHES);
 
         return $json === false ? null : $json;
     }

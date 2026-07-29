@@ -42,7 +42,7 @@ final class _incorporation_share_allocationCard extends CardBaseFramework
             return '<div class="helper">Select a company before allocating shares.</div>';
         }
         if (empty($summary['available'])) {
-            return '<div class="helper">' . HelperFramework::escape((string)(($summary['errors'] ?? [])[0] ?? 'Share allocation is unavailable.')) . '</div>';
+            return '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)(($summary['errors'] ?? [])[0] ?? 'Share allocation is unavailable.')) . '</div>';
         }
 
         $parties = (array)$summary['parties'];
@@ -61,11 +61,11 @@ final class _incorporation_share_allocationCard extends CardBaseFramework
         $rows = '';
         foreach ($parties as $party) {
             foreach ((array)($party['holdings'] ?? []) as $holding) {
-                $rows .= '<tr><td>' . HelperFramework::escape((string)$party['legal_name']) . '</td>'
-                    . '<td>' . HelperFramework::escape((string)$holding['share_class']) . '</td>'
+                $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)$party['legal_name']) . '</td>'
+                    . '<td>' . \eel_accounts\Support\Utf8::html((string)$holding['share_class']) . '</td>'
                     . '<td class="numeric">' . (int)$holding['quantity'] . '</td>'
-                    . '<td>' . HelperFramework::escape(HelperFramework::displayDate((string)($holding['effective_from'] ?? ''))) . '</td>'
-                    . '<td>' . HelperFramework::escape(
+                    . '<td>' . \eel_accounts\Support\Utf8::html(HelperFramework::displayDate((string)($holding['effective_from'] ?? ''))) . '</td>'
+                    . '<td>' . \eel_accounts\Support\Utf8::html(
                         trim((string)($holding['effective_to'] ?? '')) !== ''
                             ? HelperFramework::displayDate((string)$holding['effective_to'])
                             : 'Current'
@@ -110,7 +110,7 @@ final class _incorporation_share_allocationCard extends CardBaseFramework
     {
         $html = '';
         foreach ($parties as $party) {
-            $html .= '<option value="' . (int)$party['id'] . '">' . HelperFramework::escape((string)$party['legal_name']) . '</option>';
+            $html .= '<option value="' . (int)$party['id'] . '">' . \eel_accounts\Support\Utf8::html((string)$party['legal_name']) . '</option>';
         }
         return $html;
     }
@@ -132,7 +132,7 @@ final class _incorporation_share_allocationCard extends CardBaseFramework
             if ($allocated === $allotted) {
                 continue;
             }
-            $html .= '<option value="' . $classId . '" data-remaining-shares="' . ($allotted - $allocated) . '">' . HelperFramework::escape(
+            $html .= '<option value="' . $classId . '" data-remaining-shares="' . ($allotted - $allocated) . '">' . \eel_accounts\Support\Utf8::html(
                 $issueDate . ' ' . (string)$class['share_class'] . ' '
                 . $allocated . ' of ' . $allotted
             ) . '</option>';

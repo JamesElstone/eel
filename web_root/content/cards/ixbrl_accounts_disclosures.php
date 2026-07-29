@@ -93,7 +93,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
 
         if (empty($result['available'])) {
             $errors = (array)($result['errors'] ?? ['Select a valid company and accounting period.']);
-            return '<div class="standout helper">' . HelperFramework::escape(implode(' ', $errors)) . '</div>';
+            return '<div class="standout helper">' . \eel_accounts\Support\Utf8::html(implode(' ', $errors)) . '</div>';
         }
 
         $complete = !empty($result['complete']);
@@ -136,13 +136,13 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
             }
             $directorOptions .= '<option value="' . $directorId . '"'
                 . ($selectedDirectorId === $directorId ? ' selected' : '')
-                . '>' . HelperFramework::escape($directorName) . '</option>';
+                . '>' . \eel_accounts\Support\Utf8::html($directorName) . '</option>';
         }
         $sourceSummary = $this->sourceSummary($suggestionSources, !empty($result['stored']));
         $profileErrors = '';
         foreach ((array)($result['profile_errors'] ?? []) as $profileError) {
             $profileErrors .= '<div class="standout helper">'
-                . HelperFramework::escape((string)$profileError)
+                . \eel_accounts\Support\Utf8::html((string)$profileError)
                 . '</div>';
         }
         $dormancy = (array)($result['dormancy'] ?? []);
@@ -181,7 +181,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
             $sourceUrl = trim((string)($smallCompanies['threshold_source'] ?? ''));
             $source = $sourceUrl === ''
                 ? 'Not recorded'
-                : '<a class="button" href="' . HelperFramework::escape($sourceUrl) . '" target="_blank" rel="noopener noreferrer">GOV.UK guidance</a>';
+                : '<a class="button" href="' . \eel_accounts\Support\Utf8::html($sourceUrl) . '" target="_blank" rel="noopener noreferrer">GOV.UK guidance</a>';
             $thresholdStart = trim((string)($thresholdPeriod['start'] ?? ''));
             $thresholdEnd = trim((string)($thresholdPeriod['end'] ?? ''));
             $thresholdDates = $formatCompanyDate($thresholdStart) . ' to '
@@ -191,15 +191,15 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                 <th>FRS 105 tests</th><th>Turnover</th><th>Balance sheet total</th><th>Average employees</th><th>Source</th><th>Validity Period</th><th>Last Checked</th>
             </tr></thead><tbody><tr>
                 <td>' . (int)($smallCompanies['pass_count'] ?? 0) . ' of 3 passed; all required</td>
-                <td>' . HelperFramework::escape($testValue('turnover')) . '<div class="helper">Base ' . HelperFramework::escape($money($baseThresholds['turnover'] ?? 0)) . '; ' . (int)($smallCompanies['period_days'] ?? 0) . ' days</div></td>
-                <td>' . HelperFramework::escape($testValue('balance_sheet_total')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($testValue('turnover')) . '<div class="helper">Base ' . \eel_accounts\Support\Utf8::html($money($baseThresholds['turnover'] ?? 0)) . '; ' . (int)($smallCompanies['period_days'] ?? 0) . ' days</div></td>
+                <td>' . \eel_accounts\Support\Utf8::html($testValue('balance_sheet_total')) . '</td>
                 <td>' . (int)($metrics['employees'] ?? 0) . ' / ' . (int)($thresholds['employees'] ?? 0) . ' (' . (!empty($passes['employees']) ? 'Pass' : 'Fail') . ')</td>
                 <td>' . $source . '</td>
-                <td>' . HelperFramework::escape($thresholdDates) . '</td>
-                <td>' . HelperFramework::escape($checkedAt) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($thresholdDates) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($checkedAt) . '</td>
             </tr></tbody></table></div>';
         } else {
-            $smallCompaniesSummary = '<div class="helper">' . HelperFramework::escape((string)($smallCompanies['error'] ?? 'Enter the accounting figures and refresh to calculate this status.')) . '</div>';
+            $smallCompaniesSummary = '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)($smallCompanies['error'] ?? 'Enter the accounting figures and refresh to calculate this status.')) . '</div>';
         }
         $updatedAt = trim((string)($disclosures['updated_at'] ?? ''));
         $updatedBy = trim((string)($result['updated_by_display_name'] ?? ''));
@@ -226,7 +226,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                 </div>
                 ' . $sourceSummary . '
                 ' . ($missing !== []
-                    ? '<div class="helper">Still required: ' . HelperFramework::escape(implode(', ', $missing)) . '.</div>'
+                    ? '<div class="helper">Still required: ' . \eel_accounts\Support\Utf8::html(implode(', ', $missing)) . '.</div>'
                     : '') . '
                 ' . $profileErrors . '
             ' . $disclosureLockNotice . '
@@ -234,8 +234,8 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                     <div class="form-row full table-scroll">
                         <table><tbody>
                             <tr><th scope="row"><label>Accounting standard</label></th><td><input class="input" value="FRS 105" readonly' . $disabledAttribute . '></td></tr>
-                            <tr><th scope="row"><label for="ixbrl_average_number_employees">Average number of employees</label></th><td><input class="input" id="ixbrl_average_number_employees" name="average_number_employees" type="number" min="0" step="1" required value="' . HelperFramework::escape($this->nullableValue($display['average_number_employees'] ?? null)) . '" data-state-default="' . HelperFramework::escape($this->nullableValue($display['average_number_employees'] ?? null)) . '"' . $disabledAttribute . '></td></tr>
-                            <tr><th scope="row"><label for="ixbrl_accounts_approval_date">Accounts approval date</label></th><td><div class="actions-row actions-row-nowrap"><input class="input" id="ixbrl_accounts_approval_date" name="accounts_approval_date" type="date" required value="' . HelperFramework::escape((string)($display['accounts_approval_date'] ?? '')) . '" data-state-default="' . HelperFramework::escape((string)($display['accounts_approval_date'] ?? '')) . '"' . $disabledAttribute . '><button class="button primary" type="button" data-set-today-for="ixbrl_accounts_approval_date"' . $disabledAttribute . '>Today</button></div></td></tr>
+                            <tr><th scope="row"><label for="ixbrl_average_number_employees">Average number of employees</label></th><td><input class="input" id="ixbrl_average_number_employees" name="average_number_employees" type="number" min="0" step="1" required value="' . \eel_accounts\Support\Utf8::html($this->nullableValue($display['average_number_employees'] ?? null)) . '" data-state-default="' . \eel_accounts\Support\Utf8::html($this->nullableValue($display['average_number_employees'] ?? null)) . '"' . $disabledAttribute . '></td></tr>
+                            <tr><th scope="row"><label for="ixbrl_accounts_approval_date">Accounts approval date</label></th><td><div class="actions-row actions-row-nowrap"><input class="input" id="ixbrl_accounts_approval_date" name="accounts_approval_date" type="date" required value="' . \eel_accounts\Support\Utf8::html((string)($display['accounts_approval_date'] ?? '')) . '" data-state-default="' . \eel_accounts\Support\Utf8::html((string)($display['accounts_approval_date'] ?? '')) . '"' . $disabledAttribute . '><button class="button primary" type="button" data-set-today-for="ixbrl_accounts_approval_date"' . $disabledAttribute . '>Today</button></div></td></tr>
                             <tr>
                                 <th scope="row"><label for="ixbrl_approving_director_id">Director signing and approving the accounts</label></th>
                                 <td>
@@ -245,8 +245,8 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                                     <div class="helper">The selected officer’s name is used as the approving and signing director in the generated iXBRL.</div>
                                 </td>
                             </tr>
-                            <tr><th scope="row">Last updated on</th><td>' . HelperFramework::escape($updatedAtDisplay) . '</td></tr>
-                            <tr><th scope="row">Last updated by</th><td>' . HelperFramework::escape($updatedByDisplay) . '</td></tr>
+                            <tr><th scope="row">Last updated on</th><td>' . \eel_accounts\Support\Utf8::html($updatedAtDisplay) . '</td></tr>
+                            <tr><th scope="row">Last updated by</th><td>' . \eel_accounts\Support\Utf8::html($updatedByDisplay) . '</td></tr>
                         </tbody></table>
                     </div>
                     <div class="form-row full">
@@ -266,7 +266,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                                     $controlDisabled
                                 )
                                 . '</div>') . '
-                        <div class="helper">If a company is marked as not trading on ' . HelperFramework::escape($periodEndDisplay) . ', it automatically calculates Never Traded versus No Longer Trading status based on any historical Sales posted.</div>
+                        <div class="helper">If a company is marked as not trading on ' . \eel_accounts\Support\Utf8::html($periodEndDisplay) . ', it automatically calculates Never Traded versus No Longer Trading status based on any historical Sales posted.</div>
                     </div>
                     <div class="form-row full">
                         <div class="actions-row actions-row-nowrap ixbrl-core-details-actions">
@@ -281,13 +281,13 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                         <div class="status-head">
                             <h4 class="card-title">Was the company dormant for this accounting period?</h4>
                         </div>
-                        <div class="helper">Automatically calculated from posted credits to the configured Sales nominal. ' . HelperFramework::escape($dormancyDetail) . '</div>
-                        <div class="card-title">' . HelperFramework::escape($dormancyLabel) . '</div>
+                        <div class="helper">Automatically calculated from posted credits to the configured Sales nominal. ' . \eel_accounts\Support\Utf8::html($dormancyDetail) . '</div>
+                        <div class="card-title">' . \eel_accounts\Support\Utf8::html($dormancyLabel) . '</div>
                     </section>
                     <section class="panel-soft">
                         <div class="status-head">
                             <h4 class="card-title">Were these accounts prepared under the small companies regime?</h4>
-                            <span class="badge ' . ($smallCompaniesAvailable && !empty($smallCompanies['qualifies']) ? 'success' : 'danger') . '">' . HelperFramework::escape($smallCompaniesLabel) . '</span>
+                            <span class="badge ' . ($smallCompaniesAvailable && !empty($smallCompanies['qualifies']) ? 'success' : 'danger') . '">' . \eel_accounts\Support\Utf8::html($smallCompaniesLabel) . '</span>
                         </div>
                         <div class="ixbrl-small-companies-detail">
                             ' . $smallCompaniesSummary . '
@@ -359,14 +359,14 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         $evidence = '';
         if ($approval !== []) {
             $evidence = '<div class="helper">' . ($current ? 'Approval #' : 'Previous approval #') . (int)$approval['id']
-                . ' by ' . HelperFramework::escape((string)$approval['approved_by'])
-                . ' at ' . HelperFramework::escape((string)$approval['approved_at'])
+                . ' by ' . \eel_accounts\Support\Utf8::html((string)$approval['approved_by'])
+                . ' at ' . \eel_accounts\Support\Utf8::html((string)$approval['approved_at'])
                 . '; disclosure revision ' . (int)$approval['disclosure_revision']
-                . '; basis ' . HelperFramework::escape(substr((string)$approval['basis_hash'], 0, 16)) . '…</div>';
+                . '; basis ' . \eel_accounts\Support\Utf8::html(substr((string)$approval['basis_hash'], 0, 16)) . '…</div>';
         }
         $errors = '';
         foreach ((array)($status['errors'] ?? []) as $error) {
-            $errors .= '<div class="standout helper">' . HelperFramework::escape((string)$error) . '</div>';
+            $errors .= '<div class="standout helper">' . \eel_accounts\Support\Utf8::html((string)$error) . '</div>';
         }
         $disabled = empty($status['can_approve']) || $current || !$yearEndLocked
             ? ' disabled aria-disabled="true"'
@@ -374,7 +374,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
 
         return '<section class="panel-soft ixbrl-approval-panel">
             <div class="status-head"><h3 class="card-title">Disclosure Approval</h3><span class="badge ' . $badge . '">' . $label . '</span></div>
-            <div class="helper ixbrl-approval-detail">' . HelperFramework::escape($detail) . '</div>' . $evidence . $errors . '
+            <div class="helper ixbrl-approval-detail">' . \eel_accounts\Support\Utf8::html($detail) . '</div>' . $evidence . $errors . '
             <form method="post" action="?page=disclosures" data-ajax="true">
                 <input type="hidden" name="card_action" value="Ixbrl">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
@@ -405,7 +405,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
 
         $reasons = '<ul>';
         foreach ($errors as $error) {
-            $reasons .= '<li>' . HelperFramework::escape($error) . '</li>';
+            $reasons .= '<li>' . \eel_accounts\Support\Utf8::html($error) . '</li>';
         }
         $reasons .= '</ul>';
 
@@ -424,11 +424,11 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         $submitOnChange = $ajaxField ? ' data-submit-on-change="true"' : '';
 
         $fieldset = '<fieldset class="panel-soft">
-            <legend>' . HelperFramework::escape($label) . '</legend>
-            ' . ($helper !== '' ? '<div class="helper ixbrl-question-helper">' . HelperFramework::escape($helper) . '</div>' : '') . '
+            <legend>' . \eel_accounts\Support\Utf8::html($label) . '</legend>
+            ' . ($helper !== '' ? '<div class="helper ixbrl-question-helper">' . \eel_accounts\Support\Utf8::html($helper) . '</div>' : '') . '
             <div class="actions-row">
-                <label for="' . $yesId . '"><input id="' . $yesId . '" type="radio" name="' . HelperFramework::escape($name) . '" value="1" required' . ($normalised === 1 ? ' checked' : '') . ($disabled ? ' disabled aria-disabled="true"' : '') . $submitOnChange . '> Yes</label>
-                <label for="' . $noId . '"><input id="' . $noId . '" type="radio" name="' . HelperFramework::escape($name) . '" value="0" required' . ($normalised === 0 ? ' checked' : '') . ($disabled ? ' disabled aria-disabled="true"' : '') . $submitOnChange . '> No</label>
+                <label for="' . $yesId . '"><input id="' . $yesId . '" type="radio" name="' . \eel_accounts\Support\Utf8::html($name) . '" value="1" required' . ($normalised === 1 ? ' checked' : '') . ($disabled ? ' disabled aria-disabled="true"' : '') . $submitOnChange . '> Yes</label>
+                <label for="' . $noId . '"><input id="' . $noId . '" type="radio" name="' . \eel_accounts\Support\Utf8::html($name) . '" value="0" required' . ($normalised === 0 ? ' checked' : '') . ($disabled ? ' disabled aria-disabled="true"' : '') . $submitOnChange . '> No</label>
             </div>
         </fieldset>';
         if (!$ajaxField) {
@@ -441,7 +441,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                 <input type="hidden" name="intent" value="save_ixbrl_disclosure_field">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <input type="hidden" name="disclosure_field" value="' . HelperFramework::escape($name) . '">'
+                <input type="hidden" name="disclosure_field" value="' . \eel_accounts\Support\Utf8::html($name) . '">'
             . $fieldset
             . '</form>';
     }
@@ -465,7 +465,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                 continue;
             }
             $evidenceRows .= '<tr><th class="description" scope="row">'
-                . HelperFramework::escape((string)($row['director_name'] ?? 'Director'))
+                . \eel_accounts\Support\Utf8::html((string)($row['director_name'] ?? 'Director'))
                 . '</th><td class="amount">£'
                 . number_format((float)($row['advances'] ?? 0), 2)
                 . '</td></tr>';
@@ -477,7 +477,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
 
         return '<fieldset class="panel-soft">
             <legend>Director or Participant Advances and Credits requiring disclosure</legend>
-            <div class="helper">Automatically calculated from the chronological Director Loan Statement. ' . HelperFramework::escape($detail) . '</div>
+            <div class="helper">Automatically calculated from the chronological Director Loan Statement. ' . \eel_accounts\Support\Utf8::html($detail) . '</div>
             ' . $evidence . '
         </fieldset>';
     }
@@ -509,9 +509,9 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
 
     private function option(string $value, string $label, mixed $selected): string
     {
-        return '<option value="' . HelperFramework::escape($value) . '"'
+        return '<option value="' . \eel_accounts\Support\Utf8::html($value) . '"'
             . ((string)$selected === $value ? ' selected' : '')
-            . '>' . HelperFramework::escape($label) . '</option>';
+            . '>' . \eel_accounts\Support\Utf8::html($label) . '</option>';
     }
 
     private function sourceSummary(array $sources, bool $stored): string
@@ -530,7 +530,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         $filingDates = array_values(array_unique($filingDates));
 
         return '<div class="helper"><span class="badge info">Suggested</span> The form has been prefilled from the matching stored Companies House iXBRL filing'
-            . ($filingDates !== [] ? ' dated ' . HelperFramework::escape(implode(', ', $filingDates)) : '')
+            . ($filingDates !== [] ? ' dated ' . \eel_accounts\Support\Utf8::html(implode(', ', $filingDates)) : '')
             . '. Review the suggested core details and save them explicitly before facts can be built.</div>';
     }
 }

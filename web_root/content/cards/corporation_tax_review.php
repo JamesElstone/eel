@@ -32,7 +32,7 @@ final class _corporation_tax_reviewCard extends CardBaseFramework
     {
         $review = (array)($context['services']['corporationTaxReview'] ?? []);
         if (empty($review['available'])) {
-            return '<div class="helper">' . HelperFramework::escape((string)(($review['errors'] ?? [])[0] ?? 'Corporation Tax review is unavailable.')) . '</div>';
+            return '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)(($review['errors'] ?? [])[0] ?? 'Corporation Tax review is unavailable.')) . '</div>';
         }
         $items = (array)($review['items'] ?? []);
         if ($items === []) {
@@ -51,11 +51,11 @@ final class _corporation_tax_reviewCard extends CardBaseFramework
                 $options .= '<option value="' . $value . '"' . ($treatment === $value ? ' selected' : '') . '>' . $label . '</option>';
             }
             $guidance = trim((string)($item['guidance_url'] ?? '')) !== ''
-                ? '<a class="button button-inline" target="_blank" rel="noopener noreferrer" href="' . HelperFramework::escape((string)$item['guidance_url']) . '">BIM guidance</a>'
+                ? '<a class="button button-inline" target="_blank" rel="noopener noreferrer" href="' . \eel_accounts\Support\Utf8::html((string)$item['guidance_url']) . '">BIM guidance</a>'
                 : '';
             $source = trim((string)($item['source_url'] ?? '')) !== ''
-                ? '<a class="button button-inline" href="' . HelperFramework::escape((string)$item['source_url']) . '">' . HelperFramework::escape((string)$item['source_label']) . '</a>'
-                : HelperFramework::escape((string)$item['source_label']);
+                ? '<a class="button button-inline" href="' . \eel_accounts\Support\Utf8::html((string)$item['source_url']) . '">' . \eel_accounts\Support\Utf8::html((string)$item['source_label']) . '</a>'
+                : \eel_accounts\Support\Utf8::html((string)$item['source_label']);
             $form = '<form method="post" action="?page=corporation_tax" data-ajax="true" class="actions-row">'
                 . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
                 . '<input type="hidden" name="card_action" value="Tax"><input type="hidden" name="intent" value="save_line_tax_treatment">'
@@ -63,7 +63,7 @@ final class _corporation_tax_reviewCard extends CardBaseFramework
                 . '<input type="hidden" name="ct_period_id" value="' . $ctPeriodId . '"><input type="hidden" name="journal_line_id" value="' . (int)$item['journal_line_id'] . '">'
                 . '<select class="select" name="tax_treatment" required data-submit-on-change="true">' . $options . '</select></form>';
             $state = (string)($item['state'] ?? '') === 'resolved'
-                ? '<span class="badge success">' . HelperFramework::escape(ucfirst($treatment)) . '</span>'
+                ? '<span class="badge success">' . \eel_accounts\Support\Utf8::html(ucfirst($treatment)) . '</span>'
                 : '<span class="badge danger">Review required</span>';
             $history = (array)($item['decision_history'] ?? []);
             $historyHtml = '';
@@ -77,18 +77,18 @@ final class _corporation_tax_reviewCard extends CardBaseFramework
                         default => '<span class="badge">Historical</span>',
                     };
                     $rule = trim((string)($decision['rule_code'] ?? '') . ' ' . (string)($decision['rule_version'] ?? ''));
-                    $historyRows .= '<tr><td>' . HelperFramework::escape(ucfirst((string)($decision['tax_treatment'] ?? ''))) . '</td><td>'
-                        . HelperFramework::escape(HelperFramework::displayDateTime((string)($decision['decided_at'] ?? ''))) . '</td><td>'
-                        . HelperFramework::escape((string)($decision['decided_by'] ?? '')) . '</td><td>'
-                        . HelperFramework::escape($rule !== '' ? $rule : '—') . '</td><td>' . $status . '</td></tr>';
+                    $historyRows .= '<tr><td>' . \eel_accounts\Support\Utf8::html(ucfirst((string)($decision['tax_treatment'] ?? ''))) . '</td><td>'
+                        . \eel_accounts\Support\Utf8::html(HelperFramework::displayDateTime((string)($decision['decided_at'] ?? ''))) . '</td><td>'
+                        . \eel_accounts\Support\Utf8::html((string)($decision['decided_by'] ?? '')) . '</td><td>'
+                        . \eel_accounts\Support\Utf8::html($rule !== '' ? $rule : '—') . '</td><td>' . $status . '</td></tr>';
                 }
                 $count = count($history);
                 $historyHtml = '<details class="table-row-details"><summary>Decision history (' . $count . ')</summary><div class="table-scroll"><table><thead><tr><th>Treatment</th><th>Decided at</th><th>Decided by</th><th>Rule</th><th>Basis status</th></tr></thead><tbody>'
                     . $historyRows . '</tbody></table></div></details>';
             }
-            $rows .= '<tr><td>' . HelperFramework::escape(HelperFramework::displayDate((string)$item['journal_date'])) . '</td><td><strong>'
-                . HelperFramework::escape((string)$item['description']) . '</strong><div class="helper">' . HelperFramework::escape(trim((string)$item['nominal_code'] . ' ' . (string)$item['nominal_name'])) . '</div></td><td class="numeric">'
-                . HelperFramework::escape($money->format($settings, $item['amount'] ?? 0)) . '</td><td>' . $state . '</td><td>' . $source . ' ' . $guidance . '</td><td>' . $form . '</td></tr>';
+            $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html(HelperFramework::displayDate((string)$item['journal_date'])) . '</td><td><strong>'
+                . \eel_accounts\Support\Utf8::html((string)$item['description']) . '</strong><div class="helper">' . \eel_accounts\Support\Utf8::html(trim((string)$item['nominal_code'] . ' ' . (string)$item['nominal_name'])) . '</div></td><td class="numeric">'
+                . \eel_accounts\Support\Utf8::html($money->format($settings, $item['amount'] ?? 0)) . '</td><td>' . $state . '</td><td>' . $source . ' ' . $guidance . '</td><td>' . $form . '</td></tr>';
             if ($historyHtml !== '') {
                 $rows .= '<tr><td colspan="6">' . $historyHtml . '</td></tr>';
             }

@@ -33,11 +33,11 @@ final class _pl_source_coverageCard extends CardBaseFramework
             $statusClass = !$present ? 'info' : ($unverified > 0 ? 'warning' : 'success');
             $statusLabel = !$present ? 'None' : ($unverified > 0 ? 'Review' : 'Verified');
             $html .= '<tr>
-                <td>' . HelperFramework::escape((string)($source['label'] ?? $source['source_type'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($source['label'] ?? $source['source_type'] ?? '')) . '</td>
                 <td><span class="badge ' . $statusClass . '">' . $statusLabel . '</span></td>
                 <td>' . (int)($source['journal_count'] ?? 0) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $source['debit_total'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $source['credit_total'] ?? 0)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $source['debit_total'] ?? 0)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $source['credit_total'] ?? 0)) . '</td>
             </tr>';
         }
         $summary = (array)($context['profit_loss']['summary'] ?? []);
@@ -45,10 +45,10 @@ final class _pl_source_coverageCard extends CardBaseFramework
         $prepayments = (float)($summary['prepayment_expense_adjustment'] ?? 0);
         $previewParts = [];
         if (abs($depreciation) >= 0.005) {
-            $previewParts[] = HelperFramework::escape($this->money($companySettings, $depreciation)) . ' of depreciation';
+            $previewParts[] = \eel_accounts\Support\Utf8::html($this->money($companySettings, $depreciation)) . ' of depreciation';
         }
         if (abs($prepayments) >= 0.005) {
-            $previewParts[] = HelperFramework::escape($this->money($companySettings, $prepayments)) . ' of prepayment adjustment';
+            $previewParts[] = \eel_accounts\Support\Utf8::html($this->money($companySettings, $prepayments)) . ' of prepayment adjustment';
         }
         $previewNote = $previewParts !== []
             ? '<div class="helper"><span class="badge info">Close preview</span> Journal coverage below is posted-source evidence only. The P&amp;L cards also include ' . implode(' and ', $previewParts) . ' from the Year End close preview.</div>'
@@ -98,7 +98,7 @@ final class _pl_source_coverageCard extends CardBaseFramework
 
     private function evidenceFailureTable(array $rows): TableFramework
     {
-        return TableFramework::make('pl_source_coverage_evidence', $rows)
+        return \eel_accounts\Support\Utf8Table::make('pl_source_coverage_evidence', $rows)
             ->filename('unverified-journal-evidence')
             ->exports(true)
             ->exportLimit(max(1, count($rows)))
@@ -128,8 +128,8 @@ final class _pl_source_coverageCard extends CardBaseFramework
 
         $url = '?page=journal&show_card=journals_list&journals_list_keyword=' . rawurlencode((string)$journalId);
 
-        return '<a class="button button-inline" href="' . HelperFramework::escape($url) . '">'
-            . HelperFramework::escape('#' . $journalId)
+        return '<a class="button button-inline" href="' . \eel_accounts\Support\Utf8::html($url) . '">'
+            . \eel_accounts\Support\Utf8::html('#' . $journalId)
             . '</a>';
     }
 

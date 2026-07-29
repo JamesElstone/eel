@@ -64,7 +64,7 @@ final class _invited_usersCard extends CardBaseFramework
 
     private function table(array $context): TableFramework
     {
-        return TableFramework::make($this->key(), $this->rows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->rows($context))
             ->filename('invited-users')
             ->exportLimit(500)
             ->empty('No invitations were found.')
@@ -145,16 +145,16 @@ final class _invited_usersCard extends CardBaseFramework
             <form method="post" action="?page=users" data-ajax="true">
                 ' . $cards . '
                 <input type="hidden" name="action" value="users-copy-invite-link">
-                <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
-                <input type="hidden" name="target_user_id" value="' . HelperFramework::escape((string)$userId) . '">
+                <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
+                <input type="hidden" name="target_user_id" value="' . \eel_accounts\Support\Utf8::html((string)$userId) . '">
                 <input type="hidden" name="contact_method" value="auto">
                 <button class="button primary" type="submit">Copy Link</button>
             </form>
             <form method="post" action="?page=users" data-ajax="true">
                 ' . $cards . '
                 <input type="hidden" name="action" value="users-revoke-invite">
-                <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
-                <input type="hidden" name="invite_id" value="' . HelperFramework::escape((string)$inviteId) . '">
+                <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
+                <input type="hidden" name="invite_id" value="' . \eel_accounts\Support\Utf8::html((string)$inviteId) . '">
                 <button class="button danger" type="submit">Cancel</button>
             </form>
         </div>';
@@ -184,7 +184,7 @@ final class _invited_usersCard extends CardBaseFramework
         )));
 
         foreach ($cardKeys as $cardKey) {
-            $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+            $html .= '<input type="hidden" name="cards[]" value="' . \eel_accounts\Support\Utf8::html((string)$cardKey) . '">';
         }
 
         return $html;

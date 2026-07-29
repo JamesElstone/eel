@@ -127,13 +127,13 @@ final class _prepayments_reviewCard extends CardBaseFramework
         foreach ((array)($repair['missing_reviews'] ?? []) as $missing) {
             $allocation = (array)($missing['selected_allocation'] ?? []);
             $missingRows .= '<tr><td>#' . (int)$missing['review_id'] . '</td><td>'
-                . HelperFramework::escape(HelperFramework::labelFromKey((string)$missing['source_type'], '_') . ' #' . (int)$missing['source_id']) . '</td><td>'
-                . HelperFramework::escape($this->displayDate((string)$missing['source_date'])) . '</td><td class="numeric">'
-                . HelperFramework::escape($this->money($settings, ((int)$missing['source_amount_pence']) / 100)) . '</td><td>'
-                . HelperFramework::escape($this->displayDate((string)$missing['service_start_date']) . '–' . $this->displayDate((string)$missing['service_end_date'])) . '</td><td class="numeric">'
+                . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)$missing['source_type'], '_') . ' #' . (int)$missing['source_id']) . '</td><td>'
+                . \eel_accounts\Support\Utf8::html($this->displayDate((string)$missing['source_date'])) . '</td><td class="numeric">'
+                . \eel_accounts\Support\Utf8::html($this->money($settings, ((int)$missing['source_amount_pence']) / 100)) . '</td><td>'
+                . \eel_accounts\Support\Utf8::html($this->displayDate((string)$missing['service_start_date']) . '–' . $this->displayDate((string)$missing['service_end_date'])) . '</td><td class="numeric">'
                 . (int)($allocation['overlap_days'] ?? 0) . '</td><td class="numeric">'
-                . HelperFramework::escape($this->money($settings, ((int)($allocation['expense_pence'] ?? 0)) / 100)) . '</td><td class="numeric">'
-                . HelperFramework::escape($this->money($settings, ((int)($allocation['closing_deferred_pence'] ?? 0)) / 100)) . '</td></tr>';
+                . \eel_accounts\Support\Utf8::html($this->money($settings, ((int)($allocation['expense_pence'] ?? 0)) / 100)) . '</td><td class="numeric">'
+                . \eel_accounts\Support\Utf8::html($this->money($settings, ((int)($allocation['closing_deferred_pence'] ?? 0)) / 100)) . '</td></tr>';
         }
         if ($missingRows === '') {
             return '';
@@ -160,13 +160,13 @@ final class _prepayments_reviewCard extends CardBaseFramework
         $rows = '';
         foreach ($items as $item) {
             $rows .= '<tr><td>'
-                . HelperFramework::escape(HelperFramework::labelFromKey((string)($item['source_type'] ?? ''), '_'))
+                . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)($item['source_type'] ?? ''), '_'))
                 . ' #' . (int)($item['source_id'] ?? 0) . '</td><td>'
-                . HelperFramework::escape($this->displayDate((string)($item['source_date'] ?? ''))) . '</td><td>'
-                . HelperFramework::escape(trim((string)($item['nominal_code'] ?? '') . ' ' . (string)($item['nominal_name'] ?? ''))) . '</td><td>'
-                . HelperFramework::escape((string)($item['description'] ?? '')) . '</td><td class="numeric">'
-                . HelperFramework::escape($this->money($companySettings, $item['amount'] ?? 0)) . '</td><td>'
-                . HelperFramework::escape((string)($item['exclusion_reason'] ?? 'The source is not eligible for prepayment review.'))
+                . \eel_accounts\Support\Utf8::html($this->displayDate((string)($item['source_date'] ?? ''))) . '</td><td>'
+                . \eel_accounts\Support\Utf8::html(trim((string)($item['nominal_code'] ?? '') . ' ' . (string)($item['nominal_name'] ?? ''))) . '</td><td>'
+                . \eel_accounts\Support\Utf8::html((string)($item['description'] ?? '')) . '</td><td class="numeric">'
+                . \eel_accounts\Support\Utf8::html($this->money($companySettings, $item['amount'] ?? 0)) . '</td><td>'
+                . \eel_accounts\Support\Utf8::html((string)($item['exclusion_reason'] ?? 'The source is not eligible for prepayment review.'))
                 . '</td></tr>';
         }
 
@@ -199,32 +199,32 @@ final class _prepayments_reviewCard extends CardBaseFramework
         $sourceValid = !array_key_exists('source_valid', $item) || !empty($item['source_valid']);
 
         return '<tr>
-            <td>' . HelperFramework::escape(HelperFramework::labelFromKey($sourceType, '_')) . '</td>
-            <td>' . HelperFramework::escape($this->displayDate((string)($item['source_date'] ?? ''))) . '</td>
-            <td>' . HelperFramework::escape(trim((string)($item['nominal_code'] ?? '') . ' ' . (string)($item['nominal_name'] ?? ''))) . '</td>
+            <td>' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($sourceType, '_')) . '</td>
+            <td>' . \eel_accounts\Support\Utf8::html($this->displayDate((string)($item['source_date'] ?? ''))) . '</td>
+            <td>' . \eel_accounts\Support\Utf8::html(trim((string)($item['nominal_code'] ?? '') . ' ' . (string)($item['nominal_name'] ?? ''))) . '</td>
             <td>
-                ' . HelperFramework::escape((string)($item['description'] ?? '')) . '
-                ' . (!$sourceValid ? '<div class="helper"><span class="badge warning">Not postable</span> ' . HelperFramework::escape((string)(($item['source_errors'] ?? [])[0] ?? 'The source journal is not ready.')) . '</div>' : '') . '
+                ' . \eel_accounts\Support\Utf8::html((string)($item['description'] ?? '')) . '
+                ' . (!$sourceValid ? '<div class="helper"><span class="badge warning">Not postable</span> ' . \eel_accounts\Support\Utf8::html((string)(($item['source_errors'] ?? [])[0] ?? 'The source journal is not ready.')) . '</div>' : '') . '
             </td>
-            <td class="numeric">' . HelperFramework::escape($this->money($companySettings, $item['amount'] ?? 0)) . '</td>
+            <td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $item['amount'] ?? 0)) . '</td>
             <td>
-                ' . ($isLocked || !$sourceValid ? '<span class="badge ' . ($status === 'pending' ? 'warning' : ($status === 'prepaid' ? 'success' : 'info')) . '">' . HelperFramework::escape($this->statusLabel($status)) . '</span>' : '
-                <form id="' . HelperFramework::escape($formId) . '" method="post" data-ajax="true" class="actions-row actions-row-nowrap prepayment-review-form">
+                ' . ($isLocked || !$sourceValid ? '<span class="badge ' . ($status === 'pending' ? 'warning' : ($status === 'prepaid' ? 'success' : 'info')) . '">' . \eel_accounts\Support\Utf8::html($this->statusLabel($status)) . '</span>' : '
+                <form id="' . \eel_accounts\Support\Utf8::html($formId) . '" method="post" data-ajax="true" class="actions-row actions-row-nowrap prepayment-review-form">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="Prepayments">
                     <input type="hidden" name="intent" value="save_review">
                     <input type="hidden" name="company_id" value="' . $companyId . '">
                     <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                    <input type="hidden" name="source_type" value="' . HelperFramework::escape($sourceType) . '">
+                    <input type="hidden" name="source_type" value="' . \eel_accounts\Support\Utf8::html($sourceType) . '">
                     <input type="hidden" name="source_id" value="' . $sourceId . '">
-                    <input type="hidden" name="prepayment_notes" value="' . HelperFramework::escape((string)($review['notes'] ?? '')) . '">
-                    <select class="select" id="' . HelperFramework::escape($formId) . '-status" name="prepayment_status">' . $this->statusOptions($status) . '</select>
+                    <input type="hidden" name="prepayment_notes" value="' . \eel_accounts\Support\Utf8::html((string)($review['notes'] ?? '')) . '">
+                    <select class="select" id="' . \eel_accounts\Support\Utf8::html($formId) . '-status" name="prepayment_status">' . $this->statusOptions($status) . '</select>
                     <span class="prepayment-date-actions" data-visible-when-field="prepayment_status" data-visible-when-value="prepaid"' . ($status === 'prepaid' ? '' : ' hidden aria-hidden="true"') . '>
-                        <label class="prepayment-date-field" for="' . HelperFramework::escape($formId) . '-service-start-date">Service start
-                            <input class="input" id="' . HelperFramework::escape($formId) . '-service-start-date" type="date" name="service_start_date" value="' . HelperFramework::escape($serviceStart) . '" required>
+                        <label class="prepayment-date-field" for="' . \eel_accounts\Support\Utf8::html($formId) . '-service-start-date">Service start
+                            <input class="input" id="' . \eel_accounts\Support\Utf8::html($formId) . '-service-start-date" type="date" name="service_start_date" value="' . \eel_accounts\Support\Utf8::html($serviceStart) . '" required>
                         </label>
-                        <label class="prepayment-date-field" for="' . HelperFramework::escape($formId) . '-service-end-date">Service end
-                            <input class="input" id="' . HelperFramework::escape($formId) . '-service-end-date" type="date" name="service_end_date" value="' . HelperFramework::escape($serviceEnd) . '" required>
+                        <label class="prepayment-date-field" for="' . \eel_accounts\Support\Utf8::html($formId) . '-service-end-date">Service end
+                            <input class="input" id="' . \eel_accounts\Support\Utf8::html($formId) . '-service-end-date" type="date" name="service_end_date" value="' . \eel_accounts\Support\Utf8::html($serviceEnd) . '" required>
                         </label>
                         <button class="button primary" type="submit">Save</button>
                     </span>
@@ -254,14 +254,14 @@ final class _prepayments_reviewCard extends CardBaseFramework
             $allocations = is_array($schedule) ? array_values((array)($schedule['allocations'] ?? [])) : [];
             if ($allocations === []) {
                 $rows .= '<tr>
-                    <td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($item['source_type'] ?? ''), '_')) . '</td>
-                    <td>' . HelperFramework::escape((string)($item['description'] ?? '')) . '</td>
-                    <td>' . HelperFramework::escape(
+                    <td>' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)($item['source_type'] ?? ''), '_')) . '</td>
+                    <td>' . \eel_accounts\Support\Utf8::html((string)($item['description'] ?? '')) . '</td>
+                    <td>' . \eel_accounts\Support\Utf8::html(
                         $this->displayDate((string)($review['service_start_date'] ?? ''))
                         . '–'
                         . $this->displayDate((string)($review['service_end_date'] ?? ''))
                     ) . '</td>
-                    <td class="numeric">' . HelperFramework::escape($this->money($settings, $item['amount'] ?? 0)) . '</td>
+                    <td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($settings, $item['amount'] ?? 0)) . '</td>
                     <td colspan="4"><span class="badge warning">Calculation required</span></td>
                     <td></td>
                 </tr>';
@@ -273,23 +273,23 @@ final class _prepayments_reviewCard extends CardBaseFramework
             foreach ($allocations as $index => $allocation) {
                 $rows .= '<tr>';
                 if ($index === 0) {
-                    $rows .= '<td' . $rowspan . '>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($item['source_type'] ?? ''), '_')) . '</td>
-                        <td' . $rowspan . '>' . HelperFramework::escape((string)($item['description'] ?? '')) . '</td>
-                        <td' . $rowspan . '>' . HelperFramework::escape(
+                    $rows .= '<td' . $rowspan . '>' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)($item['source_type'] ?? ''), '_')) . '</td>
+                        <td' . $rowspan . '>' . \eel_accounts\Support\Utf8::html((string)($item['description'] ?? '')) . '</td>
+                        <td' . $rowspan . '>' . \eel_accounts\Support\Utf8::html(
                             $this->displayDate((string)($review['service_start_date'] ?? ''))
                             . '–'
                             . $this->displayDate((string)($review['service_end_date'] ?? ''))
                         ) . '</td>
-                        <td class="numeric"' . $rowspan . '>' . HelperFramework::escape($this->money($settings, $item['amount'] ?? 0)) . '</td>';
+                        <td class="numeric"' . $rowspan . '>' . \eel_accounts\Support\Utf8::html($this->money($settings, $item['amount'] ?? 0)) . '</td>';
                 }
-                $rows .= '<td>' . HelperFramework::escape(
+                $rows .= '<td>' . \eel_accounts\Support\Utf8::html(
                     $this->displayDate((string)($allocation['period_start'] ?? ''))
                     . '–'
                     . $this->displayDate((string)($allocation['period_end'] ?? ''))
                 ) . '</td>
                     <td class="numeric">' . (int)($allocation['overlap_days'] ?? 0) . '</td>
-                    <td class="numeric">' . HelperFramework::escape($this->money($settings, ((int)($allocation['expense_pence'] ?? 0)) / 100)) . '</td>
-                    <td class="numeric">' . HelperFramework::escape($this->money($settings, ((int)($allocation['closing_deferred_pence'] ?? 0)) / 100)) . '</td>';
+                    <td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($settings, ((int)($allocation['expense_pence'] ?? 0)) / 100)) . '</td>
+                    <td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($settings, ((int)($allocation['closing_deferred_pence'] ?? 0)) / 100)) . '</td>';
                 if ($index === 0) {
                     $rows .= '<td' . $rowspan . '>' . $actions . '</td>';
                 }
@@ -318,7 +318,7 @@ final class _prepayments_reviewCard extends CardBaseFramework
 
         $unallocated = (int)($schedule['unallocated_pence'] ?? 0);
         $warning = $unallocated > 0
-            ? '<div class="helper"><span class="badge warning">Future period missing</span> ' . HelperFramework::escape($this->money($settings, $unallocated / 100)) . ' remains to be allocated when later accounting periods are created.</div>'
+            ? '<div class="helper"><span class="badge warning">Future period missing</span> ' . \eel_accounts\Support\Utf8::html($this->money($settings, $unallocated / 100)) . ' remains to be allocated when later accounting periods are created.</div>'
             : '';
         $reopen = $hasPostings && !$isLocked
             ? '<form method="post" data-ajax="true" class="actions-row">'
@@ -344,13 +344,13 @@ final class _prepayments_reviewCard extends CardBaseFramework
         foreach ($schedules as $schedule) {
             $allocation = (array)($schedule['selected_allocation'] ?? []);
             $rows .= '<tr>
-                <td>' . HelperFramework::escape((string)($schedule['source_description'] ?? 'Prepayment source')) . '</td>
-                <td>' . HelperFramework::escape($this->displayDate((string)($schedule['service_start_date'] ?? '')) . '–' . $this->displayDate((string)($schedule['service_end_date'] ?? ''))) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($schedule['source_description'] ?? 'Prepayment source')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->displayDate((string)($schedule['service_start_date'] ?? '')) . '–' . $this->displayDate((string)($schedule['service_end_date'] ?? ''))) . '</td>
                 <td class="numeric">' . (int)($allocation['overlap_days'] ?? 0) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($settings, ((int)($allocation['expense_pence'] ?? 0)) / 100)) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($settings, ((int)($allocation['opening_deferred_pence'] ?? 0)) / 100)) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($settings, ((int)($allocation['closing_deferred_pence'] ?? 0)) / 100)) . '</td>
-                <td><span class="badge ' . ((string)($allocation['journal_state'] ?? '') === 'posted' ? 'success' : 'warning') . '">' . HelperFramework::escape(HelperFramework::labelFromKey((string)($allocation['journal_state'] ?? 'not_posted'), '_')) . '</span></td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($settings, ((int)($allocation['expense_pence'] ?? 0)) / 100)) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($settings, ((int)($allocation['opening_deferred_pence'] ?? 0)) / 100)) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($settings, ((int)($allocation['closing_deferred_pence'] ?? 0)) / 100)) . '</td>
+                <td><span class="badge ' . ((string)($allocation['journal_state'] ?? '') === 'posted' ? 'success' : 'warning') . '">' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)($allocation['journal_state'] ?? 'not_posted'), '_')) . '</span></td>
             </tr>';
         }
 
@@ -378,7 +378,7 @@ final class _prepayments_reviewCard extends CardBaseFramework
         ];
         $html = '';
         foreach ($labels as $value => $label) {
-            $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($selected === $value ? ' selected' : '') . ($value === 'pending' ? ' disabled' : '') . '>' . HelperFramework::escape($label) . '</option>';
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html($value) . '"' . ($selected === $value ? ' selected' : '') . ($value === 'pending' ? ' disabled' : '') . '>' . \eel_accounts\Support\Utf8::html($label) . '</option>';
         }
 
         return $html;
@@ -386,7 +386,7 @@ final class _prepayments_reviewCard extends CardBaseFramework
 
     private function summaryCard(string $label, string $value): string
     {
-        return '<div class="panel-soft"><div class="eyebrow">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+        return '<div class="panel-soft"><div class="eyebrow">' . \eel_accounts\Support\Utf8::html($label) . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div></div>';
     }
 
     private function money(array $companySettings, float|int|string|null $value): string
@@ -403,7 +403,7 @@ final class _prepayments_reviewCard extends CardBaseFramework
     {
         $html = '';
         foreach ($errors as $error) {
-            $html .= '<div class="helper">' . HelperFramework::escape((string)$error) . '</div>';
+            $html .= '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$error) . '</div>';
         }
 
         return $html;

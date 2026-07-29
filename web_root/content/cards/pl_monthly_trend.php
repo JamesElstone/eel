@@ -47,7 +47,7 @@ final class _pl_monthly_trendCard extends CardBaseFramework
     {
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
 
-        return TableFramework::make(
+        return \eel_accounts\Support\Utf8Table::make(
             $this->key(),
             $this->tableRows((array)($context['profit_loss']['monthly_trend'] ?? []))
         )
@@ -58,56 +58,56 @@ final class _pl_monthly_trendCard extends CardBaseFramework
             ->column(
                 'income_total',
                 'Income',
-                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['income_total'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['income_total'] ?? 0)),
                 export: fn(array $row): string => $this->numberExport($row['income_total'] ?? 0),
                 exportType: 'number'
             )
             ->column(
                 'cost_of_sales_total',
                 'Cost of sales',
-                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['cost_of_sales_total'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['cost_of_sales_total'] ?? 0)),
                 export: fn(array $row): string => $this->numberExport($row['cost_of_sales_total'] ?? 0),
                 exportType: 'number'
             )
             ->column(
                 'operating_expense_total',
                 'Operating expenses',
-                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['operating_expense_total'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['operating_expense_total'] ?? 0)),
                 export: fn(array $row): string => $this->numberExport($row['operating_expense_total'] ?? 0),
                 exportType: 'number'
             )
             ->column(
                 'depreciation_expense',
                 'Depreciation preview',
-                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['depreciation_expense'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['depreciation_expense'] ?? 0)),
                 export: fn(array $row): string => $this->numberExport($row['depreciation_expense'] ?? 0),
                 exportType: 'number'
             )
             ->column(
                 'posted_corporation_tax_charge',
                 'Posted CT',
-                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['posted_corporation_tax_charge'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['posted_corporation_tax_charge'] ?? 0)),
                 export: fn(array $row): string => $this->numberExport($row['posted_corporation_tax_charge'] ?? 0),
                 exportType: 'number'
             )
             ->column(
                 'estimated_corporation_tax_adjustment',
                 'Estimated total tax adjustment',
-                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['estimated_corporation_tax_adjustment'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['estimated_corporation_tax_adjustment'] ?? 0)),
                 export: fn(array $row): string => $this->numberExport($row['estimated_corporation_tax_adjustment'] ?? 0),
                 exportType: 'number'
             )
             ->column(
                 'corporation_tax_expense_total',
                 'Estimated total tax charge',
-                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['corporation_tax_expense_total'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['corporation_tax_expense_total'] ?? 0)),
                 export: fn(array $row): string => $this->numberExport($row['corporation_tax_expense_total'] ?? 0),
                 exportType: 'number'
             )
             ->column(
                 'profit_before_tax',
                 'Profit before tax',
-                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['profit_before_tax'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['profit_before_tax'] ?? 0)),
                 export: fn(array $row): string => $this->numberExport($row['profit_before_tax'] ?? 0),
                 exportType: 'number'
             )
@@ -116,7 +116,7 @@ final class _pl_monthly_trendCard extends CardBaseFramework
                 'After estimated tax',
                 html: fn(array $row): string => '<span class="badge '
                     . ((float)($row['profit_after_tax'] ?? 0) >= 0 ? 'success' : 'danger')
-                    . '">' . HelperFramework::escape($this->money($companySettings, $row['profit_after_tax'] ?? 0)) . '</span>',
+                    . '">' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['profit_after_tax'] ?? 0)) . '</span>',
                 export: fn(array $row): string => $this->numberExport($row['profit_after_tax'] ?? 0),
                 exportType: 'number'
             );

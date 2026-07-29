@@ -83,13 +83,13 @@ final class _uploads_bank_transactionsCard extends CardBaseFramework
             $accountType = (string)($account['account_type'] ?? '');
             $selected = (int)($selectedUploadPreview['upload']['account_id'] ?? 0) === (int)($account['id'] ?? 0) ? ' selected' : '';
             $accountOptions .= '<option value="' . (int)($account['id'] ?? 0) . '"' . $selected . '>'
-                . HelperFramework::escape((string)($account['account_name'] ?? '')) . ' ('
-                . HelperFramework::escape(\eel_accounts\Service\CompanyAccountService::accountTypes()[$accountType] ?? ucfirst($accountType))
+                . \eel_accounts\Support\Utf8::html((string)($account['account_name'] ?? '')) . ' ('
+                . \eel_accounts\Support\Utf8::html(\eel_accounts\Service\CompanyAccountService::accountTypes()[$accountType] ?? ucfirst($accountType))
                 . ')</option>';
         }
 
         return 
-            ($uploadsAutoSwitchTab !== '' ? '<div hidden data-uploads-next-tab="' . HelperFramework::escape($uploadsAutoSwitchTab) . '"></div>' : '') 
+            ($uploadsAutoSwitchTab !== '' ? '<div hidden data-uploads-next-tab="' . \eel_accounts\Support\Utf8::html($uploadsAutoSwitchTab) . '"></div>' : '')
             . '
             <form method="post" enctype="multipart/form-data" action="?page=uploads">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
@@ -97,7 +97,7 @@ final class _uploads_bank_transactionsCard extends CardBaseFramework
                 <input type="hidden" name="intent" value="upload_account_csv">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <input type="hidden" name="filter" value="' . HelperFramework::escape($selectedUploadHistoryFilter) . '">
+                <input type="hidden" name="filter" value="' . \eel_accounts\Support\Utf8::html($selectedUploadHistoryFilter) . '">
                 <input type="hidden" name="page" value="' . $selectedUploadHistoryPage . '">
                 <div class="stack">
                     <p class="helper">The first row must be headings, ideally clear names like <strong>date, description, amount, balance</strong>.<br>Transactions must be in statement order, either oldest first or newest first, so balances can be checked before import.</p>

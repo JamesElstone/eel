@@ -51,11 +51,11 @@ final class _api_connectivity_testCard extends CardBaseFramework
         $html = '';
 
         foreach ($messages as $message) {
-            $html .= '<div class="notice success">' . HelperFramework::escape((string)$message) . '</div>';
+            $html .= '<div class="notice success">' . \eel_accounts\Support\Utf8::html((string)$message) . '</div>';
         }
 
         foreach ($errors as $error) {
-            $html .= '<div class="notice error">' . HelperFramework::escape((string)$error) . '</div>';
+            $html .= '<div class="notice error">' . \eel_accounts\Support\Utf8::html((string)$error) . '</div>';
         }
 
         if ($html === '') {
@@ -88,9 +88,9 @@ final class _api_connectivity_testCard extends CardBaseFramework
             };
 
             $itemsHtml .= '<div class="list-item">
-                <strong>' . HelperFramework::escape($label) . '</strong>
-                <span class="status-indicator"><span class="status-square ' . HelperFramework::escape($state) . '"></span>' . HelperFramework::escape($statusText) . '</span>
-                <span>' . HelperFramework::escape($detail) . '</span>
+                <strong>' . \eel_accounts\Support\Utf8::html($label) . '</strong>
+                <span class="status-indicator"><span class="status-square ' . \eel_accounts\Support\Utf8::html($state) . '"></span>' . \eel_accounts\Support\Utf8::html($statusText) . '</span>
+                <span>' . \eel_accounts\Support\Utf8::html($detail) . '</span>
             </div>';
         }
 

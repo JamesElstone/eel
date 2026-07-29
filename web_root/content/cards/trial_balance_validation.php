@@ -56,10 +56,10 @@ final class _trial_balance_validationCard extends CardBaseFramework
             $status = (string)($check['status'] ?? 'warning');
             $checksHtml .= '<div class="panel-soft">
                 <div class="status-head">
-                    <h4 class="card-title">' . HelperFramework::escape((string)($check['title'] ?? 'Check')) . '</h4>
-                    <span class="badge ' . $this->badgeClass($status) . '">' . HelperFramework::escape($status) . '</span>
+                    <h4 class="card-title">' . \eel_accounts\Support\Utf8::html((string)($check['title'] ?? 'Check')) . '</h4>
+                    <span class="badge ' . $this->badgeClass($status) . '">' . \eel_accounts\Support\Utf8::html($status) . '</span>
                 </div>
-                <div class="helper">' . HelperFramework::escape((string)($check['detail'] ?? '')) . '</div>
+                <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($check['detail'] ?? '')) . '</div>
                 ' . $this->metricValue($check['metric_value'] ?? null, $companySettings) . '
             </div>';
         }
@@ -100,8 +100,8 @@ final class _trial_balance_validationCard extends CardBaseFramework
             : 'No validation checks were returned.';
         $overallValue = '<div class="trial-balance-validation-status">
             <div class="trial-balance-validation-status-main">
-                <span class="badge ' . $overallClass . '">' . HelperFramework::escape($overallLabel) . '</span>
-                <span class="trial-balance-validation-percent">' . HelperFramework::escape($percentOk . '% ready') . '</span>
+                <span class="badge ' . $overallClass . '">' . \eel_accounts\Support\Utf8::html($overallLabel) . '</span>
+                <span class="trial-balance-validation-percent">' . \eel_accounts\Support\Utf8::html($percentOk . '% ready') . '</span>
             </div>
         </div>';
 
@@ -113,9 +113,9 @@ final class _trial_balance_validationCard extends CardBaseFramework
     private function summaryCard(string $label, string $value, string $helper = '', bool $trustedValue = false): string
     {
         return '<div class="summary-card">
-            <div class="summary-label">' . HelperFramework::escape($label) . '</div>
-            <div class="summary-value">' . ($trustedValue ? $value : HelperFramework::escape($value)) . '</div>
-            ' . ($helper !== '' ? '<div class="helper">' . HelperFramework::escape($helper) . '</div>' : '') . '
+            <div class="summary-label">' . \eel_accounts\Support\Utf8::html($label) . '</div>
+            <div class="summary-value">' . ($trustedValue ? $value : \eel_accounts\Support\Utf8::html($value)) . '</div>
+            ' . ($helper !== '' ? '<div class="helper">' . \eel_accounts\Support\Utf8::html($helper) . '</div>' : '') . '
         </div>';
     }
 
@@ -129,7 +129,7 @@ final class _trial_balance_validationCard extends CardBaseFramework
             return $this->metricTable($value, $companySettings);
         }
 
-        return '<div><strong>' . HelperFramework::escape($this->metricText($value, $companySettings)) . '</strong></div>';
+        return '<div><strong>' . \eel_accounts\Support\Utf8::html($this->metricText($value, $companySettings)) . '</strong></div>';
     }
 
     private function metricTable(array $value, array $companySettings): string
@@ -142,8 +142,8 @@ final class _trial_balance_validationCard extends CardBaseFramework
 
             $label = HelperFramework::labelFromKey((string)$key, '_');
             $rows .= '<tr>
-                <th scope="row">' . HelperFramework::escape($label) . '</th>
-                <td><strong>' . HelperFramework::escape($this->metricText($metric, $companySettings)) . '</strong></td>
+                <th scope="row">' . \eel_accounts\Support\Utf8::html($label) . '</th>
+                <td><strong>' . \eel_accounts\Support\Utf8::html($this->metricText($metric, $companySettings)) . '</strong></td>
             </tr>';
         }
 
@@ -236,7 +236,7 @@ final class _trial_balance_validationCard extends CardBaseFramework
     {
         $html = '';
         foreach ($errors as $error) {
-            $html .= '<div class="helper">' . HelperFramework::escape((string)$error) . '</div>';
+            $html .= '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$error) . '</div>';
         }
 
         return $html;

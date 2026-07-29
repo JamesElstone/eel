@@ -81,7 +81,7 @@ final class _ixbrl_readinessCard extends CardBaseFramework
                     ? $this->filingOutputs($readiness, $latestRun, $computationPeriods, $companiesHouse)
                     : '';
                 $groupPanels .= '<section class="panel-soft"><h3 class="card-title">'
-                    . HelperFramework::escape($title) . '</h3>' . $filingOutputs . '<div class="summary-grid">'
+                    . \eel_accounts\Support\Utf8::html($title) . '</h3>' . $filingOutputs . '<div class="summary-grid">'
                     . $items . '</div></section>';
             }
         }
@@ -90,9 +90,9 @@ final class _ixbrl_readinessCard extends CardBaseFramework
         foreach ($filingReadiness as $check) {
             $ready = !empty($check['ready']);
             $filingItems .= '<div class="summary-card">
-                <div class="summary-label">' . HelperFramework::escape((string)($check['label'] ?? 'Filing prerequisite')) . '</div>
+                <div class="summary-label">' . \eel_accounts\Support\Utf8::html((string)($check['label'] ?? 'Filing prerequisite')) . '</div>
                 <div class="summary-value"><span class="badge ' . ($ready ? 'success' : 'warning') . '">' . ($ready ? 'Ready' : 'Not ready') . '</span></div>
-                <div class="helper">' . HelperFramework::escape((string)($check['detail'] ?? '')) . '</div>
+                <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($check['detail'] ?? '')) . '</div>
             </div>';
         }
 
@@ -102,11 +102,11 @@ final class _ixbrl_readinessCard extends CardBaseFramework
                 <div class="summary-grid">
                 <div class="summary-card">
                     <div class="summary-label">Period</div>
-                    <div class="summary-value">' . HelperFramework::escape($period) . '</div>
+                    <div class="summary-value">' . \eel_accounts\Support\Utf8::html($period) . '</div>
                 </div>
                 <div class="summary-card">
                     <div class="summary-label">Status</div>
-                    <div class="summary-value"><span class="badge ' . HelperFramework::escape($headlineClass) . '">' . HelperFramework::escape($headline) . '</span></div>
+                    <div class="summary-value"><span class="badge ' . \eel_accounts\Support\Utf8::html($headlineClass) . '">' . \eel_accounts\Support\Utf8::html($headline) . '</span></div>
                 </div>
                 ' . $this->capability('Build facts', !empty($readiness['can_build_facts'])) . '
                 ' . $this->capability('Generate filing', !empty($readiness['can_generate'])) . '
@@ -149,9 +149,9 @@ final class _ixbrl_readinessCard extends CardBaseFramework
     {
         $statusLabel = $this->statusLabel((string)($check['status_label'] ?? (!empty($check['complete']) ? 'Ready' : 'Warning')));
         return '<div class="summary-card">
-            <div class="summary-label">' . HelperFramework::escape((string)($check['label'] ?? 'Check')) . '</div>
-            <div class="summary-value"><span class="badge ' . HelperFramework::escape((string)($check['status'] ?? 'warning')) . '">' . HelperFramework::escape($statusLabel) . '</span></div>
-            <div class="helper">' . HelperFramework::escape((string)($check['detail'] ?? '')) . '</div>
+            <div class="summary-label">' . \eel_accounts\Support\Utf8::html((string)($check['label'] ?? 'Check')) . '</div>
+            <div class="summary-value"><span class="badge ' . \eel_accounts\Support\Utf8::html((string)($check['status'] ?? 'warning')) . '">' . \eel_accounts\Support\Utf8::html($statusLabel) . '</span></div>
+            <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($check['detail'] ?? '')) . '</div>
         </div>';
     }
 
@@ -206,17 +206,17 @@ final class _ixbrl_readinessCard extends CardBaseFramework
     /** @param array{0:string,1:string} $status */
     private function outputCard(string $label, string $quantity, array $status, string $detail): string
     {
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div>'
-            . '<div class="summary-value">' . HelperFramework::escape($quantity) . '</div>'
-            . '<div><span class="badge ' . HelperFramework::escape($status[1]) . '">'
-            . HelperFramework::escape($status[0]) . '</span></div><div class="helper">'
-            . HelperFramework::escape($detail) . '</div></div>';
+        return '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label) . '</div>'
+            . '<div class="summary-value">' . \eel_accounts\Support\Utf8::html($quantity) . '</div>'
+            . '<div><span class="badge ' . \eel_accounts\Support\Utf8::html($status[1]) . '">'
+            . \eel_accounts\Support\Utf8::html($status[0]) . '</span></div><div class="helper">'
+            . \eel_accounts\Support\Utf8::html($detail) . '</div></div>';
     }
 
     private function capability(string $label, bool $available): string
     {
         return '<div class="summary-card">
-            <div class="summary-label">' . HelperFramework::escape($label) . '</div>
+            <div class="summary-label">' . \eel_accounts\Support\Utf8::html($label) . '</div>
             <div class="summary-value"><span class="badge ' . ($available ? 'success' : 'muted') . '">' . ($available ? 'Available' : 'Not available') . '</span></div>
         </div>';
     }

@@ -60,7 +60,7 @@ final class _asset_taxCard extends CardBaseFramework
         );
 
         if ($assetTaxView === null) {
-            return '<div class="helper">' . HelperFramework::escape($this->emptyStateMessage($assetsPageData, $accountingPeriodId)) . '</div>';
+            return '<div class="helper">' . \eel_accounts\Support\Utf8::html($this->emptyStateMessage($assetsPageData, $accountingPeriodId)) . '</div>';
         }
 
         return $this->taxTable($settings, $assetTaxView);
@@ -95,21 +95,21 @@ final class _asset_taxCard extends CardBaseFramework
             $head .= '<th>Amount</th>';
         } else {
             foreach ($periods as $period) {
-                $head .= '<th>' . HelperFramework::escape($this->periodHeading($period)) . '</th>';
+                $head .= '<th>' . \eel_accounts\Support\Utf8::html($this->periodHeading($period)) . '</th>';
             }
             $head .= '<th>Total</th>';
         }
 
         $body = '';
         foreach ($rows as [$label, $key]) {
-            $body .= '<tr><td>' . HelperFramework::escape($label) . '</td>';
+            $body .= '<tr><td>' . \eel_accounts\Support\Utf8::html($label) . '</td>';
             if ($periods === []) {
-                $body .= '<td>' . HelperFramework::escape($this->money($settings, $assetTaxView[$key] ?? 0)) . '</td>';
+                $body .= '<td>' . \eel_accounts\Support\Utf8::html($this->money($settings, $assetTaxView[$key] ?? 0)) . '</td>';
             } else {
                 foreach ($periods as $period) {
-                    $body .= '<td>' . HelperFramework::escape($this->money($settings, $period[$key] ?? 0)) . '</td>';
+                    $body .= '<td>' . \eel_accounts\Support\Utf8::html($this->money($settings, $period[$key] ?? 0)) . '</td>';
                 }
-                $body .= '<td>' . HelperFramework::escape($this->money($settings, $totals[$key] ?? 0)) . '</td>';
+                $body .= '<td>' . \eel_accounts\Support\Utf8::html($this->money($settings, $totals[$key] ?? 0)) . '</td>';
             }
             $body .= '</tr>';
         }

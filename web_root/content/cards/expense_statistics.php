@@ -70,14 +70,14 @@ final class _expense_statisticsCard extends CardBaseFramework
         $body = '';
         foreach ($rows as $row) {
             $body .= '<tr>
-                <td>' . HelperFramework::escape((string)($row['claimant_name'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($row['claimant_name'] ?? '')) . '</td>
                 <td class="numeric">' . (int)($row['claim_count'] ?? 0) . '</td>
                 <td class="numeric">' . (int)($row['item_count'] ?? 0) . '</td>
                 <td class="numeric">' . (int)($row['unassigned_item_count'] ?? 0) . '</td>
-                <td class="numeric">' . HelperFramework::escape($companySettingsService->money($companySettings, (float)($row['brought_forward'] ?? 0))) . '</td>
-                <td class="numeric">' . HelperFramework::escape($companySettingsService->money($companySettings, (float)($row['claimed_total'] ?? 0))) . '</td>
-                <td class="numeric">' . HelperFramework::escape($companySettingsService->money($companySettings, (float)($row['payments_made'] ?? 0))) . '</td>
-                <td class="numeric">' . HelperFramework::escape($companySettingsService->money($companySettings, (float)($row['carried_forward'] ?? 0))) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($companySettingsService->money($companySettings, (float)($row['brought_forward'] ?? 0))) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($companySettingsService->money($companySettings, (float)($row['claimed_total'] ?? 0))) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($companySettingsService->money($companySettings, (float)($row['payments_made'] ?? 0))) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($companySettingsService->money($companySettings, (float)($row['carried_forward'] ?? 0))) . '</td>
             </tr>';
         }
 
@@ -106,11 +106,11 @@ final class _expense_statisticsCard extends CardBaseFramework
             }
 
             $body .= '<tr>
-                <td>' . HelperFramework::escape((string)($row['claimant_name'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape($claimReference) . '</td>
-                <td>' . HelperFramework::escape((string)($row['month'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape($this->displayDate((string)($row['expense_date'] ?? ''))) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($companySettings, $row['amount'] ?? 0)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($row['claimant_name'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($claimReference) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($row['month'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->displayDate((string)($row['expense_date'] ?? ''))) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['amount'] ?? 0)) . '</td>
             </tr>';
         }
 
@@ -144,10 +144,10 @@ final class _expense_statisticsCard extends CardBaseFramework
             }
 
             $body .= '<tr>
-                <td>' . HelperFramework::escape((string)($row['claimant_name'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape($claimReference) . '</td>
-                <td>' . HelperFramework::escape((string)($row['month'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape($status) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($row['claimant_name'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($claimReference) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($row['month'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($status) . '</td>
             </tr>';
         }
 
@@ -184,9 +184,9 @@ final class _expense_statisticsCard extends CardBaseFramework
 
             $tableRows .= '<tr>
                 <td class="expense-statistics-colour-column">' . $this->colourSwatch($colour) . '</td>
-                <td>' . HelperFramework::escape($label) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($label) . '</td>
                 <td class="numeric">' . (int)($row['line_count'] ?? 0) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($companySettings, $value)) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $value)) . '</td>
             </tr>';
         }
 
@@ -287,15 +287,15 @@ final class _expense_statisticsCard extends CardBaseFramework
             return '<svg class="expense-statistics-colour-swatch" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect class="expense-statistics-colour-swatch-muted" x="0" y="0" width="20" height="20" rx="2"></rect></svg>';
         }
 
-        return '<svg class="expense-statistics-colour-swatch" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect class="expense-statistics-colour-swatch-square" x="0" y="0" width="20" height="20" rx="2" fill="' . HelperFramework::escape($colour) . '"></rect></svg>';
+        return '<svg class="expense-statistics-colour-swatch" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect class="expense-statistics-colour-swatch-square" x="0" y="0" width="20" height="20" rx="2" fill="' . \eel_accounts\Support\Utf8::html($colour) . '"></rect></svg>';
     }
 
     private function metric(string $label, string $value, string $foot): string
     {
         return '<article class="card stat-card">
-            <div class="eyebrow">' . HelperFramework::escape($label) . '</div>
-            <div class="stat-value">' . HelperFramework::escape($value) . '</div>
-            <div class="stat-foot">' . HelperFramework::escape($foot) . '</div>
+            <div class="eyebrow">' . \eel_accounts\Support\Utf8::html($label) . '</div>
+            <div class="stat-value">' . \eel_accounts\Support\Utf8::html($value) . '</div>
+            <div class="stat-foot">' . \eel_accounts\Support\Utf8::html($foot) . '</div>
         </article>';
     }
 
@@ -322,7 +322,7 @@ final class _expense_statisticsCard extends CardBaseFramework
 
     private function emptyPanel(string $title, string $message): string
     {
-        return '<section class="panel-soft"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3><div class="helper">' . HelperFramework::escape($message) . '</div></section>';
+        return '<section class="panel-soft"><h3 class="card-title">' . \eel_accounts\Support\Utf8::html($title) . '</h3><div class="helper">' . \eel_accounts\Support\Utf8::html($message) . '</div></section>';
     }
 
     private function money(array $companySettings, mixed $value): string

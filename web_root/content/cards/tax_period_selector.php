@@ -34,7 +34,7 @@ final class _tax_period_selectorCard extends CardBaseFramework
                 . ' - ' . (string)($period['period_start'] ?? '')
                 . ' to ' . (string)($period['period_end'] ?? '')
                 . ' (' . (string)($period['status'] ?? 'pending') . ')';
-            $html .= '<option value="' . $id . '"' . ($id === $selectedCtPeriodId ? ' selected' : '') . '>' . HelperFramework::escape($label) . '</option>';
+            $html .= '<option value="' . $id . '"' . ($id === $selectedCtPeriodId ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html($label) . '</option>';
         }
 
         return $html;
@@ -73,9 +73,9 @@ final class _tax_period_selectorCard extends CardBaseFramework
     private function summaryCard(string $label, string $value): string
     {
         return '<div class="summary-card"><div class="summary-label">'
-            . HelperFramework::escape($label)
+            . \eel_accounts\Support\Utf8::html($label)
             . '</div><div class="summary-value">'
-            . HelperFramework::escape($value)
+            . \eel_accounts\Support\Utf8::html($value)
             . '</div></div>';
     }
 }

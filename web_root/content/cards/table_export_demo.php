@@ -101,7 +101,7 @@ final class _table_export_demoCard extends CardBaseFramework
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
         $settingsService = new \eel_accounts\Service\CompanySettingsService();
 
-        return TableFramework::make('test_table_export_demo', $this->filteredRows($context, $this->selectedStatusFilter($context)))
+        return \eel_accounts\Support\Utf8Table::make('test_table_export_demo', $this->filteredRows($context, $this->selectedStatusFilter($context)))
             ->filename('test-table-export-demo')
             ->exportLimit(1000)
             ->empty('No demo records were found.')
@@ -110,14 +110,14 @@ final class _table_export_demoCard extends CardBaseFramework
             ->column(
                 'status',
                 'Status',
-                html: fn(array $row): string => '<span class="badge ' . HelperFramework::escape($this->statusBadgeClass((string)($row['status'] ?? ''))) . '">'
-                    . HelperFramework::escape((string)($row['status'] ?? ''))
+                html: fn(array $row): string => '<span class="badge ' . \eel_accounts\Support\Utf8::html($this->statusBadgeClass((string)($row['status'] ?? ''))) . '">'
+                    . \eel_accounts\Support\Utf8::html((string)($row['status'] ?? ''))
                     . '</span>'
             )
             ->column(
                 'amount',
                 'Amount',
-                html: static fn(array $row): string => HelperFramework::escape($settingsService->money($companySettings, $row['amount'] ?? 0)),
+                html: static fn(array $row): string => \eel_accounts\Support\Utf8::html($settingsService->money($companySettings, $row['amount'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['amount'] ?? 0), 2, '.', ''),
                 cellClass: 'cell-fit',
                 exportType: 'number'

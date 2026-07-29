@@ -58,15 +58,15 @@ final class _dividend_historyCard extends CardBaseFramework
             $status = (string)($row['status'] ?? 'posted');
             $paymentLinkStatus = (string)($row['payment_link_status'] ?? '');
             $rowsHtml .= '<tr>
-                <td>' . HelperFramework::escape((string)($row['journal_date'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape((string)($row['description'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $row['amount'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape((string)($row['settlement_account'] ?? '')) . '</td>
-                <td><div class="helper">' . HelperFramework::escape((string)($row['source_ref'] ?? '')) . '</div></td>
-                <td><span class="badge ' . HelperFramework::escape($this->statusBadgeClass($status)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($status, '_')) . '</span></td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($row['journal_date'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($row['description'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['amount'] ?? 0)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($row['settlement_account'] ?? '')) . '</td>
+                <td><div class="helper">' . \eel_accounts\Support\Utf8::html((string)($row['source_ref'] ?? '')) . '</div></td>
+                <td><span class="badge ' . \eel_accounts\Support\Utf8::html($this->statusBadgeClass($status)) . '">' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($status, '_')) . '</span></td>
                 <td>
-                    <span class="badge ' . HelperFramework::escape($this->paymentLinkBadgeClass($paymentLinkStatus)) . '">' . HelperFramework::escape((string)($row['payment_link_label'] ?? 'Manual / draft')) . '</span>
-                    <div class="helper">' . HelperFramework::escape((string)($row['payment_link_detail'] ?? '')) . '</div>
+                    <span class="badge ' . \eel_accounts\Support\Utf8::html($this->paymentLinkBadgeClass($paymentLinkStatus)) . '">' . \eel_accounts\Support\Utf8::html((string)($row['payment_link_label'] ?? 'Manual / draft')) . '</span>
+                    <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($row['payment_link_detail'] ?? '')) . '</div>
                 </td>
                 <td>' . $this->actionsHtml($row, $companyId, $accountingPeriodId) . '</td>
             </tr>';

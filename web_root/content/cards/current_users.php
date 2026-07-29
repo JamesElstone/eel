@@ -74,14 +74,14 @@ final class _current_usersCard extends CardBaseFramework
 
     private function table(array $context): TableFramework
     {
-        return TableFramework::make($this->key(), $this->rows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->rows($context))
             ->filename('current-users')
             ->exportLimit(500)
             ->empty('No users were found.')
             ->column(
                 'display_name',
                 'User',
-                html: fn(array $row): string => HelperFramework::escape((string)($row['display_name'] ?? ''))
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html((string)($row['display_name'] ?? ''))
                     . (!empty($row['is_current_user']) ? ' <span class="badge info">You</span>' : ''),
                 export: static fn(array $row): string => (string)($row['display_name'] ?? '')
             )
@@ -96,8 +96,8 @@ final class _current_usersCard extends CardBaseFramework
             ->column(
                 'status_label',
                 'Status',
-                html: static fn(array $row): string => '<span class="badge ' . HelperFramework::escape((string)($row['status_badge_class'] ?? 'warning')) . '">'
-                    . HelperFramework::escape((string)($row['status_label'] ?? ''))
+                html: static fn(array $row): string => '<span class="badge ' . \eel_accounts\Support\Utf8::html((string)($row['status_badge_class'] ?? 'warning')) . '">'
+                    . \eel_accounts\Support\Utf8::html((string)($row['status_label'] ?? ''))
                     . '</span>'
                     . (!empty($row['must_change_password']) ? ' <span class="badge warning">Password change required</span>' : ''),
                 export: static fn(array $row): string => (string)($row['status_label'] ?? '')
@@ -148,8 +148,8 @@ final class _current_usersCard extends CardBaseFramework
         foreach ($roles as $role) {
             $roleId = (int)($role['id'] ?? 0);
             $selected = $roleId === $currentRoleId ? ' selected' : '';
-            $optionsHtml .= '<option value="' . HelperFramework::escape((string)$roleId) . '"' . $selected . '>'
-                . HelperFramework::escape((string)($role['role_name'] ?? ''))
+            $optionsHtml .= '<option value="' . \eel_accounts\Support\Utf8::html((string)$roleId) . '"' . $selected . '>'
+                . \eel_accounts\Support\Utf8::html((string)($role['role_name'] ?? ''))
                 . '</option>';
         }
 
@@ -160,8 +160,8 @@ final class _current_usersCard extends CardBaseFramework
         return '<form method="post" action="?page=users" data-ajax="true">
             ' . $cards . '
             <input type="hidden" name="action" value="users-set-role">
-            <input type="hidden" name="csrf_token" value="' . HelperFramework::escape((string)($context['page']['csrf_token'] ?? '')) . '">
-            <input type="hidden" name="target_user_id" value="' . HelperFramework::escape((string)$userId) . '">
+            <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html((string)($context['page']['csrf_token'] ?? '')) . '">
+            <input type="hidden" name="target_user_id" value="' . \eel_accounts\Support\Utf8::html((string)$userId) . '">
             <select class="selector-input" name="target_role_id">
                 ' . $optionsHtml . '
             </select>
@@ -181,8 +181,8 @@ final class _current_usersCard extends CardBaseFramework
         return '<form method="post" action="?page=users" data-ajax="true">
             ' . $cards . '
             <input type="hidden" name="action" value="users-set-otp-required">
-            <input type="hidden" name="csrf_token" value="' . HelperFramework::escape((string)($context['page']['csrf_token'] ?? '')) . '">
-            <input type="hidden" name="target_user_id" value="' . HelperFramework::escape((string)$userId) . '">
+            <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html((string)($context['page']['csrf_token'] ?? '')) . '">
+            <input type="hidden" name="target_user_id" value="' . \eel_accounts\Support\Utf8::html((string)$userId) . '">
             <select class="selector-input" name="otp_required">
                 <option value="1"' . ($otpRequired ? ' selected' : '') . '>Required</option>
                 <option value="0"' . (!$otpRequired ? ' selected' : '') . '>Optional</option>
@@ -205,30 +205,30 @@ final class _current_usersCard extends CardBaseFramework
         $isPendingInvitation = (string)($user['account_status'] ?? '') === 'pending_invitation';
         $toggleButton = $isCurrentUser && $enableState === '0'
             ? '<button class="button primary disabled" type="button" aria-disabled="true">Disable</button>'
-            : '<button class="button primary" type="submit">' . HelperFramework::escape($enableLabel) . '</button>';
+            : '<button class="button primary" type="submit">' . \eel_accounts\Support\Utf8::html($enableLabel) . '</button>';
 
         return '<div class="actions-row">
             ' . ($isPendingInvitation ? $this->inviteActionsHtml($context, $user) : '') . '
             <form method="post" action="?page=users" data-ajax="true">
                 ' . $cards . '
                 <input type="hidden" name="action" value="users-toggle-user">
-                <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
-                <input type="hidden" name="target_user_id" value="' . HelperFramework::escape((string)$userId) . '">
-                <input type="hidden" name="target_state" value="' . HelperFramework::escape($enableState) . '">
+                <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
+                <input type="hidden" name="target_user_id" value="' . \eel_accounts\Support\Utf8::html((string)$userId) . '">
+                <input type="hidden" name="target_state" value="' . \eel_accounts\Support\Utf8::html($enableState) . '">
                 ' . $toggleButton . '
             </form>
             ' . ($isPendingInvitation ? '' : '<form method="post" action="?page=users" data-ajax="true">
                 ' . $cards . '
                 <input type="hidden" name="action" value="users-reset-otp">
-                <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
-                <input type="hidden" name="target_user_id" value="' . HelperFramework::escape((string)$userId) . '">
+                <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
+                <input type="hidden" name="target_user_id" value="' . \eel_accounts\Support\Utf8::html((string)$userId) . '">
                 <button class="button primary" type="submit">Reset OTP</button>
             </form>
             <form method="post" action="?page=users" data-ajax="true">
                 ' . $cards . '
                 <input type="hidden" name="action" value="users-require-password-change">
-                <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
-                <input type="hidden" name="target_user_id" value="' . HelperFramework::escape((string)$userId) . '">
+                <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
+                <input type="hidden" name="target_user_id" value="' . \eel_accounts\Support\Utf8::html((string)$userId) . '">
                 <button class="button primary" type="submit">Force Password Change</button>
             </form>') . '
             ' . ($isCurrentUser
@@ -236,8 +236,8 @@ final class _current_usersCard extends CardBaseFramework
                 : ($isPendingInvitation ? '' : '<form method="post" action="?page=users" data-ajax="true" class="input-action-row">
                 ' . $cards . '
                 <input type="hidden" name="action" value="users-set-password">
-                <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
-                <input type="hidden" name="target_user_id" value="' . HelperFramework::escape((string)$userId) . '">
+                <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
+                <input type="hidden" name="target_user_id" value="' . \eel_accounts\Support\Utf8::html((string)$userId) . '">
                 <input class="input" name="target_password" type="password" placeholder="New password" autocomplete="new-password" required>
                 <button class="button button-inline primary" type="submit">Set Password</button>
             </form>')) . '
@@ -255,7 +255,7 @@ final class _current_usersCard extends CardBaseFramework
             default => 'info',
         };
 
-        return '<span class="badge ' . HelperFramework::escape($class) . '">' . HelperFramework::escape($label) . '</span>';
+        return '<span class="badge ' . \eel_accounts\Support\Utf8::html($class) . '">' . \eel_accounts\Support\Utf8::html($label) . '</span>';
     }
 
     private function inviteActionsHtml(array $context, array $user): string
@@ -287,10 +287,10 @@ final class _current_usersCard extends CardBaseFramework
         return '<form method="post" action="?page=users" data-ajax="true">
             ' . $cards . '
             <input type="hidden" name="action" value="' . ($mode === 'copy' ? 'users-copy-invite-link' : 'users-send-invite') . '">
-            <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
-            <input type="hidden" name="target_user_id" value="' . HelperFramework::escape((string)$userId) . '">
-            <input type="hidden" name="contact_method" value="' . HelperFramework::escape($contactMethod) . '">
-            <button class="button primary" type="submit">' . HelperFramework::escape($label) . '</button>
+            <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
+            <input type="hidden" name="target_user_id" value="' . \eel_accounts\Support\Utf8::html((string)$userId) . '">
+            <input type="hidden" name="contact_method" value="' . \eel_accounts\Support\Utf8::html($contactMethod) . '">
+            <button class="button primary" type="submit">' . \eel_accounts\Support\Utf8::html($label) . '</button>
         </form>';
     }
 
@@ -299,7 +299,7 @@ final class _current_usersCard extends CardBaseFramework
         $html = '';
 
         foreach ((array)($context['page']['page_cards'] ?? []) as $cardKey) {
-            $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+            $html .= '<input type="hidden" name="cards[]" value="' . \eel_accounts\Support\Utf8::html((string)$cardKey) . '">';
         }
 
         return $html;

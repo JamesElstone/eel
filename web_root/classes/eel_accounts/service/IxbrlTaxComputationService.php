@@ -221,12 +221,12 @@ final class IxbrlTaxComputationService
                     'filename' => $artifact['filename'],
                     'taxonomy_profile' => (string)$package['taxonomy_version'] . '/' . (string)$package['artifact_version'],
                     'validation_status' => 'passed',
-                    'validation_errors' => json_encode([], JSON_UNESCAPED_SLASHES),
+                    'validation_errors' => \eel_accounts\Support\Utf8::json([], JSON_UNESCAPED_SLASHES),
                     'external_validator' => 'arelle',
                     'external_validator_version' => $validatorVersion !== '' ? $validatorVersion : null,
                     'external_status' => $externalStatus,
-                    'external_errors' => json_encode((array)($external['errors'] ?? []), JSON_UNESCAPED_SLASHES),
-                    'external_warnings' => json_encode((array)($external['warnings'] ?? []), JSON_UNESCAPED_SLASHES),
+                    'external_errors' => \eel_accounts\Support\Utf8::json((array)($external['errors'] ?? []), JSON_UNESCAPED_SLASHES),
+                    'external_warnings' => \eel_accounts\Support\Utf8::json((array)($external['warnings'] ?? []), JSON_UNESCAPED_SLASHES),
                     'external_log' => ($external['log_path'] ?? null) ?: null,
                     'output_sha256' => $artifact['sha256'],
                     'validated_sha256' => ($external['validated_sha256'] ?? null) ?: null,
@@ -343,7 +343,7 @@ final class IxbrlTaxComputationService
              external_validation_status = :external_status, external_validation_errors_json = :external_errors,
              external_validation_warnings_json = :external_warnings, external_validation_log_path = :external_log,
              external_validated_at = CURRENT_TIMESTAMP, external_validated_sha256 = :validated_sha256 WHERE id = :id',
-            ['ixbrl_status' => $passed ? 'validated' : 'validation_failed', 'validation_status' => 'passed', 'validation_errors' => json_encode([], JSON_UNESCAPED_SLASHES), 'validator' => 'arelle', 'validator_version' => $validatorVersion !== '' ? $validatorVersion : null, 'external_status' => (string)($external['status'] ?? 'error'), 'external_errors' => json_encode((array)($external['errors'] ?? []), JSON_UNESCAPED_SLASHES), 'external_warnings' => json_encode((array)($external['warnings'] ?? []), JSON_UNESCAPED_SLASHES), 'external_log' => ($external['log_path'] ?? null) ?: null, 'validated_sha256' => ($external['validated_sha256'] ?? null) ?: null, 'id' => (int)$run['id']]
+            ['ixbrl_status' => $passed ? 'validated' : 'validation_failed', 'validation_status' => 'passed', 'validation_errors' => \eel_accounts\Support\Utf8::json([], JSON_UNESCAPED_SLASHES), 'validator' => 'arelle', 'validator_version' => $validatorVersion !== '' ? $validatorVersion : null, 'external_status' => (string)($external['status'] ?? 'error'), 'external_errors' => \eel_accounts\Support\Utf8::json((array)($external['errors'] ?? []), JSON_UNESCAPED_SLASHES), 'external_warnings' => \eel_accounts\Support\Utf8::json((array)($external['warnings'] ?? []), JSON_UNESCAPED_SLASHES), 'external_log' => ($external['log_path'] ?? null) ?: null, 'validated_sha256' => ($external['validated_sha256'] ?? null) ?: null, 'id' => (int)$run['id']]
         );
         return ['success' => $passed, 'errors' => $passed ? [] : ((array)($external['errors'] ?? []) !== [] ? (array)$external['errors'] : ['Arelle validation did not return a complete validator identity and matching artifact hash.']), 'warnings' => (array)($external['warnings'] ?? [])];
     }
@@ -384,7 +384,7 @@ final class IxbrlTaxComputationService
             }
             $contextPeriod = $this->contextPeriod($mapping, $model);
             $contextId = 'ct_' . substr(hash('sha256', (string)$mapping['period_type'] . '|'
-                . (string)json_encode($contextDefinition, JSON_UNESCAPED_SLASHES) . '|'
+                . (string)\eel_accounts\Support\Utf8::json($contextDefinition, JSON_UNESCAPED_SLASHES) . '|'
                 . (string)$contextPeriod['start_date'] . '|' . (string)$contextPeriod['end_date']), 0, 12);
             if (!isset($contexts[$contextId])) {
                 $contexts[$contextId] = [
@@ -1301,7 +1301,7 @@ CSS;
             \InterfaceDB::prepareExecute(
                 'UPDATE corporation_tax_computation_runs SET ixbrl_status = :status, validation_status = :validation_status,
                  validation_errors_json = :errors WHERE id = :id',
-                ['status' => 'failed', 'validation_status' => 'failed', 'errors' => json_encode([$message], JSON_UNESCAPED_SLASHES), 'id' => $runId]
+                ['status' => 'failed', 'validation_status' => 'failed', 'errors' => \eel_accounts\Support\Utf8::json([$message], JSON_UNESCAPED_SLASHES), 'id' => $runId]
             );
         }
         return ['success' => false, 'errors' => [$message]];

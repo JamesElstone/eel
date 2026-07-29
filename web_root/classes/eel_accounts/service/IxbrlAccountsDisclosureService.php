@@ -1410,9 +1410,9 @@ final class IxbrlAccountsDisclosureService
                 'action' => 'ixbrl_disclosures_changed',
                 'action_by' => $changedBy,
                 'old_value_json' => $oldValues !== null
-                    ? json_encode($oldValues, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)
+                    ? \eel_accounts\Support\Utf8::json($oldValues, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)
                     : null,
-                'new_value_json' => json_encode($newValues, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+                'new_value_json' => \eel_accounts\Support\Utf8::json($newValues, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
                 'notes' => 'Period-specific iXBRL accounts disclosures changed; existing facts and exports must be rebuilt.',
             ]
         );

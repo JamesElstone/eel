@@ -345,7 +345,7 @@ final class HmrcCt600ValidationService
             'validator_version' => self::VALIDATOR_VERSION,
             'document_sha256' => $basis['document_sha256'],
             'validation_basis' => $basis,
-            'validation_sha256' => hash('sha256', json_encode($basis, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)),
+            'validation_sha256' => hash('sha256', \eel_accounts\Support\Utf8::json($basis, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)),
             'diagnostics' => array_values($diagnostics),
             'errors' => array_values(array_map(
                 static fn(array $item): string => (string)$item['message'],

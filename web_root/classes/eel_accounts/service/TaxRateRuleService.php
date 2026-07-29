@@ -646,7 +646,7 @@ final class TaxRateRuleService
 
     private function ruleVersion(array $rule): string
     {
-        $hash = hash('sha256', json_encode([
+        $hash = hash('sha256', \eel_accounts\Support\Utf8::json([
             'tax_domain' => (string)$rule['tax_domain'],
             'regime' => (string)$rule['regime'],
             'rule_key' => (string)$rule['rule_key'],

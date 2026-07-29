@@ -71,7 +71,7 @@ final class _year_end_notesCard extends CardBaseFramework
             <section class="settings-stack">
                 <div class="helper"><span class="badge warning">Period locked</span> Year End notes are read only.</div>
                 <div class="form-row full">
-                    <textarea class="input year-end-review-notes" id="year-end-review-notes" aria-label="Year end notes" readonly>' . HelperFramework::escape($notes) . '</textarea>
+                    <textarea class="input year-end-review-notes" id="year-end-review-notes" aria-label="Year end notes" readonly>' . \eel_accounts\Support\Utf8::html($notes) . '</textarea>
                 </div>
             </section>';
         }
@@ -85,7 +85,7 @@ final class _year_end_notesCard extends CardBaseFramework
                     <input type="hidden" name="company_id" value="' . $companyId . '">
                     <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                     <div class="form-row full">
-                        <textarea class="input year-end-review-notes" id="year-end-review-notes" name="review_notes" aria-label="Year end notes">' . HelperFramework::escape($notes) . '</textarea>
+                        <textarea class="input year-end-review-notes" id="year-end-review-notes" name="review_notes" aria-label="Year end notes">' . \eel_accounts\Support\Utf8::html($notes) . '</textarea>
                     </div>
                     <div><button class="button primary" type="submit">Save Notes</button></div>
                 </form>

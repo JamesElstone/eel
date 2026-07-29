@@ -80,7 +80,7 @@ final class _transactions_monthly_statusCard extends CardBaseFramework
 
             $monthYear = trim((string)($month['year'] ?? ''));
             $monthYearHtml = $monthYear !== ''
-                ? '<div class="month-year">' . HelperFramework::escape($monthYear) . '</div>'
+                ? '<div class="month-year">' . \eel_accounts\Support\Utf8::html($monthYear) . '</div>'
                 : '';
             $confirmedEmptyHtml = !empty($month['empty_month_confirmed'])
                 ? '<div class="helper">Confirmed no activity</div>'
@@ -94,7 +94,7 @@ final class _transactions_monthly_statusCard extends CardBaseFramework
             $monthCardClass = $this->monthStatusClass((string)($month['status'] ?? 'idle'));
             $monthContentHtml = '<div class="month-head">
                     <div>
-                        <div class="month-name">' . HelperFramework::escape((string)($month['month'] ?? '')) . '</div>
+                        <div class="month-name">' . \eel_accounts\Support\Utf8::html((string)($month['month'] ?? '')) . '</div>
                         ' . $monthYearHtml . '
                     </div>
                     <span class="month-dot"></span>
@@ -109,7 +109,7 @@ final class _transactions_monthly_statusCard extends CardBaseFramework
                 ' . $confirmedEmptyHtml;
 
             $monthsHtml .= '<div class="month-card-stack">
-            <div class="' . HelperFramework::escape($monthCardClass) . '">
+            <div class="' . \eel_accounts\Support\Utf8::html($monthCardClass) . '">
                 ' . $this->monthSelectFormHtml($monthKey, $companyId, $accountingPeriodId, $selectedTransactionFilter, $selectedAccountFilter, $monthContentHtml) . '
                 ' . $confirmEmptyHtml . '
             </div>
@@ -133,8 +133,8 @@ final class _transactions_monthly_statusCard extends CardBaseFramework
             <input type="hidden" name="global_action" value="select_transaction_month">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-            <input type="hidden" name="month_key" value="' . HelperFramework::escape($monthKey) . '">
-            <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+            <input type="hidden" name="month_key" value="' . \eel_accounts\Support\Utf8::html($monthKey) . '">
+            <input type="hidden" name="category_filter" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionFilter) . '">
             <input type="hidden" name="account_filter" value="' . $selectedAccountFilter . '">
             <button class="month-card-select" type="submit" data-page-card-switch-tab="Categorise">' . $monthContentHtml . '</button>
         </form>';
@@ -152,7 +152,7 @@ final class _transactions_monthly_statusCard extends CardBaseFramework
             <input type="hidden" name="intent" value="confirm_empty_month">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-            <input type="hidden" name="month_start" value="' . HelperFramework::escape($monthKey) . '">
+            <input type="hidden" name="month_start" value="' . \eel_accounts\Support\Utf8::html($monthKey) . '">
             <button class="button" type="submit">Confirm no activity</button>
         </form>';
     }

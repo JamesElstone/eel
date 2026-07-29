@@ -69,7 +69,7 @@ final class _expense_claim_createCard extends CardBaseFramework
             <input type="hidden" name="accounting_period_id" value="' . (int)($company['accounting_period_id'] ?? 0) . '">
             <input type="hidden" name="intent" value="create_claim">
         </form>
-        ' . ($createDisabled ? '<div class="helper">' . HelperFramework::escape($disabledReason) . '</div>' : '') . '
+        ' . ($createDisabled ? '<div class="helper">' . \eel_accounts\Support\Utf8::html($disabledReason) . '</div>' : '') . '
         <div class="create-expense-claim">
                 <div class="mini-field">
                     <label for="expense-create-claimant">Claimant</label>
@@ -97,15 +97,15 @@ final class _expense_claim_createCard extends CardBaseFramework
                 continue;
             }
 
-            $options .= '<option value="' . (int)($claimant['id'] ?? 0) . '">' . HelperFramework::escape((string)($claimant['claimant_name'] ?? '')) . '</option>';
+            $options .= '<option value="' . (int)($claimant['id'] ?? 0) . '">' . \eel_accounts\Support\Utf8::html((string)($claimant['claimant_name'] ?? '')) . '</option>';
             $optionCount++;
         }
 
         if ($optionCount === 0) {
-            return '<option value="" selected>' . HelperFramework::escape($emptyLabel) . '</option>';
+            return '<option value="" selected>' . \eel_accounts\Support\Utf8::html($emptyLabel) . '</option>';
         }
 
-        return '<option value="">' . HelperFramework::escape($emptyLabel) . '</option>' . $options;
+        return '<option value="">' . \eel_accounts\Support\Utf8::html($emptyLabel) . '</option>' . $options;
     }
 
     private function claimPeriodDefaults(array $accountingPeriod): array
@@ -182,7 +182,7 @@ final class _expense_claim_createCard extends CardBaseFramework
         $html = '';
         for ($month = 1; $month <= 12; $month++) {
             $selected = $month === $selectedMonth ? ' selected' : '';
-            $html .= '<option value="' . $month . '"' . $selected . '>' . HelperFramework::escape($this->monthName($month)) . '</option>';
+            $html .= '<option value="' . $month . '"' . $selected . '>' . \eel_accounts\Support\Utf8::html($this->monthName($month)) . '</option>';
         }
 
         return $html;

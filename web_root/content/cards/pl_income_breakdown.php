@@ -41,13 +41,13 @@ final class _pl_income_breakdownCard extends CardBaseFramework
     private function group(string $title, array $rows, string $empty, array $companySettings, string $emptyNote = ''): string
     {
         if ($rows === []) {
-            return '<section class="panel-soft"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3><div class="helper">' . HelperFramework::escape($empty) . '</div>' . $emptyNote . '</section>';
+            return '<section class="panel-soft"><h3 class="card-title">' . \eel_accounts\Support\Utf8::html($title) . '</h3><div class="helper">' . \eel_accounts\Support\Utf8::html($empty) . '</div>' . $emptyNote . '</section>';
         }
         $html = '';
         foreach ($rows as $row) {
-            $html .= '<tr><td>' . HelperFramework::escape((string)($row['code'] ?? '')) . '</td><td>' . HelperFramework::escape((string)($row['name'] ?? '')) . '</td><td>' . HelperFramework::escape($this->money($companySettings, $row['amount'] ?? 0)) . '</td></tr>';
+            $html .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)($row['code'] ?? '')) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($row['name'] ?? '')) . '</td><td>' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['amount'] ?? 0)) . '</td></tr>';
         }
-        return '<section class="panel-soft"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3><div class="table-scroll"><table><thead><tr><th>Code</th><th>Nominal</th><th>Amount</th></tr></thead><tbody>' . $html . '</tbody></table></div></section>';
+        return '<section class="panel-soft"><h3 class="card-title">' . \eel_accounts\Support\Utf8::html($title) . '</h3><div class="table-scroll"><table><thead><tr><th>Code</th><th>Nominal</th><th>Amount</th></tr></thead><tbody>' . $html . '</tbody></table></div></section>';
     }
 
     private function money(array $companySettings, mixed $value): string
@@ -73,7 +73,7 @@ final class _pl_income_breakdownCard extends CardBaseFramework
         }
 
         return '<div class="helper">Monies posted to '
-            . HelperFramework::escape(implode(', ', $labels))
+            . \eel_accounts\Support\Utf8::html(implode(', ', $labels))
             . ' are excluded from income because those nominal accounts do not affect P&amp;L income.<br>Director loans, capital introduced, internal transfers, and other balance-sheet movements are not income.</div>';
     }
 

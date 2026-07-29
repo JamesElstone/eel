@@ -514,8 +514,8 @@ final class CategorisationRuleService
 
         $params = $this->lastParams === []
             ? '{}'
-            : (function_exists('json_encode')
-                ? (string)json_encode($this->lastParams, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE)
+            : (function_exists('\eel_accounts\Support\Utf8::json')
+                ? (string)\eel_accounts\Support\Utf8::json($this->lastParams, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE)
                 : '{}');
 
         return 'SQL: ' . preg_replace('/\s+/', ' ', trim($this->lastSql)) . ' | Params: ' . $params;

@@ -141,9 +141,9 @@ final class _ixbrl_historyCard extends CardBaseFramework
                 . (!$evidenceBundleExists ? '<div><span class="badge danger">Missing</span></div>' : '')
             : '—';
 
-        return '<td rowspan="' . $rowSpan . '"><strong>' . HelperFramework::escape($approvalId) . '</strong></td>'
+        return '<td rowspan="' . $rowSpan . '"><strong>' . \eel_accounts\Support\Utf8::html($approvalId) . '</strong></td>'
             . '<td rowspan="' . $rowSpan . '">' . $evidenceBundle . '</td>'
-            . '<td rowspan="' . $rowSpan . '">' . HelperFramework::escape($approvedAt) . '</td>';
+            . '<td rowspan="' . $rowSpan . '">' . \eel_accounts\Support\Utf8::html($approvedAt) . '</td>';
     }
 
     private function runCells(array $run): string
@@ -166,19 +166,19 @@ final class _ixbrl_historyCard extends CardBaseFramework
             ? (string)(int)$run['fact_count']
             : '—';
 
-        return '<td><strong>' . HelperFramework::escape($runLabel) . '</strong>'
-                . ($runHelper !== '' ? '<div class="helper">' . HelperFramework::escape($runHelper) . '</div>' : '')
+        return '<td><strong>' . \eel_accounts\Support\Utf8::html($runLabel) . '</strong>'
+                . ($runHelper !== '' ? '<div class="helper">' . \eel_accounts\Support\Utf8::html($runHelper) . '</div>' : '')
                 . (!empty($run['is_latest']) ? '<div><span class="badge info">Latest</span></div>' : '') . '</td>'
-            . '<td>' . HelperFramework::escape((string)($run['output_label'] ?? 'iXBRL')) . '</td>'
-            . '<td>' . HelperFramework::escape((string)($run['ct_period_label'] ?? '')) . '</td>'
-            . '<td>' . HelperFramework::escape($facts) . '</td>'
-            . '<td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($run['output_status'] ?? $run['status'] ?? 'draft'), '_')) . '</td>'
-            . '<td>' . HelperFramework::escape($artifact)
-                . '<div class="helper">' . HelperFramework::escape((string)($run['generated_filename'] ?? '')) . '</div></td>'
-            . '<td>' . HelperFramework::escape($this->validation((string)($run['validation_status'] ?? 'not_validated'))) . '</td>'
-            . '<td>' . HelperFramework::escape($this->validation((string)($run['external_validation_status'] ?? 'not_configured'))) . '</td>'
-            . '<td>' . HelperFramework::escape((string)($run['created_at'] ?? ''))
-                . '<div class="helper">Generated ' . HelperFramework::escape((string)($run['generated_at'] ?? 'Not generated')) . '</div></td>';
+            . '<td>' . \eel_accounts\Support\Utf8::html((string)($run['output_label'] ?? 'iXBRL')) . '</td>'
+            . '<td>' . \eel_accounts\Support\Utf8::html((string)($run['ct_period_label'] ?? '')) . '</td>'
+            . '<td>' . \eel_accounts\Support\Utf8::html($facts) . '</td>'
+            . '<td>' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)($run['output_status'] ?? $run['status'] ?? 'draft'), '_')) . '</td>'
+            . '<td>' . \eel_accounts\Support\Utf8::html($artifact)
+                . '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)($run['generated_filename'] ?? '')) . '</div></td>'
+            . '<td>' . \eel_accounts\Support\Utf8::html($this->validation((string)($run['validation_status'] ?? 'not_validated'))) . '</td>'
+            . '<td>' . \eel_accounts\Support\Utf8::html($this->validation((string)($run['external_validation_status'] ?? 'not_configured'))) . '</td>'
+            . '<td>' . \eel_accounts\Support\Utf8::html((string)($run['created_at'] ?? ''))
+                . '<div class="helper">Generated ' . \eel_accounts\Support\Utf8::html((string)($run['generated_at'] ?? 'Not generated')) . '</div></td>';
     }
 
     private function compareRows(array $left, array $right): int

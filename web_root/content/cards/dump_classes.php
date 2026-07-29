@@ -105,7 +105,7 @@ final class _dump_classesCard extends CardBaseFramework
             $isHighlighted = isset($highlightLookup[$className]);
 
             $item = '<li><span' . ($isHighlighted ? ' class="class-list-highlight"' : '') . '>'
-                . HelperFramework::escape($className)
+                . \eel_accounts\Support\Utf8::html($className)
                 . '</span></li>';
 
             if ($isHighlighted) {
@@ -120,7 +120,7 @@ final class _dump_classesCard extends CardBaseFramework
         if ($highlightedItems !== []) {
             $html .= '<div class="stack">';
             if ($highlightedLabel !== null && $highlightedLabel !== '') {
-                $html .= '<p class="helper">' . HelperFramework::escape($highlightedLabel) . '</p>';
+                $html .= '<p class="helper">' . \eel_accounts\Support\Utf8::html($highlightedLabel) . '</p>';
             }
             $html .= '<ul class="class-list class-list-highlighted">' . implode('', $highlightedItems) . '</ul>';
             $html .= '</div>';
@@ -129,7 +129,7 @@ final class _dump_classesCard extends CardBaseFramework
         if ($normalItems !== []) {
             $html .= '<div class="stack">';
             if ($normalLabel !== null && $normalLabel !== '') {
-                $html .= '<p class="helper">' . HelperFramework::escape($normalLabel) . '</p>';
+                $html .= '<p class="helper">' . \eel_accounts\Support\Utf8::html($normalLabel) . '</p>';
             }
             $html .= '<ul class="class-list">' . implode('', $normalItems) . '</ul>';
             $html .= '</div>';

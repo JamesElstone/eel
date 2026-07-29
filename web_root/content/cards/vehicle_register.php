@@ -101,7 +101,7 @@ final class _vehicle_registerCard extends CardBaseFramework
         $vehicleColours = (array)($data['vehicle_colours'] ?? \eel_accounts\Service\VehicleService::vehicleColourOptions());
         $isLocked = (new \eel_accounts\Service\YearEndLockService())->isLocked((int)($company['id'] ?? 0), (int)($company['accounting_period_id'] ?? 0));
 
-        return TableFramework::make($this->key(), $this->rows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->rows($context))
             ->filename('vehicle-register')
             ->exportLimit(5000)
             ->classes('vehicle-register-table')
@@ -147,10 +147,10 @@ final class _vehicle_registerCard extends CardBaseFramework
 
     private function assetHtml(array $row, array $settings): string
     {
-        return '<div><strong>' . HelperFramework::escape((string)($row['asset_code'] ?? '')) . '</strong></div>'
-            . '<div>' . HelperFramework::escape((string)($row['description'] ?? '')) . '</div>'
-            . '<div class="helper">' . HelperFramework::escape($this->displayDate((string)($row['purchase_date'] ?? '')) . ' - ' . $this->money($settings, $row['cost'] ?? 0)) . '</div>'
-            . '<div class="helper">' . HelperFramework::escape((string)($row['nominal_code'] ?? '') . ' ' . (string)($row['nominal_name'] ?? '')) . '</div>';
+        return '<div><strong>' . \eel_accounts\Support\Utf8::html((string)($row['asset_code'] ?? '')) . '</strong></div>'
+            . '<div>' . \eel_accounts\Support\Utf8::html((string)($row['description'] ?? '')) . '</div>'
+            . '<div class="helper">' . \eel_accounts\Support\Utf8::html($this->displayDate((string)($row['purchase_date'] ?? '')) . ' - ' . $this->money($settings, $row['cost'] ?? 0)) . '</div>'
+            . '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)($row['nominal_code'] ?? '') . ' ' . (string)($row['nominal_name'] ?? '')) . '</div>';
     }
 
     private function vehicleFactsHtml(array $row, array $vehicleTypes, array $vehicleColours, array $company, bool $isLocked): string
@@ -160,7 +160,7 @@ final class _vehicle_registerCard extends CardBaseFramework
         $formId = $this->formId($row);
         $vehicleType = $this->vehicleType($row);
 
-        return '<form id="' . HelperFramework::escape($formId) . '" method="post" action="?page=vehicles" data-ajax="true" data-vehicle-row="true">
+        return '<form id="' . \eel_accounts\Support\Utf8::html($formId) . '" method="post" action="?page=vehicles" data-ajax="true" data-vehicle-row="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Vehicle">
                 <input type="hidden" name="intent" value="save_vehicle_details">
@@ -169,8 +169,8 @@ final class _vehicle_registerCard extends CardBaseFramework
                 <input type="hidden" name="default_bank_nominal_id" value="' . (int)(($company['settings'] ?? [])['default_bank_nominal_id'] ?? 0) . '">
                 <div class="form-grid compact vehicle-register-controls vehicle-facts-controls">
                     <label>Type<select class="select" name="vehicle_type" data-vehicle-watch data-no-submit-on-change="true"' . ($isLocked ? ' disabled' : '') . '>' . $this->options($vehicleTypes, $vehicleType) . '</select></label>
-                    <label>Registration<input class="input" name="registration_mark" value="' . HelperFramework::escape((string)($row['registration_mark'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
-                    <label>Make / model<input class="input" name="make_model" value="' . HelperFramework::escape((string)($row['make_model'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
+                    <label>Registration<input class="input" name="registration_mark" value="' . \eel_accounts\Support\Utf8::html((string)($row['registration_mark'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
+                    <label>Make / model<input class="input" name="make_model" value="' . \eel_accounts\Support\Utf8::html((string)($row['make_model'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
                     <label>Colour<select class="select" name="colour" data-vehicle-watch data-no-submit-on-change="true"' . ($isLocked ? ' disabled' : '') . '>' . $this->options($vehicleColours, (string)($row['colour'] ?? '')) . '</select></label>
                 </div>
             </form>';
@@ -181,13 +181,13 @@ final class _vehicle_registerCard extends CardBaseFramework
         $formId = $this->formId($row);
 
         return '<div class="form-grid compact vehicle-register-controls vehicle-tax-controls">
-                <label>Condition<select class="select" name="acquisition_condition" form="' . HelperFramework::escape($formId) . '" data-vehicle-watch data-no-submit-on-change="true"' . ($isLocked ? ' disabled' : '') . '>' . $this->options($conditions, (string)($row['acquisition_condition'] ?? '')) . '</select></label>
-                <label>CO2 g/km<input class="input" type="number" min="0" step="1" name="co2_emissions_g_km" form="' . HelperFramework::escape($formId) . '" value="' . HelperFramework::escape((string)($row['co2_emissions_g_km'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
-                <label>Engine cc<input class="input" type="number" min="0" step="1" name="engine_capacity_cc" form="' . HelperFramework::escape($formId) . '" value="' . HelperFramework::escape((string)($row['engine_capacity_cc'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
-                <label>Payload kg<input class="input" type="number" min="0" step="0.01" name="payload_kg" form="' . HelperFramework::escape($formId) . '" value="' . HelperFramework::escape((string)($row['payload_kg'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
-                <label>First registered<input class="input" type="date" name="first_registered_date" form="' . HelperFramework::escape($formId) . '" value="' . HelperFramework::escape((string)($row['first_registered_date'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
-                <label class="checkbox-row"><span>Zero emission</span><input type="checkbox" name="is_zero_emission" value="1" form="' . HelperFramework::escape($formId) . '"' . ((int)($row['is_zero_emission'] ?? 0) === 1 ? ' checked' : '') . ' data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
-                <label>Notes<input class="input" name="notes" form="' . HelperFramework::escape($formId) . '" value="' . HelperFramework::escape((string)($row['notes'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
+                <label>Condition<select class="select" name="acquisition_condition" form="' . \eel_accounts\Support\Utf8::html($formId) . '" data-vehicle-watch data-no-submit-on-change="true"' . ($isLocked ? ' disabled' : '') . '>' . $this->options($conditions, (string)($row['acquisition_condition'] ?? '')) . '</select></label>
+                <label>CO2 g/km<input class="input" type="number" min="0" step="1" name="co2_emissions_g_km" form="' . \eel_accounts\Support\Utf8::html($formId) . '" value="' . \eel_accounts\Support\Utf8::html((string)($row['co2_emissions_g_km'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
+                <label>Engine cc<input class="input" type="number" min="0" step="1" name="engine_capacity_cc" form="' . \eel_accounts\Support\Utf8::html($formId) . '" value="' . \eel_accounts\Support\Utf8::html((string)($row['engine_capacity_cc'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
+                <label>Payload kg<input class="input" type="number" min="0" step="0.01" name="payload_kg" form="' . \eel_accounts\Support\Utf8::html($formId) . '" value="' . \eel_accounts\Support\Utf8::html((string)($row['payload_kg'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
+                <label>First registered<input class="input" type="date" name="first_registered_date" form="' . \eel_accounts\Support\Utf8::html($formId) . '" value="' . \eel_accounts\Support\Utf8::html((string)($row['first_registered_date'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
+                <label class="checkbox-row"><span>Zero emission</span><input type="checkbox" name="is_zero_emission" value="1" form="' . \eel_accounts\Support\Utf8::html($formId) . '"' . ((int)($row['is_zero_emission'] ?? 0) === 1 ? ' checked' : '') . ' data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
+                <label>Notes<input class="input" name="notes" form="' . \eel_accounts\Support\Utf8::html($formId) . '" value="' . \eel_accounts\Support\Utf8::html((string)($row['notes'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
             </div>';
     }
 
@@ -195,15 +195,15 @@ final class _vehicle_registerCard extends CardBaseFramework
     {
         $warnings = '';
         foreach ((array)($row['warnings'] ?? []) as $warning) {
-            $warnings .= '<div class="helper">' . HelperFramework::escape((string)$warning) . '</div>';
+            $warnings .= '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$warning) . '</div>';
         }
         $status = (string)($row['tax_review_status'] ?? 'unreviewed');
-        return '<span class="badge ' . HelperFramework::escape($status === 'reviewed' ? 'success' : 'warning') . '">' . HelperFramework::escape($status !== '' ? $status : 'unreviewed') . '</span>' . $warnings;
+        return '<span class="badge ' . \eel_accounts\Support\Utf8::html($status === 'reviewed' ? 'success' : 'warning') . '">' . \eel_accounts\Support\Utf8::html($status !== '' ? $status : 'unreviewed') . '</span>' . $warnings;
     }
 
     private function actionHtml(array $row, bool $isLocked): string
     {
-        return '<button class="button primary" type="submit" form="' . HelperFramework::escape($this->formId($row)) . '" data-vehicle-save disabled' . ($isLocked ? ' title="Period locked"' : '') . '>Save</button>';
+        return '<button class="button primary" type="submit" form="' . \eel_accounts\Support\Utf8::html($this->formId($row)) . '" data-vehicle-save disabled' . ($isLocked ? ' title="Period locked"' : '') . '>Save</button>';
     }
 
     private function assetExport(array $row, array $settings): string
@@ -282,7 +282,7 @@ final class _vehicle_registerCard extends CardBaseFramework
 
         $html = '';
         foreach ($warnings as $warning) {
-            $html .= '<div class="helper">' . HelperFramework::escape($warning) . '</div>';
+            $html .= '<div class="helper">' . \eel_accounts\Support\Utf8::html($warning) . '</div>';
         }
 
         return '<section class="panel-soft settings-stack"><span class="badge warning">Warning</span>' . $html . '</section>';
@@ -293,8 +293,8 @@ final class _vehicle_registerCard extends CardBaseFramework
         $html = '';
         foreach ($options as $value => $label) {
             $isSelected = (string)$value === $selected || ($selected !== '' && strcasecmp((string)$value, $selected) === 0);
-            $html .= '<option value="' . HelperFramework::escape((string)$value) . '"' . ($isSelected ? ' selected' : '') . '>'
-                . HelperFramework::escape((string)$label)
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html((string)$value) . '"' . ($isSelected ? ' selected' : '') . '>'
+                . \eel_accounts\Support\Utf8::html((string)$label)
                 . '</option>';
         }
 

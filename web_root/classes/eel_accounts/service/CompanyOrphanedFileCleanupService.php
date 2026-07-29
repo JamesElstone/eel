@@ -62,7 +62,7 @@ final class CompanyOrphanedFileCleanupService
         $counts['files_failed'] += $manualAssetEvidenceResult['failed'];
         $errors = array_merge($errors, $manualAssetEvidenceResult['errors']);
 
-        error_log('[company_orphaned_file_cleanup] ' . json_encode([
+        error_log('[company_orphaned_file_cleanup] ' . \eel_accounts\Support\Utf8::json([
             'company_id' => $companyId,
             'actor' => $actor !== null && trim($actor) !== '' ? trim($actor) : 'unknown',
             'timestamp' => (new \DateTimeImmutable('now'))->format(\DateTimeInterface::ATOM),

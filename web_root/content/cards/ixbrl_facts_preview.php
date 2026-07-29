@@ -28,12 +28,12 @@ final class _ixbrl_facts_previewCard extends CardBaseFramework
         $rows = '';
         foreach ($facts as $fact) {
             $rows .= '<tr>
-                <td>' . HelperFramework::escape($this->section($fact)) . '</td>
-                <td><div>' . HelperFramework::escape((string)($fact['taxonomy_concept'] ?? '')) . '</div><div class="helper">' . HelperFramework::escape((string)($fact['label'] ?? $fact['fact_key'] ?? '')) . '</div></td>
-                <td>' . HelperFramework::escape($this->typeAndUnit($fact)) . '</td>
-                <td><div>' . HelperFramework::escape((string)($fact['context_ref'] ?? '')) . '</div><div class="helper">' . HelperFramework::escape($this->dimensions($fact)) . '</div></td>
-                <td>' . HelperFramework::escape($this->value($fact, $companySettings)) . '</td>
-                <td>' . HelperFramework::escape($this->sourceSummary($fact)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->section($fact)) . '</td>
+                <td><div>' . \eel_accounts\Support\Utf8::html((string)($fact['taxonomy_concept'] ?? '')) . '</div><div class="helper">' . \eel_accounts\Support\Utf8::html((string)($fact['label'] ?? $fact['fact_key'] ?? '')) . '</div></td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->typeAndUnit($fact)) . '</td>
+                <td><div>' . \eel_accounts\Support\Utf8::html((string)($fact['context_ref'] ?? '')) . '</div><div class="helper">' . \eel_accounts\Support\Utf8::html($this->dimensions($fact)) . '</div></td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->value($fact, $companySettings)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->sourceSummary($fact)) . '</td>
             </tr>';
         }
 
@@ -43,8 +43,8 @@ final class _ixbrl_facts_previewCard extends CardBaseFramework
 
         return '<div class="settings-stack">
             <section class="panel-soft">
-                <div class="status-head"><h3 class="card-title">Latest fact snapshot</h3><span class="badge ' . HelperFramework::escape($this->freshnessClass($freshnessState)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($freshnessState, '_')) . '</span></div>
-                <div class="helper">' . HelperFramework::escape((string)($freshness['detail'] ?? 'Approving the disclosures creates a traceable snapshot of the current accounts report.')) . '</div>
+                <div class="status-head"><h3 class="card-title">Latest fact snapshot</h3><span class="badge ' . \eel_accounts\Support\Utf8::html($this->freshnessClass($freshnessState)) . '">' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($freshnessState, '_')) . '</span></div>
+                <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($freshness['detail'] ?? 'Approving the disclosures creates a traceable snapshot of the current accounts report.')) . '</div>
             </section>
             ' . $table . '
             ' . ($developerOptions
@@ -137,7 +137,7 @@ final class _ixbrl_facts_previewCard extends CardBaseFramework
 
         $parts = [];
         foreach ($decoded as $dimension => $member) {
-            $parts[] = (string)$dimension . ': ' . (is_scalar($member) ? (string)$member : json_encode($member));
+            $parts[] = (string)$dimension . ': ' . (is_scalar($member) ? (string)$member : \eel_accounts\Support\Utf8::json($member));
         }
         return $parts !== [] ? implode('; ', $parts) : 'No dimensions';
     }

@@ -102,7 +102,7 @@ final class _trial_balance_lossesCard extends CardBaseFramework
 
         $stepsHtml = '';
         foreach ($steps as $step) {
-            $stepsHtml .= '<tr><td>' . HelperFramework::escape((string)($step['label'] ?? '')) . '</td><td>' . HelperFramework::escape($this->money($companySettings, $step['amount'] ?? 0)) . '</td></tr>';
+            $stepsHtml .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)($step['label'] ?? '')) . '</td><td>' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $step['amount'] ?? 0)) . '</td></tr>';
         }
 
         return '<section class="panel-soft">
@@ -119,12 +119,12 @@ final class _trial_balance_lossesCard extends CardBaseFramework
         foreach ($periods as $period) {
             $warningCount = count((array)($period['warnings'] ?? []));
             $rows .= '<tr>
-                <td>' . HelperFramework::escape($this->periodLabel($period)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $period['taxable_profit'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $period['ordinary_corporation_tax'] ?? $period['estimated_corporation_tax'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $period['loss_created_in_period'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $period['losses_used'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $period['losses_carried_forward'] ?? 0)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->periodLabel($period)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $period['taxable_profit'] ?? 0)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $period['ordinary_corporation_tax'] ?? $period['estimated_corporation_tax'] ?? 0)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $period['loss_created_in_period'] ?? 0)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $period['losses_used'] ?? 0)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $period['losses_carried_forward'] ?? 0)) . '</td>
                 <td>' . $warningCount . '</td>
             </tr>';
         }
@@ -158,7 +158,7 @@ final class _trial_balance_lossesCard extends CardBaseFramework
 
     private function summaryCard(string $label, string $value): string
     {
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+        return '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label) . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div></div>';
     }
 
     private function money(array $companySettings, mixed $value): string
@@ -170,7 +170,7 @@ final class _trial_balance_lossesCard extends CardBaseFramework
     {
         $html = '';
         foreach ($errors as $error) {
-            $html .= '<div class="helper">' . HelperFramework::escape((string)$error) . '</div>';
+            $html .= '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$error) . '</div>';
         }
 
         return $html;

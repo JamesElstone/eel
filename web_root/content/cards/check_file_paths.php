@@ -33,24 +33,24 @@ final class _check_file_pathsCard extends CardBaseFramework
                 $pathsHtml = '';
 
                 foreach ($detailPaths as $detailPath) {
-                    $pathsHtml .= '<div class="helper">Path: ' . HelperFramework::escape($detailPath) . '</div>';
+                    $pathsHtml .= '<div class="helper">Path: ' . \eel_accounts\Support\Utf8::html($detailPath) . '</div>';
                 }
 
                 $cardsHtml .= '<div class="path-detail-card">
                     <strong>
                         <span class="status-indicator">
-                            <span class="status-square ' . HelperFramework::escape($state) . '"></span>
-                            ' . HelperFramework::escape((string)($item['title'] ?? 'Path')) . ': ' . HelperFramework::escape($this->pathStateLabel($state)) . '
+                            <span class="status-square ' . \eel_accounts\Support\Utf8::html($state) . '"></span>
+                            ' . \eel_accounts\Support\Utf8::html((string)($item['title'] ?? 'Path')) . ': ' . \eel_accounts\Support\Utf8::html($this->pathStateLabel($state)) . '
                         </span>
                     </strong>'
                     . $pathsHtml . '
-                    <span>' . HelperFramework::escape((string)($item['detail'] ?? '')) . '</span>
+                    <span>' . \eel_accounts\Support\Utf8::html((string)($item['detail'] ?? '')) . '</span>
                 </div>';
             }
 
             $contentHtml = '
-                <div class="path-status ' . HelperFramework::escape((string)($pathStatus['state'] ?? 'warn')) . '">
-                    <div class="helper">' . HelperFramework::escape((string)($pathStatus['message'] ?? '')) . '</div>
+                <div class="path-status ' . \eel_accounts\Support\Utf8::html((string)($pathStatus['state'] ?? 'warn')) . '">
+                    <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($pathStatus['message'] ?? '')) . '</div>
                     <div class="path-detail-grid">' . $cardsHtml . '</div>
                 </div>';
         } elseif ($items !== []) {
@@ -61,14 +61,14 @@ final class _check_file_pathsCard extends CardBaseFramework
 
                 $metaHtml .= '<div class="path-meta-item">
                     <span class="status-indicator">
-                        <span class="status-square ' . HelperFramework::escape($state) . '"></span>
-                        ' . HelperFramework::escape((string)($item['title'] ?? 'Path')) . ': ' . HelperFramework::escape($this->pathStateLabel($state)) . '
+                        <span class="status-square ' . \eel_accounts\Support\Utf8::html($state) . '"></span>
+                        ' . \eel_accounts\Support\Utf8::html((string)($item['title'] ?? 'Path')) . ': ' . \eel_accounts\Support\Utf8::html($this->pathStateLabel($state)) . '
                     </span>
                 </div>';
             }
 
             $contentHtml = '
-                <div class="path-status ' . HelperFramework::escape((string)($pathStatus['state'] ?? 'warn')) . '">
+                <div class="path-status ' . \eel_accounts\Support\Utf8::html((string)($pathStatus['state'] ?? 'warn')) . '">
                     <div class="path-meta">' . $metaHtml . '</div>
                 </div>';
         } else {

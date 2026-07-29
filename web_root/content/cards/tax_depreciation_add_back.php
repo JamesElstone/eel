@@ -48,7 +48,7 @@ final class _tax_depreciation_add_backCard extends CardBaseFramework
     /** @param list<array<string, float|string>> $rows */
     private function table(array $rows): TableFramework
     {
-        return TableFramework::make($this->key(), $rows)
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $rows)
             ->filename('tax-depreciation-add-back')
             ->exportLimit(5000)
             ->empty('No depreciation add-back rows were found for this period.')
@@ -57,7 +57,7 @@ final class _tax_depreciation_add_backCard extends CardBaseFramework
             ->column(
                 'amount',
                 'Amount',
-                html: static fn(array $row): string => HelperFramework::escape((string)($row['amount_html'] ?? '')),
+                html: static fn(array $row): string => \eel_accounts\Support\Utf8::html((string)($row['amount_html'] ?? '')),
                 export: static fn(array $row): string => number_format((float)($row['amount'] ?? 0), 2, '.', ''),
                 headerClass: 'numeric',
                 cellClass: 'numeric',

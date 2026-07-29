@@ -63,6 +63,25 @@ final class VehicleService
         ];
     }
 
+    public static function assetDisplayDescription(string $description, ?string $registrationMark): string
+    {
+        $description = trim($description);
+        $registrationMark = strtoupper(trim((string)$registrationMark));
+        if ($registrationMark === '') {
+            return $description;
+        }
+
+        if ($description === '') {
+            return $registrationMark;
+        }
+
+        if (preg_match('/\\(' . preg_quote($registrationMark, '/') . '\\)\\s*$/i', $description) === 1) {
+            return $description;
+        }
+
+        return $description . ' (' . $registrationMark . ')';
+    }
+
     public function hasRequiredSchema(): bool
     {
         return \InterfaceDB::tableExists('asset_register')

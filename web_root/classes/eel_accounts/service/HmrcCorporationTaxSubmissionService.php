@@ -1803,7 +1803,7 @@ final class HmrcCorporationTaxSubmissionService
 
     private function json(array $value): string
     {
-        return json_encode(
+        return \eel_accounts\Support\Utf8::json(
             $value,
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
         );
@@ -1824,7 +1824,7 @@ final class HmrcCorporationTaxSubmissionService
             return $item;
         };
 
-        return json_encode(
+        return \eel_accounts\Support\Utf8::json(
             $normalise($value),
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
         );

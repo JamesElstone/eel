@@ -119,7 +119,7 @@ final class _expense_claimantsCard extends CardBaseFramework
 
     private function table(array $context): TableFramework
     {
-        return TableFramework::make($this->key(), $this->rows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->rows($context))
             ->filename('expense-claimants')
             ->empty($this->hasCompany($context)
                 ? 'No claimants configured yet. Add one below to enable claim creation.'
@@ -194,7 +194,7 @@ final class _expense_claimantsCard extends CardBaseFramework
                 <form method="post" action="?page=expense_claims" data-ajax="true" class="toolbar">
                     ' . $this->hiddenInputs($fields) . '
                     <label for="expense-claimants-query">Search claimants</label>
-                    <input class="input" id="expense-claimants-query" name="' . self::SEARCH_FIELD . '" type="search" value="' . HelperFramework::escape($searchQuery) . '" placeholder="Search claimants">
+                    <input class="input" id="expense-claimants-query" name="' . self::SEARCH_FIELD . '" type="search" value="' . \eel_accounts\Support\Utf8::html($searchQuery) . '" placeholder="Search claimants">
                     <button class="button primary" type="submit">Search</button>
                 </form>
                 ' . $clearForm . '
@@ -209,12 +209,12 @@ final class _expense_claimantsCard extends CardBaseFramework
         foreach ($fields as $name => $value) {
             if (is_array($value)) {
                 foreach ($value as $item) {
-                    $html .= '<input type="hidden" name="' . HelperFramework::escape((string)$name) . '" value="' . HelperFramework::escape((string)$item) . '">';
+                    $html .= '<input type="hidden" name="' . \eel_accounts\Support\Utf8::html((string)$name) . '" value="' . \eel_accounts\Support\Utf8::html((string)$item) . '">';
                 }
                 continue;
             }
 
-            $html .= '<input type="hidden" name="' . HelperFramework::escape((string)$name) . '" value="' . HelperFramework::escape((string)$value) . '">';
+            $html .= '<input type="hidden" name="' . \eel_accounts\Support\Utf8::html((string)$name) . '" value="' . \eel_accounts\Support\Utf8::html((string)$value) . '">';
         }
 
         return $html;
@@ -245,7 +245,7 @@ final class _expense_claimantsCard extends CardBaseFramework
             <input type="hidden" name="card_action" value="Expense">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="claimant_id" value="' . $claimantId . '">
-            <button class="button button-inline" type="submit" name="intent" value="' . HelperFramework::escape($intent) . '">' . HelperFramework::escape($label) . '</button>
+            <button class="button button-inline" type="submit" name="intent" value="' . \eel_accounts\Support\Utf8::html($intent) . '">' . \eel_accounts\Support\Utf8::html($label) . '</button>
             ' . $deleteButton . '
             <button class="button button-inline" type="submit" name="intent" value="filter_claims" data-page-card-switch-tab="Claims">Claims</button>
         </form>';
@@ -255,7 +255,7 @@ final class _expense_claimantsCard extends CardBaseFramework
     {
         $isActive = $this->isActive($claimant);
 
-        return '<span class="badge ' . ($isActive ? 'success' : 'warning') . '">' . HelperFramework::escape($this->statusLabel($claimant)) . '</span>';
+        return '<span class="badge ' . ($isActive ? 'success' : 'warning') . '">' . \eel_accounts\Support\Utf8::html($this->statusLabel($claimant)) . '</span>';
     }
 
     private function statusLabel(array $claimant): string

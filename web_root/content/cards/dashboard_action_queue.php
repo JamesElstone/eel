@@ -72,12 +72,12 @@ final class _dashboard_action_queueCard extends CardBaseFramework
 
             $state = $this->actionState($item);
             $itemsHtml .= '<div class="list-item">
-                <strong>' . HelperFramework::escape((string)($item['title'] ?? '')) . '</strong>
+                <strong>' . \eel_accounts\Support\Utf8::html((string)($item['title'] ?? '')) . '</strong>
                 <span class="status-indicator">
-                    <span class="status-square ' . HelperFramework::escape($state) . '"></span>
-                    ' . HelperFramework::escape($this->stateLabel($state)) . '
+                    <span class="status-square ' . \eel_accounts\Support\Utf8::html($state) . '"></span>
+                    ' . \eel_accounts\Support\Utf8::html($this->stateLabel($state)) . '
                 </span>
-                <span>' . HelperFramework::escape((string)($item['detail'] ?? '')) . '</span>
+                <span>' . \eel_accounts\Support\Utf8::html((string)($item['detail'] ?? '')) . '</span>
             </div>';
         }
 

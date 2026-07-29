@@ -107,7 +107,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             <section class="panel-soft">
                 <div class="status-head">
                     <h3 class="card-title">HMRC Accounting iXBRL</h3>
-                    <span class="badge ' . HelperFramework::escape($this->statusClass($displayStatus)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($displayStatus, '_')) . '</span>
+                    <span class="badge ' . \eel_accounts\Support\Utf8::html($this->statusClass($displayStatus)) . '">' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($displayStatus, '_')) . '</span>
                 </div>
                 <div class="helper ixbrl-complete-filing-set-helper">Generate the approved HMRC accounts iXBRL export and review its structural and Arelle validation results.</div>
                 <div class="summary-grid">
@@ -121,10 +121,10 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     ' . $this->metric('Arelle Validated At', (string)($run['external_validated_at'] ?? '')) . '
                     ' . $this->metricHtml('Artifact', $artifact) . '
                 </div>
-                <div class="helper">' . HelperFramework::escape((string)($run['error_message'] ?? '')) . '</div>
+                <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($run['error_message'] ?? '')) . '</div>
                 ' . ($stale
                     ? '<div class="helper ixbrl-rebuild-required-helper"><span class="badge warning">Rebuild required</span> '
-                        . HelperFramework::escape((string)($runFreshness['detail'] ?? 'The latest facts are stale.'))
+                        . \eel_accounts\Support\Utf8::html((string)($runFreshness['detail'] ?? 'The latest facts are stale.'))
                         . '</div>'
                     : '') . '
                 ' . $this->internalValidationDetails($run) . '
@@ -173,13 +173,13 @@ final class _ixbrl_generationCard extends CardBaseFramework
             ), static fn(string $message): bool => $message !== '')));
             $blockersHtml = '';
             foreach ($blockers as $blocker) {
-                $blockersHtml .= '<div class="helper ixbrl-companies-house-prepare-blocker">' . HelperFramework::escape($blocker) . '</div>';
+                $blockersHtml .= '<div class="helper ixbrl-companies-house-prepare-blocker">' . \eel_accounts\Support\Utf8::html($blocker) . '</div>';
             }
             return '<section class="panel-soft"><div class="status-head">'
-                . '<h3 class="card-title">Companies House ' . HelperFramework::escape($filingLabel) . ' Accounting iXBRL</h3>'
+                . '<h3 class="card-title">Companies House ' . \eel_accounts\Support\Utf8::html($filingLabel) . ' Accounting iXBRL</h3>'
                 . '<span class="badge muted">Not prepared</span></div>'
                 . '<div class="helper ixbrl-complete-filing-set-helper">Prepare the Companies House-specific accounts iXBRL from the approved '
-                . HelperFramework::escape($filingLabel) . ' filing basis. This does not transmit it.</div>'
+                . \eel_accounts\Support\Utf8::html($filingLabel) . ' filing basis. This does not transmit it.</div>'
                 . $this->arelleOutput($revisedValidation)
                 . $blockersHtml
                 . '<form method="post" action="?page=disclosures" data-ajax="true" class="actions-row">'
@@ -196,10 +196,10 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 ?? 'This artifact does not belong to the current approved Accounting iXBRL run.');
             $canPrepare = !empty($readiness['ready_for_filing']) && !empty($filing['can_prepare']);
             return '<section class="panel-soft warn"><div class="status-head">'
-                . '<h3 class="card-title">Companies House ' . HelperFramework::escape($filingLabel) . ' Accounting iXBRL</h3>'
+                . '<h3 class="card-title">Companies House ' . \eel_accounts\Support\Utf8::html($filingLabel) . ' Accounting iXBRL</h3>'
                 . '<span class="badge warning">Rebuild required</span></div>'
                 . '<div class="helper ixbrl-rebuild-required-helper">'
-                . HelperFramework::escape($reason) . '</div>'
+                . \eel_accounts\Support\Utf8::html($reason) . '</div>'
                 . '<div class="summary-grid">'
                 . $this->metric('Historical Generated At', (string)($submission['prepared_at'] ?? ''))
                 . $this->metric('Historical Base Run', (int)($artifact['base_run_id'] ?? 0) > 0
@@ -246,11 +246,11 @@ final class _ixbrl_generationCard extends CardBaseFramework
             default => 'info',
         };
         return '<section class="panel-soft"><div class="status-head">'
-            . '<h3 class="card-title">Companies House ' . HelperFramework::escape($filingLabel) . ' Accounting iXBRL</h3>'
+            . '<h3 class="card-title">Companies House ' . \eel_accounts\Support\Utf8::html($filingLabel) . ' Accounting iXBRL</h3>'
             . '<span class="badge ' . $badge . '">'
-            . HelperFramework::escape(HelperFramework::labelFromKey($lifecycle, '_')) . '</span></div>'
+            . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($lifecycle, '_')) . '</span></div>'
             . '<div class="helper ixbrl-complete-filing-set-helper">This is the prepared Companies House '
-            . HelperFramework::escape($filingLabel) . '-accounts iXBRL artifact. It has not been transmitted by this page.</div>'
+            . \eel_accounts\Support\Utf8::html($filingLabel) . '-accounts iXBRL artifact. It has not been transmitted by this page.</div>'
             . '<div class="summary-grid">'
             . $this->metric('Generated At', (string)($submission['prepared_at'] ?? ''))
             . $this->metric('Facts', (string)(int)($artifact['fact_count'] ?? $revisedValidation['fact_count'] ?? 0))
@@ -276,7 +276,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
 
         $html = '<div class="helper"><strong>Generation requirements</strong><ul>';
         foreach ($blockers as $blocker) {
-            $html .= '<li>' . HelperFramework::escape($blocker) . '</li>';
+            $html .= '<li>' . \eel_accounts\Support\Utf8::html($blocker) . '</li>';
         }
 
         return $html . '</ul></div>';
@@ -297,7 +297,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             return '<section class="panel-soft warn ixbrl-generation-blockers"><div class="status-head">'
                 . '<h3 class="card-title">iXBRL generation blocked</h3>'
                 . '<span class="badge warning">Action required</span></div>'
-                . '<div class="helper"><strong>' . HelperFramework::escape($nextStep) . '</strong> '
+                . '<div class="helper"><strong>' . \eel_accounts\Support\Utf8::html($nextStep) . '</strong> '
                 . 'This is the next step before generating HMRC Accounting, Corporation Tax, or Companies House iXBRL.</div>'
                 . '</section>';
         }
@@ -349,8 +349,8 @@ final class _ixbrl_generationCard extends CardBaseFramework
             . '<div class="helper">Resolve the following before generating the complete iXBRL filing set.</div><ul>';
         foreach ($groups as $label => $messages) {
             foreach ($messages as $message) {
-                $html .= '<li><strong>' . HelperFramework::escape($label) . ':</strong> '
-                    . HelperFramework::escape($message) . '</li>';
+                $html .= '<li><strong>' . \eel_accounts\Support\Utf8::html($label) . ':</strong> '
+                    . \eel_accounts\Support\Utf8::html($message) . '</li>';
             }
         }
 
@@ -398,9 +398,9 @@ final class _ixbrl_generationCard extends CardBaseFramework
             $artifact = trim((string)($run['generated_filename'] ?? '')) !== ''
                 ? '<form method="post" action="?page=disclosures">' . $hidden
                     . '<input type="hidden" name="intent" value="download_computation_ixbrl">'
-                    . '<button class="button compact primary" type="submit"' . ($fileable && $artifactExists ? '' : ' disabled') . '>Download ' . HelperFramework::escape($ctPeriodLabel) . ' iXBRL</button></form>'
+                    . '<button class="button compact primary" type="submit"' . ($fileable && $artifactExists ? '' : ' disabled') . '>Download ' . \eel_accounts\Support\Utf8::html($ctPeriodLabel) . ' iXBRL</button></form>'
                 : 'Not generated';
-            $html .= '<section class="panel-soft"><div class="status-head"><h3>' . HelperFramework::escape($ctPeriodLabel) . ' iXBRL</h3><span class="badge '
+            $html .= '<section class="panel-soft"><div class="status-head"><h3>' . \eel_accounts\Support\Utf8::html($ctPeriodLabel) . ' iXBRL</h3><span class="badge '
                 . ($fileable ? 'success' : ($fresh ? 'warning' : 'muted')) . '">'
                 . ($fileable ? 'Filing ready' : ($fresh ? 'Generated, not fileable' : 'Not generated')) . '</span></div>'
                 . '<div class="helper ixbrl-complete-filing-set-helper">Generate a separate Corporation Tax computation iXBRL for this filing period and review its validation status.</div>'
@@ -423,11 +423,11 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 $errors[] = 'Corporation Tax iXBRL needs to be regenerated because its filing basis, taxonomy package, mapping profile, or artifact file is no longer current.';
             }
             foreach ($errors as $error) {
-                $html .= '<div class="helper ixbrl-computation-helper">' . HelperFramework::escape((string)$error) . '</div>';
+                $html .= '<div class="helper ixbrl-computation-helper">' . \eel_accounts\Support\Utf8::html((string)$error) . '</div>';
             }
             $html .= '<div class="form-row-actions"><form method="post" action="?page=disclosures" data-ajax="true">' . $hidden
                 . '<input type="hidden" name="intent" value="generate_computation_ixbrl"><button class="button primary" type="submit"'
-                . ($ready ? '' : ' disabled') . '>Generate ' . HelperFramework::escape($ctPeriodLabel) . ' iXBRL</button></form>';
+                . ($ready ? '' : ' disabled') . '>Generate ' . \eel_accounts\Support\Utf8::html($ctPeriodLabel) . ' iXBRL</button></form>';
             $html .= '</div></section>';
         }
         return $html;
@@ -490,12 +490,12 @@ final class _ixbrl_generationCard extends CardBaseFramework
 
     private function metric(string $label, string $value): string
     {
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+        return '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label) . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div></div>';
     }
 
     private function metricHtml(string $label, string $value): string
     {
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . $value . '</div></div>';
+        return '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label) . '</div><div class="summary-value">' . $value . '</div></div>';
     }
 
     private function statusClass(string $status): string
@@ -541,9 +541,9 @@ final class _ixbrl_generationCard extends CardBaseFramework
             }
             $items = '';
             foreach (array_slice($messages, 0, 20) as $message) {
-                $items .= '<li>' . HelperFramework::escape(is_scalar($message) ? (string)$message : (string)json_encode($message)) . '</li>';
+                $items .= '<li>' . \eel_accounts\Support\Utf8::html(is_scalar($message) ? (string)$message : (string)\eel_accounts\Support\Utf8::json($message)) . '</li>';
             }
-            $html .= '<section class="panel-soft"><h3>' . HelperFramework::escape($label) . '</h3>'
+            $html .= '<section class="panel-soft"><h3>' . \eel_accounts\Support\Utf8::html($label) . '</h3>'
                 . '<div class="helper ixbrl-complete-filing-set-helper">These are structural checks performed before external Arelle validation.</div>'
                 . '<ul>' . $items . '</ul></section>';
         }
@@ -563,11 +563,11 @@ final class _ixbrl_generationCard extends CardBaseFramework
 
         $html = '<section class="panel-soft ixbrl-arelle-output">';
         if ($version !== '') {
-            $html .= '<div class="helper">Arelle version: ' . HelperFramework::escape($version) . '</div>';
+            $html .= '<div class="helper">Arelle version: ' . \eel_accounts\Support\Utf8::html($version) . '</div>';
         }
         if ($errors === [] && $warnings === [] && $version === '') {
             $html .= '<div class="helper">Arelle validation: '
-                . HelperFramework::escape($this->validationLabel($status)) . '</div>';
+                . \eel_accounts\Support\Utf8::html($this->validationLabel($status)) . '</div>';
         }
         foreach (['Errors' => $errors, 'Warnings' => $warnings] as $label => $messages) {
             if ($messages === []) {
@@ -575,7 +575,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             }
             $html .= '<h5>' . $label . '</h5><ul>';
             foreach (array_slice($messages, 0, 20) as $message) {
-                $html .= '<li>' . HelperFramework::escape(is_scalar($message) ? (string)$message : (string)json_encode($message)) . '</li>';
+                $html .= '<li>' . \eel_accounts\Support\Utf8::html(is_scalar($message) ? (string)$message : (string)\eel_accounts\Support\Utf8::json($message)) . '</li>';
             }
             $html .= '</ul>';
         }

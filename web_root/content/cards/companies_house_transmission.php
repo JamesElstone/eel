@@ -113,7 +113,7 @@ final class _companies_house_transmissionCard extends CardBaseFramework
 
         $html .= '<section class="panel-soft"><div class="status-head"><h3 class="card-title">Prepared transmission</h3>'
             . '<span class="badge ' . $this->badge($lifecycle) . '">'
-            . HelperFramework::escape(HelperFramework::labelFromKey($lifecycle, '_')) . '</span></div>';
+            . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($lifecycle, '_')) . '</span></div>';
         if ($submission === null) {
             $html .= '<div class="notice warning">No Companies House accounts artifact is prepared. Generate it from the approved filing basis.</div>';
         } else {
@@ -123,7 +123,7 @@ final class _companies_house_transmissionCard extends CardBaseFramework
                 : (!empty($artifact['current']) || (string)$artifact['state'] === 'current');
             if (!$artifactCurrent && $lifecycle === 'prepared') {
                 $html .= '<div class="notice warning">'
-                    . HelperFramework::escape((string)(($artifact['errors'] ?? [])[0]
+                    . \eel_accounts\Support\Utf8::html((string)(($artifact['errors'] ?? [])[0]
                         ?? 'This prepared artifact is historical and cannot be submitted for the current filing basis.'))
                     . '</div>';
             }
@@ -150,7 +150,7 @@ final class _companies_house_transmissionCard extends CardBaseFramework
                 )
                 . '</div>';
             foreach ((array)($model['submission_blockers'] ?? []) as $blocker) {
-                $html .= '<div class="notice warning">' . HelperFramework::escape((string)$blocker) . '</div>';
+                $html .= '<div class="notice warning">' . \eel_accounts\Support\Utf8::html((string)$blocker) . '</div>';
             }
             if ($lifecycle === 'prepared' && !empty($model['can_submit'])) {
                 $html .= $this->submitForm(
@@ -234,7 +234,7 @@ final class _companies_house_transmissionCard extends CardBaseFramework
         $live = $mode === 'LIVE'
             ? '<label class="checkbox-row"><input type="checkbox" name="authority_confirmed" value="1" required> '
                 . '<span>I am authorised to file these statutory accounts.</span></label>'
-                . '<label>Type <strong>' . HelperFramework::escape($confirmationPhrase) . '</strong> to confirm'
+                . '<label>Type <strong>' . \eel_accounts\Support\Utf8::html($confirmationPhrase) . '</strong> to confirm'
                 . '<input type="text" name="live_confirmation_phrase" required autocomplete="off"></label>'
             : '';
 
@@ -246,10 +246,10 @@ final class _companies_house_transmissionCard extends CardBaseFramework
             . 'pattern="[A-Za-z0-9]{6}" required autocomplete="off"></label>'
             . $live
             . '<button class="button danger" type="submit" data-chicken-check="true" '
-            . 'data-chicken-title="Send ' . HelperFramework::escape($filingLabel) . ' accounts" '
-            . 'data-chicken-message="Send this immutable ' . HelperFramework::escape($filingKind) . '-accounts package to Companies House '
-            . HelperFramework::escape($mode) . '?" data-chicken-confirm-text="Send accounts">Send / continue '
-            . HelperFramework::escape($mode) . ' filing</button></form>';
+            . 'data-chicken-title="Send ' . \eel_accounts\Support\Utf8::html($filingLabel) . ' accounts" '
+            . 'data-chicken-message="Send this immutable ' . \eel_accounts\Support\Utf8::html($filingKind) . '-accounts package to Companies House '
+            . \eel_accounts\Support\Utf8::html($mode) . '?" data-chicken-confirm-text="Send accounts">Send / continue '
+            . \eel_accounts\Support\Utf8::html($mode) . ' filing</button></form>';
     }
 
     private function refreshForm(
@@ -262,7 +262,7 @@ final class _companies_house_transmissionCard extends CardBaseFramework
         return '<form method="post" action="?page=transmit" data-ajax="true" class="actions-row">'
             . $this->hidden($companyId, $accountingPeriodId, 'refresh_accounts_status')
             . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
-            . '<button class="button" type="submit">' . HelperFramework::escape($label) . '</button></form>';
+            . '<button class="button" type="submit">' . \eel_accounts\Support\Utf8::html($label) . '</button></form>';
     }
 
     private function developerPreparedControls(
@@ -278,7 +278,7 @@ final class _companies_house_transmissionCard extends CardBaseFramework
             . '<div class="helper">Each button performs one XML send/receive pair and then pauses.</div>';
         if (!$bindingConfigured) {
             return $html . '<div class="notice warning">The preflight binding key could not be prepared for '
-                . HelperFramework::escape($mode) . '.</div></section>';
+                . \eel_accounts\Support\Utf8::html($mode) . '.</div></section>';
         }
         $verified = is_array($preflight)
             && (string)($preflight['outcome'] ?? '') === 'verified'
@@ -298,7 +298,7 @@ final class _companies_house_transmissionCard extends CardBaseFramework
             $live = $mode === 'LIVE'
                 ? '<label class="checkbox-row"><input type="checkbox" name="authority_confirmed" value="1" required> '
                     . '<span>I am authorised to file these statutory accounts.</span></label>'
-                    . '<label>Type <strong>' . HelperFramework::escape($confirmationPhrase) . '</strong> to confirm'
+                    . '<label>Type <strong>' . \eel_accounts\Support\Utf8::html($confirmationPhrase) . '</strong> to confirm'
                     . '<input type="text" name="live_confirmation_phrase" required autocomplete="off"></label>'
                 : '';
             $html .= '<div class="notice success">CompanyData preflight verified. Re-enter the same code to submit Accounts.</div>'
@@ -371,7 +371,7 @@ final class _companies_house_transmissionCard extends CardBaseFramework
         return '<form method="post" action="?page=transmit" data-ajax="true" class="actions-row">'
             . $this->hidden($companyId, $accountingPeriodId, $intent)
             . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
-            . '<button class="button" type="submit">' . HelperFramework::escape($label) . '</button></form>';
+            . '<button class="button" type="submit">' . \eel_accounts\Support\Utf8::html($label) . '</button></form>';
     }
 
     private function exchangeTimeline(
@@ -382,9 +382,9 @@ final class _companies_house_transmissionCard extends CardBaseFramework
     ): string {
         $rows = '';
         foreach ($exchanges as $exchange) {
-            $rows .= '<tr><td>' . HelperFramework::escape((string)$exchange['operation'])
-                . '</td><td>' . HelperFramework::escape((string)$exchange['transaction_id'])
-                . '</td><td>' . HelperFramework::escape((string)$exchange['exchange_state'])
+            $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)$exchange['operation'])
+                . '</td><td>' . \eel_accounts\Support\Utf8::html((string)$exchange['transaction_id'])
+                . '</td><td>' . \eel_accounts\Support\Utf8::html((string)$exchange['exchange_state'])
                 . '</td><td>' . $this->evidenceButton(
                     $companyId,
                     $accountingPeriodId,
@@ -433,7 +433,7 @@ final class _companies_house_transmissionCard extends CardBaseFramework
             . '<input type="hidden" name="exchange_id" value="' . $exchangeId . '">'
             . '<input type="hidden" name="direction" value="' . $direction . '">'
             . '<button class="button button-inline" type="submit" data-chicken-check="true" '
-            . 'data-chicken-message="' . HelperFramework::escape($warning) . '" '
+            . 'data-chicken-message="' . \eel_accounts\Support\Utf8::html($warning) . '" '
             . 'data-chicken-confirm-text="Download XML">Download</button></form>';
     }
 
@@ -441,7 +441,7 @@ final class _companies_house_transmissionCard extends CardBaseFramework
     {
         return HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="CompaniesHouseAccounts">'
-            . '<input type="hidden" name="intent" value="' . HelperFramework::escape($intent) . '">'
+            . '<input type="hidden" name="intent" value="' . \eel_accounts\Support\Utf8::html($intent) . '">'
             . '<input type="hidden" name="company_id" value="' . $companyId . '">'
             . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">';
     }
@@ -455,10 +455,10 @@ final class _companies_house_transmissionCard extends CardBaseFramework
         $rows = '';
         foreach ($history as $submission) {
             $archive = (array)($submission['transmission_archive'] ?? []);
-            $rows .= '<tr><td>' . HelperFramework::escape((string)($submission['submission_number'] ?? 'Not sent'))
-                . '</td><td>' . HelperFramework::escape((string)($submission['environment'] ?? ''))
-                . '</td><td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($submission['lifecycle'] ?? ''), '_'))
-                . '</td><td>' . HelperFramework::escape((string)($submission['submitted_at'] ?? $submission['prepared_at'] ?? ''))
+            $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)($submission['submission_number'] ?? 'Not sent'))
+                . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($submission['environment'] ?? ''))
+                . '</td><td>' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)($submission['lifecycle'] ?? ''), '_'))
+                . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($submission['submitted_at'] ?? $submission['prepared_at'] ?? ''))
                 . '</td><td>' . ($archive !== [] ? 'Captured' : '—') . '</td></tr>';
         }
 
@@ -482,8 +482,8 @@ final class _companies_house_transmissionCard extends CardBaseFramework
     private function metric(string $label, string $value): string
     {
         $value = trim($value) !== '' ? $value : '—';
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label)
-            . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+        return '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label)
+            . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div></div>';
     }
 
     private function utcTimestamp(string $value): int

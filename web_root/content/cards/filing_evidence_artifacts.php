@@ -18,13 +18,13 @@ final class _filing_evidence_artifactsCard extends CardBaseFramework
         if (empty($model['available'])) { return '<div class="helper">Artifacts appear after an Evidence ID is selected.</div>'; }
         $rows = '';
         foreach ((array)$model['artifacts'] as $artifact) {
-            $rows .= '<tr><td><strong>' . HelperFramework::escape(HelperFramework::labelFromKey((string)$artifact['artifact_role']))
-                . '</strong><br><span class="helper">' . HelperFramework::escape((string)$artifact['display_id']) . '</span></td><td>'
-                . HelperFramework::escape((string)($artifact['filename'] ?? 'Not persisted')) . '</td><td><code>'
-                . HelperFramework::escape((string)($artifact['sha256'] ?? 'Reserved')) . '</code></td><td>'
-                . HelperFramework::escape((string)($artifact['schema_identity'] ?? 'Internal format')) . '</td><td>'
-                . HelperFramework::escape((string)$artifact['generator_name'] . ' ' . (string)$artifact['generator_version']) . '</td><td><span class="badge '
-                . ((string)$artifact['artifact_status'] === 'failed' ? 'danger' : 'success') . '">' . HelperFramework::escape(HelperFramework::labelFromKey((string)$artifact['artifact_status']))
+            $rows .= '<tr><td><strong>' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)$artifact['artifact_role']))
+                . '</strong><br><span class="helper">' . \eel_accounts\Support\Utf8::html((string)$artifact['display_id']) . '</span></td><td>'
+                . \eel_accounts\Support\Utf8::html((string)($artifact['filename'] ?? 'Not persisted')) . '</td><td><code>'
+                . \eel_accounts\Support\Utf8::html((string)($artifact['sha256'] ?? 'Reserved')) . '</code></td><td>'
+                . \eel_accounts\Support\Utf8::html((string)($artifact['schema_identity'] ?? 'Internal format')) . '</td><td>'
+                . \eel_accounts\Support\Utf8::html((string)$artifact['generator_name'] . ' ' . (string)$artifact['generator_version']) . '</td><td><span class="badge '
+                . ((string)$artifact['artifact_status'] === 'failed' ? 'danger' : 'success') . '">' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)$artifact['artifact_status']))
                 . '</span>' . (!empty($artifact['legacy_non_embedded']) ? ' <span class="badge warning">Not embedded</span>' : '') . '</td></tr>';
         }
         if ($rows === '') { $rows = '<tr><td colspan="6">No generated artifacts are linked yet.</td></tr>'; }

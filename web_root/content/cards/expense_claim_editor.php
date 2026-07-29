@@ -106,16 +106,16 @@ final class _expense_claim_editorCard extends CardBaseFramework
         $displayTotals = $this->displayControlTotals($claim);
 
         return '<div class="summary-grid expense-claim-summary-grid">
-                <div class="summary-card"><div class="summary-label">Claim Reference</div><div class="summary-value">' . HelperFramework::escape($claimReference) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Claimant</div><div class="summary-value">' . HelperFramework::escape($claimantName) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Claim Month</div><div class="summary-value">' . HelperFramework::escape($claimMonthLabel) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Brought Forwards (A)</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $displayTotals['A'])) . '</div></div>
-                <div class="summary-card"><div class="summary-label">In this claim (B)</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $displayTotals['B'])) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Paid in this period (C)</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $displayTotals['C'])) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $displayTotals['D'])) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Claim Reference</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($claimReference) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Claimant</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($claimantName) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Claim Month</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($claimMonthLabel) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Brought Forwards (A)</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $displayTotals['A'])) . '</div></div>
+                <div class="summary-card"><div class="summary-label">In this claim (B)</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $displayTotals['B'])) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Paid in this period (C)</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $displayTotals['C'])) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $displayTotals['D'])) . '</div></div>
             </div>
             ' . ($isReadOnly ? '' : $this->renderBulkPastePanel($claimId, $companyId, $dateFormat)) . '
-            ' . ($isReadOnly ? '<div class="helper">' . HelperFramework::escape($isPeriodLocked ? 'Period locked. Expense claims can be reviewed but not changed.' : 'Posted claim lines are locked. Repayments can still be linked from bank transactions.') . '</div>' : $this->renderLineForm($claim, $nominals, $claimId, $companySettings, $companyId)) . '
+            ' . ($isReadOnly ? '<div class="helper">' . \eel_accounts\Support\Utf8::html($isPeriodLocked ? 'Period locked. Expense claims can be reviewed but not changed.' : 'Posted claim lines are locked. Repayments can still be linked from bank transactions.') . '</div>' : $this->renderLineForm($claim, $nominals, $claimId, $companySettings, $companyId)) . '
             ' . $this->renderExpenseLinesPanel(
                 (array)($claim['lines'] ?? []),
                 $nominals,
@@ -135,8 +135,8 @@ final class _expense_claim_editorCard extends CardBaseFramework
     private function renderTablePanel(string $title, string $tableHtml, string $helper = ''): string
     {
         return '<div class="panel-soft">
-            <div class="status-head"><h4 class="card-title">' . HelperFramework::escape($title) . '</h4></div>
-            ' . ($helper === '' ? '' : '<div class="helper">' . HelperFramework::escape($helper) . '</div>') . '
+            <div class="status-head"><h4 class="card-title">' . \eel_accounts\Support\Utf8::html($title) . '</h4></div>
+            ' . ($helper === '' ? '' : '<div class="helper">' . \eel_accounts\Support\Utf8::html($helper) . '</div>') . '
             ' . $tableHtml . '
         </div>';
     }
@@ -179,7 +179,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
 
         if (!$hasLines && $noLinesConfirmed) {
             $confirmedAt = trim((string)($claim['no_lines_confirmed_at'] ?? ''));
-            return '<div class="helper">No Lines Confirmed' . ($confirmedAt !== '' ? ' on ' . HelperFramework::escape($confirmedAt) : '') . '</div>';
+            return '<div class="helper">No Lines Confirmed' . ($confirmedAt !== '' ? ' on ' . \eel_accounts\Support\Utf8::html($confirmedAt) : '') . '</div>';
         }
 
         $chickenAttributes = $hasLines
@@ -237,7 +237,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="intent" value="bulk_save_lines">
                 <input type="hidden" name="claim_id" value="' . $claimId . '">
-                <input type="hidden" name="date_format" value="' . HelperFramework::escape($dateFormat) . '">
+                <input type="hidden" name="date_format" value="' . \eel_accounts\Support\Utf8::html($dateFormat) . '">
                 <div class="form-row">
                     <div class="status-head"><h4 class="card-title"><label for="expense-bulk-paste-' . $claimId . '">Claim Lines can be pasted below</label></h4></div>
                     <div class="helper">Paste TSV as<br>DATE[TAB]DESCRIPTION[TAB]AMOUNT CLAIMED or DATE[TAB]DESCRIPTION[TAB]Info[TAB]AMOUNT CLAIMED.<br>Quoted CSV is also accepted.</div>
@@ -295,7 +295,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
 
     private function linesTable(array $lines, array $nominals, array $assetCategories, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $companySettings, array $context): TableFramework
     {
-        return TableFramework::make(self::TABLE_LINES, $this->lineRows($lines, $dateFormat))
+        return \eel_accounts\Support\Utf8Table::make(self::TABLE_LINES, $this->lineRows($lines, $dateFormat))
             ->filename('expense-claim-lines')
             ->exportLimit(1000)
             ->empty('No expense lines have been added yet.')
@@ -305,7 +305,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 'line_type',
                 'Type',
                 html: fn(array $row): string => $isPosted
-                    ? HelperFramework::escape(ucfirst((string)($row['line_type'] ?? 'expense')))
+                    ? \eel_accounts\Support\Utf8::html(ucfirst((string)($row['line_type'] ?? 'expense')))
                     : $this->lineTypeForm($claimId, (int)($row['id'] ?? 0), (string)($row['line_type'] ?? 'expense'), $companyId, $context),
                 export: static fn(array $row): string => ucfirst((string)($row['line_type'] ?? 'expense')),
                 cellClass: 'cell-fit'
@@ -321,7 +321,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
             ->column(
                 'amount',
                 'Amount',
-                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['amount'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['amount'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['amount'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -362,7 +362,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
         }
 
         return $isPosted
-            ? HelperFramework::escape((string)($row['nominal_label'] ?? ''))
+            ? \eel_accounts\Support\Utf8::html((string)($row['nominal_label'] ?? ''))
             : $this->lineNominalForm($nominals, $claimId, (int)($row['id'] ?? 0), (int)($row['nominal_account_id'] ?? 0), $companyId, $context);
     }
 
@@ -415,7 +415,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
                     </div>
                     <div class="form-row">
                         <label for="expense-line-asset-residual-' . $lineId . '" title="End of Life Value, also known as the Residual Value, is the value the item has after the useful life period has expired.">EOL Value</label>
-                        <input class="input" id="expense-line-asset-residual-' . $lineId . '" name="asset_residual_value" inputmode="decimal" value="' . HelperFramework::escape($residual) . '" data-autosave-submit-target=".js-expense-line-asset-submit">
+                        <input class="input" id="expense-line-asset-residual-' . $lineId . '" name="asset_residual_value" inputmode="decimal" value="' . \eel_accounts\Support\Utf8::html($residual) . '" data-autosave-submit-target=".js-expense-line-asset-submit">
                     </div>
                 </div>
             </form>';
@@ -437,7 +437,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
             )
             : '';
 
-        return HelperFramework::escape($label) . $assetLink;
+        return \eel_accounts\Support\Utf8::html($label) . $assetLink;
     }
 
     private function deleteLineForm(int $claimId, int $lineId, int $companyId, array $context): string
@@ -456,7 +456,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
 
     private function linesTablePageHiddenInput(array $context): string
     {
-        return '<input type="hidden" name="' . HelperFramework::escape($this->paginationPageField(self::TABLE_LINES)) . '" value="' . $this->paginationPage($context, self::TABLE_LINES) . '">';
+        return '<input type="hidden" name="' . \eel_accounts\Support\Utf8::html($this->paginationPageField(self::TABLE_LINES)) . '" value="' . $this->paginationPage($context, self::TABLE_LINES) . '">';
     }
 
     private function renderLineForm(array $claim, array $nominals, int $claimId, array $companySettings, int $companyId): string
@@ -476,14 +476,14 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 <div class="form-grid expense-line-form-grid">
                     <div class="form-row">
                         <label for="expense-line-date">Date</label>
-                        <input class="input" id="expense-line-date" name="expense_date" form="' . $formId . '" type="date" value="' . HelperFramework::escape((string)($claim['period_end'] ?? '')) . '">
+                        <input class="input" id="expense-line-date" name="expense_date" form="' . $formId . '" type="date" value="' . \eel_accounts\Support\Utf8::html((string)($claim['period_end'] ?? '')) . '">
                     </div>
                     <div class="form-row">
                         <label for="expense-line-description">Description</label>
                         <input class="input" id="expense-line-description" name="description" form="' . $formId . '" type="text">
                     </div>
                     <div class="form-row">
-                        <label for="expense-line-amount">' . HelperFramework::escape($amountLabel) . '</label>
+                        <label for="expense-line-amount">' . \eel_accounts\Support\Utf8::html($amountLabel) . '</label>
                         <input class="input" id="expense-line-amount" name="amount" form="' . $formId . '" inputmode="decimal">
                     </div>
                     <div class="form-row">
@@ -545,7 +545,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
 
     private function paymentsTable(array $payments, array $companySettings, int $claimId, bool $isPosted, int $companyId, string $dateFormat): TableFramework
     {
-        return TableFramework::make(self::TABLE_PAYMENTS, $this->paymentRows($payments, $dateFormat))
+        return \eel_accounts\Support\Utf8Table::make(self::TABLE_PAYMENTS, $this->paymentRows($payments, $dateFormat))
             ->filename('expense-claim-repayments')
             ->exportLimit(1000)
             ->empty('No repayments are linked to this claim.')
@@ -555,7 +555,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
             ->column(
                 'linked_amount',
                 'Linked',
-                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['linked_amount'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['linked_amount'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['linked_amount'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -591,7 +591,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
             <input type="hidden" name="intent" value="filter_claims">
             <input type="hidden" name="claim_id" value="' . $claimId . '">
             <label for="expense-payment-query">Search repayments</label>
-            <input class="input" id="expense-payment-query" name="payment_query" type="search" value="' . HelperFramework::escape($paymentQuery) . '" placeholder="Bank description or reference">
+            <input class="input" id="expense-payment-query" name="payment_query" type="search" value="' . \eel_accounts\Support\Utf8::html($paymentQuery) . '" placeholder="Bank description or reference">
             <button class="button" type="submit">Search</button>
         </form>';
     }
@@ -614,7 +614,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
 
     private function paymentCandidatesTable(array $paymentCandidates, array $companySettings, int $claimId, int $companyId, string $dateFormat, bool $isReadOnly): TableFramework
     {
-        return TableFramework::make(self::TABLE_PAYMENT_CANDIDATES, $this->paymentCandidateRows($paymentCandidates, $dateFormat))
+        return \eel_accounts\Support\Utf8Table::make(self::TABLE_PAYMENT_CANDIDATES, $this->paymentCandidateRows($paymentCandidates, $dateFormat))
             ->filename('expense-claim-candidate-repayments')
             ->exportLimit(1000)
             ->empty('No candidate repayments were found for this claim month.')
@@ -623,7 +623,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
             ->column(
                 'amount',
                 'Amount',
-                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['amount'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['amount'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['amount'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -631,7 +631,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
             ->column(
                 'available_amount',
                 'Available',
-                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['available_amount'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['available_amount'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['available_amount'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -678,10 +678,10 @@ final class _expense_claim_editorCard extends CardBaseFramework
 
     private function nominalOptions(array $nominals, int $selectedNominalId = 0, string $emptyLabel = 'Select nominal'): string
     {
-        $html = '<option value="">' . HelperFramework::escape($emptyLabel) . '</option>';
+        $html = '<option value="">' . \eel_accounts\Support\Utf8::html($emptyLabel) . '</option>';
         foreach ($nominals as $nominal) {
             $nominalId = (int)($nominal['id'] ?? 0);
-            $html .= '<option value="' . $nominalId . '"' . ($nominalId === $selectedNominalId ? ' selected' : '') . '>' . HelperFramework::escape(FormattingFramework::nominalLabel($nominal)) . '</option>';
+            $html .= '<option value="' . $nominalId . '"' . ($nominalId === $selectedNominalId ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html(FormattingFramework::nominalLabel($nominal)) . '</option>';
         }
 
         return $html;
@@ -696,7 +696,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
         $html = '';
         foreach ($assetCategories as $value => $label) {
             $value = (string)$value;
-            $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selectedCategory ? ' selected' : '') . '>' . HelperFramework::escape((string)$label) . '</option>';
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html($value) . '"' . ($value === $selectedCategory ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html((string)$label) . '</option>';
         }
 
         return $html;
@@ -715,7 +715,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
 
         $html = '';
         foreach ($options as $value => $label) {
-            $html .= '<option value="' . $value . '"' . ($value === $selectedYears ? ' selected' : '') . '>' . HelperFramework::escape($label) . '</option>';
+            $html .= '<option value="' . $value . '"' . ($value === $selectedYears ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html($label) . '</option>';
         }
 
         return $html;
@@ -730,7 +730,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
         ];
         $html = '';
         foreach ($options as $value => $label) {
-            $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selectedMethod ? ' selected' : '') . '>' . HelperFramework::escape($label) . '</option>';
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html($value) . '"' . ($value === $selectedMethod ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html($label) . '</option>';
         }
 
         return $html;

@@ -570,7 +570,7 @@ final class Ct600BuilderService
     ): \DOMElement {
         $element = $document->createElementNS(self::CT_NAMESPACE, $name);
         if ($value !== null) {
-            $element->appendChild($document->createTextNode($value));
+            $element->appendChild($document->createTextNode(\eel_accounts\Support\Utf8::normalize($value)));
         }
         $parent->appendChild($element);
         return $element;

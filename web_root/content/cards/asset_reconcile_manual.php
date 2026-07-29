@@ -72,14 +72,14 @@ final class _asset_reconcile_manualCard extends CardBaseFramework
             }
 
             $rowsHtml .= '<tr>
-                <td>' . HelperFramework::escape((string)($asset['asset_code'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($asset['asset_code'] ?? '')) . '</td>
                 <td>
-                    <div>' . HelperFramework::escape((string)($asset['description'] ?? '')) . '</div>
-                    <div class="helper">' . HelperFramework::escape((string)($asset['manual_addition_reason_label'] ?? '')) . '</div>
+                    <div>' . \eel_accounts\Support\Utf8::html((string)($asset['description'] ?? '')) . '</div>
+                    <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($asset['manual_addition_reason_label'] ?? '')) . '</div>
                 </td>
-                <td>' . HelperFramework::escape($this->displayDate((string)($asset['purchase_date'] ?? ''))) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($settings, $asset['cost'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape((string)($asset['manual_offset_nominal_label'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->displayDate((string)($asset['purchase_date'] ?? ''))) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($settings, $asset['cost'] ?? 0)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($asset['manual_offset_nominal_label'] ?? '')) . '</td>
                 <td>' . $this->candidateRows($companyId, $accountingPeriodId, (int)($asset['id'] ?? 0), $defaultBankNominalId, (array)($asset['candidates'] ?? []), $settings, $selectedPeriodLocked) . '</td>
             </tr>';
         }
@@ -126,9 +126,9 @@ final class _asset_reconcile_manualCard extends CardBaseFramework
 
             $candidateRows .= '<div class="asset-reconcile-candidate">
                 <div>
-                    <div>' . HelperFramework::escape($this->displayDate((string)($candidate['txn_date'] ?? '')) . ' - ' . $this->money($settings, $candidate['amount'] ?? 0)) . '</div>
-                    <div class="helper">' . HelperFramework::escape((string)($candidate['description'] ?? '')) . '</div>
-                    <div class="helper">' . HelperFramework::escape((string)($candidate['nominal_label'] ?? 'Unassigned')) . '</div>
+                    <div>' . \eel_accounts\Support\Utf8::html($this->displayDate((string)($candidate['txn_date'] ?? '')) . ' - ' . $this->money($settings, $candidate['amount'] ?? 0)) . '</div>
+                    <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($candidate['description'] ?? '')) . '</div>
+                    <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($candidate['nominal_label'] ?? 'Unassigned')) . '</div>
                 </div>
                 <form method="post" action="?page=assets" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '

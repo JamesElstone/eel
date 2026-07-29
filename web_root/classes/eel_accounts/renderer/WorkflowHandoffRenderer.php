@@ -26,12 +26,12 @@ final class WorkflowHandoffRenderer
 
         unset($fields['page']);
 
-        return '<form method="post" action="?page=' . \HelperFramework::escape(rawurlencode($page)) . '"'
+        return '<form method="post" action="?page=' . \eel_accounts\Support\Utf8::html(rawurlencode($page)) . '"'
             . ($ajax ? ' data-ajax="true"' : '')
-            . ' class="' . \HelperFramework::escape($formClass) . '">'
+            . ' class="' . \eel_accounts\Support\Utf8::html($formClass) . '">'
             . self::hiddenFields($fields)
-            . '<button type="submit" class="' . \HelperFramework::escape($buttonClass) . '">'
-            . \HelperFramework::escape($label !== '' ? $label : 'Open Related Workflow')
+            . '<button type="submit" class="' . \eel_accounts\Support\Utf8::html($buttonClass) . '">'
+            . \eel_accounts\Support\Utf8::html($label !== '' ? $label : 'Open Related Workflow')
             . '</button></form>';
     }
 
@@ -130,7 +130,7 @@ final class WorkflowHandoffRenderer
             return $html;
         }
 
-        return '<input type="hidden" name="' . \HelperFramework::escape($name) . '" value="'
-            . \HelperFramework::escape((string)$value) . '">';
+        return '<input type="hidden" name="' . \eel_accounts\Support\Utf8::html($name) . '" value="'
+            . \eel_accounts\Support\Utf8::html((string)$value) . '">';
     }
 }

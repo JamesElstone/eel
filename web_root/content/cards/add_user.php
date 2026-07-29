@@ -58,7 +58,7 @@ final class _add_userCard extends CardBaseFramework
     public function render(array $context): string
     {
         $csrfToken = (string)($context['page']['csrf_token'] ?? '');
-        $passwordPolicy = HelperFramework::escape((string)(($context['services'] ?? [])['password_policy'] ?? ''));
+        $passwordPolicy = \eel_accounts\Support\Utf8::html((string)(($context['services'] ?? [])['password_policy'] ?? ''));
         $inviteAvailability = (array)(($context['services'] ?? [])['invite_availability'] ?? []);
         $inviteAvailable = !empty($inviteAvailability['available']);
         $inviteEmailAvailable = !empty($inviteAvailability['smtp_ready']);
@@ -66,14 +66,14 @@ final class _add_userCard extends CardBaseFramework
         $addPanelId = 'add-user-create-direct-panel';
         $invitePanelId = 'add-user-create-invite-panel';
         $addPanelAttributes = $inviteAvailable
-            ? ' id="' . HelperFramework::escape($addPanelId) . '" data-user-create-mode-panel="add" role="tabpanel"'
+            ? ' id="' . \eel_accounts\Support\Utf8::html($addPanelId) . '" data-user-create-mode-panel="add" role="tabpanel"'
             : '';
 
         $addForm = '
             <form method="post" action="?page=users" data-ajax="true" class="form-grid"' . $addPanelAttributes . '>
                 ' . $this->hiddenFields($context) . '
                 <input type="hidden" name="action" value="users-create-user">
-                <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
+                <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
                 <div class="form-row full">
                     <div class="warning-box" data-password-requirements-panel data-password-requirements-for="add-user-password">
                         <strong>Password requirements</strong>
@@ -129,14 +129,14 @@ final class _add_userCard extends CardBaseFramework
 
         return '
             <div class="form-row full segmented-control" role="tablist" aria-label="User creation mode">
-                <button class="segmented-option" type="button" role="tab" aria-selected="true" aria-controls="' . HelperFramework::escape($addPanelId) . '" data-user-create-mode-button="add">Add directly</button>
-                <button class="segmented-option" type="button" role="tab" aria-selected="false" aria-controls="' . HelperFramework::escape($invitePanelId) . '" data-user-create-mode-button="invite">Invite</button>
+                <button class="segmented-option" type="button" role="tab" aria-selected="true" aria-controls="' . \eel_accounts\Support\Utf8::html($addPanelId) . '" data-user-create-mode-button="add">Add directly</button>
+                <button class="segmented-option" type="button" role="tab" aria-selected="false" aria-controls="' . \eel_accounts\Support\Utf8::html($invitePanelId) . '" data-user-create-mode-button="invite">Invite</button>
             </div>
             ' . $addForm . '
-            <form method="post" action="?page=users" data-ajax="true" data-require-invite-contact="true" class="form-grid" id="' . HelperFramework::escape($invitePanelId) . '" data-user-create-mode-panel="invite" role="tabpanel" hidden>
+            <form method="post" action="?page=users" data-ajax="true" data-require-invite-contact="true" class="form-grid" id="' . \eel_accounts\Support\Utf8::html($invitePanelId) . '" data-user-create-mode-panel="invite" role="tabpanel" hidden>
                 ' . $this->hiddenFields($context) . '
                 <input type="hidden" name="action" value="users-create-invited-user">
-                <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
+                <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
                 <div class="form-row half">
                     <label for="invite-user-display-name">Display name</label>
                     <input class="input" id="invite-user-display-name" name="invite_display_name" type="text" required>
@@ -168,8 +168,8 @@ final class _add_userCard extends CardBaseFramework
                 continue;
             }
 
-            $html .= '<option value="' . HelperFramework::escape((string)$roleId) . '">'
-                . HelperFramework::escape($roleName)
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html((string)$roleId) . '">'
+                . \eel_accounts\Support\Utf8::html($roleName)
                 . '</option>';
         }
 
@@ -181,7 +181,7 @@ final class _add_userCard extends CardBaseFramework
         $html = '';
 
         foreach ((array)($context['page']['page_cards'] ?? []) as $cardKey) {
-            $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+            $html .= '<input type="hidden" name="cards[]" value="' . \eel_accounts\Support\Utf8::html((string)$cardKey) . '">';
         }
 
         return $html;
@@ -193,8 +193,8 @@ final class _add_userCard extends CardBaseFramework
 
         foreach (UserManagementService::mobileCountryCodeOptions() as $countryCode => $label) {
             $selected = $countryCode === $selectedCountryCode ? ' selected' : '';
-            $html .= '<option value="' . HelperFramework::escape($countryCode) . '"' . $selected . '>'
-                . HelperFramework::escape($label)
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html($countryCode) . '"' . $selected . '>'
+                . \eel_accounts\Support\Utf8::html($label)
                 . '</option>';
         }
 

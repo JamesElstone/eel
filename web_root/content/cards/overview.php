@@ -54,9 +54,9 @@ final class _overviewCard extends CardBaseFramework
 
         foreach ($stats as $stat) {
             $statsHtml .= '<article class="card stat-card">
-                <div class="eyebrow">' . HelperFramework::escape((string)($stat['label'] ?? '')) . '</div>
-                <div class="stat-value">' . HelperFramework::escape((string)($stat['value'] ?? '')) . '</div>
-                <div class="stat-foot">' . HelperFramework::escape((string)($stat['foot'] ?? '')) . '</div>
+                <div class="eyebrow">' . \eel_accounts\Support\Utf8::html((string)($stat['label'] ?? '')) . '</div>
+                <div class="stat-value">' . \eel_accounts\Support\Utf8::html((string)($stat['value'] ?? '')) . '</div>
+                <div class="stat-foot">' . \eel_accounts\Support\Utf8::html((string)($stat['foot'] ?? '')) . '</div>
             </article>';
         }
 

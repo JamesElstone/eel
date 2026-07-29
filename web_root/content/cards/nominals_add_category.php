@@ -46,7 +46,7 @@ final class _nominals_add_categoryCard extends CardBaseFramework
         $accountTypeOptions = '';
         foreach ($this->validAccountTypes() as $accountType) {
             $selected = (string)($editingSubtype['parent_account_type'] ?? '') === $accountType ? ' selected' : '';
-            $accountTypeOptions .= '<option value="' . HelperFramework::escape($accountType) . '"' . $selected . '>' . HelperFramework::escape($accountType) . '</option>';
+            $accountTypeOptions .= '<option value="' . \eel_accounts\Support\Utf8::html($accountType) . '"' . $selected . '>' . \eel_accounts\Support\Utf8::html($accountType) . '</option>';
         }
 
         $cancelFormId = 'nominals-category-cancel-form';
@@ -63,18 +63,18 @@ final class _nominals_add_categoryCard extends CardBaseFramework
             <form method="post" data-ajax-card-form="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Nominals">
-                <input type="hidden" name="global_action" value="' . HelperFramework::escape($editingSubtype !== null ? 'save_nominal_subtype' : 'add_nominal_subtype') . '">'
+                <input type="hidden" name="global_action" value="' . \eel_accounts\Support\Utf8::html($editingSubtype !== null ? 'save_nominal_subtype' : 'add_nominal_subtype') . '">'
                 . ($editingSubtype !== null
                     ? '<input type="hidden" name="subtype_id" value="' . (int)($editingSubtype['id'] ?? 0) . '">'
                     : '') . '
                 <div class="form-grid">
                     <div class="form-row">
                         <label for="subtype_code">Category Code <span>(Letters, Number or _ only)</span></label>
-                        <input class="input" id="subtype_code" name="subtype_code" pattern="[A-Za-z0-9_]*" title="Letters, Number or _ only" value="' . HelperFramework::escape((string)($editingSubtype['code'] ?? '')) . '">
+                        <input class="input" id="subtype_code" name="subtype_code" pattern="[A-Za-z0-9_]*" title="Letters, Number or _ only" value="' . \eel_accounts\Support\Utf8::html((string)($editingSubtype['code'] ?? '')) . '">
                     </div>
                     <div class="form-row">
                         <label for="subtype_name">Category Name</label>
-                        <input class="input" id="subtype_name" name="subtype_name" value="' . HelperFramework::escape((string)($editingSubtype['name'] ?? '')) . '">
+                        <input class="input" id="subtype_name" name="subtype_name" value="' . \eel_accounts\Support\Utf8::html((string)($editingSubtype['name'] ?? '')) . '">
                     </div>
                     <div class="form-row">
                         <label for="subtype_parent_account_type">Parent Account Type</label>
@@ -82,7 +82,7 @@ final class _nominals_add_categoryCard extends CardBaseFramework
                     </div>
                     <div class="form-row">
                         <label for="subtype_sort_order">Sort Order</label>
-                        <input class="input" id="subtype_sort_order" name="subtype_sort_order" value="' . HelperFramework::escape((string)($editingSubtype['sort_order'] ?? '100')) . '">
+                        <input class="input" id="subtype_sort_order" name="subtype_sort_order" value="' . \eel_accounts\Support\Utf8::html((string)($editingSubtype['sort_order'] ?? '100')) . '">
                     </div>
                     <label class="checkbox-item">
                         <input type="checkbox" name="subtype_is_active" value="1"' . (!isset($editingSubtype['is_active']) || (int)($editingSubtype['is_active'] ?? 0) === 1 ? ' checked' : '') . '>
@@ -93,7 +93,7 @@ final class _nominals_add_categoryCard extends CardBaseFramework
                     </label>
                 </div>
                 <div>
-                    <button class="button primary" type="submit">' . HelperFramework::escape($editingSubtype !== null ? 'Save Category' : 'Add Category') . '</button>'
+                    <button class="button primary" type="submit">' . \eel_accounts\Support\Utf8::html($editingSubtype !== null ? 'Save Category' : 'Add Category') . '</button>'
                     . ($editingSubtype !== null
                         ? '<button class="button" type="submit" form="' . $cancelFormId . '" formnovalidate>Cancel</button>'
                         : '') . '

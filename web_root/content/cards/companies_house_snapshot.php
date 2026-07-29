@@ -49,7 +49,7 @@ final class _companies_house_snapshotCard extends CardBaseFramework
 
         $warningHtml = '';
         foreach ((array)($snapshot['warnings'] ?? []) as $warning) {
-            $warningHtml .= '<div class="helper">' . HelperFramework::escape((string)$warning) . '</div>';
+            $warningHtml .= '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$warning) . '</div>';
         }
         $reliable = !empty($snapshot['reliable_closing_balance']);
         $balanced = !empty($snapshot['is_balance_sheet_balanced']);
@@ -63,31 +63,31 @@ final class _companies_house_snapshotCard extends CardBaseFramework
                 : (string)($field['value'] ?? '');
             $note = trim((string)($field['note'] ?? ''));
             $fieldsHtml .= '<tr>
-                <td>' . HelperFramework::escape((string)($field['label'] ?? '')) . '</td>
-                <td><strong>' . HelperFramework::escape($value) . '</strong>' . ($note !== '' ? '<div class="helper">' . HelperFramework::escape($note) . '</div>' : '') . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($field['label'] ?? '')) . '</td>
+                <td><strong>' . \eel_accounts\Support\Utf8::html($value) . '</strong>' . ($note !== '' ? '<div class="helper">' . \eel_accounts\Support\Utf8::html($note) . '</div>' : '') . '</td>
             </tr>';
         }
 
         $checksHtml = '';
         foreach ((array)($snapshot['checks'] ?? []) as $check) {
             $checksHtml .= '<tr>
-                <td>' . HelperFramework::escape((string)($check['label'] ?? '')) . '</td>
-                <td><strong>' . HelperFramework::escape($this->displayValue($check['value'] ?? '', $companySettings)) . '</strong><div class="helper">' . HelperFramework::escape((string)($check['detail'] ?? '')) . '</div></td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($check['label'] ?? '')) . '</td>
+                <td><strong>' . \eel_accounts\Support\Utf8::html($this->displayValue($check['value'] ?? '', $companySettings)) . '</strong><div class="helper">' . \eel_accounts\Support\Utf8::html((string)($check['detail'] ?? '')) . '</div></td>
             </tr>';
         }
 
         $sourceHtml = '';
         foreach ((array)($snapshot['sources'] ?? []) as $source) {
             $sourceHtml .= '<tr>
-                <td>' . HelperFramework::escape((string)($source['label'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($source['label'] ?? '')) . '</td>
                 <td>' . (int)($source['count'] ?? 0) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $source['amount'] ?? 0)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $source['amount'] ?? 0)) . '</td>
             </tr>';
         }
 
         $assumptionsHtml = '';
         foreach ((array)($snapshot['assumptions'] ?? []) as $assumption) {
-            $assumptionsHtml .= '<li>' . HelperFramework::escape((string)$assumption) . '</li>';
+            $assumptionsHtml .= '<li>' . \eel_accounts\Support\Utf8::html((string)$assumption) . '</li>';
         }
 
         return '<div class="settings-stack">
@@ -126,7 +126,7 @@ final class _companies_house_snapshotCard extends CardBaseFramework
 
     private function panel(string $title, string $body): string
     {
-        return '<section class="panel-soft"><div class="status-head"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3></div>' . $body . '</section>';
+        return '<section class="panel-soft"><div class="status-head"><h3 class="card-title">' . \eel_accounts\Support\Utf8::html($title) . '</h3></div>' . $body . '</section>';
     }
 
     private function money(array $companySettings, mixed $value): string
@@ -138,7 +138,7 @@ final class _companies_house_snapshotCard extends CardBaseFramework
     {
         $html = '';
         foreach ($errors as $error) {
-            $html .= '<div class="helper">' . HelperFramework::escape((string)$error) . '</div>';
+            $html .= '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$error) . '</div>';
         }
 
         return $html;

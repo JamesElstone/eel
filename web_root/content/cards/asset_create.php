@@ -87,12 +87,12 @@ final class _asset_createCard extends CardBaseFramework
                     : '') . '
                 <input type="hidden" name="card_action" value="Asset">
                 <input type="hidden" name="default_bank_nominal_id" value="' . (int)($assetsPageData['default_bank_nominal_id'] ?? 0) . '">
-                <input type="hidden" name="global_action" value="' . HelperFramework::escape($prefillGlobalAction) . '">
+                <input type="hidden" name="global_action" value="' . \eel_accounts\Support\Utf8::html($prefillGlobalAction) . '">
                 ' . ($isManualAsset ? '<input type="hidden" name="manual_asset_legal_acknowledged" value="0" data-manual-asset-legal-acknowledged>' : '') . '
                 <div class="asset-create-controls">
                     <div class="field">
                         <label for="asset_description">Description</label>
-                        <input class="input" id="asset_description" type="text" name="description" value="' . HelperFramework::escape((string)($prefillTransaction['description'] ?? '')) . '" required>
+                        <input class="input" id="asset_description" type="text" name="description" value="' . \eel_accounts\Support\Utf8::html((string)($prefillTransaction['description'] ?? '')) . '" required>
                     </div>
                     <div class="field">
                         <label for="asset_category">Asset category</label>
@@ -100,11 +100,11 @@ final class _asset_createCard extends CardBaseFramework
                     </div>
                     <div class="field">
                         <label for="asset_purchase_date">Purchase Date</label>
-                        <input class="input" id="asset_purchase_date" type="date" name="purchase_date" value="' . HelperFramework::escape((string)($prefillTransaction['purchase_date'] ?? '')) . '" required>
+                        <input class="input" id="asset_purchase_date" type="date" name="purchase_date" value="' . \eel_accounts\Support\Utf8::html((string)($prefillTransaction['purchase_date'] ?? '')) . '" required>
                     </div>
                     <div class="field">
                         <label for="asset_cost">Cost</label>
-                        <input class="input" id="asset_cost" type="number" step="0.01" name="cost" value="' . HelperFramework::escape((string)($prefillTransaction['cost'] ?? '')) . '" required>
+                        <input class="input" id="asset_cost" type="number" step="0.01" name="cost" value="' . \eel_accounts\Support\Utf8::html((string)($prefillTransaction['cost'] ?? '')) . '" required>
                     </div>
                     <div class="field">
                         <label for="asset_life">Useful life</label>
@@ -140,7 +140,7 @@ final class _asset_createCard extends CardBaseFramework
                         </div>
                     </div>'
                         : '') . '
-                    <button class="button primary" type="submit"' . ($isManualAsset ? $this->manualAssetLegalWarningAttributes() . ' data-upload-submit' : '') . '>' . HelperFramework::escape($prefillTransaction !== null ? 'Create Asset' : 'Post Asset') . ($isManualAsset ? '<img class="upload-processing-icon is-hidden" src="svg/loader.svg" alt="" aria-hidden="true" data-upload-processing-icon>' : '') . '</button>
+                    <button class="button primary" type="submit"' . ($isManualAsset ? $this->manualAssetLegalWarningAttributes() . ' data-upload-submit' : '') . '>' . \eel_accounts\Support\Utf8::html($prefillTransaction !== null ? 'Create Asset' : 'Post Asset') . ($isManualAsset ? '<img class="upload-processing-icon is-hidden" src="svg/loader.svg" alt="" aria-hidden="true" data-upload-processing-icon>' : '') . '</button>
                 </div>
             </form>
         ';
@@ -150,7 +150,7 @@ final class _asset_createCard extends CardBaseFramework
     {
         $html = '';
         foreach ($assetCategories as $value => $label) {
-            $html .= '<option value="' . HelperFramework::escape((string)$value) . '">' . HelperFramework::escape((string)$label) . '</option>';
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html((string)$value) . '">' . \eel_accounts\Support\Utf8::html((string)$label) . '</option>';
         }
 
         return $html;
@@ -167,7 +167,7 @@ final class _asset_createCard extends CardBaseFramework
     {
         $html = '<option value="">Select reason</option>';
         foreach (\eel_accounts\Service\AssetService::manualAdditionReasonOptions() as $value => $label) {
-            $html .= '<option value="' . HelperFramework::escape((string)$value) . '">' . HelperFramework::escape((string)$label) . '</option>';
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html((string)$value) . '">' . \eel_accounts\Support\Utf8::html((string)$label) . '</option>';
         }
 
         return $html;
@@ -183,7 +183,7 @@ final class _asset_createCard extends CardBaseFramework
 
             $nominalId = (int)($nominal['id'] ?? 0);
             $selected = $nominalId === $selectedId ? ' selected' : '';
-            $html .= '<option value="' . $nominalId . '"' . $selected . '>' . HelperFramework::escape(FormattingFramework::nominalLabel((array)$nominal, ' ')) . '</option>';
+            $html .= '<option value="' . $nominalId . '"' . $selected . '>' . \eel_accounts\Support\Utf8::html(FormattingFramework::nominalLabel((array)$nominal, ' ')) . '</option>';
         }
 
         return $html;
@@ -202,7 +202,7 @@ final class _asset_createCard extends CardBaseFramework
 
         return ' data-manual-asset-legal-check="true"'
             . ' data-manual-asset-warning-title="Manual asset legal warning"'
-            . ' data-manual-asset-warning-message="' . HelperFramework::escape($message) . '"'
+            . ' data-manual-asset-warning-message="' . \eel_accounts\Support\Utf8::html($message) . '"'
             . ' data-manual-asset-warning-confirm-text="Acknowledge and Post"';
     }
 }

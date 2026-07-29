@@ -28,6 +28,6 @@ final class _license_agpl_3_0Card extends CardBaseFramework
     {
         $text = (new \eel_accounts\Service\LicenseService())->licenseText('agpl_3_0');
 
-        return '<pre class="license-text-panel">' . HelperFramework::escape($text) . '</pre>';
+        return '<pre class="license-text-panel">' . \eel_accounts\Support\Utf8::html($text) . '</pre>';
     }
 }

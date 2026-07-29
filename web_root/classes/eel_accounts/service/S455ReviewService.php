@@ -388,7 +388,7 @@ final class S455ReviewService
         // opportunities. Until attributed, they are not relied-on evidence and
         // must not stale or block the filed-period Section 464A conclusion.
         unset($hashBasis['future_unattributed_movements']);
-        $basisHash = hash('sha256', json_encode($hashBasis, JSON_UNESCAPED_SLASHES));
+        $basisHash = hash('sha256', \eel_accounts\Support\Utf8::json($hashBasis, JSON_UNESCAPED_SLASHES));
         return $basis + [
             'available' => true,
             'errors' => array_values(array_unique($errors)),
@@ -817,7 +817,7 @@ final class S455ReviewService
             'evidence_cutoff' => (string)$calculation['evidence_cutoff'],
             'window_status' => (string)$calculation['window_status'],
             'basis_hash' => (string)$calculation['basis_hash'],
-            'basis_json' => json_encode($calculation['basis'], JSON_UNESCAPED_SLASHES),
+            'basis_json' => \eel_accounts\Support\Utf8::json($calculation['basis'], JSON_UNESCAPED_SLASHES),
             'confirmed_at' => null,
             'confirmed_by' => null,
             'confirmation_note' => null,

@@ -64,6 +64,7 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
                         'id' => 44,
                         'asset_code' => 'FA-7-1',
                         'description' => 'Test asset',
+                        'registration_mark' => 'PK59ZPJ',
                         'purchase_date' => '2020-01-01',
                         'period_depreciation' => 12.34,
                         'resale_value' => 87.66,
@@ -111,9 +112,9 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
         $harness->assertTrue($periodDepreciationHeaderPosition < $resaleValueHeaderPosition);
         $harness->assertTrue($resaleValueHeaderPosition < $residualValueHeaderPosition);
         $harness->assertTrue($residualValueHeaderPosition < $statusHeaderPosition);
-        $harness->assertTrue(str_contains($html, '<td>01/01/20</td><td class="numeric">10</td><td class="numeric">3</td><td>FA-7-1</td><td><div>Test asset</div></td><td class="numeric">$ 100.00</td><td class="numeric">$ 12.34</td><td class="numeric">$ 87.66</td><td class="numeric">$ 10.00</td>'));
+        $harness->assertTrue(str_contains($html, '<td>01/01/20</td><td class="numeric">10</td><td class="numeric">3</td><td>FA-7-1</td><td><div>Test asset (PK59ZPJ)</div></td><td class="numeric">$ 100.00</td><td class="numeric">$ 12.34</td><td class="numeric">$ 87.66</td><td class="numeric">$ 10.00</td>'));
         $harness->assertTrue(str_contains($html, 'FA-7-1'));
-        $harness->assertTrue(str_contains($html, 'Test asset'));
+        $harness->assertTrue(str_contains($html, 'Test asset (PK59ZPJ)'));
         $harness->assertTrue(str_contains($html, '$ 100.00'));
         $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="csv"'));
         $harness->assertTrue(str_contains($html, '<th class="asset-register-method-heading">Disposal Method</th>'));

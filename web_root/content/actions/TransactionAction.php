@@ -823,7 +823,7 @@ final class TransactionAction implements ActionInterfaceFramework
     {
         $companyId = $this->selectedCompanyId($request);
         $exportPayload = self::service($services, \eel_accounts\Service\CategorisationRuleService::class)->exportRules($companyId);
-        $encoded = json_encode($exportPayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $encoded = \eel_accounts\Support\Utf8::json($exportPayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
         if ($encoded === false) {
             header('Content-Type: text/plain; charset=utf-8', true, 500);

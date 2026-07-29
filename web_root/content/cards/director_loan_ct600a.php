@@ -43,7 +43,7 @@ final class _director_loan_ct600aCard extends CardBaseFramework
     {
         $data = (array)($context['services']['ct600a'] ?? []);
         if (empty($data['available'])) {
-            return '<div class="helper">' . HelperFramework::escape((string)(($data['errors'] ?? [])[0] ?? 'CT600A evidence is unavailable.')) . '</div>';
+            return '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)(($data['errors'] ?? [])[0] ?? 'CT600A evidence is unavailable.')) . '</div>';
         }
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
@@ -58,18 +58,18 @@ final class _director_loan_ct600aCard extends CardBaseFramework
             $errors = (array)($ct['blocking_errors'] ?? []);
             $complete = !array_key_exists('complete', $ct) ? $errors === [] : !empty($ct['complete']);
             $html .= '<section class="panel-soft settings-stack"><div class="status-head"><h3 class="card-title">Tax period '
-                . (int)($ct['display_sequence_no'] ?? $ct['sequence_no']) . ' — ' . HelperFramework::escape((string)$ct['period_start']) . ' to '
-                . HelperFramework::escape((string)$ct['period_end']) . '</h3>'
+                . (int)($ct['display_sequence_no'] ?? $ct['sequence_no']) . ' — ' . \eel_accounts\Support\Utf8::html((string)$ct['period_start']) . ' to '
+                . \eel_accounts\Support\Utf8::html((string)$ct['period_end']) . '</h3>'
                 . ($complete ? '<span class="badge success">Ready</span>' : '')
                 . '<span class="badge info">CT600A required: ' . (!empty($ct['required']) ? 'Yes' : 'No') . '</span></div>';
             $html .= $this->summaryTable($ct, $company)->render($context, [
                 'cards[]' => (array)($context['page']['page_cards'] ?? [$this->key()]),
             ]);
             foreach ($errors as $error) {
-                $html .= '<div class="standout helper">' . HelperFramework::escape((string)$error) . '</div>';
+                $html .= '<div class="standout helper">' . \eel_accounts\Support\Utf8::html((string)$error) . '</div>';
             }
             foreach ((array)($ct['evidence_warnings'] ?? []) as $warning) {
-                $html .= '<div class="panel-soft warn helper">' . HelperFramework::escape((string)$warning) . '</div>';
+                $html .= '<div class="panel-soft warn helper">' . \eel_accounts\Support\Utf8::html((string)$warning) . '</div>';
             }
             $html .= '</section>';
         }
@@ -85,7 +85,7 @@ final class _director_loan_ct600aCard extends CardBaseFramework
             if (!in_array($value, ['yes', 'no'], true)) {
                 $value = 'yes';
             }
-            $fields .= '<fieldset class="panel-soft"><legend>' . HelperFramework::escape((string)$question) . '</legend><div class="actions-row">'
+            $fields .= '<fieldset class="panel-soft"><legend>' . \eel_accounts\Support\Utf8::html((string)$question) . '</legend><div class="actions-row">'
                 . $this->radio((string)$key, 'no', 'No', $value) . $this->radio((string)$key, 'yes', 'Yes', $value)
                 . '</div></fieldset>';
         }
@@ -96,17 +96,17 @@ final class _director_loan_ct600aCard extends CardBaseFramework
                 <input type="hidden" name="ct_period_id" value="' . $ctId . '"><h4 class="card-title">Section 464A and 464C declaration</h4>
                 <div class="helper">Answer the risk questions from the company records and posted transaction or journal evidence. This review does not create tax evidence.</div>'
             . $fields . '<div class="form-grid"><div class="form-row"><label>Approver name</label><input class="input" name="approved_by" value="'
-            . HelperFramework::escape((string)($review['approved_by'] ?? '')) . '" required></div><div class="form-row"><label>Approver role</label>
+            . \eel_accounts\Support\Utf8::html((string)($review['approved_by'] ?? '')) . '" required></div><div class="form-row"><label>Approver role</label>
                 <select class="input" name="approver_role"><option value="director"' . ((string)($review['approver_role'] ?? 'director') === 'director' ? ' selected' : '')
             . '>Director</option><option value="adviser"' . ((string)($review['approver_role'] ?? '') === 'adviser' ? ' selected' : '')
             . '>Adviser</option></select></div></div><div class="form-row"><label>Evidence or conclusion note</label><textarea class="input" name="confirmation_note" rows="3">'
-            . HelperFramework::escape((string)($review['confirmation_note'] ?? '')) . '</textarea></div><button class="button primary" type="submit">Approve section 464A review</button></form>';
+            . \eel_accounts\Support\Utf8::html((string)($review['confirmation_note'] ?? '')) . '</textarea></div><button class="button primary" type="submit">Approve section 464A review</button></form>';
     }
 
     private function radio(string $name, string $value, string $label, string $selected): string
     {
         $id = 'ct600a_' . $name . '_' . $value;
-        return '<label for="' . $id . '"><input id="' . $id . '" type="radio" name="' . HelperFramework::escape($name)
+        return '<label for="' . $id . '"><input id="' . $id . '" type="radio" name="' . \eel_accounts\Support\Utf8::html($name)
             . '" value="' . $value . '"' . ($selected === $value ? ' checked' : '') . ' required> ' . $label . '</label>';
     }
     private function summaryTable(array $ct, array $company): TableFramework
@@ -115,7 +115,7 @@ final class _director_loan_ct600aCard extends CardBaseFramework
         $sequenceNo = (int)($ct['sequence_no'] ?? 0);
         $identifier = $ctPeriodId > 0 ? (string)$ctPeriodId : 'sequence-' . $sequenceNo;
 
-        return TableFramework::make('director_loan_ct600a_summary_' . $identifier, $this->summaryRows($ct))
+        return \eel_accounts\Support\Utf8Table::make('director_loan_ct600a_summary_' . $identifier, $this->summaryRows($ct))
             ->filename('ct600a-summary-ct-period-' . ($sequenceNo > 0 ? $sequenceNo : $identifier))
             ->exportLimit(6)
             ->empty('No CT600A summary values are available for this CT period.')
@@ -124,7 +124,7 @@ final class _director_loan_ct600aCard extends CardBaseFramework
             ->column(
                 'value',
                 'Value',
-                html: fn(array $row): string => HelperFramework::escape($this->money($company, (float)($row['value'] ?? 0))),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($company, (float)($row['value'] ?? 0))),
                 export: static fn(array $row): string => number_format((float)($row['value'] ?? 0), 2, '.', ''),
                 headerClass: 'numeric',
                 cellClass: 'numeric',

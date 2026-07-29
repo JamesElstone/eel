@@ -53,13 +53,13 @@ final class _test_sourceCard extends CardBaseFramework
         $cardsHtml = '';
 
         foreach ((array)(($context['page']['page_cards'] ?? [])) as $cardKey) {
-            $cardsHtml .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+            $cardsHtml .= '<input type="hidden" name="cards[]" value="' . \eel_accounts\Support\Utf8::html((string)$cardKey) . '">';
         }
 
         $optionsHtml = '';
         foreach ((array)($testContext['preset_options'] ?? []) as $value => $label) {
             $selected = $value === $preset ? ' selected' : '';
-            $optionsHtml .= '<option value="' . HelperFramework::escape((string)$value) . '"' . $selected . '>' . HelperFramework::escape((string)$label) . '</option>';
+            $optionsHtml .= '<option value="' . \eel_accounts\Support\Utf8::html((string)$value) . '"' . $selected . '>' . \eel_accounts\Support\Utf8::html((string)$label) . '</option>';
         }
 
         return '
@@ -75,14 +75,14 @@ final class _test_sourceCard extends CardBaseFramework
                 </div>
                 <div class="form-row">
                     <label for="test-note">Note</label>
-                    <input class="input" id="test-note" name="note" type="text" value="' . HelperFramework::escape($note) . '">
+                    <input class="input" id="test-note" name="note" type="text" value="' . \eel_accounts\Support\Utf8::html($note) . '">
                 </div>
                 <div class="form-row">
                     <button class="button primary" type="submit">Apply Test Context</button>
                 </div>
             </form>
             <div class="pill-row">
-                <span class="pill">Selected preset: ' . HelperFramework::escape(ucfirst($preset)) . '</span>
+                <span class="pill">Selected preset: ' . \eel_accounts\Support\Utf8::html(ucfirst($preset)) . '</span>
                 <span class="pill">Context owner: page</span>
             </div>
         ';

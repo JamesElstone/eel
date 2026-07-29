@@ -39,7 +39,7 @@ final class _hmrc_submission_unavailableCard extends CardBaseFramework
     public function handleError(string $serviceKey, array $error, array $context): string
     {
         return '<div class="notice warning">The Corporation Tax filing status could not be loaded. '
-            . HelperFramework::escape((string)($error['message'] ?? 'Review the application log and try again.'))
+            . \eel_accounts\Support\Utf8::html((string)($error['message'] ?? 'Review the application log and try again.'))
             . '</div>';
     }
 
@@ -60,7 +60,7 @@ final class _hmrc_submission_unavailableCard extends CardBaseFramework
             . $this->environmentSummary($status);
 
         foreach ($this->messages((array)($status['errors'] ?? [])) as $error) {
-            $html .= '<div class="notice warning">' . HelperFramework::escape($error) . '</div>';
+            $html .= '<div class="notice warning">' . \eel_accounts\Support\Utf8::html($error) . '</div>';
         }
 
         if ($periods === []) {
@@ -96,7 +96,7 @@ final class _hmrc_submission_unavailableCard extends CardBaseFramework
         );
         foreach (array_values(array_unique($environmentBlockers)) as $blocker) {
             $html .= '<div class="helper"><span class="badge warning">Connection blocker</span> '
-                . HelperFramework::escape($blocker) . '</div>';
+                . \eel_accounts\Support\Utf8::html($blocker) . '</div>';
         }
 
         return $html . '</section>';
@@ -131,8 +131,8 @@ final class _hmrc_submission_unavailableCard extends CardBaseFramework
         $archiveSubmission = $pending !== [] ? $pending : ($latestLive !== [] ? $latestLive : $latestTest);
         $archive = (array)($archiveSubmission['transmission_archive'] ?? []);
         $html = '<section class="panel-soft"><div class="status-head"><h3 class="card-title">CT period '
-            . HelperFramework::escape($start) . ' to ' . HelperFramework::escape($end)
-            . '</h3><span class="badge ' . $badgeClass . '">' . HelperFramework::escape($badgeLabel) . '</span></div>'
+            . \eel_accounts\Support\Utf8::html($start) . ' to ' . \eel_accounts\Support\Utf8::html($end)
+            . '</h3><span class="badge ' . $badgeClass . '">' . \eel_accounts\Support\Utf8::html($badgeLabel) . '</span></div>'
             . '<div class="summary-grid">'
             . $this->metric('Last TIL result', $this->submissionLabel($latestTest))
             . $this->metric('LIVE result', $this->submissionLabel($latestLive))
@@ -147,7 +147,7 @@ final class _hmrc_submission_unavailableCard extends CardBaseFramework
             $this->messages((array)($period['live_blockers'] ?? []))
         )));
         foreach ($blockers as $blocker) {
-            $html .= '<div class="notice warning">' . HelperFramework::escape($blocker) . '</div>';
+            $html .= '<div class="notice warning">' . \eel_accounts\Support\Utf8::html($blocker) . '</div>';
         }
 
         $html .= $this->submissionForm(
@@ -185,7 +185,7 @@ final class _hmrc_submission_unavailableCard extends CardBaseFramework
             . $this->hiddenFields($companyId, $accountingPeriodId, $ctPeriodId)
             . '<input type="hidden" name="intent" value="hmrc_poll">'
             . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
-            . '<button class="button" type="submit">' . HelperFramework::escape($label) . '</button></form>';
+            . '<button class="button" type="submit">' . \eel_accounts\Support\Utf8::html($label) . '</button></form>';
     }
 
     private function submissionForm(
@@ -211,10 +211,10 @@ final class _hmrc_submission_unavailableCard extends CardBaseFramework
             . '<div class="helper">These details form part of the tested filing body. Leave them unchanged between a successful TIL test and LIVE submission.</div>'
             . '<div class="form-row half"><label for="hmrc-declaration-name-' . $ctPeriodId . '">Declarant name</label>'
             . '<input class="input" id="hmrc-declaration-name-' . $ctPeriodId . '" name="declaration_name" type="text" value="'
-            . HelperFramework::escape($declarationName) . '" required></div>'
+            . \eel_accounts\Support\Utf8::html($declarationName) . '" required></div>'
             . '<div class="form-row half"><label for="hmrc-declaration-status-' . $ctPeriodId . '">Declarant status or capacity</label>'
             . '<input class="input" id="hmrc-declaration-status-' . $ctPeriodId . '" name="declaration_status" type="text" value="'
-            . HelperFramework::escape($declarationStatus) . '" required></div>'
+            . \eel_accounts\Support\Utf8::html($declarationStatus) . '" required></div>'
             . $this->confirmation('original_unfiled_confirmed', $ctPeriodId, 'This is an original return and has not already been filed for this CT period.')
             . $this->confirmation('supplementary_scope_confirmed', $ctPeriodId, 'I confirm the supported return does not require a supplementary page.')
             . $this->confirmation('authority_confirmed', $ctPeriodId, 'I am authorised to file this Corporation Tax return for the company.')
@@ -223,7 +223,7 @@ final class _hmrc_submission_unavailableCard extends CardBaseFramework
             . '<button class="button primary" type="submit" name="intent" value="hmrc_submit_test"' . $testDisabled . '>Test</button>'
             . '<button class="button danger" type="submit" name="intent" value="hmrc_submit_live"' . $liveDisabled
             . ' data-chicken-check="true" data-chicken-title="Submit Corporation Tax return"'
-            . ' data-chicken-message="Submit the CT600 for ' . HelperFramework::escape($periodLabel)
+            . ' data-chicken-message="Submit the CT600 for ' . \eel_accounts\Support\Utf8::html($periodLabel)
             . ' to HMRC LIVE?&lt;br&gt;&lt;br&gt;This is a statutory filing and cannot be undone in this application."'
             . ' data-chicken-confirm-text="Submit Tax Return">Submit Tax Return</button></div>'
             . ($liveEnabled ? '' : '<div class="helper">A successful TIL result for the current body and source manifest is required before LIVE submission.</div>')
@@ -234,8 +234,8 @@ final class _hmrc_submission_unavailableCard extends CardBaseFramework
     {
         $id = 'hmrc-' . str_replace('_', '-', $name) . '-' . $ctPeriodId;
         return '<label class="checkbox-row" for="' . $id . '"><input id="' . $id . '" name="'
-            . HelperFramework::escape($name) . '" type="checkbox" value="1" required> '
-            . HelperFramework::escape($label) . '</label>';
+            . \eel_accounts\Support\Utf8::html($name) . '" type="checkbox" value="1" required> '
+            . \eel_accounts\Support\Utf8::html($label) . '</label>';
     }
 
     private function hiddenFields(int $companyId, int $accountingPeriodId, int $ctPeriodId): string
@@ -295,8 +295,8 @@ final class _hmrc_submission_unavailableCard extends CardBaseFramework
 
     private function metric(string $label, string $value): string
     {
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label)
-            . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+        return '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label)
+            . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div></div>';
     }
 
     /** @return list<string> */

@@ -241,7 +241,7 @@ final class YearEndAcknowledgementService
         // (for example, an en dash becomes mojibake). Escaped code points
         // survive that round trip byte-for-byte, so basis_hash continues to
         // describe the exact basis_json that can later be verified.
-        $json = json_encode($this->normalizeArray($basis), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
+        $json = \eel_accounts\Support\Utf8::json($this->normalizeArray($basis), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
         if (!is_string($json)) {
             throw new \RuntimeException('Unable to encode the Year End acknowledgement basis.');
         }
@@ -254,8 +254,8 @@ final class YearEndAcknowledgementService
         if (array_is_list($value)) {
             $normalized = array_map(fn(mixed $item): mixed => $this->normalizeValue($item), $value);
             usort($normalized, static fn(mixed $left, mixed $right): int => strcmp(
-                (string)json_encode($left, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION),
-                (string)json_encode($right, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION)
+                (string)\eel_accounts\Support\Utf8::json($left, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION),
+                (string)\eel_accounts\Support\Utf8::json($right, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION)
             ));
             return $normalized;
         }

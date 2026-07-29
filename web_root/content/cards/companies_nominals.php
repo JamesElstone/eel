@@ -89,9 +89,9 @@ final class _companies_nominalsCard extends CardBaseFramework
                 }
 
                 $suggestionItemsHtml .= '<div class="list-item"><strong>'
-                    . HelperFramework::escape($label)
+                    . \eel_accounts\Support\Utf8::html($label)
                     . '</strong><span>'
-                    . HelperFramework::escape(FormattingFramework::nominalLabel($nominalSuggestions[$key], ' '))
+                    . \eel_accounts\Support\Utf8::html(FormattingFramework::nominalLabel($nominalSuggestions[$key], ' '))
                     . '</span></div>';
             }
 
@@ -107,7 +107,7 @@ final class _companies_nominalsCard extends CardBaseFramework
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                             <input type="hidden" name="card_action" value="Nominals">
                             <input type="hidden" name="intent" value="apply_nominal_suggestions">
-                            <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)($context['company']['id'] ?? 0)) . '">
+                            <input type="hidden" name="company_id" value="' . \eel_accounts\Support\Utf8::html((string)($context['company']['id'] ?? 0)) . '">
                             <button class="button primary" type="submit"' . ($suggestionItemsHtml === '' ? ' disabled' : '') . '>Assign system defaults</button>
                         </form>
                     </div>
@@ -121,8 +121,8 @@ final class _companies_nominalsCard extends CardBaseFramework
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Nominals">
                 <input type="hidden" name="intent" value="save_nominals">
-                <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)($context['company']['id'] ?? 0)) . '">
-                <section data-state-fields="default_bank_nominal_id,default_sales_nominal_id,default_trade_nominal_id,default_expense_nominal_id,tools_small_equipment_nominal_id,prepayment_asset_nominal_id,participator_loan_asset_nominal_id,participator_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id,corporation_tax_expense_nominal_id,corporation_tax_liability_nominal_id,' . HelperFramework::escape($helperStateFields) . '" data-state-target="save_default_nominals">
+                <input type="hidden" name="company_id" value="' . \eel_accounts\Support\Utf8::html((string)($context['company']['id'] ?? 0)) . '">
+                <section data-state-fields="default_bank_nominal_id,default_sales_nominal_id,default_trade_nominal_id,default_expense_nominal_id,tools_small_equipment_nominal_id,prepayment_asset_nominal_id,participator_loan_asset_nominal_id,participator_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id,corporation_tax_expense_nominal_id,corporation_tax_liability_nominal_id,' . \eel_accounts\Support\Utf8::html($helperStateFields) . '" data-state-target="save_default_nominals">
                     ' . $this->renderNominalDefaultTable($nominalAccounts, $settings) . '
                     <div>
                         <button class="button primary" id="save_default_nominals" type="submit" disabled>Save Nominals Defaults</button>
@@ -167,9 +167,9 @@ final class _companies_nominalsCard extends CardBaseFramework
             $options = $key === 'prepayment_asset_nominal_id'
                 ? $this->prepaymentNominalOptions($nominalAccounts, $value)
                 : $this->nominalOptions($nominalAccounts, $value);
-            $rowsHtml .= '<tr><th scope="row"><label for="' . HelperFramework::escape($key) . '">'
-                . HelperFramework::escape($label) . '</label></th><td><select class="select" id="' . HelperFramework::escape($key)
-                . '" name="' . HelperFramework::escape($key) . '" data-state-default="' . HelperFramework::escape($value)
+            $rowsHtml .= '<tr><th scope="row"><label for="' . \eel_accounts\Support\Utf8::html($key) . '">'
+                . \eel_accounts\Support\Utf8::html($label) . '</label></th><td><select class="select" id="' . \eel_accounts\Support\Utf8::html($key)
+                . '" name="' . \eel_accounts\Support\Utf8::html($key) . '" data-state-default="' . \eel_accounts\Support\Utf8::html($value)
                 . '"><option value="">Select nominal account</option>' . $options . '</select></td></tr>';
         }
 
@@ -182,7 +182,7 @@ final class _companies_nominalsCard extends CardBaseFramework
         $html = '';
         foreach ($nominalAccounts as $nominal) {
             $id = (string)($nominal['id'] ?? '');
-            $html .= '<option value="' . HelperFramework::escape($id) . '"' . ($id === $selectedId ? ' selected' : '') . '>' . HelperFramework::escape(FormattingFramework::nominalLabel($nominal, ' ')) . '</option>';
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html($id) . '"' . ($id === $selectedId ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html(FormattingFramework::nominalLabel($nominal, ' ')) . '</option>';
         }
         return $html;
     }

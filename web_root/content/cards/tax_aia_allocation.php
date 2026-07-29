@@ -53,14 +53,14 @@ final class _tax_aia_allocationCard extends CardBaseFramework
     /** @param list<array<string, float|string>> $rows */
     private function table(array $rows): TableFramework
     {
-        return TableFramework::make($this->key(), $rows)
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $rows)
             ->filename('tax-aia-allocation')
             ->exportLimit(5000)
             ->empty('No Annual Investment Allowance (AIA) allocation rows were found for this period.')
             ->textColumn('purchase_date', 'Purchase date', exportType: 'date')
             ->textColumn('asset', 'Asset')
-            ->column('addition', 'Addition', html: static fn(array $row): string => HelperFramework::escape((string)($row['addition_html'] ?? '')), export: static fn(array $row): string => number_format((float)($row['addition'] ?? 0), 2, '.', ''), headerClass: 'numeric', cellClass: 'numeric', exportType: 'number')
-            ->column('allowance', 'Annual Investment Allowance (AIA) claimed', html: static fn(array $row): string => HelperFramework::escape((string)($row['allowance_html'] ?? '')), export: static fn(array $row): string => number_format((float)($row['allowance'] ?? 0), 2, '.', ''), headerClass: 'numeric', cellClass: 'numeric', exportType: 'number')
-            ->column('used', 'Cumulative Annual Investment Allowance (AIA) used', html: static fn(array $row): string => HelperFramework::escape((string)($row['used_html'] ?? '')), export: static fn(array $row): string => number_format((float)($row['used'] ?? 0), 2, '.', ''), headerClass: 'numeric', cellClass: 'numeric', exportType: 'number');
+            ->column('addition', 'Addition', html: static fn(array $row): string => \eel_accounts\Support\Utf8::html((string)($row['addition_html'] ?? '')), export: static fn(array $row): string => number_format((float)($row['addition'] ?? 0), 2, '.', ''), headerClass: 'numeric', cellClass: 'numeric', exportType: 'number')
+            ->column('allowance', 'Annual Investment Allowance (AIA) claimed', html: static fn(array $row): string => \eel_accounts\Support\Utf8::html((string)($row['allowance_html'] ?? '')), export: static fn(array $row): string => number_format((float)($row['allowance'] ?? 0), 2, '.', ''), headerClass: 'numeric', cellClass: 'numeric', exportType: 'number')
+            ->column('used', 'Cumulative Annual Investment Allowance (AIA) used', html: static fn(array $row): string => \eel_accounts\Support\Utf8::html((string)($row['used_html'] ?? '')), export: static fn(array $row): string => number_format((float)($row['used'] ?? 0), 2, '.', ''), headerClass: 'numeric', cellClass: 'numeric', exportType: 'number');
     }
 }

@@ -16,47 +16,47 @@ final class _filing_evidence_overviewCard extends CardBaseFramework
     {
         $model = (array)($context['services']['filingEvidenceOverview'] ?? []);
         if (!empty($model['empty_selection'])) { return '<div class="helper">Look up an Evidence ID to inspect its immutable history.</div>'; }
-        if (empty($model['available'])) { return '<div class="helper">' . HelperFramework::escape((string)(($model['errors'] ?? [])[0] ?? 'Evidence unavailable.')) . '</div>'; }
+        if (empty($model['available'])) { return '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)(($model['errors'] ?? [])[0] ?? 'Evidence unavailable.')) . '</div>'; }
         $b = (array)$model['bundle'];
         $status = (string)($b['lifecycle_status'] ?? 'current');
         $periodRows = '';
         foreach ((array)$model['ct_periods'] as $period) {
             $periodRows .= '<tr><td>CT period ' . (int)$period['sequence_no'] . '</td><td>'
-                . HelperFramework::escape((string)$period['period_start'] . ' to ' . (string)$period['period_end'])
-                . '</td><td><code>' . HelperFramework::escape((string)$period['calculation_basis_hash']) . '</code></td></tr>';
+                . \eel_accounts\Support\Utf8::html((string)$period['period_start'] . ' to ' . (string)$period['period_end'])
+                . '</td><td><code>' . \eel_accounts\Support\Utf8::html((string)$period['calculation_basis_hash']) . '</code></td></tr>';
         }
         $events = '';
         foreach ((array)$model['events'] as $event) {
             $level = (string)$event['event_status'];
-            $events .= '<tr><td>' . HelperFramework::escape((string)$event['created_at']) . '</td><td><span class="badge '
+            $events .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)$event['created_at']) . '</td><td><span class="badge '
                 . ($level === 'success' ? 'success' : ($level === 'error' ? 'danger' : 'warning')) . '">'
-                . HelperFramework::escape(HelperFramework::labelFromKey((string)$event['event_type'])) . '</span></td><td>'
-                . HelperFramework::escape((string)$event['event_message']) . '</td><td>' . HelperFramework::escape((string)$event['actor']) . '</td></tr>';
+                . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)$event['event_type'])) . '</span></td><td>'
+                . \eel_accounts\Support\Utf8::html((string)$event['event_message']) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)$event['actor']) . '</td></tr>';
         }
         $submissions = '';
         foreach ((array)$model['hmrc_submissions'] as $submission) {
             $outcome = (string)($submission['business_outcome'] ?: $submission['status']);
             $submissions .= '<tr><td>HMRC Corporation Tax</td><td>'
-                . HelperFramework::escape((string)$submission['environment']) . '</td><td>'
-                . HelperFramework::escape(HelperFramework::labelFromKey($outcome)) . '</td><td>'
-                . HelperFramework::escape((string)($submission['hmrc_submission_reference'] ?: $submission['hmrc_correlation_id'] ?: $submission['transaction_id']))
-                . '</td><td>' . HelperFramework::escape((string)($submission['final_response_at'] ?: $submission['submitted_at'])) . '</td></tr>';
+                . \eel_accounts\Support\Utf8::html((string)$submission['environment']) . '</td><td>'
+                . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($outcome)) . '</td><td>'
+                . \eel_accounts\Support\Utf8::html((string)($submission['hmrc_submission_reference'] ?: $submission['hmrc_correlation_id'] ?: $submission['transaction_id']))
+                . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($submission['final_response_at'] ?: $submission['submitted_at'])) . '</td></tr>';
         }
         foreach ((array)$model['companies_house_submissions'] as $submission) {
             $submissions .= '<tr><td>Companies House accounts</td><td>'
-                . HelperFramework::escape((string)$submission['environment']) . '</td><td>'
-                . HelperFramework::escape(HelperFramework::labelFromKey((string)$submission['lifecycle'])) . '</td><td>'
-                . HelperFramework::escape((string)($submission['gateway_submission_reference'] ?: $submission['submission_number']))
-                . '</td><td>' . HelperFramework::escape((string)($submission['accepted_at'] ?: $submission['submitted_at'])) . '</td></tr>';
+                . \eel_accounts\Support\Utf8::html((string)$submission['environment']) . '</td><td>'
+                . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)$submission['lifecycle'])) . '</td><td>'
+                . \eel_accounts\Support\Utf8::html((string)($submission['gateway_submission_reference'] ?: $submission['submission_number']))
+                . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($submission['accepted_at'] ?: $submission['submitted_at'])) . '</td></tr>';
         }
         return '<div class="summary-grid"><div class="summary-card"><div class="summary-label">Evidence ID</div><div class="summary-value">'
-            . HelperFramework::escape((string)$b['display_id']) . '</div></div><div class="summary-card"><div class="summary-label">Lifecycle</div><div class="summary-value"><span class="badge '
-            . ($status === 'current' ? 'success' : 'warning') . '">' . HelperFramework::escape(HelperFramework::labelFromKey($status))
+            . \eel_accounts\Support\Utf8::html((string)$b['display_id']) . '</div></div><div class="summary-card"><div class="summary-label">Lifecycle</div><div class="summary-value"><span class="badge '
+            . ($status === 'current' ? 'success' : 'warning') . '">' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($status))
             . '</span></div></div><div class="summary-card"><div class="summary-label">Locked</div><div class="summary-value">'
-            . HelperFramework::escape((string)$b['locked_at']) . '</div></div></div>'
+            . \eel_accounts\Support\Utf8::html((string)$b['locked_at']) . '</div></div></div>'
             . (!empty($b['legacy_backfill']) ? '<div class="helper"><span class="badge warning">Legacy backfill</span> The original files were not modified; equation presentation may be reconstructed from frozen values.</div>' : '')
-            . '<div class="helper">Produced by ' . HelperFramework::escape((string)$b['application_name']) . ' '
-            . HelperFramework::escape((string)$b['application_version']) . ' · evidence ' . HelperFramework::escape((string)$b['evidence_version']) . '</div>'
+            . '<div class="helper">Produced by ' . \eel_accounts\Support\Utf8::html((string)$b['application_name']) . ' '
+            . \eel_accounts\Support\Utf8::html((string)$b['application_version']) . ' · evidence ' . \eel_accounts\Support\Utf8::html((string)$b['evidence_version']) . '</div>'
             . '<div class="table-scroll"><table><thead><tr><th>Scope</th><th>Dates</th><th>Frozen basis hash</th></tr></thead><tbody>' . $periodRows . '</tbody></table></div>'
             . '<h3>Submission outcomes</h3>'
             . ($submissions === '' ? '<div class="helper">No submission attempts are linked to this evidence.</div>'

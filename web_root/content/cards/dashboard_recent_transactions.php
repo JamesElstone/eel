@@ -81,7 +81,7 @@ final class _dashboard_recent_transactionsCard extends CardBaseFramework
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
         $settingsService = new \eel_accounts\Service\CompanySettingsService();
 
-        return TableFramework::make($this->key(), $this->rows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->rows($context))
             ->filename('dashboard-recent-transactions')
             ->exportLimit(100)
             ->empty('No recent transactions are available.')
@@ -92,7 +92,7 @@ final class _dashboard_recent_transactionsCard extends CardBaseFramework
             ->column(
                 'amount',
                 'Amount',
-                html: static fn(array $row): string => HelperFramework::escape($settingsService->money($companySettings, $row['amount'] ?? 0)),
+                html: static fn(array $row): string => \eel_accounts\Support\Utf8::html($settingsService->money($companySettings, $row['amount'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['amount'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric'
             )

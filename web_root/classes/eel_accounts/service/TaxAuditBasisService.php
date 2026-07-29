@@ -808,7 +808,7 @@ final class TaxAuditBasisService
             }
             return $item;
         };
-        $json = json_encode($normalise($value), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
+        $json = \eel_accounts\Support\Utf8::json($normalise($value), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
         if (!is_string($json)) {
             throw new \RuntimeException('The Tax Audit basis could not be encoded.');
         }

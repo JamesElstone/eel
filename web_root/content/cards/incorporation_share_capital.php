@@ -69,7 +69,7 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
 
         $summary = (array)($context['services']['incorporationShares'] ?? []);
         if (empty($summary['available'])) {
-            return '<section class="settings-stack"><div class="helper">' . HelperFramework::escape((string)(($summary['errors'] ?? [])[0] ?? 'Formation share capital is not available.')) . '</div></section>';
+            return '<section class="settings-stack"><div class="helper">' . \eel_accounts\Support\Utf8::html((string)(($summary['errors'] ?? [])[0] ?? 'Formation share capital is not available.')) . '</div></section>';
         }
 
         return '<section class="settings-stack" id="incorporation-share-capital">'
@@ -117,7 +117,7 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
 
     private function newShareForm(int $companyId, string $formId, int $accountingPeriodId): string
     {
-        return '<form id="' . HelperFramework::escape($formId) . '" method="post" data-ajax="true">'
+        return '<form id="' . \eel_accounts\Support\Utf8::html($formId) . '" method="post" data-ajax="true">'
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="Incorporation">'
             . '<input type="hidden" name="intent" value="save_incorporation_shares">'
@@ -129,22 +129,22 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
 
     private function newShareRow(string $formId, array $draftShareClass, array $companySettings, string $periodEnd): string
     {
-        $field = static fn(string $name): string => HelperFramework::escape($formId . '-' . $name);
-        $form = HelperFramework::escape($formId);
+        $field = static fn(string $name): string => \eel_accounts\Support\Utf8::html($formId . '-' . $name);
+        $form = \eel_accounts\Support\Utf8::html($formId);
         $currency = strtoupper(trim((string)($draftShareClass['currency'] ?? 'GBP'))) ?: 'GBP';
         $issueDate = $this->newShareIssueDate($draftShareClass, $periodEnd);
 
         return '<tr class="incorporation-share-new-row">'
-            . '<td><input class="input" form="' . $form . '" type="date" id="' . $field('issued-at') . '" name="issued_at" value="' . HelperFramework::escape($issueDate) . '" max="' . HelperFramework::escape($periodEnd) . '" aria-label="Date" required></td>'
-            . '<td><input class="input" form="' . $form . '" id="' . $field('share-class') . '" name="share_class" value="' . HelperFramework::escape((string)($draftShareClass['share_class'] ?? 'Ordinary')) . '" aria-label="Class of shares"></td>'
+            . '<td><input class="input" form="' . $form . '" type="date" id="' . $field('issued-at') . '" name="issued_at" value="' . \eel_accounts\Support\Utf8::html($issueDate) . '" max="' . \eel_accounts\Support\Utf8::html($periodEnd) . '" aria-label="Date" required></td>'
+            . '<td><input class="input" form="' . $form . '" id="' . $field('share-class') . '" name="share_class" value="' . \eel_accounts\Support\Utf8::html((string)($draftShareClass['share_class'] ?? 'Ordinary')) . '" aria-label="Class of shares"></td>'
             . '<td><select class="select" form="' . $form . '" id="' . $field('currency') . '" name="currency" aria-label="Currency">' . $this->currencyOptions($currency, $companySettings) . '</select></td>'
-            . '<td><input class="input" form="' . $form . '" inputmode="numeric" pattern="[0-9,]*" id="' . $field('quantity') . '" name="quantity" value="' . HelperFramework::escape((string)($draftShareClass['quantity'] ?? '')) . '" aria-label="Number allotted"></td>'
+            . '<td><input class="input" form="' . $form . '" inputmode="numeric" pattern="[0-9,]*" id="' . $field('quantity') . '" name="quantity" value="' . \eel_accounts\Support\Utf8::html((string)($draftShareClass['quantity'] ?? '')) . '" aria-label="Number allotted"></td>'
             . '<td class="numeric">—</td>'
-            . '<td><input class="input" form="' . $form . '" inputmode="numeric" pattern="[0-9,]*" id="' . $field('aggregate-nominal') . '" name="aggregate_nominal_value" value="' . HelperFramework::escape($this->decimalValue($draftShareClass['aggregate_nominal_value'] ?? '')) . '" aria-label="Aggregate nominal value"></td>'
-            . '<td><input class="input" form="' . $form . '" inputmode="numeric" pattern="[0-9,]*" id="' . $field('aggregate-unpaid') . '" name="total_aggregate_unpaid" value="' . HelperFramework::escape($this->decimalValue($draftShareClass['total_aggregate_unpaid'] ?? '0')) . '" aria-label="Total aggregate unpaid"></td>'
+            . '<td><input class="input" form="' . $form . '" inputmode="numeric" pattern="[0-9,]*" id="' . $field('aggregate-nominal') . '" name="aggregate_nominal_value" value="' . \eel_accounts\Support\Utf8::html($this->decimalValue($draftShareClass['aggregate_nominal_value'] ?? '')) . '" aria-label="Aggregate nominal value"></td>'
+            . '<td><input class="input" form="' . $form . '" inputmode="numeric" pattern="[0-9,]*" id="' . $field('aggregate-unpaid') . '" name="total_aggregate_unpaid" value="' . \eel_accounts\Support\Utf8::html($this->decimalValue($draftShareClass['total_aggregate_unpaid'] ?? '0')) . '" aria-label="Total aggregate unpaid"></td>'
             . '<td>—</td>'
-            . '<td><input class="input" form="' . $form . '" id="' . $field('document') . '" name="document_reference" value="' . HelperFramework::escape((string)($draftShareClass['document_reference'] ?? '')) . '" aria-label="Source document or reference"></td>'
-            . '<td><textarea class="input" form="' . $form . '" rows="1" id="' . $field('particulars') . '" name="source_note" aria-label="Prescribed particulars">' . HelperFramework::escape((string)($draftShareClass['source_note'] ?? '')) . '</textarea></td>'
+            . '<td><input class="input" form="' . $form . '" id="' . $field('document') . '" name="document_reference" value="' . \eel_accounts\Support\Utf8::html((string)($draftShareClass['document_reference'] ?? '')) . '" aria-label="Source document or reference"></td>'
+            . '<td><textarea class="input" form="' . $form . '" rows="1" id="' . $field('particulars') . '" name="source_note" aria-label="Prescribed particulars">' . \eel_accounts\Support\Utf8::html((string)($draftShareClass['source_note'] ?? '')) . '</textarea></td>'
             . '<td class="cell-fit"><button class="button primary" form="' . $form . '" type="submit">Add Share Class</button></td>'
             . '</tr>';
     }
@@ -154,7 +154,7 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
         $defaultCurrencySymbol = (new \eel_accounts\Service\CompanySettingsService())->defaultCurrencySymbol($companySettings);
         $defaultCurrencyLabel = 'GBP - ' . $defaultCurrencySymbol;
 
-        return '<option value="GBP"' . ($selectedCurrency === 'GBP' ? ' selected' : '') . '>' . HelperFramework::escape($defaultCurrencyLabel) . '</option>';
+        return '<option value="GBP"' . ($selectedCurrency === 'GBP' ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html($defaultCurrencyLabel) . '</option>';
     }
 
     private function issueDate(mixed $issuedAt): string
@@ -176,35 +176,35 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
 
     private function table(array $context): TableFramework
     {
-        return TableFramework::make($this->key(), $this->rows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->rows($context))
             ->filename('incorporation-share-classes')
             ->exportLimit(5000)
             ->empty('No share classes have been recorded yet.')
             ->column(
                 'issued_at',
                 'Date',
-                html: fn(array $row): string => HelperFramework::escape($this->issueDate($row['issued_at'] ?? null)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->issueDate($row['issued_at'] ?? null)),
                 export: fn(array $row): string => $this->issueDate($row['issued_at'] ?? null),
                 sort: fn(array $row): string => (string)($row['issued_at'] ?? '')
             )
             ->column(
                 'share_class',
                 'Class of shares',
-                html: static fn(array $row): string => HelperFramework::escape((string)($row['share_class'] ?? '')),
+                html: static fn(array $row): string => \eel_accounts\Support\Utf8::html((string)($row['share_class'] ?? '')),
                 export: static fn(array $row): string => (string)($row['share_class'] ?? ''),
                 sort: true
             )
             ->column(
                 'currency',
                 'Currency',
-                html: static fn(array $row): string => HelperFramework::escape((string)($row['currency'] ?? '')),
+                html: static fn(array $row): string => \eel_accounts\Support\Utf8::html((string)($row['currency'] ?? '')),
                 export: static fn(array $row): string => (string)($row['currency'] ?? ''),
                 sort: true
             )
             ->column(
                 'quantity',
                 'Number allotted',
-                html: static fn(array $row): string => HelperFramework::escape((string)(int)($row['quantity'] ?? 0)),
+                html: static fn(array $row): string => \eel_accounts\Support\Utf8::html((string)(int)($row['quantity'] ?? 0)),
                 export: static fn(array $row): string => (string)(int)($row['quantity'] ?? 0),
                 exportType: 'number',
                 sort: static fn(array $row): int => (int)($row['quantity'] ?? 0)
@@ -212,7 +212,7 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
             ->column(
                 'allocated',
                 'Allocated',
-                html: static fn(array $row): string => HelperFramework::escape((string)(int)($row['allocated'] ?? 0)),
+                html: static fn(array $row): string => \eel_accounts\Support\Utf8::html((string)(int)($row['allocated'] ?? 0)),
                 export: static fn(array $row): string => (string)(int)($row['allocated'] ?? 0),
                 exportType: 'number',
                 sort: static fn(array $row): int => (int)($row['allocated'] ?? 0)
@@ -220,7 +220,7 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
             ->column(
                 'aggregate_nominal_value',
                 'Aggregate nominal value',
-                html: fn(array $row): string => HelperFramework::escape($this->aggregateNominalValue($row)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->aggregateNominalValue($row)),
                 export: fn(array $row): string => $this->aggregateNominalValue($row),
                 exportType: 'number',
                 sort: fn(array $row): float => (float)$this->aggregateNominalValue($row)
@@ -228,7 +228,7 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
             ->column(
                 'total_aggregate_unpaid',
                 'Total aggregate unpaid',
-                html: fn(array $row): string => HelperFramework::escape($this->totalAggregateUnpaid($row)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->totalAggregateUnpaid($row)),
                 export: fn(array $row): string => $this->totalAggregateUnpaid($row),
                 exportType: 'number',
                 sort: fn(array $row): float => (float)$this->totalAggregateUnpaid($row)
@@ -243,14 +243,14 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
             ->column(
                 'document_reference',
                 'Source document/reference',
-                html: static fn(array $row): string => HelperFramework::escape((string)($row['document_reference'] ?? '')),
+                html: static fn(array $row): string => \eel_accounts\Support\Utf8::html((string)($row['document_reference'] ?? '')),
                 export: static fn(array $row): string => (string)($row['document_reference'] ?? ''),
                 sort: true
             )
             ->column(
                 'source_note',
                 'Prescribed particulars',
-                html: static fn(array $row): string => HelperFramework::escape((string)($row['source_note'] ?? '')),
+                html: static fn(array $row): string => \eel_accounts\Support\Utf8::html((string)($row['source_note'] ?? '')),
                 export: static fn(array $row): string => (string)($row['source_note'] ?? ''),
                 sort: true
             )
@@ -338,8 +338,8 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
     {
         $status = (string)($row['payment_status'] ?? '');
 
-        return '<span class="badge ' . HelperFramework::escape($this->paymentStatusBadgeClass($status)) . '">'
-            . HelperFramework::escape($this->paymentStatusLabel($status))
+        return '<span class="badge ' . \eel_accounts\Support\Utf8::html($this->paymentStatusBadgeClass($status)) . '">'
+            . \eel_accounts\Support\Utf8::html($this->paymentStatusLabel($status))
             . '</span>';
     }
 

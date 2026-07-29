@@ -18,7 +18,7 @@ final class _filing_evidence_loansCard extends CardBaseFramework
         $model = (array)($context['services']['filingEvidenceLoans'] ?? []);
         if (!empty($model['empty_selection'])) { return '<div class="helper">Look up an Evidence ID to inspect its frozen director-loan evidence.</div>'; }
         if (empty($model['available'])) {
-            return '<div class="helper">' . HelperFramework::escape((string)(($model['errors'] ?? [])[0] ?? 'Frozen loan evidence is unavailable.')) . '</div>';
+            return '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)(($model['errors'] ?? [])[0] ?? 'Frozen loan evidence is unavailable.')) . '</div>';
         }
         $snapshot = (array)($model['snapshot'] ?? []);
         $html = '<section class="settings-stack"><div class="summary-grid four">'
@@ -31,7 +31,7 @@ final class _filing_evidence_loansCard extends CardBaseFramework
         foreach ((array)($snapshot['ct_periods'] ?? []) as $period) {
             $s455 = (array)($period['s455'] ?? []);
             $html .= '<section class="panel-soft settings-stack"><h3 class="card-title">S455 — CT period '
-                . (int)($period['sequence_no'] ?? 0) . ' · ' . HelperFramework::escape((string)($period['period_start'] ?? '') . ' to ' . (string)($period['period_end'] ?? ''))
+                . (int)($period['sequence_no'] ?? 0) . ' · ' . \eel_accounts\Support\Utf8::html((string)($period['period_start'] ?? '') . ' to ' . (string)($period['period_end'] ?? ''))
                 . '</h3><div class="table-scroll"><table><tbody>'
                 . $this->row('Close-company status', (string)($s455['close_company_status'] ?? ''))
                 . $this->row('Evidence cut-off', (string)($s455['evidence_cutoff'] ?? ''))
@@ -55,8 +55,8 @@ final class _filing_evidence_loansCard extends CardBaseFramework
         $review = (array)($ct600a['review'] ?? []);
         $answers = '';
         foreach ((array)($ct600a['questions'] ?? []) as $key => $question) {
-            $answers .= '<tr><th scope="row">' . HelperFramework::escape((string)$question) . '</th><td>'
-                . HelperFramework::escape(ucfirst((string)($review['answers'][$key] ?? 'unresolved'))) . '</td></tr>';
+            $answers .= '<tr><th scope="row">' . \eel_accounts\Support\Utf8::html((string)$question) . '</th><td>'
+                . \eel_accounts\Support\Utf8::html(ucfirst((string)($review['answers'][$key] ?? 'unresolved'))) . '</td></tr>';
         }
         $periods = '';
         foreach ((array)($ct600a['periods'] ?? []) as $period) {
@@ -71,11 +71,11 @@ final class _filing_evidence_loansCard extends CardBaseFramework
         foreach ((array)($ct600a['periods'] ?? []) as $period) {
             foreach ((array)($period['events'] ?? []) as $event) {
                 $events .= '<tr><td>CT period ' . (int)($period['sequence_no'] ?? 0) . '</td><td>'
-                    . HelperFramework::escape((string)($event['event_date'] ?? '')) . '</td><td>'
-                    . HelperFramework::escape(HelperFramework::labelFromKey((string)($event['event_kind'] ?? ''))) . '</td><td>'
-                    . HelperFramework::escape((string)($event['party_name'] ?? '')) . '</td><td>'
+                    . \eel_accounts\Support\Utf8::html((string)($event['event_date'] ?? '')) . '</td><td>'
+                    . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)($event['event_kind'] ?? ''))) . '</td><td>'
+                    . \eel_accounts\Support\Utf8::html((string)($event['party_name'] ?? '')) . '</td><td>'
                     . $this->money($context, $event['amount'] ?? 0) . '</td><td>'
-                    . HelperFramework::escape(HelperFramework::labelFromKey((string)($event['matching_status'] ?? 'clear'))) . '</td></tr>';
+                    . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)($event['matching_status'] ?? 'clear'))) . '</td></tr>';
             }
         }
         return '<section class="panel-soft settings-stack"><h3 class="card-title">CT600A and Section 464A/464C</h3>'
@@ -95,17 +95,17 @@ final class _filing_evidence_loansCard extends CardBaseFramework
         $disclosure = (array)($section['disclosure'] ?? []);
         $rows = '';
         foreach ((array)($disclosure['director_evidence'] ?? []) as $row) {
-            $rows .= '<tr><td>' . HelperFramework::escape((string)($row['director_name'] ?? 'Director')) . '</td><td>'
+            $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)($row['director_name'] ?? 'Director')) . '</td><td>'
                 . $this->money($context, $row['advances'] ?? 0) . '</td><td>' . $this->money($context, $row['cash_repayments'] ?? 0)
                 . '</td><td>' . $this->money($context, $row['closing_company_to_director_balance'] ?? 0)
                 . '</td><td>' . (!empty($row['section_413_required']) ? 'Yes' : 'No') . '</td></tr>';
         }
         $statementRows = '';
         foreach ((array)(($section['statement'] ?? [])['statement_rows'] ?? []) as $row) {
-            $statementRows .= '<tr><td>' . HelperFramework::escape((string)($row['txn_date'] ?? $row['date'] ?? '')) . '</td><td>'
-                . HelperFramework::escape((string)($row['director_name'] ?? $row['party_name'] ?? '')) . '</td><td>'
-                . HelperFramework::escape((string)($row['source_type'] ?? '')) . '</td><td>'
-                . HelperFramework::escape((string)($row['source_id'] ?? '')) . '</td><td>'
+            $statementRows .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)($row['txn_date'] ?? $row['date'] ?? '')) . '</td><td>'
+                . \eel_accounts\Support\Utf8::html((string)($row['director_name'] ?? $row['party_name'] ?? '')) . '</td><td>'
+                . \eel_accounts\Support\Utf8::html((string)($row['source_type'] ?? '')) . '</td><td>'
+                . \eel_accounts\Support\Utf8::html((string)($row['source_id'] ?? '')) . '</td><td>'
                 . $this->money($context, $row['signed_amount'] ?? 0) . '</td><td>'
                 . $this->money($context, $row['running_balance'] ?? 0) . '</td></tr>';
         }
@@ -128,23 +128,23 @@ final class _filing_evidence_loansCard extends CardBaseFramework
     {
         $rows = '';
         foreach ((array)($basis['all_lots'] ?? $basis['lots'] ?? []) as $lot) {
-            $rows .= '<tr><td>' . HelperFramework::escape((string)($lot['transaction_id'] ?? $lot['source_id'] ?? '')) . '</td><td>'
-                . HelperFramework::escape((string)($lot['txn_date'] ?? $lot['advance_date'] ?? '')) . '</td><td>'
+            $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)($lot['transaction_id'] ?? $lot['source_id'] ?? '')) . '</td><td>'
+                . \eel_accounts\Support\Utf8::html((string)($lot['txn_date'] ?? $lot['advance_date'] ?? '')) . '</td><td>'
                 . $this->money($context, $lot['remaining_at_period_end'] ?? $lot['amount'] ?? 0) . '</td><td>'
-                . HelperFramework::escape(number_format((float)($lot['rate'] ?? 0) * 100, 3)) . '%</td></tr>';
+                . \eel_accounts\Support\Utf8::html(number_format((float)($lot['rate'] ?? 0) * 100, 3)) . '%</td></tr>';
         }
         $movements = '';
         foreach ((array)($basis['movements'] ?? []) as $movement) {
-            $movements .= '<tr><td>' . HelperFramework::escape((string)($movement['transaction_id'] ?? '')) . '</td><td>'
-                . HelperFramework::escape((string)($movement['txn_date'] ?? '')) . '</td><td>'
-                . HelperFramework::escape((string)($movement['party_id'] ?? '')) . '</td><td>'
-                . HelperFramework::escape(HelperFramework::labelFromKey((string)($movement['cash_direction'] ?? ''))) . '</td><td>'
+            $movements .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)($movement['transaction_id'] ?? '')) . '</td><td>'
+                . \eel_accounts\Support\Utf8::html((string)($movement['txn_date'] ?? '')) . '</td><td>'
+                . \eel_accounts\Support\Utf8::html((string)($movement['party_id'] ?? '')) . '</td><td>'
+                . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)($movement['cash_direction'] ?? ''))) . '</td><td>'
                 . $this->money($context, $movement['amount'] ?? 0) . '</td></tr>';
         }
         $repayments = '';
         foreach ((array)($basis['all_repayment_allocations'] ?? $basis['repayment_allocations'] ?? []) as $repayment) {
-            $repayments .= '<tr><td>' . HelperFramework::escape((string)($repayment['repayment_date'] ?? '')) . '</td><td>'
-                . HelperFramework::escape((string)($repayment['transaction_id'] ?? $repayment['repayment_transaction_id'] ?? '')) . '</td><td>'
+            $repayments .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)($repayment['repayment_date'] ?? '')) . '</td><td>'
+                . \eel_accounts\Support\Utf8::html((string)($repayment['transaction_id'] ?? $repayment['repayment_transaction_id'] ?? '')) . '</td><td>'
                 . $this->money($context, $repayment['amount'] ?? $repayment['allocated_amount'] ?? 0) . '</td></tr>';
         }
         $lots = $rows === '' ? '<div class="helper">No S455 loan lots were frozen for this CT period.</div>'
@@ -154,7 +154,7 @@ final class _filing_evidence_loansCard extends CardBaseFramework
         return $lots . $movementTable . $repaymentTable;
     }
 
-    private function stat(string $label, string $value): string { return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>'; }
-    private function row(string $label, string $value): string { return '<tr><th scope="row">' . HelperFramework::escape($label) . '</th><td>' . HelperFramework::escape($value) . '</td></tr>'; }
+    private function stat(string $label, string $value): string { return '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label) . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div></div>'; }
+    private function row(string $label, string $value): string { return '<tr><th scope="row">' . \eel_accounts\Support\Utf8::html($label) . '</th><td>' . \eel_accounts\Support\Utf8::html($value) . '</td></tr>'; }
     private function money(array $context, mixed $value): string { return (new \eel_accounts\Service\CompanySettingsService())->money((array)($context['company']['settings'] ?? []), $value); }
 }

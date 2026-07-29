@@ -90,11 +90,11 @@ final class _nominal_opening_balancesCard extends CardBaseFramework
                 <div class="form-grid">
                     <div class="form-row">
                         <label for="opening-balance-description">Description</label>
-                        <input class="input" id="opening-balance-description" name="opening_balance_description" form="' . $formId . '" value="' . HelperFramework::escape($description) . '">
+                        <input class="input" id="opening-balance-description" name="opening_balance_description" form="' . $formId . '" value="' . \eel_accounts\Support\Utf8::html($description) . '">
                     </div>
                     <div class="form-row">
                         <label for="opening-balance-notes">Notes</label>
-                        <input class="input" id="opening-balance-notes" name="opening_balance_notes" form="' . $formId . '" value="' . HelperFramework::escape((string)($existing['notes'] ?? '')) . '">
+                        <input class="input" id="opening-balance-notes" name="opening_balance_notes" form="' . $formId . '" value="' . \eel_accounts\Support\Utf8::html((string)($existing['notes'] ?? '')) . '">
                     </div>
                 </div>
             </section>
@@ -120,9 +120,9 @@ final class _nominal_opening_balancesCard extends CardBaseFramework
             $description = (string)($row['line_description'] ?? '');
             $html .= '<tr>
                 <td><select class="select" name="' . $prefix . '_line_' . $index . '_nominal_id" form="' . $formId . '">' . $this->nominalOptions($nominals, $nominalId) . '</select></td>
-                <td><input class="input" name="' . $prefix . '_line_' . $index . '_debit" form="' . $formId . '" value="' . HelperFramework::escape($this->lineAmount($row, 'debit')) . '" inputmode="decimal"></td>
-                <td><input class="input" name="' . $prefix . '_line_' . $index . '_credit" form="' . $formId . '" value="' . HelperFramework::escape($this->lineAmount($row, 'credit')) . '" inputmode="decimal"></td>
-                <td><input class="input" name="' . $prefix . '_line_' . $index . '_description" form="' . $formId . '" value="' . HelperFramework::escape($description) . '"></td>
+                <td><input class="input" name="' . $prefix . '_line_' . $index . '_debit" form="' . $formId . '" value="' . \eel_accounts\Support\Utf8::html($this->lineAmount($row, 'debit')) . '" inputmode="decimal"></td>
+                <td><input class="input" name="' . $prefix . '_line_' . $index . '_credit" form="' . $formId . '" value="' . \eel_accounts\Support\Utf8::html($this->lineAmount($row, 'credit')) . '" inputmode="decimal"></td>
+                <td><input class="input" name="' . $prefix . '_line_' . $index . '_description" form="' . $formId . '" value="' . \eel_accounts\Support\Utf8::html($description) . '"></td>
             </tr>';
         }
 
@@ -134,7 +134,7 @@ final class _nominal_opening_balancesCard extends CardBaseFramework
         $html = '<option value="">Select nominal</option>';
         foreach ($nominals as $nominal) {
             $nominalId = (int)($nominal['id'] ?? 0);
-            $html .= '<option value="' . $nominalId . '"' . ($nominalId === $selectedNominalId ? ' selected' : '') . '>' . HelperFramework::escape(FormattingFramework::nominalLabel($nominal)) . '</option>';
+            $html .= '<option value="' . $nominalId . '"' . ($nominalId === $selectedNominalId ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html(FormattingFramework::nominalLabel($nominal)) . '</option>';
         }
 
         return $html;
@@ -168,7 +168,7 @@ final class _nominal_opening_balancesCard extends CardBaseFramework
         $balanced = abs($difference) < 0.005;
 
         return '<div class="status-head">
-            <div class="helper">Debits ' . HelperFramework::escape($this->money($companySettings, $debitTotal)) . ' | Credits ' . HelperFramework::escape($this->money($companySettings, $creditTotal)) . ' | Difference ' . HelperFramework::escape($this->money($companySettings, $difference)) . '</div>
+            <div class="helper">Debits ' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $debitTotal)) . ' | Credits ' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $creditTotal)) . ' | Difference ' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $difference)) . '</div>
             <span class="badge ' . ($balanced ? 'success' : 'warning') . '">' . ($balanced ? 'Balanced' : 'Out of balance') . '</span>
         </div>';
     }
@@ -182,7 +182,7 @@ final class _nominal_opening_balancesCard extends CardBaseFramework
     {
         $html = '';
         foreach ($errors as $error) {
-            $html .= '<div class="helper">' . HelperFramework::escape((string)$error) . '</div>';
+            $html .= '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$error) . '</div>';
         }
 
         return $html;

@@ -74,7 +74,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         $filingScope = (array)($context['services']['corporation_tax_filing_scope'] ?? []);
 
         if (empty($taxReadiness['available'])) {
-            return '<section class="settings-stack" id="tax-readiness"><div class="helper">' . HelperFramework::escape((string)($taxReadiness['errors'][0] ?? 'Tax readiness is not available.')) . '</div></section>';
+            return '<section class="settings-stack" id="tax-readiness"><div class="helper">' . \eel_accounts\Support\Utf8::html((string)($taxReadiness['errors'][0] ?? 'Tax readiness is not available.')) . '</div></section>';
         }
 
         $provision = (array)($taxReadiness['provision'] ?? []);
@@ -108,7 +108,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
     {
         if (empty($scope['available'])) {
             return '<section class="panel-soft"><h3 class="card-title">Corporation Tax Filing Scope Check</h3><div class="standout helper">'
-                . HelperFramework::escape((string)(($scope['errors'] ?? [])[0] ?? 'The Corporation Tax scope review is unavailable.')) . '</div></section>';
+                . \eel_accounts\Support\Utf8::html((string)(($scope['errors'] ?? [])[0] ?? 'The Corporation Tax scope review is unavailable.')) . '</div></section>';
         }
         $answers = (array)($scope['answers'] ?? []);
         $rows = '';
@@ -117,15 +117,15 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             if (!in_array($answer, ['yes', 'no'], true)) {
                 $answer = '';
             }
-            $rows .= '<tr><td>' . HelperFramework::escape((string)$definition['page']) . '</td>'
-                . '<td>' . HelperFramework::escape((string)$definition['label']) . '</td>'
-                . '<td>' . HelperFramework::escape((string)$definition['question']) . '</td>'
-                . '<td class="year-end-tax-scope-guidance"><a class="button button-inline" target="_blank" rel="noopener noreferrer" href="' . HelperFramework::escape((string)$definition['url']) . '">HMRC guidance</a></td>'
+            $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)$definition['page']) . '</td>'
+                . '<td>' . \eel_accounts\Support\Utf8::html((string)$definition['label']) . '</td>'
+                . '<td>' . \eel_accounts\Support\Utf8::html((string)$definition['question']) . '</td>'
+                . '<td class="year-end-tax-scope-guidance"><a class="button button-inline" target="_blank" rel="noopener noreferrer" href="' . \eel_accounts\Support\Utf8::html((string)$definition['url']) . '">HMRC guidance</a></td>'
                 . '<td><form method="post" action="?page=corporation_tax" data-ajax="true">'
                 . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
                 . '<input type="hidden" name="card_action" value="Ixbrl"><input type="hidden" name="intent" value="save_ct_filing_scope_answer">'
                 . '<input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
-                . '<input type="hidden" name="scope_field" value="' . HelperFramework::escape((string)$key) . '">'
+                . '<input type="hidden" name="scope_field" value="' . \eel_accounts\Support\Utf8::html((string)$key) . '">'
                 . '<div class="actions-row actions-row-nowrap year-end-tax-scope-answer">' . $this->scopeRadio((string)$key, 'no', 'No', $answer, $disabled)
                 . $this->scopeRadio((string)$key, 'yes', 'Yes', $answer, $disabled) . '</div></form></td></tr>';
         }
@@ -227,7 +227,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         if (empty($provision['available'])) {
             return '<section class="panel-soft stack">
                 <h3 class="card-title">CT Provision At Close</h3>
-                <div class="helper">' . HelperFramework::escape((string)($provision['errors'][0] ?? 'Corporation Tax provision status is not available.')) . '</div>
+                <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($provision['errors'][0] ?? 'Corporation Tax provision status is not available.')) . '</div>
             </section>';
         }
 
@@ -247,7 +247,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
                 ['Close adjustment', $this->money($companySettings, $provision['unposted_tax_charge_adjustment'] ?? $unposted)],
                 ['Status', $this->badge($this->provisionBadgeClass($status), $this->provisionLabel($status)), true],
             ]) . '
-            <div class="helper">' . HelperFramework::escape($statusHelp) . '</div>
+            <div class="helper">' . \eel_accounts\Support\Utf8::html($statusHelp) . '</div>
         </section>';
     }
 
@@ -302,7 +302,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             : $this->badge('danger', $diagnosticCount . ' action' . ($diagnosticCount === 1 ? '' : 's') . ' required');
 
         return '<section class="panel-soft stack">
-            <h3 class="card-title">' . HelperFramework::escape($this->periodTitle($period)) . '</h3>
+            <h3 class="card-title">' . \eel_accounts\Support\Utf8::html($this->periodTitle($period)) . '</h3>
             ' . $this->summaryGrid([
                 ['Taxable profit', $this->money($companySettings, $period['taxable_profit'] ?? 0)],
                 ['CT600 profit-tax liability', $this->money($companySettings, $period['ordinary_corporation_tax'] ?? 0)],
@@ -390,12 +390,12 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         ), static fn(string $message): bool => $message !== ''));
 
         if ($messages === []) {
-            return '<div class="helper">' . $this->badge('success', 'Ready') . ' ' . HelperFramework::escape($emptyMessage) . '</div>';
+            return '<div class="helper">' . $this->badge('success', 'Ready') . ' ' . \eel_accounts\Support\Utf8::html($emptyMessage) . '</div>';
         }
 
-        $html = '<section class="stack">' . ($includeTitle ? '<h3 class="card-title">' . HelperFramework::escape($title) . '</h3>' : '');
+        $html = '<section class="stack">' . ($includeTitle ? '<h3 class="card-title">' . \eel_accounts\Support\Utf8::html($title) . '</h3>' : '');
         foreach ($messages as $message) {
-            $html .= '<div class="helper">' . HelperFramework::escape($message) . '</div>';
+            $html .= '<div class="helper">' . \eel_accounts\Support\Utf8::html($message) . '</div>';
         }
 
         return $html . '</section>';
@@ -426,28 +426,28 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
     private function summaryCard(string $label, string $value, bool $trustedValue = false): string
     {
         return '<div class="summary-card"><div class="summary-label">'
-            . HelperFramework::escape($label)
+            . \eel_accounts\Support\Utf8::html($label)
             . '</div><div class="summary-value">'
-            . ($trustedValue ? $value : HelperFramework::escape($value))
+            . ($trustedValue ? $value : \eel_accounts\Support\Utf8::html($value))
             . '</div></div>';
     }
 
     private function table(array $headers, array $rows, string $emptyMessage): string
     {
         if ($rows === []) {
-            return '<div class="helper">' . HelperFramework::escape($emptyMessage) . '</div>';
+            return '<div class="helper">' . \eel_accounts\Support\Utf8::html($emptyMessage) . '</div>';
         }
 
         $head = '';
         foreach ($headers as $header) {
-            $head .= '<th>' . HelperFramework::escape((string)$header) . '</th>';
+            $head .= '<th>' . \eel_accounts\Support\Utf8::html((string)$header) . '</th>';
         }
 
         $body = '';
         foreach ($rows as $row) {
             $body .= '<tr>';
             foreach ((array)$row as $cell) {
-                $body .= '<td>' . HelperFramework::escape((string)$cell) . '</td>';
+                $body .= '<td>' . \eel_accounts\Support\Utf8::html((string)$cell) . '</td>';
             }
             $body .= '</tr>';
         }
@@ -457,7 +457,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
 
     private function badge(string $class, string $label): string
     {
-        return '<span class="badge ' . HelperFramework::escape($class) . '">' . HelperFramework::escape($label) . '</span>';
+        return '<span class="badge ' . \eel_accounts\Support\Utf8::html($class) . '">' . \eel_accounts\Support\Utf8::html($label) . '</span>';
     }
 
     private function percent(mixed $value): string

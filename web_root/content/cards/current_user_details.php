@@ -46,18 +46,18 @@ final class _current_user_detailsCard extends CardBaseFramework
             <form method="post" action="?page=users" data-ajax="true" data-invalidate-page="true" class="form-flex-flow" autocomplete="off">
                 ' . $this->hiddenFields($context) . '
                 <input type="hidden" name="action" value="users-update-current-user">
-                <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
+                <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
                 <div class="autofill-trap" aria-hidden="true">
                     <input type="text" name="fake_username" autocomplete="username" tabindex="-1">
                     <input type="password" name="fake_password" autocomplete="current-password" tabindex="-1">
                 </div>
                 <div class="form-row half">
                     <label for="users-display-name">Display name</label>
-                    <input class="input" id="users-display-name" name="display_name" type="text" value="' . HelperFramework::escape((string)($user['display_name'] ?? '')) . '" autocomplete="off" required>
+                    <input class="input" id="users-display-name" name="display_name" type="text" value="' . \eel_accounts\Support\Utf8::html((string)($user['display_name'] ?? '')) . '" autocomplete="off" required>
                 </div>
                 <div class="form-row half">
                     <label for="users-email-address">Email address</label>
-                    <input class="input" id="users-email-address" name="email_address" type="email" value="' . HelperFramework::escape((string)($user['email_address'] ?? '')) . '" autocomplete="off" data-lpignore="true" data-form-type="other" required>
+                    <input class="input" id="users-email-address" name="email_address" type="email" value="' . \eel_accounts\Support\Utf8::html((string)($user['email_address'] ?? '')) . '" autocomplete="off" data-lpignore="true" data-form-type="other" required>
                 </div>
                 <div class="form-row full">
                     <label for="users-mobile-number">Mobile number</label>
@@ -65,7 +65,7 @@ final class _current_user_detailsCard extends CardBaseFramework
                         <select class="selector-input mobile-country-code" id="users-mobile-country-code" name="mobile_country_code" autocomplete="tel-country-code" data-no-submit-on-change="true">
                             ' . $this->mobileCountryCodeOptionsHtml((string)($mobileParts['country_code'] ?? UserManagementService::defaultMobileCountryCode())) . '
                         </select>
-                        <input class="input mobile-number-input" id="users-mobile-number" name="mobile_number" type="tel" value="' . HelperFramework::escape((string)($mobileParts['local_number'] ?? '')) . '" autocomplete="tel-national" inputmode="tel" maxlength="16" data-lpignore="true" data-form-type="other">
+                        <input class="input mobile-number-input" id="users-mobile-number" name="mobile_number" type="tel" value="' . \eel_accounts\Support\Utf8::html((string)($mobileParts['local_number'] ?? '')) . '" autocomplete="tel-national" inputmode="tel" maxlength="16" data-lpignore="true" data-form-type="other">
                     </div>
                 </div>
                 <div class="form-row half">
@@ -92,7 +92,7 @@ final class _current_user_detailsCard extends CardBaseFramework
         $html = '';
 
         foreach ((array)($context['page']['page_cards'] ?? []) as $cardKey) {
-            $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+            $html .= '<input type="hidden" name="cards[]" value="' . \eel_accounts\Support\Utf8::html((string)$cardKey) . '">';
         }
 
         return $html;
@@ -104,8 +104,8 @@ final class _current_user_detailsCard extends CardBaseFramework
 
         foreach (UserManagementService::mobileCountryCodeOptions() as $countryCode => $label) {
             $selected = $countryCode === $selectedCountryCode ? ' selected' : '';
-            $html .= '<option value="' . HelperFramework::escape($countryCode) . '"' . $selected . '>'
-                . HelperFramework::escape($label)
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html($countryCode) . '"' . $selected . '>'
+                . \eel_accounts\Support\Utf8::html($label)
                 . '</option>';
         }
 

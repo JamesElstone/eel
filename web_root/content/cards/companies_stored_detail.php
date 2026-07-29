@@ -101,38 +101,38 @@ final class _companies_stored_detailCard extends CardBaseFramework
                 </div>
             </div>
             <div class="form-grid">
-                <div class="form-row"><label>Status</label><input class="input" value="' . HelperFramework::escape((string)((($serviceResponse['company_status'] ?? '') !== '') ? $serviceResponse['company_status'] : 'Not stored yet')) . '" readonly></div>
-                <div class="form-row"><label>API Environment</label><input class="input" value="' . HelperFramework::escape((string)((($serviceResponse['companies_house_environment'] ?? '') !== '') ? $serviceResponse['companies_house_environment'] : 'Not stored yet')) . '" readonly></div>
-                <div class="form-row"><label>Last profile refresh</label><input class="input" value="' . HelperFramework::escape((string)((($serviceResponse['companies_house_last_checked_at'] ?? '') !== '') ? HelperFramework::displayDateTime((string)$serviceResponse['companies_house_last_checked_at']) : 'Not stored yet')) . '" readonly></div>
-                <div class="form-row"><label>ETag</label><input class="input" value="' . HelperFramework::escape((string)((($serviceResponse['companies_house_etag'] ?? '') !== '') ? $serviceResponse['companies_house_etag'] : 'Not stored yet')) . '" readonly></div>
-                <div class="form-row"><label>Type</label><input class="input" value="' . HelperFramework::escape((string)((($serviceResponse['companies_house_type'] ?? '') !== '') ? $serviceResponse['companies_house_type'] : 'Not stored yet')) . '" readonly></div>
-                <div class="form-row"><label>Jurisdiction</label><input class="input" value="' . HelperFramework::escape((string)((($serviceResponse['companies_house_jurisdiction'] ?? '') !== '') ? $serviceResponse['companies_house_jurisdiction'] : 'Not stored yet')) . '" readonly></div>
-                <div class="form-row"><label>Active directors</label><input class="input" value="' . HelperFramework::escape($activeDirectorLabel) . '" readonly></div>
-                <div class="form-row"><label>Officers last checked</label><input class="input" value="' . HelperFramework::escape($officersLastChecked !== '' ? HelperFramework::displayDateTime($officersLastChecked) : 'Not stored yet') . '" readonly></div>
+                <div class="form-row"><label>Status</label><input class="input" value="' . \eel_accounts\Support\Utf8::html((string)((($serviceResponse['company_status'] ?? '') !== '') ? $serviceResponse['company_status'] : 'Not stored yet')) . '" readonly></div>
+                <div class="form-row"><label>API Environment</label><input class="input" value="' . \eel_accounts\Support\Utf8::html((string)((($serviceResponse['companies_house_environment'] ?? '') !== '') ? $serviceResponse['companies_house_environment'] : 'Not stored yet')) . '" readonly></div>
+                <div class="form-row"><label>Last profile refresh</label><input class="input" value="' . \eel_accounts\Support\Utf8::html((string)((($serviceResponse['companies_house_last_checked_at'] ?? '') !== '') ? HelperFramework::displayDateTime((string)$serviceResponse['companies_house_last_checked_at']) : 'Not stored yet')) . '" readonly></div>
+                <div class="form-row"><label>ETag</label><input class="input" value="' . \eel_accounts\Support\Utf8::html((string)((($serviceResponse['companies_house_etag'] ?? '') !== '') ? $serviceResponse['companies_house_etag'] : 'Not stored yet')) . '" readonly></div>
+                <div class="form-row"><label>Type</label><input class="input" value="' . \eel_accounts\Support\Utf8::html((string)((($serviceResponse['companies_house_type'] ?? '') !== '') ? $serviceResponse['companies_house_type'] : 'Not stored yet')) . '" readonly></div>
+                <div class="form-row"><label>Jurisdiction</label><input class="input" value="' . \eel_accounts\Support\Utf8::html((string)((($serviceResponse['companies_house_jurisdiction'] ?? '') !== '') ? $serviceResponse['companies_house_jurisdiction'] : 'Not stored yet')) . '" readonly></div>
+                <div class="form-row"><label>Active directors</label><input class="input" value="' . \eel_accounts\Support\Utf8::html($activeDirectorLabel) . '" readonly></div>
+                <div class="form-row"><label>Officers last checked</label><input class="input" value="' . \eel_accounts\Support\Utf8::html($officersLastChecked !== '' ? HelperFramework::displayDateTime($officersLastChecked) : 'Not stored yet') . '" readonly></div>
                 <div class="form-row">
                     <label>SIC codes</label>
-                    <textarea class="input" rows="4" readonly>' . HelperFramework::escape($sicLines !== [] ? implode(PHP_EOL, $sicLines) : 'No SIC codes have been stored yet.') . '</textarea>
+                    <textarea class="input" rows="4" readonly>' . \eel_accounts\Support\Utf8::html($sicLines !== [] ? implode(PHP_EOL, $sicLines) : 'No SIC codes have been stored yet.') . '</textarea>
                 </div>
                 <div class="form-row">
                     <label>Registered office</label>
-                    <textarea class="input" rows="6" readonly>' . HelperFramework::escape($addressLines !== [] ? implode(PHP_EOL, $addressLines) : 'No registered office address has been stored yet.') . '</textarea>
+                    <textarea class="input" rows="6" readonly>' . \eel_accounts\Support\Utf8::html($addressLines !== [] ? implode(PHP_EOL, $addressLines) : 'No registered office address has been stored yet.') . '</textarea>
                 </div>
             </div>
             <div class="table-scroll-mini">
                 <table>
                     <thead><th>Property</th><th>Value</th></thead>
                     <tbody>
-                        <tr><td scope="row">Can file</th><td>' . HelperFramework::escape($this->companiesHouseFlagLabel($serviceResponse['can_file'] ?? null)) . '</td></tr>
-                        <tr><td scope="row">Has charges</th><td>' . HelperFramework::escape($this->companiesHouseFlagLabel($serviceResponse['has_charges'] ?? null)) . '</td></tr>
-                        <tr><td scope="row">Has insolvency history</th><td>' . HelperFramework::escape($this->companiesHouseFlagLabel($serviceResponse['has_insolvency_history'] ?? null)) . '</td></tr>
-                        <tr><td scope="row">Has been liquidated</th><td>' . HelperFramework::escape($this->companiesHouseFlagLabel($serviceResponse['has_been_liquidated'] ?? null)) . '</td></tr>
-                        <tr><td scope="row">Registered office in dispute</th><td>' . HelperFramework::escape($this->companiesHouseFlagLabel($serviceResponse['registered_office_is_in_dispute'] ?? null)) . '</td></tr>
-                        <tr><td scope="row">Undeliverable registered office</th><td>' . HelperFramework::escape($this->companiesHouseFlagLabel($serviceResponse['undeliverable_registered_office_address'] ?? null)) . '</td></tr>
-                        <tr><td scope="row">Has super secure PSCs</th><td>' . HelperFramework::escape($this->companiesHouseFlagLabel($serviceResponse['has_super_secure_pscs'] ?? null)) . '</td></tr>
-                        <tr><td scope="row">Director names</td><td>' . HelperFramework::escape($directorNames !== '' ? $directorNames : 'Not stored yet') . '</td></tr>
+                        <tr><td scope="row">Can file</th><td>' . \eel_accounts\Support\Utf8::html($this->companiesHouseFlagLabel($serviceResponse['can_file'] ?? null)) . '</td></tr>
+                        <tr><td scope="row">Has charges</th><td>' . \eel_accounts\Support\Utf8::html($this->companiesHouseFlagLabel($serviceResponse['has_charges'] ?? null)) . '</td></tr>
+                        <tr><td scope="row">Has insolvency history</th><td>' . \eel_accounts\Support\Utf8::html($this->companiesHouseFlagLabel($serviceResponse['has_insolvency_history'] ?? null)) . '</td></tr>
+                        <tr><td scope="row">Has been liquidated</th><td>' . \eel_accounts\Support\Utf8::html($this->companiesHouseFlagLabel($serviceResponse['has_been_liquidated'] ?? null)) . '</td></tr>
+                        <tr><td scope="row">Registered office in dispute</th><td>' . \eel_accounts\Support\Utf8::html($this->companiesHouseFlagLabel($serviceResponse['registered_office_is_in_dispute'] ?? null)) . '</td></tr>
+                        <tr><td scope="row">Undeliverable registered office</th><td>' . \eel_accounts\Support\Utf8::html($this->companiesHouseFlagLabel($serviceResponse['undeliverable_registered_office_address'] ?? null)) . '</td></tr>
+                        <tr><td scope="row">Has super secure PSCs</th><td>' . \eel_accounts\Support\Utf8::html($this->companiesHouseFlagLabel($serviceResponse['has_super_secure_pscs'] ?? null)) . '</td></tr>
+                        <tr><td scope="row">Director names</td><td>' . \eel_accounts\Support\Utf8::html($directorNames !== '' ? $directorNames : 'Not stored yet') . '</td></tr>
                         <tr><td scope="row">Incorporation Document downloaded</td><td>' . ($incorporationDocumentDownloaded ? 'true' : 'false') . '</td></tr>
-                        <tr><td scope="row">Incorporation Document last successfully downloaded</td><td>' . HelperFramework::escape($incorporationDocumentDownloadedAt !== '' ? HelperFramework::displayDateTime($incorporationDocumentDownloadedAt) : 'Not downloaded') . '</td></tr>
-                        <tr><td scope="row">Incorporation Document filename</td><td>' . HelperFramework::escape($incorporationDocumentFilename !== '' ? $incorporationDocumentFilename : 'Not downloaded') . '</td></tr>
+                        <tr><td scope="row">Incorporation Document last successfully downloaded</td><td>' . \eel_accounts\Support\Utf8::html($incorporationDocumentDownloadedAt !== '' ? HelperFramework::displayDateTime($incorporationDocumentDownloadedAt) : 'Not downloaded') . '</td></tr>
+                        <tr><td scope="row">Incorporation Document filename</td><td>' . \eel_accounts\Support\Utf8::html($incorporationDocumentFilename !== '' ? $incorporationDocumentFilename : 'Not downloaded') . '</td></tr>
                     </tbody>
                 </table>
             </div>

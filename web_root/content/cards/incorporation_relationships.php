@@ -42,7 +42,7 @@ final class _incorporation_relationshipsCard extends CardBaseFramework
             return '<div class="helper">Select a company before maintaining incorporation relationships.</div>';
         }
         if (empty($summary['available'])) {
-            return '<div class="helper">' . HelperFramework::escape((string)(($summary['errors'] ?? [])[0] ?? 'Incorporation relationships are unavailable.')) . '</div>';
+            return '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)(($summary['errors'] ?? [])[0] ?? 'Incorporation relationships are unavailable.')) . '</div>';
         }
 
         $parties = (array)$summary['parties'];
@@ -58,16 +58,16 @@ final class _incorporation_relationshipsCard extends CardBaseFramework
         foreach ($parties as $party) {
             $shareholderFrom = $this->calculatedShareholderFrom($party);
             if ($shareholderFrom !== null) {
-                $rows .= '<tr><td>' . HelperFramework::escape((string)$party['legal_name']) . '</td>'
+                $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)$party['legal_name']) . '</td>'
                     . '<td>Shareholder (calculated)</td>'
-                    . '<td>' . HelperFramework::escape(HelperFramework::displayDate($shareholderFrom)) . '</td>'
+                    . '<td>' . \eel_accounts\Support\Utf8::html(HelperFramework::displayDate($shareholderFrom)) . '</td>'
                     . '<td>Current</td><td>—</td></tr>';
             }
             foreach ((array)($party['roles'] ?? []) as $role) {
-                $rows .= '<tr><td>' . HelperFramework::escape((string)$party['legal_name']) . '</td>'
-                    . '<td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)$role['role_type'], '_')) . '</td>'
-                    . '<td>' . HelperFramework::escape(HelperFramework::displayDate((string)($role['effective_from'] ?? ''))) . '</td>'
-                    . '<td>' . HelperFramework::escape(
+                $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)$party['legal_name']) . '</td>'
+                    . '<td>' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)$role['role_type'], '_')) . '</td>'
+                    . '<td>' . \eel_accounts\Support\Utf8::html(HelperFramework::displayDate((string)($role['effective_from'] ?? ''))) . '</td>'
+                    . '<td>' . \eel_accounts\Support\Utf8::html(
                         trim((string)($role['effective_to'] ?? '')) !== ''
                             ? HelperFramework::displayDate((string)$role['effective_to'])
                             : 'Current'
@@ -131,7 +131,7 @@ final class _incorporation_relationshipsCard extends CardBaseFramework
             if ($this->calculatedShareholderFrom($party) !== null || !empty($party['roles'])) {
                 continue;
             }
-            $html .= '<option value="' . (int)$party['id'] . '">' . HelperFramework::escape((string)$party['legal_name']) . '</option>';
+            $html .= '<option value="' . (int)$party['id'] . '">' . \eel_accounts\Support\Utf8::html((string)$party['legal_name']) . '</option>';
         }
         return $html;
     }

@@ -92,7 +92,7 @@ final class _tax_treatment_rulesCard extends CardBaseFramework
 
     private function table(array $rules, string $statusFilter): TableFramework
     {
-        return TableFramework::make($this->key(), $rules)
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $rules)
             ->filename('corporation-tax-treatment-rules')
             ->empty(match ($statusFilter) {
                 'active' => 'No active Corporation Tax treatment rules are stored yet.',
@@ -104,19 +104,19 @@ final class _tax_treatment_rulesCard extends CardBaseFramework
             ->column(
                 'match',
                 'Match',
-                html: fn(array $row): string => HelperFramework::escape($this->matchLabel($row)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->matchLabel($row)),
                 export: fn(array $row): string => $this->matchLabel($row)
             )
             ->column(
                 'tax_treatment',
                 'Treatment',
-                html: fn(array $row): string => HelperFramework::escape(\eel_accounts\Service\AccountingFormattingService::nominalTaxTreatmentLabel((string)($row['tax_treatment'] ?? 'allowable'))),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html(\eel_accounts\Service\AccountingFormattingService::nominalTaxTreatmentLabel((string)($row['tax_treatment'] ?? 'allowable'))),
                 export: fn(array $row): string => \eel_accounts\Service\AccountingFormattingService::nominalTaxTreatmentLabel((string)($row['tax_treatment'] ?? 'allowable'))
             )
             ->column(
                 'effective',
                 'Effective',
-                html: fn(array $row): string => HelperFramework::escape($this->effectiveLabel($row)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->effectiveLabel($row)),
                 export: fn(array $row): string => $this->effectiveLabel($row)
             )
             ->column(
@@ -186,7 +186,7 @@ final class _tax_treatment_rulesCard extends CardBaseFramework
             <input type="hidden" name="intent" value="toggle_tax_treatment_rule">
             <input type="hidden" name="rule_id" value="' . $ruleId . '">
             <input type="hidden" name="target_is_active" value="' . ($isActive ? '0' : '1') . '">
-            <button class="button" type="submit"' . $chickenAttributes . '>' . HelperFramework::escape($buttonText) . '</button>
+            <button class="button" type="submit"' . $chickenAttributes . '>' . \eel_accounts\Support\Utf8::html($buttonText) . '</button>
         </form>';
     }
 
@@ -235,8 +235,8 @@ final class _tax_treatment_rulesCard extends CardBaseFramework
             return '';
         }
 
-        return '<a class="button" href="' . HelperFramework::escape($url) . '" target="_blank" rel="noopener noreferrer">'
-            . HelperFramework::escape($this->sourceLabel($url))
+        return '<a class="button" href="' . \eel_accounts\Support\Utf8::html($url) . '" target="_blank" rel="noopener noreferrer">'
+            . \eel_accounts\Support\Utf8::html($this->sourceLabel($url))
             . '</a>';
     }
 
@@ -255,9 +255,9 @@ final class _tax_treatment_rulesCard extends CardBaseFramework
         $options = '';
 
         foreach ($this->reviewStatusOptions() as $value => $label) {
-            $options .= '<option value="' . HelperFramework::escape($value) . '"'
+            $options .= '<option value="' . \eel_accounts\Support\Utf8::html($value) . '"'
                 . ($currentStatus === $value ? ' selected' : '')
-                . '>' . HelperFramework::escape($label) . '</option>';
+                . '>' . \eel_accounts\Support\Utf8::html($label) . '</option>';
         }
 
         return '<form method="post" action="?page=tax_artifacts" data-ajax="true">
@@ -265,15 +265,15 @@ final class _tax_treatment_rulesCard extends CardBaseFramework
             <input type="hidden" name="card_action" value="TaxRates">
             <input type="hidden" name="intent" value="update_tax_treatment_rule_review_status">
             <input type="hidden" name="rule_id" value="' . $ruleId . '">
-            <input type="hidden" name="' . self::FILTER_FIELD . '" value="' . HelperFramework::escape($statusFilter) . '">
+            <input type="hidden" name="' . self::FILTER_FIELD . '" value="' . \eel_accounts\Support\Utf8::html($statusFilter) . '">
             <select class="select" name="review_status" aria-label="Review status">' . $options . '</select>
         </form>';
     }
 
     private function statusHtml(bool $isActive): string
     {
-        return '<span class="badge ' . HelperFramework::escape($isActive ? 'success' : 'warning') . '">'
-            . HelperFramework::escape($this->statusLabel($isActive))
+        return '<span class="badge ' . \eel_accounts\Support\Utf8::html($isActive ? 'success' : 'warning') . '">'
+            . \eel_accounts\Support\Utf8::html($this->statusLabel($isActive))
             . '</span>';
     }
 

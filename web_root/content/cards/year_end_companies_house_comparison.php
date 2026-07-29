@@ -98,7 +98,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
                     <label class="checkbox-row"><input type="radio" name="eligibility_decision" value="eligible" required data-submit-on-change="true"' . $yesChecked . '><span>Yes</span></label>
                     <label class="checkbox-row"><input type="radio" name="eligibility_decision" value="ineligible" required data-submit-on-change="true"' . $noChecked . '><span>No</span></label>
                 </fieldset>
-                ' . ($helper !== '' ? '<div class="helper">' . HelperFramework::escape($helper) . '</div>' : '') . '
+                ' . ($helper !== '' ? '<div class="helper">' . \eel_accounts\Support\Utf8::html($helper) . '</div>' : '') . '
             </form>';
     }
 
@@ -130,10 +130,10 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             . '<input type="hidden" name="original_document_id" value="' . $originalDocumentId . '">
                 <fieldset class="panel-soft"' . $disabled . '>
                     <legend>Why do the Companies House figures need revising?</legend>
-                    ' . ($helper !== '' ? '<div class="helper">' . HelperFramework::escape($helper) . '</div>' : '') . '
+                    ' . ($helper !== '' ? '<div class="helper">' . \eel_accounts\Support\Utf8::html($helper) . '</div>' : '') . '
                     <label class="form-row full" for="companies_house_variance_explanation">
                         <textarea class="input" id="companies_house_variance_explanation" name="variance_explanation" rows="4" required' . $disabled . '>'
-                            . HelperFramework::escape($value)
+                            . \eel_accounts\Support\Utf8::html($value)
                         . '</textarea>
                     </label>
                     <div class="actions-row companies-house-variance-actions"><button class="button primary" type="submit"' . $disabled . '>Save Variance Explanation</button></div>
@@ -163,18 +163,18 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
 
         $warningsHtml = '';
         foreach ((array)($comparison['warnings'] ?? []) as $warning) {
-            $warningsHtml .= '<div class="helper">' . HelperFramework::escape((string)$warning) . '</div>';
+            $warningsHtml .= '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$warning) . '</div>';
         }
 
         $rowsHtml = '';
         foreach ((array)($comparison['rows'] ?? []) as $row) {
             $status = (string)($row['status'] ?? '');
             $rowsHtml .= '<tr>
-                <td>' . HelperFramework::escape((string)($row['label'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape($this->nullableMoney($companySettings, $row['app_value'] ?? null)) . '</td>
-                <td>' . HelperFramework::escape($this->nullableMoney($companySettings, $row['filed_value'] ?? null)) . '</td>
-                <td>' . HelperFramework::escape($this->nullableMoney($companySettings, $row['variance'] ?? null)) . '</td>
-                <td><span class="badge ' . $this->badgeClass($status) . '">' . HelperFramework::escape($this->comparisonStatusLabel($status)) . '</span></td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($row['label'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->nullableMoney($companySettings, $row['app_value'] ?? null)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->nullableMoney($companySettings, $row['filed_value'] ?? null)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->nullableMoney($companySettings, $row['variance'] ?? null)) . '</td>
+                <td><span class="badge ' . $this->badgeClass($status) . '">' . \eel_accounts\Support\Utf8::html($this->comparisonStatusLabel($status)) . '</span></td>
             </tr>';
         }
 
@@ -204,9 +204,9 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
                     $filingKind === 'revised' ? 'Exact-period filing found' : 'No exact-period filing found'
                 )
             . '</div>
-            <div class="helper">' . HelperFramework::escape((string)($comparison['comparison_note'] ?? '')) . '</div>
+            <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($comparison['comparison_note'] ?? '')) . '</div>
             ' . $warningsHtml . '
-            <div class="helper">Stored filing date: ' . HelperFramework::escape((string)($comparison['filing']['filing_date'] ?? '-')) . '</div>
+            <div class="helper">Stored filing date: ' . \eel_accounts\Support\Utf8::html((string)($comparison['filing']['filing_date'] ?? '-')) . '</div>
             <div class="table-scroll">
                 <table>
                     <thead><tr><th>Metric</th><th>App</th><th>Filed</th><th>Variance</th><th>Status</th></tr></thead>
@@ -256,7 +256,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         return '<section class="settings-stack" id="companies-house-mismatch-acknowledgement">
             <div class="status-head">
                 <h3 class="card-title">Approval</h3>
-                <span class="badge ' . HelperFramework::escape($isAcknowledged ? 'success' : 'warning') . '">' . HelperFramework::escape($isAcknowledged ? 'Approved' : 'Approval pending') . '</span>
+                <span class="badge ' . \eel_accounts\Support\Utf8::html($isAcknowledged ? 'success' : 'warning') . '">' . \eel_accounts\Support\Utf8::html($isAcknowledged ? 'Approved' : 'Approval pending') . '</span>
             </div>
             ' . $form . '
         </section>';
@@ -310,7 +310,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
                     <input type="password" name="company_auth_code" minlength="6" maxlength="8" pattern="[A-Za-z0-9]{6,8}" required autocomplete="off"' . $disabled . '>
                 </label>'
             . $liveConfirmation
-            . '<button class="button danger" type="submit"' . $disabled . '>Submit ' . HelperFramework::escape($mode) . ' revised accounts</button>
+            . '<button class="button danger" type="submit"' . $disabled . '>Submit ' . \eel_accounts\Support\Utf8::html($mode) . ' revised accounts</button>
             </form>';
     }
 
@@ -332,7 +332,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
     {
         return HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="CompaniesHouseAccounts">'
-            . '<input type="hidden" name="intent" value="' . HelperFramework::escape($intent) . '">'
+            . '<input type="hidden" name="intent" value="' . \eel_accounts\Support\Utf8::html($intent) . '">'
             . '<input type="hidden" name="company_id" value="' . $companyId . '">'
             . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">';
     }
@@ -348,7 +348,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         return '<section class="panel-soft" id="companies-house-revised-accounts-filing">
             <div class="status-head">
                 <h3 class="card-title">Companies House Revised Accounts Filing</h3>
-                <span class="badge ' . HelperFramework::escape($badgeClass) . '">' . HelperFramework::escape($status) . '</span>
+                <span class="badge ' . \eel_accounts\Support\Utf8::html($badgeClass) . '">' . \eel_accounts\Support\Utf8::html($status) . '</span>
             </div>' . $body . '
         </section>';
     }
@@ -357,8 +357,8 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
     {
         $value = trim($value);
 
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label)
-            . '</div><div class="summary-value">' . HelperFramework::escape($value !== '' ? $value : '-') . '</div></div>';
+        return '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label)
+            . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value !== '' ? $value : '-') . '</div></div>';
     }
 
     private function periodLabel(array $period): string
@@ -405,13 +405,13 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
                 . '</div>';
             if ($text !== '') {
                 $html .= '<div class="helper"><strong>Recorded eligibility evidence</strong><div>'
-                    . nl2br(HelperFramework::escape($text)) . '</div></div>';
+                    . nl2br(\eel_accounts\Support\Utf8::html($text)) . '</div></div>';
             }
 
             return $html;
         }
 
-        $html = $reference !== '' ? '<div class="helper">Companies House response reference: ' . HelperFramework::escape($reference) . '</div>' : '';
+        $html = $reference !== '' ? '<div class="helper">Companies House response reference: ' . \eel_accounts\Support\Utf8::html($reference) . '</div>' : '';
 
         return $html . $this->messageList($this->normaliseMessages($evidence), 'Recorded eligibility evidence');
     }
@@ -479,10 +479,10 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
 
         $items = '';
         foreach ($messages as $message) {
-            $items .= '<li>' . HelperFramework::escape($message) . '</li>';
+            $items .= '<li>' . \eel_accounts\Support\Utf8::html($message) . '</li>';
         }
 
-        return '<div class="helper"><strong>' . HelperFramework::escape($title) . '</strong><ul>' . $items . '</ul></div>';
+        return '<div class="helper"><strong>' . \eel_accounts\Support\Utf8::html($title) . '</strong><ul>' . $items . '</ul></div>';
     }
 
     private function normaliseMessages(mixed $value): array
@@ -537,7 +537,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
 
     private function panel(string $title, string $body): string
     {
-        return '<section class="panel-soft"><div class="status-head"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3></div>' . $body . '</section>';
+        return '<section class="panel-soft"><div class="status-head"><h3 class="card-title">' . \eel_accounts\Support\Utf8::html($title) . '</h3></div>' . $body . '</section>';
     }
 
     private function badgeClass(string $status): string
@@ -571,7 +571,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
     {
         $html = '';
         foreach ($errors as $error) {
-            $html .= '<div class="helper">' . HelperFramework::escape((string)$error) . '</div>';
+            $html .= '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$error) . '</div>';
         }
 
         return $html;

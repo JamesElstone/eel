@@ -89,9 +89,9 @@ final class _journal_cut_off_confirmationCard extends CardBaseFramework
         $rows = '';
         foreach ($adjustments as $adjustment) {
             $rows .= '<tr>
-                <td>' . HelperFramework::escape(HelperFramework::displayDate((string)($adjustment['journal_date'] ?? ''))) . '</td>
-                <td>' . HelperFramework::escape((string)($adjustment['description'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($adjustment['journal_tag'] ?? ''), '_')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html(HelperFramework::displayDate((string)($adjustment['journal_date'] ?? ''))) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($adjustment['description'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)($adjustment['journal_tag'] ?? ''), '_')) . '</td>
                 <td>' . count((array)($adjustment['lines'] ?? [])) . '</td>
             </tr>';
         }
@@ -104,7 +104,7 @@ final class _journal_cut_off_confirmationCard extends CardBaseFramework
         $rows = '';
         foreach ($adjustments as $journal) {
             if (!str_starts_with((string)($journal['journal_key'] ?? ''), 'manual-cutoff-')) continue;
-            $rows .= '<tr><td>' . HelperFramework::escape(HelperFramework::displayDate((string)($journal['journal_date'] ?? ''))) . '</td><td>' . HelperFramework::escape((string)($journal['description'] ?? '')) . '</td><td>' . count((array)($journal['lines'] ?? [])) . '</td></tr>';
+            $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html(HelperFramework::displayDate((string)($journal['journal_date'] ?? ''))) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($journal['description'] ?? '')) . '</td><td>' . count((array)($journal['lines'] ?? [])) . '</td></tr>';
         }
 
         return '<section class="panel-soft settings-stack"><h4 class="card-title">Posted Manual Journal Entries</h4>' . ($rows !== ''

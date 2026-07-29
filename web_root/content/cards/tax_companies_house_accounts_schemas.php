@@ -44,7 +44,7 @@ final class _tax_companies_house_accounts_schemasCard extends CardBaseFramework
         }
         $html .= '<div class="table-scroll"><table><thead><tr><th>Profile role</th><th>Pinned schema</th></tr></thead><tbody>';
         foreach ($roots as $role => $url) {
-            $html .= '<tr><td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)$role, '_')) . '</td><td><code>' . HelperFramework::escape(basename((string)parse_url((string)$url, PHP_URL_PATH))) . '</code></td></tr>';
+            $html .= '<tr><td>' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)$role, '_')) . '</td><td><code>' . \eel_accounts\Support\Utf8::html(basename((string)parse_url((string)$url, PHP_URL_PATH))) . '</code></td></tr>';
         }
         return $html . '</tbody></table></div></div>';
     }
@@ -60,7 +60,7 @@ final class _tax_companies_house_accounts_schemasCard extends CardBaseFramework
 
     private function metric(string $label, string $value): string
     {
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label)
-            . '</div><div class="summary-value">' . HelperFramework::escape($value !== '' ? $value : '-') . '</div></div>';
+        return '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label)
+            . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value !== '' ? $value : '-') . '</div></div>';
     }
 }

@@ -507,7 +507,7 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
     ): \DOMElement {
         $element = $this->element($document, $parent, $name);
         if ($value !== '') {
-            $element->appendChild($document->createTextNode($value));
+            $element->appendChild($document->createTextNode(\eel_accounts\Support\Utf8::normalize($value)));
         }
 
         return $element;
@@ -1146,7 +1146,7 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         foreach ($secrets as $secret) {
             $text = str_replace($secret, '[REDACTED]', $text);
             $text = str_replace(
-                htmlspecialchars($secret, ENT_XML1 | ENT_QUOTES, 'UTF-8'),
+                \eel_accounts\Support\Utf8::xml($secret),
                 '[REDACTED]',
                 $text
             );

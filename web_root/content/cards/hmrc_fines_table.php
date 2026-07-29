@@ -43,7 +43,7 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
         $companyId = (int)($context['company']['id'] ?? 0);
         $accountingPeriodId = (int)($context['company']['accounting_period_id'] ?? 0);
         $laterObligationCount = (int)($context['hmrc_obligations']['later_obligation_count'] ?? 0);
-        $laterObligationWarning = HelperFramework::escape((string)($context['hmrc_obligations']['later_obligation_warning'] ?? ''));
+        $laterObligationWarning = \eel_accounts\Support\Utf8::html((string)($context['hmrc_obligations']['later_obligation_warning'] ?? ''));
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
 
         $form = '<section class="panel-soft">
@@ -108,8 +108,8 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
 
     private function summaryCard(string $label, string $value): string
     {
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label)
-            . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+        return '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label)
+            . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div></div>';
     }
 
     public function tables(array $context): array
@@ -149,14 +149,14 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
 
     private function table(array $context, array $companySettings): TableFramework
     {
-        return TableFramework::make($this->key(), $this->filteredRows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->filteredRows($context))
             ->filename('hmrc-fines-and-interest')
             ->exportLimit(5000)
             ->empty('No HMRC fines or interest match the selected period filter.')
             ->column(
                 'notice_date',
                 'Notice date',
-                html: fn(array $row): string => HelperFramework::escape($this->displayDate((string)($row['notice_date'] ?? ''), $companySettings)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->displayDate((string)($row['notice_date'] ?? ''), $companySettings)),
                 export: static fn(array $row): string => (string)($row['notice_date'] ?? ''),
                 exportType: 'date'
             )
@@ -164,35 +164,35 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
             ->column(
                 'obligation_type',
                 'Type',
-                html: static fn(array $row): string => HelperFramework::escape(HelperFramework::labelFromKey((string)($row['obligation_type'] ?? ''), '_')),
+                html: static fn(array $row): string => \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)($row['obligation_type'] ?? ''), '_')),
                 export: static fn(array $row): string => HelperFramework::labelFromKey((string)($row['obligation_type'] ?? ''), '_')
             )
             ->textColumn('due_date', 'Due date', exportType: 'date')
             ->column(
                 'amount_due',
                 'Due',
-                html: fn(array $row): string => HelperFramework::escape(($row['amount_due'] ?? null) === null ? 'Not set' : $this->money($companySettings, $row['amount_due'])),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html(($row['amount_due'] ?? null) === null ? 'Not set' : $this->money($companySettings, $row['amount_due'])),
                 export: static fn(array $row): string => ($row['amount_due'] ?? null) === null ? '' : number_format((float)$row['amount_due'], 2, '.', ''),
                 exportType: 'number'
             )
             ->column(
                 'amount_paid',
                 'Paid',
-                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['amount_paid'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['amount_paid'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['amount_paid'] ?? 0), 2, '.', ''),
                 exportType: 'number'
             )
             ->column(
                 'effective_status',
                 'Status',
-                html: fn(array $row): string => '<span class="badge ' . HelperFramework::escape($this->badgeClass($this->displayStatus($row))) . '">'
-                    . HelperFramework::escape(HelperFramework::labelFromKey($this->displayStatus($row), '_')) . '</span>',
+                html: fn(array $row): string => '<span class="badge ' . \eel_accounts\Support\Utf8::html($this->badgeClass($this->displayStatus($row))) . '">'
+                    . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($this->displayStatus($row), '_')) . '</span>',
                 export: fn(array $row): string => HelperFramework::labelFromKey($this->displayStatus($row), '_')
             )
             ->column(
                 'related_journal_id',
                 'Accrual',
-                html: static fn(array $row): string => HelperFramework::escape(self::accrualLifecycleLabel($row)),
+                html: static fn(array $row): string => \eel_accounts\Support\Utf8::html(self::accrualLifecycleLabel($row)),
                 export: static fn(array $row): string => self::accrualLifecycleLabel($row)
             )
             ->textColumn('source_reference', 'Reference')
@@ -224,7 +224,7 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
             <input type="hidden" name="intent" value="correct_manual_obligation">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="obligation_id" value="' . $obligationId . '">
-            <input type="hidden" name="hmrc_fines_period_scope" value="' . HelperFramework::escape($periodScope) . '">
+            <input type="hidden" name="hmrc_fines_period_scope" value="' . \eel_accounts\Support\Utf8::html($periodScope) . '">
             <div class="form-row"><label>Correction</label><select class="select" name="correction_mode" data-no-submit-on-change="true"><option value="cancel">Cancelled by HMRC</option><option value="reassess">Reassessed by HMRC</option></select></div>
             <div class="form-row"><label>Effective date *</label><input class="input" type="date" name="effective_date" value="' . $today . '" required></div>
             <div class="form-row"><label>HMRC reason *</label><input class="input" name="correction_reason" required></div>

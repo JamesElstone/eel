@@ -36,6 +36,34 @@ $harness->run(_asset_relationshipsCard::class, static function (GeneratedService
         $harness->assertFalse(str_contains($html, 'name="intent" value="save_asset_relationship"'));
         $harness->assertTrue(str_contains($html, 'Read only'));
     });
+
+    $harness->check(_asset_relationshipsCard::class, 'recovers the legacy encoded Citroën asset label without blanking its option', static function () use ($harness, $card): void {
+        $context = assetRelationshipsCardTestContext();
+        $context['services']['assetRelationshipData']['parent_candidates'][] = [
+            'id' => 11,
+            'asset_code' => 'FA-49-20260707140545-01',
+            'description' => 'Citro' . chr(0xEB) . 'n Dispatch van, registration PK59 ZPJ',
+        ];
+
+        $html = $card->render($context);
+        $expected = '<option value="11">FA-49-20260707140545-01 — Citroën Dispatch van, registration PK59 ZPJ</option>';
+        $harness->assertSame(1, substr_count($html, $expected));
+        $harness->assertFalse(str_contains($html, '<option value="11"></option>'));
+    });
+
+    $harness->check(_asset_relationshipsCard::class, 'preserves an already valid UTF-8 Citroën asset label', static function () use ($harness, $card): void {
+        $context = assetRelationshipsCardTestContext();
+        $context['services']['assetRelationshipData']['parent_candidates'][] = [
+            'id' => 11,
+            'asset_code' => 'FA-49-20260707140545-01',
+            'description' => 'Citroën Dispatch van, registration PK59 ZPJ',
+        ];
+
+        $html = $card->render($context);
+        $expected = '<option value="11">FA-49-20260707140545-01 — Citroën Dispatch van, registration PK59 ZPJ</option>';
+        $harness->assertSame(1, substr_count($html, $expected));
+        $harness->assertFalse(str_contains($html, '<option value="11"></option>'));
+    });
 });
 
 function assetRelationshipsCardTestContext(): array

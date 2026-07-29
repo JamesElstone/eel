@@ -65,7 +65,7 @@ final class _incorporation_payment_matchingCard extends CardBaseFramework
             return '<div class="helper">Select or add a company before matching share payments.</div>';
         }
         if (empty($summary['available'])) {
-            return '<section class="settings-stack"><div class="helper">' . HelperFramework::escape((string)(($summary['errors'] ?? [])[0] ?? 'Share payment matching is not available.')) . '</div></section>';
+            return '<section class="settings-stack"><div class="helper">' . \eel_accounts\Support\Utf8::html((string)(($summary['errors'] ?? [])[0] ?? 'Share payment matching is not available.')) . '</div></section>';
         }
 
         $blocks = '';
@@ -112,7 +112,7 @@ final class _incorporation_payment_matchingCard extends CardBaseFramework
         $hasValidMatch = $this->hasValidMatch($shareClass);
 
         $matchWarning = is_array($currentMatch) && empty($currentMatch['match_valid'])
-            ? '<div class="helper warning">' . HelperFramework::escape($this->invalidMatchMessage((string)($currentMatch['match_invalid_reason'] ?? ''))) . '</div>'
+            ? '<div class="helper warning">' . \eel_accounts\Support\Utf8::html($this->invalidMatchMessage((string)($currentMatch['match_invalid_reason'] ?? ''))) . '</div>'
             : '';
         $matchHtml = is_array($currentMatch)
             ? $this->currentMatchesTable($companyId, $shareClassId, $settings, $currentMatch, $matchWarning)
@@ -120,12 +120,12 @@ final class _incorporation_payment_matchingCard extends CardBaseFramework
 
         return '<div class="panel-soft stack">
             <div class="status-head">
-                <h3 class="card-title">' . HelperFramework::escape((string)($shareClass['share_class'] ?? 'Share class')) . '</h3>
-                <span class="badge ' . HelperFramework::escape($this->badgeClass($status)) . '">' . HelperFramework::escape($this->statusLabel($status)) . '</span>
+                <h3 class="card-title">' . \eel_accounts\Support\Utf8::html((string)($shareClass['share_class'] ?? 'Share class')) . '</h3>
+                <span class="badge ' . \eel_accounts\Support\Utf8::html($this->badgeClass($status)) . '">' . \eel_accounts\Support\Utf8::html($this->statusLabel($status)) . '</span>
             </div>
             <div class="summary-grid">
-                <div class="summary-card"><div class="summary-label">Expected paid total</div><div class="summary-value">' . HelperFramework::escape($this->money($settings, $shareClass['expected_paid_total'] ?? 0)) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Unpaid share capital</div><div class="summary-value">' . HelperFramework::escape($this->money($settings, $shareClass['paid_up_unpaid_total'] ?? ($shareClass['unpaid_total'] ?? 0))) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Expected paid total</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($this->money($settings, $shareClass['expected_paid_total'] ?? 0)) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Unpaid share capital</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($this->money($settings, $shareClass['paid_up_unpaid_total'] ?? ($shareClass['unpaid_total'] ?? 0))) . '</div></div>
             </div>
             ' . $matchHtml . '
             ' . ($hasValidMatch ? '' : '<h3 class="card-title">Candidate Payments</h3>'
@@ -142,10 +142,10 @@ final class _incorporation_payment_matchingCard extends CardBaseFramework
     ): string {
         return '<div class="panel-soft"><h4 class="card-title">Current Matches</h4>'
             . '<table class="table"><thead><tr><th>Date</th><th>Transaction</th><th>Description</th><th>Amount</th><th>Manage</th></tr></thead><tbody><tr>'
-            . '<td>' . HelperFramework::escape(HelperFramework::displayDate((string)($currentMatch['txn_date'] ?? ''))) . '</td>'
+            . '<td>' . \eel_accounts\Support\Utf8::html(HelperFramework::displayDate((string)($currentMatch['txn_date'] ?? ''))) . '</td>'
             . '<td>' . $this->transactionSearchLink((int)($currentMatch['transaction_id'] ?? 0)) . '</td>'
-            . '<td>' . HelperFramework::escape((string)($currentMatch['description'] ?? '')) . '</td>'
-            . '<td class="numeric">' . HelperFramework::escape($this->money($settings, $currentMatch['matched_amount'] ?? 0)) . '</td>'
+            . '<td>' . \eel_accounts\Support\Utf8::html((string)($currentMatch['description'] ?? '')) . '</td>'
+            . '<td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($settings, $currentMatch['matched_amount'] ?? 0)) . '</td>'
             . '<td class="cell-fit">' . $this->clearForm($companyId, $shareClassId) . '</td>'
             . '</tr></tbody></table>' . $matchWarning . '</div>';
     }
@@ -180,7 +180,7 @@ final class _incorporation_payment_matchingCard extends CardBaseFramework
         $shareClassId = (int)($shareClass['id'] ?? 0);
         $shareClassLabel = HelperFramework::normaliseCardKey((string)($shareClass['share_class'] ?? 'share_class'));
 
-        return TableFramework::make($this->candidateTableKey($shareClass), $this->candidateRows($shareClass))
+        return \eel_accounts\Support\Utf8Table::make($this->candidateTableKey($shareClass), $this->candidateRows($shareClass))
             ->filename('incorporation-candidate-payments-' . $shareClassLabel)
             ->exportLimit(5000)
             ->empty('No exact incoming payment candidates were found.')
@@ -189,7 +189,7 @@ final class _incorporation_payment_matchingCard extends CardBaseFramework
             ->column(
                 'amount',
                 'Amount',
-                html: fn(array $row): string => HelperFramework::escape($this->money($settings, $row['amount'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($settings, $row['amount'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['amount'] ?? 0), 2, '.', ''),
                 exportType: 'number',
                 cellClass: 'numeric'

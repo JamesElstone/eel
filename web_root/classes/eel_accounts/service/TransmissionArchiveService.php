@@ -241,7 +241,7 @@ final class TransmissionArchiveService
             'lifecycle' => trim($lifecycle) !== '' ? trim($lifecycle) : 'unknown',
             'files' => $files,
         ];
-        $json = json_encode(
+        $json = \eel_accounts\Support\Utf8::json(
             $payload,
             JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
         ) . "\n";

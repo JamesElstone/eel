@@ -50,7 +50,7 @@ final class _incorporation_sharesCard extends CardBaseFramework
 
         $summary = (array)($context['services']['incorporationShares'] ?? []);
         if (empty($summary['available'])) {
-            return '<section class="settings-stack"><div class="helper">' . HelperFramework::escape((string)(($summary['errors'] ?? [])[0] ?? 'Formation share capital is not available.')) . '</div></section>';
+            return '<section class="settings-stack"><div class="helper">' . \eel_accounts\Support\Utf8::html((string)(($summary['errors'] ?? [])[0] ?? 'Formation share capital is not available.')) . '</div></section>';
         }
 
         $draftShareClass = (array)($context['incorporation_shares']['draft_share_class'] ?? []);
@@ -68,7 +68,7 @@ final class _incorporation_sharesCard extends CardBaseFramework
         $currency = strtoupper(trim((string)($draftShareClass['currency'] ?? 'GBP'))) ?: 'GBP';
 
         return '
-            <form class="incorporation-share-add-form" id="' . HelperFramework::escape($formId) . '" method="post" data-ajax="true">
+            <form class="incorporation-share-add-form" id="' . \eel_accounts\Support\Utf8::html($formId) . '" method="post" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Incorporation">
                 <input type="hidden" name="intent" value="save_incorporation_shares">
@@ -76,34 +76,34 @@ final class _incorporation_sharesCard extends CardBaseFramework
                 <input type="hidden" name="share_class_id" value="0">
                 <div class="incorporation-share-fields">
                     <div class="field">
-                        <label for="' . HelperFramework::escape($formId) . '-share-class">Class of shares</label>
-                        <input class="input" id="' . HelperFramework::escape($formId) . '-share-class" name="share_class" value="' . HelperFramework::escape((string)($draftShareClass['share_class'] ?? 'Ordinary')) . '">
+                        <label for="' . \eel_accounts\Support\Utf8::html($formId) . '-share-class">Class of shares</label>
+                        <input class="input" id="' . \eel_accounts\Support\Utf8::html($formId) . '-share-class" name="share_class" value="' . \eel_accounts\Support\Utf8::html((string)($draftShareClass['share_class'] ?? 'Ordinary')) . '">
                     </div>
                     <div class="field">
-                        <label for="' . HelperFramework::escape($formId) . '-currency">Currency</label>
-                        <select class="select" id="' . HelperFramework::escape($formId) . '-currency" name="currency">
+                        <label for="' . \eel_accounts\Support\Utf8::html($formId) . '-currency">Currency</label>
+                        <select class="select" id="' . \eel_accounts\Support\Utf8::html($formId) . '-currency" name="currency">
                             ' . $this->currencyOptions($currency, $companySettings) . '
                         </select>
                     </div>
                     <div class="field">
-                        <label for="' . HelperFramework::escape($formId) . '-quantity">Number allotted</label>
-                        <input class="input" inputmode="numeric" pattern="[0-9,]*" id="' . HelperFramework::escape($formId) . '-quantity" name="quantity" value="' . HelperFramework::escape((string)($draftShareClass['quantity'] ?? '')) . '">
+                        <label for="' . \eel_accounts\Support\Utf8::html($formId) . '-quantity">Number allotted</label>
+                        <input class="input" inputmode="numeric" pattern="[0-9,]*" id="' . \eel_accounts\Support\Utf8::html($formId) . '-quantity" name="quantity" value="' . \eel_accounts\Support\Utf8::html((string)($draftShareClass['quantity'] ?? '')) . '">
                     </div>
                     <div class="field">
-                        <label for="' . HelperFramework::escape($formId) . '-aggregate-nominal">Aggregate nominal value</label>
-                        <input class="input" inputmode="numeric" pattern="[0-9,]*" id="' . HelperFramework::escape($formId) . '-aggregate-nominal" name="aggregate_nominal_value" value="' . HelperFramework::escape($aggregateNominalValue) . '">
+                        <label for="' . \eel_accounts\Support\Utf8::html($formId) . '-aggregate-nominal">Aggregate nominal value</label>
+                        <input class="input" inputmode="numeric" pattern="[0-9,]*" id="' . \eel_accounts\Support\Utf8::html($formId) . '-aggregate-nominal" name="aggregate_nominal_value" value="' . \eel_accounts\Support\Utf8::html($aggregateNominalValue) . '">
                     </div>
                     <div class="field">
-                        <label for="' . HelperFramework::escape($formId) . '-aggregate-unpaid">Total aggregate unpaid</label>
-                        <input class="input" inputmode="numeric" pattern="[0-9,]*" id="' . HelperFramework::escape($formId) . '-aggregate-unpaid" name="total_aggregate_unpaid" value="' . HelperFramework::escape($totalAggregateUnpaid) . '">
+                        <label for="' . \eel_accounts\Support\Utf8::html($formId) . '-aggregate-unpaid">Total aggregate unpaid</label>
+                        <input class="input" inputmode="numeric" pattern="[0-9,]*" id="' . \eel_accounts\Support\Utf8::html($formId) . '-aggregate-unpaid" name="total_aggregate_unpaid" value="' . \eel_accounts\Support\Utf8::html($totalAggregateUnpaid) . '">
                     </div>
                     <div class="field">
-                        <label for="' . HelperFramework::escape($formId) . '-document">Source document/reference</label>
-                        <input class="input" id="' . HelperFramework::escape($formId) . '-document" name="document_reference" value="' . HelperFramework::escape((string)($draftShareClass['document_reference'] ?? '')) . '">
+                        <label for="' . \eel_accounts\Support\Utf8::html($formId) . '-document">Source document/reference</label>
+                        <input class="input" id="' . \eel_accounts\Support\Utf8::html($formId) . '-document" name="document_reference" value="' . \eel_accounts\Support\Utf8::html((string)($draftShareClass['document_reference'] ?? '')) . '">
                     </div>
                     <div class="field">
-                        <label for="' . HelperFramework::escape($formId) . '-particulars">Prescribed particulars (text note)</label>
-                        <textarea class="input" rows="1" id="' . HelperFramework::escape($formId) . '-particulars" name="source_note">' . HelperFramework::escape((string)($draftShareClass['source_note'] ?? '')) . '</textarea>
+                        <label for="' . \eel_accounts\Support\Utf8::html($formId) . '-particulars">Prescribed particulars (text note)</label>
+                        <textarea class="input" rows="1" id="' . \eel_accounts\Support\Utf8::html($formId) . '-particulars" name="source_note">' . \eel_accounts\Support\Utf8::html((string)($draftShareClass['source_note'] ?? '')) . '</textarea>
                     </div>
                     <div class="field incorporation-share-actions">
                         <button class="button primary" type="submit">Add Share Class</button>
@@ -118,7 +118,7 @@ final class _incorporation_sharesCard extends CardBaseFramework
         $defaultCurrencySymbol = (new \eel_accounts\Service\CompanySettingsService())->defaultCurrencySymbol($companySettings);
         $defaultCurrencyLabel = 'GBP - ' . $defaultCurrencySymbol;
 
-        return '<option value="GBP"' . ($selectedCurrency === 'GBP' ? ' selected' : '') . '>' . HelperFramework::escape($defaultCurrencyLabel) . '</option>';
+        return '<option value="GBP"' . ($selectedCurrency === 'GBP' ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html($defaultCurrencyLabel) . '</option>';
     }
 
     private function decimalValue(mixed $value): string

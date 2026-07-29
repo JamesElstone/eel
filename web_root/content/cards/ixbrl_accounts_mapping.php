@@ -39,15 +39,15 @@ final class _ixbrl_accounts_mappingCard extends CardBaseFramework
         $rows = '';
         foreach ($labels as $key => $label) {
             $rows .= '<tr>
-                <td>' . HelperFramework::escape($label) . '</td>
-                <td class="amount">' . HelperFramework::escape($this->money($companySettings, $buckets[$key] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->sourceSummary((array)($sources[$key] ?? []))) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($label) . '</td>
+                <td class="amount">' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $buckets[$key] ?? 0)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->sourceSummary((array)($sources[$key] ?? []))) . '</td>
             </tr>';
         }
 
         $assumptions = '';
         foreach ((array)($mapping['assumptions'] ?? []) as $assumption) {
-            $assumptions .= '<li>' . HelperFramework::escape((string)$assumption) . '</li>';
+            $assumptions .= '<li>' . \eel_accounts\Support\Utf8::html((string)$assumption) . '</li>';
         }
 
         return '<div class="settings-stack">

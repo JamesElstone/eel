@@ -19,13 +19,13 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
     {
         $items = (array)($context['hmrc_obligations']['timeline'] ?? []);
         $laterObligationCount = (int)($context['hmrc_obligations']['later_obligation_count'] ?? 0);
-        $laterObligationWarning = HelperFramework::escape((string)($context['hmrc_obligations']['later_obligation_warning'] ?? ''));
+        $laterObligationWarning = \eel_accounts\Support\Utf8::html((string)($context['hmrc_obligations']['later_obligation_warning'] ?? ''));
         $filters = (array)($context['hmrc_obligations']['filters'] ?? []);
         $selected = (string)($context['hmrc_obligations']['filter'] ?? 'all');
         $companyId = (int)($context['company']['id'] ?? 0);
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
 
-        $table = TableFramework::make($this->key(), $items)
+        $table = \eel_accounts\Support\Utf8Table::make($this->key(), $items)
             ->filename('hmrc-obligations-timeline')
             ->exports(true)
             ->exportLimit(5000)
@@ -34,34 +34,34 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
             ->column(
                 'accounting_period_label',
                 'Period',
-                html: static fn(array $item): string => HelperFramework::escape((string)($item['accounting_period_label'] ?? ''))
-                    . '<div class="helper">' . HelperFramework::escape((string)($item['period_start'] ?? '') . ' to ' . (string)($item['period_end'] ?? '')) . '</div>',
+                html: static fn(array $item): string => \eel_accounts\Support\Utf8::html((string)($item['accounting_period_label'] ?? ''))
+                    . '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)($item['period_start'] ?? '') . ' to ' . (string)($item['period_end'] ?? '')) . '</div>',
                 export: static fn(array $item): string => (string)($item['accounting_period_label'] ?? '') . ' (' . (string)($item['period_start'] ?? '') . ' to ' . (string)($item['period_end'] ?? '') . ')'
             )
             ->column(
                 'obligation_type',
                 'Obligation',
-                html: fn(array $item): string => HelperFramework::escape(HelperFramework::labelFromKey((string)($item['obligation_type'] ?? ''), '_')) . $this->chHint((array)($item['companies_house'] ?? [])),
+                html: fn(array $item): string => \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)($item['obligation_type'] ?? ''), '_')) . $this->chHint((array)($item['companies_house'] ?? [])),
                 export: static fn(array $item): string => HelperFramework::labelFromKey((string)($item['obligation_type'] ?? ''), '_')
             )
             ->column(
                 'due_date',
                 'Due date',
-                html: fn(array $item): string => HelperFramework::escape((string)($item['due_date'] ?? '')) . '<div class="helper">' . HelperFramework::escape($this->daysLabel((int)($item['days_delta'] ?? 0))) . '</div>',
+                html: fn(array $item): string => \eel_accounts\Support\Utf8::html((string)($item['due_date'] ?? '')) . '<div class="helper">' . \eel_accounts\Support\Utf8::html($this->daysLabel((int)($item['days_delta'] ?? 0))) . '</div>',
                 export: static fn(array $item): string => (string)($item['due_date'] ?? ''),
                 exportType: 'date'
             )
             ->column(
                 'amount_due',
                 'Amount',
-                html: fn(array $item): string => HelperFramework::escape($this->amountLabel($item, $companySettings)),
+                html: fn(array $item): string => \eel_accounts\Support\Utf8::html($this->amountLabel($item, $companySettings)),
                 export: fn(array $item): string => ($item['amount_due'] ?? null) === null ? '' : number_format((float)$item['amount_due'], 2, '.', ''),
                 exportType: 'number'
             )
             ->column(
                 'effective_status',
                 'Status',
-                html: fn(array $item): string => '<span class="badge ' . HelperFramework::escape($this->badgeClass((string)($item['effective_status'] ?? ''))) . '">' . HelperFramework::escape(HelperFramework::labelFromKey((string)($item['effective_status'] ?? ''), '_')) . '</span>',
+                html: fn(array $item): string => '<span class="badge ' . \eel_accounts\Support\Utf8::html($this->badgeClass((string)($item['effective_status'] ?? ''))) . '">' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)($item['effective_status'] ?? ''), '_')) . '</span>',
                 export: static fn(array $item): string => HelperFramework::labelFromKey((string)($item['effective_status'] ?? ''), '_')
             )
             ->textColumn('action_needed', 'Action needed')
@@ -88,7 +88,7 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
     {
         $options = '';
         foreach ($filters as $value => $label) {
-            $options .= '<option value="' . HelperFramework::escape((string)$value) . '"' . ((string)$value === $selected ? ' selected' : '') . '>' . HelperFramework::escape((string)$label) . '</option>';
+            $options .= '<option value="' . \eel_accounts\Support\Utf8::html((string)$value) . '"' . ((string)$value === $selected ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html((string)$label) . '</option>';
         }
 
         return '<form method="post" action="?page=HMRC" data-ajax="true" class="toolbar">'
@@ -109,7 +109,7 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
         $common = '<input type="hidden" name="card_action" value="HmrcObligation">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="obligation_id" value="' . $id . '">
-            <input type="hidden" name="hmrc_filter" value="' . HelperFramework::escape($filter) . '">';
+            <input type="hidden" name="hmrc_filter" value="' . \eel_accounts\Support\Utf8::html($filter) . '">';
 
         if ($type === 'ct600_filing') {
             return '<form method="post" action="?page=HMRC" data-ajax="true" class="mini-form">
@@ -135,7 +135,7 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
             $value = (string)($candidate['source_type'] ?? '') . ':' . (int)($candidate['id'] ?? 0);
             $label = (string)($candidate['source_label'] ?? 'Evidence') . ' | ' . (string)($candidate['evidence_date'] ?? '') . ' | '
                 . (string)($candidate['description'] ?? '') . ' | £' . number_format((float)($candidate['amount'] ?? 0), 2);
-            $options .= '<option value="' . HelperFramework::escape($value) . '">' . HelperFramework::escape($label) . '</option>';
+            $options .= '<option value="' . \eel_accounts\Support\Utf8::html($value) . '">' . \eel_accounts\Support\Utf8::html($label) . '</option>';
         }
 
         return $linksHtml . '<form method="post" action="?page=HMRC" data-ajax="true" class="mini-form">
@@ -162,7 +162,7 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
                 . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . $common
                 . '<input type="hidden" name="intent" value="unlink_payment_evidence">'
                 . '<input type="hidden" name="evidence_link_id" value="' . (int)($link['id'] ?? 0) . '">'
-                . '<span class="helper">' . HelperFramework::escape($label) . '</span>'
+                . '<span class="helper">' . \eel_accounts\Support\Utf8::html($label) . '</span>'
                 . '<button class="button button-inline danger" type="submit">Unlink</button></form>';
         }
 
@@ -171,7 +171,7 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
 
     private function chHint(array $ch): string
     {
-        return !empty($ch['filed']) ? '<div class="helper">CH accounts filed ' . HelperFramework::escape((string)($ch['filing_date'] ?? '')) . '</div>' : '';
+        return !empty($ch['filed']) ? '<div class="helper">CH accounts filed ' . \eel_accounts\Support\Utf8::html((string)($ch['filing_date'] ?? '')) . '</div>' : '';
     }
 
     private function amountLabel(array $item, array $companySettings): string

@@ -30,7 +30,7 @@ final class _hmrc_anti_fraud_testCard extends CardBaseFramework
 
     public function handleError(string $serviceKey, array $error, array $context): string
     {
-        return 'Service state: ' . HelperFramework::escape((string)($error['type'] ?? 'error'));
+        return 'Service state: ' . \eel_accounts\Support\Utf8::html((string)($error['type'] ?? 'error'));
     }
 
     public function render(array $context): string
@@ -43,10 +43,10 @@ final class _hmrc_anti_fraud_testCard extends CardBaseFramework
         $cardsHtml = '';
 
         foreach ((array)($page['page_cards'] ?? []) as $cardKey) {
-            $cardsHtml .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+            $cardsHtml .= '<input type="hidden" name="cards[]" value="' . \eel_accounts\Support\Utf8::html((string)$cardKey) . '">';
         }
 
-        $resultJson = json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $resultJson = \eel_accounts\Support\Utf8::json($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
         if ($resultJson === false) {
             $resultJson = '{}';
         }
@@ -55,19 +55,19 @@ final class _hmrc_anti_fraud_testCard extends CardBaseFramework
             <form method="post" data-ajax="true" data-ajax-transport="xhr" class="toolbar">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="hmrcCheck">
-                <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)$companyId) . '">
+                <input type="hidden" name="company_id" value="' . \eel_accounts\Support\Utf8::html((string)$companyId) . '">
                 ' . $cardsHtml . '
                 <div class="actions-row">
                     <button class="button primary" type="submit">Test anti-fraud headers</button>
                 </div>
             </form>
             <div class="pill-row">
-                <span class="pill">HMRC mode: ' . HelperFramework::escape($hmrcMode) . '</span>
+                <span class="pill">HMRC mode: ' . \eel_accounts\Support\Utf8::html($hmrcMode) . '</span>
                 ' . ($hasApiError ? '<span class="pill danger">API error</span>' : '') . '
             </div>
-            <pre class="panel-soft">' . HelperFramework::escape($resultJson) . '</pre>
+            <pre class="panel-soft">' . \eel_accounts\Support\Utf8::html($resultJson) . '</pre>
             <div class="pill-row">
-                <span class="pill">Selected company ID: ' . HelperFramework::escape((string)$companyId) . '</span>
+                <span class="pill">Selected company ID: ' . \eel_accounts\Support\Utf8::html((string)$companyId) . '</span>
                 <span class="pill">Device cookie only: af_client_device_id</span>
             </div>
         ';

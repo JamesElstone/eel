@@ -36,13 +36,13 @@ final class _year_end_evidence_bundlesCard extends CardBaseFramework
             $activeArtifactCount = array_key_exists('active_artifact_count', $bundle)
                 ? (int)$bundle['active_artifact_count']
                 : (int)($bundle['artifact_count'] ?? 0);
-            $rows .= '<tr><td><strong>' . HelperFramework::escape((string)($bundle['display_id'] ?? $bundle['evidence_id'] ?? '')) . '</strong>'
+            $rows .= '<tr><td><strong>' . \eel_accounts\Support\Utf8::html((string)($bundle['display_id'] ?? $bundle['evidence_id'] ?? '')) . '</strong>'
                 . '<div class="helper">#' . (int)($bundle['id'] ?? 0) . '</div></td><td>'
-                . HelperFramework::escape((string)($bundle['lifecycle_status'] ?? '')) . '</td><td>'
-                . HelperFramework::escape((string)($bundle['locked_at'] ?? '')) . '<div class="helper">'
-                . HelperFramework::escape((string)($bundle['locked_by'] ?? '')) . '</div></td><td>'
+                . \eel_accounts\Support\Utf8::html((string)($bundle['lifecycle_status'] ?? '')) . '</td><td>'
+                . \eel_accounts\Support\Utf8::html((string)($bundle['locked_at'] ?? '')) . '<div class="helper">'
+                . \eel_accounts\Support\Utf8::html((string)($bundle['locked_by'] ?? '')) . '</div></td><td>'
                 . (int)($bundle['snapshot_count'] ?? 0) . ' snapshots<br>' . $activeArtifactCount . ' active artifacts</td><td>'
-                . $status . '<div class="helper">' . HelperFramework::escape($reasons) . '</div></td></tr>';
+                . $status . '<div class="helper">' . \eel_accounts\Support\Utf8::html($reasons) . '</div></td></tr>';
         }
         if ($rows === '') { $rows = '<tr><td colspan="5">No filing evidence bundles exist for the selected accounting period.</td></tr>'; }
 

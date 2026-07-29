@@ -71,18 +71,18 @@ final class _tax_rates_vatCard extends CardBaseFramework
 
     private function table(array $rules): TableFramework
     {
-        return TableFramework::make($this->key(), $rules)
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $rules)
             ->filename('hmrc-vat-rates')
             ->exportLimit(5000)
             ->empty('No HMRC VAT rates are stored. Use Import Live HMRC VAT Rates to populate this table.')
             ->classes(wrapperClass: 'table-scroll tax-rates-vat-table')
-            ->column('period', 'Period', html: fn(array $row): string => HelperFramework::escape($this->period($row)), export: fn(array $row): string => $this->period($row))
-            ->column('rate_type', 'Rate Type', html: static fn(array $row): string => HelperFramework::escape(ucwords(str_replace('_', ' ', (string)($row['rate_type'] ?? '')))))
-            ->column('scope', 'Scope', html: static fn(array $row): string => HelperFramework::escape(strtoupper((string)($row['scope'] ?? 'uk'))))
+            ->column('period', 'Period', html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->period($row)), export: fn(array $row): string => $this->period($row))
+            ->column('rate_type', 'Rate Type', html: static fn(array $row): string => \eel_accounts\Support\Utf8::html(ucwords(str_replace('_', ' ', (string)($row['rate_type'] ?? '')))))
+            ->column('scope', 'Scope', html: static fn(array $row): string => \eel_accounts\Support\Utf8::html(strtoupper((string)($row['scope'] ?? 'uk'))))
             ->column(
                 'rate_percentage',
                 'VAT Rate',
-                html: static fn(array $row): string => HelperFramework::escape(rtrim(rtrim(number_format((float)($row['rate_percentage'] ?? 0), 3, '.', ''), '0'), '.') . '%'),
+                html: static fn(array $row): string => \eel_accounts\Support\Utf8::html(rtrim(rtrim(number_format((float)($row['rate_percentage'] ?? 0), 3, '.', ''), '0'), '.') . '%'),
                 export: static fn(array $row): string => number_format((float)($row['rate_percentage'] ?? 0), 3, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -108,7 +108,7 @@ final class _tax_rates_vatCard extends CardBaseFramework
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="TaxRatesVat">'
             . '<input type="hidden" name="intent" value="refresh_hmrc_vat_rates">'
-            . '<button class="button ' . ($empty ? 'danger' : 'primary') . '" type="submit">' . HelperFramework::escape($label) . '</button>'
+            . '<button class="button ' . ($empty ? 'danger' : 'primary') . '" type="submit">' . \eel_accounts\Support\Utf8::html($label) . '</button>'
             . '</form>';
     }
 
@@ -119,9 +119,9 @@ final class _tax_rates_vatCard extends CardBaseFramework
         }
         $row = $rules[0];
         $url = trim((string)($row['source_url'] ?? \eel_accounts\Service\VatRateRuleService::NOTICE_URL));
-        return '<div class="helper">Source updated: ' . HelperFramework::escape((string)($row['source_updated_at'] ?? 'Unknown'))
-            . '. Checked: ' . HelperFramework::escape((string)($row['source_checked_at'] ?? 'Unknown'))
-            . '. <a class="button button-inline" href="' . HelperFramework::escape($url) . '" target="_blank" rel="noopener noreferrer">HMRC - VAT Rates</a></div>';
+        return '<div class="helper">Source updated: ' . \eel_accounts\Support\Utf8::html((string)($row['source_updated_at'] ?? 'Unknown'))
+            . '. Checked: ' . \eel_accounts\Support\Utf8::html((string)($row['source_checked_at'] ?? 'Unknown'))
+            . '. <a class="button button-inline" href="' . \eel_accounts\Support\Utf8::html($url) . '" target="_blank" rel="noopener noreferrer">HMRC - VAT Rates</a></div>';
     }
 
     private function period(array $row): string

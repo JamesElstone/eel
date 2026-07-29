@@ -330,7 +330,7 @@ final class VatRateRuleService
         ];
         $datasetHash = hash(
             'sha256',
-            json_encode(
+            \eel_accounts\Support\Utf8::json(
                 $datasetIdentity,
                 JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR
             )
@@ -358,7 +358,7 @@ final class VatRateRuleService
                 'source_checked_at' => $checkedAt,
                 'rule_version' => 'govuk-' . substr(hash(
                     'sha256',
-                    json_encode(
+                    \eel_accounts\Support\Utf8::json(
                         $ruleIdentity,
                         JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR
                     )
@@ -587,7 +587,7 @@ final class VatRateRuleService
                 $response = $response['body'] ?? '';
             }
             if (is_array($response)) {
-                $response = json_encode($response, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                $response = \eel_accounts\Support\Utf8::json($response, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
             }
             if (!is_string($response) || trim($response) === '') {
                 throw new \RuntimeException('GOV.UK Content API returned an empty response.');

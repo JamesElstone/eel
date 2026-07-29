@@ -88,7 +88,7 @@ final class _tax_capital_allowances_summaryCard extends CardBaseFramework
     /** @param list<array<string, float|string>> $rows */
     private function calculationTable(array $rows): TableFramework
     {
-        return TableFramework::make($this->key(), $rows)
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $rows)
             ->filename('tax-capital-allowances-calculation')
             ->exportLimit(5000)
             ->empty('No capital allowance calculation rows were found for this period.')
@@ -97,7 +97,7 @@ final class _tax_capital_allowances_summaryCard extends CardBaseFramework
             ->column(
                 'amount',
                 'Amount',
-                html: static fn(array $row): string => HelperFramework::escape((string)($row['amount_html'] ?? '')),
+                html: static fn(array $row): string => \eel_accounts\Support\Utf8::html((string)($row['amount_html'] ?? '')),
                 export: static fn(array $row): string => number_format((float)($row['amount'] ?? 0), 2, '.', ''),
                 headerClass: 'numeric',
                 cellClass: 'numeric',
@@ -106,7 +106,7 @@ final class _tax_capital_allowances_summaryCard extends CardBaseFramework
             ->column(
                 'running_total',
                 'Running total',
-                html: static fn(array $row): string => HelperFramework::escape((string)($row['running_total_html'] ?? '')),
+                html: static fn(array $row): string => \eel_accounts\Support\Utf8::html((string)($row['running_total_html'] ?? '')),
                 export: static fn(array $row): string => number_format((float)($row['running_total'] ?? 0), 2, '.', ''),
                 headerClass: 'numeric',
                 cellClass: 'numeric',

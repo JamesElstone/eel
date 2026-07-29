@@ -712,7 +712,7 @@ final class StatementCsvExportService
 
     private function xmlText(string $value): string
     {
-        return htmlspecialchars($value, \ENT_XML1 | \ENT_COMPAT, 'UTF-8');
+        return \eel_accounts\Support\Utf8::xml($value);
     }
 
     private function rowMonthKey(array $row, array $mapping, array $committedRow = []): string

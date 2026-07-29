@@ -153,7 +153,7 @@ final class _director_loan_stateCard extends CardBaseFramework
         ));
         $settings = ['default_currency_symbol' => (string)($statement['default_currency_symbol'] ?? '&#163;')];
 
-        return TableFramework::make(self::POSITION_TABLE_KEY, $positions)
+        return \eel_accounts\Support\Utf8Table::make(self::POSITION_TABLE_KEY, $positions)
             ->filename('director-loan-positions')
             ->exportLimit(5000)
             ->empty('No Director Loan activity or balance exists for this period.')
@@ -161,7 +161,7 @@ final class _director_loan_stateCard extends CardBaseFramework
             ->column(
                 'gross_asset',
                 'Gross asset',
-                html: fn(array $row): string => HelperFramework::escape($this->money($settings, $row['gross_asset'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($settings, $row['gross_asset'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['gross_asset'] ?? 0), 2, '.', ''),
                 headerClass: 'numeric',
                 cellClass: 'numeric',
@@ -170,7 +170,7 @@ final class _director_loan_stateCard extends CardBaseFramework
             ->column(
                 'gross_liability',
                 'Gross liability',
-                html: fn(array $row): string => HelperFramework::escape($this->money($settings, $row['gross_liability'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($settings, $row['gross_liability'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['gross_liability'] ?? 0), 2, '.', ''),
                 headerClass: 'numeric',
                 cellClass: 'numeric',
@@ -179,7 +179,7 @@ final class _director_loan_stateCard extends CardBaseFramework
             ->column(
                 'desired_reclassification',
                 'Reclassification',
-                html: fn(array $row): string => HelperFramework::escape($this->money($settings, $row['desired_reclassification'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($settings, $row['desired_reclassification'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['desired_reclassification'] ?? 0), 2, '.', ''),
                 headerClass: 'numeric',
                 cellClass: 'numeric',
@@ -188,7 +188,7 @@ final class _director_loan_stateCard extends CardBaseFramework
             ->column(
                 'net_closing_position',
                 'Net closing',
-                html: fn(array $row): string => HelperFramework::escape($this->money($settings, $row['net_closing_position'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($settings, $row['net_closing_position'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['net_closing_position'] ?? 0), 2, '.', ''),
                 headerClass: 'numeric',
                 cellClass: 'numeric',
@@ -198,7 +198,7 @@ final class _director_loan_stateCard extends CardBaseFramework
             ->column(
                 'potential_s455_exposure',
                 'Gross asset principal',
-                html: fn(array $row): string => HelperFramework::escape($this->money($settings, $row['potential_s455_exposure'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($settings, $row['potential_s455_exposure'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['potential_s455_exposure'] ?? 0), 2, '.', ''),
                 headerClass: 'numeric',
                 cellClass: 'numeric',
@@ -226,7 +226,7 @@ final class _director_loan_stateCard extends CardBaseFramework
 
     private function stat(string $label, string $value, string $class = '', string $actionHtml = ''): string
     {
-        return '<div class="summary-card' . ($class !== '' ? ' ' . HelperFramework::escape($class) : '') . '"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div>' . ($actionHtml !== '' ? '<div class="actions-row">' . $actionHtml . '</div>' : '') . '</div>';
+        return '<div class="summary-card' . ($class !== '' ? ' ' . \eel_accounts\Support\Utf8::html($class) : '') . '"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label) . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div>' . ($actionHtml !== '' ? '<div class="actions-row">' . $actionHtml . '</div>' : '') . '</div>';
     }
 
     private function money(array $settings, mixed $value): string
@@ -237,7 +237,7 @@ final class _director_loan_stateCard extends CardBaseFramework
     private function errors(array $errors): string
     {
         return implode('', array_map(
-            static fn(mixed $error): string => '<div class="helper">' . HelperFramework::escape((string)$error) . '</div>',
+            static fn(mixed $error): string => '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$error) . '</div>',
             $errors
         ));
     }

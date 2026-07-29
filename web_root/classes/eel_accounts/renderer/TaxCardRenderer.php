@@ -35,14 +35,14 @@ final class TaxCardRenderer
         $errors = (array)($workings['errors'] ?? []);
         $message = (string)($errors[0] ?? 'Select a company and accounting period to inspect tax workings.');
 
-        return '<div class="helper">' . \HelperFramework::escape($message) . '</div>';
+        return '<div class="helper">' . \eel_accounts\Support\Utf8::html($message) . '</div>';
     }
 
     public static function selectedPeriodHelper(array $context): string
     {
         $tax = (array)($context['tax'] ?? []);
 
-        return \HelperFramework::escape((string)($tax['selected_ct_period_helper'] ?? ''));
+        return \eel_accounts\Support\Utf8::html((string)($tax['selected_ct_period_helper'] ?? ''));
     }
 
     public static function guidanceLink(string $key, ?string $label = null): string
@@ -60,8 +60,8 @@ final class TaxCardRenderer
             default => 'HMRC - Guidance',
         };
 
-        return '<a class="button button-inline" href="' . \HelperFramework::escape($url) . '" target="_blank" rel="noopener noreferrer">'
-            . \HelperFramework::escape($label)
+        return '<a class="button button-inline" href="' . \eel_accounts\Support\Utf8::html($url) . '" target="_blank" rel="noopener noreferrer">'
+            . \eel_accounts\Support\Utf8::html($label)
             . '</a>';
     }
 
@@ -91,7 +91,7 @@ final class TaxCardRenderer
         };
         $label = $label !== '' ? $label : \HelperFramework::labelFromKey($status, '_');
 
-        return '<span class="badge ' . \HelperFramework::escape($class) . '">' . \HelperFramework::escape($label) . '</span>';
+        return '<span class="badge ' . \eel_accounts\Support\Utf8::html($class) . '">' . \eel_accounts\Support\Utf8::html($label) . '</span>';
     }
 
     public static function header(string $guidanceKey, array $additionalGuidance = []): string
@@ -121,18 +121,18 @@ final class TaxCardRenderer
         };
         $class = $status === 'current' ? 'success' : 'warning';
 
-        return '<div class="helper"><span class="badge ' . $class . '">' . \HelperFramework::escape($label) . '</span> ' . \HelperFramework::escape($detail) . '</div>';
+        return '<div class="helper"><span class="badge ' . $class . '">' . \eel_accounts\Support\Utf8::html($label) . '</span> ' . \eel_accounts\Support\Utf8::html($detail) . '</div>';
     }
 
     public static function table(array $headers, array $rows, string $empty = 'No rows to show.'): string
     {
         if ($rows === []) {
-            return '<div class="helper">' . \HelperFramework::escape($empty) . '</div>';
+            return '<div class="helper">' . \eel_accounts\Support\Utf8::html($empty) . '</div>';
         }
 
         $head = '';
         foreach ($headers as $header) {
-            $head .= '<th>' . \HelperFramework::escape((string)$header) . '</th>';
+            $head .= '<th>' . \eel_accounts\Support\Utf8::html((string)$header) . '</th>';
         }
 
         $body = '';
@@ -152,9 +152,9 @@ final class TaxCardRenderer
         $html = '';
         foreach ($items as $item) {
             $html .= '<div class="summary-card"><div class="summary-label">'
-                . \HelperFramework::escape((string)($item[0] ?? ''))
+                . \eel_accounts\Support\Utf8::html((string)($item[0] ?? ''))
                 . '</div><div class="summary-value">'
-                . \HelperFramework::escape((string)($item[1] ?? ''))
+                . \eel_accounts\Support\Utf8::html((string)($item[1] ?? ''))
                 . '</div></div>';
         }
 
@@ -163,6 +163,6 @@ final class TaxCardRenderer
 
     public static function escape(mixed $value): string
     {
-        return \HelperFramework::escape((string)$value);
+        return \eel_accounts\Support\Utf8::html((string)$value);
     }
 }

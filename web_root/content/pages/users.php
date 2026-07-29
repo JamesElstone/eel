@@ -358,11 +358,11 @@ final class _users extends PageContextFramework
 
         $link = trim((string)($result['link'] ?? ''));
         $message = $successMessage;
-        $messageHtml = HelperFramework::escape($successMessage);
+        $messageHtml = \eel_accounts\Support\Utf8::html($successMessage);
 
         if ($link !== '') {
             $message = $successMessage . ' Copy this link: ' . $link;
-            $messageHtml = HelperFramework::escape($successMessage) . '<br><code>' . HelperFramework::escape($link) . '</code>';
+            $messageHtml = \eel_accounts\Support\Utf8::html($successMessage) . '<br><code>' . \eel_accounts\Support\Utf8::html($link) . '</code>';
         }
 
         return new ActionResultFramework(
@@ -401,7 +401,7 @@ final class _users extends PageContextFramework
             $listHtml = '';
 
             foreach ($passwordPolicyItems as $item) {
-                $listHtml .= '<li>' . HelperFramework::escape($item) . '</li>';
+                $listHtml .= '<li>' . \eel_accounts\Support\Utf8::html($item) . '</li>';
             }
 
             array_unshift($messages, [

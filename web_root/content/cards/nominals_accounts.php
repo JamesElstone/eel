@@ -49,7 +49,7 @@ final class _nominals_accountsCard extends CardBaseFramework
 
     private function table(array $context): TableFramework
     {
-        return TableFramework::make($this->key(), $this->rows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->rows($context))
             ->filename('nominal-accounts')
             ->exportLimit(1000)
             ->empty('No nominal accounts were found.')
@@ -62,7 +62,7 @@ final class _nominals_accountsCard extends CardBaseFramework
             ->column(
                 'sort_order',
                 'Sort',
-                html: static fn(array $row): string => HelperFramework::escape((string)(int)($row['sort_order'] ?? 0)),
+                html: static fn(array $row): string => \eel_accounts\Support\Utf8::html((string)(int)($row['sort_order'] ?? 0)),
                 export: static fn(array $row): int => (int)($row['sort_order'] ?? 0),
                 exportType: 'number'
             )
@@ -124,7 +124,7 @@ final class _nominals_accountsCard extends CardBaseFramework
         return '<form method="post" class="actions-row actions-row-nowrap" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Nominals">
-            <input type="hidden" name="page" value="' . HelperFramework::escape($pageId) . '">
+            <input type="hidden" name="page" value="' . \eel_accounts\Support\Utf8::html($pageId) . '">
             <input type="hidden" name="show_card" value="nominals_add_account">
             <input type="hidden" name="edit_nominal_id" value="' . $nominalId . '">
             <input type="hidden" name="nominal_account_id" value="' . $nominalId . '">

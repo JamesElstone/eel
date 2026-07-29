@@ -128,7 +128,7 @@ final class CompanyDataResetService
             ];
         }
 
-        error_log('[company_data_clear_down] ' . json_encode([
+        error_log('[company_data_clear_down] ' . \eel_accounts\Support\Utf8::json([
             'company_id' => $companyId,
             'company_number' => $expectedCompanyNumber,
             'actor' => $actor !== null && trim($actor) !== '' ? trim($actor) : 'unknown',

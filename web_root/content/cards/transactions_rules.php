@@ -94,13 +94,13 @@ final class _transactions_rulesCard extends CardBaseFramework
                     <input type="hidden" name="card_action" value="Transaction">
                     <input type="hidden" name="company_id" value="' . $companyId . '">
                     <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                    <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
-                    <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                    <input type="hidden" name="month_key" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionMonth) . '">
+                    <input type="hidden" name="category_filter" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionFilter) . '">
                     <input type="hidden" name="account_filter" value="' . $selectedAccountFilter . '">
                     <input type="hidden" name="global_action" value="import_categorisation_rules">
                     <div class="form-row">
                         <label for="rules_import_json" class="sr-only">Exported rules JSON</label>
-                        <textarea class="input" id="rules_import_json" name="rules_import_json" rows="8" placeholder="Paste exported transaction rules JSON here">' . HelperFramework::escape($ruleImportJson) . '</textarea>
+                        <textarea class="input" id="rules_import_json" name="rules_import_json" rows="8" placeholder="Paste exported transaction rules JSON here">' . \eel_accounts\Support\Utf8::html($ruleImportJson) . '</textarea>
                         <div class="helper">Import uses the current company and matches nominal accounts by id, code, or name.</div>
                     </div>
                     <div>
@@ -157,20 +157,20 @@ final class _transactions_rulesCard extends CardBaseFramework
     {
         $rows = array_values(array_filter($rules, static fn(mixed $rule): bool => is_array($rule)));
 
-        return TableFramework::make($this->key(), $rows)
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $rows)
             ->filename('transaction-categorisation-rules')
             ->empty('No categorisation rules exist yet. Save a manual categorisation and use Auto to create one from a transaction.')
             ->column('priority', 'Priority', exportType: 'number')
             ->column(
                 'match',
                 'Match',
-                html: fn(array $row): string => HelperFramework::escape($this->categorisationRuleSummary($row)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->categorisationRuleSummary($row)),
                 export: fn(array $row): string => $this->categorisationRuleSummary($row)
             )
             ->column(
                 'nominal',
                 'Nominal',
-                html: fn(array $row): string => HelperFramework::escape($this->nominalLabel($row)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->nominalLabel($row)),
                 export: fn(array $row): string => $this->nominalLabel($row)
             )
             ->column(
@@ -194,8 +194,8 @@ final class _transactions_rulesCard extends CardBaseFramework
             <input type="hidden" name="card_action" value="Transaction">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-            <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
-            <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+            <input type="hidden" name="month_key" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionMonth) . '">
+            <input type="hidden" name="category_filter" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionFilter) . '">
             <input type="hidden" name="account_filter" value="' . $selectedAccountFilter . '">
             <input type="hidden" name="global_action" value="export_categorisation_rules">
             <button class="button" type="submit">Export Rules</button>
@@ -209,8 +209,8 @@ final class _transactions_rulesCard extends CardBaseFramework
         $commonFields = '<input type="hidden" name="card_action" value="Transaction">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-            <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
-            <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+            <input type="hidden" name="month_key" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionMonth) . '">
+            <input type="hidden" name="category_filter" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionFilter) . '">
             <input type="hidden" name="account_filter" value="' . $selectedAccountFilter . '">
             <input type="hidden" name="rule_id" value="' . $ruleId . '">';
 
@@ -265,8 +265,8 @@ final class _transactions_rulesCard extends CardBaseFramework
 
     private function ruleStatusHtml(bool $isActive): string
     {
-        return '<span class="badge ' . HelperFramework::escape($this->ruleStatusBadgeClass($isActive)) . '">'
-            . HelperFramework::escape($this->ruleStatusLabel($isActive))
+        return '<span class="badge ' . \eel_accounts\Support\Utf8::html($this->ruleStatusBadgeClass($isActive)) . '">'
+            . \eel_accounts\Support\Utf8::html($this->ruleStatusLabel($isActive))
             . '</span>';
     }
 

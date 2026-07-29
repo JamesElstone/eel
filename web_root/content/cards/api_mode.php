@@ -45,7 +45,7 @@ final class _api_modeCard extends CardBaseFramework
                 <div class="form-flex-flow">
                     <div class="form-row">
                         <label for="companies_house_api_mode">Companies House REST Environment</label>
-                        <select class="select" id="companies_house_api_mode" name="companies_house_api_mode" data-state-default="' . HelperFramework::escape($companiesHouseApiMode) . '">
+                        <select class="select" id="companies_house_api_mode" name="companies_house_api_mode" data-state-default="' . \eel_accounts\Support\Utf8::html($companiesHouseApiMode) . '">
                             <option value="TEST"' . ($companiesHouseApiMode === 'TEST' ? ' selected' : '') . '>TEST</option>
                             <option value="LIVE"' . ($companiesHouseApiMode === 'LIVE' ? ' selected' : '') . '>LIVE</option>
                         </select>
@@ -53,7 +53,7 @@ final class _api_modeCard extends CardBaseFramework
                     </div>
                     <div class="form-row">
                         <label for="ch_accounts_filing_mode">Companies House XML Environment</label>
-                        <select class="select" id="ch_accounts_filing_mode" name="ch_accounts_filing_mode" data-state-default="' . HelperFramework::escape($companiesHouseAccountsFilingMode) . '">
+                        <select class="select" id="ch_accounts_filing_mode" name="ch_accounts_filing_mode" data-state-default="' . \eel_accounts\Support\Utf8::html($companiesHouseAccountsFilingMode) . '">
                             <option value="DISABLED"' . ($companiesHouseAccountsFilingMode === 'DISABLED' ? ' selected' : '') . '>DISABLED</option>
                             <option value="TEST"' . ($companiesHouseAccountsFilingMode === 'TEST' ? ' selected' : '') . '>TEST</option>
                             <option value="LIVE"' . ($companiesHouseAccountsFilingMode === 'LIVE' ? ' selected' : '') . '>LIVE</option>
@@ -61,7 +61,7 @@ final class _api_modeCard extends CardBaseFramework
                     </div>
                     <div class="form-row">
                         <label for="hmrc_api_mode">HMRC Environment</label>
-                        <select class="select" id="hmrc_api_mode" name="hmrc_api_mode" data-state-default="' . HelperFramework::escape($hmrcApiMode) . '">
+                        <select class="select" id="hmrc_api_mode" name="hmrc_api_mode" data-state-default="' . \eel_accounts\Support\Utf8::html($hmrcApiMode) . '">
                             <option value="TEST"' . ($hmrcApiMode === 'TEST' ? ' selected' : '') . '>TEST</option>
                             <option value="LIVE"' . ($hmrcApiMode === 'LIVE' ? ' selected' : '') . '>LIVE</option>
                         </select>

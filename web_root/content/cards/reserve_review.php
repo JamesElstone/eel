@@ -68,16 +68,16 @@ final class _reserve_reviewCard extends CardBaseFramework
             $guidance = $this->rowGuidance($row);
 
             $rowsHtml .= '<tr>
-                <td>' . HelperFramework::escape((string)($row['nominal_code'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape((string)($row['nominal_name'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $row['profit_effect'] ?? 0)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($row['nominal_code'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($row['nominal_name'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['profit_effect'] ?? 0)) . '</td>
                 <td>
-                    <span class="badge ' . HelperFramework::escape($badge['class']) . '">' . HelperFramework::escape($badge['label']) . '</span>
-                    <select class="select' . ($isReadOnly ? ' control-disabled' : '') . '" name="treatment[' . $nominalId . ']"' . ($isReadOnly ? ' disabled aria-disabled="true"' : '') . ' title="' . HelperFramework::escape($profitLossApproved ? 'Revoke Profit & Loss approval before changing reserve classifications.' : ($isLocked ? 'This accounting period is locked.' : '')) . '">
+                    <span class="badge ' . \eel_accounts\Support\Utf8::html($badge['class']) . '">' . \eel_accounts\Support\Utf8::html($badge['label']) . '</span>
+                    <select class="select' . ($isReadOnly ? ' control-disabled' : '') . '" name="treatment[' . $nominalId . ']"' . ($isReadOnly ? ' disabled aria-disabled="true"' : '') . ' title="' . \eel_accounts\Support\Utf8::html($profitLossApproved ? 'Revoke Profit & Loss approval before changing reserve classifications.' : ($isLocked ? 'This accounting period is locked.' : '')) . '">
                         ' . $this->treatmentOptions((array)($review['treatments'] ?? []), $treatment) . '
                     </select>
-                    <div class="helper">' . HelperFramework::escape($this->treatmentExplanation($treatment)) . '</div>
-                    <div class="helper">' . HelperFramework::escape($guidance) . '</div>
+                    <div class="helper">' . \eel_accounts\Support\Utf8::html($this->treatmentExplanation($treatment)) . '</div>
+                    <div class="helper">' . \eel_accounts\Support\Utf8::html($guidance) . '</div>
                 </td>
             </tr>';
         }
@@ -87,9 +87,9 @@ final class _reserve_reviewCard extends CardBaseFramework
 
         return '<div class="settings-stack">
             <div class="status-head">
-                <span class="badge ' . HelperFramework::escape($statusClass) . '">' . HelperFramework::escape($statusLabel) . '</span>
-                <span class="helper">As at ' . HelperFramework::escape($asAtDate !== '' ? $asAtDate : '-') . '</span>
-                ' . ($reviewedAt !== '' ? '<span class="helper">Last reviewed ' . HelperFramework::escape(HelperFramework::displayDate($reviewedAt)) . '</span>' : '') . '
+                <span class="badge ' . \eel_accounts\Support\Utf8::html($statusClass) . '">' . \eel_accounts\Support\Utf8::html($statusLabel) . '</span>
+                <span class="helper">As at ' . \eel_accounts\Support\Utf8::html($asAtDate !== '' ? $asAtDate : '-') . '</span>
+                ' . ($reviewedAt !== '' ? '<span class="helper">Last reviewed ' . \eel_accounts\Support\Utf8::html(HelperFramework::displayDate($reviewedAt)) . '</span>' : '') . '
             </div>
             <section class="panel-soft settings-stack">
                 <div class="summary-label">What this review is for</div>
@@ -121,7 +121,7 @@ final class _reserve_reviewCard extends CardBaseFramework
                 <input type="hidden" name="intent" value="save_dividend_reserve_review">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <input type="hidden" name="as_at_date" value="' . HelperFramework::escape($asAtDate) . '">
+                <input type="hidden" name="as_at_date" value="' . \eel_accounts\Support\Utf8::html($asAtDate) . '">
                 <div class="table-scroll">
                     <table>
                         <thead><tr><th>Code</th><th>Nominal</th><th>Amount</th><th>Review</th></tr></thead>
@@ -139,7 +139,7 @@ final class _reserve_reviewCard extends CardBaseFramework
         $html = '';
         foreach ($treatments as $treatment) {
             $value = (string)$treatment;
-            $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selected ? ' selected' : '') . '>' . HelperFramework::escape($this->treatmentLabel($value)) . '</option>';
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html($value) . '"' . ($value === $selected ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html($this->treatmentLabel($value)) . '</option>';
         }
 
         return $html;
@@ -151,8 +151,8 @@ final class _reserve_reviewCard extends CardBaseFramework
         foreach ($treatments as $treatment) {
             $value = (string)$treatment;
             $items .= '<div class="summary-card">
-                <div class="summary-label">' . HelperFramework::escape($this->treatmentLabel($value)) . '</div>
-                <div class="helper">' . HelperFramework::escape($this->treatmentExplanation($value)) . '</div>
+                <div class="summary-label">' . \eel_accounts\Support\Utf8::html($this->treatmentLabel($value)) . '</div>
+                <div class="helper">' . \eel_accounts\Support\Utf8::html($this->treatmentExplanation($value)) . '</div>
             </div>';
         }
 
@@ -217,7 +217,7 @@ final class _reserve_reviewCard extends CardBaseFramework
 
     private function summaryCard(string $label, string $value): string
     {
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+        return '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label) . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div></div>';
     }
 
     private function reviewedReductions(array $summary): float
@@ -241,7 +241,7 @@ final class _reserve_reviewCard extends CardBaseFramework
     {
         $html = '';
         foreach ($errors as $error) {
-            $html .= '<div class="helper">' . HelperFramework::escape((string)$error) . '</div>';
+            $html .= '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$error) . '</div>';
         }
 
         return $html;

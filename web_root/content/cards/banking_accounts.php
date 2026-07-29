@@ -106,7 +106,7 @@ final class _banking_accountsCard extends CardBaseFramework
     {
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
 
-        return TableFramework::make($this->key(), $this->rows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->rows($context))
             ->filename('company-accounts')
             ->exportLimit(1000)
             ->empty('No company accounts have been added to this company yet.')
@@ -122,7 +122,7 @@ final class _banking_accountsCard extends CardBaseFramework
             ->column(
                 'balance',
                 'Balance',
-                html: fn(array $row): string => HelperFramework::escape($this->nullableMoney($companySettings, $row['balance'] ?? null)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->nullableMoney($companySettings, $row['balance'] ?? null)),
                 export: static fn(array $row): string => (string)($row['balance'] ?? ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -156,7 +156,7 @@ final class _banking_accountsCard extends CardBaseFramework
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Banking">
             <input type="hidden" name="intent" value="assign_missing_nominals">
-            <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)$companyId) . '">
+            <input type="hidden" name="company_id" value="' . \eel_accounts\Support\Utf8::html((string)$companyId) . '">
             <button class="button danger" type="submit"' . $disabled . ' data-chicken-check="true" data-chicken-message="Create and assign missing company account nominals?<br><br>Bank and trade accounts use the next free code above the configured default nominal." data-chicken-confirm-text="Assign">Assign Missing Nominals</button>
         </form>';
     }
@@ -186,8 +186,8 @@ final class _banking_accountsCard extends CardBaseFramework
         return '<div>
             <form method="post" class="actions-row actions-row-nowrap" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-                <input type="hidden" name="account_id" value="' . HelperFramework::escape((string)$accountId) . '">
-                <input type="hidden" name="field_mapping_account_id" value="' . HelperFramework::escape((string)$accountId) . '">
+                <input type="hidden" name="account_id" value="' . \eel_accounts\Support\Utf8::html((string)$accountId) . '">
+                <input type="hidden" name="field_mapping_account_id" value="' . \eel_accounts\Support\Utf8::html((string)$accountId) . '">
                 <input type="hidden" name="card_action" value="Banking">
                 <button class="button button-inline" name="intent" value="edit" data-show-card="banking_account_form" data-ajax-link="true">Edit</button>
                 <button class="button button-inline" name="intent" value="select_field_mapping" data-show-card="statement_field_mapping" data-ajax-link="true">Field Mappings</button>

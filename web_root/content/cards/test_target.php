@@ -24,7 +24,7 @@ final class _test_targetCard extends CardBaseFramework
         $testContext = (array)($context['test.context'] ?? []);
         $sharedContext = (array)($testContext['shared_demo_context'] ?? []);
 
-        return HelperFramework::escape((string)($sharedContext['title'] ?? 'No title')) . ' - ' . HelperFramework::escape((string)($sharedContext['summary'] ?? 'No summary available.'));
+        return \eel_accounts\Support\Utf8::html((string)($sharedContext['title'] ?? 'No title')) . ' - ' . \eel_accounts\Support\Utf8::html((string)($sharedContext['summary'] ?? 'No summary available.'));
     }
 
     protected function additionalInvalidationFacts(): array
@@ -37,7 +37,7 @@ final class _test_targetCard extends CardBaseFramework
         $message = (string)($error['message'] ?? 'Unknown card service error.');
         $type = (string)($error['type'] ?? 'error');
 
-        return 'Service Error: ' . HelperFramework::escape($message)  . ' (' . HelperFramework::escape($type, '_') .')';
+        return 'Service Error: ' . \eel_accounts\Support\Utf8::html($message)  . ' (' . \eel_accounts\Support\Utf8::html($type, '_') .')';
     }
 
     public function render(array $context): string
@@ -53,7 +53,7 @@ final class _test_targetCard extends CardBaseFramework
         foreach ((array)($shared['items'] ?? []) as $item) {
             $itemsHtml .= '
                 <div class="panel-soft">
-                    <strong>' . HelperFramework::escape((string)$item) . '</strong>
+                    <strong>' . \eel_accounts\Support\Utf8::html((string)$item) . '</strong>
                     <br>
                     <span>Read from the shared context payload prepared by the source card.</span>
                 </div>
@@ -62,8 +62,8 @@ final class _test_targetCard extends CardBaseFramework
 
         foreach ($accounts as $account) {
             $accountsHtml .= '<div class="list-item">
-                <strong>' . HelperFramework::escape((string)($account['account_name'] ?? 'Unknown account')) . '</strong>
-                <span>' . HelperFramework::escape((string)($account['account_type'] ?? '')) . '</span>
+                <strong>' . \eel_accounts\Support\Utf8::html((string)($account['account_name'] ?? 'Unknown account')) . '</strong>
+                <span>' . \eel_accounts\Support\Utf8::html((string)($account['account_type'] ?? '')) . '</span>
             </div>';
         }
 
@@ -74,11 +74,11 @@ final class _test_targetCard extends CardBaseFramework
         return '
             <div class="panel-soft">
                 <strong>Passed note</strong>
-                <div class="helper">' . HelperFramework::escape((string)($shared['note'] ?? '')) . '</div>
+                <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($shared['note'] ?? '')) . '</div>
             </div>
             <div class="panel-soft">
                 <strong>Card handle pipeline</strong>
-                <div class="helper">' . HelperFramework::escape(implode(', ', $handledByCards)) . '</div>
+                <div class="helper">' . \eel_accounts\Support\Utf8::html(implode(', ', $handledByCards)) . '</div>
             </div>
             ' . $itemsHtml . '
         ';

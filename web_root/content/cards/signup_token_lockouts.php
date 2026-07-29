@@ -74,7 +74,7 @@ final class _signup_token_lockoutsCard extends CardBaseFramework
 
     private function table(array $context): TableFramework
     {
-        return TableFramework::make($this->key(), $this->rows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->rows($context))
             ->filename('signup-token-lockouts')
             ->exportLimit(200)
             ->empty('No client IPs are currently blocked for signup token attempts.')
@@ -121,8 +121,8 @@ final class _signup_token_lockoutsCard extends CardBaseFramework
         return '<form method="post" action="?page=logs" data-ajax="true">
             ' . $this->hiddenFields($context) . '
             <input type="hidden" name="action" value="logs-reset-signup-token-lockout">
-            <input type="hidden" name="csrf_token" value="' . HelperFramework::escape((string)($context['page']['csrf_token'] ?? '')) . '">
-            <input type="hidden" name="client_ip" value="' . HelperFramework::escape($clientIp) . '">
+            <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html((string)($context['page']['csrf_token'] ?? '')) . '">
+            <input type="hidden" name="client_ip" value="' . \eel_accounts\Support\Utf8::html($clientIp) . '">
             <button class="button primary" type="submit">Reset Lockout</button>
         </form>';
     }
@@ -137,7 +137,7 @@ final class _signup_token_lockoutsCard extends CardBaseFramework
         $html = '';
 
         foreach ((array)($context['page']['page_cards'] ?? []) as $cardKey) {
-            $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+            $html .= '<input type="hidden" name="cards[]" value="' . \eel_accounts\Support\Utf8::html((string)$cardKey) . '">';
         }
 
         return $html;

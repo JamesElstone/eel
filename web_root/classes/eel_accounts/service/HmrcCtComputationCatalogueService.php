@@ -558,7 +558,7 @@ final class HmrcCtComputationCatalogueService
             ],
             $files
         );
-        return hash('sha256', (string)json_encode($inventory, JSON_UNESCAPED_SLASHES));
+        return hash('sha256', (string)\eel_accounts\Support\Utf8::json($inventory, JSON_UNESCAPED_SLASHES));
     }
 
     private function archiveMatchesInventory(string $archivePath, string $expectedHash): bool

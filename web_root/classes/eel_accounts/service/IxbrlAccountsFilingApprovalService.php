@@ -868,6 +868,6 @@ final class IxbrlAccountsFilingApprovalService
             foreach ($item as $key => $child) { $item[$key] = $normalise($child); }
             return $item;
         };
-        return json_encode($normalise($value), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
+        return \eel_accounts\Support\Utf8::json($normalise($value), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
     }
 }

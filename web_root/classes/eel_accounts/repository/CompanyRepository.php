@@ -193,7 +193,7 @@ final class CompanyRepository
         }
 
         $address = is_array($profile['registered_office_address'] ?? null) ? $profile['registered_office_address'] : [];
-        $profileJson = json_encode($profile, JSON_UNESCAPED_SLASHES);
+        $profileJson = \eel_accounts\Support\Utf8::json($profile, JSON_UNESCAPED_SLASHES);
 
         if ($profileJson === false) {
             $profileJson = null;

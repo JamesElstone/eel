@@ -46,7 +46,7 @@ final class _vat_registrationCard extends CardBaseFramework
 
         $countryOptions = '';
         foreach ($this->vatCountryOptions() as $countryCode => $countryLabel) {
-            $countryOptions .= '<option value="' . HelperFramework::escape($countryCode) . '"' . ((string)($settings['vat_country_code'] ?? '') === $countryCode ? ' selected' : '') . '>' . HelperFramework::escape($countryLabel) . '</option>';
+            $countryOptions .= '<option value="' . \eel_accounts\Support\Utf8::html($countryCode) . '"' . ((string)($settings['vat_country_code'] ?? '') === $countryCode ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html($countryLabel) . '</option>';
         }
 
         $resultsHtml = $this->renderVatResultFields($settings, $companyId);
@@ -58,7 +58,7 @@ final class _vat_registrationCard extends CardBaseFramework
 
         return '
             <div class="pill-row vat-registration-api-state">
-                <span class="pill">HMRC API: ' . HelperFramework::escape($hmrcApiState) . '</span>
+                <span class="pill">HMRC API: ' . \eel_accounts\Support\Utf8::html($hmrcApiState) . '</span>
             </div>
             <form method="post" data-ajax="true" data-vat-registration-form>
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
@@ -68,28 +68,28 @@ final class _vat_registrationCard extends CardBaseFramework
                 <div class="form-grid">
                     <div class="form-row">
                         <label>Company</label>
-                        <input class="input" value="' . HelperFramework::escape((string)($settings['company_name'] ?? '')) . '" readonly>
+                        <input class="input" value="' . \eel_accounts\Support\Utf8::html((string)($settings['company_name'] ?? '')) . '" readonly>
                     </div>
                     <div class="form-row">
                         <label>Company Registration Number (CRN)</label>
-                        <input class="input" value="' . HelperFramework::escape((string)($settings['companies_house_number'] ?? '')) . '" readonly>
+                        <input class="input" value="' . \eel_accounts\Support\Utf8::html((string)($settings['companies_house_number'] ?? '')) . '" readonly>
                     </div>
                     <div class="form-row full">
                         <label>VAT Registered</label>
                         <div class="segmented-control" data-vat-registered-toggle>
                             <label class="segmented-option">
-                                <input type="radio" name="is_vat_registered" value="1" data-vat-registered-control data-vat-initial-value="' . HelperFramework::escape($registeredValue) . '"' . (!empty($settings['is_vat_registered']) ? ' checked' : '') . '>
+                                <input type="radio" name="is_vat_registered" value="1" data-vat-registered-control data-vat-initial-value="' . \eel_accounts\Support\Utf8::html($registeredValue) . '"' . (!empty($settings['is_vat_registered']) ? ' checked' : '') . '>
                                 <span>Yes</span>
                             </label>
                             <label class="segmented-option">
-                                <input type="radio" name="is_vat_registered" value="0" data-vat-registered-control data-vat-initial-value="' . HelperFramework::escape($registeredValue) . '"' . (empty($settings['is_vat_registered']) ? ' checked' : '') . '>
+                                <input type="radio" name="is_vat_registered" value="0" data-vat-registered-control data-vat-initial-value="' . \eel_accounts\Support\Utf8::html($registeredValue) . '"' . (empty($settings['is_vat_registered']) ? ' checked' : '') . '>
                                 <span>No</span>
                             </label>
                         </div>
                     </div>
                 </div>
                 <div>
-                    <button class="button primary" id="save_vat_button" type="submit" name="intent" value="save_vat" disabled data-vat-save-button data-vat-validation-status="' . HelperFramework::escape($validationStatus) . '" data-vat-validated-hash="' . HelperFramework::escape($validatedHash) . '">Save VAT Configuration</button>
+                    <button class="button primary" id="save_vat_button" type="submit" name="intent" value="save_vat" disabled data-vat-save-button data-vat-validation-status="' . \eel_accounts\Support\Utf8::html($validationStatus) . '" data-vat-validated-hash="' . \eel_accounts\Support\Utf8::html($validatedHash) . '">Save VAT Configuration</button>
                 </div>
             </section>
             <div class="form-grid">
@@ -97,13 +97,13 @@ final class _vat_registrationCard extends CardBaseFramework
                     <div class="form-grid">
                         <div class="form-row">
                             <label for="vat_country_code">VAT Country/Prefix</label>
-                            <select class="select" id="vat_country_code" name="vat_country_code" data-vat-country-code data-vat-initial-value="' . HelperFramework::escape((string)($settings['vat_country_code'] ?? '')) . '">
+                            <select class="select" id="vat_country_code" name="vat_country_code" data-vat-country-code data-vat-initial-value="' . \eel_accounts\Support\Utf8::html((string)($settings['vat_country_code'] ?? '')) . '">
                                 <option value="">Select country/prefix</option>' . $countryOptions . '
                             </select>
                         </div>
                         <div class="form-row">
                             <label for="vat_number">VAT Registration Number</label>
-                            <input class="input" id="vat_number" name="vat_number" value="' . HelperFramework::escape((string)($settings['vat_number'] ?? '')) . '" placeholder="Enter VAT Registration Number" autocomplete="off" data-vat-number data-vat-initial-value="' . HelperFramework::escape((string)($settings['vat_number'] ?? '')) . '">
+                            <input class="input" id="vat_number" name="vat_number" value="' . \eel_accounts\Support\Utf8::html((string)($settings['vat_number'] ?? '')) . '" placeholder="Enter VAT Registration Number" autocomplete="off" data-vat-number data-vat-initial-value="' . \eel_accounts\Support\Utf8::html((string)($settings['vat_number'] ?? '')) . '">
                         </div>
                         <div class="form-row full">
                             <div class="vat-actions" data-vat-actions">' . $this->renderVatActionButtons($settings) . '</div>
@@ -154,14 +154,14 @@ final class _vat_registrationCard extends CardBaseFramework
 
         $html = '';
         foreach ($messages as $message) {
-            $html .= '<div class="helper">' . HelperFramework::escape((string)$message) . '</div>';
+            $html .= '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$message) . '</div>';
         }
         return $html;
     }
 
     private function renderVatMismatchPanel(array $warnings): string
     {
-        return '<div class="helper">' . HelperFramework::escape(implode(' ', $warnings)) . '</div>
+        return '<div class="helper">' . \eel_accounts\Support\Utf8::html(implode(' ', $warnings)) . '</div>
                 <div>
                     <button class="button" type="submit" name="intent" value="accept_vat_mismatch">Accept Mismatch</button>
                 </div>
@@ -190,7 +190,7 @@ final class _vat_registrationCard extends CardBaseFramework
             if (trim($value) === '') {
                 continue;
             }
-            $html .= '<div class="list-item"><strong>' . HelperFramework::escape($label) . '</strong><span>' . HelperFramework::escape($value) . '</span></div>';
+            $html .= '<div class="list-item"><strong>' . \eel_accounts\Support\Utf8::html($label) . '</strong><span>' . \eel_accounts\Support\Utf8::html($value) . '</span></div>';
         }
         $html .= '</div>';
 

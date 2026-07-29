@@ -46,7 +46,7 @@ final class _tax_vat_thresholdCard extends CardBaseFramework
     {
         $monitoring = (array)($context['services']['vat_turnover_monitoring'] ?? []);
         if (empty($monitoring['available'])) {
-            return '<div class="helper">' . HelperFramework::escape((string)($monitoring['message'] ?? 'Select a company and accounting period to monitor the VAT threshold.')) . '</div>';
+            return '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)($monitoring['message'] ?? 'Select a company and accounting period to monitor the VAT threshold.')) . '</div>';
         }
         if (!empty($monitoring['not_started'])) {
             return '<div class="helper">This accounting period has not started, so no period-to-date VAT threshold comparison is available.</div>' . $this->links();
@@ -77,8 +77,8 @@ final class _tax_vat_thresholdCard extends CardBaseFramework
 
     private function summary(string $label, string $value): string
     {
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label)
-            . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+        return '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label)
+            . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div></div>';
     }
 
     private function warnings(array $warnings): string
@@ -88,7 +88,7 @@ final class _tax_vat_thresholdCard extends CardBaseFramework
         }
 
         return '<div class="helper"><strong>Important limitations</strong><ul><li>'
-            . implode('</li><li>', array_map(static fn(mixed $warning): string => HelperFramework::escape((string)$warning), $warnings))
+            . implode('</li><li>', array_map(static fn(mixed $warning): string => \eel_accounts\Support\Utf8::html((string)$warning), $warnings))
             . '</li></ul></div>';
     }
 

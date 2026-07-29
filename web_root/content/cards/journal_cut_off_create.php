@@ -44,7 +44,7 @@ final class _journal_cut_off_createCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="YearEnd"><input type="hidden" name="intent" value="create_adjustment"><input type="hidden" name="show_card" value=".self"><input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $periodId . '"><input type="hidden" name="adjustment_journal_key" value="template-cutoff-' . bin2hex(random_bytes(4)) . '">
             <div class="form-flex-flow journal-cut-off-create-fields">
                 <div class="form-row"><label for="cutoff-template-type">Template</label><select class="select" id="cutoff-template-type" name="adjustment_template_type"' . $disabled . '><option value="accrual" selected>Create accrual</option><option value="prepayment">Create prepayment</option><option value="deferred_income">Create deferred income</option></select></div>
-                <div class="form-row"><label for="cutoff-date">Date</label><input class="input" id="cutoff-date" name="adjustment_date" type="date" value="' . HelperFramework::escape((string)($period['period_end'] ?? '')) . '"' . $disabled . '></div>
+                <div class="form-row"><label for="cutoff-date">Date</label><input class="input" id="cutoff-date" name="adjustment_date" type="date" value="' . \eel_accounts\Support\Utf8::html((string)($period['period_end'] ?? '')) . '"' . $disabled . '></div>
                 <div class="form-row"><label for="cutoff-description">Description</label><input class="input" id="cutoff-description" name="adjustment_description" value=""' . $disabled . '></div>
                 <div class="form-row"><label for="cutoff-notes">Notes</label><input class="input" id="cutoff-notes" name="adjustment_notes" value=""' . $disabled . '></div>
                 <div class="form-row"><label for="cutoff-primary-nominal">Primary nominal</label><select class="select" id="cutoff-primary-nominal" name="adjustment_primary_nominal_id"' . $disabled . '>' . $this->nominalOptions((array)($data['nominals'] ?? [])) . '</select></div>
@@ -64,7 +64,7 @@ final class _journal_cut_off_createCard extends CardBaseFramework
             $id = (int)($nominal['id'] ?? 0);
             if ($id <= 0) continue;
             $label = trim((string)($nominal['code'] ?? '') . ' ' . (string)($nominal['name'] ?? ''));
-            $html .= '<option value="' . $id . '">' . HelperFramework::escape($label) . '</option>';
+            $html .= '<option value="' . $id . '">' . \eel_accounts\Support\Utf8::html($label) . '</option>';
         }
         return $html;
     }
@@ -77,7 +77,7 @@ final class _journal_cut_off_createCard extends CardBaseFramework
 
         $rows = '';
         foreach ($adjustments as $adjustment) {
-            $rows .= '<tr><td>' . HelperFramework::escape(HelperFramework::displayDate((string)($adjustment['journal_date'] ?? ''))) . '</td><td>' . HelperFramework::escape((string)($adjustment['description'] ?? '')) . '</td><td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($adjustment['journal_tag'] ?? ''), '_')) . '</td><td>' . count((array)($adjustment['lines'] ?? [])) . '</td></tr>';
+            $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html(HelperFramework::displayDate((string)($adjustment['journal_date'] ?? ''))) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($adjustment['description'] ?? '')) . '</td><td>' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)($adjustment['journal_tag'] ?? ''), '_')) . '</td><td>' . count((array)($adjustment['lines'] ?? [])) . '</td></tr>';
         }
 
         return '<section class="panel-soft settings-stack"><h4 class="card-title">Posted cut-off journals</h4><div class="table-scroll"><table><thead><tr><th>Date</th><th>Description</th><th>Type</th><th>Lines</th></tr></thead><tbody>' . $rows . '</tbody></table></div></section>';

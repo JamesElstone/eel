@@ -652,7 +652,7 @@ final class DirectorLoanReconciliationService
             (int)$left['party_id'] <=> (int)$right['party_id']
         );
         $journalKey = self::UNLOCK_REVERSAL_JOURNAL_KEY_PREFIX . substr(
-            hash('sha256', json_encode($keyFacts, JSON_UNESCAPED_SLASHES)),
+            hash('sha256', \eel_accounts\Support\Utf8::json($keyFacts, JSON_UNESCAPED_SLASHES)),
             0,
             24
         );

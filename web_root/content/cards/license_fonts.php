@@ -28,6 +28,6 @@ final class _license_fontsCard extends CardBaseFramework
     {
         $text = (new \eel_accounts\Service\LicenseService())->licenseText('fonts');
 
-        return '<pre class="license-text-panel">' . HelperFramework::escape($text) . '</pre>';
+        return '<pre class="license-text-panel">' . \eel_accounts\Support\Utf8::html($text) . '</pre>';
     }
 }

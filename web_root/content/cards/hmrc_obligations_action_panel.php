@@ -24,7 +24,7 @@ final class _hmrc_obligations_action_panelCard extends CardBaseFramework
 
         $html = '';
         foreach ($messages as $message) {
-            $html .= '<section class="panel-soft"><div class="helper">' . HelperFramework::escape((string)$message) . '</div></section>';
+            $html .= '<section class="panel-soft"><div class="helper">' . \eel_accounts\Support\Utf8::html((string)$message) . '</div></section>';
         }
 
         if ($matches !== []) {
@@ -32,9 +32,9 @@ final class _hmrc_obligations_action_panelCard extends CardBaseFramework
             foreach ($matches as $match) {
                 $rows .= '<tr>
                     <td>#' . (int)($match['obligation_id'] ?? 0) . '</td>
-                    <td>' . HelperFramework::escape((string)($match['txn_date'] ?? '')) . '</td>
-                    <td>' . HelperFramework::escape((string)($match['description'] ?? $match['reference'] ?? '')) . '</td>
-                    <td>' . HelperFramework::escape($this->money($companySettings, $match['amount'] ?? 0)) . '</td>
+                    <td>' . \eel_accounts\Support\Utf8::html((string)($match['txn_date'] ?? '')) . '</td>
+                    <td>' . \eel_accounts\Support\Utf8::html((string)($match['description'] ?? $match['reference'] ?? '')) . '</td>
+                    <td>' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $match['amount'] ?? 0)) . '</td>
                     <td><span class="badge warning">Suggested only</span></td>
                 </tr>';
             }

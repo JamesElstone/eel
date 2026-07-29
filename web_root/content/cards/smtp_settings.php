@@ -29,7 +29,7 @@ final class _smtp_settingsCard extends CardBaseFramework
         return '<form method="post" action="?page=settings" data-ajax="true" class="form-grid">
             ' . $this->hiddenFields($context) . '
             <input type="hidden" name="card_action" value="SmtpSettings">
-            <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
+            <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
             <fieldset class="form-row full settings-fieldset">
                 <legend>Outbound email</legend>
                 <label class="checkbox-item" for="smtp-enabled">
@@ -62,50 +62,50 @@ final class _smtp_settingsCard extends CardBaseFramework
                     </div>
                     <div class="form-row full smtp-settings-actions">
                         <button class="button primary" type="submit">Save SMTP Settings</button>
-                        <button class="button" type="submit" form="' . HelperFramework::escape($testFormId) . '" formnovalidate data-processing-text="Testing" data-processing-state="disabled">Test SMTP Connection</button>
+                        <button class="button" type="submit" form="' . \eel_accounts\Support\Utf8::html($testFormId) . '" formnovalidate data-processing-text="Testing" data-processing-state="disabled">Test SMTP Connection</button>
                     </div>
                 </div>
             </fieldset>
         </form>
-        <form id="' . HelperFramework::escape($testFormId) . '" method="post" action="?page=settings" data-ajax="true">
+        <form id="' . \eel_accounts\Support\Utf8::html($testFormId) . '" method="post" action="?page=settings" data-ajax="true">
             ' . $this->hiddenFields($context) . '
             <input type="hidden" name="card_action" value="SmtpTest">
-            <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
+            <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
         </form>';
     }
 
     private function input(string $id, string $label, string $name, string $value, string $type = 'text', string $placeholder = ''): string
     {
         return '<div class="form-row half">
-            <label for="' . HelperFramework::escape($id) . '">' . HelperFramework::escape($label) . '</label>
-            <input class="input" id="' . HelperFramework::escape($id) . '" name="' . HelperFramework::escape($name) . '" type="' . HelperFramework::escape($type) . '" value="' . HelperFramework::escape($value) . '"' . ($placeholder !== '' ? ' placeholder="' . HelperFramework::escape($placeholder) . '"' : '') . '>
+            <label for="' . \eel_accounts\Support\Utf8::html($id) . '">' . \eel_accounts\Support\Utf8::html($label) . '</label>
+            <input class="input" id="' . \eel_accounts\Support\Utf8::html($id) . '" name="' . \eel_accounts\Support\Utf8::html($name) . '" type="' . \eel_accounts\Support\Utf8::html($type) . '" value="' . \eel_accounts\Support\Utf8::html($value) . '"' . ($placeholder !== '' ? ' placeholder="' . \eel_accounts\Support\Utf8::html($placeholder) . '"' : '') . '>
         </div>';
     }
 
     private function columnInput(string $id, string $label, string $name, string $value, string $type = 'text', string $placeholder = ''): string
     {
         return '<div class="smtp-settings-column-field">
-            <label for="' . HelperFramework::escape($id) . '">' . HelperFramework::escape($label) . '</label>
-            <input class="input" id="' . HelperFramework::escape($id) . '" name="' . HelperFramework::escape($name) . '" type="' . HelperFramework::escape($type) . '" value="' . HelperFramework::escape($value) . '"' . ($placeholder !== '' ? ' placeholder="' . HelperFramework::escape($placeholder) . '"' : '') . '>
+            <label for="' . \eel_accounts\Support\Utf8::html($id) . '">' . \eel_accounts\Support\Utf8::html($label) . '</label>
+            <input class="input" id="' . \eel_accounts\Support\Utf8::html($id) . '" name="' . \eel_accounts\Support\Utf8::html($name) . '" type="' . \eel_accounts\Support\Utf8::html($type) . '" value="' . \eel_accounts\Support\Utf8::html($value) . '"' . ($placeholder !== '' ? ' placeholder="' . \eel_accounts\Support\Utf8::html($placeholder) . '"' : '') . '>
         </div>';
     }
 
     private function compactInput(string $id, string $label, string $name, string $value, string $type = 'text', string $min = '', string $max = '', string $maxlength = ''): string
     {
         return '<div class="smtp-connection-field">
-            <label for="' . HelperFramework::escape($id) . '">' . HelperFramework::escape($label) . '</label>
-            <input class="input" id="' . HelperFramework::escape($id) . '" name="' . HelperFramework::escape($name) . '" type="' . HelperFramework::escape($type) . '" value="' . HelperFramework::escape($value) . '"' . ($min !== '' ? ' min="' . HelperFramework::escape($min) . '"' : '') . ($max !== '' ? ' max="' . HelperFramework::escape($max) . '"' : '') . ($maxlength !== '' ? ' maxlength="' . HelperFramework::escape($maxlength) . '"' : '') . '>
+            <label for="' . \eel_accounts\Support\Utf8::html($id) . '">' . \eel_accounts\Support\Utf8::html($label) . '</label>
+            <input class="input" id="' . \eel_accounts\Support\Utf8::html($id) . '" name="' . \eel_accounts\Support\Utf8::html($name) . '" type="' . \eel_accounts\Support\Utf8::html($type) . '" value="' . \eel_accounts\Support\Utf8::html($value) . '"' . ($min !== '' ? ' min="' . \eel_accounts\Support\Utf8::html($min) . '"' : '') . ($max !== '' ? ' max="' . \eel_accounts\Support\Utf8::html($max) . '"' : '') . ($maxlength !== '' ? ' maxlength="' . \eel_accounts\Support\Utf8::html($maxlength) . '"' : '') . '>
         </div>';
     }
 
     private function select(string $id, string $label, string $name, array $options, string $current): string
     {
         $html = '<div class="form-row half">
-            <label for="' . HelperFramework::escape($id) . '">' . HelperFramework::escape($label) . '</label>
-            <select class="selector-input" id="' . HelperFramework::escape($id) . '" name="' . HelperFramework::escape($name) . '">';
+            <label for="' . \eel_accounts\Support\Utf8::html($id) . '">' . \eel_accounts\Support\Utf8::html($label) . '</label>
+            <select class="selector-input" id="' . \eel_accounts\Support\Utf8::html($id) . '" name="' . \eel_accounts\Support\Utf8::html($name) . '">';
 
         foreach ($options as $value => $optionLabel) {
-            $html .= '<option value="' . HelperFramework::escape((string)$value) . '"' . ((string)$value === $current ? ' selected' : '') . '>' . HelperFramework::escape((string)$optionLabel) . '</option>';
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html((string)$value) . '"' . ((string)$value === $current ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html((string)$optionLabel) . '</option>';
         }
 
         return $html . '</select></div>';
@@ -114,11 +114,11 @@ final class _smtp_settingsCard extends CardBaseFramework
     private function compactSelect(string $id, string $label, string $name, array $options, string $current): string
     {
         $html = '<div class="smtp-connection-field">
-            <label for="' . HelperFramework::escape($id) . '">' . HelperFramework::escape($label) . '</label>
-            <select class="selector-input" id="' . HelperFramework::escape($id) . '" name="' . HelperFramework::escape($name) . '">';
+            <label for="' . \eel_accounts\Support\Utf8::html($id) . '">' . \eel_accounts\Support\Utf8::html($label) . '</label>
+            <select class="selector-input" id="' . \eel_accounts\Support\Utf8::html($id) . '" name="' . \eel_accounts\Support\Utf8::html($name) . '">';
 
         foreach ($options as $value => $optionLabel) {
-            $html .= '<option value="' . HelperFramework::escape((string)$value) . '"' . ((string)$value === $current ? ' selected' : '') . '>' . HelperFramework::escape((string)$optionLabel) . '</option>';
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html((string)$value) . '"' . ((string)$value === $current ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html((string)$optionLabel) . '</option>';
         }
 
         return $html . '</select></div>';
@@ -128,7 +128,7 @@ final class _smtp_settingsCard extends CardBaseFramework
     {
         $html = '';
         foreach ((array)($context['page']['page_cards'] ?? []) as $cardKey) {
-            $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+            $html .= '<input type="hidden" name="cards[]" value="' . \eel_accounts\Support\Utf8::html((string)$cardKey) . '">';
         }
 
         return $html;

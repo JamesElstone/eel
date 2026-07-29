@@ -122,7 +122,7 @@ final class _journals_listCard extends CardBaseFramework
 
         $rows = $this->journalLineRows($this->journalRows($context));
 
-        return TableFramework::make($this->key(), $rows)
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $rows)
             ->filename('journals-list')
             ->exportLimit($this->exportAll($context) ? max(1, count($rows)) : 5000)
             ->empty($this->hasSearchCriteria($context) ? $this->noMatchesMessage() : 'Posted transaction journals will appear here once transactions have been categorised and posted.')
@@ -173,7 +173,7 @@ final class _journals_listCard extends CardBaseFramework
                 'credit',
                 'CR',
                 html: static fn(array $row): string => (float)($row['credit'] ?? 0) > 0
-                    ? HelperFramework::escape($settingsService->money($companySettings, $row['credit'] ?? 0))
+                    ? \eel_accounts\Support\Utf8::html($settingsService->money($companySettings, $row['credit'] ?? 0))
                     : '',
                 export: static fn(array $row): string => (float)($row['credit'] ?? 0) > 0
                     ? number_format((float)($row['credit'] ?? 0), 2, '.', '')
@@ -185,7 +185,7 @@ final class _journals_listCard extends CardBaseFramework
                 'debit',
                 'DR',
                 html: static fn(array $row): string => (float)($row['debit'] ?? 0) > 0
-                    ? HelperFramework::escape($settingsService->money($companySettings, $row['debit'] ?? 0))
+                    ? \eel_accounts\Support\Utf8::html($settingsService->money($companySettings, $row['debit'] ?? 0))
                     : '',
                 export: static fn(array $row): string => (float)($row['debit'] ?? 0) > 0
                     ? number_format((float)($row['debit'] ?? 0), 2, '.', '')
@@ -227,19 +227,19 @@ final class _journals_listCard extends CardBaseFramework
         $sourceAccountId = $this->sourceAccountId($context);
         $selectedNominalIds = $this->nominalAccountIds($context);
 
-        return '<form class="card-toolbar" method="post" action="?page=' . HelperFramework::escape(rawurlencode($pageId)) . '" data-ajax="true">
+        return '<form class="card-toolbar" method="post" action="?page=' . \eel_accounts\Support\Utf8::html(rawurlencode($pageId)) . '" data-ajax="true">
             <input type="hidden" name="show_card" value=".self">
             <input type="hidden" name="_pagination" value="1">
-            <input type="hidden" name="_invalidate_fact" value="' . HelperFramework::escape($this->tableInvalidationFact()) . '">
-            <input type="hidden" name="' . HelperFramework::escape($this->paginationPageField()) . '" value="1">
+            <input type="hidden" name="_invalidate_fact" value="' . \eel_accounts\Support\Utf8::html($this->tableInvalidationFact()) . '">
+            <input type="hidden" name="' . \eel_accounts\Support\Utf8::html($this->paginationPageField()) . '" value="1">
             <div class="actions-row journal-search-controls">
                 <div class="mini-field">
                     <label for="journals_list_keyword">Keyword</label>
-                    <input class="input" id="journals_list_keyword" name="journals_list_keyword" value="' . HelperFramework::escape($keyword) . '">
+                    <input class="input" id="journals_list_keyword" name="journals_list_keyword" value="' . \eel_accounts\Support\Utf8::html($keyword) . '">
                 </div>
                 <div class="mini-field">
                     <label for="journals_list_amount">Amount</label>
-                    <input class="input" id="journals_list_amount" name="journals_list_amount" inputmode="decimal" value="' . HelperFramework::escape($amount) . '">
+                    <input class="input" id="journals_list_amount" name="journals_list_amount" inputmode="decimal" value="' . \eel_accounts\Support\Utf8::html($amount) . '">
                 </div>
                 <div class="mini-field">
                     <label for="journals_list_side">Side</label>
@@ -260,7 +260,7 @@ final class _journals_listCard extends CardBaseFramework
                     </select>
                 </div>
                 <button class="button primary" type="submit">Search</button>
-                <a class="button" href="?page=' . HelperFramework::escape(rawurlencode($pageId)) . '&amp;show_card=' . HelperFramework::escape($this->key()) . '">Clear</a>
+                <a class="button" href="?page=' . \eel_accounts\Support\Utf8::html(rawurlencode($pageId)) . '&amp;show_card=' . \eel_accounts\Support\Utf8::html($this->key()) . '">Clear</a>
             </div>
         </form>';
     }
@@ -275,8 +275,8 @@ final class _journals_listCard extends CardBaseFramework
         $html = '';
 
         foreach ($options as $value => $label) {
-            $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selectedSide ? ' selected' : '') . '>'
-                . HelperFramework::escape($label)
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html($value) . '"' . ($value === $selectedSide ? ' selected' : '') . '>'
+                . \eel_accounts\Support\Utf8::html($label)
                 . '</option>';
         }
 
@@ -293,7 +293,7 @@ final class _journals_listCard extends CardBaseFramework
             }
 
             $html .= '<option value="' . $id . '"' . ($id === $selectedAccountId ? ' selected' : '') . '>'
-                . HelperFramework::escape($this->companyAccountLabel($account))
+                . \eel_accounts\Support\Utf8::html($this->companyAccountLabel($account))
                 . '</option>';
         }
 
@@ -311,7 +311,7 @@ final class _journals_listCard extends CardBaseFramework
             }
 
             $html .= '<option value="' . $id . '"' . (isset($selected[$id]) ? ' selected' : '') . '>'
-                . HelperFramework::escape(FormattingFramework::nominalLabel($nominal))
+                . \eel_accounts\Support\Utf8::html(FormattingFramework::nominalLabel($nominal))
                 . '</option>';
         }
 
@@ -495,7 +495,7 @@ final class _journals_listCard extends CardBaseFramework
 
     private function journalCell(array $row, string $value): string
     {
-        return !empty($row['journal_row_start']) ? HelperFramework::escape($value) : '';
+        return !empty($row['journal_row_start']) ? \eel_accounts\Support\Utf8::html($value) : '';
     }
 
     private function journalExportValue(array $row, string $value): string
@@ -521,12 +521,12 @@ final class _journals_listCard extends CardBaseFramework
         $sourceTransactionId = $this->journalSourceTransactionId($journal);
         $sourceRef = trim((string)($journal['source_ref'] ?? ''));
 
-        return '<span class="badge ' . HelperFramework::escape($sourceType === 'bank_csv' ? 'info' : 'success') . '">'
-            . HelperFramework::escape($this->sourceTypeLabel($sourceType))
+        return '<span class="badge ' . \eel_accounts\Support\Utf8::html($sourceType === 'bank_csv' ? 'info' : 'success') . '">'
+            . \eel_accounts\Support\Utf8::html($this->sourceTypeLabel($sourceType))
             . '</span>'
             . ($sourceTransactionId > 0
                 ? '<div class="helper">Transaction #' . $sourceTransactionId . '</div>'
-                : ($sourceRef !== '' ? '<div class="helper">' . HelperFramework::escape($sourceRef) . '</div>' : ''));
+                : ($sourceRef !== '' ? '<div class="helper">' . \eel_accounts\Support\Utf8::html($sourceRef) . '</div>' : ''));
     }
 
     private function statusCellHtml(array $row): string
@@ -538,8 +538,8 @@ final class _journals_listCard extends CardBaseFramework
         $lifecycle = (int)($row['reversal_of_journal_id'] ?? 0) > 0
             || (int)($row['reversed_by_journal_id'] ?? 0) > 0
             || (int)($row['replacement_of_journal_id'] ?? 0) > 0;
-        return '<span class="badge ' . HelperFramework::escape($lifecycle ? 'warning' : ((int)($row['is_posted'] ?? 0) === 1 ? 'success' : 'warning')) . '">'
-            . HelperFramework::escape($this->statusLabel($row))
+        return '<span class="badge ' . \eel_accounts\Support\Utf8::html($lifecycle ? 'warning' : ((int)($row['is_posted'] ?? 0) === 1 ? 'success' : 'warning')) . '">'
+            . \eel_accounts\Support\Utf8::html($this->statusLabel($row))
             . '</span>';
     }
 

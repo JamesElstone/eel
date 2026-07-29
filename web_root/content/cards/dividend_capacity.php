@@ -101,7 +101,7 @@ final class _dividend_capacityCard extends CardBaseFramework
     {
         $class = trim('summary-card dividend-capacity-summary-card ' . $extraClass);
 
-        return '<div class="' . HelperFramework::escape($class) . '"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value !== '' ? $value : '-') . '</div>' . ($helper !== '' ? '<div class="helper">' . HelperFramework::escape($helper) . '</div>' : '') . '</div>';
+        return '<div class="' . \eel_accounts\Support\Utf8::html($class) . '"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label) . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value !== '' ? $value : '-') . '</div>' . ($helper !== '' ? '<div class="helper">' . \eel_accounts\Support\Utf8::html($helper) . '</div>' : '') . '</div>';
     }
 
     private function reserveBasisCard(array $capacity): string
@@ -110,21 +110,21 @@ final class _dividend_capacityCard extends CardBaseFramework
         $statusClass = $reliable ? 'is-success' : 'is-danger';
 
         return '<div class="summary-card dividend-capacity-summary-card has-summary-card-pill ' . $statusClass . '">
-            <div class="summary-card-header"><div class="summary-label">Reserve basis</div><div class="summary-card-pill"><span class="badge ' . HelperFramework::escape($reliable ? 'success' : 'danger') . '">' . HelperFramework::escape($reliable ? 'Reserve basis verified' : 'Reserve basis blocked') . '</span></div></div>
+            <div class="summary-card-header"><div class="summary-label">Reserve basis</div><div class="summary-card-pill"><span class="badge ' . \eel_accounts\Support\Utf8::html($reliable ? 'success' : 'danger') . '">' . \eel_accounts\Support\Utf8::html($reliable ? 'Reserve basis verified' : 'Reserve basis blocked') . '</span></div></div>
         </div>';
     }
 
     private function summaryTableRow(string $title, string $description, string $value): string
     {
-        return '<tr><td>' . HelperFramework::escape($title) . '</td><td>'
-            . HelperFramework::escape($description !== '' ? $description : '—')
-            . '</td><td class="numeric">' . HelperFramework::escape($value !== '' ? $value : '-') . '</td></tr>';
+        return '<tr><td>' . \eel_accounts\Support\Utf8::html($title) . '</td><td>'
+            . \eel_accounts\Support\Utf8::html($description !== '' ? $description : '—')
+            . '</td><td class="numeric">' . \eel_accounts\Support\Utf8::html($value !== '' ? $value : '-') . '</td></tr>';
     }
 
     private function summaryTableActionRow(string $title, string $description, string $actionHtml): string
     {
-        return '<tr><td>' . HelperFramework::escape($title) . '</td><td>'
-            . HelperFramework::escape($description !== '' ? $description : '—')
+        return '<tr><td>' . \eel_accounts\Support\Utf8::html($title) . '</td><td>'
+            . \eel_accounts\Support\Utf8::html($description !== '' ? $description : '—')
             . '</td><td class="numeric">' . $actionHtml . '</td></tr>';
     }
 
@@ -151,11 +151,11 @@ final class _dividend_capacityCard extends CardBaseFramework
                 ]
             );
             $badgeClass = $this->badgeClass($severity);
-            $badgeHtml = '<span class="badge ' . HelperFramework::escape($badgeClass) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($severity, '_')) . '</span>';
-            $html .= '<div class="summary-card dividend-capacity-summary-card has-summary-card-pill is-' . HelperFramework::escape($badgeClass) . '">
-                <div class="summary-card-header"><div class="summary-label">' . HelperFramework::escape((string)($warning['title'] ?? 'Warning')) . '</div><div class="summary-card-pill">' . $badgeHtml . '</div></div>
-                ' . ($metricValue !== '' ? '<div class="summary-value">' . HelperFramework::escape($metricValue) . '</div>' : '') . '
-                <div class="helper">' . HelperFramework::escape((string)($warning['detail'] ?? '')) . '</div>
+            $badgeHtml = '<span class="badge ' . \eel_accounts\Support\Utf8::html($badgeClass) . '">' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($severity, '_')) . '</span>';
+            $html .= '<div class="summary-card dividend-capacity-summary-card has-summary-card-pill is-' . \eel_accounts\Support\Utf8::html($badgeClass) . '">
+                <div class="summary-card-header"><div class="summary-label">' . \eel_accounts\Support\Utf8::html((string)($warning['title'] ?? 'Warning')) . '</div><div class="summary-card-pill">' . $badgeHtml . '</div></div>
+                ' . ($metricValue !== '' ? '<div class="summary-value">' . \eel_accounts\Support\Utf8::html($metricValue) . '</div>' : '') . '
+                <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($warning['detail'] ?? '')) . '</div>
                 ' . ($actionHtml !== '' ? '<div class="actions-row">' . $actionHtml . '</div>' : '') . '
             </div>';
         }
@@ -230,7 +230,7 @@ final class _dividend_capacityCard extends CardBaseFramework
     {
         $html = '';
         foreach ($errors as $error) {
-            $html .= '<div class="helper">' . HelperFramework::escape((string)$error) . '</div>';
+            $html .= '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$error) . '</div>';
         }
 
         return $html;

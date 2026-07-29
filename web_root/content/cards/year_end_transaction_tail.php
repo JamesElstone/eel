@@ -79,12 +79,12 @@ final class _year_end_transaction_tailCard extends CardBaseFramework
             $balance = array_key_exists('balance', $row) ? $row['balance'] : null;
             $balanceDisplay = $balance === null || trim((string)$balance) === '' ? '-' : $this->money($companySettings, $balance);
             $rowsHtml .= '<tr>
-                <td>' . HelperFramework::escape((string)($row['account'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($row['account_type'] ?? ''), '_')) . '</td>
-                <td>' . HelperFramework::escape($this->blankToDash($this->displayDate((string)($row['last_transaction_date'] ?? '')))) . '</td>
-                <td>' . HelperFramework::escape($this->blankToDash((string)($row['last_transaction_desc'] ?? ''))) . '</td>
-                <td class="numeric">' . HelperFramework::escape($amountDisplay) . '</td>
-                <td class="numeric">' . HelperFramework::escape($balanceDisplay) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($row['account'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)($row['account_type'] ?? ''), '_')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->blankToDash($this->displayDate((string)($row['last_transaction_date'] ?? '')))) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->blankToDash((string)($row['last_transaction_desc'] ?? ''))) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($amountDisplay) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($balanceDisplay) . '</td>
             </tr>';
         }
 
@@ -147,7 +147,7 @@ final class _year_end_transaction_tailCard extends CardBaseFramework
     {
         $html = '';
         foreach ($errors as $error) {
-            $html .= '<div class="helper">' . HelperFramework::escape((string)$error) . '</div>';
+            $html .= '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$error) . '</div>';
         }
 
         return $html;

@@ -59,7 +59,7 @@ final class _vat_turnover_monitoringCard extends CardBaseFramework
     {
         $monitoring = (array)($context['services']['vat_turnover_monitoring'] ?? []);
         if (empty($monitoring['available'])) {
-            return '<div class="helper">' . HelperFramework::escape((string)($monitoring['message'] ?? 'Select a company and accounting period to view gross income.')) . '</div>';
+            return '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)($monitoring['message'] ?? 'Select a company and accounting period to view gross income.')) . '</div>';
         }
         if (!empty($monitoring['not_started'])) {
             return '<div class="helper">This accounting period has not started. Select a current or past period to view income monitoring.</div>' . $this->links();
@@ -188,13 +188,13 @@ final class _vat_turnover_monitoringCard extends CardBaseFramework
         $moneyColumn = fn(string $key, string $label): array => [
             $key,
             $label,
-            fn(array $row): string => HelperFramework::escape($this->money($settings, $row[$key] ?? 0)),
+            fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($settings, $row[$key] ?? 0)),
             static fn(array $row): string => number_format((float)($row[$key] ?? 0), 2, '.', ''),
         ];
         [$monthlyKey, $monthlyLabel, $monthlyHtml, $monthlyExport] = $moneyColumn('monthly_gross_income', 'Monthly Gross Income');
         [$cumulativeKey, $cumulativeLabel, $cumulativeHtml, $cumulativeExport] = $moneyColumn('cumulative_income', 'Cumulative Income');
 
-        return TableFramework::make($this->key(), $rows)
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $rows)
             ->filename('vat-turnover-monitoring')
             ->exportLimit(5000)
             ->empty('No accounting-period months are available at the effective date.')
@@ -208,7 +208,7 @@ final class _vat_turnover_monitoringCard extends CardBaseFramework
                 'Threshold',
                 html: fn(array $row): string => ($row['threshold'] ?? null) === null
                     ? 'Unavailable'
-                    : HelperFramework::escape($this->money($settings, $row['threshold'])),
+                    : \eel_accounts\Support\Utf8::html($this->money($settings, $row['threshold'])),
                 export: static fn(array $row): string => ($row['threshold'] ?? null) === null
                     ? ''
                     : number_format((float)$row['threshold'], 2, '.', ''),
@@ -220,7 +220,7 @@ final class _vat_turnover_monitoringCard extends CardBaseFramework
                 'coverage',
                 'Coverage',
                 html: static fn(array $row): string => '<span class="badge ' . (!empty($row['coverage_complete']) ? 'success' : 'warning') . '">'
-                    . HelperFramework::escape((string)($row['coverage'] ?? 'Unknown')) . '</span>',
+                    . \eel_accounts\Support\Utf8::html((string)($row['coverage'] ?? 'Unknown')) . '</span>',
                 export: static fn(array $row): string => (string)($row['coverage'] ?? 'Unknown')
             );
     }
@@ -232,7 +232,7 @@ final class _vat_turnover_monitoringCard extends CardBaseFramework
         }
 
         return '<div class="helper"><strong>Important limitations and coverage checks</strong><ul><li>'
-            . implode('</li><li>', array_map(static fn(mixed $warning): string => HelperFramework::escape((string)$warning), $warnings))
+            . implode('</li><li>', array_map(static fn(mixed $warning): string => \eel_accounts\Support\Utf8::html((string)$warning), $warnings))
             . '</li></ul></div>';
     }
 
@@ -261,8 +261,8 @@ final class _vat_turnover_monitoringCard extends CardBaseFramework
 
     private function summary(string $label, string $value): string
     {
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label)
-            . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+        return '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label)
+            . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div></div>';
     }
 
     private function money(array $settings, mixed $value): string
@@ -319,7 +319,7 @@ final class _vat_turnover_monitoringCard extends CardBaseFramework
                 . '" x1="' . $this->chartNumber($left) . '" y1="' . $this->chartNumber($gridY)
                 . '" x2="' . $this->chartNumber($left + $plotWidth) . '" y2="' . $this->chartNumber($gridY) . '"></line>'
                 . '<text class="chart-axis-label" x="' . $this->chartNumber($left - 10) . '" y="' . $this->chartNumber($gridY + 4)
-                . '" text-anchor="end">' . HelperFramework::escape(number_format($gridValue, 0)) . '</text>';
+                . '" text-anchor="end">' . \eel_accounts\Support\Utf8::html(number_format($gridValue, 0)) . '</text>';
         }
 
         foreach ($points as $index => $point) {
@@ -333,16 +333,16 @@ final class _vat_turnover_monitoringCard extends CardBaseFramework
             $html .= '<rect class="chart-bar' . ($value < 0 ? ' chart-bar-negative' : '') . '" x="' . $this->chartNumber($x)
                 . '" y="' . $this->chartNumber($y) . '" width="' . $this->chartNumber($barWidth)
                 . '" height="' . $this->chartNumber($barHeight) . '" fill="' . $color . '"><title>'
-                . HelperFramework::escape($label . ': ' . number_format($value, 2)) . '</title></rect>'
+                . \eel_accounts\Support\Utf8::html($label . ': ' . number_format($value, 2)) . '</title></rect>'
                 . '<text class="chart-axis-label" x="' . $this->chartNumber($x + ($barWidth / 2)) . '" y="' . $this->chartNumber($height - 22)
-                . '" text-anchor="middle">' . HelperFramework::escape($label) . '</text>';
+                . '" text-anchor="middle">' . \eel_accounts\Support\Utf8::html($label) . '</text>';
         }
 
         $titleId = 'vat-signed-bar-' . bin2hex(random_bytes(4));
 
         return '<svg class="chart chart-bar chart-signed-bar" viewBox="0 0 640 320" role="img" aria-labelledby="'
-            . HelperFramework::escape($titleId) . '" preserveAspectRatio="xMidYMid meet"><title id="'
-            . HelperFramework::escape($titleId) . '">' . HelperFramework::escape($title) . '</title>'
+            . \eel_accounts\Support\Utf8::html($titleId) . '" preserveAspectRatio="xMidYMid meet"><title id="'
+            . \eel_accounts\Support\Utf8::html($titleId) . '">' . \eel_accounts\Support\Utf8::html($title) . '</title>'
             . $html
             . '<line class="chart-axis-line" x1="' . $this->chartNumber($left) . '" y1="' . $this->chartNumber($top)
             . '" x2="' . $this->chartNumber($left) . '" y2="' . $this->chartNumber($top + $plotHeight) . '"></line>'

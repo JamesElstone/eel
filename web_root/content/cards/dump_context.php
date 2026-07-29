@@ -49,7 +49,7 @@ final class _dump_contextCard extends CardBaseFramework
                         <div>
                             <p class="helper">Context dump (Warning: Only shows services for this card not others)</p>
                         </div>
-                        <pre class="preformatted-panel">' . HelperFramework::escape($this->dumpJson($context)) . '</pre>
+                        <pre class="preformatted-panel">' . \eel_accounts\Support\Utf8::html($this->dumpJson($context)) . '</pre>
                     </div>
                 </div>
             </div>
@@ -66,7 +66,7 @@ final class _dump_contextCard extends CardBaseFramework
 
     private function dumpJson(array $context) : string
     {
-        return json_encode(
+        return \eel_accounts\Support\Utf8::json(
             $context,
             JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
         );

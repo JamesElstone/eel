@@ -292,7 +292,7 @@ final class CorporationTaxLineTreatmentService
     private function basisHash(array $line, array $base): string
     {
         $rule = (array)($base['rule'] ?? []);
-        return hash('sha256', json_encode([
+        return hash('sha256', \eel_accounts\Support\Utf8::json([
             'journal_id' => (int)($line['journal_id'] ?? 0),
             'journal_line_id' => (int)($line['journal_line_id'] ?? 0),
             'journal_date' => (string)($line['journal_date'] ?? ''),

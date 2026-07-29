@@ -74,7 +74,7 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
             if (preg_match('/^\d+ Director Loan entries are not attributed to a valid same-company director\.$/i', trim((string)$warning)) === 1) {
                 continue;
             }
-            $warnings .= '<div class="panel-soft warn helper">' . HelperFramework::escape((string)$warning) . '</div>';
+            $warnings .= '<div class="panel-soft warn helper">' . \eel_accounts\Support\Utf8::html((string)$warning) . '</div>';
         }
         if ($legacyRepairRequired) {
             $warnings .= $locked
@@ -89,10 +89,10 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
             $confirmation = $acknowledgement !== []
                 ? '<section class="panel-soft ' . ($acknowledgementCurrent ? 'success' : 'warn') . ' settings-stack">
                     <div class="eyebrow">Recorded Year End Confirmation</div>
-                    <div class="summary-value">' . HelperFramework::escape($acknowledgementCurrent ? self::CONFIRMATION_TEXT : 'The recorded confirmation is no longer current for the facts shown above.') . '</div>
+                    <div class="summary-value">' . \eel_accounts\Support\Utf8::html($acknowledgementCurrent ? self::CONFIRMATION_TEXT : 'The recorded confirmation is no longer current for the facts shown above.') . '</div>
                     <div class="stat-foot">Approved'
-                        . (trim((string)($review['acknowledged_at'] ?? '')) !== '' ? ' at ' . HelperFramework::escape((string)$review['acknowledged_at']) : '')
-                        . (trim((string)($review['acknowledged_by'] ?? '')) !== '' ? ' by ' . HelperFramework::escape((string)$review['acknowledged_by']) : '')
+                        . (trim((string)($review['acknowledged_at'] ?? '')) !== '' ? ' at ' . \eel_accounts\Support\Utf8::html((string)$review['acknowledged_at']) : '')
+                        . (trim((string)($review['acknowledged_by'] ?? '')) !== '' ? ' by ' . \eel_accounts\Support\Utf8::html((string)$review['acknowledged_by']) : '')
                         . '.</div>
                 </section>'
                 : '<div class="panel-soft warn helper">No Director Loan Year End confirmation was recorded before this period was locked.</div>';
@@ -168,7 +168,7 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
             if (!in_array($value, ['yes', 'no'], true)) {
                 $value = 'yes';
             }
-            $fields .= '<fieldset class="panel-soft"><legend>' . HelperFramework::escape((string)$question) . '</legend><div class="actions-row">'
+            $fields .= '<fieldset class="panel-soft"><legend>' . \eel_accounts\Support\Utf8::html((string)$question) . '</legend><div class="actions-row">'
                 . $this->ct600aRadio((string)$key, 'no', 'No', $value, $locked)
                 . $this->ct600aRadio((string)$key, 'yes', 'Yes', $value, $locked) . '</div></fieldset>';
         }
@@ -176,7 +176,7 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
             ? 'Re-approve declaration using these answers'
             : 'Save Section 464A and 464C declaration';
         $saveAction = !$locked
-            ? '<div class="actions-row"><button class="button primary" type="submit">' . HelperFramework::escape($saveLabel) . '</button></div>'
+            ? '<div class="actions-row"><button class="button primary" type="submit">' . \eel_accounts\Support\Utf8::html($saveLabel) . '</button></div>'
             : '';
 
         return '<section class="settings-stack"><form class="settings-stack" method="post" action="?page=loans" data-ajax="true">'
@@ -195,7 +195,7 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
     private function ct600aRadio(string $name, string $value, string $label, string $selected, bool $locked): string
     {
         $id = 'ct600a_' . $name . '_' . $value;
-        return '<label for="' . $id . '"><input id="' . $id . '" type="radio" name="' . HelperFramework::escape($name)
+        return '<label for="' . $id . '"><input id="' . $id . '" type="radio" name="' . \eel_accounts\Support\Utf8::html($name)
             . '" value="' . $value . '"' . ($locked ? ' disabled' : '')
             . ($selected === $value ? ' checked' : '') . ' required> ' . $label . '</label>';
     }
@@ -235,13 +235,13 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
                 ?? $flag['director_name']
                 ?? ''));
             $rows .= '<tr>
-                <td>' . HelperFramework::escape($partyName !== '' ? $partyName : 'Unattributed') . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['gross_asset'] ?? 0)) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['gross_liability'] ?? 0)) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['desired_reclassification'] ?? $position['desired_set_off'] ?? 0)) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['net_closing_position'] ?? 0)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($partyName !== '' ? $partyName : 'Unattributed') . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($settings, $position['gross_asset'] ?? 0)) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($settings, $position['gross_liability'] ?? 0)) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($settings, $position['desired_reclassification'] ?? $position['desired_set_off'] ?? 0)) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($settings, $position['net_closing_position'] ?? 0)) . '</td>
                 <td>' . $this->taxFlagBadge($position, $flag, $taxReview, $review) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($settings, $flag['potential_s455_exposure'] ?? ($position['potential_s455_exposure'] ?? 0))) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($settings, $flag['potential_s455_exposure'] ?? ($position['potential_s455_exposure'] ?? 0))) . '</td>
             </tr>';
         }
         return '<div class="panel-soft table-scroll"><table>
@@ -393,10 +393,10 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
             $nominalId = (int)($line['nominal_account_id'] ?? 0);
             $nominal = $nominalLabels[$nominalId] ?? ('Nominal #' . $nominalId);
             $rows .= '<tr>
-                <td>' . HelperFramework::escape((string)($line['line_description'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape($nominal) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($settings, $line['debit'] ?? 0)) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($settings, $line['credit'] ?? 0)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($line['line_description'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($nominal) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($settings, $line['debit'] ?? 0)) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($settings, $line['credit'] ?? 0)) . '</td>
             </tr>';
         }
         return '<div class="panel-soft table-scroll"><table>
@@ -407,7 +407,7 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
 
     private function stat(string $label, string $value): string
     {
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+        return '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label) . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div></div>';
     }
 
     private function money(array $settings, mixed $value): string
@@ -418,7 +418,7 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
     private function errors(array $errors): string
     {
         return implode('', array_map(
-            static fn(mixed $error): string => '<div class="helper">' . HelperFramework::escape((string)$error) . '</div>',
+            static fn(mixed $error): string => '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$error) . '</div>',
             $errors
         ));
     }

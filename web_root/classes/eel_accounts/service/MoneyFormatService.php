@@ -34,12 +34,12 @@ final class MoneyFormatService
     {
         $amount = $this->parseAmount($value);
         if ($amount === null) {
-            return \HelperFramework::escape($fallback);
+            return \eel_accounts\Support\Utf8::html($fallback);
         }
 
         $class = $amount > 0.0 ? 'amount-positive' : ($amount < 0.0 ? 'amount-negative' : 'amount-zero');
 
-        return '<span class="' . $class . '">' . \HelperFramework::escape($this->format($settings, $amount, $fallback)) . '</span>';
+        return '<span class="' . $class . '">' . \eel_accounts\Support\Utf8::html($this->format($settings, $amount, $fallback)) . '</span>';
     }
 
     public function parseAmount(mixed $value): ?float

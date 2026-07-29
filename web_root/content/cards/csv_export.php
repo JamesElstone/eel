@@ -91,7 +91,7 @@ final class _csv_exportCard extends CardBaseFramework
 
     private function table(array $context): TableFramework
     {
-        return TableFramework::make($this->key(), $this->rows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->rows($context))
             ->filename('csv-upload-exports')
             ->exportLimit(5000)
             ->empty('No uploaded CSV files are available for this accounting period.')
@@ -145,7 +145,7 @@ final class _csv_exportCard extends CardBaseFramework
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
             <input type="hidden" name="upload_id" value="' . (int)($row['id'] ?? 0) . '">
-            <input type="hidden" name="export_month" value="' . HelperFramework::escape((string)($row['month_key'] ?? '')) . '">';
+            <input type="hidden" name="export_month" value="' . \eel_accounts\Support\Utf8::html((string)($row['month_key'] ?? '')) . '">';
 
         return '<div class="actions-row actions-row-nowrap">
             <form method="post" action="?page=uploads" class="inline-form">

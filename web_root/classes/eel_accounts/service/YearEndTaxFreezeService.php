@@ -297,8 +297,8 @@ final class YearEndTaxFreezeService
         if (array_is_list($value)) {
             $result = array_map(fn(mixed $item): mixed => $this->stableValue($item), $value);
             usort($result, static fn(mixed $left, mixed $right): int => strcmp(
-                (string)json_encode($left, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION),
-                (string)json_encode($right, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)
+                (string)\eel_accounts\Support\Utf8::json($left, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION),
+                (string)\eel_accounts\Support\Utf8::json($right, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)
             ));
             return $result;
         }
@@ -326,7 +326,7 @@ final class YearEndTaxFreezeService
 
     private function canonicalJson(mixed $value): string
     {
-        $json = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
+        $json = \eel_accounts\Support\Utf8::json($value, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
         return is_string($json) ? $json : '';
     }
 }

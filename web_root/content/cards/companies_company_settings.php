@@ -91,52 +91,52 @@ final class _companies_company_settingsCard extends CardBaseFramework
                 <div class="form-grid">
                     <div class="form-row">
                         <label for="company_name">Company name</label>
-                        <input class="input" id="company_name" name="company_name" value="' . HelperFramework::escape((string)($context['company']['name'] ?? '')) . '" readonly>
+                        <input class="input" id="company_name" name="company_name" value="' . \eel_accounts\Support\Utf8::html((string)($context['company']['name'] ?? '')) . '" readonly>
                     </div>
                     <div class="form-row">
                         <label for="companies_house_number">Companies House number</label>
-                        <input class="input" id="companies_house_number" name="companies_house_number" value="' . HelperFramework::escape((string)($context['company']['number'] ?? '')) . '" readonly>
+                        <input class="input" id="companies_house_number" name="companies_house_number" value="' . \eel_accounts\Support\Utf8::html((string)($context['company']['number'] ?? '')) . '" readonly>
                     </div>
                     <div class="form-row">
                         <label for="utr">HMRC Uniquie Tax Reference (UTR)</label>
                         <div class="actions-row">
-                            <input class="input' . ($utrMissing ? ' input-missing-required' : '') . '" id="utr" name="utr" value="' . HelperFramework::escape($utr) . '" placeholder="Enter corporation tax UTR">
+                            <input class="input' . ($utrMissing ? ' input-missing-required' : '') . '" id="utr" name="utr" value="' . \eel_accounts\Support\Utf8::html($utr) . '" placeholder="Enter corporation tax UTR">
                             <button class="button primary" id="save_company_settings_button" type="submit" disabled>Save</button>
                         </div>
                     </div>
                     <div class="form-row">
                         <label for="incorporation_date">Detected incorporation date</label>
-                        <input class="input" id="incorporation_date" value="' . HelperFramework::escape((string)($companyDetail['incorporation_date'] ?? '')) . '" readonly>
+                        <input class="input" id="incorporation_date" value="' . \eel_accounts\Support\Utf8::html((string)($companyDetail['incorporation_date'] ?? '')) . '" readonly>
                     </div>
                     <div class="form-row">
                         <label>Companies House active directors</label>
-                        <input class="input" value="' . HelperFramework::escape($activeDirectorLabel) . '" readonly>
+                        <input class="input" value="' . \eel_accounts\Support\Utf8::html($activeDirectorLabel) . '" readonly>
                     </div>
                     <div class="form-row">
                         <label for="qualifying_activity_ceased_on">Qualifying activity ceased on</label>
                         <input class="input" type="date" id="qualifying_activity_ceased_on" name="qualifying_activity_ceased_on"
-                            value="' . HelperFramework::escape($qualifyingActivityCeasedOn) . '"
-                            data-state-default="' . HelperFramework::escape($qualifyingActivityCeasedOn) . '"'
+                            value="' . \eel_accounts\Support\Utf8::html($qualifyingActivityCeasedOn) . '"
+                            data-state-default="' . \eel_accounts\Support\Utf8::html($qualifyingActivityCeasedOn) . '"'
                             . ($taxYearEndReadOnly
-                                ? ' disabled title="' . HelperFramework::escape((string)($vatSupportScope['message'] ?? \eel_accounts\Service\VatSupportScopeService::UNSUPPORTED_MESSAGE)) . '"'
+                                ? ' disabled title="' . \eel_accounts\Support\Utf8::html((string)($vatSupportScope['message'] ?? \eel_accounts\Service\VatSupportScopeService::UNSUPPORTED_MESSAGE)) . '"'
                                 : '') . '>
                         <div class="helper">'
                             . ($taxYearEndReadOnly
-                                ? HelperFramework::escape((string)($vatSupportScope['message'] ?? \eel_accounts\Service\VatSupportScopeService::UNSUPPORTED_MESSAGE))
+                                ? \eel_accounts\Support\Utf8::html((string)($vatSupportScope['message'] ?? \eel_accounts\Service\VatSupportScopeService::UNSUPPORTED_MESSAGE))
                                 : 'Leave blank while the qualifying trade or activity continues. Saving a date rebuilds capital allowances and cannot alter a locked affected period.')
                             . '
                         </div>
                     </div>
                     <div class="form-row">
                         <label for="default_currency">Currency</label>
-                        <input type="hidden" id="company_default_currency_state" value="' . HelperFramework::escape($defaultCurrency) . '" data-state-default="' . HelperFramework::escape($defaultCurrency) . '">
+                        <input type="hidden" id="company_default_currency_state" value="' . \eel_accounts\Support\Utf8::html($defaultCurrency) . '" data-state-default="' . \eel_accounts\Support\Utf8::html($defaultCurrency) . '">
                         <select class="select" id="default_currency" name="default_currency">
-                            <option value="GBP"' . ($defaultCurrency === 'GBP' ? ' selected' : '') . '>' . HelperFramework::escape($defaultCurrencyLabel) . '</option>
+                            <option value="GBP"' . ($defaultCurrency === 'GBP' ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html($defaultCurrencyLabel) . '</option>
                         </select>
                     </div>
                     <div class="form-row">
                         <label for="date_format">Display Date Format</label>
-                        <input type="hidden" id="company_date_format_state" value="' . HelperFramework::escape($dateFormat) . '" data-state-default="' . HelperFramework::escape($dateFormat) . '">
+                        <input type="hidden" id="company_date_format_state" value="' . \eel_accounts\Support\Utf8::html($dateFormat) . '" data-state-default="' . \eel_accounts\Support\Utf8::html($dateFormat) . '">
                         <select class="select" id="date_format" name="date_format">
                             <option value="Y-m-d"' . ($dateFormat === 'Y-m-d' ? ' selected' : '') . '>Y-m-d</option>
                             <option value="d/m/Y"' . ($dateFormat === 'd/m/Y' ? ' selected' : '') . '>d/m/Y</option>
@@ -151,9 +151,9 @@ final class _companies_company_settingsCard extends CardBaseFramework
                                 . (in_array(trim((string)($settings['vat_validation_status'] ?? '')), ['valid', 'mismatch_override'], true)
                                     && trim((string)($settings['vat_country_code'] ?? '')) !== ''
                                     && trim((string)($settings['vat_number'] ?? '')) !== ''
-                                    ? ' Validated number: ' . HelperFramework::escape((string)$settings['vat_country_code']) . HelperFramework::escape((string)$settings['vat_number']) . '.'
+                                    ? ' Validated number: ' . \eel_accounts\Support\Utf8::html((string)$settings['vat_country_code']) . \eel_accounts\Support\Utf8::html((string)$settings['vat_number']) . '.'
                                     : (trim((string)($settings['vat_number'] ?? '')) !== ''
-                                        ? ' Current number: ' . HelperFramework::escape((string)$settings['vat_country_code']) . HelperFramework::escape((string)$settings['vat_number']) . '.'
+                                        ? ' Current number: ' . \eel_accounts\Support\Utf8::html((string)$settings['vat_country_code']) . \eel_accounts\Support\Utf8::html((string)$settings['vat_number']) . '.'
                                         : ''))
                                 . ' Manage VAT registration on the VAT page.
                             </div>'

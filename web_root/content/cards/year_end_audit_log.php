@@ -65,11 +65,11 @@ final class _year_end_audit_logCard extends CardBaseFramework
             }
 
             $tableRows .= '<tr>
-                <td>' . HelperFramework::escape((string)($row['action_at'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape((string)($row['company_name'] ?? '')) . '<div class="helper">' . HelperFramework::escape($period) . '</div></td>
-                <td><span class="badge info">' . HelperFramework::escape(HelperFramework::labelFromKey((string)($row['action'] ?? ''), '_')) . '</span></td>
-                <td>' . HelperFramework::escape($this->userName($row)) . '</td>
-                <td>' . HelperFramework::escape(implode(' | ', $detailParts)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($row['action_at'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($row['company_name'] ?? '')) . '<div class="helper">' . \eel_accounts\Support\Utf8::html($period) . '</div></td>
+                <td><span class="badge info">' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)($row['action'] ?? ''), '_')) . '</span></td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->userName($row)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html(implode(' | ', $detailParts)) . '</td>
             </tr>';
         }
 

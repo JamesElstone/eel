@@ -163,7 +163,7 @@ final class _transaction_searchCard extends CardBaseFramework
     {
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
 
-        return TableFramework::make($this->key(), $this->rows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->rows($context))
             ->filename('transaction-search')
             ->exportLimit(5000)
             ->empty($this->hasSearchCriteria($context) ? $this->noMatchesMessage() : 'Enter a keyword or choose a filter to search transactions.')
@@ -171,7 +171,7 @@ final class _transaction_searchCard extends CardBaseFramework
             ->column(
                 'txn_date',
                 'Date',
-                html: fn(array $row): string => HelperFramework::escape($this->displayDate((string)($row['txn_date'] ?? ''))),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->displayDate((string)($row['txn_date'] ?? ''))),
                 export: static fn(array $row): string => (string)($row['txn_date'] ?? ''),
                 exportType: 'date'
             )
@@ -181,13 +181,13 @@ final class _transaction_searchCard extends CardBaseFramework
             ->column(
                 'source_account',
                 'Source',
-                html: fn(array $row): string => HelperFramework::escape($this->sourceAccountLabel($row)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->sourceAccountLabel($row)),
                 export: fn(array $row): string => $this->sourceAccountLabel($row)
             )
             ->column(
                 'amount',
                 'Amount',
-                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['amount'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['amount'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['amount'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -196,7 +196,7 @@ final class _transaction_searchCard extends CardBaseFramework
             ->column(
                 'balance',
                 'Balance',
-                html: static fn(array $row): string => HelperFramework::escape((new \eel_accounts\Service\MoneyFormatService())->format($companySettings, $row['balance'] ?? null, '')),
+                html: static fn(array $row): string => \eel_accounts\Support\Utf8::html((new \eel_accounts\Service\MoneyFormatService())->format($companySettings, $row['balance'] ?? null, '')),
                 export: static fn(array $row): string => ($row['balance'] ?? null) === null || ($row['balance'] ?? '') === '' ? '' : number_format((float)$row['balance'], 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -204,21 +204,21 @@ final class _transaction_searchCard extends CardBaseFramework
             ->column(
                 'nominal',
                 'Nominal',
-                html: fn(array $row): string => HelperFramework::escape($this->nominalLabel($row)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->nominalLabel($row)),
                 export: fn(array $row): string => $this->nominalLabel($row)
             )
             ->column(
                 'category_status',
                 'Cat.',
-                html: fn(array $row): string => '<span class="badge ' . HelperFramework::escape($this->categorisationBadgeClass((string)($row['category_status'] ?? ''))) . '">'
-                    . HelperFramework::escape($this->categorisationLabel((string)($row['category_status'] ?? '')))
+                html: fn(array $row): string => '<span class="badge ' . \eel_accounts\Support\Utf8::html($this->categorisationBadgeClass((string)($row['category_status'] ?? ''))) . '">'
+                    . \eel_accounts\Support\Utf8::html($this->categorisationLabel((string)($row['category_status'] ?? '')))
                     . '</span>',
                 export: fn(array $row): string => $this->categorisationLabel((string)($row['category_status'] ?? ''))
             )
             ->column(
                 'auto_rule',
                 'Auto Rule',
-                html: fn(array $row): string => HelperFramework::escape($this->autoRuleLabel($row)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->autoRuleLabel($row)),
                 export: fn(array $row): string => $this->autoRuleLabel($row)
             )
             ->column(
@@ -237,7 +237,7 @@ final class _transaction_searchCard extends CardBaseFramework
                 'has_derived_journal',
                 'Journal',
                 html: fn(array $row): string => '<span class="badge ' . (((int)($row['has_derived_journal'] ?? 0) === 1) ? 'success' : 'warning') . '">'
-                    . HelperFramework::escape($this->journalStatusLabel($row))
+                    . \eel_accounts\Support\Utf8::html($this->journalStatusLabel($row))
                     . '</span>',
                 export: fn(array $row): string => $this->journalStatusLabel($row)
             )
@@ -245,7 +245,7 @@ final class _transaction_searchCard extends CardBaseFramework
             ->column(
                 'document_download_status',
                 'Doc.',
-                html: fn(array $row): string => HelperFramework::escape(HelperFramework::labelFromKey((string)($row['document_download_status'] ?? 'skipped'), '_', 'Skipped')),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)($row['document_download_status'] ?? 'skipped'), '_', 'Skipped')),
                 export: fn(array $row): string => HelperFramework::labelFromKey((string)($row['document_download_status'] ?? 'skipped'), '_', 'Skipped')
             )
             ->column(
@@ -270,16 +270,16 @@ final class _transaction_searchCard extends CardBaseFramework
         return '<form class="card-toolbar" method="post" action="?page=transactions" data-ajax="true">
             <input type="hidden" name="show_card" value=".self">
             <input type="hidden" name="_pagination" value="1">
-            <input type="hidden" name="_invalidate_fact" value="' . HelperFramework::escape($this->tableInvalidationFact()) . '">
-            <input type="hidden" name="' . HelperFramework::escape($this->paginationPageField()) . '" value="1">
+            <input type="hidden" name="_invalidate_fact" value="' . \eel_accounts\Support\Utf8::html($this->tableInvalidationFact()) . '">
+            <input type="hidden" name="' . \eel_accounts\Support\Utf8::html($this->paginationPageField()) . '" value="1">
             <div class="actions-row transaction-search-controls">
                 <div class="mini-field">
                     <label for="transaction_search_keyword">Keyword</label>
-                    <input class="input" id="transaction_search_keyword" name="transaction_search_keyword" value="' . HelperFramework::escape($keyword) . '">
+                    <input class="input" id="transaction_search_keyword" name="transaction_search_keyword" value="' . \eel_accounts\Support\Utf8::html($keyword) . '">
                 </div>
                 <div class="mini-field">
                     <label for="transaction_search_amount">Amount</label>
-                    <input class="input" id="transaction_search_amount" name="transaction_search_amount" inputmode="decimal" value="' . HelperFramework::escape($amount) . '">
+                    <input class="input" id="transaction_search_amount" name="transaction_search_amount" inputmode="decimal" value="' . \eel_accounts\Support\Utf8::html($amount) . '">
                 </div>
                 <div class="mini-field">
                     <label for="transaction_search_flow">Flow</label>
@@ -328,7 +328,7 @@ final class _transaction_searchCard extends CardBaseFramework
         }
 
         return '<span class="pill">Accounting period: '
-            . HelperFramework::escape(HelperFramework::displayDate($start) . ' to ' . HelperFramework::displayDate($end))
+            . \eel_accounts\Support\Utf8::html(HelperFramework::displayDate($start) . ' to ' . HelperFramework::displayDate($end))
             . '</span>';
     }
 
@@ -396,8 +396,8 @@ final class _transaction_searchCard extends CardBaseFramework
         $html = '';
 
         foreach ($options as $value => $label) {
-            $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selectedFlow ? ' selected' : '') . '>'
-                . HelperFramework::escape($label)
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html($value) . '"' . ($value === $selectedFlow ? ' selected' : '') . '>'
+                . \eel_accounts\Support\Utf8::html($label)
                 . '</option>';
         }
 
@@ -415,8 +415,8 @@ final class _transaction_searchCard extends CardBaseFramework
         $html = '';
 
         foreach ($options as $value => $label) {
-            $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selectedStatus ? ' selected' : '') . '>'
-                . HelperFramework::escape($label)
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html($value) . '"' . ($value === $selectedStatus ? ' selected' : '') . '>'
+                . \eel_accounts\Support\Utf8::html($label)
                 . '</option>';
         }
 
@@ -434,8 +434,8 @@ final class _transaction_searchCard extends CardBaseFramework
         $html = '';
 
         foreach ($options as $value => $label) {
-            $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selectedFilter ? ' selected' : '') . '>'
-                . HelperFramework::escape($label)
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html($value) . '"' . ($value === $selectedFilter ? ' selected' : '') . '>'
+                . \eel_accounts\Support\Utf8::html($label)
                 . '</option>';
         }
 
@@ -452,7 +452,7 @@ final class _transaction_searchCard extends CardBaseFramework
             }
 
             $html .= '<option value="' . $id . '"' . ($id === $selectedAccountId ? ' selected' : '') . '>'
-                . HelperFramework::escape($this->companyAccountLabel($account))
+                . \eel_accounts\Support\Utf8::html($this->companyAccountLabel($account))
                 . '</option>';
         }
 
@@ -470,7 +470,7 @@ final class _transaction_searchCard extends CardBaseFramework
             }
 
             $html .= '<option value="' . $id . '"' . (isset($selected[$id]) ? ' selected' : '') . '>'
-                . HelperFramework::escape(FormattingFramework::nominalLabel($nominal))
+                . \eel_accounts\Support\Utf8::html(FormattingFramework::nominalLabel($nominal))
                 . '</option>';
         }
 
@@ -499,9 +499,9 @@ final class _transaction_searchCard extends CardBaseFramework
         $totalHtml = '<div class="transaction-search-amount-total">'
             . '<span>Amount total:</span> '
             . '<span>Page</span> '
-            . '<strong>' . HelperFramework::escape($this->money($companySettings, $this->amountTotal($visibleRows))) . '</strong> '
+            . '<strong>' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $this->amountTotal($visibleRows))) . '</strong> '
             . '<span>Query</span> '
-            . '<strong>' . HelperFramework::escape($this->money($companySettings, $this->amountTotal($queryRows))) . '</strong>'
+            . '<strong>' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $this->amountTotal($queryRows))) . '</strong>'
             . '</div>';
 
         $footer = str_replace(
@@ -811,7 +811,7 @@ final class _transaction_searchCard extends CardBaseFramework
 
         $url = '?page=transactions&show_card=transactions_imported&month_key=' . rawurlencode($monthKey) . '&category_filter=all';
 
-        return '<a class="button" href="' . HelperFramework::escape($url) . '">Open&nbsp;Month</a>';
+        return '<a class="button" href="' . \eel_accounts\Support\Utf8::html($url) . '">Open&nbsp;Month</a>';
     }
 
     private function displayDate(string $value): string

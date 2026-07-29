@@ -94,7 +94,7 @@ final class _user_account_audit_logCard extends CardBaseFramework
 
     private function table(array $context): TableFramework
     {
-        return TableFramework::make($this->key(), $this->rows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->rows($context))
             ->filename('user-account-audit-log')
             ->exportLimit(200)
             ->empty('No user account audit events have been recorded yet.')

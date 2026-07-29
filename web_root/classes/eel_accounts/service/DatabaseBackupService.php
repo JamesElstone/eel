@@ -556,7 +556,7 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
                     'sha256' => $hash,
                 ];
             }
-            $manifest = json_encode([
+            $manifest = \eel_accounts\Support\Utf8::json([
                 'format' => 'eel_accounts_full_backup_v1',
                 'company_id' => $companyId,
                 'created_at' => (new DateTimeImmutable())->format(DATE_ATOM),
@@ -1160,7 +1160,7 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
 
     private function databaseIdentityForMessage(string $databaseName): string
     {
-        $encoded = json_encode($databaseName, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $encoded = \eel_accounts\Support\Utf8::json($databaseName, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
         return is_string($encoded) ? $encoded : '[invalid database name]';
     }

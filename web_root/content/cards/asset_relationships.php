@@ -108,7 +108,7 @@ final class _asset_relationshipsCard extends CardBaseFramework
             }
             $id = (int)($asset['id'] ?? 0);
             $options .= '<option value="' . $id . '"' . ($id === $selectedId ? ' selected' : '') . '>'
-                . HelperFramework::escape($this->assetLabel($asset)) . '</option>';
+                . \eel_accounts\Support\Utf8::html($this->assetLabel($asset)) . '</option>';
         }
 
         return '<form method="post" action="?page=assets" data-ajax="true" class="form-grid">'
@@ -134,11 +134,11 @@ final class _asset_relationshipsCard extends CardBaseFramework
             }
             $componentId = (int)($component['id'] ?? 0);
             $linked = !empty($component['linked_to_selected_parent']);
-            $componentRows .= '<tr><td><label class="checkbox-row"><input type="checkbox" name="component_asset_ids[]" value="' . $componentId . '"' . ($linked ? ' checked' : '') . $disabled . '><span>' . HelperFramework::escape($this->assetLabel($component)) . '</span></label></td>'
-                . '<td>' . HelperFramework::escape($this->displayDate((string)($component['purchase_date'] ?? ''))) . '</td>'
-                . '<td class="numeric">' . HelperFramework::escape($this->money($settings, (float)($component['cost'] ?? 0))) . '</td>'
+            $componentRows .= '<tr><td><label class="checkbox-row"><input type="checkbox" name="component_asset_ids[]" value="' . $componentId . '"' . ($linked ? ' checked' : '') . $disabled . '><span>' . \eel_accounts\Support\Utf8::html($this->assetLabel($component)) . '</span></label></td>'
+                . '<td>' . \eel_accounts\Support\Utf8::html($this->displayDate((string)($component['purchase_date'] ?? ''))) . '</td>'
+                . '<td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($settings, (float)($component['cost'] ?? 0))) . '</td>'
                 . '<td>' . ($linked
-                    ? '<label>Standalone date if removed <input class="input" type="date" name="detached_available_for_use_dates[' . $componentId . ']" value="' . HelperFramework::escape((string)($component['available_for_use_date'] ?? '')) . '"' . $disabled . '></label>'
+                    ? '<label>Standalone date if removed <input class="input" type="date" name="detached_available_for_use_dates[' . $componentId . ']" value="' . \eel_accounts\Support\Utf8::html((string)($component['available_for_use_date'] ?? '')) . '"' . $disabled . '></label>'
                     : '<span class="helper">Unlinked source cost</span>') . '</td></tr>';
         }
         if ($componentRows === '') {
@@ -150,9 +150,9 @@ final class _asset_relationshipsCard extends CardBaseFramework
             . '<input type="hidden" name="card_action" value="Asset"><input type="hidden" name="intent" value="save_asset_relationship">'
             . '<input type="hidden" name="company_id" value="' . (int)($company['id'] ?? 0) . '"><input type="hidden" name="accounting_period_id" value="' . (int)($company['accounting_period_id'] ?? 0) . '">'
             . '<input type="hidden" name="asset_relationship_parent_id" value="' . $parentId . '">'
-            . '<h3>' . HelperFramework::escape($this->assetLabel($parent)) . '</h3><div class="form-grid">'
-            . '<div class="form-row"><label for="asset-relationship-available-date">Available for use</label><input class="input" id="asset-relationship-available-date" type="date" name="available_for_use_date" value="' . HelperFramework::escape((string)($parent['available_for_use_date'] ?? '')) . '" required' . $disabled . '></div>'
-            . '<div class="form-row"><label for="asset-relationship-evidence">Evidence</label><input class="input" id="asset-relationship-evidence" type="text" name="available_for_use_evidence" value="' . HelperFramework::escape((string)($parent['available_for_use_evidence'] ?? '')) . '" required' . $disabled . '></div></div>'
+            . '<h3>' . \eel_accounts\Support\Utf8::html($this->assetLabel($parent)) . '</h3><div class="form-grid">'
+            . '<div class="form-row"><label for="asset-relationship-available-date">Available for use</label><input class="input" id="asset-relationship-available-date" type="date" name="available_for_use_date" value="' . \eel_accounts\Support\Utf8::html((string)($parent['available_for_use_date'] ?? '')) . '" required' . $disabled . '></div>'
+            . '<div class="form-row"><label for="asset-relationship-evidence">Evidence</label><input class="input" id="asset-relationship-evidence" type="text" name="available_for_use_evidence" value="' . \eel_accounts\Support\Utf8::html((string)($parent['available_for_use_evidence'] ?? '')) . '" required' . $disabled . '></div></div>'
             . '<p class="helper">Tick directly attributable costs incurred before the asset was available for use. For a currently linked item that is unticked, record its standalone operational date.</p>'
             . '<div class="table-scroll"><table><thead><tr><th>Source asset</th><th>Purchase date</th><th>Cost</th><th>Correction if removed</th></tr></thead><tbody>' . $componentRows . '</tbody></table></div>'
             . '<button class="button primary" type="submit"' . ($isLocked ? ' disabled' : '') . '>Save relationship</button></form>';
@@ -176,7 +176,7 @@ final class _asset_relationshipsCard extends CardBaseFramework
                 . '<input type="hidden" name="card_action" value="Asset"><input type="hidden" name="intent" value="select_asset_relationship_parent">'
                 . '<input type="hidden" name="company_id" value="' . (int)($company['id'] ?? 0) . '"><input type="hidden" name="accounting_period_id" value="' . (int)($company['accounting_period_id'] ?? 0) . '">'
                 . '<input type="hidden" name="asset_relationship_parent_id" value="' . $id . '"><button class="button" type="submit">Edit</button></form>';
-            $rows .= '<tr><td>' . HelperFramework::escape($this->assetLabel($relationship)) . '</td><td>' . HelperFramework::escape($this->displayDate((string)($relationship['available_for_use_date'] ?? ''))) . '</td><td class="numeric">' . HelperFramework::escape($this->money($settings, (float)($relationship['accounting_cost'] ?? 0))) . '</td><td>' . HelperFramework::escape($componentSummary) . '</td><td>' . $edit . '</td></tr>';
+            $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html($this->assetLabel($relationship)) . '</td><td>' . \eel_accounts\Support\Utf8::html($this->displayDate((string)($relationship['available_for_use_date'] ?? ''))) . '</td><td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($settings, (float)($relationship['accounting_cost'] ?? 0))) . '</td><td>' . \eel_accounts\Support\Utf8::html($componentSummary) . '</td><td>' . $edit . '</td></tr>';
         }
         if ($rows === '') {
             $rows = '<tr><td colspan="5">No operational asset relationships have been recorded.</td></tr>';

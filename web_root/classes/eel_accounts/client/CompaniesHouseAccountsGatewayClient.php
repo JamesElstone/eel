@@ -908,7 +908,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         string $value
     ): \DOMElement {
         $element = $document->createElementNS($namespace, $name);
-        $element->appendChild($document->createTextNode($value));
+        $element->appendChild($document->createTextNode(\eel_accounts\Support\Utf8::normalize($value)));
         $parent->appendChild($element);
 
         return $element;

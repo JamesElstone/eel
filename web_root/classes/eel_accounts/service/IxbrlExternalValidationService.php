@@ -246,8 +246,8 @@ final class IxbrlExternalValidationService
                 'validator' => (string)($result['validator'] ?? 'arelle'),
                 'validator_version' => trim((string)($result['version'] ?? '')) ?: null,
                 'status' => (string)($result['status'] ?? 'error'),
-                'errors' => json_encode((array)($result['errors'] ?? []), JSON_UNESCAPED_SLASHES),
-                'warnings' => json_encode((array)($result['warnings'] ?? []), JSON_UNESCAPED_SLASHES),
+                'errors' => \eel_accounts\Support\Utf8::json((array)($result['errors'] ?? []), JSON_UNESCAPED_SLASHES),
+                'warnings' => \eel_accounts\Support\Utf8::json((array)($result['warnings'] ?? []), JSON_UNESCAPED_SLASHES),
                 'log_path' => (string)($result['log_path'] ?? ''),
                 'validated_sha256' => ($result['validated_sha256'] ?? null) !== null
                     ? (string)$result['validated_sha256']

@@ -74,7 +74,7 @@ final class _user_login_lockoutsCard extends CardBaseFramework
 
     private function table(array $context): TableFramework
     {
-        return TableFramework::make($this->key(), $this->rows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->rows($context))
             ->filename('user-login-lockouts')
             ->exportLimit(200)
             ->empty('No users are currently locked out.')
@@ -130,8 +130,8 @@ final class _user_login_lockoutsCard extends CardBaseFramework
         return '<form method="post" action="?page=users" data-ajax="true">
             ' . $this->hiddenFields($context) . '
             <input type="hidden" name="action" value="users-reset-login-lockout">
-            <input type="hidden" name="csrf_token" value="' . HelperFramework::escape((string)($context['page']['csrf_token'] ?? '')) . '">
-            <input type="hidden" name="target_user_id" value="' . HelperFramework::escape((string)$userId) . '">
+            <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html((string)($context['page']['csrf_token'] ?? '')) . '">
+            <input type="hidden" name="target_user_id" value="' . \eel_accounts\Support\Utf8::html((string)$userId) . '">
             <button class="button primary" type="submit">Reset Lockout</button>
         </form>';
     }
@@ -167,7 +167,7 @@ final class _user_login_lockoutsCard extends CardBaseFramework
         $html = '';
 
         foreach ((array)($context['page']['page_cards'] ?? []) as $cardKey) {
-            $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+            $html .= '<input type="hidden" name="cards[]" value="' . \eel_accounts\Support\Utf8::html((string)$cardKey) . '">';
         }
 
         return $html;

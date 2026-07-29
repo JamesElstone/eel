@@ -73,13 +73,13 @@ final class _transaction_category_audit_logCard extends CardBaseFramework
 
             $reason = trim((string)($row['reason'] ?? ''));
             if ($reason !== '') {
-                $detail .= '<div class="helper">' . HelperFramework::escape($reason) . '</div>';
+                $detail .= '<div class="helper">' . \eel_accounts\Support\Utf8::html($reason) . '</div>';
             }
 
             $tableRows .= '<tr>
-                <td>' . HelperFramework::escape((string)($row['changed_at'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape((string)($row['changed_by'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape($transactionSummary) . '<div class="helper">ID ' . HelperFramework::escape((string)($row['transaction_id'] ?? '')) . '</div></td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($row['changed_at'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($row['changed_by'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($transactionSummary) . '<div class="helper">ID ' . \eel_accounts\Support\Utf8::html((string)($row['transaction_id'] ?? '')) . '</div></td>
                 <td>' . $detail . '</td>
             </tr>';
         }
@@ -129,6 +129,6 @@ final class _transaction_category_audit_logCard extends CardBaseFramework
             return 'not set';
         }
 
-        return HelperFramework::escape(implode(' | ', $parts));
+        return \eel_accounts\Support\Utf8::html(implode(' | ', $parts));
     }
 }

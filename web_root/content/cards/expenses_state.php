@@ -125,7 +125,7 @@ final class _expenses_stateCard extends CardBaseFramework
     {
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
 
-        return TableFramework::make($this->key(), $this->claimTableRows($claims))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->claimTableRows($claims))
             ->filename('expense-claims')
             ->exportLimit(1000)
             ->empty('No expense claims were found.')
@@ -135,7 +135,7 @@ final class _expenses_stateCard extends CardBaseFramework
             ->column(
                 'A',
                 'A',
-                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['A'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['A'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['A'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -143,7 +143,7 @@ final class _expenses_stateCard extends CardBaseFramework
             ->column(
                 'B',
                 'B',
-                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['B'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['B'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['B'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -151,7 +151,7 @@ final class _expenses_stateCard extends CardBaseFramework
             ->column(
                 'C',
                 'C',
-                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['C'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['C'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['C'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -159,7 +159,7 @@ final class _expenses_stateCard extends CardBaseFramework
             ->column(
                 'D',
                 'D',
-                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['D'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['D'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['D'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -243,11 +243,11 @@ final class _expenses_stateCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="Expense">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="intent" value="filter_claims">
-                <input type="hidden" name="expense_status" value="' . HelperFramework::escape((string)($filters['status'] ?? 'all')) . '">
+                <input type="hidden" name="expense_status" value="' . \eel_accounts\Support\Utf8::html((string)($filters['status'] ?? 'all')) . '">
                 <input type="hidden" name="expense_heatmap_claimant_id" value="' . $selectedClaimantId . '">
-                <input type="hidden" name="expense_heatmap_date" value="' . HelperFramework::escape((string)($filters['heatmap_date'] ?? '')) . '">
+                <input type="hidden" name="expense_heatmap_date" value="' . \eel_accounts\Support\Utf8::html((string)($filters['heatmap_date'] ?? '')) . '">
                 <div class="mini-field">
-                    <input class="input" id="expense-search-query" name="expense_query" type="search" value="' . HelperFramework::escape((string)($filters['query'] ?? '')) . '" placeholder="EXP-...">
+                    <input class="input" id="expense-search-query" name="expense_query" type="search" value="' . \eel_accounts\Support\Utf8::html((string)($filters['query'] ?? '')) . '" placeholder="EXP-...">
                 </div>
                 <button class="button primary" type="submit">Search</button>
             </form>';
@@ -259,18 +259,18 @@ final class _expenses_stateCard extends CardBaseFramework
         $selectedStatus = (string)($filters['status'] ?? 'all');
         foreach ($this->statusFilterOptions() as $value => $label) {
             $value = (string)$value;
-            $options .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selectedStatus ? ' selected' : '') . '>' . HelperFramework::escape((string)$label) . '</option>';
+            $options .= '<option value="' . \eel_accounts\Support\Utf8::html($value) . '"' . ($value === $selectedStatus ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html((string)$label) . '</option>';
         }
 
         return '<form method="post" data-ajax="true" class="toolbar">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-                <input type="hidden" name="page" value="' . HelperFramework::escape((string)($context['page']['page_id'] ?? 'expenses')) . '">
+                <input type="hidden" name="page" value="' . \eel_accounts\Support\Utf8::html((string)($context['page']['page_id'] ?? 'expenses')) . '">
                 <input type="hidden" name="card_action" value="Expense">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="intent" value="filter_claims">
-                <input type="hidden" name="expense_query" value="' . HelperFramework::escape((string)($filters['query'] ?? '')) . '">
+                <input type="hidden" name="expense_query" value="' . \eel_accounts\Support\Utf8::html((string)($filters['query'] ?? '')) . '">
                 <input type="hidden" name="expense_heatmap_claimant_id" value="' . $selectedClaimantId . '">
-                <input type="hidden" name="expense_heatmap_date" value="' . HelperFramework::escape((string)($filters['heatmap_date'] ?? '')) . '">
+                <input type="hidden" name="expense_heatmap_date" value="' . \eel_accounts\Support\Utf8::html((string)($filters['heatmap_date'] ?? '')) . '">
                 <div class="form-row table-filter-row">
                     <label for="table-filter-expenses_state-expense_status">Show</label>
                     <select class="selector-input" id="table-filter-expenses_state-expense_status" name="expense_status">' . $options . '</select>
@@ -285,8 +285,8 @@ final class _expenses_stateCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="Expense">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="intent" value="filter_claims">
-                <input type="hidden" name="expense_query" value="' . HelperFramework::escape((string)($filters['query'] ?? '')) . '">
-                <input type="hidden" name="expense_status" value="' . HelperFramework::escape((string)($filters['status'] ?? 'all')) . '">
+                <input type="hidden" name="expense_query" value="' . \eel_accounts\Support\Utf8::html((string)($filters['query'] ?? '')) . '">
+                <input type="hidden" name="expense_status" value="' . \eel_accounts\Support\Utf8::html((string)($filters['status'] ?? 'all')) . '">
                 <label for="expense-claimant">Claimant</label>
                 <select class="select" id="expense-claimant" name="claimant_id">' . $this->claimantOptions($claimants, $selectedClaimantId) . '</select>
             </form>';
@@ -316,10 +316,10 @@ final class _expenses_stateCard extends CardBaseFramework
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="intent" value="select_claim">
             <input type="hidden" name="claim_id" value="' . $claimId . '">
-            <input type="hidden" name="expense_status" value="' . HelperFramework::escape((string)($filters['status'] ?? 'all')) . '">
-            <input type="hidden" name="expense_query" value="' . HelperFramework::escape((string)($filters['query'] ?? '')) . '">
+            <input type="hidden" name="expense_status" value="' . \eel_accounts\Support\Utf8::html((string)($filters['status'] ?? 'all')) . '">
+            <input type="hidden" name="expense_query" value="' . \eel_accounts\Support\Utf8::html((string)($filters['query'] ?? '')) . '">
             <input type="hidden" name="expense_heatmap_claimant_id" value="' . (int)($filters['heatmap_claimant_id'] ?? 0) . '">
-            <input type="hidden" name="expense_heatmap_date" value="' . HelperFramework::escape((string)($filters['heatmap_date'] ?? '')) . '">
+            <input type="hidden" name="expense_heatmap_date" value="' . \eel_accounts\Support\Utf8::html((string)($filters['heatmap_date'] ?? '')) . '">
             <button class="button button-inline" type="submit" data-show-card="expense_claim_editor">Open</button>
         </form>';
     }
@@ -336,10 +336,10 @@ final class _expenses_stateCard extends CardBaseFramework
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="intent" value="delete_claim">
             <input type="hidden" name="claim_id" value="' . $claimId . '">
-            <input type="hidden" name="expense_status" value="' . HelperFramework::escape((string)($filters['status'] ?? 'all')) . '">
-            <input type="hidden" name="expense_query" value="' . HelperFramework::escape((string)($filters['query'] ?? '')) . '">
+            <input type="hidden" name="expense_status" value="' . \eel_accounts\Support\Utf8::html((string)($filters['status'] ?? 'all')) . '">
+            <input type="hidden" name="expense_query" value="' . \eel_accounts\Support\Utf8::html((string)($filters['query'] ?? '')) . '">
             <input type="hidden" name="expense_heatmap_claimant_id" value="' . (int)($filters['heatmap_claimant_id'] ?? 0) . '">
-            <input type="hidden" name="expense_heatmap_date" value="' . HelperFramework::escape((string)($filters['heatmap_date'] ?? '')) . '">
+            <input type="hidden" name="expense_heatmap_date" value="' . \eel_accounts\Support\Utf8::html((string)($filters['heatmap_date'] ?? '')) . '">
             <button class="button button-inline danger" type="submit">Delete</button>
         </form>';
     }
@@ -386,8 +386,8 @@ final class _expenses_stateCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="Expense">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="intent" value="filter_claims">
-                <input type="hidden" name="expense_query" value="' . HelperFramework::escape($query) . '">
-                <input type="hidden" name="expense_status" value="' . HelperFramework::escape($status) . '">
+                <input type="hidden" name="expense_query" value="' . \eel_accounts\Support\Utf8::html($query) . '">
+                <input type="hidden" name="expense_status" value="' . \eel_accounts\Support\Utf8::html($status) . '">
                 <input type="hidden" name="expense_heatmap_claimant_id" value="' . $selectedClaimantId . '">
                 ' . $chartHtml . '
             </form>
@@ -469,7 +469,7 @@ final class _expenses_stateCard extends CardBaseFramework
 
             $claimantId = (int)($claimant['id'] ?? 0);
             $selected = $claimantId === $selectedClaimantId ? ' selected' : '';
-            $options .= '<option value="' . $claimantId . '"' . $selected . '>' . HelperFramework::escape((string)($claimant['claimant_name'] ?? '')) . '</option>';
+            $options .= '<option value="' . $claimantId . '"' . $selected . '>' . \eel_accounts\Support\Utf8::html((string)($claimant['claimant_name'] ?? '')) . '</option>';
         }
 
         return '<option value=""' . ($selectedClaimantId <= 0 ? ' selected' : '') . '>Choose Claimant...</option>' . $options;
@@ -582,7 +582,7 @@ final class _expenses_stateCard extends CardBaseFramework
     private function claimStatusHtml(array $claim): string
     {
         return '<span class="badge ' . ((string)($claim['status'] ?? '') === 'posted' ? 'success' : 'warning') . '">'
-            . HelperFramework::escape($this->claimStatusLabel($claim))
+            . \eel_accounts\Support\Utf8::html($this->claimStatusLabel($claim))
             . '</span>';
     }
 

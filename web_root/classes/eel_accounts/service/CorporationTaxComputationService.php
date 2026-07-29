@@ -299,7 +299,7 @@ final class CorporationTaxComputationService
         // This computation is the ordinary profit-tax engine. CT600A A80 is
         // composed with box 475 by CorporationTaxReturnPositionService.
         $estimatedCorporationTax = $ordinaryCorporationTax;
-        $computationHash = hash('sha256', json_encode([
+        $computationHash = hash('sha256', \eel_accounts\Support\Utf8::json([
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
             'ct_period_id' => $ctPeriodId,
@@ -750,7 +750,7 @@ final class CorporationTaxComputationService
             $sealBasis['basis_hash'] = (new YearEndAcknowledgementService())->hashBasis($sealBasis);
             $summary['frozen_calculation_basis'] = $sealBasis;
             unset($summary['frozen_filing_basis']);
-            $summaryJson = json_encode($summary, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
+            $summaryJson = \eel_accounts\Support\Utf8::json($summary, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
             if (!is_string($summaryJson)) {
                 $errors[] = 'CT period ' . $ctPeriodId . ': The frozen calculation-basis seal could not be encoded.';
                 continue;
@@ -800,7 +800,7 @@ final class CorporationTaxComputationService
 
     private function updatePersistedHardGateDiagnostics(int $runId, array $summary): void
     {
-        $summaryJson = json_encode($summary, JSON_UNESCAPED_SLASHES);
+        $summaryJson = \eel_accounts\Support\Utf8::json($summary, JSON_UNESCAPED_SLASHES);
         if ($runId <= 0 || !is_string($summaryJson)) {
             return;
         }
@@ -1080,7 +1080,7 @@ final class CorporationTaxComputationService
                     $taxableProfit,
                     $associatedCompanyCount
                 );
-                $computationHash = hash('sha256', json_encode([
+                $computationHash = hash('sha256', \eel_accounts\Support\Utf8::json([
                     'company_id' => $companyId,
                     'accounting_period_id' => $accountingPeriodId,
                     'accounting_profit' => (float)($pnl['profit_before_tax'] ?? 0),
@@ -2401,7 +2401,7 @@ final class CorporationTaxComputationService
             return 0;
         }
 
-        $summaryJson = json_encode($summary, JSON_UNESCAPED_SLASHES);
+        $summaryJson = \eel_accounts\Support\Utf8::json($summary, JSON_UNESCAPED_SLASHES);
         if (!is_string($summaryJson)) {
             return 0;
         }

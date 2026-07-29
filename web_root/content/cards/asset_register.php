@@ -159,7 +159,7 @@ final class _asset_registerCard extends CardBaseFramework
             $isLocked = true;
         }
 
-        return TableFramework::make($this->key(), $this->rows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->rows($context))
             ->filename('asset-register')
             ->exportLimit(5000)
             ->classes(wrapperClass: 'table-scroll asset-register-table')
@@ -167,7 +167,7 @@ final class _asset_registerCard extends CardBaseFramework
             ->column(
                 'purchase_date',
                 'Purchase Date',
-                html: fn(array $row): string => HelperFramework::escape($this->displayDate((string)($row['purchase_date'] ?? ''))),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->displayDate((string)($row['purchase_date'] ?? ''))),
                 export: static fn(array $row): string => trim((string)($row['purchase_date'] ?? '')),
                 headerClass: 'asset-register-wrap-heading asset-register-purchase-date-heading',
                 exportType: 'date'
@@ -175,7 +175,7 @@ final class _asset_registerCard extends CardBaseFramework
             ->column(
                 'age_days',
                 'Age (days)',
-                html: fn(array $row): string => HelperFramework::escape($this->ageDays($row, $ageReferenceDate)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->ageDays($row, $ageReferenceDate)),
                 export: fn(array $row): string => $this->ageDays($row, $ageReferenceDate),
                 cellClass: 'numeric',
                 headerClass: 'asset-register-wrap-heading asset-register-age-heading',
@@ -184,7 +184,7 @@ final class _asset_registerCard extends CardBaseFramework
             ->column(
                 'useful_life_years',
                 'Useful Life (years)',
-                html: static fn(array $row): string => HelperFramework::escape((string)max(1, (int)($row['useful_life_years'] ?? 1))),
+                html: static fn(array $row): string => \eel_accounts\Support\Utf8::html((string)max(1, (int)($row['useful_life_years'] ?? 1))),
                 export: static fn(array $row): string => (string)max(1, (int)($row['useful_life_years'] ?? 1)),
                 cellClass: 'numeric',
                 headerClass: 'asset-register-wrap-heading asset-register-useful-life-heading',
@@ -195,12 +195,15 @@ final class _asset_registerCard extends CardBaseFramework
                 'description',
                 'Description',
                 html: fn(array $row): string => $this->descriptionHtml($row),
-                export: static fn(array $row): string => trim((string)($row['description'] ?? ''))
+                export: static fn(array $row): string => \eel_accounts\Service\VehicleService::assetDisplayDescription(
+                    (string)($row['description'] ?? ''),
+                    isset($row['registration_mark']) ? (string)$row['registration_mark'] : null
+                )
             )
             ->column(
                 'cost',
                 'Cost',
-                html: fn(array $row): string => HelperFramework::escape($this->money($settings, (float)($row['cost'] ?? 0))),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($settings, (float)($row['cost'] ?? 0))),
                 export: static fn(array $row): string => number_format((float)($row['cost'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -208,7 +211,7 @@ final class _asset_registerCard extends CardBaseFramework
             ->column(
                 'period_depreciation',
                 'Depreciation in Period',
-                html: fn(array $row): string => HelperFramework::escape($this->money($settings, (float)($row['period_depreciation'] ?? 0))),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($settings, (float)($row['period_depreciation'] ?? 0))),
                 export: static fn(array $row): string => number_format((float)($row['period_depreciation'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 headerClass: 'asset-register-wrap-heading asset-register-period-depreciation-heading',
@@ -217,7 +220,7 @@ final class _asset_registerCard extends CardBaseFramework
             ->column(
                 'resale_value',
                 'Net book value',
-                html: fn(array $row): string => HelperFramework::escape($this->money($settings, (float)($row['resale_value'] ?? 0))),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($settings, (float)($row['resale_value'] ?? 0))),
                 export: static fn(array $row): string => number_format((float)($row['resale_value'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -225,7 +228,7 @@ final class _asset_registerCard extends CardBaseFramework
             ->column(
                 'residual_value',
                 'EOL Value',
-                html: fn(array $row): string => HelperFramework::escape($this->money($settings, (float)($row['residual_value'] ?? 0))),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($settings, (float)($row['residual_value'] ?? 0))),
                 export: static fn(array $row): string => number_format((float)($row['residual_value'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -236,8 +239,8 @@ final class _asset_registerCard extends CardBaseFramework
                 html: static function (array $row): string {
                     $status = (string)($row['status'] ?? 'active');
 
-                    return '<span class="badge ' . HelperFramework::escape($status === 'disposed' ? 'warning' : 'success') . '">'
-                        . HelperFramework::escape($status)
+                    return '<span class="badge ' . \eel_accounts\Support\Utf8::html($status === 'disposed' ? 'warning' : 'success') . '">'
+                        . \eel_accounts\Support\Utf8::html($status)
                         . '</span>';
                 }
             )
@@ -292,9 +295,13 @@ final class _asset_registerCard extends CardBaseFramework
     private function descriptionHtml(array $asset): string
     {
         $nominal = trim((string)($asset['nominal_code'] ?? '') . ' ' . (string)($asset['nominal_name'] ?? ''));
+        $description = \eel_accounts\Service\VehicleService::assetDisplayDescription(
+            (string)($asset['description'] ?? ''),
+            isset($asset['registration_mark']) ? (string)$asset['registration_mark'] : null
+        );
 
-        return '<div>' . HelperFramework::escape((string)($asset['description'] ?? '')) . '</div>'
-            . ($nominal !== '' ? '<div class="helper">' . HelperFramework::escape($nominal) . '</div>' : '');
+        return '<div>' . \eel_accounts\Support\Utf8::html($description) . '</div>'
+            . ($nominal !== '' ? '<div class="helper">' . \eel_accounts\Support\Utf8::html($nominal) . '</div>' : '');
     }
 
     private function actionsHtml(
@@ -317,13 +324,13 @@ final class _asset_registerCard extends CardBaseFramework
             $eventLabel = $this->disposalEventLabel((string)($asset['disposal_event_type'] ?? ''));
             $detailHtml = '';
             if ($eventLabel !== '') {
-                $detailHtml .= '<div class="helper">Reason: ' . HelperFramework::escape($eventLabel) . '</div>';
+                $detailHtml .= '<div class="helper">Reason: ' . \eel_accounts\Support\Utf8::html($eventLabel) . '</div>';
             }
             if ($reason !== '' && $reason !== $eventLabel) {
-                $detailHtml .= '<div class="helper">' . ($eventLabel !== '' ? 'Note' : 'Reason') . ': ' . HelperFramework::escape($reason) . '</div>';
+                $detailHtml .= '<div class="helper">' . ($eventLabel !== '' ? 'Note' : 'Reason') . ': ' . \eel_accounts\Support\Utf8::html($reason) . '</div>';
             }
 
-            return '<span class="helper">Disposed on ' . HelperFramework::escape($this->displayDate((string)($asset['disposal_date'] ?? ''))) . '</span>'
+            return '<span class="helper">Disposed on ' . \eel_accounts\Support\Utf8::html($this->displayDate((string)($asset['disposal_date'] ?? ''))) . '</span>'
                 . $detailHtml;
         }
 
@@ -369,10 +376,10 @@ final class _asset_registerCard extends CardBaseFramework
             <input type="hidden" name="intent" value="set_asset_disposal_method">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-            <input type="hidden" name="cards[]" value="' . HelperFramework::escape($this->key()) . '">
+            <input type="hidden" name="cards[]" value="' . \eel_accounts\Support\Utf8::html($this->key()) . '">
             <input type="hidden" name="asset_disposal_method_asset_id" value="' . $assetId . '">
-            <input type="hidden" name="asset_disposal_method" value="' . HelperFramework::escape($nextMethod) . '">
-            <button class="button button-inline" type="submit" title="Switch to ' . HelperFramework::escape($nextLabel) . '">' . HelperFramework::escape($currentLabel) . '</button>
+            <input type="hidden" name="asset_disposal_method" value="' . \eel_accounts\Support\Utf8::html($nextMethod) . '">
+            <button class="button button-inline" type="submit" title="Switch to ' . \eel_accounts\Support\Utf8::html($nextLabel) . '">' . \eel_accounts\Support\Utf8::html($currentLabel) . '</button>
         </form>';
     }
 
@@ -412,7 +419,7 @@ final class _asset_registerCard extends CardBaseFramework
                     <input type="hidden" name="asset_disposal_method" value="at_nil_value">
                     <div class="asset-disposal-controls">
                         <div class="asset-disposal-row">
-                            <input class="input" type="date" name="disposal_date" value="' . HelperFramework::escape($searchDate) . '">
+                            <input class="input" type="date" name="disposal_date" value="' . \eel_accounts\Support\Utf8::html($searchDate) . '">
                             <select class="select" name="disposal_event_type" aria-label="Nil value disposal reason" data-no-submit-on-change="true">' . $nilReasonOptions . '</select>
                             <input class="input" type="text" name="disposal_reason" placeholder="Nil value note" maxlength="20" size="20">
                             <button class="button button-inline primary" type="submit" name="intent" value="dispose_asset_nil">Dispose of at Nil Value</button>
@@ -433,7 +440,7 @@ final class _asset_registerCard extends CardBaseFramework
                 <input type="hidden" name="asset_disposal_method" value="sell_asset">
                 <div class="asset-disposal-controls">
                     <div class="asset-disposal-row">
-                        <input type="hidden" name="disposal_search_date" value="' . HelperFramework::escape($searchDate) . '">
+                        <input type="hidden" name="disposal_search_date" value="' . \eel_accounts\Support\Utf8::html($searchDate) . '">
                         <span class="helper">The disposal date will be taken from the selected incoming payment.</span>
                         <button class="button button-inline primary" type="submit" name="intent" value="search_asset_disposal_receipts">Search Incoming Payments</button>
                     </div>
@@ -454,7 +461,7 @@ final class _asset_registerCard extends CardBaseFramework
     ): string {
         $errors = (array)($disposalSearch['errors'] ?? []);
         if ($errors !== []) {
-            return '<div class="helper asset-disposal-error">' . HelperFramework::escape(implode(' ', array_map('strval', $errors))) . '</div>';
+            return '<div class="helper asset-disposal-error">' . \eel_accounts\Support\Utf8::html(implode(' ', array_map('strval', $errors))) . '</div>';
         }
 
         $windowStart = $this->displayDate((string)($disposalSearch['window_start'] ?? ''));
@@ -465,8 +472,8 @@ final class _asset_registerCard extends CardBaseFramework
         foreach ($candidates as $candidate) {
             $candidateRows .= '<div class="asset-disposal-candidate">
                 <div>
-                    <div>' . HelperFramework::escape($this->displayDate((string)($candidate['txn_date'] ?? '')) . ' - ' . $this->money($settings, (float)($candidate['amount'] ?? 0))) . '</div>
-                    <div class="helper">' . HelperFramework::escape((string)($candidate['description'] ?? '')) . '</div>
+                    <div>' . \eel_accounts\Support\Utf8::html($this->displayDate((string)($candidate['txn_date'] ?? '')) . ' - ' . $this->money($settings, (float)($candidate['amount'] ?? 0))) . '</div>
+                    <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($candidate['description'] ?? '')) . '</div>
                 </div>
                 <form method="post" action="?page=assets" data-ajax="true">
                 ' . $csrfHiddenInput . '
@@ -487,7 +494,7 @@ final class _asset_registerCard extends CardBaseFramework
         }
 
         return '<div class="asset-disposal-candidates">
-            <div class="helper">Receipts from ' . HelperFramework::escape($windowStart) . ' to ' . HelperFramework::escape($windowEnd) . '</div>
+            <div class="helper">Receipts from ' . \eel_accounts\Support\Utf8::html($windowStart) . ' to ' . \eel_accounts\Support\Utf8::html($windowEnd) . '</div>
             ' . $candidateRows . '
         </div>';
     }
@@ -497,8 +504,8 @@ final class _asset_registerCard extends CardBaseFramework
         $html = '';
 
         foreach (\eel_accounts\Service\AssetService::nilDisposalEventOptions() as $value => $label) {
-            $html .= '<option value="' . HelperFramework::escape((string)$value) . '">'
-                . HelperFramework::escape((string)$label)
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html((string)$value) . '">'
+                . \eel_accounts\Support\Utf8::html((string)$label)
                 . '</option>';
         }
 

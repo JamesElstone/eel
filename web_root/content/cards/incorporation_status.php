@@ -45,7 +45,7 @@ final class _incorporation_statusCard extends CardBaseFramework
     {
         $summary = (array)($context['services']['incorporationShares'] ?? []);
         if (empty($summary['available'])) {
-            return '<section class="settings-stack"><div class="helper">' . HelperFramework::escape((string)(($summary['errors'] ?? [])[0] ?? 'Incorporation status is not available.')) . '</div></section>';
+            return '<section class="settings-stack"><div class="helper">' . \eel_accounts\Support\Utf8::html((string)(($summary['errors'] ?? [])[0] ?? 'Incorporation status is not available.')) . '</div></section>';
         }
 
         $settings = (array)(($context['company'] ?? [])['settings'] ?? []);
@@ -63,7 +63,7 @@ final class _incorporation_statusCard extends CardBaseFramework
 
     private function summaryCard(string $label, string $value): string
     {
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+        return '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label) . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div></div>';
     }
 
     private function money(array $companySettings, float|int|string|null $value): string

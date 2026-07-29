@@ -30,13 +30,13 @@ final class _pl_expense_breakdownCard extends CardBaseFramework
     private function group(string $title, array $rows, string $empty, array $companySettings): string
     {
         if ($rows === []) {
-            return '<section class="panel-soft"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3><div class="helper">' . HelperFramework::escape($empty) . '</div></section>';
+            return '<section class="panel-soft"><h3 class="card-title">' . \eel_accounts\Support\Utf8::html($title) . '</h3><div class="helper">' . \eel_accounts\Support\Utf8::html($empty) . '</div></section>';
         }
         $html = '';
         foreach ($rows as $row) {
-            $html .= '<tr><td>' . HelperFramework::escape((string)($row['code'] ?? '')) . '</td><td>' . HelperFramework::escape((string)($row['name'] ?? '')) . '</td><td>' . HelperFramework::escape($this->money($companySettings, $row['amount'] ?? 0)) . '</td></tr>';
+            $html .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)($row['code'] ?? '')) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($row['name'] ?? '')) . '</td><td>' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['amount'] ?? 0)) . '</td></tr>';
         }
-        return '<section class="panel-soft"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3><div class="table-scroll"><table><thead><tr><th>Code</th><th>Nominal</th><th>Amount</th></tr></thead><tbody>' . $html . '</tbody></table></div></section>';
+        return '<section class="panel-soft"><h3 class="card-title">' . \eel_accounts\Support\Utf8::html($title) . '</h3><div class="table-scroll"><table><thead><tr><th>Code</th><th>Nominal</th><th>Amount</th></tr></thead><tbody>' . $html . '</tbody></table></div></section>';
     }
 
     private function money(array $companySettings, mixed $value): string

@@ -30,7 +30,7 @@ final class _journal_manual_entryCard extends CardBaseFramework
         $locked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $periodId);
         $disabled = ($confirmed || $locked) ? ' disabled' : '';
         $message = $locked ? '<div class="helper"><span class="badge warning">Period locked</span> Cut-off journals are read only.</div>' : ($confirmed ? '<div class="helper"><span class="badge warning">Year End Confirmation entered</span> Cut-off journal controls are disabled until the confirmation is revoked.</div>' : '');
-        $html = '<section class="settings-stack">' . $message . '<section class="panel-soft settings-stack"><h4 class="card-title">Custom journal lines</h4><form method="post" data-ajax="true">' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '<input type="hidden" name="card_action" value="YearEnd"><input type="hidden" name="intent" value="create_adjustment"><input type="hidden" name="show_card" value=".self"><input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $periodId . '"><input type="hidden" name="adjustment_template_type" value="custom"><input type="hidden" name="adjustment_date" value="' . HelperFramework::escape((string)($period['period_end'] ?? '')) . '"><input type="hidden" name="adjustment_description" value="Custom journal"><input type="hidden" name="adjustment_journal_key" value="manual-cutoff-' . bin2hex(random_bytes(4)) . '"><div class="table-scroll"><table><thead><tr><th>Nominal</th><th>Debit</th><th>Credit</th><th>Description</th></tr></thead><tbody>';
+        $html = '<section class="settings-stack">' . $message . '<section class="panel-soft settings-stack"><h4 class="card-title">Custom journal lines</h4><form method="post" data-ajax="true">' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '<input type="hidden" name="card_action" value="YearEnd"><input type="hidden" name="intent" value="create_adjustment"><input type="hidden" name="show_card" value=".self"><input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $periodId . '"><input type="hidden" name="adjustment_template_type" value="custom"><input type="hidden" name="adjustment_date" value="' . \eel_accounts\Support\Utf8::html((string)($period['period_end'] ?? '')) . '"><input type="hidden" name="adjustment_description" value="Custom journal"><input type="hidden" name="adjustment_journal_key" value="manual-cutoff-' . bin2hex(random_bytes(4)) . '"><div class="table-scroll"><table><thead><tr><th>Nominal</th><th>Debit</th><th>Credit</th><th>Description</th></tr></thead><tbody>';
         for ($index = 0; $index < 2; $index++) {
             $html .= '<tr><td><select class="select" name="adjustment_line_' . $index . '_nominal_id"' . $disabled . '>' . $this->nominalOptions((array)($data['nominals'] ?? [])) . '</select></td><td><input class="input" name="adjustment_line_' . $index . '_debit" inputmode="decimal"' . $disabled . '></td><td><input class="input" name="adjustment_line_' . $index . '_credit" inputmode="decimal"' . $disabled . '></td><td><input class="input" name="adjustment_line_' . $index . '_description"' . $disabled . '></td></tr>';
         }
@@ -40,7 +40,7 @@ final class _journal_manual_entryCard extends CardBaseFramework
     private function nominalOptions(array $nominals): string
     {
         $html = '<option value="">Choose nominal...</option>';
-        foreach ($nominals as $nominal) { $id = (int)($nominal['id'] ?? 0); if ($id > 0) $html .= '<option value="' . $id . '">' . HelperFramework::escape(trim((string)($nominal['code'] ?? '') . ' ' . (string)($nominal['name'] ?? ''))) . '</option>'; }
+        foreach ($nominals as $nominal) { $id = (int)($nominal['id'] ?? 0); if ($id > 0) $html .= '<option value="' . $id . '">' . \eel_accounts\Support\Utf8::html(trim((string)($nominal['code'] ?? '') . ' ' . (string)($nominal['name'] ?? ''))) . '</option>'; }
         return $html;
     }
 
@@ -49,7 +49,7 @@ final class _journal_manual_entryCard extends CardBaseFramework
         $rows = '';
         foreach ($adjustments as $journal) {
             if (!str_starts_with((string)($journal['journal_key'] ?? ''), 'manual-cutoff-')) continue;
-            $rows .= '<tr><td>' . HelperFramework::escape(HelperFramework::displayDate((string)($journal['journal_date'] ?? ''))) . '</td><td>' . HelperFramework::escape((string)($journal['description'] ?? '')) . '</td><td>' . count((array)($journal['lines'] ?? [])) . '</td></tr>';
+            $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html(HelperFramework::displayDate((string)($journal['journal_date'] ?? ''))) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($journal['description'] ?? '')) . '</td><td>' . count((array)($journal['lines'] ?? [])) . '</td></tr>';
         }
 
         return '<section class="panel-soft settings-stack"><h4 class="card-title">Posted Manual Journal Entries</h4>' . ($rows !== ''

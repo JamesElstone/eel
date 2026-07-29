@@ -57,7 +57,7 @@ final class _otp_status_testCard extends CardBaseFramework
             $statusHtml = '<div class="summary-grid">
                 <div class="summary-card">
                     <div class="summary-label">User ID</div>
-                    <div class="summary-value">' . HelperFramework::escape((string)$userId) . '</div>
+                    <div class="summary-value">' . \eel_accounts\Support\Utf8::html((string)$userId) . '</div>
                 </div>
                 <div class="summary-card">
                     <div class="summary-label">TOTP Secret</div>
@@ -73,7 +73,7 @@ final class _otp_status_testCard extends CardBaseFramework
                     <strong>' . ($isEnabled ? 'Two-factor authentication is active.' : 'Two-factor authentication still needs setup.') . '</strong>
                     <span class="status-badge ' . ($isEnabled ? 'success' : 'warning') . '">' . ($isEnabled ? 'Enabled' : 'Pending') . '</span>
                 </div>
-                <p class="helper">Current device id: ' . HelperFramework::escape($currentDeviceId !== '' ? $currentDeviceId : 'Unavailable') . '</p>
+                <p class="helper">Current device id: ' . \eel_accounts\Support\Utf8::html($currentDeviceId !== '' ? $currentDeviceId : 'Unavailable') . '</p>
             </div>';
         }
 

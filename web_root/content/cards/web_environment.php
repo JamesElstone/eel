@@ -34,13 +34,13 @@ final class _web_environmentCard extends CardBaseFramework
         return '<form method="post" action="?page=settings" data-ajax="true" class="form-grid">
             ' . $this->hiddenFields($context) . '
             <input type="hidden" name="card_action" value="WebEnvironment">
-            <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
+            <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
             <fieldset class="form-row full settings-fieldset">
                 <legend>Server Address</legend>
                 <div class="form-grid">
                     <div class="form-row full">
                         <p class="helper">Current server IP address</p>
-                        <p><code>' . HelperFramework::escape($this->serverIpAddress()) . '</code></p>
+                        <p><code>' . \eel_accounts\Support\Utf8::html($this->serverIpAddress()) . '</code></p>
                     </div>
                 </div>
             </fieldset>
@@ -82,8 +82,8 @@ final class _web_environmentCard extends CardBaseFramework
         foreach ($limits as $key => $label) {
             $value = ini_get($key);
             $html .= '<div class="web-environment-soft-panel">
-                <p class="helper">' . HelperFramework::escape($label) . '</p>
-                <p><code>' . HelperFramework::escape($value === false ? 'Unavailable' : (string)$value) . '</code></p>
+                <p class="helper">' . \eel_accounts\Support\Utf8::html($label) . '</p>
+                <p><code>' . \eel_accounts\Support\Utf8::html($value === false ? 'Unavailable' : (string)$value) . '</code></p>
             </div>';
         }
 
@@ -108,17 +108,17 @@ final class _web_environmentCard extends CardBaseFramework
     private function input(string $id, string $label, string $name, string $value, string $type = 'text'): string
     {
         return '<div class="form-row full">
-            <label for="' . HelperFramework::escape($id) . '">' . HelperFramework::escape($label) . '</label>
-            <input class="input" id="' . HelperFramework::escape($id) . '" name="' . HelperFramework::escape($name) . '" type="' . HelperFramework::escape($type) . '" value="' . HelperFramework::escape($value) . '">
+            <label for="' . \eel_accounts\Support\Utf8::html($id) . '">' . \eel_accounts\Support\Utf8::html($label) . '</label>
+            <input class="input" id="' . \eel_accounts\Support\Utf8::html($id) . '" name="' . \eel_accounts\Support\Utf8::html($name) . '" type="' . \eel_accounts\Support\Utf8::html($type) . '" value="' . \eel_accounts\Support\Utf8::html($value) . '">
         </div>';
     }
 
     private function textarea(string $id, string $label, string $name, string $value, string $helper, string $afterTextareaHtml = ''): string
     {
         return '<div class="form-row full">
-            <label for="' . HelperFramework::escape($id) . '">' . HelperFramework::escape($label) . '</label>
-            <p class="helper">' . HelperFramework::escape($helper) . '</p>
-            <textarea class="input" id="' . HelperFramework::escape($id) . '" name="' . HelperFramework::escape($name) . '" rows="3">' . HelperFramework::escape($value) . '</textarea>
+            <label for="' . \eel_accounts\Support\Utf8::html($id) . '">' . \eel_accounts\Support\Utf8::html($label) . '</label>
+            <p class="helper">' . \eel_accounts\Support\Utf8::html($helper) . '</p>
+            <textarea class="input" id="' . \eel_accounts\Support\Utf8::html($id) . '" name="' . \eel_accounts\Support\Utf8::html($name) . '" rows="3">' . \eel_accounts\Support\Utf8::html($value) . '</textarea>
             ' . ($afterTextareaHtml !== '' ? '<div class="form-row-actions align-right">' . $afterTextareaHtml . '</div>' : '') . '
         </div>';
     }
@@ -127,7 +127,7 @@ final class _web_environmentCard extends CardBaseFramework
     {
         $html = '';
         foreach ((array)($context['page']['page_cards'] ?? []) as $cardKey) {
-            $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+            $html .= '<input type="hidden" name="cards[]" value="' . \eel_accounts\Support\Utf8::html((string)$cardKey) . '">';
         }
 
         return $html;

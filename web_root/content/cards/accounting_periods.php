@@ -315,7 +315,7 @@ final class _accounting_periodsCard extends CardBaseFramework
 
     private function escape(?string $value): string
     {
-        return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+        return \eel_accounts\Support\Utf8::html($value);
     }
 
     private function periodDisplayRange(array $period): string
@@ -382,7 +382,7 @@ final class _accounting_periodsCard extends CardBaseFramework
 
     private function existingPeriodsTable(array $context): TableFramework
     {
-        return TableFramework::make($this->key(), $this->existingPeriodRows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->existingPeriodRows($context))
             ->filename('accounting-periods')
             ->empty('No accounting periods have been created for this company yet.')
             ->classes('', 'table-scroll-mini')

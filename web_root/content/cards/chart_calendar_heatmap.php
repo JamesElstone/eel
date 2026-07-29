@@ -88,7 +88,7 @@ final class _chart_calendar_heatmapCard extends CardBaseFramework
             ])
             . $chartHtml
             . '</form>'
-            . '<p class="helper calendar-heatmap-selection">Selected Day: ' . HelperFramework::escape($selectedDate) . '</p>'
+            . '<p class="helper calendar-heatmap-selection">Selected Day: ' . \eel_accounts\Support\Utf8::html($selectedDate) . '</p>'
             . '</div>';
     }
 
@@ -179,6 +179,6 @@ final class _chart_calendar_heatmapCard extends CardBaseFramework
             return '';
         }
 
-        return '<input type="hidden" name="' . HelperFramework::escape($name) . '" value="' . HelperFramework::escape((string)$value) . '">';
+        return '<input type="hidden" name="' . \eel_accounts\Support\Utf8::html($name) . '" value="' . \eel_accounts\Support\Utf8::html((string)$value) . '">';
     }
 }

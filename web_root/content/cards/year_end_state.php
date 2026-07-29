@@ -98,7 +98,7 @@ final class _year_end_stateCard extends CardBaseFramework
                 <div class="summary-grid">
                     <div class="summary-card">
                         <div class="summary-label">Status</div>
-                        <div class="summary-value"><span class="badge ' . HelperFramework::escape($this->badgeClass($status)) . '">' . HelperFramework::escape($this->statusLabel($status)) . '</span></div>
+                        <div class="summary-value"><span class="badge ' . \eel_accounts\Support\Utf8::html($this->badgeClass($status)) . '">' . \eel_accounts\Support\Utf8::html($this->statusLabel($status)) . '</span></div>
                     </div>
                     <div class="summary-card">
                         <div class="summary-label">Calculation basis</div>
@@ -106,12 +106,12 @@ final class _year_end_stateCard extends CardBaseFramework
                     </div>
                     <div class="summary-card">
                         <div class="summary-label">Latest backup</div>
-                        <div class="summary-value">' . HelperFramework::escape($latestBackupAt !== '' ? $latestBackupAt : 'No backup available') . '</div>
+                        <div class="summary-value">' . \eel_accounts\Support\Utf8::html($latestBackupAt !== '' ? $latestBackupAt : 'No backup available') . '</div>
                     </div>
                 </div>
-                <div class="helper">' . HelperFramework::escape($backupHelp) . '</div>
-                <div class="helper">' . HelperFramework::escape($this->statusHelp($status, $isLocked)) . '</div>
-                ' . ($unlockLockOrderHelp !== '' ? '<div class="helper">' . HelperFramework::escape($unlockLockOrderHelp) . '</div>' : '') . '
+                <div class="helper">' . \eel_accounts\Support\Utf8::html($backupHelp) . '</div>
+                <div class="helper">' . \eel_accounts\Support\Utf8::html($this->statusHelp($status, $isLocked)) . '</div>
+                ' . ($unlockLockOrderHelp !== '' ? '<div class="helper">' . \eel_accounts\Support\Utf8::html($unlockLockOrderHelp) . '</div>' : '') . '
                 <div class="actions-row">
                     ' . $this->actionForm($companyId, $accountingPeriodId, 'recalculate', 'Refresh Year-End Checklist', $isLocked, $isLocked ? 'This accounting period is locked.' : 'Re-checks the year-end readiness checklist using the latest ledger, review, tax, and confirmation data.') . '
                     ' . $this->backupForm($context) . '
@@ -136,7 +136,7 @@ final class _year_end_stateCard extends CardBaseFramework
             ' . $this->hiddenCardFields($context) . '
             <input type="hidden" name="card_action" value="Backup">
             <input type="hidden" name="company_id" value="' . (int)($context['company']['id'] ?? 0) . '">
-            <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
+            <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
             <button class="button primary" type="submit" name="intent" value="create_database_backup" data-processing-text="Creating Backup" data-processing-state="disabled">Backup</button>
         </form>';
     }
@@ -144,15 +144,15 @@ final class _year_end_stateCard extends CardBaseFramework
     private function actionForm(int $companyId, int $accountingPeriodId, string $intent, string $label, bool $disabled = false, string $title = ''): string
     {
         $disabledAttribute = $disabled ? ' disabled' : '';
-        $titleAttribute = $title !== '' ? ' title="' . HelperFramework::escape($title) . '"' : '';
+        $titleAttribute = $title !== '' ? ' title="' . \eel_accounts\Support\Utf8::html($title) . '"' : '';
 
         return '<form method="post" data-ajax="true" data-year-end-state-form="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="YearEnd">
-            <input type="hidden" name="intent" value="' . HelperFramework::escape($intent) . '">
+            <input type="hidden" name="intent" value="' . \eel_accounts\Support\Utf8::html($intent) . '">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-            <button class="button primary" type="submit" data-year-end-state-submit="true" data-year-end-state-running-label="' . HelperFramework::escape($this->runningLabel($intent)) . '"' . $disabledAttribute . $titleAttribute . '>' . HelperFramework::escape($label) . '</button>
+            <button class="button primary" type="submit" data-year-end-state-submit="true" data-year-end-state-running-label="' . \eel_accounts\Support\Utf8::html($this->runningLabel($intent)) . '"' . $disabledAttribute . $titleAttribute . '>' . \eel_accounts\Support\Utf8::html($label) . '</button>
         </form>';
     }
 
@@ -160,7 +160,7 @@ final class _year_end_stateCard extends CardBaseFramework
     {
         $html = '';
         foreach ((array)($context['page']['page_cards'] ?? []) as $cardKey) {
-            $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+            $html .= '<input type="hidden" name="cards[]" value="' . \eel_accounts\Support\Utf8::html((string)$cardKey) . '">';
         }
 
         return $html;
@@ -226,7 +226,7 @@ final class _year_end_stateCard extends CardBaseFramework
     {
         $html = '';
         foreach ($errors as $error) {
-            $html .= '<div class="helper">' . HelperFramework::escape((string)$error) . '</div>';
+            $html .= '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$error) . '</div>';
         }
 
         return $html;

@@ -20,20 +20,20 @@ final class _filing_evidence_calculation_detailCard extends CardBaseFramework
     {
         $detail = (array)($context['services']['filingEvidenceCalculationDetail'] ?? []);
         if (!empty($detail['empty_selection'])) { return '<div class="helper">Choose a frozen calculation area above.</div>'; }
-        if (empty($detail['available'])) { return '<div class="helper">' . HelperFramework::escape((string)(($detail['errors'] ?? [])[0] ?? 'Frozen detail unavailable.')) . '</div>'; }
+        if (empty($detail['available'])) { return '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)(($detail['errors'] ?? [])[0] ?? 'Frozen detail unavailable.')) . '</div>'; }
         $rows = '';
         foreach ((array)$detail['rows'] as $row) {
-            $rows .= '<tr><td>' . HelperFramework::escape((string)($row['source_date'] ?? '')) . '</td><td><strong>'
-                . HelperFramework::escape((string)($row['label'] ?? 'Frozen source')) . '</strong><br><span class="helper">'
-                . HelperFramework::escape((string)($row['source_label'] ?? $row['source_type'] ?? '')) . '</span></td><td>'
-                . HelperFramework::escape(trim((string)($row['nominal_code'] ?? '') . ' ' . (string)($row['nominal_name'] ?? ''))) . '</td><td>'
-                . HelperFramework::escape((string)($row['accounting_amount'] ?? '0')) . '</td><td>' . HelperFramework::escape((string)($row['tax_adjustment_amount'] ?? '0')) . '</td><td>'
-                . HelperFramework::escape(trim((string)($row['rule_code'] ?? '') . ' ' . (string)($row['rule_version'] ?? ''))) . '</td><td>' . $this->currentJournalLink($row, $context) . '</td></tr>';
+            $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)($row['source_date'] ?? '')) . '</td><td><strong>'
+                . \eel_accounts\Support\Utf8::html((string)($row['label'] ?? 'Frozen source')) . '</strong><br><span class="helper">'
+                . \eel_accounts\Support\Utf8::html((string)($row['source_label'] ?? $row['source_type'] ?? '')) . '</span></td><td>'
+                . \eel_accounts\Support\Utf8::html(trim((string)($row['nominal_code'] ?? '') . ' ' . (string)($row['nominal_name'] ?? ''))) . '</td><td>'
+                . \eel_accounts\Support\Utf8::html((string)($row['accounting_amount'] ?? '0')) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($row['tax_adjustment_amount'] ?? '0')) . '</td><td>'
+                . \eel_accounts\Support\Utf8::html(trim((string)($row['rule_code'] ?? '') . ' ' . (string)($row['rule_version'] ?? ''))) . '</td><td>' . $this->currentJournalLink($row, $context) . '</td></tr>';
         }
         if ($rows === '') { $rows = '<tr><td colspan="7">No journal-level rows are required for this calculation.</td></tr>'; }
         return '<div class="helper"><span class="badge success">Frozen evidence</span> Displayed values come from the immutable snapshot, not the current ledger.</div>'
-            . '<div class="summary-grid"><div class="summary-card"><div class="summary-label">Frozen result</div><div class="summary-value">' . HelperFramework::escape((string)($detail['amount'] ?? 0)) . '</div></div>'
-            . '<div class="summary-card"><div class="summary-label">Expected result</div><div class="summary-value">' . HelperFramework::escape((string)($detail['expected_amount'] ?? 0)) . '</div></div></div>'
+            . '<div class="summary-grid"><div class="summary-card"><div class="summary-label">Frozen result</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html((string)($detail['amount'] ?? 0)) . '</div></div>'
+            . '<div class="summary-card"><div class="summary-label">Expected result</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html((string)($detail['expected_amount'] ?? 0)) . '</div></div></div>'
             . '<div class="table-scroll"><table><thead><tr><th>Date</th><th>Frozen source</th><th>Nominal</th><th>Accounting</th><th>Tax adjustment</th><th>Rule</th><th>Live record</th></tr></thead><tbody>' . $rows . '</tbody></table></div>';
     }
     private function currentJournalLink(array $row, array $context): string

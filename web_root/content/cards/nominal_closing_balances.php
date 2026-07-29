@@ -75,7 +75,7 @@ final class _nominal_closing_balancesCard extends CardBaseFramework
             <section class="panel-soft">
                 <div class="form-grid">
                     <div class="form-row"><label for="adjustment-template-type">Template</label><select class="select" id="adjustment-template-type" name="adjustment_template_type" form="' . $formId . '">' . $this->options(['accrual' => 'Create accrual', 'prepayment' => 'Create prepayment', 'deferred_income' => 'Create deferred income', 'custom' => 'Custom journal'], 'accrual') . '</select></div>
-                    <div class="form-row"><label for="adjustment-date">Date</label><input class="input" id="adjustment-date" name="adjustment_date" form="' . $formId . '" type="date" value="' . HelperFramework::escape((string)($accountingPeriod['period_end'] ?? '')) . '"></div>
+                    <div class="form-row"><label for="adjustment-date">Date</label><input class="input" id="adjustment-date" name="adjustment_date" form="' . $formId . '" type="date" value="' . \eel_accounts\Support\Utf8::html((string)($accountingPeriod['period_end'] ?? '')) . '"></div>
                     <div class="form-row"><label for="adjustment-description">Description</label><input class="input" id="adjustment-description" name="adjustment_description" form="' . $formId . '" value=""></div>
                     <div class="form-row"><label for="adjustment-notes">Notes</label><input class="input" id="adjustment-notes" name="adjustment_notes" form="' . $formId . '" value=""></div>
                     <div class="form-row"><label for="adjustment-primary-nominal">Primary nominal</label><select class="select" id="adjustment-primary-nominal" name="adjustment_primary_nominal_id" form="' . $formId . '">' . $this->nominalOptions((array)($adjustments['nominals'] ?? []), 0) . '</select></div>
@@ -104,9 +104,9 @@ final class _nominal_closing_balancesCard extends CardBaseFramework
             $description = (string)($row['line_description'] ?? '');
             $html .= '<tr>
                 <td><select class="select" name="' . $prefix . '_line_' . $index . '_nominal_id" form="' . $formId . '">' . $this->nominalOptions($nominals, $nominalId) . '</select></td>
-                <td><input class="input" name="' . $prefix . '_line_' . $index . '_debit" form="' . $formId . '" value="' . HelperFramework::escape($this->lineAmount($row, 'debit')) . '" inputmode="decimal"></td>
-                <td><input class="input" name="' . $prefix . '_line_' . $index . '_credit" form="' . $formId . '" value="' . HelperFramework::escape($this->lineAmount($row, 'credit')) . '" inputmode="decimal"></td>
-                <td><input class="input" name="' . $prefix . '_line_' . $index . '_description" form="' . $formId . '" value="' . HelperFramework::escape($description) . '"></td>
+                <td><input class="input" name="' . $prefix . '_line_' . $index . '_debit" form="' . $formId . '" value="' . \eel_accounts\Support\Utf8::html($this->lineAmount($row, 'debit')) . '" inputmode="decimal"></td>
+                <td><input class="input" name="' . $prefix . '_line_' . $index . '_credit" form="' . $formId . '" value="' . \eel_accounts\Support\Utf8::html($this->lineAmount($row, 'credit')) . '" inputmode="decimal"></td>
+                <td><input class="input" name="' . $prefix . '_line_' . $index . '_description" form="' . $formId . '" value="' . \eel_accounts\Support\Utf8::html($description) . '"></td>
             </tr>';
         }
 
@@ -122,9 +122,9 @@ final class _nominal_closing_balancesCard extends CardBaseFramework
         $rows = '';
         foreach ($adjustments as $adjustment) {
             $rows .= '<tr>
-                <td>' . HelperFramework::escape(HelperFramework::displayDate((string)($adjustment['journal_date'] ?? ''))) . '</td>
-                <td>' . HelperFramework::escape((string)($adjustment['description'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($adjustment['journal_tag'] ?? ''), '_')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html(HelperFramework::displayDate((string)($adjustment['journal_date'] ?? ''))) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($adjustment['description'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)($adjustment['journal_tag'] ?? ''), '_')) . '</td>
                 <td>' . count((array)($adjustment['lines'] ?? [])) . '</td>
             </tr>';
         }
@@ -137,7 +137,7 @@ final class _nominal_closing_balancesCard extends CardBaseFramework
         $html = '<option value="">Select nominal</option>';
         foreach ($nominals as $nominal) {
             $nominalId = (int)($nominal['id'] ?? 0);
-            $html .= '<option value="' . $nominalId . '"' . ($nominalId === $selectedNominalId ? ' selected' : '') . '>' . HelperFramework::escape(FormattingFramework::nominalLabel($nominal)) . '</option>';
+            $html .= '<option value="' . $nominalId . '"' . ($nominalId === $selectedNominalId ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html(FormattingFramework::nominalLabel($nominal)) . '</option>';
         }
 
         return $html;
@@ -147,7 +147,7 @@ final class _nominal_closing_balancesCard extends CardBaseFramework
     {
         $html = '';
         foreach ($options as $value => $label) {
-            $html .= '<option value="' . HelperFramework::escape((string)$value) . '"' . ((string)$value === $selectedValue ? ' selected' : '') . '>' . HelperFramework::escape((string)$label) . '</option>';
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html((string)$value) . '"' . ((string)$value === $selectedValue ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html((string)$label) . '</option>';
         }
 
         return $html;
@@ -167,7 +167,7 @@ final class _nominal_closing_balancesCard extends CardBaseFramework
     {
         $html = '';
         foreach ($errors as $error) {
-            $html .= '<div class="helper">' . HelperFramework::escape((string)$error) . '</div>';
+            $html .= '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$error) . '</div>';
         }
 
         return $html;

@@ -52,7 +52,7 @@ final class _dump_stackCard extends CardBaseFramework
                                 <button class="button primary" type="submit" name="intent" value="check">Test Action</button>
                             </form>
                         </div>
-                        <pre class="preformatted-panel">' . HelperFramework::escape($context['actionCallStack'] ?? '') . '</pre>
+                        <pre class="preformatted-panel">' . \eel_accounts\Support\Utf8::html($context['actionCallStack'] ?? '') . '</pre>
                     </div>
                 </div>
             </div>

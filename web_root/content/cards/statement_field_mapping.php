@@ -233,9 +233,9 @@ final class _statement_field_mappingCard extends CardBaseFramework
             <div class="stack">
                 ' . $summaryHtml . '
                 ' . $sampleHtml . '
-                <form method="post" action="' . HelperFramework::escape($action) . '" data-ajax="true">
+                <form method="post" action="' . \eel_accounts\Support\Utf8::html($action) . '" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-                    <input type="hidden" name="card_action" value="' . HelperFramework::escape($cardAction) . '">
+                    <input type="hidden" name="card_action" value="' . \eel_accounts\Support\Utf8::html($cardAction) . '">
                     <input type="hidden" name="intent" value="save_account_mapping">
                     <input type="hidden" name="company_id" value="' . $companyId . '">
                     <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
@@ -288,23 +288,23 @@ final class _statement_field_mappingCard extends CardBaseFramework
         $statusText = $hasConfirmedMapping && $extraHeaders === [] ? 'Mapping available' : 'Review mapping';
 
         $message = $mode === 'upload'
-            ? 'Selected upload: <strong>' . HelperFramework::escape((string)($upload['original_filename'] ?? '')) . '</strong>.'
-            : 'Saved account mapping source: <strong>' . HelperFramework::escape((string)($upload['original_filename'] ?? '')) . '</strong>.';
+            ? 'Selected upload: <strong>' . \eel_accounts\Support\Utf8::html((string)($upload['original_filename'] ?? '')) . '</strong>.'
+            : 'Saved account mapping source: <strong>' . \eel_accounts\Support\Utf8::html((string)($upload['original_filename'] ?? '')) . '</strong>.';
 
         $accountName = trim((string)($upload['account_name'] ?? ''));
         if ($accountName === '') {
             $accountName = 'No account selected';
         }
-        $message .= '<br>Field mappings apply to: <strong>' . HelperFramework::escape($accountName) . '</strong>.';
+        $message .= '<br>Field mappings apply to: <strong>' . \eel_accounts\Support\Utf8::html($accountName) . '</strong>.';
         $mappingLabel = $this->mappingStatusLabel($mappingRow);
 
         if ($mappingLabel !== '') {
-            $message .= '<br>Mapping status: <strong>' . HelperFramework::escape($mappingLabel) . '</strong>.';
+            $message .= '<br>Mapping status: <strong>' . \eel_accounts\Support\Utf8::html($mappingLabel) . '</strong>.';
         }
 
         if ($extraHeaders !== []) {
             $message .= '<br>Extra columns found in this file: <strong>'
-                . HelperFramework::escape(implode(', ', array_map(static fn($header): string => (string)$header, $extraHeaders)))
+                . \eel_accounts\Support\Utf8::html(implode(', ', array_map(static fn($header): string => (string)$header, $extraHeaders)))
                 . '</strong>.';
         }
 
@@ -314,7 +314,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
 
         return '<div class="statement-mapping-summary">
             <div class="helper statement-mapping-summary-copy">
-                <span class="badge ' . HelperFramework::escape($statusClass) . '">' . HelperFramework::escape($statusText) . '</span><br>
+                <span class="badge ' . \eel_accounts\Support\Utf8::html($statusClass) . '">' . \eel_accounts\Support\Utf8::html($statusText) . '</span><br>
                 ' . $message . '
             </div>
             ' . $accountSwitcherHtml . '
@@ -350,14 +350,14 @@ final class _statement_field_mappingCard extends CardBaseFramework
 
         $thead = '';
         foreach ($headers as $header) {
-            $thead .= '<th>' . HelperFramework::escape((string)$header) . '</th>';
+            $thead .= '<th>' . \eel_accounts\Support\Utf8::html((string)$header) . '</th>';
         }
 
         $tbody = '';
         foreach ($rows as $row) {
             $tbody .= '<tr>';
             foreach ((array)$row as $value) {
-                $tbody .= '<td>' . HelperFramework::escape((string)$value) . '</td>';
+                $tbody .= '<td>' . \eel_accounts\Support\Utf8::html((string)$value) . '</td>';
             }
             $tbody .= '</tr>';
         }
@@ -389,15 +389,15 @@ final class _statement_field_mappingCard extends CardBaseFramework
                 ?? ucfirst((string)($account['account_type'] ?? ''));
 
             $options .= '<option value="' . $accountId . '"' . $selected . '>'
-                . HelperFramework::escape((string)($account['account_name'] ?? ''))
-                . ' (' . HelperFramework::escape($type) . ')</option>';
+                . \eel_accounts\Support\Utf8::html((string)($account['account_name'] ?? ''))
+                . ' (' . \eel_accounts\Support\Utf8::html($type) . ')</option>';
         }
 
         $idPrefix = $mode === 'upload' ? 'upload' : 'account';
 
         return '<div class="form-row">
-            <label for="' . HelperFramework::escape($idPrefix) . '_mapping_account_id">Default Account to use</label>
-            <select class="select" id="' . HelperFramework::escape($idPrefix) . '_mapping_account_id" name="account_id" required data-no-submit-on-change="true" data-statement-mapping-account-selector>' . $options . '</select>
+            <label for="' . \eel_accounts\Support\Utf8::html($idPrefix) . '_mapping_account_id">Default Account to use</label>
+            <select class="select" id="' . \eel_accounts\Support\Utf8::html($idPrefix) . '_mapping_account_id" name="account_id" required data-no-submit-on-change="true" data-statement-mapping-account-selector>' . $options . '</select>
         </div>';
     }
 
@@ -415,13 +415,13 @@ final class _statement_field_mappingCard extends CardBaseFramework
             $selected = $selectedAccountId === $accountId ? ' selected' : '';
 
             $options .= '<option value="' . $accountId . '"' . $selected . '>'
-                . HelperFramework::escape((string)($account['account_name'] ?? ''))
+                . \eel_accounts\Support\Utf8::html((string)($account['account_name'] ?? ''))
                 . '</option>';
         }
 
-        return '<form method="post" action="' . HelperFramework::escape($action) . '" data-ajax="true" class="statement-mapping-account-switcher">
+        return '<form method="post" action="' . \eel_accounts\Support\Utf8::html($action) . '" data-ajax="true" class="statement-mapping-account-switcher">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-            <input type="hidden" name="card_action" value="' . HelperFramework::escape($cardAction) . '">
+            <input type="hidden" name="card_action" value="' . \eel_accounts\Support\Utf8::html($cardAction) . '">
             <input type="hidden" name="intent" value="select_field_mapping">
             <input type="hidden" name="show_card" value="statement_field_mapping">
             <label class="sr-only" for="statement_mapping_account_switcher">Account mapping source</label>
@@ -457,24 +457,24 @@ final class _statement_field_mappingCard extends CardBaseFramework
 
             if ($fieldName === 'currency') {
                 $gbpValue = \eel_accounts\Service\StatementUploadService::CURRENCY_DEFAULT_OPTION_GBP;
-                $options .= '<option value="' . HelperFramework::escape($gbpValue) . '"'
+                $options .= '<option value="' . \eel_accounts\Support\Utf8::html($gbpValue) . '"'
                     . ($selectedHeader === $gbpValue ? ' selected' : '')
                     . '>GBP</option>';
             }
 
             foreach ($sourceHeaders as $header) {
                 $header = (string)$header;
-                $options .= '<option value="' . HelperFramework::escape($header) . '"'
+                $options .= '<option value="' . \eel_accounts\Support\Utf8::html($header) . '"'
                     . ($selectedHeader === $header ? ' selected' : '')
-                    . '>' . HelperFramework::escape($header) . '</option>';
+                    . '>' . \eel_accounts\Support\Utf8::html($header) . '</option>';
             }
 
             $html .= '<div class="form-row">
-                <label for="' . HelperFramework::escape($idPrefix . '_' . $fieldName) . '">'
-                    . HelperFramework::escape((string)($definition['label'] ?? $fieldName))
+                <label for="' . \eel_accounts\Support\Utf8::html($idPrefix . '_' . $fieldName) . '">'
+                    . \eel_accounts\Support\Utf8::html((string)($definition['label'] ?? $fieldName))
                     . (!empty($definition['required']) ? ' *' : '')
                     . '</label>
-                <select class="select" id="' . HelperFramework::escape($idPrefix . '_' . $fieldName) . '" name="mapping_' . HelperFramework::escape($fieldName) . '"' . $disabledAttributes . '>'
+                <select class="select" id="' . \eel_accounts\Support\Utf8::html($idPrefix . '_' . $fieldName) . '" name="mapping_' . \eel_accounts\Support\Utf8::html($fieldName) . '"' . $disabledAttributes . '>'
                     . $options
                     . '</select>
             </div>';

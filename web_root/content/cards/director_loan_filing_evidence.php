@@ -25,8 +25,8 @@ final class _director_loan_filing_evidenceCard extends CardBaseFramework
         $url = '?page=filing_evidence&evidence_reference=' . rawurlencode($reference)
             . '&evidence_bundle_id=' . (int)($bundle['id'] ?? 0);
         return '<section class="panel-soft settings-stack"><div class="summary-card-header"><div><div class="eyebrow">Current Year End bundle</div><div class="summary-value">'
-            . HelperFramework::escape((string)($bundle['display_id'] ?? $reference)) . '</div></div><span class="badge success">Frozen</span></div>'
+            . \eel_accounts\Support\Utf8::html((string)($bundle['display_id'] ?? $reference)) . '</div></div><span class="badge success">Frozen</span></div>'
             . '<div class="helper">This bundle contains the frozen S455, CT600A/Section 464A–C and Section 413 evidence used at Year End.</div>'
-            . '<a class="button primary" href="' . HelperFramework::escape($url) . '">View frozen filing evidence</a></section>';
+            . '<a class="button primary" href="' . \eel_accounts\Support\Utf8::html($url) . '">View frozen filing evidence</a></section>';
     }
 }

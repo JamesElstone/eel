@@ -32,9 +32,9 @@ final class _licenses_overviewCard extends CardBaseFramework
 
         foreach ($licenses as $license) {
             $items .= '<div class="license-summary-item">
-                <strong>' . HelperFramework::escape($license['short_title']) . '</strong>
-                <span>' . HelperFramework::escape($license['scope']) . '</span>
-                <span class="helper">Full text: ' . HelperFramework::escape($license['source']) . '</span>
+                <strong>' . \eel_accounts\Support\Utf8::html($license['short_title']) . '</strong>
+                <span>' . \eel_accounts\Support\Utf8::html($license['scope']) . '</span>
+                <span class="helper">Full text: ' . \eel_accounts\Support\Utf8::html($license['source']) . '</span>
             </div>';
         }
 

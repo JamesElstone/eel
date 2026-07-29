@@ -29,7 +29,7 @@ final class _tax_ct_period_factsCard extends CardBaseFramework
         $accountingPeriodId = (int)($context['company']['accounting_period_id'] ?? 0);
         $facts = (array)($context['services']['ct_period_facts'] ?? []);
         if (empty($facts['available'])) {
-            return '<div class="helper">' . HelperFramework::escape((string)(($facts['errors'] ?? [])[0] ?? 'CT-period facts are unavailable.')) . '</div>';
+            return '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)(($facts['errors'] ?? [])[0] ?? 'CT-period facts are unavailable.')) . '</div>';
         }
         $html = '<section class="settings-stack" id="ct-period-facts"><div class="helper">Enter the number of associated companies excluding this company. The application uses 0 until you change it. Close-company status is calculated from the effective ownership and relationship records at the CT-period end.</div>';
         foreach ((array)$facts['periods'] as $period) {
@@ -38,7 +38,7 @@ final class _tax_ct_period_factsCard extends CardBaseFramework
                 . '<input type="hidden" name="card_action" value="Tax"><input type="hidden" name="intent" value="save_ct_period_facts">'
                 . '<input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
                 . '<input type="hidden" name="ct_period_id" value="' . (int)$period['ct_period_id'] . '">'
-                . '<div class="actions-row"><h4 class="card-title">Tax Period ' . (int)$period['sequence_no'] . ': ' . HelperFramework::escape((string)$period['period_start']) . ' to ' . HelperFramework::escape((string)$period['period_end']) . '</h4>'
+                . '<div class="actions-row"><h4 class="card-title">Tax Period ' . (int)$period['sequence_no'] . ': ' . \eel_accounts\Support\Utf8::html((string)$period['period_start']) . ' to ' . \eel_accounts\Support\Utf8::html((string)$period['period_end']) . '</h4>'
                 . '</div>'
                 . $this->closeCompanyStatement((array)($period['close_company'] ?? []))
                 . '<div class="form-grid"><div class="form-row"><label>Associated companies excluding this company</label><input class="input" type="number" min="0" name="associated_company_count" value="' . max(0, (int)($period['associated_company_count'] ?? 0)) . '" required></div></div>'
@@ -59,9 +59,9 @@ final class _tax_ct_period_factsCard extends CardBaseFramework
         $counts = (int)($closeCompany['shareholder_party_count'] ?? 0) . ' shareholder party/parties and '
             . (int)($closeCompany['non_shareholder_party_count'] ?? 0) . ' non-shareholder participator or associate party/parties.';
 
-        return '<div class="panel-soft ' . $class . '"><strong>' . HelperFramework::escape($label) . '</strong><div class="helper">'
-            . HelperFramework::escape((string)($closeCompany['detail'] ?? 'Close-company status is unavailable.'))
-            . ' ' . HelperFramework::escape($counts)
+        return '<div class="panel-soft ' . $class . '"><strong>' . \eel_accounts\Support\Utf8::html($label) . '</strong><div class="helper">'
+            . \eel_accounts\Support\Utf8::html((string)($closeCompany['detail'] ?? 'Close-company status is unavailable.'))
+            . ' ' . \eel_accounts\Support\Utf8::html($counts)
             . ' <a class="button compact" href="?page=incorporation&amp;show_card=incorporation_relationships">Review ownership and relationships</a></div></div>';
     }
 }

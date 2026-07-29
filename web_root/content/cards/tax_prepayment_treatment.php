@@ -152,18 +152,18 @@ final class _tax_prepayment_treatmentCard extends CardBaseFramework
 
             $rows[] = [
                 'source' => $sourceLabel,
-                'source_html' => '<strong>' . HelperFramework::escape($sourceLabel) . '</strong>'
-                    . ($sourceDetail !== '' ? '<br><span class="helper">' . HelperFramework::escape($sourceDetail) . '</span>' : ''),
+                'source_html' => '<strong>' . \eel_accounts\Support\Utf8::html($sourceLabel) . '</strong>'
+                    . ($sourceDetail !== '' ? '<br><span class="helper">' . \eel_accounts\Support\Utf8::html($sourceDetail) . '</span>' : ''),
                 'purchase_pence' => $amountPence,
-                'purchase_html' => HelperFramework::escape($this->moneyPence($settings, $amountPence)),
+                'purchase_html' => \eel_accounts\Support\Utf8::html($this->moneyPence($settings, $amountPence)),
                 'service_period' => $servicePeriod,
-                'service_period_html' => HelperFramework::escape($servicePeriod) . '<br><span class="helper">' . $totalDays . ' inclusive days</span>',
+                'service_period_html' => \eel_accounts\Support\Utf8::html($servicePeriod) . '<br><span class="helper">' . $totalDays . ' inclusive days</span>',
                 'calculation' => $calculation . ' ' . $calculationDetail,
-                'calculation_html' => HelperFramework::escape($calculation) . '<br><span class="helper">' . HelperFramework::escape($calculationDetail) . '</span>',
+                'calculation_html' => \eel_accounts\Support\Utf8::html($calculation) . '<br><span class="helper">' . \eel_accounts\Support\Utf8::html($calculationDetail) . '</span>',
                 'expense_pence' => $expensePence,
-                'expense_html' => HelperFramework::escape($this->moneyPence($settings, $expensePence)),
+                'expense_html' => \eel_accounts\Support\Utf8::html($this->moneyPence($settings, $expensePence)),
                 'closing_pence' => $closingPence,
-                'closing_html' => HelperFramework::escape($this->moneyPence($settings, $closingPence)),
+                'closing_html' => \eel_accounts\Support\Utf8::html($this->moneyPence($settings, $closingPence)),
                 'journal_state' => $journalState,
                 'journal_state_html' => $this->journalStateHtml($journalState, $postingDetail),
                 'journal_state_export' => $journalState === 'preview_only'
@@ -176,7 +176,7 @@ final class _tax_prepayment_treatmentCard extends CardBaseFramework
 
     private function table(array $rows): TableFramework
     {
-        return TableFramework::make($this->key(), $rows)
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $rows)
             ->filename('prepayment-accounting-treatment')
             ->exportLimit(5000)
             ->empty('No prepayment schedule overlaps the selected accounting period.')
@@ -200,12 +200,12 @@ final class _tax_prepayment_treatmentCard extends CardBaseFramework
 
     private function journalStateHtml(string $journalState, string $postingDetail): string
     {
-        $detail = '<span class="helper">' . HelperFramework::escape($postingDetail) . '</span>';
+        $detail = '<span class="helper">' . \eel_accounts\Support\Utf8::html($postingDetail) . '</span>';
         if ($journalState === 'preview_only') {
             return $detail;
         }
         $class = $journalState === 'posted' ? 'success' : ($journalState === 'correction_required' ? 'warning' : 'info');
-        return '<span class="badge ' . $class . '">' . HelperFramework::escape(HelperFramework::labelFromKey($journalState, '_'))
+        return '<span class="badge ' . $class . '">' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($journalState, '_'))
             . '</span><br>' . $detail;
     }
 
@@ -225,8 +225,8 @@ final class _tax_prepayment_treatmentCard extends CardBaseFramework
 
     private function summary(string $label, string $value): string
     {
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label)
-            . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+        return '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label)
+            . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div></div>';
     }
 
     private function messages(array $messages): string
@@ -236,7 +236,7 @@ final class _tax_prepayment_treatmentCard extends CardBaseFramework
         }
 
         return '<div class="helper"><ul><li>'
-            . implode('</li><li>', array_map(static fn(mixed $message): string => HelperFramework::escape((string)$message), $messages))
+            . implode('</li><li>', array_map(static fn(mixed $message): string => \eel_accounts\Support\Utf8::html((string)$message), $messages))
             . '</li></ul></div>';
     }
 

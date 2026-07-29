@@ -581,7 +581,10 @@ final class TaxWorkingsService
             $rows[] = [
                 'asset_id' => $assetId,
                 'asset_code' => (string)($asset['asset_code'] ?? ''),
-                'description' => (string)($asset['description'] ?? ''),
+                'description' => \eel_accounts\Service\VehicleService::assetDisplayDescription(
+                    (string)($asset['description'] ?? ''),
+                    isset($asset['registration_mark']) ? (string)$asset['registration_mark'] : null
+                ),
                 'purchase_date' => (string)($asset['purchase_date'] ?? ''),
                 'cost' => round((float)($asset['cost'] ?? 0), 2),
                 'category' => (string)($asset['category'] ?? ''),

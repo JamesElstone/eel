@@ -166,14 +166,14 @@ final class _not_an_assetCard extends CardBaseFramework
         $dataEntry = (array)(($context['services']['nonAssetReview'] ?? [])['data_entry'] ?? []);
         $companySettingsService = new \eel_accounts\Service\CompanySettingsService();
 
-        return TableFramework::make($this->key(), $this->rows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->rows($context))
             ->filename('non-assets-potential-fixed-assets')
             ->exportLimit(5000)
             ->empty('No Tools & Small Equipment items are over the selected threshold.')
             ->column(
                 'date',
                 'Date',
-                html: fn(array $row): string => HelperFramework::escape($this->displayDate((string)($row['date'] ?? ''))),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->displayDate((string)($row['date'] ?? ''))),
                 export: static fn(array $row): string => (string)($row['date'] ?? ''),
                 exportType: 'date'
             )
@@ -183,7 +183,7 @@ final class _not_an_assetCard extends CardBaseFramework
             ->column(
                 'amount',
                 'Amount',
-                html: static fn(array $row): string => HelperFramework::escape($companySettingsService->money($settings, (float)($row['amount'] ?? 0))),
+                html: static fn(array $row): string => \eel_accounts\Support\Utf8::html($companySettingsService->money($settings, (float)($row['amount'] ?? 0))),
                 export: static fn(array $row): string => number_format((float)($row['amount'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -219,8 +219,8 @@ final class _not_an_assetCard extends CardBaseFramework
         $options = '';
         foreach (\eel_accounts\Service\AssetService::potentialAssetThresholdOptions() as $option) {
             $optionValue = (string)$option;
-            $options .= '<option value="' . HelperFramework::escape($optionValue) . '"' . ($option === $threshold ? ' selected' : '') . '>'
-                . HelperFramework::escape($companySettingsService->money($settings, $option))
+            $options .= '<option value="' . \eel_accounts\Support\Utf8::html($optionValue) . '"' . ($option === $threshold ? ' selected' : '') . '>'
+                . \eel_accounts\Support\Utf8::html($companySettingsService->money($settings, $option))
                 . '</option>';
         }
 
@@ -251,7 +251,7 @@ final class _not_an_assetCard extends CardBaseFramework
             return '<div class="helper"><span class="badge warning">Period locked</span> Non-asset thresholds and conversions are read only.</div>';
         }
 
-        return '<div class="helper">' . HelperFramework::escape(
+        return '<div class="helper">' . \eel_accounts\Support\Utf8::html(
             $reason !== '' ? $reason : 'Data entry is not permitted for this accounting period.'
         ) . '</div>';
     }
@@ -356,7 +356,7 @@ final class _not_an_assetCard extends CardBaseFramework
             return '';
         }
         if (empty($dataEntry['permitted'])) {
-            return '<span class="helper">' . HelperFramework::escape(
+            return '<span class="helper">' . \eel_accounts\Support\Utf8::html(
                 !empty($dataEntry['is_locked']) ? 'Period locked' : (string)($dataEntry['reason'] ?? 'Data entry is not permitted.')
             ) . '</span>';
         }
@@ -373,29 +373,29 @@ final class _not_an_assetCard extends CardBaseFramework
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
             <input type="hidden" name="default_bank_nominal_id" value="' . $defaultBankNominalId . '">
-            <input type="hidden" name="source_type" value="' . HelperFramework::escape($sourceType) . '">
+            <input type="hidden" name="source_type" value="' . \eel_accounts\Support\Utf8::html($sourceType) . '">
             <input type="hidden" name="source_id" value="' . $sourceId . '">
-            <input type="hidden" name="description" value="' . HelperFramework::escape((string)($row['description'] ?? '')) . '">
-            <input type="hidden" name="purchase_date" value="' . HelperFramework::escape((string)($row['date'] ?? '')) . '">
-            <input type="hidden" name="cost" value="' . HelperFramework::escape(number_format((float)($row['amount'] ?? 0), 2, '.', '')) . '">
+            <input type="hidden" name="description" value="' . \eel_accounts\Support\Utf8::html((string)($row['description'] ?? '')) . '">
+            <input type="hidden" name="purchase_date" value="' . \eel_accounts\Support\Utf8::html((string)($row['date'] ?? '')) . '">
+            <input type="hidden" name="cost" value="' . \eel_accounts\Support\Utf8::html(number_format((float)($row['amount'] ?? 0), 2, '.', '')) . '">
             <div class="form-flex-flow">
                 <div class="form-row">
-                    <label for="' . HelperFramework::escape($formId) . '-category">Asset category</label>
-                    <select class="select" id="' . HelperFramework::escape($formId) . '-category" name="asset_category">' . $this->assetCategoryOptions('tools_equipment') . '</select>
+                    <label for="' . \eel_accounts\Support\Utf8::html($formId) . '-category">Asset category</label>
+                    <select class="select" id="' . \eel_accounts\Support\Utf8::html($formId) . '-category" name="asset_category">' . $this->assetCategoryOptions('tools_equipment') . '</select>
                 </div>
                 <div class="form-row">
-                    <label for="' . HelperFramework::escape($formId) . '-life">Useful life</label>
-                    <select class="select" id="' . HelperFramework::escape($formId) . '-life" name="asset_useful_life_years">' . $this->assetUsefulLifeOptions(3) . '</select>
+                    <label for="' . \eel_accounts\Support\Utf8::html($formId) . '-life">Useful life</label>
+                    <select class="select" id="' . \eel_accounts\Support\Utf8::html($formId) . '-life" name="asset_useful_life_years">' . $this->assetUsefulLifeOptions(3) . '</select>
                 </div>
                 <div class="form-row">
-                    <label for="' . HelperFramework::escape($formId) . '-method" title="None: no depreciation is posted. Straight Line: spreads cost less EOL Value evenly over the useful life. Reducing Balance: depreciates by the same rate each period, using the asset&apos;s remaining value after previous depreciation.">Depreciation</label>
-                    <select class="select" id="' . HelperFramework::escape($formId) . '-method" name="asset_depreciation_method">' . $this->depreciationMethodOptions('straight_line') . '</select>
+                    <label for="' . \eel_accounts\Support\Utf8::html($formId) . '-method" title="None: no depreciation is posted. Straight Line: spreads cost less EOL Value evenly over the useful life. Reducing Balance: depreciates by the same rate each period, using the asset&apos;s remaining value after previous depreciation.">Depreciation</label>
+                    <select class="select" id="' . \eel_accounts\Support\Utf8::html($formId) . '-method" name="asset_depreciation_method">' . $this->depreciationMethodOptions('straight_line') . '</select>
                 </div>
                 <div class="form-row">
-                    <label for="' . HelperFramework::escape($formId) . '-residual" title="End of Life Value, also known as the Residual Value, is the value the item has after the useful life period has expired.">EOL Value</label>
-                    <input class="input" id="' . HelperFramework::escape($formId) . '-residual" name="asset_residual_value" inputmode="decimal" value="0.00">
+                    <label for="' . \eel_accounts\Support\Utf8::html($formId) . '-residual" title="End of Life Value, also known as the Residual Value, is the value the item has after the useful life period has expired.">EOL Value</label>
+                    <input class="input" id="' . \eel_accounts\Support\Utf8::html($formId) . '-residual" name="asset_residual_value" inputmode="decimal" value="0.00">
                 </div>
-                <button class="button primary" type="submit" data-chicken-check="true" data-chicken-title="Convert to Asset" data-chicken-message="' . HelperFramework::escape($message) . '" data-chicken-confirm-text="Convert to Asset" data-chicken-button-class="button primary">Convert to Asset</button>
+                <button class="button primary" type="submit" data-chicken-check="true" data-chicken-title="Convert to Asset" data-chicken-message="' . \eel_accounts\Support\Utf8::html($message) . '" data-chicken-confirm-text="Convert to Asset" data-chicken-button-class="button primary">Convert to Asset</button>
             </div>
         </form>';
     }
@@ -405,7 +405,7 @@ final class _not_an_assetCard extends CardBaseFramework
         $html = '';
         foreach (\eel_accounts\Service\AssetService::assetCategoryOptions() as $value => $label) {
             $selected = $value === $selectedCategory ? ' selected' : '';
-            $html .= '<option value="' . HelperFramework::escape((string)$value) . '"' . $selected . '>' . HelperFramework::escape((string)$label) . '</option>';
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html((string)$value) . '"' . $selected . '>' . \eel_accounts\Support\Utf8::html((string)$label) . '</option>';
         }
 
         return $html;
@@ -432,7 +432,7 @@ final class _not_an_assetCard extends CardBaseFramework
         $html = '';
         foreach ($options as $value => $label) {
             $selected = $value === $selectedMethod ? ' selected' : '';
-            $html .= '<option value="' . HelperFramework::escape($value) . '"' . $selected . '>' . HelperFramework::escape($label) . '</option>';
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html($value) . '"' . $selected . '>' . \eel_accounts\Support\Utf8::html($label) . '</option>';
         }
 
         return $html;

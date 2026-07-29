@@ -43,7 +43,7 @@ final class _nominals_account_typesCard extends CardBaseFramework
 
     private function table(): TableFramework
     {
-        return TableFramework::make($this->key(), $this->rows())
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->rows())
             ->filename('nominal-account-types')
             ->exportLimit(100)
             ->empty('No nominal account types were found.')

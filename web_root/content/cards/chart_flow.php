@@ -47,7 +47,7 @@ final class _chart_flowCard extends CardBaseFramework
     private function chartPanel(string $title, string $chartHtml): string
     {
         return '<div class="chart-panel chart-panel-wide">'
-            . '<h3>' . HelperFramework::escape($title) . '</h3>'
+            . '<h3>' . \eel_accounts\Support\Utf8::html($title) . '</h3>'
             . $chartHtml
             . '</div>';
     }

@@ -49,7 +49,7 @@ final class _backupCard extends CardBaseFramework
                 ' . $this->hiddenFields($context) . '
                 <input type="hidden" name="card_action" value="Backup">
                 <input type="hidden" name="company_id" value="' . (int)($context['company']['id'] ?? 0) . '">
-                <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
+                <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
                 <button class="button primary" type="submit" name="intent" value="create_database_backup" data-processing-text="Creating Backup" data-processing-state="disabled">Create Backup</button>
             </form>
         </div>';
@@ -62,11 +62,11 @@ final class _backupCard extends CardBaseFramework
         }
 
         return '<div class="path-status ok">
-            <div class="helper">Created ' . HelperFramework::escape((string)($backupResult['filename'] ?? 'backup file')) . '</div>
+            <div class="helper">Created ' . \eel_accounts\Support\Utf8::html((string)($backupResult['filename'] ?? 'backup file')) . '</div>
             <div class="path-meta">
-                <div class="path-meta-item">Tables: ' . HelperFramework::escape((string)($backupResult['table_count'] ?? 0)) . '</div>
-                <div class="path-meta-item">Size: ' . HelperFramework::escape($this->formatBytes((int)($backupResult['size_bytes'] ?? 0))) . '</div>
-                <div class="path-meta-item">Folder: ' . HelperFramework::escape((string)($backupResult['directory'] ?? '')) . '</div>
+                <div class="path-meta-item">Tables: ' . \eel_accounts\Support\Utf8::html((string)($backupResult['table_count'] ?? 0)) . '</div>
+                <div class="path-meta-item">Size: ' . \eel_accounts\Support\Utf8::html($this->formatBytes((int)($backupResult['size_bytes'] ?? 0))) . '</div>
+                <div class="path-meta-item">Folder: ' . \eel_accounts\Support\Utf8::html((string)($backupResult['directory'] ?? '')) . '</div>
             </div>
         </div>';
     }
@@ -81,20 +81,20 @@ final class _backupCard extends CardBaseFramework
             ? 'Backup output is ready.'
             : 'Backup output needs attention before a ZIP can be created.';
 
-        return '<div class="path-status ' . HelperFramework::escape($state) . '">
-            <div class="helper">' . HelperFramework::escape($detail) . '</div>
+        return '<div class="path-status ' . \eel_accounts\Support\Utf8::html($state) . '">
+            <div class="helper">' . \eel_accounts\Support\Utf8::html($detail) . '</div>
             <div class="path-meta">
                 <div class="path-meta-item">
-                    <span class="status-indicator"><span class="status-square ' . HelperFramework::escape($directoryExists ? 'ok' : 'warn') . '"></span>Company backup folder: ' . HelperFramework::escape($directoryExists ? 'Exists' : 'Will be created') . '</span>
+                    <span class="status-indicator"><span class="status-square ' . \eel_accounts\Support\Utf8::html($directoryExists ? 'ok' : 'warn') . '"></span>Company backup folder: ' . \eel_accounts\Support\Utf8::html($directoryExists ? 'Exists' : 'Will be created') . '</span>
                 </div>
                 <div class="path-meta-item">
-                    <span class="status-indicator"><span class="status-square ' . HelperFramework::escape($directoryWritable || !$directoryExists ? 'ok' : 'bad') . '"></span>Write access: ' . HelperFramework::escape($directoryWritable || !$directoryExists ? 'Ready' : 'Needs attention') . '</span>
+                    <span class="status-indicator"><span class="status-square ' . \eel_accounts\Support\Utf8::html($directoryWritable || !$directoryExists ? 'ok' : 'bad') . '"></span>Write access: ' . \eel_accounts\Support\Utf8::html($directoryWritable || !$directoryExists ? 'Ready' : 'Needs attention') . '</span>
                 </div>
                 <div class="path-meta-item">
-                    <span class="status-indicator"><span class="status-square ' . HelperFramework::escape($zipAvailable ? 'ok' : 'bad') . '"></span>ZIP support: ' . HelperFramework::escape($zipAvailable ? 'Available' : 'Unavailable') . '</span>
+                    <span class="status-indicator"><span class="status-square ' . \eel_accounts\Support\Utf8::html($zipAvailable ? 'ok' : 'bad') . '"></span>ZIP support: ' . \eel_accounts\Support\Utf8::html($zipAvailable ? 'Available' : 'Unavailable') . '</span>
                 </div>
             </div>
-            <div class="helper">Folder: ' . HelperFramework::escape((string)($status['directory'] ?? '')) . '</div>
+            <div class="helper">Folder: ' . \eel_accounts\Support\Utf8::html((string)($status['directory'] ?? '')) . '</div>
         </div>';
     }
 
@@ -102,7 +102,7 @@ final class _backupCard extends CardBaseFramework
     {
         $html = '';
         foreach ((array)($context['page']['page_cards'] ?? []) as $cardKey) {
-            $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+            $html .= '<input type="hidden" name="cards[]" value="' . \eel_accounts\Support\Utf8::html((string)$cardKey) . '">';
         }
 
         return $html;

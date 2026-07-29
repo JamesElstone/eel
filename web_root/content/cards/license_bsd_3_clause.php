@@ -28,6 +28,6 @@ final class _license_bsd_3_clauseCard extends CardBaseFramework
     {
         $text = (new \eel_accounts\Service\LicenseService())->licenseText('bsd_3_clause');
 
-        return '<pre class="license-text-panel">' . HelperFramework::escape($text) . '</pre>';
+        return '<pre class="license-text-panel">' . \eel_accounts\Support\Utf8::html($text) . '</pre>';
     }
 }

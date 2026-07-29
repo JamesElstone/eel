@@ -84,9 +84,9 @@ final class _vat_readinessCard extends CardBaseFramework
         $html = '';
         foreach ($items as $item) {
             $html .= '<div class="list-item">
-                <strong>' . HelperFramework::escape($item['title']) . '</strong>
+                <strong>' . \eel_accounts\Support\Utf8::html($item['title']) . '</strong>
                 <span class="status-indicator"><span class="status-square ' . ($item['ok'] ? 'ok' : 'bad') . '"></span>' . ($item['ok'] ? 'Ready' : 'Needs attention') . '</span>
-                <span>' . HelperFramework::escape($item['detail']) . '</span>
+                <span>' . \eel_accounts\Support\Utf8::html($item['detail']) . '</span>
             </div>';
         }
 

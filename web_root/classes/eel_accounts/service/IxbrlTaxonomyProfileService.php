@@ -227,7 +227,7 @@ final class IxbrlTaxonomyProfileService
             'decimals_value' => $decimals,
             'context_profile' => $contextProfile,
             'dimensions_json' => $dimensions !== null
-                ? json_encode($dimensions, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)
+                ? \eel_accounts\Support\Utf8::json($dimensions, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)
                 : null,
             'comparative_enabled' => $comparativeEnabled ? 1 : 0,
             'is_required' => 1,

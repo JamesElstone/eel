@@ -44,4 +44,13 @@ $harness->run(\eel_accounts\Support\PersistentJson::class, static function (Gene
         $harness->assertSame(false, str_contains($json, 'é'));
         $harness->assertSame(true, str_contains($json, '\\u00e9'));
     });
+
+    $harness->check(\eel_accounts\Support\PersistentJson::class, 'recovers legacy Windows-1252 text deterministically', static function () use ($harness): void {
+        $json = \eel_accounts\Support\PersistentJson::encode([
+            'asset' => 'Citro' . chr(0xEB) . 'n',
+        ]);
+
+        $harness->assertSame('{"asset":"Citro\\u00ebn"}', $json);
+        $harness->assertSame(['asset' => 'Citroën'], json_decode($json, true, 512, JSON_THROW_ON_ERROR));
+    });
 });

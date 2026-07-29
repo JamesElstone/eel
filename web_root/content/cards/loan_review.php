@@ -25,7 +25,7 @@ final class _loan_reviewCard extends CardBaseFramework
     {
         $review = (array)($context['services']['loanReview'] ?? []);
         if (empty($review['available'])) {
-            return '<div class="helper">' . HelperFramework::escape((string)(($review['errors'] ?? [])[0] ?? 'Loan review is unavailable.')) . '</div>';
+            return '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)(($review['errors'] ?? [])[0] ?? 'Loan review is unavailable.')) . '</div>';
         }
         $items = (array)($review['items'] ?? []);
         $futureWarning = (array)($review['future_attribution_warning'] ?? []);
@@ -45,11 +45,11 @@ final class _loan_reviewCard extends CardBaseFramework
         $rows = '';
         foreach ($items as $item) {
             $evidence = trim((string)($item['source_url'] ?? '')) !== ''
-                ? '<a class="button button-inline"' . (str_starts_with((string)$item['source_url'], 'http') ? ' target="_blank" rel="noopener noreferrer"' : '') . ' href="' . HelperFramework::escape((string)$item['source_url']) . '">' . HelperFramework::escape((string)$item['source_label']) . '</a>'
+                ? '<a class="button button-inline"' . (str_starts_with((string)$item['source_url'], 'http') ? ' target="_blank" rel="noopener noreferrer"' : '') . ' href="' . \eel_accounts\Support\Utf8::html((string)$item['source_url']) . '">' . \eel_accounts\Support\Utf8::html((string)$item['source_label']) . '</a>'
                 : '';
             $rows .= '<tr><td><span class="badge danger">' . ((string)($item['state'] ?? '') === 'stale' ? 'Stale' : 'Action required') . '</span></td><td><strong>'
-                . HelperFramework::escape((string)$item['title']) . '</strong><div class="helper">' . HelperFramework::escape((string)$item['detail']) . '</div></td><td>' . $evidence . '</td><td><a class="button primary" href="'
-                . HelperFramework::escape((string)$item['action_url']) . '">' . HelperFramework::escape((string)$item['action_label']) . '</a></td></tr>';
+                . \eel_accounts\Support\Utf8::html((string)$item['title']) . '</strong><div class="helper">' . \eel_accounts\Support\Utf8::html((string)$item['detail']) . '</div></td><td>' . $evidence . '</td><td><a class="button primary" href="'
+                . \eel_accounts\Support\Utf8::html((string)$item['action_url']) . '">' . \eel_accounts\Support\Utf8::html((string)$item['action_label']) . '</a></td></tr>';
         }
         $blockingHtml = $rows !== ''
             ? '<section class="panel-soft settings-stack"><h3 class="card-title">Items required for this accounting period</h3><div class="table-scroll"><table><thead><tr><th>State</th><th>Issue</th><th>Evidence</th><th>Resolve</th></tr></thead><tbody>' . $rows . '</tbody></table></div></section>'
@@ -64,10 +64,10 @@ final class _loan_reviewCard extends CardBaseFramework
         foreach ($movements as $movement) {
             $sourceUrl = (string)($movement['source_url'] ?? '');
             $source = $sourceUrl !== ''
-                ? '<a class="button button-inline" href="' . HelperFramework::escape($sourceUrl) . '">' . HelperFramework::escape((string)($movement['source_label'] ?? 'Source transaction')) . '</a>'
-                : HelperFramework::escape((string)($movement['source_label'] ?? ''));
-            $rows .= '<tr><td>' . HelperFramework::escape(HelperFramework::displayDate((string)($movement['txn_date'] ?? ''))) . '</td><td>'
-                . $source . '</td><td>' . HelperFramework::escape(ucfirst((string)($movement['cash_direction'] ?? 'movement'))) . '</td></tr>';
+                ? '<a class="button button-inline" href="' . \eel_accounts\Support\Utf8::html($sourceUrl) . '">' . \eel_accounts\Support\Utf8::html((string)($movement['source_label'] ?? 'Source transaction')) . '</a>'
+                : \eel_accounts\Support\Utf8::html((string)($movement['source_label'] ?? ''));
+            $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html(HelperFramework::displayDate((string)($movement['txn_date'] ?? ''))) . '</td><td>'
+                . $source . '</td><td>' . \eel_accounts\Support\Utf8::html(ucfirst((string)($movement['cash_direction'] ?? 'movement'))) . '</td></tr>';
         }
         return '<section class="panel-soft warn settings-stack">
             <div class="summary-card-header"><h3 class="card-title">Optional future repayment attribution</h3><span class="badge warning">Not a blocker</span></div>

@@ -19,15 +19,15 @@ final class _filing_evidence_coverageCard extends CardBaseFramework
         $state = (array)($context['filing_evidence'] ?? []); $rows = '';
         foreach ((array)($model['sections'] ?? []) as $section) {
             $snapshot = (array)($section['lock_snapshot'] ?? []); $captured = !empty($section['captured']);
-            $rows .= '<tr><td><strong>' . HelperFramework::escape(HelperFramework::labelFromKey((string)$section['section_code'])) . '</strong></td><td><span class="badge '
+            $rows .= '<tr><td><strong>' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)$section['section_code'])) . '</strong></td><td><span class="badge '
                 . ($captured ? 'success' : 'warning') . '">' . ($captured ? 'Frozen' : 'Not captured') . '</span></td><td>'
                 . ($captured ? (int)($snapshot['record_count'] ?? 0) : '—') . '</td><td><code>'
-                . HelperFramework::escape($captured ? (string)($snapshot['snapshot_hash'] ?? '') : 'Historic bundle') . '</code></td><td>';
+                . \eel_accounts\Support\Utf8::html($captured ? (string)($snapshot['snapshot_hash'] ?? '') : 'Historic bundle') . '</code></td><td>';
             if ($captured) {
                 $rows .= '<form method="post" action="?page=filing_evidence" data-ajax="true">'
                     . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
-                    . '<input type="hidden" name="action" value="select-filing-evidence-section"><input type="hidden" name="evidence_reference" value="' . HelperFramework::escape((string)($state['reference'] ?? '')) . '">'
-                    . '<input type="hidden" name="evidence_bundle_id" value="' . (int)($state['bundle_id'] ?? 0) . '"><input type="hidden" name="evidence_section_code" value="' . HelperFramework::escape((string)$section['section_code']) . '">'
+                    . '<input type="hidden" name="action" value="select-filing-evidence-section"><input type="hidden" name="evidence_reference" value="' . \eel_accounts\Support\Utf8::html((string)($state['reference'] ?? '')) . '">'
+                    . '<input type="hidden" name="evidence_bundle_id" value="' . (int)($state['bundle_id'] ?? 0) . '"><input type="hidden" name="evidence_section_code" value="' . \eel_accounts\Support\Utf8::html((string)$section['section_code']) . '">'
                     . '<button class="button button-inline" type="submit">Show frozen records</button></form>';
             } else { $rows .= '<span class="helper">Not captured for this historic bundle.</span>'; }
             $rows .= '</td></tr>';

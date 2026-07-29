@@ -314,6 +314,9 @@ final class AssetService
         $parentClause = \InterfaceDB::columnExists('asset_register', 'parent_asset_id')
             ? ' AND ar.parent_asset_id IS NULL'
             : '';
+        $vehicleDetailsAvailable = \InterfaceDB::tableExists('asset_vehicle_details');
+        $vehicleSelect = $vehicleDetailsAvailable ? 'vd.registration_mark' : 'NULL AS registration_mark';
+        $vehicleJoin = $vehicleDetailsAvailable ? ' LEFT JOIN asset_vehicle_details vd ON vd.asset_id = ar.id' : '';
         $assets = \InterfaceDB::fetchAll(
             'SELECT ar.id,
                     ar.asset_code,
@@ -333,12 +336,14 @@ final class AssetService
                     ar.disposal_date,
                     ar.disposal_event_type,
                     ar.disposal_reason,
+                    ' . $vehicleSelect . ',
                     COALESCE(ar.cost, 0) - COALESCE(dep.accumulated_depreciation, 0) AS nbv,
                     COALESCE(dep.accumulated_depreciation, 0) AS accumulated_depreciation,
                     na.code AS nominal_code,
                     na.name AS nominal_name
              FROM asset_register ar
              LEFT JOIN nominal_accounts na ON na.id = ar.nominal_account_id
+             ' . $vehicleJoin . '
              LEFT JOIN (
                 SELECT ade.asset_id, SUM(ade.amount) AS accumulated_depreciation
                 FROM asset_depreciation_entries ade

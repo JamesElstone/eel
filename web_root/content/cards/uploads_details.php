@@ -116,7 +116,7 @@ final class _uploads_detailsCard extends CardBaseFramework
         $uploadSummaryHtml = $this->uploadSummaryTable((array)($context['services']['upload_summary_by_accounting_period'] ?? []));
         
         foreach ($filterTerms as $filterValue => $filterLabel) {
-            $filterOptionsHtml .= '<option value="' . HelperFramework::escape($filterValue) . '"' . ($selectedUploadHistoryFilter === $filterValue ? ' selected' : '') . '>' . HelperFramework::escape($filterLabel) . '</option>';
+            $filterOptionsHtml .= '<option value="' . \eel_accounts\Support\Utf8::html($filterValue) . '"' . ($selectedUploadHistoryFilter === $filterValue ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html($filterLabel) . '</option>';
         }
 
         if ($uploadHistory === []) {
@@ -147,7 +147,7 @@ final class _uploads_detailsCard extends CardBaseFramework
                             <input type="hidden" name="card_action" value="Uploads">
                             <input type="hidden" name="intent" value="preview_upload">
                             <input type="hidden" name="upload_id" value="' . (int)($upload['id'] ?? 0) . '">
-                            <input type="hidden" name="filter" value="' . HelperFramework::escape($selectedUploadHistoryFilter) . '">
+                            <input type="hidden" name="filter" value="' . \eel_accounts\Support\Utf8::html($selectedUploadHistoryFilter) . '">
                             <input type="hidden" name="page" value="' . $selectedUploadHistoryPage . '">
                             <button class="button" type="submit" data-show-card="statement_field_mapping" data-page-card-switch-tab="Review Uploads">Field Mappings</button>
                         </form>
@@ -156,7 +156,7 @@ final class _uploads_detailsCard extends CardBaseFramework
                             <input type="hidden" name="card_action" value="Uploads">
                             <input type="hidden" name="intent" value="stage_account_upload">
                             <input type="hidden" name="upload_id" value="' . (int)($upload['id'] ?? 0) . '">
-                            <input type="hidden" name="filter" value="' . HelperFramework::escape($selectedUploadHistoryFilter) . '">
+                            <input type="hidden" name="filter" value="' . \eel_accounts\Support\Utf8::html($selectedUploadHistoryFilter) . '">
                             <input type="hidden" name="page" value="' . $selectedUploadHistoryPage . '">
                             <button class="button primary" type="submit" data-show-card="uploads_validate_commit" data-processing-text="Preparing import..." data-processing-state="disabled"' . ($canPreviewAndValidate && !$uploadLocked ? '' : ' disabled title="' . ($uploadLocked ? 'This upload includes a locked accounting period.' : 'Save field mappings before previewing and validating rows.') . '"') . '>Import Transactions</button>
                         </form>');
@@ -171,27 +171,27 @@ final class _uploads_detailsCard extends CardBaseFramework
                         <input type="hidden" name="card_action" value="Uploads">
                         <input type="hidden" name="intent" value="rescan_account_upload">
                         <input type="hidden" name="upload_id" value="' . (int)($upload['id'] ?? 0) . '">
-                        <input type="hidden" name="filter" value="' . HelperFramework::escape($selectedUploadHistoryFilter) . '">
+                        <input type="hidden" name="filter" value="' . \eel_accounts\Support\Utf8::html($selectedUploadHistoryFilter) . '">
                         <input type="hidden" name="page" value="' . $selectedUploadHistoryPage . '">
                         <button class="button danger" type="submit"' . ($uploadLocked ? ' disabled title="This upload includes a locked accounting period."' : '') . '>Rescan</button>
                     </form>';
                 }
 
                 $rowsHtml .= '<tr>
-                    <td>' . HelperFramework::escape($this->displayDateTime((string)($upload['uploaded_at'] ?? ''), 'H:i')) . '</td>
+                    <td>' . \eel_accounts\Support\Utf8::html($this->displayDateTime((string)($upload['uploaded_at'] ?? ''), 'H:i')) . '</td>
                     <td>
-                        <div>' . HelperFramework::escape((string)($upload['filename'] ?? '')) . '</div>
-                        <div class="helper">' . HelperFramework::escape((string)($upload['month'] ?? '')) . '</div>'
+                        <div>' . \eel_accounts\Support\Utf8::html((string)($upload['filename'] ?? '')) . '</div>
+                        <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($upload['month'] ?? '')) . '</div>'
                         . ($uploadExtraHeaders !== []
-                            ? '<div class="helper">Needs mapping: ' . HelperFramework::escape(implode(', ', array_map(static fn($header): string => (string)$header, $uploadExtraHeaders))) . '</div>'
+                            ? '<div class="helper">Needs mapping: ' . \eel_accounts\Support\Utf8::html(implode(', ', array_map(static fn($header): string => (string)$header, $uploadExtraHeaders))) . '</div>'
                             : '') . '
                     </td>
                     <td>
-                        <div>' . HelperFramework::escape((string)($upload['account_name'] ?? '') !== '' ? (string)$upload['account_name'] : 'No account selected') . '</div>'
-                        . ($accountType !== '' ? '<div class="helper">' . HelperFramework::escape(\eel_accounts\Service\CompanyAccountService::accountTypes()[$accountType] ?? ucfirst($accountType)) . '</div>' : '') . '
+                        <div>' . \eel_accounts\Support\Utf8::html((string)($upload['account_name'] ?? '') !== '' ? (string)$upload['account_name'] : 'No account selected') . '</div>'
+                        . ($accountType !== '' ? '<div class="helper">' . \eel_accounts\Support\Utf8::html(\eel_accounts\Service\CompanyAccountService::accountTypes()[$accountType] ?? ucfirst($accountType)) . '</div>' : '') . '
                     </td>
-                    <td><span class="badge ' . HelperFramework::escape($statusClass) . '">' . HelperFramework::escape($statusLabel) . '</span></td>
-                    <td>' . HelperFramework::escape($this->uploadRowsLabel($upload)) . '</td>
+                    <td><span class="badge ' . \eel_accounts\Support\Utf8::html($statusClass) . '">' . \eel_accounts\Support\Utf8::html($statusLabel) . '</span></td>
+                    <td>' . \eel_accounts\Support\Utf8::html($this->uploadRowsLabel($upload)) . '</td>
                     <td><div class="actions-row">' . $previewActions . '</div></td>
                 </tr>';
             }
@@ -211,7 +211,7 @@ final class _uploads_detailsCard extends CardBaseFramework
                     <tbody>' . $rowsHtml . '</tbody>
                 </table>
                 <div class="status-head">
-                    <div class="helper">' . HelperFramework::escape(HelperFramework::paginationItemsLabel($pagination, 'Uploads')) . '</div>
+                    <div class="helper">' . \eel_accounts\Support\Utf8::html(HelperFramework::paginationItemsLabel($pagination, 'Uploads')) . '</div>
                     <div class="actions-row">
                         ' . $this->pagerForm('Prev', max(1, $selectedUploadHistoryPage - 1), $uploadHistoryHasPreviousPage, $selectedUploadId, $selectedUploadHistoryFilter) . '
                         ' . $this->pagerForm('Next', $selectedUploadHistoryPage + 1, $uploadHistoryHasNextPage, $selectedUploadId, $selectedUploadHistoryFilter) . '
@@ -288,7 +288,7 @@ final class _uploads_detailsCard extends CardBaseFramework
 
     private function accountingPeriodSummaryButton(array $period): string
     {
-        $label = HelperFramework::escape((string)($period['label'] ?? ''));
+        $label = \eel_accounts\Support\Utf8::html((string)($period['label'] ?? ''));
         $accountingPeriodId = (int)($period['accounting_period_id'] ?? 0);
 
         if ($accountingPeriodId <= 0) {
@@ -315,7 +315,7 @@ final class _uploads_detailsCard extends CardBaseFramework
                     <input type="hidden" name="card_action" value="Uploads">
                     <input type="hidden" name="intent" value="recalculate_upload_checksums">
                     <input type="hidden" name="upload_id" value="' . $uploadId . '">
-                    <input type="hidden" name="filter" value="' . HelperFramework::escape($filter) . '">
+                    <input type="hidden" name="filter" value="' . \eel_accounts\Support\Utf8::html($filter) . '">
                     <input type="hidden" name="page" value="' . $page . '">
                     <button class="button danger" type="submit">Recalculate Checksums</button>
                 </form>
@@ -324,7 +324,7 @@ final class _uploads_detailsCard extends CardBaseFramework
                     <input type="hidden" name="card_action" value="Uploads">
                     <input type="hidden" name="intent" value="backfill_transaction_types_from_staged_json">
                     <input type="hidden" name="upload_id" value="' . $uploadId . '">
-                    <input type="hidden" name="filter" value="' . HelperFramework::escape($filter) . '">
+                    <input type="hidden" name="filter" value="' . \eel_accounts\Support\Utf8::html($filter) . '">
                     <input type="hidden" name="page" value="' . $page . '">
                     <button class="button danger" type="submit">Backfill mappings from original JSON</button>
                 </form>

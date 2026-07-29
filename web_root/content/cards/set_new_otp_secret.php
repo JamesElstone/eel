@@ -60,8 +60,8 @@ final class _set_new_otp_secretCard extends CardBaseFramework
 
         $statusHtml = '<div class="status-panel ' . $statusClass . '">
             <div class="status-head">
-                <strong>' . HelperFramework::escape($statusTitle) . '</strong>
-                <span class="status-badge ' . $statusClass . '">' . HelperFramework::escape($statusBadge) . '</span>
+                <strong>' . \eel_accounts\Support\Utf8::html($statusTitle) . '</strong>
+                <span class="status-badge ' . $statusClass . '">' . \eel_accounts\Support\Utf8::html($statusBadge) . '</span>
             </div>
             <p class="helper">Use this card to generate and confirm a fresh OTP secret for your account.</p>
         </div>';
@@ -70,12 +70,12 @@ final class _set_new_otp_secretCard extends CardBaseFramework
             $actionHtml = '<div class="auth-qr"><!-- ' . str_replace('--', '%2D%2D', (string)($setup['otpauth_uri'] ?? '')) . ' -->' . (string)($setup['qr_svg'] ?? '') . '</div>
                 <div class="auth-secret">
                     <div class="auth-secret-label">Manual entry secret</div>
-                    <code class="auth-secret-value">' . HelperFramework::escape((string)($setup['manual_secret'] ?? '')) . '</code>
+                    <code class="auth-secret-value">' . \eel_accounts\Support\Utf8::html((string)($setup['manual_secret'] ?? '')) . '</code>
                 </div>
                 <form method="post" action="?page=users" data-ajax="true" class="form-grid">
                     ' . $this->hiddenFields($context) . '
                     <input type="hidden" name="action" value="users-complete-otp-rotation">
-                    <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
+                    <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
                     <div class="form-row half">
                         <label for="users-otp-code">OTP code</label>
                         <input class="input" id="users-otp-code" name="otp_code" type="text" inputmode="numeric" pattern="\\d{6}" maxlength="6" autocomplete="one-time-code" required>
@@ -90,7 +90,7 @@ final class _set_new_otp_secretCard extends CardBaseFramework
             $actionHtml = '<form method="post" action="?page=users" data-ajax="true" class="otp-rotation-form">
                 ' . $this->hiddenFields($context) . '
                 <input type="hidden" name="action" value="users-begin-otp-rotation">
-                <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
+                <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
                 <div class="actions-row">
                     <button class="button primary" type="submit">Set new OTP secret</button>
                 </div>
@@ -105,7 +105,7 @@ final class _set_new_otp_secretCard extends CardBaseFramework
         $html = '';
 
         foreach ((array)($context['page']['page_cards'] ?? []) as $cardKey) {
-            $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+            $html .= '<input type="hidden" name="cards[]" value="' . \eel_accounts\Support\Utf8::html((string)$cardKey) . '">';
         }
 
         return $html;

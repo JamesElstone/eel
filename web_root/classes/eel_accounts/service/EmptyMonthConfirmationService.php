@@ -344,7 +344,7 @@ final class EmptyMonthConfirmationService
         string $notes,
         string $confirmedBy
     ): void {
-        $evidenceJson = json_encode((array)($candidate['evidence'] ?? []), JSON_UNESCAPED_SLASHES);
+        $evidenceJson = \eel_accounts\Support\Utf8::json((array)($candidate['evidence'] ?? []), JSON_UNESCAPED_SLASHES);
         if (!is_string($evidenceJson) || $evidenceJson === '') {
             $evidenceJson = '{}';
         }

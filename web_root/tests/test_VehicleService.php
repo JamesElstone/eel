@@ -18,6 +18,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('1320', \eel_accounts\Service\AssetService::assetNominalCodesForCategory('unreviewed_vehicle')['cost']);
         });
 
+        $harness->check(\eel_accounts\Service\VehicleService::class, 'formats vehicle display descriptions without changing source text', static function () use ($harness): void {
+            $harness->assertSame('TCS THATCHAM CAR SALES (PK59ZPJ)', \eel_accounts\Service\VehicleService::assetDisplayDescription('TCS THATCHAM CAR SALES', 'pk59zpj'));
+            $harness->assertSame('TCS THATCHAM CAR SALES (PK59ZPJ)', \eel_accounts\Service\VehicleService::assetDisplayDescription('TCS THATCHAM CAR SALES (PK59ZPJ)', 'PK59ZPJ'));
+            $harness->assertSame('TCS THATCHAM CAR SALES', \eel_accounts\Service\VehicleService::assetDisplayDescription('TCS THATCHAM CAR SALES', null));
+        });
+
         $harness->check(\eel_accounts\Service\VehicleService::class, 'uses the company vehicle nominal defaults for detection and reclassification', static function () use ($harness, $service): void {
             vehicleServiceFixture('company-defaults', static function (array $fixture) use ($harness, $service): void {
                 $settings = new \eel_accounts\Store\CompanySettingsStore((int)$fixture['company_id']);

@@ -389,7 +389,7 @@ final class NominalsAction implements ActionInterfaceFramework
                 ? FormattingFramework::nominalLabel($nominalsById[$nominalId])
                 : 'Unassigned';
 
-            $parts[] = HelperFramework::escape($label . ': ' . $nominalLabel);
+            $parts[] = \eel_accounts\Support\Utf8::html($label . ': ' . $nominalLabel);
         }
 
         return 'Nominal defaults saved successfully.<br>Saved:<br>' . implode('<br>', $parts);

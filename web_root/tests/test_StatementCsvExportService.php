@@ -107,7 +107,7 @@ $harness->run(\eel_accounts\Service\StatementCsvExportService::class, static fun
                 '_row_number' => '2',
                 'account' => 'Example Bank',
                 'created' => '2026-02-01',
-                'description' => 'Example',
+                'description' => 'Citro' . chr(0xEB) . 'n',
                 'amount' => '12.34',
                 'category' => '',
             ],
@@ -119,6 +119,7 @@ $harness->run(\eel_accounts\Service\StatementCsvExportService::class, static fun
         $harness->assertSame('PK', substr($xlsx, 0, 2));
         $harness->assertTrue(str_contains($xlsx, 'eel_row_key'));
         $harness->assertTrue(str_contains($xlsx, '5000 - Purchases'));
+        $harness->assertTrue(str_contains($xlsx, 'Citroën'));
         $harness->assertTrue(str_contains($xlsx, 'Categories!$A$1:$A$2'));
         $harness->assertTrue(str_contains($xlsx, 'state="hidden"'));
         $harness->assertTrue(str_contains($xlsx, '<col min="2" max="2" width="30" customWidth="1"/>'));

@@ -52,7 +52,7 @@ final class _nominals_add_accountCard extends CardBaseFramework
         $accountTypeOptions = '';
         foreach ($this->validAccountTypes() as $accountType) {
             $selected = (string)($editingNominal['account_type'] ?? '') === $accountType ? ' selected' : '';
-            $accountTypeOptions .= '<option value="' . HelperFramework::escape($accountType) . '"' . $selected . '>' . HelperFramework::escape($accountType) . '</option>';
+            $accountTypeOptions .= '<option value="' . \eel_accounts\Support\Utf8::html($accountType) . '"' . $selected . '>' . \eel_accounts\Support\Utf8::html($accountType) . '</option>';
         }
 
         $subtypeOptions = '<option value="">No subtype</option>';
@@ -64,13 +64,13 @@ final class _nominals_add_accountCard extends CardBaseFramework
             $subtypeId = (string)($subtype['id'] ?? '');
             $selected = (string)($editingNominal['account_subtype_id'] ?? '') === $subtypeId ? ' selected' : '';
             $label = (string)($subtype['name'] ?? '') . ' [' . (string)($subtype['parent_account_type'] ?? '') . ']';
-            $subtypeOptions .= '<option value="' . HelperFramework::escape($subtypeId) . '"' . $selected . '>' . HelperFramework::escape($label) . '</option>';
+            $subtypeOptions .= '<option value="' . \eel_accounts\Support\Utf8::html($subtypeId) . '"' . $selected . '>' . \eel_accounts\Support\Utf8::html($label) . '</option>';
         }
 
         $taxTreatmentOptions = '';
         foreach ($this->validNominalTaxTreatments() as $taxTreatment) {
             $selected = (string)($editingNominal['tax_treatment'] ?? 'allowable') === $taxTreatment ? ' selected' : '';
-            $taxTreatmentOptions .= '<option value="' . HelperFramework::escape($taxTreatment) . '"' . $selected . '>' . HelperFramework::escape(\eel_accounts\Service\AccountingFormattingService::nominalTaxTreatmentLabel($taxTreatment)) . '</option>';
+            $taxTreatmentOptions .= '<option value="' . \eel_accounts\Support\Utf8::html($taxTreatment) . '"' . $selected . '>' . \eel_accounts\Support\Utf8::html(\eel_accounts\Service\AccountingFormattingService::nominalTaxTreatmentLabel($taxTreatment)) . '</option>';
         }
 
         $cancelFormId = 'nominals-account-cancel-form';
@@ -87,18 +87,18 @@ final class _nominals_add_accountCard extends CardBaseFramework
             <form method="post" data-ajax-card-form="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Nominals">
-                <input type="hidden" name="global_action" value="' . HelperFramework::escape($editingNominal !== null ? 'save_nominal_account' : 'add_nominal_account') . '">'
+                <input type="hidden" name="global_action" value="' . \eel_accounts\Support\Utf8::html($editingNominal !== null ? 'save_nominal_account' : 'add_nominal_account') . '">'
                 . ($editingNominal !== null
                     ? '<input type="hidden" name="nominal_account_id" value="' . (int)($editingNominal['id'] ?? 0) . '">'
                     : '') . '
                 <div class="form-grid">
                     <div class="form-row">
                         <label for="nominal_code">Account Code <span>(Letters, Number or _ only)</span></label>
-                        <input class="input" id="nominal_code" name="nominal_code" pattern="[A-Za-z0-9_]*" title="Letters, Number or _ only" value="' . HelperFramework::escape((string)($editingNominal['code'] ?? '')) . '">
+                        <input class="input" id="nominal_code" name="nominal_code" pattern="[A-Za-z0-9_]*" title="Letters, Number or _ only" value="' . \eel_accounts\Support\Utf8::html((string)($editingNominal['code'] ?? '')) . '">
                     </div>
                     <div class="form-row">
                         <label for="nominal_name">Account Name</label>
-                        <input class="input" id="nominal_name" name="nominal_name" value="' . HelperFramework::escape((string)($editingNominal['name'] ?? '')) . '">
+                        <input class="input" id="nominal_name" name="nominal_name" value="' . \eel_accounts\Support\Utf8::html((string)($editingNominal['name'] ?? '')) . '">
                     </div>
                     <div class="form-row">
                         <label for="nominal_account_type">Account Type</label>
@@ -114,7 +114,7 @@ final class _nominals_add_accountCard extends CardBaseFramework
                     </div>
                     <div class="form-row">
                         <label for="nominal_sort_order">Sort Order</label>
-                        <input class="input" id="nominal_sort_order" name="nominal_sort_order" value="' . HelperFramework::escape((string)($editingNominal['sort_order'] ?? '100')) . '">
+                        <input class="input" id="nominal_sort_order" name="nominal_sort_order" value="' . \eel_accounts\Support\Utf8::html((string)($editingNominal['sort_order'] ?? '100')) . '">
                     </div>
                     <label class="checkbox-item">
                         <input type="hidden" name="nominal_prepayment_candidate" value="0">
@@ -133,7 +133,7 @@ final class _nominals_add_accountCard extends CardBaseFramework
                     </label>
                 </div>
                 <div>
-                    <button class="button primary" type="submit">' . HelperFramework::escape($editingNominal !== null ? 'Save Account' : 'Add Nominal') . '</button>'
+                    <button class="button primary" type="submit">' . \eel_accounts\Support\Utf8::html($editingNominal !== null ? 'Save Account' : 'Add Nominal') . '</button>'
                     . ($editingNominal !== null
                         ? '<button class="button" type="submit" form="' . $cancelFormId . '" formnovalidate>Cancel</button>'
                         : '') . '

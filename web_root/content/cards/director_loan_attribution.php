@@ -162,21 +162,21 @@ final class _director_loan_attributionCard extends CardBaseFramework
         $companyId = (int)($context['company']['id'] ?? 0);
         $accountingPeriodId = (int)($context['company']['accounting_period_id'] ?? 0);
 
-        return TableFramework::make(self::TABLE_KEY, $entries)
+        return \eel_accounts\Support\Utf8Table::make(self::TABLE_KEY, $entries)
             ->filename('director-loan-attribution')
             ->exportLimit(5000)
             ->empty($filter === 'requires_assignment'
                 ? 'No Director Loan entries currently require assignment.'
                 : 'No Director Loan control-account entries were found.')
-            ->column('journal_date', 'Date', html: static fn(array $row): string => HelperFramework::escape(HelperFramework::displayDate((string)($row['journal_date'] ?? ''))), export: static fn(array $row): string => (string)($row['journal_date'] ?? ''), exportType: 'date')
+            ->column('journal_date', 'Date', html: static fn(array $row): string => \eel_accounts\Support\Utf8::html(HelperFramework::displayDate((string)($row['journal_date'] ?? ''))), export: static fn(array $row): string => (string)($row['journal_date'] ?? ''), exportType: 'date')
             ->textColumn('description', 'Description')
             ->column('counterparty_name', 'Actual counterparty', html: static function (array $row): string {
                 $counterparty = trim((string)($row['counterparty_name'] ?? ''));
-                return $counterparty !== '' ? HelperFramework::escape($counterparty) : '<span class="helper">Not stated</span>';
+                return $counterparty !== '' ? \eel_accounts\Support\Utf8::html($counterparty) : '<span class="helper">Not stated</span>';
             }, export: static fn(array $row): string => trim((string)($row['counterparty_name'] ?? '')))
             ->column('source_label', 'Source', html: fn(array $row): string => $this->attributionSourceHtml($row), export: static fn(array $row): string => trim((string)($row['source_label'] ?? '')))
-            ->column('signed_amount', 'Movement', html: fn(array $row): string => HelperFramework::escape($this->money($settings, $this->attributionAmount($row))), export: fn(array $row): string => number_format($this->attributionAmount($row), 2, '.', ''), headerClass: 'numeric', cellClass: 'numeric', exportType: 'number')
-            ->column('running_balance', 'Running balance', html: fn(array $row): string => HelperFramework::escape($this->money($settings, (float)($row['running_balance'] ?? 0))), export: static fn(array $row): string => number_format((float)($row['running_balance'] ?? 0), 2, '.', ''), headerClass: 'numeric', cellClass: 'numeric', exportType: 'number')
+            ->column('signed_amount', 'Movement', html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($settings, $this->attributionAmount($row))), export: fn(array $row): string => number_format($this->attributionAmount($row), 2, '.', ''), headerClass: 'numeric', cellClass: 'numeric', exportType: 'number')
+            ->column('running_balance', 'Running balance', html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($settings, (float)($row['running_balance'] ?? 0))), export: static fn(array $row): string => number_format((float)($row['running_balance'] ?? 0), 2, '.', ''), headerClass: 'numeric', cellClass: 'numeric', exportType: 'number')
             ->column('director_id', 'Participator loan account', html: fn(array $row): string => $this->attributionForm($row, $directors, $companyId, $accountingPeriodId, $filter), export: fn(array $row): string => $this->attributedDirectorLabel($row, $directors));
     }
 
@@ -228,7 +228,7 @@ final class _director_loan_attributionCard extends CardBaseFramework
     {
         $sourceLabel = trim((string)($entry['source_label'] ?? ''));
         $sourceUrl = trim((string)($entry['source_url'] ?? ''));
-        $sourceHtml = $sourceUrl !== '' ? '<a class="button" href="' . HelperFramework::escape($sourceUrl) . '">' . HelperFramework::escape($sourceLabel) . '</a>' : HelperFramework::escape($sourceLabel);
+        $sourceHtml = $sourceUrl !== '' ? '<a class="button" href="' . \eel_accounts\Support\Utf8::html($sourceUrl) . '">' . \eel_accounts\Support\Utf8::html($sourceLabel) . '</a>' : \eel_accounts\Support\Utf8::html($sourceLabel);
         return $sourceHtml;
     }
 
@@ -243,10 +243,10 @@ final class _director_loan_attributionCard extends CardBaseFramework
         $options = '<option value="" disabled' . ($currentDirectorId <= 0 ? ' selected' : '') . '>Choose party</option>';
         foreach ((new \eel_accounts\Service\OwnershipPartyService())->effectiveParties($companyId, (string)($entry['journal_date'] ?? '')) as $director) {
             $directorId = (int)($director['id'] ?? 0);
-            $options .= '<option value="' . $directorId . '"' . ($directorId === $currentDirectorId ? ' selected' : '') . '>' . HelperFramework::escape((string)$director['legal_name'] . ((int)($director['linked_director_id'] ?? 0) > 0 ? ' (Director)' : '')) . '</option>';
+            $options .= '<option value="' . $directorId . '"' . ($directorId === $currentDirectorId ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html((string)$director['legal_name'] . ((int)($director['linked_director_id'] ?? 0) > 0 ? ' (Director)' : '')) . '</option>';
         }
         $isLocked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
-        return '<form method="post" data-ajax="true" class="actions-row">' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '<input type="hidden" name="card_action" value="YearEnd"><input type="hidden" name="intent" value="set_participator_loan_attribution"><input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '"><input type="hidden" name="journal_line_id" value="' . (int)($entry['journal_line_id'] ?? 0) . '"><input type="hidden" name="director_loan_attribution_filter" value="' . HelperFramework::escape($this->normaliseFilter($filter)) . '"><select class="input' . ($isLocked ? ' control-disabled' : '') . '" name="party_id" required' . ($isLocked ? ' disabled aria-disabled="true"' : '') . '>' . $options . '</select></form>';
+        return '<form method="post" data-ajax="true" class="actions-row">' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '<input type="hidden" name="card_action" value="YearEnd"><input type="hidden" name="intent" value="set_participator_loan_attribution"><input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '"><input type="hidden" name="journal_line_id" value="' . (int)($entry['journal_line_id'] ?? 0) . '"><input type="hidden" name="director_loan_attribution_filter" value="' . \eel_accounts\Support\Utf8::html($this->normaliseFilter($filter)) . '"><select class="input' . ($isLocked ? ' control-disabled' : '') . '" name="party_id" required' . ($isLocked ? ' disabled aria-disabled="true"' : '') . '>' . $options . '</select></form>';
     }
 
     private function attributedDirectorLabel(array $entry, array $directors): string
@@ -270,6 +270,6 @@ final class _director_loan_attributionCard extends CardBaseFramework
 
     private function errors(array $errors): string
     {
-        return implode('', array_map(static fn(mixed $error): string => '<div class="helper">' . HelperFramework::escape((string)$error) . '</div>', $errors));
+        return implode('', array_map(static fn(mixed $error): string => '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$error) . '</div>', $errors));
     }
 }

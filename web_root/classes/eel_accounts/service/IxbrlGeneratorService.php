@@ -204,7 +204,7 @@ final class IxbrlGeneratorService
 
     public function escape(string $value): string
     {
-        return htmlspecialchars($value, ENT_QUOTES | ENT_XML1, 'UTF-8');
+        return \eel_accounts\Support\Utf8::xml($value);
     }
 
     private function renderContext(array $context): string

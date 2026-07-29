@@ -93,7 +93,7 @@ final class _tax_rates_ctCard extends CardBaseFramework
 
     private function table(array $rules, string $statusFilter): TableFramework
     {
-        return TableFramework::make($this->key(), $rules)
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $rules)
             ->filename('tax-and-allowance-rates')
             ->empty($statusFilter === 'active'
                 ? 'No active sourced tax or allowance rules are stored yet.'
@@ -113,7 +113,7 @@ final class _tax_rates_ctCard extends CardBaseFramework
             ->column(
                 'period',
                 'Period',
-                html: fn(array $row): string => HelperFramework::escape($this->periodLabel($row)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->periodLabel($row)),
                 export: fn(array $row): string => $this->periodLabel($row)
             )
             ->column(
@@ -177,8 +177,8 @@ final class _tax_rates_ctCard extends CardBaseFramework
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="TaxRates">
             <input type="hidden" name="intent" value="refresh_hmrc_rates">
-            <input type="hidden" name="' . HelperFramework::escape(self::FILTER_FIELD) . '" value="' . HelperFramework::escape($this->normaliseStatusFilter($statusFilter)) . '">
-            <button class="' . HelperFramework::escape($buttonClass) . '" type="submit">' . HelperFramework::escape($buttonLabel) . '</button>
+            <input type="hidden" name="' . \eel_accounts\Support\Utf8::html(self::FILTER_FIELD) . '" value="' . \eel_accounts\Support\Utf8::html($this->normaliseStatusFilter($statusFilter)) . '">
+            <button class="' . \eel_accounts\Support\Utf8::html($buttonClass) . '" type="submit">' . \eel_accounts\Support\Utf8::html($buttonLabel) . '</button>
         </form>';
     }
 
@@ -190,17 +190,17 @@ final class _tax_rates_ctCard extends CardBaseFramework
 
         $row = $rules[0];
         $url = trim((string)($context[$this->key()]['source_url'] ?? ($row['source_url'] ?? '')));
-        $link = $url === '' ? '' : '. <a class="button button-inline" href="' . HelperFramework::escape($url) . '" target="_blank" rel="noopener noreferrer">HMRC - Rates and allowances</a>';
+        $link = $url === '' ? '' : '. <a class="button button-inline" href="' . \eel_accounts\Support\Utf8::html($url) . '" target="_blank" rel="noopener noreferrer">HMRC - Rates and allowances</a>';
 
-        return '<div class="helper">Source updated: ' . HelperFramework::escape((string)($row['source_updated_at'] ?? 'Unknown'))
-            . '. Checked: ' . HelperFramework::escape((string)($row['source_checked_at'] ?? 'Unknown'))
+        return '<div class="helper">Source updated: ' . \eel_accounts\Support\Utf8::html((string)($row['source_updated_at'] ?? 'Unknown'))
+            . '. Checked: ' . \eel_accounts\Support\Utf8::html((string)($row['source_checked_at'] ?? 'Unknown'))
             . $link . '</div>';
     }
 
     private function statusHtml(bool $isActive): string
     {
-        return '<span class="badge ' . HelperFramework::escape($isActive ? 'success' : 'info') . '">'
-            . HelperFramework::escape($this->statusLabel($isActive))
+        return '<span class="badge ' . \eel_accounts\Support\Utf8::html($isActive ? 'success' : 'info') . '">'
+            . \eel_accounts\Support\Utf8::html($this->statusLabel($isActive))
             . '</span>';
     }
 

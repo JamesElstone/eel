@@ -48,7 +48,7 @@ final class _year_end_checklistCard extends CardBaseFramework
         return '<section class="panel-soft settings-stack">
             <div class="status-head">
                 <h3 class="card-title">Overall status</h3>
-                <span class="badge ' . HelperFramework::escape($this->badgeClass($status)) . '">' . HelperFramework::escape($this->overallStatusLabel($status)) . '</span>
+                <span class="badge ' . \eel_accounts\Support\Utf8::html($this->badgeClass($status)) . '">' . \eel_accounts\Support\Utf8::html($this->overallStatusLabel($status)) . '</span>
             </div>
         </section>';
     }
@@ -85,12 +85,12 @@ final class _year_end_checklistCard extends CardBaseFramework
         return '<section class="panel-soft settings-stack">
             <h3 class="card-title">A. Bookkeeping completeness</h3>
             <div class="summary-grid">
-                <div class="summary-card year-end-check-panel year-end-check-panel-' . HelperFramework::escape($statusClass) . '">
+                <div class="summary-card year-end-check-panel year-end-check-panel-' . \eel_accounts\Support\Utf8::html($statusClass) . '">
                     <div class="status-head">
                         <div class="summary-label">Transaction coverage</div>
-                        <span class="year-end-check-status-label">' . HelperFramework::escape(HelperFramework::labelFromKey($status, '_')) . '</span>
+                        <span class="year-end-check-status-label">' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($status, '_')) . '</span>
                     </div>
-                    ' . ($coverageValue !== '' ? '<div class="summary-value">' . HelperFramework::escape($coverageValue) . '</div>' : '') . '
+                    ' . ($coverageValue !== '' ? '<div class="summary-value">' . \eel_accounts\Support\Utf8::html($coverageValue) . '</div>' : '') . '
                     <div class="helper">Review the transaction and monthly coverage detail from the Transactions page.</div>
                     <div class="year-end-related-workflow">' . $transactionsButton . '</div>
                 </div>
@@ -125,7 +125,7 @@ final class _year_end_checklistCard extends CardBaseFramework
         $html = '';
         foreach ($sections as $key => $checks) {
             $sectionKey = (string)$key;
-            $html .= '<section class="panel-soft settings-stack"><h3 class="card-title">' . HelperFramework::escape($this->sectionTitle($sectionKey)) . '</h3><div class="summary-grid">';
+            $html .= '<section class="panel-soft settings-stack"><h3 class="card-title">' . \eel_accounts\Support\Utf8::html($this->sectionTitle($sectionKey)) . '</h3><div class="summary-grid">';
             foreach ((array)$checks as $check) {
                 $html .= $this->renderSummaryCheck((array)$check, $companyId, $accountingPeriodId);
             }
@@ -155,14 +155,14 @@ final class _year_end_checklistCard extends CardBaseFramework
             : '';
         $previousAcknowledgementHtml = $this->previousAcknowledgementHtml($check);
 
-        return '<div class="summary-card year-end-check-panel year-end-check-panel-' . HelperFramework::escape($statusClass) . '">
+        return '<div class="summary-card year-end-check-panel year-end-check-panel-' . \eel_accounts\Support\Utf8::html($statusClass) . '">
             <div class="status-head">
-                <div class="summary-label">' . HelperFramework::escape((string)($check['title'] ?? '')) . '</div>
-                <span class="year-end-check-status-label">' . HelperFramework::escape(HelperFramework::labelFromKey($status, '_')) . '</span>
+                <div class="summary-label">' . \eel_accounts\Support\Utf8::html((string)($check['title'] ?? '')) . '</div>
+                <span class="year-end-check-status-label">' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($status, '_')) . '</span>
             </div>
-            ' . ($metricValue !== '' ? '<div class="summary-value">' . HelperFramework::escape($metricValue) . '</div>' : '') . '
-            <div class="helper">' . HelperFramework::escape((string)($check['detail_text'] ?? '')) . '</div>
-            ' . ($formulaText !== '' ? '<div class="helper">' . HelperFramework::escape($formulaText) . '</div>' : '') . '
+            ' . ($metricValue !== '' ? '<div class="summary-value">' . \eel_accounts\Support\Utf8::html($metricValue) . '</div>' : '') . '
+            <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($check['detail_text'] ?? '')) . '</div>
+            ' . ($formulaText !== '' ? '<div class="helper">' . \eel_accounts\Support\Utf8::html($formulaText) . '</div>' : '') . '
             ' . $previousAcknowledgementHtml . '
             ' . $actionsHtml . '
         </div>';
@@ -191,8 +191,8 @@ final class _year_end_checklistCard extends CardBaseFramework
         }
 
         return '<div class="helper"><strong>Previous approval:</strong> '
-            . HelperFramework::escape($parts !== [] ? implode(' ', $parts) . '.' : 'Recorded approval requires re-review.')
-            . ($note !== '' ? ' ' . HelperFramework::escape('Original note: ' . $note) : '')
+            . \eel_accounts\Support\Utf8::html($parts !== [] ? implode(' ', $parts) . '.' : 'Recorded approval requires re-review.')
+            . ($note !== '' ? ' ' . \eel_accounts\Support\Utf8::html('Original note: ' . $note) : '')
             . '</div>';
     }
 
@@ -234,11 +234,11 @@ final class _year_end_checklistCard extends CardBaseFramework
         return '<form method="post" action="?page=year_end" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="YearEnd">
-                <input type="hidden" name="intent" value="' . HelperFramework::escape($intent) . '">
+                <input type="hidden" name="intent" value="' . \eel_accounts\Support\Utf8::html($intent) . '">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <input type="hidden" name="check_code" value="' . HelperFramework::escape($checkCode) . '">
-                <button class="' . HelperFramework::escape($buttonClass) . '" type="submit"' . $confirmAttributes . '>' . HelperFramework::escape($label) . '</button>
+                <input type="hidden" name="check_code" value="' . \eel_accounts\Support\Utf8::html($checkCode) . '">
+                <button class="' . \eel_accounts\Support\Utf8::html($buttonClass) . '" type="submit"' . $confirmAttributes . '>' . \eel_accounts\Support\Utf8::html($label) . '</button>
             </form>';
     }
 

@@ -20,6 +20,6 @@ final class PersistentJson
     public static function encode(mixed $value, int $flags = 0): string
     {
         $flags = ($flags | JSON_THROW_ON_ERROR) & ~JSON_UNESCAPED_UNICODE;
-        return json_encode($value, $flags);
+        return Utf8::json($value, $flags);
     }
 }

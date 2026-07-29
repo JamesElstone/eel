@@ -45,11 +45,11 @@ final class _director_loan_directorsCard extends CardBaseFramework
         foreach ($directors as $director) {
             $resignedOn = trim((string)($director['resigned_on'] ?? ''));
             $rows .= '<tr>
-                <td>' . HelperFramework::escape((string)($director['full_name'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($director['officer_role'] ?? 'director'), '-')) . '</td>
-                <td>' . HelperFramework::escape(HelperFramework::displayDate((string)($director['appointed_on'] ?? ''))) . '</td>
-                <td>' . HelperFramework::escape($resignedOn !== '' ? HelperFramework::displayDate($resignedOn) : 'Active') . '</td>
-                <td>' . HelperFramework::escape(HelperFramework::displayDateTime((string)($director['last_synced_at'] ?? ''))) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($director['full_name'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)($director['officer_role'] ?? 'director'), '-')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html(HelperFramework::displayDate((string)($director['appointed_on'] ?? ''))) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($resignedOn !== '' ? HelperFramework::displayDate($resignedOn) : 'Active') . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html(HelperFramework::displayDateTime((string)($director['last_synced_at'] ?? ''))) . '</td>
             </tr>';
         }
 

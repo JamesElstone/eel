@@ -116,7 +116,7 @@ final class _transactions_rule_formCard extends CardBaseFramework
                 continue;
             }
 
-            $nominalOptions .= '<option value="' . (int)($nominal['id'] ?? 0) . '"' . ((string)($nominal['id'] ?? '') === (string)($ruleForm['nominal_account_id'] ?? '') ? ' selected' : '') . '>' . HelperFramework::escape(FormattingFramework::nominalLabel($nominal)) . '</option>';
+            $nominalOptions .= '<option value="' . (int)($nominal['id'] ?? 0) . '"' . ((string)($nominal['id'] ?? '') === (string)($ruleForm['nominal_account_id'] ?? '') ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html(FormattingFramework::nominalLabel($nominal)) . '</option>';
         }
 
         return '
@@ -125,8 +125,8 @@ final class _transactions_rule_formCard extends CardBaseFramework
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="Transaction">
                     <input type="hidden" name="global_action" value="cancel_categorisation_rule">
-                    <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
-                    <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                    <input type="hidden" name="month_key" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionMonth) . '">
+                    <input type="hidden" name="category_filter" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionFilter) . '">
                     <input type="hidden" name="account_filter" value="' . $selectedAccountFilter . '">
                 </form>'
                 : '') . '
@@ -135,8 +135,8 @@ final class _transactions_rule_formCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="Transaction">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
-                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                <input type="hidden" name="month_key" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionMonth) . '">
+                <input type="hidden" name="category_filter" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionFilter) . '">
                 <input type="hidden" name="account_filter" value="' . $selectedAccountFilter . '">'
                 . ($editingRuleId > 0
                     ? '<input type="hidden" name="rule_id" value="' . $editingRuleId . '">'
@@ -146,7 +146,7 @@ final class _transactions_rule_formCard extends CardBaseFramework
                 <div class="form-grid">
                     <div class="form-row">
                         <label for="rule_priority">Priority</label>
-                        <input class="input" id="rule_priority" name="rule_priority" value="' . HelperFramework::escape((string)($ruleForm['priority'] ?? '100')) . '" type="number" min="1" step="1" inputmode="numeric">
+                        <input class="input" id="rule_priority" name="rule_priority" value="' . \eel_accounts\Support\Utf8::html((string)($ruleForm['priority'] ?? '100')) . '" type="number" min="1" step="1" inputmode="numeric">
                     </div>
                     <fieldset class="form-row full settings-fieldset">
                         <legend>Description Matching</legend>
@@ -159,7 +159,7 @@ final class _transactions_rule_formCard extends CardBaseFramework
                             </div>
                             <div class="form-row">
                                 <label for="rule_desc_value">String</label>
-                                <input class="input" id="rule_desc_value" name="rule_desc_value" value="' . HelperFramework::escape($descMatchValue) . '" required>
+                                <input class="input" id="rule_desc_value" name="rule_desc_value" value="' . \eel_accounts\Support\Utf8::html($descMatchValue) . '" required>
                             </div>
                         </div>
                     </fieldset>
@@ -174,7 +174,7 @@ final class _transactions_rule_formCard extends CardBaseFramework
                             </div>
                             <div class="form-row">
                                 <label for="rule_ref_value">String</label>
-                                <input class="input" id="rule_ref_value" name="rule_ref_value" value="' . HelperFramework::escape($refMatchValue) . '">
+                                <input class="input" id="rule_ref_value" name="rule_ref_value" value="' . \eel_accounts\Support\Utf8::html($refMatchValue) . '">
                             </div>
                         </div>
                     </fieldset>
@@ -211,7 +211,7 @@ final class _transactions_rule_formCard extends CardBaseFramework
                     </div>
                 </label>
                 <div>
-                    <button class="button primary" type="submit">' . HelperFramework::escape($editingRuleId > 0 ? 'Save Rule' : 'Add Rule') . '</button>'
+                    <button class="button primary" type="submit">' . \eel_accounts\Support\Utf8::html($editingRuleId > 0 ? 'Save Rule' : 'Add Rule') . '</button>'
                     . ($editingRuleId > 0
                         ? '<button class="button" type="submit" form="' . $cancelFormId . '" formnovalidate>Cancel</button>'
                         : '') . '
@@ -239,9 +239,9 @@ final class _transactions_rule_formCard extends CardBaseFramework
             $normalisedOptions[$selectedValue] = $selectedValue;
         }
 
-        $html = '<option value=""' . ($selectedValue === '' ? ' selected' : '') . '>' . HelperFramework::escape($anyLabel) . '</option>';
+        $html = '<option value=""' . ($selectedValue === '' ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html($anyLabel) . '</option>';
         foreach ($normalisedOptions as $value) {
-            $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selectedValue ? ' selected' : '') . '>' . HelperFramework::escape($value) . '</option>';
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html($value) . '"' . ($value === $selectedValue ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html($value) . '</option>';
         }
 
         return $html;
@@ -258,7 +258,7 @@ final class _transactions_rule_formCard extends CardBaseFramework
 
         $html = '';
         foreach ($options as $value => $label) {
-            $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selectedValue ? ' selected' : '') . '>' . HelperFramework::escape($label) . '</option>';
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html($value) . '"' . ($value === $selectedValue ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html($label) . '</option>';
         }
 
         return $html;

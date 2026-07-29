@@ -74,7 +74,7 @@ final class _uploads_validate_commitCard extends CardBaseFramework
             return 'No upload selected.';
         }
         return HelperFramework::rawHtml(
-            'Working on upload: <strong>' . HelperFramework::escape($filename) . '</strong>'
+            'Working on upload: <strong>' . \eel_accounts\Support\Utf8::html($filename) . '</strong>'
         );
     }
 
@@ -88,7 +88,7 @@ final class _uploads_validate_commitCard extends CardBaseFramework
         $placeholderMessage = trim((string)($context['uploads']['validate_placeholder_message'] ?? ''));
 
         if ($placeholderMessage !== '') {
-            return '<div class="helper">' . HelperFramework::escape($placeholderMessage) . '</div>';
+            return '<div class="helper">' . \eel_accounts\Support\Utf8::html($placeholderMessage) . '</div>';
         }
 
         $preview = (array)($context['services']['selected_upload_preview'] ?? []);
@@ -115,7 +115,7 @@ final class _uploads_validate_commitCard extends CardBaseFramework
         if ($rows === [] && (int)($summary['rows_parsed'] ?? 0) > 0) {
             return '<div class="panel-soft">
                 <h3 class="card-title">Preview Not Ready</h3>
-                <div class="helper">' . HelperFramework::escape($this->previewNotReadyMessage((array)($preview['mapping'] ?? []), (int)$summary['rows_parsed'])) . '</div>
+                <div class="helper">' . \eel_accounts\Support\Utf8::html($this->previewNotReadyMessage((array)($preview['mapping'] ?? []), (int)$summary['rows_parsed'])) . '</div>
             </div>';
         }
 
@@ -152,7 +152,7 @@ final class _uploads_validate_commitCard extends CardBaseFramework
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="upload_id" value="' . $uploadId . '">
-                <input type="hidden" name="filter" value="' . HelperFramework::escape($uploadHistoryFilter) . '">
+                <input type="hidden" name="filter" value="' . \eel_accounts\Support\Utf8::html($uploadHistoryFilter) . '">
                 <input type="hidden" name="page" value="' . $uploadHistoryPage . '">
                 <input type="hidden" name="account_id" value="' . $accountId . '">
                 <button class="button primary" type="submit"' . $importButtonDisabled . $importButtonTitle . '>Import Transactions</button>
@@ -183,7 +183,7 @@ final class _uploads_validate_commitCard extends CardBaseFramework
 
             $documentUrl = trim((string)($row['source_document_url'] ?? ''));
             $documentHtml = $documentUrl !== ''
-                ? '<a class="text-link" href="' . HelperFramework::escape($documentUrl) . '" target="_blank" rel="noopener noreferrer">Source document</a>'
+                ? '<a class="text-link" href="' . \eel_accounts\Support\Utf8::html($documentUrl) . '" target="_blank" rel="noopener noreferrer">Source document</a>'
                 : '<span class="helper">None</span>';
 
             $status = trim((string)($row['validation_status'] ?? 'invalid'));
@@ -207,21 +207,21 @@ final class _uploads_validate_commitCard extends CardBaseFramework
                 $stageLabel = 'Ready to import';
             }
 
-            $statusHtml = '<span class="badge stage-badge ' . HelperFramework::escape($stageClass) . '">' . HelperFramework::escape($stageLabel) . '</span>';
+            $statusHtml = '<span class="badge stage-badge ' . \eel_accounts\Support\Utf8::html($stageClass) . '">' . \eel_accounts\Support\Utf8::html($stageLabel) . '</span>';
 
             $rowsHtml .= '<tr>
                 <td>' . (int)($row['row_number'] ?? 0) . '</td>
-                <td>' . HelperFramework::escape(HelperFramework::displayDate((string)($row['chosen_txn_date'] ?? ''))) . '</td>
-                <td>' . HelperFramework::escape($accountingPeriod) . '</td>
-                <td>' . HelperFramework::escape($description) . '</td>
-                <td class="' . $amountClass . '">' . HelperFramework::escape((string)($row['normalised_amount'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape($balance) . '</td>
-                <td>' . HelperFramework::escape((string)($row['normalised_currency'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape((string)($row['source_account'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape($sourceCategory) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html(HelperFramework::displayDate((string)($row['chosen_txn_date'] ?? ''))) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($accountingPeriod) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($description) . '</td>
+                <td class="' . $amountClass . '">' . \eel_accounts\Support\Utf8::html((string)($row['normalised_amount'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($balance) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($row['normalised_currency'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($row['source_account'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($sourceCategory) . '</td>
                 <td>' . $documentHtml . '</td>
                 <td>' . $statusHtml . '</td>'
-                . ($hasNotes ? '<td>' . HelperFramework::escape((string)($row['validation_notes'] ?? '')) . '</td>' : '') . '
+                . ($hasNotes ? '<td>' . \eel_accounts\Support\Utf8::html((string)($row['validation_notes'] ?? '')) . '</td>' : '') . '
             </tr>';
         }
 
@@ -251,7 +251,7 @@ final class _uploads_validate_commitCard extends CardBaseFramework
                     $missingAccountingPeriodHtml .= '<div class="list">
                         <div class="list-item">
                             <strong>Suggested period</strong>
-                            <span>' . HelperFramework::escape($this->periodDisplayRange($suggestedPeriod)) . '</span>
+                            <span>' . \eel_accounts\Support\Utf8::html($this->periodDisplayRange($suggestedPeriod)) . '</span>
                         </div>
                     </div>
                     <div class="actions-row">
@@ -260,7 +260,7 @@ final class _uploads_validate_commitCard extends CardBaseFramework
                             <input type="hidden" name="card_action" value="AccountingPeriods">
                             <input type="hidden" name="intent" value="create_required_periods_for_upload">
                             <input type="hidden" name="company_id" value="' . $companyId . '">
-                            <input type="hidden" name="required_period_end" value="' . HelperFramework::escape($periodEnd) . '">
+                            <input type="hidden" name="required_period_end" value="' . \eel_accounts\Support\Utf8::html($periodEnd) . '">
                             <button class="button primary" type="submit">Create Required Accounting Periods</button>
                         </form>
                         ' . \eel_accounts\Renderer\WorkflowHandoffRenderer::button('companies', 'Open Companies', ['company_id' => $companyId]) . '
@@ -326,7 +326,7 @@ final class _uploads_validate_commitCard extends CardBaseFramework
             }
 
             $rowCount = (int)($month['row_count'] ?? 0);
-            $items .= '<li>' . HelperFramework::escape((string)($month['month_label'] ?? '')) . ' - '
+            $items .= '<li>' . \eel_accounts\Support\Utf8::html((string)($month['month_label'] ?? '')) . ' - '
                 . $rowCount . ' ready row' . ($rowCount === 1 ? '' : 's') . '</li>';
         }
 

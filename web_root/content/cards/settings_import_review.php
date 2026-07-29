@@ -45,33 +45,33 @@ final class _settings_import_reviewCard extends CardBaseFramework
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Company">
                 <input type="hidden" name="intent" value="save_import_review">
-                <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)$companyId) . '">
-                <input type="hidden" name="accounting_period_id" value="' . HelperFramework::escape((string)$accountingPeriodId) . '">
+                <input type="hidden" name="company_id" value="' . \eel_accounts\Support\Utf8::html((string)$companyId) . '">
+                <input type="hidden" name="accounting_period_id" value="' . \eel_accounts\Support\Utf8::html((string)$accountingPeriodId) . '">
                 <section data-state-fields="enable_duplicate_file_check,enable_duplicate_row_check,auto_create_rule_prompt,lock_posted_periods" data-state-target="save_import_review_button">
                 <div class="checkbox-grid">
                     <label class="checkbox-item">
-                        <input type="checkbox" id="enable_duplicate_file_check" name="enable_duplicate_file_check" value="1" data-state-default="' . HelperFramework::escape(!empty($settings['enable_duplicate_file_check']) ? '1' : '0') . '"' . $this->checked($settings['enable_duplicate_file_check'] ?? null) . '>
+                        <input type="checkbox" id="enable_duplicate_file_check" name="enable_duplicate_file_check" value="1" data-state-default="' . \eel_accounts\Support\Utf8::html(!empty($settings['enable_duplicate_file_check']) ? '1' : '0') . '"' . $this->checked($settings['enable_duplicate_file_check'] ?? null) . '>
                         <div class="checkbox-copy">
                             <strong>Duplicate file detection</strong>
                             <span>Warn if the same CSV file hash has already been uploaded.</span>
                         </div>
                     </label>
                     <label class="checkbox-item">
-                        <input type="checkbox" id="enable_duplicate_row_check" name="enable_duplicate_row_check" value="1" data-state-default="' . HelperFramework::escape(!empty($settings['enable_duplicate_row_check']) ? '1' : '0') . '"' . $this->checked($settings['enable_duplicate_row_check'] ?? null) . '>
+                        <input type="checkbox" id="enable_duplicate_row_check" name="enable_duplicate_row_check" value="1" data-state-default="' . \eel_accounts\Support\Utf8::html(!empty($settings['enable_duplicate_row_check']) ? '1' : '0') . '"' . $this->checked($settings['enable_duplicate_row_check'] ?? null) . '>
                         <div class="checkbox-copy">
                             <strong>Duplicate row detection</strong>
                             <span>Skip individual statement rows already seen for the company.</span>
                         </div>
                     </label>
                     <label class="checkbox-item">
-                        <input type="checkbox" id="auto_create_rule_prompt" name="auto_create_rule_prompt" value="1" data-state-default="' . HelperFramework::escape(!empty($settings['auto_create_rule_prompt']) ? '1' : '0') . '"' . $this->checked($settings['auto_create_rule_prompt'] ?? null) . '>
+                        <input type="checkbox" id="auto_create_rule_prompt" name="auto_create_rule_prompt" value="1" data-state-default="' . \eel_accounts\Support\Utf8::html(!empty($settings['auto_create_rule_prompt']) ? '1' : '0') . '"' . $this->checked($settings['auto_create_rule_prompt'] ?? null) . '>
                         <div class="checkbox-copy">
                             <strong>Prompt to save categorisation rule</strong>
                             <span>After manual categorisation, offer to turn that choice into a future rule.</span>
                         </div>
                     </label>
                     <label class="checkbox-item">
-                        <input type="checkbox" id="lock_posted_periods" name="lock_posted_periods" value="1" data-state-default="' . HelperFramework::escape(!empty($settings['lock_posted_periods']) ? '1' : '0') . '"' . $this->checked($settings['lock_posted_periods'] ?? null) . '>
+                        <input type="checkbox" id="lock_posted_periods" name="lock_posted_periods" value="1" data-state-default="' . \eel_accounts\Support\Utf8::html(!empty($settings['lock_posted_periods']) ? '1' : '0') . '"' . $this->checked($settings['lock_posted_periods'] ?? null) . '>
                         <div class="checkbox-copy">
                             <strong>Lock posted periods</strong>
                             <span>Prevent further edits once a month or year-end period is marked complete.</span>

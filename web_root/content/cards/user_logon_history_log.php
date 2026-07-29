@@ -117,7 +117,7 @@ final class _user_logon_history_logCard extends CardBaseFramework
 
     private function table(array $context): TableFramework
     {
-        return TableFramework::make($this->key(), $this->rows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->rows($context))
             ->filename('user-logon-history-log')
             ->exportLimit(200)
             ->empty('No user logon history has been recorded yet.')

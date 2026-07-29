@@ -98,21 +98,21 @@ final class _backups_availableCard extends CardBaseFramework
 
     private function table(array $context): TableFramework
     {
-        return TableFramework::make($this->key(), $this->rows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->rows($context))
             ->filename('database-backups')
             ->exportLimit(5000)
             ->empty('No zipped SQL backups have been created yet.')
             ->column(
                 'created_at',
                 'Created',
-                html: static fn(array $row): string => HelperFramework::escape((string)($row['created_at'] ?? '')),
+                html: static fn(array $row): string => \eel_accounts\Support\Utf8::html((string)($row['created_at'] ?? '')),
                 export: static fn(array $row): string => (string)($row['created_at'] ?? ''),
                 sort: static fn(array $row): string => (string)($row['created_at'] ?? '')
             )
             ->column(
                 'trigger',
                 'Trigger',
-                html: static fn(array $row): string => HelperFramework::escape((string)($row['trigger'] ?? 'Unknown')),
+                html: static fn(array $row): string => \eel_accounts\Support\Utf8::html((string)($row['trigger'] ?? 'Unknown')),
                 export: static fn(array $row): string => (string)($row['trigger'] ?? 'Unknown'),
                 sort: static fn(array $row): string => (string)($row['trigger'] ?? 'Unknown')
             )
@@ -126,14 +126,14 @@ final class _backups_availableCard extends CardBaseFramework
             ->column(
                 'filename',
                 'Filename',
-                html: static fn(array $row): string => '<strong>' . HelperFramework::escape((string)($row['filename'] ?? 'backup.sql.zip')) . '</strong>',
+                html: static fn(array $row): string => '<strong>' . \eel_accounts\Support\Utf8::html((string)($row['filename'] ?? 'backup.sql.zip')) . '</strong>',
                 export: static fn(array $row): string => (string)($row['filename'] ?? ''),
                 sort: true
             )
             ->column(
                 'size_bytes',
                 'Size',
-                html: fn(array $row): string => HelperFramework::escape($this->formatBytes((int)($row['size_bytes'] ?? 0))),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->formatBytes((int)($row['size_bytes'] ?? 0))),
                 export: static fn(array $row): string => (string)(int)($row['size_bytes'] ?? 0),
                 cellClass: 'cell-fit',
                 exportType: 'number',
@@ -180,10 +180,10 @@ final class _backups_availableCard extends CardBaseFramework
 
         $hiddenFields = $this->hiddenFields()
             . '<input type="hidden" name="card_action" value="Backup">'
-            . '<input type="hidden" name="backup_filename" value="' . HelperFramework::escape($filename) . '">'
-            . '<input type="hidden" name="backup_scope" value="' . HelperFramework::escape((string)($row['scope'] ?? 'company')) . '">'
+            . '<input type="hidden" name="backup_filename" value="' . \eel_accounts\Support\Utf8::html($filename) . '">'
+            . '<input type="hidden" name="backup_scope" value="' . \eel_accounts\Support\Utf8::html((string)($row['scope'] ?? 'company')) . '">'
             . '<input type="hidden" name="company_id" value="' . (int)($this->renderContext['company']['id'] ?? 0) . '">'
-            . '<input type="hidden" name="csrf_token" value="' . HelperFramework::escape($this->csrfToken()) . '">';
+            . '<input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($this->csrfToken()) . '">';
 
         return '<form class="backup-restore-form" method="post" action="?page=backup" data-ajax="true">
             ' . $hiddenFields . '
@@ -206,10 +206,10 @@ final class _backups_availableCard extends CardBaseFramework
             ' . $this->hiddenFields() . '
             <input type="hidden" name="card_action" value="Backup">
             <input type="hidden" name="intent" value="download_database_backup">
-            <input type="hidden" name="backup_filename" value="' . HelperFramework::escape($filename) . '">
-            <input type="hidden" name="backup_scope" value="' . HelperFramework::escape((string)($row['scope'] ?? 'company')) . '">
+            <input type="hidden" name="backup_filename" value="' . \eel_accounts\Support\Utf8::html($filename) . '">
+            <input type="hidden" name="backup_scope" value="' . \eel_accounts\Support\Utf8::html((string)($row['scope'] ?? 'company')) . '">
             <input type="hidden" name="company_id" value="' . (int)($this->renderContext['company']['id'] ?? 0) . '">
-            <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($this->csrfToken()) . '">
+            <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($this->csrfToken()) . '">
             <button class="button secondary" type="submit">Download</button>
         </form>';
     }
@@ -218,7 +218,7 @@ final class _backups_availableCard extends CardBaseFramework
     {
         $html = '';
         foreach ((array)($this->renderContext['page']['page_cards'] ?? []) as $cardKey) {
-            $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+            $html .= '<input type="hidden" name="cards[]" value="' . \eel_accounts\Support\Utf8::html((string)$cardKey) . '">';
         }
 
         return $html;

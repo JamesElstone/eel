@@ -161,7 +161,7 @@ final class DividendReserveClassificationService
             ];
         }
 
-        $summaryJson = json_encode($summary, \JSON_UNESCAPED_SLASHES);
+        $summaryJson = \eel_accounts\Support\Utf8::json($summary, \JSON_UNESCAPED_SLASHES);
         if (!is_string($summaryJson)) {
             $summaryJson = '{}';
         }
@@ -654,7 +654,7 @@ final class DividendReserveClassificationService
             ),
         ];
 
-        return hash('sha256', json_encode($payload, \JSON_UNESCAPED_SLASHES) ?: '');
+        return hash('sha256', \eel_accounts\Support\Utf8::json($payload, \JSON_UNESCAPED_SLASHES) ?: '');
     }
 
     private function distributableReservesBroughtForward(int $companyId, string $periodStart): array

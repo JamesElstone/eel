@@ -1050,7 +1050,7 @@ final class CompanyAction implements ActionInterfaceFramework
 
     private function encodeProfilePayload(array $profile): string
     {
-        $payload = json_encode($profile, JSON_UNESCAPED_SLASHES);
+        $payload = \eel_accounts\Support\Utf8::json($profile, JSON_UNESCAPED_SLASHES);
 
         return $payload === false ? '' : $payload;
     }

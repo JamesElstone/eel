@@ -39,7 +39,7 @@ final class _invitation_settingsCard extends CardBaseFramework
         return '<form method="post" action="?page=settings" data-ajax="true" class="form-grid">
             ' . $this->hiddenFields($context) . '
             <input type="hidden" name="card_action" value="InvitationSettings">
-            <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
+            <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
             <fieldset class="form-row full settings-fieldset">
                 <legend>Account completion invitations</legend>
                 <label class="checkbox-item" for="invitation-enabled">
@@ -76,11 +76,11 @@ final class _invitation_settingsCard extends CardBaseFramework
             <fieldset class="panel-soft">
                 <legend>Supported template variables</legend>
                 <p class="helper">These variables can be used in the email subject, email body, and SMS template fields.</p>
-                <p class="helper"><code>{display_name}</code> - The signed-in user sending the invitation (' . HelperFramework::escape($displayName !== '' ? $displayName : 'unavailable') . ').</p>
-                <p class="helper"><code>{display_email}</code> - The signed-in user email address (' . HelperFramework::escape($displayEmail !== '' ? $displayEmail : 'unavailable') . ').</p>
-                <p class="helper"><code>{display_mobile}</code> - The signed-in user mobile number (' . HelperFramework::escape($displayMobile !== '' ? $displayMobile : 'unavailable') . ').</p>
+                <p class="helper"><code>{display_name}</code> - The signed-in user sending the invitation (' . \eel_accounts\Support\Utf8::html($displayName !== '' ? $displayName : 'unavailable') . ').</p>
+                <p class="helper"><code>{display_email}</code> - The signed-in user email address (' . \eel_accounts\Support\Utf8::html($displayEmail !== '' ? $displayEmail : 'unavailable') . ').</p>
+                <p class="helper"><code>{display_mobile}</code> - The signed-in user mobile number (' . \eel_accounts\Support\Utf8::html($displayMobile !== '' ? $displayMobile : 'unavailable') . ').</p>
                 <p class="helper"><code>{recipient_name}</code> - The user receiving the invitation.</p>
-                <p class="helper"><code>{app_name}</code> - The configured name of this app (' . HelperFramework::escape($appName) . ').</p>
+                <p class="helper"><code>{app_name}</code> - The configured name of this app (' . \eel_accounts\Support\Utf8::html($appName) . ').</p>
                 <p class="helper"><code>{link}</code> - The invitation URL to respond to.</p>
                 <p class="helper"><code>{expires_at}</code> - The date and time that the above link will expire by.</p>
             </fieldset>
@@ -90,16 +90,16 @@ final class _invitation_settingsCard extends CardBaseFramework
     private function input(string $id, string $label, string $name, string $value, string $type = 'text', string $min = '', string $max = '', bool $full = false): string
     {
         return '<div class="form-row ' . ($full ? 'full' : 'half') . '">
-            <label for="' . HelperFramework::escape($id) . '">' . HelperFramework::escape($label) . '</label>
-            <input class="input" id="' . HelperFramework::escape($id) . '" name="' . HelperFramework::escape($name) . '" type="' . HelperFramework::escape($type) . '" value="' . HelperFramework::escape($value) . '"' . ($min !== '' ? ' min="' . HelperFramework::escape($min) . '"' : '') . ($max !== '' ? ' max="' . HelperFramework::escape($max) . '"' : '') . '>
+            <label for="' . \eel_accounts\Support\Utf8::html($id) . '">' . \eel_accounts\Support\Utf8::html($label) . '</label>
+            <input class="input" id="' . \eel_accounts\Support\Utf8::html($id) . '" name="' . \eel_accounts\Support\Utf8::html($name) . '" type="' . \eel_accounts\Support\Utf8::html($type) . '" value="' . \eel_accounts\Support\Utf8::html($value) . '"' . ($min !== '' ? ' min="' . \eel_accounts\Support\Utf8::html($min) . '"' : '') . ($max !== '' ? ' max="' . \eel_accounts\Support\Utf8::html($max) . '"' : '') . '>
         </div>';
     }
 
     private function textarea(string $id, string $label, string $name, string $value): string
     {
         return '<div class="form-row full">
-            <label for="' . HelperFramework::escape($id) . '">' . HelperFramework::escape($label) . '</label>
-            <textarea class="input" id="' . HelperFramework::escape($id) . '" name="' . HelperFramework::escape($name) . '" rows="5">' . HelperFramework::escape($value) . '</textarea>
+            <label for="' . \eel_accounts\Support\Utf8::html($id) . '">' . \eel_accounts\Support\Utf8::html($label) . '</label>
+            <textarea class="input" id="' . \eel_accounts\Support\Utf8::html($id) . '" name="' . \eel_accounts\Support\Utf8::html($name) . '" rows="5">' . \eel_accounts\Support\Utf8::html($value) . '</textarea>
         </div>';
     }
 
@@ -107,7 +107,7 @@ final class _invitation_settingsCard extends CardBaseFramework
     {
         $html = '';
         foreach ((array)($context['page']['page_cards'] ?? []) as $cardKey) {
-            $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+            $html .= '<input type="hidden" name="cards[]" value="' . \eel_accounts\Support\Utf8::html((string)$cardKey) . '">';
         }
 
         return $html;

@@ -625,7 +625,7 @@ final class HmrcSubmissionPackageService
     private function ctElement(\DOMDocument $document, \DOMElement $parent, string $name, ?string $value = null): \DOMElement
     {
         $element = $document->createElementNS(Ct600BuilderService::CT_NAMESPACE, $name);
-        if ($value !== null) { $element->appendChild($document->createTextNode($value)); }
+        if ($value !== null) { $element->appendChild($document->createTextNode(\eel_accounts\Support\Utf8::normalize($value))); }
         $parent->appendChild($element);
         return $element;
     }
@@ -633,7 +633,7 @@ final class HmrcSubmissionPackageService
     private function hdElement(\DOMDocument $document, \DOMElement $parent, string $name, ?string $value = null): \DOMElement
     {
         $element = $document->createElementNS(self::ENVELOPE_NAMESPACE, $name);
-        if ($value !== null) { $element->appendChild($document->createTextNode($value)); }
+        if ($value !== null) { $element->appendChild($document->createTextNode(\eel_accounts\Support\Utf8::normalize($value))); }
         $parent->appendChild($element);
         return $element;
     }
@@ -670,7 +670,7 @@ final class HmrcSubmissionPackageService
             foreach ($item as $key => $child) { $item[$key] = $normalise($child); }
             return $item;
         };
-        return json_encode(
+        return \eel_accounts\Support\Utf8::json(
             $normalise($value),
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
         );

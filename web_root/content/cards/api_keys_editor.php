@@ -30,12 +30,12 @@ final class _api_keys_editorCard extends CardBaseFramework
         $rows = (array)($result['rows'] ?? []);
         $catalog = array_values(array_filter((array)($result['catalog'] ?? []), 'is_array'));
         $csrf = (string)($context['page']['csrf_token'] ?? '');
-        $catalogJson = json_encode($catalog, JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_UNESCAPED_SLASHES);
+        $catalogJson = \eel_accounts\Support\Utf8::json($catalog, JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_UNESCAPED_SLASHES);
         if (!is_string($catalogJson)) {
             throw new RuntimeException('API credential editor catalog could not be encoded.');
         }
 
-        return '<form method="post" action="?page=settings" data-ajax="true" class="settings-stack" data-api-credential-editor="true" data-api-credential-catalog="' . HelperFramework::escape($catalogJson) . '">'
+        return '<form method="post" action="?page=settings" data-ajax="true" class="settings-stack" data-api-credential-editor="true" data-api-credential-catalog="' . \eel_accounts\Support\Utf8::html($catalogJson) . '">'
             . $this->hiddenPageCards($context)
             . HelperFramework::csrfHiddenInput($csrf)
             . '<input type="hidden" name="card_action" value="ApiKeysEditor"><input type="hidden" name="edit_credential_id" value="" data-api-credential-id>'
@@ -63,7 +63,7 @@ final class _api_keys_editorCard extends CardBaseFramework
         foreach ($rows as $row) {
             $id = trim((string)($row['id'] ?? ''));
             if ($id === '') { continue; }
-            $html .= '<tr><td>' . HelperFramework::escape((string)($row['provider'] ?? '')) . '</td><td>' . HelperFramework::escape((string)($row['gateway'] ?? '')) . '</td><td>' . HelperFramework::escape((string)($row['tag'] ?? '')) . '</td><td>' . HelperFramework::escape((string)($row['environment'] ?? '')) . '</td><td>' . HelperFramework::escape((string)($row['schema'] ?? '')) . '</td><td>' . HelperFramework::escape((string)($row['url'] ?? '')) . '</td><td><button class="button button-inline" type="button" data-api-credential-edit="true" data-credential-id="' . HelperFramework::escape($id) . '" data-credential-provider="' . HelperFramework::escape((string)($row['provider'] ?? '')) . '" data-credential-gateway="' . HelperFramework::escape((string)($row['gateway'] ?? '')) . '" data-credential-tag="' . HelperFramework::escape((string)($row['tag'] ?? '')) . '" data-credential-environment="' . HelperFramework::escape((string)($row['environment'] ?? '')) . '" data-credential-schema="' . HelperFramework::escape((string)($row['schema'] ?? '')) . '" data-credential-url="' . HelperFramework::escape((string)($row['url'] ?? '')) . '">Edit</button></td></tr>';
+            $html .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)($row['provider'] ?? '')) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($row['gateway'] ?? '')) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($row['tag'] ?? '')) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($row['environment'] ?? '')) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($row['schema'] ?? '')) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($row['url'] ?? '')) . '</td><td><button class="button button-inline" type="button" data-api-credential-edit="true" data-credential-id="' . \eel_accounts\Support\Utf8::html($id) . '" data-credential-provider="' . \eel_accounts\Support\Utf8::html((string)($row['provider'] ?? '')) . '" data-credential-gateway="' . \eel_accounts\Support\Utf8::html((string)($row['gateway'] ?? '')) . '" data-credential-tag="' . \eel_accounts\Support\Utf8::html((string)($row['tag'] ?? '')) . '" data-credential-environment="' . \eel_accounts\Support\Utf8::html((string)($row['environment'] ?? '')) . '" data-credential-schema="' . \eel_accounts\Support\Utf8::html((string)($row['schema'] ?? '')) . '" data-credential-url="' . \eel_accounts\Support\Utf8::html((string)($row['url'] ?? '')) . '">Edit</button></td></tr>';
         }
         return $html;
     }
@@ -76,14 +76,14 @@ final class _api_keys_editorCard extends CardBaseFramework
             $value = (string)($entry[$field] ?? '');
             if ($value !== '') { $options[$value] = (string)($entry[$field . '_label'] ?? $value); }
         }
-        $html = '<label>' . HelperFramework::escape($label) . '<select class="select" name="' . HelperFramework::escape($name) . '" data-api-credential-field="' . HelperFramework::escape($field) . '" data-no-submit-on-change="true"><option value="">Select ' . HelperFramework::escape($label) . '</option>';
-        foreach ($options as $value => $optionLabel) { $html .= '<option value="' . HelperFramework::escape($value) . '">' . HelperFramework::escape($optionLabel) . '</option>'; }
+        $html = '<label>' . \eel_accounts\Support\Utf8::html($label) . '<select class="select" name="' . \eel_accounts\Support\Utf8::html($name) . '" data-api-credential-field="' . \eel_accounts\Support\Utf8::html($field) . '" data-no-submit-on-change="true"><option value="">Select ' . \eel_accounts\Support\Utf8::html($label) . '</option>';
+        foreach ($options as $value => $optionLabel) { $html .= '<option value="' . \eel_accounts\Support\Utf8::html($value) . '">' . \eel_accounts\Support\Utf8::html($optionLabel) . '</option>'; }
         return $html . '</select></label>';
     }
 
     private function input(string $label, string $name, string $type = 'text', string $placeholder = ''): string
     {
-        return '<label>' . HelperFramework::escape($label) . '<input class="input" name="' . HelperFramework::escape($name) . '" type="' . HelperFramework::escape($type) . '" value="" autocomplete="off"' . ($placeholder !== '' ? ' placeholder="' . HelperFramework::escape($placeholder) . '"' : '') . '></label>';
+        return '<label>' . \eel_accounts\Support\Utf8::html($label) . '<input class="input" name="' . \eel_accounts\Support\Utf8::html($name) . '" type="' . \eel_accounts\Support\Utf8::html($type) . '" value="" autocomplete="off"' . ($placeholder !== '' ? ' placeholder="' . \eel_accounts\Support\Utf8::html($placeholder) . '"' : '') . '></label>';
     }
 
     private function schemaSelect(): string
@@ -93,14 +93,14 @@ final class _api_keys_editorCard extends CardBaseFramework
 
     private function secretInput(string $label, string $name, string $placeholder): string
     {
-        return '<label>' . HelperFramework::escape($label) . '<textarea class="input" name="' . HelperFramework::escape($name) . '" rows="3" autocomplete="off" placeholder="' . HelperFramework::escape($placeholder) . '"></textarea></label>';
+        return '<label>' . \eel_accounts\Support\Utf8::html($label) . '<textarea class="input" name="' . \eel_accounts\Support\Utf8::html($name) . '" rows="3" autocomplete="off" placeholder="' . \eel_accounts\Support\Utf8::html($placeholder) . '"></textarea></label>';
     }
 
     private function hiddenPageCards(array $context): string
     {
         $html = '';
         foreach ((array)($context['page']['page_cards'] ?? []) as $cardKey) {
-            $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+            $html .= '<input type="hidden" name="cards[]" value="' . \eel_accounts\Support\Utf8::html((string)$cardKey) . '">';
         }
         return $html;
     }

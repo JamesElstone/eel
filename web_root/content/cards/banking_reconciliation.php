@@ -83,14 +83,14 @@ final class _banking_reconciliationCard extends CardBaseFramework
             $panelsHtml .= '
                 <section class="indexed-section">
                     <div class="indexed-section-marker">
-                        <div class="indexed-section-number">' . HelperFramework::escape(sprintf('%02d', $index + 1)) . '</div>
-                        <div class="indexed-section-label">' . HelperFramework::escape($accountTypeLabel) . '</div>
+                        <div class="indexed-section-number">' . \eel_accounts\Support\Utf8::html(sprintf('%02d', $index + 1)) . '</div>
+                        <div class="indexed-section-label">' . \eel_accounts\Support\Utf8::html($accountTypeLabel) . '</div>
                     </div>
                     <div class="indexed-section-main">
                         <header class="indexed-section-header">
                             <div>
-                                <h3 class="indexed-section-title">' . HelperFramework::escape($accountName) . '</h3>
-                                <div class="indexed-section-helper">' . HelperFramework::escape($this->accountHelper($account)) . '</div>
+                                <h3 class="indexed-section-title">' . \eel_accounts\Support\Utf8::html($accountName) . '</h3>
+                                <div class="indexed-section-helper">' . \eel_accounts\Support\Utf8::html($this->accountHelper($account)) . '</div>
                             </div>
                             <div class="indexed-section-status">' . $statusBadges . '</div>
                         </header>
@@ -135,19 +135,19 @@ final class _banking_reconciliationCard extends CardBaseFramework
             <div class="summary-grid four">
                 <div class="summary-card">
                     <div class="summary-label">Selected accounting period</div>
-                    <div class="summary-value"><span class="badge info">' . HelperFramework::escape($accountingPeriodLabel) . '</span></div>
+                    <div class="summary-value"><span class="badge info">' . \eel_accounts\Support\Utf8::html($accountingPeriodLabel) . '</span></div>
                 </div>
                 <div class="summary-card">
                     <div class="summary-label">Statement continuity</div>
-                    <div class="summary-value"><span class="badge ' . HelperFramework::escape($this->reconciliationStatusBadgeClass((string)($panel['statement_continuity_status'] ?? 'not_available'))) . '">' . HelperFramework::escape($this->reconciliationStatusLabel((string)($panel['statement_continuity_status'] ?? 'not_available'))) . '</span></div>
+                    <div class="summary-value"><span class="badge ' . \eel_accounts\Support\Utf8::html($this->reconciliationStatusBadgeClass((string)($panel['statement_continuity_status'] ?? 'not_available'))) . '">' . \eel_accounts\Support\Utf8::html($this->reconciliationStatusLabel((string)($panel['statement_continuity_status'] ?? 'not_available'))) . '</span></div>
                 </div>
                 <div class="summary-card">
                     <div class="summary-label">Running balance checks</div>
-                    <div class="summary-value"><span class="badge ' . HelperFramework::escape($this->reconciliationStatusBadgeClass((string)($panel['running_balance_status'] ?? 'not_available'))) . '">' . HelperFramework::escape($this->reconciliationStatusLabel((string)($panel['running_balance_status'] ?? 'not_available'))) . '</span></div>
+                    <div class="summary-value"><span class="badge ' . \eel_accounts\Support\Utf8::html($this->reconciliationStatusBadgeClass((string)($panel['running_balance_status'] ?? 'not_available'))) . '">' . \eel_accounts\Support\Utf8::html($this->reconciliationStatusLabel((string)($panel['running_balance_status'] ?? 'not_available'))) . '</span></div>
                 </div>
                 <div class="summary-card">
                     <div class="summary-label">Ledger reconciliation</div>
-                    <div class="summary-value"><span class="badge ' . HelperFramework::escape($this->reconciliationStatusBadgeClass((string)($panel['ledger_reconciliation_status'] ?? 'not_available'))) . '">' . HelperFramework::escape($this->reconciliationStatusLabel((string)($panel['ledger_reconciliation_status'] ?? 'not_available'))) . '</span></div>
+                    <div class="summary-value"><span class="badge ' . \eel_accounts\Support\Utf8::html($this->reconciliationStatusBadgeClass((string)($panel['ledger_reconciliation_status'] ?? 'not_available'))) . '">' . \eel_accounts\Support\Utf8::html($this->reconciliationStatusLabel((string)($panel['ledger_reconciliation_status'] ?? 'not_available'))) . '</span></div>
                 </div>
             </div>
             ' . $this->configuredBankUploadsTable($panel, $index, $context)->render($context, [
@@ -158,21 +158,21 @@ final class _banking_reconciliationCard extends CardBaseFramework
                 <div class="summary-grid">
                     <div class="summary-card">
                         <div class="summary-label">Latest statement closing balance</div>
-                        <div class="summary-value">' . HelperFramework::escape($this->nullableMoney($companySettings, $ledgerSummary['statement_closing_balance'] ?? null)) . '</div>
+                        <div class="summary-value">' . \eel_accounts\Support\Utf8::html($this->nullableMoney($companySettings, $ledgerSummary['statement_closing_balance'] ?? null)) . '</div>
                     </div>
                     <div class="summary-card">
                         <div class="summary-label">Ledger bank balance</div>
-                        <div class="summary-value">' . HelperFramework::escape($this->nullableMoney($companySettings, $ledgerSummary['ledger_balance'] ?? null)) . '</div>
+                        <div class="summary-value">' . \eel_accounts\Support\Utf8::html($this->nullableMoney($companySettings, $ledgerSummary['ledger_balance'] ?? null)) . '</div>
                     </div>
                     <div class="summary-card">
                         <div class="summary-label">Difference</div>
-                        <div class="summary-value">' . HelperFramework::escape($this->nullableMoney($companySettings, $ledgerSummary['difference'] ?? null)) . '</div>
+                        <div class="summary-value">' . \eel_accounts\Support\Utf8::html($this->nullableMoney($companySettings, $ledgerSummary['difference'] ?? null)) . '</div>
                     </div>
                 </div>
             </div>
             <div class="panel-soft">
-                <div class="helper">' . HelperFramework::escape((string)($ledgerSummary['note'] ?? '')) . '</div>
-                <div class="helper">' . HelperFramework::escape((string)($ledgerSummary['scope_note'] ?? '')) . '</div>
+                <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($ledgerSummary['note'] ?? '')) . '</div>
+                <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($ledgerSummary['scope_note'] ?? '')) . '</div>
                 <div class="helper">Possible causes include missing statement imports, bank rows not yet committed, manual journals, director loan entries, and expense register repayments.</div>
             </div>
             <div class="standout">
@@ -191,19 +191,19 @@ final class _banking_reconciliationCard extends CardBaseFramework
             <div class="summary-grid four">
                 <div class="summary-card">
                     <div class="summary-label">Selected accounting period</div>
-                    <div class="summary-value"><span class="badge info">' . HelperFramework::escape($accountingPeriodLabel) . '</span></div>
+                    <div class="summary-value"><span class="badge info">' . \eel_accounts\Support\Utf8::html($accountingPeriodLabel) . '</span></div>
                 </div>
                 <div class="summary-card">
                     <div class="summary-label">Tagged ledger lines</div>
-                    <div class="summary-value">' . HelperFramework::escape((string)(int)($summary['line_count'] ?? 0)) . '</div>
+                    <div class="summary-value">' . \eel_accounts\Support\Utf8::html((string)(int)($summary['line_count'] ?? 0)) . '</div>
                 </div>
                 <div class="summary-card">
                     <div class="summary-label">Debits</div>
-                    <div class="summary-value">' . HelperFramework::escape($this->nullableMoney($companySettings, $summary['debit_total'] ?? null)) . '</div>
+                    <div class="summary-value">' . \eel_accounts\Support\Utf8::html($this->nullableMoney($companySettings, $summary['debit_total'] ?? null)) . '</div>
                 </div>
                 <div class="summary-card">
                     <div class="summary-label">Credits</div>
-                    <div class="summary-value">' . HelperFramework::escape($this->nullableMoney($companySettings, $summary['credit_total'] ?? null)) . '</div>
+                    <div class="summary-value">' . \eel_accounts\Support\Utf8::html($this->nullableMoney($companySettings, $summary['credit_total'] ?? null)) . '</div>
                 </div>
             </div>
             <h4 class="card-title">Trade Ledger Check</h4>
@@ -211,21 +211,21 @@ final class _banking_reconciliationCard extends CardBaseFramework
                 <div class="summary-grid">
                     <div class="summary-card">
                         <div class="summary-label">Closing balance</div>
-                        <div class="summary-value">' . HelperFramework::escape($this->nullableMoney($companySettings, $summary['net_balance'] ?? null)) . '</div>
+                        <div class="summary-value">' . \eel_accounts\Support\Utf8::html($this->nullableMoney($companySettings, $summary['net_balance'] ?? null)) . '</div>
                     </div>
                     <div class="summary-card">
                         <div class="summary-label">Balance side</div>
-                        <div class="summary-value">' . HelperFramework::escape((string)($summary['balance_label'] ?? 'None')) . '</div>
+                        <div class="summary-value">' . \eel_accounts\Support\Utf8::html((string)($summary['balance_label'] ?? 'None')) . '</div>
                     </div>
                     <div class="summary-card">
                         <div class="summary-label">Last activity</div>
-                        <div class="summary-value">' . HelperFramework::escape((string)($summary['last_journal_date'] ?? '')) . '</div>
+                        <div class="summary-value">' . \eel_accounts\Support\Utf8::html((string)($summary['last_journal_date'] ?? '')) . '</div>
                     </div>
                 </div>
             </div>
             <div class="panel-soft">
-                <div class="helper">' . HelperFramework::escape((string)($summary['note'] ?? '')) . '</div>
-                <div class="helper">' . HelperFramework::escape((string)($summary['scope_note'] ?? '')) . '</div>
+                <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($summary['note'] ?? '')) . '</div>
+                <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($summary['scope_note'] ?? '')) . '</div>
             </div>
             <div class="standout">
                 <form method="post" action="?page=journals">
@@ -241,7 +241,7 @@ final class _banking_reconciliationCard extends CardBaseFramework
         $key = $this->key() . '_uploads_' . $this->panelTableSuffix($panel, $index);
         $filename = 'bank-statement-checks-' . $this->panelTableSuffix($panel, $index);
 
-        return TableFramework::make($key, $this->bankUploadRows($panel))
+        return \eel_accounts\Support\Utf8Table::make($key, $this->bankUploadRows($panel))
             ->filename($filename)
             ->exportLimit(1000)
             ->empty('No bank statement uploads are available for ' . $accountName . ' in the selected accounting period.')
@@ -254,19 +254,19 @@ final class _banking_reconciliationCard extends CardBaseFramework
             ->column(
                 'opening_balance',
                 'Opening',
-                html: fn(array $row): string => HelperFramework::escape($this->nullableMoney($companySettings, $row['opening_balance'] ?? null)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->nullableMoney($companySettings, $row['opening_balance'] ?? null)),
                 export: static fn(array $row): string => ($row['opening_balance'] ?? null) === null || ($row['opening_balance'] ?? '') === '' ? '' : number_format((float)$row['opening_balance'], 2, '.', '')
             )
             ->column(
                 'closing_balance',
                 'Closing',
-                html: fn(array $row): string => HelperFramework::escape($this->nullableMoney($companySettings, $row['closing_balance'] ?? null)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->nullableMoney($companySettings, $row['closing_balance'] ?? null)),
                 export: static fn(array $row): string => ($row['closing_balance'] ?? null) === null || ($row['closing_balance'] ?? '') === '' ? '' : number_format((float)$row['closing_balance'], 2, '.', '')
             )
             ->column(
                 'previous_statement_closing_balance',
                 'Previous closing',
-                html: fn(array $row): string => HelperFramework::escape($this->nullableMoney($companySettings, $row['previous_statement_closing_balance'] ?? null)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->nullableMoney($companySettings, $row['previous_statement_closing_balance'] ?? null)),
                 export: static fn(array $row): string => ($row['previous_statement_closing_balance'] ?? null) === null || ($row['previous_statement_closing_balance'] ?? '') === '' ? '' : number_format((float)$row['previous_statement_closing_balance'], 2, '.', '')
             )
             ->column(
@@ -349,10 +349,10 @@ final class _banking_reconciliationCard extends CardBaseFramework
 
     private function statusWithNoteHtml(string $status, string $note): string
     {
-        return '<span class="badge ' . HelperFramework::escape($this->reconciliationStatusBadgeClass($status)) . '">'
-            . HelperFramework::escape($this->reconciliationStatusLabel($status))
+        return '<span class="badge ' . \eel_accounts\Support\Utf8::html($this->reconciliationStatusBadgeClass($status)) . '">'
+            . \eel_accounts\Support\Utf8::html($this->reconciliationStatusLabel($status))
             . '</span>'
-            . '<div class="helper">' . HelperFramework::escape($note) . '</div>';
+            . '<div class="helper">' . \eel_accounts\Support\Utf8::html($note) . '</div>';
     }
 
     private function panelTableSuffix(array $panel, int $index): string
@@ -406,8 +406,8 @@ final class _banking_reconciliationCard extends CardBaseFramework
 
     private function statusBadge(string $label, string $status): string
     {
-        return '<span class="badge ' . HelperFramework::escape($this->reconciliationStatusBadgeClass($status)) . '">'
-            . HelperFramework::escape($label . ' ' . strtolower($this->reconciliationStatusLabel($status)))
+        return '<span class="badge ' . \eel_accounts\Support\Utf8::html($this->reconciliationStatusBadgeClass($status)) . '">'
+            . \eel_accounts\Support\Utf8::html($label . ' ' . strtolower($this->reconciliationStatusLabel($status)))
             . '</span>';
     }
 

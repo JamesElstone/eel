@@ -197,7 +197,7 @@ final class HmrcOutbound implements \eel_accounts\Service\VatValidationInterface
             return [
                 'status_code' => 200,
                 'headers' => [],
-                'body' => json_encode(['access_token' => $cachedToken], JSON_UNESCAPED_SLASHES),
+                'body' => \eel_accounts\Support\Utf8::json(['access_token' => $cachedToken], JSON_UNESCAPED_SLASHES),
             ];
         }
 

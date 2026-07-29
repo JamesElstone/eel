@@ -57,18 +57,18 @@ final class _tax_audit_detailCard extends CardBaseFramework
         }
         if (empty($detail['available'])) {
             $message = (string)(($detail['errors'] ?? [])[0] ?? 'The selected Tax Audit detail is unavailable.');
-            return '<div class="helper">' . HelperFramework::escape($message) . '</div>';
+            return '<div class="helper">' . \eel_accounts\Support\Utf8::html($message) . '</div>';
         }
 
         $mode = (string)($detail['mode'] ?? 'live');
         $status = (string)($detail['reconciliation_status'] ?? 'discrepancy');
         return '<div class="summary-grid">
-                <div class="summary-card"><div class="summary-label">Area total</div><div class="summary-value">' . HelperFramework::escape($this->money($context, $detail['amount'] ?? 0)) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Computation total</div><div class="summary-value">' . HelperFramework::escape($this->money($context, $detail['expected_amount'] ?? 0)) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Difference</div><div class="summary-value">' . HelperFramework::escape($this->money($context, $detail['reconciliation_difference'] ?? 0)) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Area total</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($this->money($context, $detail['amount'] ?? 0)) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Computation total</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($this->money($context, $detail['expected_amount'] ?? 0)) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Difference</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($this->money($context, $detail['reconciliation_difference'] ?? 0)) . '</div></div>
             </div>
-            <div class="helper"><span class="badge ' . ($mode === 'frozen' ? 'success' : ($mode === 'reconstructed' ? 'warning' : 'info')) . '">' . HelperFramework::escape((string)($detail['mode_label'] ?? 'Audit preview')) . '</span>
-            <span class="badge ' . ($status === 'reconciled' ? 'success' : 'danger') . '">' . HelperFramework::escape(HelperFramework::labelFromKey($status)) . '</span></div>
+            <div class="helper"><span class="badge ' . ($mode === 'frozen' ? 'success' : ($mode === 'reconstructed' ? 'warning' : 'info')) . '">' . \eel_accounts\Support\Utf8::html((string)($detail['mode_label'] ?? 'Audit preview')) . '</span>
+            <span class="badge ' . ($status === 'reconciled' ? 'success' : 'danger') . '">' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($status)) . '</span></div>
             <div class="panel-soft">' . $this->detailTable($context, $detail)->render($context, [
                 'cards[]' => (array)($context['page']['page_cards'] ?? []),
             ]) . '</div>'
@@ -98,7 +98,7 @@ final class _tax_audit_detailCard extends CardBaseFramework
             ];
         }
 
-        return TableFramework::make($this->key(), $rows)
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $rows)
             ->filename('tax-audit-area-detail')
             ->exports(true)
             ->exportLimit(5000)
@@ -108,23 +108,23 @@ final class _tax_audit_detailCard extends CardBaseFramework
             ->column(
                 'label',
                 'Source',
-                html: static fn(array $row): string => '<strong>' . HelperFramework::escape((string)$row['label']) . '</strong><br><span class="helper">' . HelperFramework::escape((string)$row['source_label']) . '</span>',
+                html: static fn(array $row): string => '<strong>' . \eel_accounts\Support\Utf8::html((string)$row['label']) . '</strong><br><span class="helper">' . \eel_accounts\Support\Utf8::html((string)$row['source_label']) . '</span>',
                 export: static fn(array $row): string => trim((string)$row['label'] . ' — ' . (string)$row['source_label'])
             )
             ->textColumn('nominal', 'Nominal')
-            ->column('accounting_amount', 'Accounting amount', html: fn(array $row): string => HelperFramework::escape($this->money($context, $row['accounting_amount'])), export: static fn(array $row): string => number_format((float)$row['accounting_amount'], 2, '.', ''), cellClass: 'numeric', exportType: 'number')
-            ->column('tax_adjustment_amount', 'Tax amount', html: fn(array $row): string => HelperFramework::escape($this->money($context, $row['tax_adjustment_amount'])), export: static fn(array $row): string => number_format((float)$row['tax_adjustment_amount'], 2, '.', ''), cellClass: 'numeric', exportType: 'number')
+            ->column('accounting_amount', 'Accounting amount', html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($context, $row['accounting_amount'])), export: static fn(array $row): string => number_format((float)$row['accounting_amount'], 2, '.', ''), cellClass: 'numeric', exportType: 'number')
+            ->column('tax_adjustment_amount', 'Tax amount', html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($context, $row['tax_adjustment_amount'])), export: static fn(array $row): string => number_format((float)$row['tax_adjustment_amount'], 2, '.', ''), cellClass: 'numeric', exportType: 'number')
             ->column(
                 'rule',
                 'Treatment / Rule',
                 html: static function (array $row): string {
-                    $rule = HelperFramework::escape((string)$row['rule']);
+                    $rule = \eel_accounts\Support\Utf8::html((string)$row['rule']);
                     $sourceUrl = trim((string)($row['source_url'] ?? ''));
                     if ($sourceUrl === '') {
                         return $rule;
                     }
 
-                    return '<a href="' . HelperFramework::escape($sourceUrl) . '" target="_blank" rel="noopener noreferrer">' . $rule . '</a>';
+                    return '<a href="' . \eel_accounts\Support\Utf8::html($sourceUrl) . '" target="_blank" rel="noopener noreferrer">' . $rule . '</a>';
                 },
                 export: static fn(array $row): string => (string)$row['rule']
             )
@@ -190,7 +190,7 @@ final class _tax_audit_detailCard extends CardBaseFramework
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="action" value="select-tax-audit-area">
                 <input type="hidden" name="ct_period_id" value="' . (int)($audit['selected_ct_period_id'] ?? 0) . '">
-                <input type="hidden" name="tax_audit_area" value="' . HelperFramework::escape((string)($audit['selected_area'] ?? '')) . '">
+                <input type="hidden" name="tax_audit_area" value="' . \eel_accounts\Support\Utf8::html((string)($audit['selected_area'] ?? '')) . '">
                 <input type="hidden" name="tax_audit_page" value="' . $target . '">
                 <button class="button button-inline" type="submit"' . ($target === $page ? ' disabled' : '') . '>' . $label . '</button>
             </form>';

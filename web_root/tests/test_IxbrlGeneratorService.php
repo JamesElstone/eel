@@ -24,6 +24,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $h->assertTrue(!str_contains($positive, ' sign="-"'));
         $h->assertTrue(!str_contains($zero, ' sign="-"'));
     });
+    $h->check($service::class, 'recovers legacy Windows-1252 narrative facts as valid UTF-8', static function () use ($h, $service): void {
+        $fact = $service->renderFact([
+            'qname' => 'ct:Label',
+            'context_ref' => 'ct',
+            'value' => 'Citro' . chr(0xEB) . 'n & Sons',
+        ]);
+        $h->assertTrue(str_contains($fact, '>Citroën &amp; Sons</ix:nonNumeric>'));
+        $h->assertFalse(str_contains($fact, '><'));
+    });
     $h->check($service::class, 'supports safe styles and transformed human-readable values', static function () use ($h, $service): void {
         $amount = $service->renderFact([
             'qname' => 'ct:Amount', 'context_ref' => 'ct', 'value' => -1234.5,

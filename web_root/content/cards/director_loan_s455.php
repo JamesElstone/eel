@@ -33,7 +33,7 @@ final class _director_loan_s455Card extends CardBaseFramework
     {
         $s455 = (array)($context['services']['s455'] ?? []);
         if (empty($s455['available'])) {
-            return '<div class="helper">' . HelperFramework::escape((string)(($s455['errors'] ?? [])[0] ?? 's455 review is unavailable.')) . '</div>';
+            return '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)(($s455['errors'] ?? [])[0] ?? 's455 review is unavailable.')) . '</div>';
         }
         $settings = (array)($context['company']['settings'] ?? []);
         $html = '<section class="settings-stack" id="director-loan-s455">
@@ -74,7 +74,7 @@ final class _director_loan_s455Card extends CardBaseFramework
         }
 
         return '<div class="panel-soft warn"><strong>Repayment opportunity</strong><div class="helper">Future transactions that are cash repayments, correctly categorised to the Participator Loan nominal on or before '
-            . HelperFramework::escape((string)($period['repayment_deadline'] ?? 'the repayment deadline'))
+            . \eel_accounts\Support\Utf8::html((string)($period['repayment_deadline'] ?? 'the repayment deadline'))
             . ' may reduce this s455 position. A repayment is counted only when the party, timing, and statutory eligibility checks pass. This is guidance only and does not block Year End from closing.</div></div>';
     }
 
@@ -98,7 +98,7 @@ final class _director_loan_s455Card extends CardBaseFramework
 
     private function stat(string $label, string $value, string $variant = ''): string
     {
-        return '<div class="summary-card ' . HelperFramework::escape($variant) . '"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+        return '<div class="summary-card ' . \eel_accounts\Support\Utf8::html($variant) . '"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label) . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div></div>';
     }
 
     private function s455TaxTable(array $settings, array $period): string
@@ -112,8 +112,8 @@ final class _director_loan_s455Card extends CardBaseFramework
 
         $html = '';
         foreach ($rows as $label => $value) {
-            $html .= '<tr><th scope="row">' . HelperFramework::escape($label) . '</th><td>'
-                . HelperFramework::escape($this->money($settings, $value)) . '</td></tr>';
+            $html .= '<tr><th scope="row">' . \eel_accounts\Support\Utf8::html($label) . '</th><td>'
+                . \eel_accounts\Support\Utf8::html($this->money($settings, $value)) . '</td></tr>';
         }
 
         return '<div class="table-scroll"><table><tbody>' . $html . '</tbody></table></div>';

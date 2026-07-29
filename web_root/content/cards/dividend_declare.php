@@ -97,8 +97,8 @@ final class _dividend_declareCard extends CardBaseFramework
             : 'Dividend declarations can be saved only once the form is enabled.';
         $statusItems = $canDeclare
             ? ''
-            : '<div class="helper">Form Disabled - Reason: ' . HelperFramework::escape($disabledReason) . '</div>';
-        $statusItems .= '<div class="helper">' . HelperFramework::escape($helper) . '</div>';
+            : '<div class="helper">Form Disabled - Reason: ' . \eel_accounts\Support\Utf8::html($disabledReason) . '</div>';
+        $statusItems .= '<div class="helper">' . \eel_accounts\Support\Utf8::html($helper) . '</div>';
         $statusPanelClass = 'panel-soft dividend-declare-status ' . ($canDeclare ? 'success' : 'warn');
 
         return '<div class="settings-stack">
@@ -112,11 +112,11 @@ final class _dividend_declareCard extends CardBaseFramework
                 <input type="hidden" name="settlement_target" value="unpaid_dividend_liability">
                 <div class="form-row">
                     <label for="dividend_declaration_date">Declaration date</label>
-                    <input class="input" id="dividend_declaration_date" type="date" name="declaration_date" value="' . HelperFramework::escape($defaultDate) . '" min="' . HelperFramework::escape($periodStart) . '" max="' . HelperFramework::escape($defaultDate !== '' ? $defaultDate : $periodEnd) . '"' . $disabled . '>
+                    <input class="input" id="dividend_declaration_date" type="date" name="declaration_date" value="' . \eel_accounts\Support\Utf8::html($defaultDate) . '" min="' . \eel_accounts\Support\Utf8::html($periodStart) . '" max="' . \eel_accounts\Support\Utf8::html($defaultDate !== '' ? $defaultDate : $periodEnd) . '"' . $disabled . '>
                 </div>
                 <div class="form-row">
                     <label for="dividend_amount">Amount</label>
-                    <input class="input" id="dividend_amount" type="number" name="amount" step="0.01" min="0.01" max="' . HelperFramework::escape(number_format(max(0, $availableReserves), 2, '.', '')) . '"' . $disabled . '>
+                    <input class="input" id="dividend_amount" type="number" name="amount" step="0.01" min="0.01" max="' . \eel_accounts\Support\Utf8::html(number_format(max(0, $availableReserves), 2, '.', '')) . '"' . $disabled . '>
                 </div>
                 <div class="form-row">
                     <label for="dividend_shareholder_party_id">Shareholder</label>
@@ -199,7 +199,7 @@ final class _dividend_declareCard extends CardBaseFramework
         $html = '';
         foreach ($labels as $partyId => $party) {
             $html .= '<option value="' . (int)$partyId . '">'
-                . HelperFramework::escape((string)$party['name'] . ' — ' . implode(', ', array_unique((array)$party['holdings'])))
+                . \eel_accounts\Support\Utf8::html((string)$party['name'] . ' — ' . implode(', ', array_unique((array)$party['holdings'])))
                 . '</option>';
         }
 
@@ -216,7 +216,7 @@ final class _dividend_declareCard extends CardBaseFramework
             $directorId = (int)($director['id'] ?? 0);
             $name = trim((string)($director['full_name'] ?? ''));
             if ($directorId > 0 && $name !== '') {
-                $html .= '<option value="' . $directorId . '">' . HelperFramework::escape($name) . '</option>';
+                $html .= '<option value="' . $directorId . '">' . \eel_accounts\Support\Utf8::html($name) . '</option>';
             }
         }
 

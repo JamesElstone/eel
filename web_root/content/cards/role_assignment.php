@@ -66,8 +66,8 @@ final class _role_assignmentCard extends CardBaseFramework
         foreach ($roles as $role) {
             $roleId = (int)($role['id'] ?? 0);
             $selected = $roleId === $selectedRoleId ? ' selected' : '';
-            $roleOptionsHtml .= '<option value="' . HelperFramework::escape((string)$roleId) . '"' . $selected . '>'
-                . HelperFramework::escape((string)($role['role_name'] ?? ''))
+            $roleOptionsHtml .= '<option value="' . \eel_accounts\Support\Utf8::html((string)$roleId) . '"' . $selected . '>'
+                . \eel_accounts\Support\Utf8::html((string)($role['role_name'] ?? ''))
                 . '</option>';
         }
 
@@ -79,15 +79,15 @@ final class _role_assignmentCard extends CardBaseFramework
             $selectClass = 'selector-input' . ($isForced ? '' : ' primary');
 
             $rowsHtml .= '<tr>
-                <td>' . HelperFramework::escape((string)($row['card_label'] ?? $cardKey)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($row['card_label'] ?? $cardKey)) . '</td>
                 <td class="cell-fit">
                     <form method="post" action="?page=roles" data-ajax="true">
                         ' . $cards . '
                         <input type="hidden" name="action" value="roles-set-card-permission">
-                        <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
-                        <input type="hidden" name="role_id" value="' . HelperFramework::escape((string)$selectedRoleId) . '">
-                        <input type="hidden" name="card_key" value="' . HelperFramework::escape($cardKey) . '">
-                        <select class="' . HelperFramework::escape($selectClass) . '" name="permission_state"' . $disabled . '>
+                        <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
+                        <input type="hidden" name="role_id" value="' . \eel_accounts\Support\Utf8::html((string)$selectedRoleId) . '">
+                        <input type="hidden" name="card_key" value="' . \eel_accounts\Support\Utf8::html($cardKey) . '">
+                        <select class="' . \eel_accounts\Support\Utf8::html($selectClass) . '" name="permission_state"' . $disabled . '>
                             <option value="allowed"' . ($isAllowed ? ' selected' : '') . '>Allowed</option>
                             <option value="denied"' . (!$isAllowed ? ' selected' : '') . '>Denied</option>
                         </select>
@@ -105,7 +105,7 @@ final class _role_assignmentCard extends CardBaseFramework
                 <form method="post" action="?page=roles" data-ajax="true" class="toolbar">
                     ' . $cards . '
                     <input type="hidden" name="action" value="roles-select-role">
-                    <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
+                    <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
                     <label for="roles-role-selector">Selected Role</label>
                     <select class="selector-input" id="roles-role-selector" name="role_id">
                         ' . $roleOptionsHtml . '
@@ -114,7 +114,7 @@ final class _role_assignmentCard extends CardBaseFramework
                 <form method="post" action="?page=roles" data-ajax="true" class="toolbar role-assignment-create">
                     ' . $cards . '
                     <input type="hidden" name="action" value="roles-create-role">
-                    <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
+                    <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
                     <input class="input" type="text" name="new_role_name" placeholder="New role name" required>
                     <button class="button" type="submit">Add Role</button>
                 </form>
@@ -138,7 +138,7 @@ final class _role_assignmentCard extends CardBaseFramework
         $html = '';
 
         foreach ((array)($context['page']['page_cards'] ?? []) as $cardKey) {
-            $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+            $html .= '<input type="hidden" name="cards[]" value="' . \eel_accounts\Support\Utf8::html((string)$cardKey) . '">';
         }
 
         return $html;

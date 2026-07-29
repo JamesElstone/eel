@@ -16,7 +16,7 @@ final class _filing_evidence_lookupCard extends CardBaseFramework
             . '<input type="hidden" name="company_id" value="' . (int)($context['company']['id'] ?? 0) . '">'
             . '<label for="filing-evidence-id">EEL Evidence ID</label>'
             . '<input class="input" id="filing-evidence-id" name="evidence_id" type="text" maxlength="80" '
-            . 'placeholder="EEL-FE-… or EEL-AR-…" value="' . HelperFramework::escape((string)($context['filing_evidence']['reference'] ?? '')) . '">'
+            . 'placeholder="EEL-FE-… or EEL-AR-…" value="' . \eel_accounts\Support\Utf8::html((string)($context['filing_evidence']['reference'] ?? '')) . '">'
             . '<button class="button primary" type="submit">Look up evidence</button></form>';
     }
 }

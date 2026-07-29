@@ -77,8 +77,8 @@ final class _tax_rates_ct600_rimCard extends CardBaseFramework
 
         $html = '<section class="panel-soft settings-stack"><h3 class="card-title">CT600 return RIM schemas</h3>'
             . $this->rimLinks()
-            . '<div class="helper"><strong>Source updated:</strong> ' . HelperFramework::escape($sourceUpdated)
-            . ' &nbsp; <strong>Checked:</strong> ' . HelperFramework::escape($checked) . '</div>';
+            . '<div class="helper"><strong>Source updated:</strong> ' . \eel_accounts\Support\Utf8::html($sourceUpdated)
+            . ' &nbsp; <strong>Checked:</strong> ' . \eel_accounts\Support\Utf8::html($checked) . '</div>';
 
         if ($packages === []) {
             return $html . '<div class="notice warning">No HMRC CT600 RIM metadata is stored yet. Refresh the filing artefacts to discover and install the supported packages.</div></section>';
@@ -87,12 +87,12 @@ final class _tax_rates_ct600_rimCard extends CardBaseFramework
         $html .= '<div class="table-scroll"><table><thead><tr><th>Form</th><th>Artefact</th><th>Applicable from</th><th>Primary XSD / inventory</th><th>Mapping compatibility</th><th>Checked</th><th>State</th><th>Action</th></tr></thead><tbody>';
         foreach ($packages as $package) {
             $state = (string)($package['package_state'] ?? 'not_downloaded');
-            $html .= '<tr><td>' . HelperFramework::escape((string)($package['form_version'] ?? '')) . '</td>'
-                . '<td>' . HelperFramework::escape((string)($package['artifact_version'] ?? '')) . '</td>'
-                . '<td>' . HelperFramework::escape((string)($package['applicable_from'] ?? 'Not confirmed')) . '</td>'
-                . '<td>' . HelperFramework::escape((string)($package['primary_xsd'] ?? 'Not catalogued')) . '<br><span class="helper">' . (int)($package['schema_count'] ?? $package['xsd_count'] ?? 0) . ' XSD; ' . (int)($package['component_count'] ?? 0) . ' components</span></td>'
+            $html .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)($package['form_version'] ?? '')) . '</td>'
+                . '<td>' . \eel_accounts\Support\Utf8::html((string)($package['artifact_version'] ?? '')) . '</td>'
+                . '<td>' . \eel_accounts\Support\Utf8::html((string)($package['applicable_from'] ?? 'Not confirmed')) . '</td>'
+                . '<td>' . \eel_accounts\Support\Utf8::html((string)($package['primary_xsd'] ?? 'Not catalogued')) . '<br><span class="helper">' . (int)($package['schema_count'] ?? $package['xsd_count'] ?? 0) . ' XSD; ' . (int)($package['component_count'] ?? 0) . ' components</span></td>'
                 . '<td>' . (int)($package['compatible_profile_count'] ?? 0) . ' active compatible<br><span class="helper">' . (int)($package['unmapped_required_count'] ?? 0) . ' required unmapped</span></td>'
-                . '<td>' . HelperFramework::escape((string)($package['checked_at'] ?? 'Not checked')) . '</td>'
+                . '<td>' . \eel_accounts\Support\Utf8::html((string)($package['checked_at'] ?? 'Not checked')) . '</td>'
                 . '<td>' . $this->stateBadge($state) . '</td>'
                 . '<td>' . $this->deleteForm((int)($package['id'] ?? 0), (string)($package['form_version'] ?? ''), (string)($package['artifact_version'] ?? '')) . '</td></tr>';
         }
@@ -139,10 +139,10 @@ final class _tax_rates_ct600_rimCard extends CardBaseFramework
                 $support = '<span class="badge success">Ready</span>';
             }
 
-            $html .= '<tr><td>' . HelperFramework::escape($taxonomy !== '' ? $taxonomy : 'Unknown')
-                . '<br><span class="helper">' . HelperFramework::escape($artifact !== '' ? $artifact : 'Unknown artefact') . '</span></td>'
-                . '<td>' . HelperFramework::escape((string)($package['applicable_from'] ?? 'Not confirmed'))
-                . ' to ' . HelperFramework::escape((string)(($package['applicable_to'] ?? null) ?: 'open')) . '</td>'
+            $html .= '<tr><td>' . \eel_accounts\Support\Utf8::html($taxonomy !== '' ? $taxonomy : 'Unknown')
+                . '<br><span class="helper">' . \eel_accounts\Support\Utf8::html($artifact !== '' ? $artifact : 'Unknown artefact') . '</span></td>'
+                . '<td>' . \eel_accounts\Support\Utf8::html((string)($package['applicable_from'] ?? 'Not confirmed'))
+                . ' to ' . \eel_accounts\Support\Utf8::html((string)(($package['applicable_to'] ?? null) ?: 'open')) . '</td>'
                 . '<td>' . $this->stateBadge($state) . '</td>'
                 . '<td>' . (int)($package['file_count'] ?? 0) . ' files; '
                 . (int)($package['concept_count'] ?? 0) . ' concepts; '
@@ -179,9 +179,9 @@ final class _tax_rates_ct600_rimCard extends CardBaseFramework
     {
         $html = '<div class="form-row-actions">';
         foreach ($links as [$label, $url, $external]) {
-            $html .= '<a class="button button-inline" href="' . HelperFramework::escape($url) . '"'
+            $html .= '<a class="button button-inline" href="' . \eel_accounts\Support\Utf8::html($url) . '"'
                 . ($external ? ' target="_blank" rel="noopener noreferrer"' : '')
-                . '>' . HelperFramework::escape($label) . '</a> ';
+                . '>' . \eel_accounts\Support\Utf8::html($label) . '</a> ';
         }
         return $html . '</div>';
     }
@@ -195,7 +195,7 @@ final class _tax_rates_ct600_rimCard extends CardBaseFramework
     private function stateBadge(string $state): string
     {
         $class = $state === 'verified' ? 'success' : ($state === 'failed' ? 'danger' : 'info');
-        return '<span class="badge ' . $class . '">' . HelperFramework::escape(str_replace('_', ' ', ucfirst($state))) . '</span>';
+        return '<span class="badge ' . $class . '">' . \eel_accounts\Support\Utf8::html(str_replace('_', ' ', ucfirst($state))) . '</span>';
     }
 
     private function deleteForm(int $packageId, string $formVersion, string $artifactVersion): string
@@ -203,7 +203,7 @@ final class _tax_rates_ct600_rimCard extends CardBaseFramework
         if ($packageId <= 0) { return ''; }
         $label = trim($formVersion . ' ' . $artifactVersion);
         return '<form method="post" action="?page=tax_artifacts" data-ajax="true">' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
-            . '<input type="hidden" name="card_action" value="TaxRates"><input type="hidden" name="intent" value="hmrc_ct_rim_delete"><input type="hidden" name="package_id" value="' . $packageId . '"><button class="button button-inline danger" type="submit" data-chicken-check="true" data-chicken-title="Delete HMRC CT600 RIM package" data-chicken-message="Delete HMRC CT600 RIM ' . HelperFramework::escape($label) . '?<br><br>This removes the database row, ZIP file, extracted directory, and validation-file catalogue records. This cannot be undone." data-chicken-confirm-text="Delete" data-chicken-button-class="button danger">Delete</button></form>';
+            . '<input type="hidden" name="card_action" value="TaxRates"><input type="hidden" name="intent" value="hmrc_ct_rim_delete"><input type="hidden" name="package_id" value="' . $packageId . '"><button class="button button-inline danger" type="submit" data-chicken-check="true" data-chicken-title="Delete HMRC CT600 RIM package" data-chicken-message="Delete HMRC CT600 RIM ' . \eel_accounts\Support\Utf8::html($label) . '?<br><br>This removes the database row, ZIP file, extracted directory, and validation-file catalogue records. This cannot be undone." data-chicken-confirm-text="Delete" data-chicken-button-class="button danger">Delete</button></form>';
     }
 
     private function computationDeleteForm(int $packageId, string $taxonomyVersion, string $artifactVersion): string
@@ -211,6 +211,6 @@ final class _tax_rates_ct600_rimCard extends CardBaseFramework
         if ($packageId <= 0) { return ''; }
         $label = trim($taxonomyVersion . ' ' . $artifactVersion);
         return '<form method="post" action="?page=tax_artifacts" data-ajax="true">' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
-            . '<input type="hidden" name="card_action" value="TaxRates"><input type="hidden" name="intent" value="hmrc_ct_computation_delete"><input type="hidden" name="package_id" value="' . $packageId . '"><button class="button button-inline danger" type="submit" data-chicken-check="true" data-chicken-title="Delete HMRC computation taxonomy package" data-chicken-message="Delete HMRC computation taxonomy ' . HelperFramework::escape($label) . '?<br><br>This removes the package database row, catalogue and mapping records, ZIP file, and extracted directory. This cannot be undone." data-chicken-confirm-text="Delete" data-chicken-button-class="button danger">Delete</button></form>';
+            . '<input type="hidden" name="card_action" value="TaxRates"><input type="hidden" name="intent" value="hmrc_ct_computation_delete"><input type="hidden" name="package_id" value="' . $packageId . '"><button class="button button-inline danger" type="submit" data-chicken-check="true" data-chicken-title="Delete HMRC computation taxonomy package" data-chicken-message="Delete HMRC computation taxonomy ' . \eel_accounts\Support\Utf8::html($label) . '?<br><br>This removes the package database row, catalogue and mapping records, ZIP file, and extracted directory. This cannot be undone." data-chicken-confirm-text="Delete" data-chicken-button-class="button danger">Delete</button></form>';
     }
 }

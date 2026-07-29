@@ -550,13 +550,13 @@ final class IxbrlAccountsReportService
             }
             if ($isList) {
                 usort($item, static fn(mixed $left, mixed $right): int => strcmp(
-                    json_encode($left, JSON_UNESCAPED_SLASHES) ?: '',
-                    json_encode($right, JSON_UNESCAPED_SLASHES) ?: ''
+                    \eel_accounts\Support\Utf8::json($left, JSON_UNESCAPED_SLASHES) ?: '',
+                    \eel_accounts\Support\Utf8::json($right, JSON_UNESCAPED_SLASHES) ?: ''
                 ));
             }
             return $item;
         };
 
-        return json_encode($normalise($value), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        return \eel_accounts\Support\Utf8::json($normalise($value), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
     }
 }

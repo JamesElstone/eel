@@ -57,7 +57,7 @@ final class _pl_tradingCard extends CardBaseFramework
             . '<div class="helper">Posted sales for the accounting period. Darker days have higher sales.</div>'
             . $chart
             . '<div class="helper"><strong>Total sales:</strong> '
-            . HelperFramework::escape($this->money($companySettings, $heatmap['total_sales'] ?? 0))
+            . \eel_accounts\Support\Utf8::html($this->money($companySettings, $heatmap['total_sales'] ?? 0))
             . '</div>'
             . '</section>';
     }

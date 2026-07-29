@@ -48,7 +48,7 @@ final class _restore_deleted_userCard extends CardBaseFramework
         return '<form method="post" action="?page=users" data-ajax="true" class="form-grid">
             ' . $this->hiddenFields($context) . '
             <input type="hidden" name="action" value="users-restore-deleted-user">
-            <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
+            <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
             <div class="form-row full">
                 <label for="restore-deleted-user-target">Deleted user</label>
                 <select class="selector-input select-placeholder-muted" id="restore-deleted-user-target" name="target_user_id" required>
@@ -73,8 +73,8 @@ final class _restore_deleted_userCard extends CardBaseFramework
                 continue;
             }
 
-            $html .= '<option value="' . HelperFramework::escape((string)$userId) . '">'
-                . HelperFramework::escape($label)
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html((string)$userId) . '">'
+                . \eel_accounts\Support\Utf8::html($label)
                 . '</option>';
         }
 
@@ -86,7 +86,7 @@ final class _restore_deleted_userCard extends CardBaseFramework
         $html = '';
 
         foreach ((array)($context['page']['page_cards'] ?? []) as $cardKey) {
-            $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+            $html .= '<input type="hidden" name="cards[]" value="' . \eel_accounts\Support\Utf8::html((string)$cardKey) . '">';
         }
 
         return $html;

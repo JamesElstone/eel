@@ -1124,7 +1124,7 @@ final class CapitalAllowanceService
             'balancing_charge' => round((float)$pool['balancing_charge'], 2),
             'balancing_allowance' => round((float)$pool['balancing_allowance'], 2),
             'closing_wdv' => round((float)$pool['closing_wdv'], 2),
-            'warnings_json' => json_encode(array_values(array_unique(array_map('strval', (array)($pool['warnings'] ?? [])))), JSON_UNESCAPED_SLASHES),
+            'warnings_json' => \eel_accounts\Support\Utf8::json(array_values(array_unique(array_map('strval', (array)($pool['warnings'] ?? [])))), JSON_UNESCAPED_SLASHES),
         ];
         $hasCtPeriodColumn = \InterfaceDB::columnExists('capital_allowance_pool_runs', 'ct_period_id');
         if ($hasCtPeriodColumn) {
@@ -1424,7 +1424,7 @@ final class CapitalAllowanceService
 
     private function serviceRunHash(array $row): string
     {
-        $digest = hash('sha256', json_encode([
+        $digest = hash('sha256', \eel_accounts\Support\Utf8::json([
             'algorithm_version' => self::RUN_HASH_ALGORITHM_VERSION,
             'payload' => $this->canonicalRunHashPayload(
                 $row,

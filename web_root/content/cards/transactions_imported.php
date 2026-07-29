@@ -138,7 +138,7 @@ final class _transactions_importedCard extends CardBaseFramework
             if (!is_array($month)) {
                 continue;
             }
-            $monthOptions .= '<option value="' . HelperFramework::escape((string)($month['month_key'] ?? '')) . '"' . ((string)($month['month_key'] ?? '') === $selectedTransactionMonth ? ' selected' : '') . '>' . HelperFramework::escape((string)($month['label'] ?? '')) . '</option>';
+            $monthOptions .= '<option value="' . \eel_accounts\Support\Utf8::html((string)($month['month_key'] ?? '')) . '"' . ((string)($month['month_key'] ?? '') === $selectedTransactionMonth ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html((string)($month['label'] ?? '')) . '</option>';
         }
         $monthNavigation = $this->monthNavigation($monthStatus, $selectedTransactionMonth);
 
@@ -181,7 +181,7 @@ final class _transactions_importedCard extends CardBaseFramework
                         <input type="hidden" name="selection_source" value="transactions_imported_filters">
                         <input type="hidden" name="company_id" value="' . $companyId . '">
                         <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                        <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                        <input type="hidden" name="category_filter" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionFilter) . '">
                         ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
                         <div class="mini-field">
                             <label for="transaction_month_key">Month</label>
@@ -320,8 +320,8 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="Transaction">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
-                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                <input type="hidden" name="month_key" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionMonth) . '">
+                <input type="hidden" name="category_filter" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionFilter) . '">
                 ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
                 <input type="hidden" name="auto_scope" value="uncategorised">
                 <input type="hidden" name="global_action" value="run_auto_rules">
@@ -332,8 +332,8 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="Transaction">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
-                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                <input type="hidden" name="month_key" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionMonth) . '">
+                <input type="hidden" name="category_filter" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionFilter) . '">
                 ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
                 <input type="hidden" name="global_action" value="post_categorised_transactions">
                 <input type="hidden" name="confirm_auto_categorisations" value="0">
@@ -378,21 +378,21 @@ final class _transactions_importedCard extends CardBaseFramework
         int $selectedAccountFilter,
         string $direction
     ): string {
-        $buttonText = HelperFramework::escape($label);
+        $buttonText = \eel_accounts\Support\Utf8::html($label);
         $buttonAttributes = $monthKey !== ''
             ? ' type="submit"'
             : ' type="button" disabled';
 
-        return '<form class="toolbar" method="post" action="?page=transactions" data-ajax="true" data-month-navigation="' . HelperFramework::escape($direction) . '">
+        return '<form class="toolbar" method="post" action="?page=transactions" data-ajax="true" data-month-navigation="' . \eel_accounts\Support\Utf8::html($direction) . '">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Transaction">
                 <input type="hidden" name="global_action" value="select_transaction_month">
                 <input type="hidden" name="selection_source" value="transactions_imported_filters">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                <input type="hidden" name="category_filter" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionFilter) . '">
                 ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
-                <input type="hidden" name="month_key" value="' . HelperFramework::escape($monthKey) . '">
+                <input type="hidden" name="month_key" value="' . \eel_accounts\Support\Utf8::html($monthKey) . '">
                 <button class="button"' . $buttonAttributes . '>' . $buttonText . '</button>
             </form>';
     }
@@ -414,7 +414,7 @@ final class _transactions_importedCard extends CardBaseFramework
     ): TableFramework {
         $rows = $this->transactionTableRows($transactions);
 
-        return TableFramework::make($this->key(), $rows)
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $rows)
             ->filename('imported-transactions')
             ->exportLimit(1000)
             ->empty('No imported transactions match the selected month and filter yet.')
@@ -463,7 +463,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 'Date',
                 html: fn(array $row): string => $this->isSyntheticSplitRow($row)
                     ? ''
-                    : HelperFramework::escape($this->displayDate((string)($row['txn_date'] ?? '')))
+                    : \eel_accounts\Support\Utf8::html($this->displayDate((string)($row['txn_date'] ?? '')))
             )
             ->column(
                 'description',
@@ -500,7 +500,7 @@ final class _transactions_importedCard extends CardBaseFramework
                     $label = $this->transactionCategorisationStatusLabel($row);
                     return $label === ''
                         ? ''
-                        : '<span class="badge ' . HelperFramework::escape($this->transactionCategorisationStatusBadgeClass($row)) . '">' . HelperFramework::escape($label) . '</span>';
+                        : '<span class="badge ' . \eel_accounts\Support\Utf8::html($this->transactionCategorisationStatusBadgeClass($row)) . '">' . \eel_accounts\Support\Utf8::html($label) . '</span>';
                 },
                 cellClass: 'transactions-imported-pill-cell'
             )
@@ -523,7 +523,7 @@ final class _transactions_importedCard extends CardBaseFramework
                     $label = $this->transactionJournalStatusLabel($row);
                     return $label === ''
                         ? ''
-                        : '<span class="badge ' . HelperFramework::escape($this->transactionJournalStatusBadgeClass($row)) . '">' . HelperFramework::escape($label) . '</span>';
+                        : '<span class="badge ' . \eel_accounts\Support\Utf8::html($this->transactionJournalStatusBadgeClass($row)) . '">' . \eel_accounts\Support\Utf8::html($label) . '</span>';
                 },
                 cellClass: 'transactions-imported-pill-cell'
             )
@@ -663,26 +663,26 @@ final class _transactions_importedCard extends CardBaseFramework
             $disabled = $isPeriodLocked ? ' disabled title="Period locked"' : '';
             $autosave = $isPeriodLocked
                 ? ''
-                : ' form="' . HelperFramework::escape($formId) . '" data-initial-value="' . HelperFramework::escape($description) . '" data-autosave-submit-target=".js-transaction-split-line-autosave-submit"';
+                : ' form="' . \eel_accounts\Support\Utf8::html($formId) . '" data-initial-value="' . \eel_accounts\Support\Utf8::html($description) . '" data-autosave-submit-target=".js-transaction-split-line-autosave-submit"';
 
-            return '<input class="input transaction-split-line-input" type="text" name="split_line_description" value="' . HelperFramework::escape($description) . '" aria-label="Split line description"' . $autosave . $disabled . '>';
+            return '<input class="input transaction-split-line-input" type="text" name="split_line_description" value="' . \eel_accounts\Support\Utf8::html($description) . '" aria-label="Split line description"' . $autosave . $disabled . '>';
         }
 
         $helperLines = [];
         $reference = trim((string)($transaction['reference'] ?? ''));
         if ($reference !== '') {
-            $helperLines[] = 'Ref: ' . HelperFramework::escape($reference);
+            $helperLines[] = 'Ref: ' . \eel_accounts\Support\Utf8::html($reference);
         }
 
         if (!$this->transactionHasInterAccountMarker($transaction) && (int)($transaction['auto_rule_id'] ?? 0) > 0) {
             $matchValue = trim((string)($transaction['auto_rule_match_value'] ?? ''));
             $helperLines[] = 'Matched by rule #' . (int)($transaction['auto_rule_id'] ?? 0)
-                . ($matchValue !== '' ? ' (' . HelperFramework::escape($matchValue) . ')' : '');
+                . ($matchValue !== '' ? ' (' . \eel_accounts\Support\Utf8::html($matchValue) . ')' : '');
         }
 
         $helperHtml = $helperLines !== [] ? '<div class="helper">' . implode('<br>', $helperLines) . '</div>' : '';
 
-        return '<div>' . HelperFramework::escape((string)($transaction['description'] ?? '')) . '</div>' . $helperHtml;
+        return '<div>' . \eel_accounts\Support\Utf8::html((string)($transaction['description'] ?? '')) . '</div>' . $helperHtml;
     }
 
     private function amountHtml(array $transaction, array $settings, bool $isPeriodLocked): string
@@ -692,7 +692,7 @@ final class _transactions_importedCard extends CardBaseFramework
             $difference = (string)($transaction['transaction_split_difference'] ?? '0.00');
             $badgeClass = abs((float)$difference) < 0.005 ? 'success' : 'warning';
 
-            return '<span class="badge ' . HelperFramework::escape($badgeClass) . ' transaction-split-difference">Difference: '
+            return '<span class="badge ' . \eel_accounts\Support\Utf8::html($badgeClass) . ' transaction-split-difference">Difference: '
                 . (new \eel_accounts\Service\CompanySettingsService())->moneyHtml($settings, $difference)
                 . '</span>';
         }
@@ -704,9 +704,9 @@ final class _transactions_importedCard extends CardBaseFramework
             $disabled = $isPeriodLocked ? ' disabled title="Period locked"' : '';
             $autosave = $isPeriodLocked
                 ? ''
-                : ' form="' . HelperFramework::escape($formId) . '" data-initial-value="' . HelperFramework::escape($amount) . '" data-autosave-submit-target=".js-transaction-split-line-autosave-submit"';
+                : ' form="' . \eel_accounts\Support\Utf8::html($formId) . '" data-initial-value="' . \eel_accounts\Support\Utf8::html($amount) . '" data-autosave-submit-target=".js-transaction-split-line-autosave-submit"';
 
-            return '<input class="input transaction-split-line-amount" type="text" inputmode="decimal" pattern="[0-9]+\.[0-9]{2}" title="Enter a positive amount with exactly 2 decimal places, for example 56.37" name="split_line_amount" value="' . HelperFramework::escape($amount) . '" aria-label="Split line amount"' . $autosave . $disabled . '>';
+            return '<input class="input transaction-split-line-amount" type="text" inputmode="decimal" pattern="[0-9]+\.[0-9]{2}" title="Enter a positive amount with exactly 2 decimal places, for example 56.37" name="split_line_amount" value="' . \eel_accounts\Support\Utf8::html($amount) . '" aria-label="Split line amount"' . $autosave . $disabled . '>';
         }
 
         return (new \eel_accounts\Service\CompanySettingsService())->moneyHtml($settings, $transaction['amount'] ?? null);
@@ -716,8 +716,8 @@ final class _transactions_importedCard extends CardBaseFramework
     {
         $sourceCategory = (string)($transaction['source_category'] ?? '');
 
-        return '<div>' . HelperFramework::escape((string)($transaction['source_account'] ?? '')) . '</div>
-            <div class="helper">' . HelperFramework::escape($sourceCategory !== '' ? $sourceCategory : 'No source category') . '</div>';
+        return '<div>' . \eel_accounts\Support\Utf8::html((string)($transaction['source_account'] ?? '')) . '</div>
+            <div class="helper">' . \eel_accounts\Support\Utf8::html($sourceCategory !== '' ? $sourceCategory : 'No source category') . '</div>';
     }
 
     private function documentHtml(
@@ -731,22 +731,22 @@ final class _transactions_importedCard extends CardBaseFramework
     {
         $transactionId = (int)($transaction['id'] ?? 0);
         $documentHtml = '<div class="document-stack">
-            <span class="badge ' . HelperFramework::escape($this->documentStatusBadgeClass((string)($transaction['document_download_status'] ?? ''))) . '">' . HelperFramework::escape($this->documentStatusLabel((string)($transaction['document_download_status'] ?? ''))) . '</span>';
+            <span class="badge ' . \eel_accounts\Support\Utf8::html($this->documentStatusBadgeClass((string)($transaction['document_download_status'] ?? ''))) . '">' . \eel_accounts\Support\Utf8::html($this->documentStatusLabel((string)($transaction['document_download_status'] ?? ''))) . '</span>';
 
         $localDocumentPath = trim((string)($transaction['local_document_path'] ?? ''));
         $sourceDocumentUrl = trim((string)($transaction['source_document_url'] ?? ''));
         if ($localDocumentPath !== '') {
-            $documentHtml .= '<a class="text-link" href="' . HelperFramework::escape($this->assetHref($localDocumentPath)) . '" target="_blank" rel="noopener noreferrer">View Receipt</a>';
+            $documentHtml .= '<a class="text-link" href="' . \eel_accounts\Support\Utf8::html($this->assetHref($localDocumentPath)) . '" target="_blank" rel="noopener noreferrer">View Receipt</a>';
         } elseif ($sourceDocumentUrl !== '') {
-            $documentHtml .= '<a class="text-link" href="' . HelperFramework::escape($sourceDocumentUrl) . '" target="_blank" rel="noopener noreferrer">Source URL</a>
+            $documentHtml .= '<a class="text-link" href="' . \eel_accounts\Support\Utf8::html($sourceDocumentUrl) . '" target="_blank" rel="noopener noreferrer">Source URL</a>
                 <form method="post" action="?page=transactions" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="Transaction">
                     <input type="hidden" name="company_id" value="' . $companyId . '">
                     <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                     <input type="hidden" name="transaction_id" value="' . $transactionId . '">
-                    <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
-                    <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                    <input type="hidden" name="month_key" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionMonth) . '">
+                    <input type="hidden" name="category_filter" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionFilter) . '">
                     ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
                     <input type="hidden" name="global_action" value="retry_receipt_download">
                     <button class="button button-inline" type="submit">Retry receipt</button>
@@ -755,7 +755,7 @@ final class _transactions_importedCard extends CardBaseFramework
 
         $documentError = trim((string)($transaction['document_error'] ?? ''));
         if ($documentError !== '') {
-            $documentHtml .= '<span class="helper">' . HelperFramework::escape($documentError) . '</span>';
+            $documentHtml .= '<span class="helper">' . \eel_accounts\Support\Utf8::html($documentError) . '</span>';
         }
 
         return $documentHtml . '</div>';
@@ -794,8 +794,8 @@ final class _transactions_importedCard extends CardBaseFramework
                 : '';
 
             return '<div class="actions-row transaction-split-parent-actions">
-                    <button class="button" type="submit" form="' . HelperFramework::escape($transactionFormId) . '" name="global_action" value="merge_transaction_split"' . $mergeConfirmAttributes . '>Merge</button>
-                    <button class="button" type="submit" form="' . HelperFramework::escape($transactionFormId) . '" name="global_action" value="add_transaction_split_line">Add Split</button>
+                    <button class="button" type="submit" form="' . \eel_accounts\Support\Utf8::html($transactionFormId) . '" name="global_action" value="merge_transaction_split"' . $mergeConfirmAttributes . '>Merge</button>
+                    <button class="button" type="submit" form="' . \eel_accounts\Support\Utf8::html($transactionFormId) . '" name="global_action" value="add_transaction_split_line">Add Split</button>
                 </div>';
         }
 
@@ -815,19 +815,19 @@ final class _transactions_importedCard extends CardBaseFramework
                 }
                 $accountType = (string)($account['account_type'] ?? '');
                 $accountTypeLabel = \eel_accounts\Service\CompanyAccountService::accountTypes()[$accountType] ?? ucfirst($accountType);
-                $transferOptions .= '<option value="' . (int)($account['id'] ?? 0) . '"' . ((string)($account['id'] ?? '') === $selectedTransferAccountId ? ' selected' : '') . '>' . HelperFramework::escape((string)($account['account_name'] ?? '') . ' [' . $accountTypeLabel . ']') . '</option>';
+                $transferOptions .= '<option value="' . (int)($account['id'] ?? 0) . '"' . ((string)($account['id'] ?? '') === $selectedTransferAccountId ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html((string)($account['account_name'] ?? '') . ' [' . $accountTypeLabel . ']') . '</option>';
             }
 
-            return '<div class="helper">' . HelperFramework::escape($transferDirectionLabel) . '</div>
-                <select class="select js-transaction-transfer" name="transfer_account_id" form="' . HelperFramework::escape($transactionFormId) . '" data-autosave-submit-target=".js-transaction-autosave-submit" data-autosave-require-value="1">' . $transferOptions . '</select>';
+            return '<div class="helper">' . \eel_accounts\Support\Utf8::html($transferDirectionLabel) . '</div>
+                <select class="select js-transaction-transfer" name="transfer_account_id" form="' . \eel_accounts\Support\Utf8::html($transactionFormId) . '" data-autosave-submit-target=".js-transaction-autosave-submit" data-autosave-require-value="1">' . $transferOptions . '</select>';
         }
 
         $selectedNominalAccountId = (string)($transaction['nominal_account_id'] ?? '');
         $nominalOptions = $this->nominalSelectOptions($nominalAccounts, $selectedNominalAccountId);
 
         return '<div class="transaction-categorisation-control">
-                <select class="select js-transaction-nominal" name="nominal_account_id" form="' . HelperFramework::escape($transactionFormId) . '" data-autosave-submit-target=".js-transaction-autosave-submit" data-autosave-require-value="1">' . $nominalOptions . '</select>
-                <button class="button" type="submit" form="' . HelperFramework::escape($transactionFormId) . '" name="global_action" value="start_transaction_split">Split</button>
+                <select class="select js-transaction-nominal" name="nominal_account_id" form="' . \eel_accounts\Support\Utf8::html($transactionFormId) . '" data-autosave-submit-target=".js-transaction-autosave-submit" data-autosave-require-value="1">' . $nominalOptions . '</select>
+                <button class="button" type="submit" form="' . \eel_accounts\Support\Utf8::html($transactionFormId) . '" name="global_action" value="start_transaction_split">Split</button>
             </div>';
     }
 
@@ -842,13 +842,13 @@ final class _transactions_importedCard extends CardBaseFramework
                 : ($role === 'matched' ? 'Inter A/C Dest' : 'Posting Source');
             $buttonAttributes = $isPeriodLocked
                 ? ' type="button" disabled title="Period locked"'
-                : ' type="submit" form="' . HelperFramework::escape($transactionFormId) . '" name="global_action" value="cancel_inter_ac_transaction" data-chicken-check="true" data-chicken-title="Cancel inter-account match" data-chicken-message="This will remove the inter-account link and its bank-derived journals.<br><br>Continue?" data-chicken-confirm-text="Cancel match" data-chicken-button-class="button primary"';
+                : ' type="submit" form="' . \eel_accounts\Support\Utf8::html($transactionFormId) . '" name="global_action" value="cancel_inter_ac_transaction" data-chicken-check="true" data-chicken-title="Cancel inter-account match" data-chicken-message="This will remove the inter-account link and its bank-derived journals.<br><br>Continue?" data-chicken-confirm-text="Cancel match" data-chicken-button-class="button primary"';
             $cancelButtonHtml = '<button class="button button-inline"' . $buttonAttributes . '>cancel</button>';
 
             return '<div class="transactions-imported-inter-ac-summary">
-                    <span class="badge info">' . HelperFramework::escape($roleLabel) . '</span>
+                    <span class="badge info">' . \eel_accounts\Support\Utf8::html($roleLabel) . '</span>
                     ' . $cancelButtonHtml . '
-                    <span class="helper">' . HelperFramework::escape($label) . '</span>
+                    <span class="helper">' . \eel_accounts\Support\Utf8::html($label) . '</span>
                 </div>';
         }
 
@@ -862,14 +862,14 @@ final class _transactions_importedCard extends CardBaseFramework
             if (!is_array($candidate)) {
                 continue;
             }
-            $options .= '<option value="' . (int)($candidate['id'] ?? 0) . '">' . HelperFramework::escape($this->interAccountCandidateLabel($candidate)) . '</option>';
+            $options .= '<option value="' . (int)($candidate['id'] ?? 0) . '">' . \eel_accounts\Support\Utf8::html($this->interAccountCandidateLabel($candidate)) . '</option>';
         }
 
         if ($candidates === []) {
             $options .= '<option value="" disabled>No matching transactions found</option>';
         }
 
-        return '<select class="select js-transaction-inter-ac-candidate" name="matched_transaction_id" form="' . HelperFramework::escape($transactionFormId) . '" data-autosave-submit-target=".js-transaction-inter-ac-submit" data-autosave-require-value="1">' . $options . '</select>';
+        return '<select class="select js-transaction-inter-ac-candidate" name="matched_transaction_id" form="' . \eel_accounts\Support\Utf8::html($transactionFormId) . '" data-autosave-submit-target=".js-transaction-inter-ac-submit" data-autosave-require-value="1">' . $options . '</select>';
     }
 
     private function interAccountControlIsActive(array $transaction, int $interAcActiveTransactionId): bool
@@ -911,10 +911,10 @@ final class _transactions_importedCard extends CardBaseFramework
         $selectedNominalAccountId = (string)($transaction['split_line_nominal_account_id'] ?? '');
 
         if ($isPeriodLocked) {
-            return '<div>' . HelperFramework::escape($this->splitLineNominalLabel($transaction, $nominalAccounts)) . '</div>';
+            return '<div>' . \eel_accounts\Support\Utf8::html($this->splitLineNominalLabel($transaction, $nominalAccounts)) . '</div>';
         }
 
-        return '<select class="select transaction-split-line-nominal" name="nominal_account_id" form="' . HelperFramework::escape($formId) . '" data-autosave-submit-target=".js-transaction-split-line-autosave-submit" data-autosave-require-value="1">' . $this->nominalSelectOptions($nominalAccounts, $selectedNominalAccountId) . '</select>';
+        return '<select class="select transaction-split-line-nominal" name="nominal_account_id" form="' . \eel_accounts\Support\Utf8::html($formId) . '" data-autosave-submit-target=".js-transaction-split-line-autosave-submit" data-autosave-require-value="1">' . $this->nominalSelectOptions($nominalAccounts, $selectedNominalAccountId) . '</select>';
     }
 
     private function nominalSelectOptions(array $nominalAccounts, string $selectedNominalAccountId): string
@@ -924,7 +924,7 @@ final class _transactions_importedCard extends CardBaseFramework
             if (!is_array($nominal)) {
                 continue;
             }
-            $nominalOptions .= '<option value="' . (int)($nominal['id'] ?? 0) . '"' . ((string)($nominal['id'] ?? '') === $selectedNominalAccountId ? ' selected' : '') . '>' . HelperFramework::escape(FormattingFramework::nominalLabel($nominal)) . '</option>';
+            $nominalOptions .= '<option value="' . (int)($nominal['id'] ?? 0) . '"' . ((string)($nominal['id'] ?? '') === $selectedNominalAccountId ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html(FormattingFramework::nominalLabel($nominal)) . '</option>';
         }
 
         return $nominalOptions;
@@ -976,9 +976,9 @@ final class _transactions_importedCard extends CardBaseFramework
             $disabled = $isPeriodLocked ? ' disabled title="Period locked"' : '';
             $autosaveAttributes = $isPeriodLocked
                 ? ''
-                : ' form="' . HelperFramework::escape($formId) . '" data-initial-value="' . HelperFramework::escape($notes) . '" data-autosave-submit-target=".js-transaction-split-line-autosave-submit"';
+                : ' form="' . \eel_accounts\Support\Utf8::html($formId) . '" data-initial-value="' . \eel_accounts\Support\Utf8::html($notes) . '" data-autosave-submit-target=".js-transaction-split-line-autosave-submit"';
 
-            return '<input class="input transaction-note-input" type="text" name="split_line_notes" value="' . HelperFramework::escape($notes) . '" aria-label="Split line note"' . $autosaveAttributes . $disabled . '>';
+            return '<input class="input transaction-note-input" type="text" name="split_line_notes" value="' . \eel_accounts\Support\Utf8::html($notes) . '" aria-label="Split line note"' . $autosaveAttributes . $disabled . '>';
         }
 
         $transactionId = (int)($transaction['id'] ?? 0);
@@ -987,9 +987,9 @@ final class _transactions_importedCard extends CardBaseFramework
         $disabled = $isPeriodLocked ? ' disabled title="Period locked"' : '';
         $autosaveAttributes = $isPeriodLocked
             ? ''
-            : ' form="' . HelperFramework::escape($formId) . '" data-initial-value="' . HelperFramework::escape($notes) . '" data-autosave-submit-target=".js-transaction-note-autosave-submit"';
+            : ' form="' . \eel_accounts\Support\Utf8::html($formId) . '" data-initial-value="' . \eel_accounts\Support\Utf8::html($notes) . '" data-autosave-submit-target=".js-transaction-note-autosave-submit"';
 
-        return '<input class="input transaction-note-input" type="text" name="notes" value="' . HelperFramework::escape($notes) . '" aria-label="Transaction note"' . $autosaveAttributes . $disabled . '>';
+        return '<input class="input transaction-note-input" type="text" name="notes" value="' . \eel_accounts\Support\Utf8::html($notes) . '" aria-label="Transaction note"' . $autosaveAttributes . $disabled . '>';
     }
 
     private function autoApprovalHtml(
@@ -1024,7 +1024,7 @@ final class _transactions_importedCard extends CardBaseFramework
                     data-auto-approval-confirmed-initial="' . ($confirmed ? '1' : '0') . '"
                     data-auto-approval-pending-initial="' . ($pendingPostConfirmation ? '1' : '0') . '"' . $checked . $disabled . '>
                 <span class="auto-approval-copy">
-                    <span class="helper" data-auto-approval-status data-auto-approval-default-status="' . HelperFramework::escape($decisionLabel) . '" aria-live="polite">' . HelperFramework::escape($decisionLabel) . '</span>
+                    <span class="helper" data-auto-approval-status data-auto-approval-default-status="' . \eel_accounts\Support\Utf8::html($decisionLabel) . '" aria-live="polite">' . \eel_accounts\Support\Utf8::html($decisionLabel) . '</span>
                 </span>
             </label>';
     }
@@ -1042,8 +1042,8 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="global_action" value="sync_auto_approval_state">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
-                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                <input type="hidden" name="month_key" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionMonth) . '">
+                <input type="hidden" name="category_filter" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionFilter) . '">
                 ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
                 <button type="submit" data-auto-approval-batch-submit hidden>Save auto approvals</button>
             </form>';
@@ -1113,7 +1113,7 @@ final class _transactions_importedCard extends CardBaseFramework
         $noteAutosaveSubmitHtml = $isPeriodLocked
             ? ''
             : '<button class="js-transaction-note-autosave-submit" type="submit" name="global_action" value="save_transaction_note" hidden>Autosave note</button>';
-        $createAssetAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit" form="' . HelperFramework::escape($assetFormId) . '" formnovalidate';
+        $createAssetAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit" form="' . \eel_accounts\Support\Utf8::html($assetFormId) . '" formnovalidate';
         $createRuleHtml = $isTransferRow ? '' : $this->createRuleButtonHtml($transaction, $isPeriodLocked);
         $directorLoanButtonHtml = $this->directorLoanButtonHtml($transaction, $settings, $isPeriodLocked, $journalRebuildAttributes);
         $dividendButtonHtml = $this->dividendButtonHtml($transaction, $dividendFormId, $settings, $isPeriodLocked, $dividendDeclarationParticipants);
@@ -1121,43 +1121,43 @@ final class _transactions_importedCard extends CardBaseFramework
         $isSplitParent = (int)($transaction['has_transaction_split'] ?? 0) === 1;
 
         if ($isSplitParent) {
-            return '<form method="post" action="?page=transactions" id="' . HelperFramework::escape($transactionFormId) . '" data-ajax="true">
+            return '<form method="post" action="?page=transactions" id="' . \eel_accounts\Support\Utf8::html($transactionFormId) . '" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Transaction">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="transaction_id" value="' . $transactionId . '">
-                <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
-                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                <input type="hidden" name="month_key" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionMonth) . '">
+                <input type="hidden" name="category_filter" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionFilter) . '">
                 ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
                 <input type="hidden" name="confirm_rebuild_journal" value="0">
             </form>';
         }
 
-        return '<form method="post" action="?page=assets&amp;show_card=asset_create" id="' . HelperFramework::escape($assetFormId) . '">
+        return '<form method="post" action="?page=assets&amp;show_card=asset_create" id="' . \eel_accounts\Support\Utf8::html($assetFormId) . '">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="transaction_id" value="' . $transactionId . '">
             </form>
-            <form method="post" action="?page=transactions" id="' . HelperFramework::escape($dividendFormId) . '" data-ajax="true">
+            <form method="post" action="?page=transactions" id="' . \eel_accounts\Support\Utf8::html($dividendFormId) . '" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Dividend">
                 <input type="hidden" name="intent" value="declare_dividend_from_transaction">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="transaction_id" value="' . $transactionId . '">
-                <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
-                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                <input type="hidden" name="month_key" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionMonth) . '">
+                <input type="hidden" name="category_filter" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionFilter) . '">
                 ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
             </form>
-            <form method="post" action="?page=transactions" id="' . HelperFramework::escape($transactionFormId) . '" data-ajax="true">
+            <form method="post" action="?page=transactions" id="' . \eel_accounts\Support\Utf8::html($transactionFormId) . '" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Transaction">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="transaction_id" value="' . $transactionId . '">
-                <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
-                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                <input type="hidden" name="month_key" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionMonth) . '">
+                <input type="hidden" name="category_filter" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionFilter) . '">
                 ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
                 <input type="hidden" name="confirm_rebuild_journal" value="0">
                 ' . $autosaveSubmitHtml . '
@@ -1183,14 +1183,14 @@ final class _transactions_importedCard extends CardBaseFramework
         string $selectedTransactionFilter,
         int $selectedAccountFilter
     ): string {
-        return '<form method="post" action="?page=transactions" id="' . HelperFramework::escape($transactionFormId) . '" data-ajax="true">
+        return '<form method="post" action="?page=transactions" id="' . \eel_accounts\Support\Utf8::html($transactionFormId) . '" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Transaction">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="transaction_id" value="' . $transactionId . '">
-                <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
-                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                <input type="hidden" name="month_key" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionMonth) . '">
+                <input type="hidden" name="category_filter" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionFilter) . '">
                 ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
             </form>';
     }
@@ -1209,22 +1209,22 @@ final class _transactions_importedCard extends CardBaseFramework
         $formId = 'transaction-split-line-form-' . $lineId;
         $assetFormId = 'transaction-split-line-asset-form-' . $lineId;
         $lockedButtonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit"';
-        $assetButtonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit" form="' . HelperFramework::escape($assetFormId) . '" formnovalidate';
+        $assetButtonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit" form="' . \eel_accounts\Support\Utf8::html($assetFormId) . '" formnovalidate';
 
-        return '<form method="post" action="?page=assets&amp;show_card=asset_create" id="' . HelperFramework::escape($assetFormId) . '">
+        return '<form method="post" action="?page=assets&amp;show_card=asset_create" id="' . \eel_accounts\Support\Utf8::html($assetFormId) . '">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="transaction_split_line_id" value="' . $lineId . '">
             </form>
-            <form method="post" action="?page=transactions" id="' . HelperFramework::escape($formId) . '" data-ajax="true">
+            <form method="post" action="?page=transactions" id="' . \eel_accounts\Support\Utf8::html($formId) . '" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Transaction">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="transaction_id" value="' . $transactionId . '">
                 <input type="hidden" name="transaction_split_line_id" value="' . $lineId . '">
-                <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
-                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                <input type="hidden" name="month_key" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionMonth) . '">
+                <input type="hidden" name="category_filter" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionFilter) . '">
                 ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
                 <button class="js-transaction-split-line-autosave-submit" type="submit" name="global_action" value="save_transaction_split_line" data-blur-scope="none" hidden>Autosave split line</button>
                 <div class="actions-row">
@@ -1256,7 +1256,7 @@ final class _transactions_importedCard extends CardBaseFramework
             ? '<input type="hidden" name="inter_ac_pending" value="1">'
             : '';
 
-        return $pendingInput . '<button class="' . HelperFramework::escape($buttonClass) . '"' . $buttonAttributes . ' name="global_action" value="toggle_inter_ac_transaction">Inter A/C Trans.</button>';
+        return $pendingInput . '<button class="' . \eel_accounts\Support\Utf8::html($buttonClass) . '"' . $buttonAttributes . ' name="global_action" value="toggle_inter_ac_transaction">Inter A/C Trans.</button>';
     }
 
     private function dividendButtonHtml(
@@ -1286,32 +1286,32 @@ final class _transactions_importedCard extends CardBaseFramework
             $disabledReason = 'Record an authorising director first';
         }
         if ($disabledReason !== '') {
-            return '<button class="button" type="button" disabled title="' . HelperFramework::escape($disabledReason) . '">Dividend</button>';
+            return '<button class="button" type="button" disabled title="' . \eel_accounts\Support\Utf8::html($disabledReason) . '">Dividend</button>';
         }
 
         $amount = $this->money($settings, abs((float)($transaction['amount'] ?? 0)));
         $date = $this->displayDate((string)($transaction['txn_date'] ?? ''));
-        $message = 'Create a dividend declaration journal for ' . HelperFramework::escape($amount)
-            . ' dated ' . HelperFramework::escape($date)
+        $message = 'Create a dividend declaration journal for ' . \eel_accounts\Support\Utf8::html($amount)
+            . ' dated ' . \eel_accounts\Support\Utf8::html($date)
             . '.<br><br>The transaction will remain categorised to Dividends Payable.';
 
         return '<details class="transaction-dividend-declaration">
                 <summary class="button">Dividend</summary>
                 <div class="settings-stack panel-soft">
-                    <div class="helper">Payment date: ' . HelperFramework::escape($date) . '; amount: ' . HelperFramework::escape($amount) . '.</div>
+                    <div class="helper">Payment date: ' . \eel_accounts\Support\Utf8::html($date) . '; amount: ' . \eel_accounts\Support\Utf8::html($amount) . '.</div>
                     <div class="form-row">
                         <label for="transaction-dividend-shareholder-' . (int)($transaction['id'] ?? 0) . '">Shareholder</label>
-                        <select class="select" id="transaction-dividend-shareholder-' . (int)($transaction['id'] ?? 0) . '" name="shareholder_party_id" form="' . HelperFramework::escape($dividendFormId) . '" required>
+                        <select class="select" id="transaction-dividend-shareholder-' . (int)($transaction['id'] ?? 0) . '" name="shareholder_party_id" form="' . \eel_accounts\Support\Utf8::html($dividendFormId) . '" required>
                             <option value="">Select shareholder</option>' . $shareholderOptions . '
                         </select>
                     </div>
                     <div class="form-row">
                         <label for="transaction-dividend-director-' . (int)($transaction['id'] ?? 0) . '">Authorising director</label>
-                        <select class="select" id="transaction-dividend-director-' . (int)($transaction['id'] ?? 0) . '" name="director_id" form="' . HelperFramework::escape($dividendFormId) . '" required>
+                        <select class="select" id="transaction-dividend-director-' . (int)($transaction['id'] ?? 0) . '" name="director_id" form="' . \eel_accounts\Support\Utf8::html($dividendFormId) . '" required>
                             <option value="">Select authorising director</option>' . $directorOptions . '
                         </select>
                     </div>
-                    <button class="button primary" type="submit" form="' . HelperFramework::escape($dividendFormId) . '"
+                    <button class="button primary" type="submit" form="' . \eel_accounts\Support\Utf8::html($dividendFormId) . '"
                         data-chicken-check="true"
                         data-chicken-title="Create dividend declaration"
                         data-chicken-message="' . $message . '"
@@ -1340,7 +1340,7 @@ final class _transactions_importedCard extends CardBaseFramework
         $html = '';
         foreach ($labels as $partyId => $party) {
             $html .= '<option value="' . (int)$partyId . '">'
-                . HelperFramework::escape((string)$party['name'] . ' — ' . implode(', ', array_unique((array)$party['holdings'])))
+                . \eel_accounts\Support\Utf8::html((string)$party['name'] . ' — ' . implode(', ', array_unique((array)$party['holdings'])))
                 . '</option>';
         }
 
@@ -1357,7 +1357,7 @@ final class _transactions_importedCard extends CardBaseFramework
             $directorId = (int)($director['id'] ?? 0);
             $name = trim((string)($director['full_name'] ?? ''));
             if ($directorId > 0 && $name !== '') {
-                $html .= '<option value="' . $directorId . '">' . HelperFramework::escape($name) . '</option>';
+                $html .= '<option value="' . $directorId . '">' . \eel_accounts\Support\Utf8::html($name) . '</option>';
             }
         }
 
@@ -1412,7 +1412,7 @@ final class _transactions_importedCard extends CardBaseFramework
         }
 
         if ($disabledReason !== '') {
-            return '<button class="button" type="button" disabled title="' . HelperFramework::escape($disabledReason) . '">Participator Loan</button>';
+            return '<button class="button" type="button" disabled title="' . \eel_accounts\Support\Utf8::html($disabledReason) . '">Participator Loan</button>';
         }
 
         return '<button class="button" type="submit" name="global_action" value="mark_director_loan"' . $journalRebuildAttributes . '>Participator Loan</button>';
@@ -1444,14 +1444,14 @@ final class _transactions_importedCard extends CardBaseFramework
             return '<button class="button primary" type="button" disabled title="Period locked">Rule</button>';
         }
 
-        return '<input type="hidden" name="transaction_reference" value="' . HelperFramework::escape((string)($transaction['reference'] ?? '')) . '">'
+        return '<input type="hidden" name="transaction_reference" value="' . \eel_accounts\Support\Utf8::html((string)($transaction['reference'] ?? '')) . '">'
             . '<button class="button primary" type="submit" name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form">Rule</button>';
     }
 
     private function readonlyCategorisationHtml(array $transaction, array $nominalAccounts, array $activeTransferCompanyAccounts): string
     {
         if ($this->transactionRowType($transaction) === 'split_line') {
-            return '<div>' . HelperFramework::escape($this->splitLineNominalLabel($transaction, $nominalAccounts)) . '</div>';
+            return '<div>' . \eel_accounts\Support\Utf8::html($this->splitLineNominalLabel($transaction, $nominalAccounts)) . '</div>';
         }
 
         if ((int)($transaction['has_transaction_split'] ?? 0) === 1) {
@@ -1461,11 +1461,11 @@ final class _transactions_importedCard extends CardBaseFramework
         if ($this->transactionIsTransferMode($transaction)) {
             $transferDirectionLabel = (float)($transaction['amount'] ?? 0) < 0 ? 'Transfer to:' : 'Transfer from:';
 
-            return '<div class="helper">' . HelperFramework::escape($transferDirectionLabel) . '</div>
-                <div>' . HelperFramework::escape($this->transferAccountLabel($transaction, $activeTransferCompanyAccounts)) . '</div>';
+            return '<div class="helper">' . \eel_accounts\Support\Utf8::html($transferDirectionLabel) . '</div>
+                <div>' . \eel_accounts\Support\Utf8::html($this->transferAccountLabel($transaction, $activeTransferCompanyAccounts)) . '</div>';
         }
 
-        return '<div>' . HelperFramework::escape($this->nominalAccountLabel($transaction, $nominalAccounts)) . '</div>';
+        return '<div>' . \eel_accounts\Support\Utf8::html($this->nominalAccountLabel($transaction, $nominalAccounts)) . '</div>';
     }
 
     private function splitLineNominalLabel(array $transaction, array $nominalAccounts): string

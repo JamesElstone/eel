@@ -95,7 +95,7 @@ final class _company_minutesCard extends CardBaseFramework
 
     private function table(array $context): TableFramework
     {
-        return TableFramework::make($this->key(), $this->rows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->rows($context))
             ->filename('company-minutes')
             ->exportLimit(500)
             ->empty('No company minutes are recorded for the selected accounting period.')
@@ -103,7 +103,7 @@ final class _company_minutesCard extends CardBaseFramework
             ->column(
                 'minutes',
                 'Minutes',
-                html: static fn(array $row): string => '<pre class="helper">' . HelperFramework::escape(str_replace('. ', ".\n", (string)($row['minutes'] ?? ''))) . '</pre>',
+                html: static fn(array $row): string => '<pre class="helper">' . \eel_accounts\Support\Utf8::html(str_replace('. ', ".\n", (string)($row['minutes'] ?? ''))) . '</pre>',
                 export: static fn(array $row): string => (string)($row['minutes'] ?? ''),
                 sort: true
             );

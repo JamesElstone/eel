@@ -72,14 +72,14 @@ final class _year_end_expenses_confirmationCard extends CardBaseFramework
         $rowsHtml = '';
         foreach ((array)($expenses['claimants'] ?? []) as $claimant) {
             $rowsHtml .= '<tr>
-                <td>' . HelperFramework::escape((string)($claimant['claimant_name'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape($this->displayDate((string)($claimant['last_claimed'] ?? ''))) . '</td>
-                <td>' . HelperFramework::escape((string)($claimant['last_item_desc'] ?? '')) . '</td>
-                <td class="numeric">' . HelperFramework::escape(!array_key_exists('last_expense_amount', $claimant) || $claimant['last_expense_amount'] === null ? '' : $this->money($companySettings, $claimant['last_expense_amount'])) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($companySettings, $claimant['brought_forward'] ?? 0)) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($companySettings, $claimant['claimed_total'] ?? 0)) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($companySettings, $claimant['payments_made'] ?? 0)) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($companySettings, $claimant['carried_forward'] ?? 0)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($claimant['claimant_name'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->displayDate((string)($claimant['last_claimed'] ?? ''))) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($claimant['last_item_desc'] ?? '')) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html(!array_key_exists('last_expense_amount', $claimant) || $claimant['last_expense_amount'] === null ? '' : $this->money($companySettings, $claimant['last_expense_amount'])) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $claimant['brought_forward'] ?? 0)) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $claimant['claimed_total'] ?? 0)) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $claimant['payments_made'] ?? 0)) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $claimant['carried_forward'] ?? 0)) . '</td>
             </tr>';
         }
 
@@ -136,7 +136,7 @@ final class _year_end_expenses_confirmationCard extends CardBaseFramework
 
     private function summaryCard(string $label, string $value): string
     {
-        return '<div class="panel-soft"><div class="eyebrow">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+        return '<div class="panel-soft"><div class="eyebrow">' . \eel_accounts\Support\Utf8::html($label) . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div></div>';
     }
 
     private function money(array $companySettings, float|int|string|null $value): string
@@ -153,7 +153,7 @@ final class _year_end_expenses_confirmationCard extends CardBaseFramework
     {
         $html = '';
         foreach ($errors as $error) {
-            $html .= '<div class="helper">' . HelperFramework::escape((string)$error) . '</div>';
+            $html .= '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$error) . '</div>';
         }
 
         return $html;

@@ -141,7 +141,7 @@ final class IxbrlOriginalAccountsArtifactService
             'filename' => $filename,
             'sha256' => $sha256,
             'validated_sha256' => $validatedHash,
-            'basis_hash' => hash('sha256', json_encode($basis, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)),
+            'basis_hash' => hash('sha256', \eel_accounts\Support\Utf8::json($basis, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)),
             'base_run_id' => (int)$base['run_id'],
             'base_sha256' => $sha256,
             'fact_count' => count($matches[0] ?? []),

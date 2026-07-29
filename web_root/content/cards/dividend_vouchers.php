@@ -53,16 +53,16 @@ final class _dividend_vouchersCard extends CardBaseFramework
 
             $isVoided = trim((string)($row['voided_at'] ?? '')) !== '';
             $statusHtml = $isVoided
-                ? '<span class="badge danger">Voided</span><div class="helper">' . HelperFramework::escape((string)($row['void_reason'] ?? '')) . '</div>'
-                : '<span class="badge success">Issued</span><div class="helper">' . HelperFramework::escape((string)($row['issued_at'] ?? '')) . '</div>';
+                ? '<span class="badge danger">Voided</span><div class="helper">' . \eel_accounts\Support\Utf8::html((string)($row['void_reason'] ?? '')) . '</div>'
+                : '<span class="badge success">Issued</span><div class="helper">' . \eel_accounts\Support\Utf8::html((string)($row['issued_at'] ?? '')) . '</div>';
 
             $rowsHtml .= '<tr>
-                <td>' . HelperFramework::escape((string)($row['declaration_date'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($row['declaration_date'] ?? '')) . '</td>
                 <td>
-                    <div>' . HelperFramework::escape((string)($row['shareholder_name'] ?? '')) . '</div>
-                    <div class="helper">' . HelperFramework::escape((string)($row['company_name'] ?? '')) . '</div>
+                    <div>' . \eel_accounts\Support\Utf8::html((string)($row['shareholder_name'] ?? '')) . '</div>
+                    <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($row['company_name'] ?? '')) . '</div>
                 </td>
-                <td class="numeric">' . HelperFramework::escape($this->money($companySettings, $row['amount'] ?? 0)) . '</td>
+                <td class="numeric">' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['amount'] ?? 0)) . '</td>
                 <td>' . $this->documentDetailsHtml('Voucher', (string)($row['voucher_text'] ?? '')) . '</td>
                 <td>' . $this->documentDetailsHtml('Minutes', (string)($row['minutes_text'] ?? '')) . '</td>
                 <td>' . $statusHtml . '</td>
@@ -91,8 +91,8 @@ final class _dividend_vouchersCard extends CardBaseFramework
         }
 
         return '<details>
-            <summary>' . HelperFramework::escape($label) . '</summary>
-            <pre class="helper preformatted-panel">' . HelperFramework::escape($text) . '</pre>
+            <summary>' . \eel_accounts\Support\Utf8::html($label) . '</summary>
+            <pre class="helper preformatted-panel">' . \eel_accounts\Support\Utf8::html($text) . '</pre>
         </details>';
     }
 
@@ -101,11 +101,11 @@ final class _dividend_vouchersCard extends CardBaseFramework
         $sourceRef = trim((string)($row['source_ref'] ?? ''));
         $transactionId = (int)($row['transaction_id'] ?? 0);
         if ($sourceRef === '' || $transactionId <= 0) {
-            return '<span class="helper">' . HelperFramework::escape($sourceRef) . '</span>';
+            return '<span class="helper">' . \eel_accounts\Support\Utf8::html($sourceRef) . '</span>';
         }
 
         return '<a class="button button-inline" href="?page=transactions&amp;show_card=transaction_search&amp;transaction_search_keyword='
-            . $transactionId . '">' . HelperFramework::escape($sourceRef) . '</a>';
+            . $transactionId . '">' . \eel_accounts\Support\Utf8::html($sourceRef) . '</a>';
     }
 
     private function voucherRows(array $context): array

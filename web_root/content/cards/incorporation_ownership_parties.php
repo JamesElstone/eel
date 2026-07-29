@@ -42,7 +42,7 @@ final class _incorporation_ownership_partiesCard extends CardBaseFramework
             return '<div class="helper">Select a company before maintaining ownership.</div>';
         }
         if (empty($summary['available'])) {
-            return '<div class="helper">' . HelperFramework::escape((string)(($summary['errors'] ?? [])[0] ?? 'Ownership is unavailable.')) . '</div>';
+            return '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)(($summary['errors'] ?? [])[0] ?? 'Ownership is unavailable.')) . '</div>';
         }
 
         $directorOptions = $this->directorOptions((array)$summary['directors'], (array)$summary['parties']);
@@ -64,11 +64,11 @@ final class _incorporation_ownership_partiesCard extends CardBaseFramework
             ), true)) {
                 $roles[] = 'Shareholder (from recorded holdings)';
             }
-            $rows .= '<tr><td>' . HelperFramework::escape((string)$party['legal_name']) . '</td>'
-                . '<td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)$party['party_type'], '_')) . '</td>'
-                . '<td>' . HelperFramework::escape((string)($party['linked_director_name'] ?? '')) . '</td>'
-                . '<td>' . HelperFramework::escape(implode('; ', $roles)) . '</td>'
-                . '<td>' . HelperFramework::escape(implode('; ', $holdings)) . '</td></tr>';
+            $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)$party['legal_name']) . '</td>'
+                . '<td>' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)$party['party_type'], '_')) . '</td>'
+                . '<td>' . \eel_accounts\Support\Utf8::html((string)($party['linked_director_name'] ?? '')) . '</td>'
+                . '<td>' . \eel_accounts\Support\Utf8::html(implode('; ', $roles)) . '</td>'
+                . '<td>' . \eel_accounts\Support\Utf8::html(implode('; ', $holdings)) . '</td></tr>';
         }
         if ($rows === '') {
             $rows = '<tr><td colspan="5" class="helper">No ownership parties have been recorded.</td></tr>';
@@ -111,7 +111,7 @@ final class _incorporation_ownership_partiesCard extends CardBaseFramework
                 continue;
             }
 
-            $html .= '<option value="' . $directorId . '">' . HelperFramework::escape((string)$director['full_name']) . '</option>';
+            $html .= '<option value="' . $directorId . '">' . \eel_accounts\Support\Utf8::html((string)$director['full_name']) . '</option>';
         }
 
         return $html;

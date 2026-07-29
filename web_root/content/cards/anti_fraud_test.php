@@ -37,7 +37,7 @@ final class _anti_fraud_testCard extends CardBaseFramework
     public function render(array $context): string
     {
         $antiFraudData = AntiFraudService::instance()->getAntifraudData();
-        $antiFraudJson = json_encode($antiFraudData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $antiFraudJson = \eel_accounts\Support\Utf8::json($antiFraudData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 
         if ($antiFraudJson === false) {
             $antiFraudJson = '{}';
@@ -45,7 +45,7 @@ final class _anti_fraud_testCard extends CardBaseFramework
 
         return '
             <div class="stack">
-                <pre class="panel-soft preformatted-panel">' . HelperFramework::escape($antiFraudJson) . '</pre>
+                <pre class="panel-soft preformatted-panel">' . \eel_accounts\Support\Utf8::html($antiFraudJson) . '</pre>
             </div>
         ';
     }

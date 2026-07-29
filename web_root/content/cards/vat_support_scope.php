@@ -43,7 +43,7 @@ final class _vat_support_scopeCard extends CardBaseFramework
 
         return '<div class="helper" data-vat-support-read-only="1">'
             . '<span class="badge warning">Unsupported VAT scope - read only</span> '
-            . HelperFramework::escape((string)($scope['message'] ?? \eel_accounts\Service\VatSupportScopeService::UNSUPPORTED_MESSAGE))
+            . \eel_accounts\Support\Utf8::html((string)($scope['message'] ?? \eel_accounts\Service\VatSupportScopeService::UNSUPPORTED_MESSAGE))
             . ' Historical figures and period selectors remain available; actions that would change Tax or Year End data are disabled.'
             . '</div>';
     }

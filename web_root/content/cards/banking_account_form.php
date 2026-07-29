@@ -91,14 +91,14 @@ final class _banking_account_formCard extends CardBaseFramework
         $optionsHtml = '';
         foreach (\eel_accounts\Service\CompanyAccountService::accountTypes() as $accountType => $accountTypeLabel) {
             $selected = (string)$bankingAccountForm['account_type'] === $accountType ? ' selected' : '';
-            $optionsHtml .= '<option value="' . HelperFramework::escape($accountType) . '"' . $selected . '>' . HelperFramework::escape($accountTypeLabel) . '</option>';
+            $optionsHtml .= '<option value="' . \eel_accounts\Support\Utf8::html($accountType) . '"' . $selected . '>' . \eel_accounts\Support\Utf8::html($accountTypeLabel) . '</option>';
         }
 
         return '
             <form method="post" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Banking">
-                <input type="hidden" name="intent" value="' . HelperFramework::escape($LookupCompanyAccount !== null ? 'save' : 'add') . '">
+                <input type="hidden" name="intent" value="' . \eel_accounts\Support\Utf8::html($LookupCompanyAccount !== null ? 'save' : 'add') . '">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="account_id" value="' . $LookupCompanyAccountId . '">
@@ -107,7 +107,7 @@ final class _banking_account_formCard extends CardBaseFramework
                 <div class="form-grid">
                     <div class="form-row">
                         <label for="account_name">Account name</label>
-                        <input class="input" id="account_name" name="account_name" value="' . HelperFramework::escape((string)$bankingAccountForm['account_name']) . '" required>
+                        <input class="input" id="account_name" name="account_name" value="' . \eel_accounts\Support\Utf8::html((string)$bankingAccountForm['account_name']) . '" required>
                     </div>
                     <div class="flex-controls">
                         <div class="mini-field">
@@ -123,48 +123,48 @@ final class _banking_account_formCard extends CardBaseFramework
                         </div>
                         <div class="mini-field">
                             <label for="internal_transfer_marker">Internal transfer marker</label>
-                            <input class="input" id="internal_transfer_marker" name="internal_transfer_marker" value="' . HelperFramework::escape((string)$bankingAccountForm['internal_transfer_marker']) . '" maxlength="6" size="6" placeholder="P2P"' . $transferMarkerAttributes . '>
+                            <input class="input" id="internal_transfer_marker" name="internal_transfer_marker" value="' . \eel_accounts\Support\Utf8::html((string)$bankingAccountForm['internal_transfer_marker']) . '" maxlength="6" size="6" placeholder="P2P"' . $transferMarkerAttributes . '>
                         </div>
                     </div>
                     <div class="form-row">
                         <label for="institution_name">Institution</label>
-                        <input class="input" id="institution_name" name="institution_name" value="' . HelperFramework::escape((string)$bankingAccountForm['institution_name']) . '">
+                        <input class="input" id="institution_name" name="institution_name" value="' . \eel_accounts\Support\Utf8::html((string)$bankingAccountForm['institution_name']) . '">
                     </div>
                     <div class="form-row">
                         <label for="account_identifier">Identifier</label>
-                        <input class="input" id="account_identifier" name="account_identifier" value="' . HelperFramework::escape((string)$bankingAccountForm['account_identifier']) . '" placeholder="Sort code/account mask, card ending, or Account label">
+                        <input class="input" id="account_identifier" name="account_identifier" value="' . \eel_accounts\Support\Utf8::html((string)$bankingAccountForm['account_identifier']) . '" placeholder="Sort code/account mask, card ending, or Account label">
                     </div>
                     <div class="form-row">
                         <label for="contact_name">Contact</label>
-                        <input class="input" id="contact_name" name="contact_name" value="' . HelperFramework::escape((string)$bankingAccountForm['contact_name']) . '">
+                        <input class="input" id="contact_name" name="contact_name" value="' . \eel_accounts\Support\Utf8::html((string)$bankingAccountForm['contact_name']) . '">
                     </div>
                     <div class="form-row">
                         <label for="phone_number">Phone number</label>
-                        <input class="input" id="phone_number" name="phone_number" value="' . HelperFramework::escape((string)$bankingAccountForm['phone_number']) . '" required>
+                        <input class="input" id="phone_number" name="phone_number" value="' . \eel_accounts\Support\Utf8::html((string)$bankingAccountForm['phone_number']) . '" required>
                     </div>
                     <div class="form-row full">
                         <label for="address_line_1">Address line 1</label>
-                        <input class="input" id="address_line_1" name="address_line_1" value="' . HelperFramework::escape((string)$bankingAccountForm['address_line_1']) . '" required>
+                        <input class="input" id="address_line_1" name="address_line_1" value="' . \eel_accounts\Support\Utf8::html((string)$bankingAccountForm['address_line_1']) . '" required>
                     </div>
                     <div class="form-row full">
                         <label for="address_line_2">Address line 2</label>
-                        <input class="input" id="address_line_2" name="address_line_2" value="' . HelperFramework::escape((string)$bankingAccountForm['address_line_2']) . '">
+                        <input class="input" id="address_line_2" name="address_line_2" value="' . \eel_accounts\Support\Utf8::html((string)$bankingAccountForm['address_line_2']) . '">
                     </div>
                     <div class="form-row">
                         <label for="address_locality">Town/City</label>
-                        <input class="input" id="address_locality" name="address_locality" value="' . HelperFramework::escape((string)$bankingAccountForm['address_locality']) . '">
+                        <input class="input" id="address_locality" name="address_locality" value="' . \eel_accounts\Support\Utf8::html((string)$bankingAccountForm['address_locality']) . '">
                     </div>
                     <div class="form-row">
                         <label for="address_region">Region/County</label>
-                        <input class="input" id="address_region" name="address_region" value="' . HelperFramework::escape((string)$bankingAccountForm['address_region']) . '">
+                        <input class="input" id="address_region" name="address_region" value="' . \eel_accounts\Support\Utf8::html((string)$bankingAccountForm['address_region']) . '">
                     </div>
                     <div class="form-row">
                         <label for="address_postal_code">Postcode</label>
-                        <input class="input" id="address_postal_code" name="address_postal_code" value="' . HelperFramework::escape((string)$bankingAccountForm['address_postal_code']) . '">
+                        <input class="input" id="address_postal_code" name="address_postal_code" value="' . \eel_accounts\Support\Utf8::html((string)$bankingAccountForm['address_postal_code']) . '">
                     </div>
                     <div class="form-row">
                         <label for="address_country">Country</label>
-                        <input class="input" id="address_country" name="address_country" value="' . HelperFramework::escape((string)$bankingAccountForm['address_country']) . '">
+                        <input class="input" id="address_country" name="address_country" value="' . \eel_accounts\Support\Utf8::html((string)$bankingAccountForm['address_country']) . '">
                     </div>
                     <label class="checkbox-item form-row full">
                         <input type="checkbox" name="is_active" value="1"' . (!empty($bankingAccountForm['is_active']) ? ' checked' : '') . '>
@@ -174,7 +174,7 @@ final class _banking_account_formCard extends CardBaseFramework
                         </div>
                     </label>
                     <div class="form-row">
-                        <button class="button primary" type="submit">' . HelperFramework::escape($LookupCompanyAccount !== null ? 'Save Account' : 'Add Account') . '</button>'
+                        <button class="button primary" type="submit">' . \eel_accounts\Support\Utf8::html($LookupCompanyAccount !== null ? 'Save Account' : 'Add Account') . '</button>'
                             . ($LookupCompanyAccount !== null
                             ? '<a class="button" data-ajax-link="true">Cancel</a>'
                             : '') . '
@@ -225,8 +225,8 @@ final class _banking_account_formCard extends CardBaseFramework
             }
 
             $id = (string)($nominal['id'] ?? '');
-            $html .= '<option value="' . HelperFramework::escape($id) . '"' . ($id === $selectedId ? ' selected' : '') . '>'
-                . HelperFramework::escape(FormattingFramework::nominalLabel($nominal, ' '))
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html($id) . '"' . ($id === $selectedId ? ' selected' : '') . '>'
+                . \eel_accounts\Support\Utf8::html(FormattingFramework::nominalLabel($nominal, ' '))
                 . '</option>';
         }
 

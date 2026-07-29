@@ -416,7 +416,7 @@ final class CorporationTaxRateRuleService
         ?float $upperLimit,
         ?float $marginalReliefFraction
     ): string {
-        $hash = hash('sha256', json_encode([
+        $hash = hash('sha256', \eel_accounts\Support\Utf8::json([
             'source' => self::SOURCE_URL,
             'regime' => 'non_ring_fence',
             'financial_year_start' => $financialYearStart,

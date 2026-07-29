@@ -41,7 +41,7 @@ final class _pl_summaryCard extends CardBaseFramework
                 (array)($summary['prepayment_preview_warnings'] ?? [])
             )));
             $notice .= '<div class="helper"><span class="badge warning">Prepayment preview incomplete</span> '
-                . HelperFramework::escape(
+                . \eel_accounts\Support\Utf8::html(
                     $warnings !== []
                         ? implode(' ', $warnings)
                         : 'One or more prepayment adjustments could not be verified.'
@@ -50,7 +50,7 @@ final class _pl_summaryCard extends CardBaseFramework
         }
         return '<div class="settings-stack">
             <div class="pl-summary-topline">
-                <div class="summary-card summary-card-fit"><div class="summary-label">Profitability</div><div class="summary-value ' . HelperFramework::escape($this->resultClass($netProfit)) . '">' . HelperFramework::escape($this->resultLabel($netProfit)) . '</div></div>
+                <div class="summary-card summary-card-fit"><div class="summary-label">Profitability</div><div class="summary-value ' . \eel_accounts\Support\Utf8::html($this->resultClass($netProfit)) . '">' . \eel_accounts\Support\Utf8::html($this->resultLabel($netProfit)) . '</div></div>
                 <div class="pl-summary-income-flow">
                     ' . ($chart !== '' ? $chart : '<div class="helper">No incoming or outgoing nominal flow is available for the selected period.</div>') . '
                     ' . $headlineMetrics . '
@@ -88,11 +88,11 @@ final class _pl_summaryCard extends CardBaseFramework
             if (!is_array($period)) {
                 continue;
             }
-            $label = 'P&amp;L for ' . HelperFramework::escape((string)($period['display_label'] ?? 'CT Period'));
+            $label = 'P&amp;L for ' . \eel_accounts\Support\Utf8::html((string)($period['display_label'] ?? 'CT Period'));
             $dates = $this->periodLabel((string)($period['period_start'] ?? ''), (string)($period['period_end'] ?? ''));
             $cards .= '<div class="summary-card"><div class="summary-label">' . $label . '</div><div class="summary-value">'
-                . HelperFramework::escape($this->money($companySettings, $period['profit_before_tax'] ?? 0))
-                . '</div><div class="helper">' . HelperFramework::escape($dates) . '</div></div>';
+                . \eel_accounts\Support\Utf8::html($this->money($companySettings, $period['profit_before_tax'] ?? 0))
+                . '</div><div class="helper">' . \eel_accounts\Support\Utf8::html($dates) . '</div></div>';
         }
         $profitBeforeTax = (float)($summary['profit_before_tax'] ?? ($summary['net_profit'] ?? 0));
         $cards .= $this->summaryCard(
@@ -102,7 +102,7 @@ final class _pl_summaryCard extends CardBaseFramework
             $this->profitBeforeTaxCardClass($profitBeforeTax)
         );
         $cards .= '<div class="summary-card"><div class="summary-label">Profit margin</div><div class="summary-value">'
-            . HelperFramework::escape(number_format((float)($summary['profit_margin_percent'] ?? 0), 1))
+            . \eel_accounts\Support\Utf8::html(number_format((float)($summary['profit_margin_percent'] ?? 0), 1))
             . '%</div></div>';
 
         return '<div class="' . $gridClass . '">' . $cards . '</div>';
@@ -294,7 +294,7 @@ final class _pl_summaryCard extends CardBaseFramework
     {
         $classes = 'summary-card' . ($class !== '' ? ' ' . $class : '');
 
-        return '<div class="' . HelperFramework::escape($classes) . '"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $value)) . '</div></div>';
+        return '<div class="' . \eel_accounts\Support\Utf8::html($classes) . '"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label) . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($this->money($companySettings, $value)) . '</div></div>';
     }
 
     private function profitBeforeTaxCardClass(float $profitBeforeTax): string
@@ -364,11 +364,11 @@ final class _pl_summaryCard extends CardBaseFramework
 
     private function metric(string $label, string $value): string
     {
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+        return '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label) . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div></div>';
     }
 
     private function messages(array $messages): string
     {
-        return implode('', array_map(static fn(mixed $message): string => '<div class="helper">' . HelperFramework::escape((string)$message) . '</div>', $messages));
+        return implode('', array_map(static fn(mixed $message): string => '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$message) . '</div>', $messages));
     }
 }

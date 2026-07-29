@@ -58,7 +58,7 @@ final class _companies_dangerCard extends CardBaseFramework
 
         $deletedDataListHtml = '';
         foreach ($deletedDataItems as $label) {
-            $deletedDataListHtml .= '<li><strong>' . HelperFramework::escape($label) . '</strong></li>';
+            $deletedDataListHtml .= '<li><strong>' . \eel_accounts\Support\Utf8::html($label) . '</strong></li>';
         }
 
         return '
@@ -66,8 +66,8 @@ final class _companies_dangerCard extends CardBaseFramework
                 <div class="panel-soft warn">
                     <h3 class="card-title">Clear Imported Accounting Data</h3>
                     <div class="helper">
-                        Company: <strong>' . HelperFramework::escape($companyName) . '</strong><br>
-                        '."Company's".' Registered Number: <strong>' . HelperFramework::escape($companyNumber) . '</strong>
+                        Company: <strong>' . \eel_accounts\Support\Utf8::html($companyName) . '</strong><br>
+                        '."Company's".' Registered Number: <strong>' . \eel_accounts\Support\Utf8::html($companyNumber) . '</strong>
                     </div>
                     <div class="standout helper">This removes imported bookkeeping data only.<br>Master company settings, accounting periods, nominal accounts, company accounts, and stored Companies House profile data are left untouched.</div>
                     <div class="list">
@@ -82,7 +82,7 @@ final class _companies_dangerCard extends CardBaseFramework
                         <input type="hidden" name="intent" value="clear_imported_accounting_data">
                         <div class="form-row">
                             <label for="company_clear_confirmation">' . "Type the Company's Registered Number below to confirm:" . '</label>
-                            <input class="input" id="company_clear_confirmation" name="company_clear_confirmation" value="" data-clear-company-input data-clear-confirm-input data-expected-value="' . HelperFramework::escape($companyNumber) . '">
+                            <input class="input" id="company_clear_confirmation" name="company_clear_confirmation" value="" data-clear-company-input data-clear-confirm-input data-expected-value="' . \eel_accounts\Support\Utf8::html($companyNumber) . '">
                         </div>
                         <div class="form-row">
                             <button class="button danger" disabled data-delete-company-button data-chicken-check="true" data-chicken-message="Confirm that all uploaded data for this company is to be removed.<br><br>Please make sure you have a valid backup or can recreate the data should you need to." data-chicken-confirm-text="Delete Imported Data" id="clear-imported-data-button" type="submit" disabled>Clear Imported Accounting Data</button>
@@ -118,7 +118,7 @@ final class _companies_dangerCard extends CardBaseFramework
                         </label>
                         <div class="form-row">
                             <label for="delete_company_confirm_value">' . "Type the Company's Registered Number below to confirm:" . '</label>
-                            <input class="input" id="delete_company_confirm_value" name="delete_company_confirm_value" value="" data-delete-confirm-input data-expected-value="' . HelperFramework::escape($companyNumber) . '" disabled>
+                            <input class="input" id="delete_company_confirm_value" name="delete_company_confirm_value" value="" data-delete-confirm-input data-expected-value="' . \eel_accounts\Support\Utf8::html($companyNumber) . '" disabled>
                         </div>
                         <div class="form-row">
                             <button class="button danger" type="submit" disabled data-delete-company-button data-delete-confirm-button data-chicken-check="true" data-chicken-message="Confirm this company and all of its data stored in this app should be deleted.<br><br>This does not delete data from third-parties, like HMRC and Companies House." data-chicken-confirm-text="Delete Company">Delete Company</button>

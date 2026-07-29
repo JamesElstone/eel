@@ -116,7 +116,7 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
     {
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
 
-        return TableFramework::make($this->key(), $this->prepaidRows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key(), $this->prepaidRows($context))
             ->filename('year-end-prepayment-approvals')
             ->exportLimit(5000)
             ->classes(wrapperClass: 'table-scroll')
@@ -128,7 +128,7 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
             ->column(
                 'amount',
                 'Amount',
-                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['amount'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['amount'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['amount'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -158,7 +158,7 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
     {
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
 
-        return TableFramework::make($this->key() . '_carried', $this->carriedScheduleRows($context))
+        return \eel_accounts\Support\Utf8Table::make($this->key() . '_carried', $this->carriedScheduleRows($context))
             ->filename('year-end-carried-prepayment-approvals')
             ->exportLimit(5000)
             ->classes(wrapperClass: 'table-scroll')
@@ -169,7 +169,7 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
             ->column(
                 'opening_asset',
                 'Opening Asset',
-                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['opening_asset'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['opening_asset'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['opening_asset'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -177,7 +177,7 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
             ->column(
                 'period_release',
                 'AP Release',
-                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['period_release'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['period_release'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['period_release'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -185,7 +185,7 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
             ->column(
                 'closing_asset',
                 'Closing Asset',
-                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['closing_asset'] ?? 0)),
+                html: fn(array $row): string => \eel_accounts\Support\Utf8::html($this->money($companySettings, $row['closing_asset'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['closing_asset'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -300,7 +300,7 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
 
     private function summaryCard(string $label, string $value): string
     {
-        return '<div class="panel-soft"><div class="eyebrow">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+        return '<div class="panel-soft"><div class="eyebrow">' . \eel_accounts\Support\Utf8::html($label) . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div></div>';
     }
 
     private function money(array $companySettings, float|int|string|null $value): string
@@ -317,7 +317,7 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
     {
         $html = '';
         foreach ($errors as $error) {
-            $html .= '<div class="helper">' . HelperFramework::escape((string)$error) . '</div>';
+            $html .= '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$error) . '</div>';
         }
 
         return $html;

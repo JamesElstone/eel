@@ -586,7 +586,7 @@ final class IxbrlRevisedAccountsArtifactService
         ] as [$class, $value]) {
             $item = $document->createElementNS(self::XHTML_NS, 'div');
             $item->setAttribute('class', $class);
-            $item->appendChild($document->createTextNode($value));
+            $item->appendChild($document->createTextNode(\eel_accounts\Support\Utf8::normalize($value)));
             $header->appendChild($item);
         }
         $section->appendChild($header);
@@ -604,7 +604,7 @@ final class IxbrlRevisedAccountsArtifactService
         $container->setAttribute('class', 'revision-statement keepTogether');
         if ($label !== '') {
             $heading = $document->createElementNS(self::XHTML_NS, 'h3');
-            $heading->appendChild($document->createTextNode($label));
+            $heading->appendChild($document->createTextNode(\eel_accounts\Support\Utf8::normalize($label)));
             $container->appendChild($heading);
         }
         $paragraph = $document->createElementNS(self::XHTML_NS, 'p');
@@ -615,7 +615,7 @@ final class IxbrlRevisedAccountsArtifactService
             $fact->setAttribute('format', 'ixt:datedaymonthyearen');
             $value = $this->displayDate($value);
         }
-        $fact->appendChild($document->createTextNode($value));
+        $fact->appendChild($document->createTextNode(\eel_accounts\Support\Utf8::normalize($value)));
         $paragraph->appendChild($fact);
         $container->appendChild($paragraph);
         $section->appendChild($container);

@@ -303,7 +303,7 @@ final class IxbrlFactBuilderService
                 'decimals_value' => $fact['decimals_value'],
                 'context_ref' => $fact['context_ref'],
                 'dimensions_json' => $fact['dimensions_json'],
-                'source_json' => json_encode($fact['source'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+                'source_json' => \eel_accounts\Support\Utf8::json($fact['source'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
             ]
         );
     }
@@ -412,7 +412,7 @@ final class IxbrlFactBuilderService
             'decimals_value' => $decimals,
             'context_ref' => $contextRef,
             'dimensions_json' => $dimensions !== []
-                ? json_encode($dimensions, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)
+                ? \eel_accounts\Support\Utf8::json($dimensions, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)
                 : null,
             'source' => [
                 'calculation_type' => $calculationType,

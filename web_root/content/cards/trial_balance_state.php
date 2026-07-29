@@ -52,7 +52,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
 
         return '<div id="trial-balance-app" class="settings-stack">
-            ' . (trim((string)($trialBalance['summary_basis_note'] ?? '')) !== '' ? '<div class="helper"><span class="badge info">Mixed basis</span> ' . HelperFramework::escape((string)$trialBalance['summary_basis_note']) . '</div>' : '') . '
+            ' . (trim((string)($trialBalance['summary_basis_note'] ?? '')) !== '' ? '<div class="helper"><span class="badge info">Mixed basis</span> ' . \eel_accounts\Support\Utf8::html((string)$trialBalance['summary_basis_note']) . '</div>' : '') . '
             ' . $this->renderSummaryPanel($summary, $validation, $companySettings) . '
         </div>';
     }
@@ -65,7 +65,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
             <div>' . $this->readinessGaugeCard($validation) . '</div>
             <div class="summary-grid trial-balance-summary-grid">
                 ' . $this->readinessDriverCards($validation, $companySettings) . '
-                ' . $this->summaryCard('Trial Balance status', '<span class="badge ' . (!empty($status['is_balanced']) ? 'success' : 'danger') . '">' . HelperFramework::escape((string)($status['label'] ?? 'Not balanced')) . '</span>', true) . '
+                ' . $this->summaryCard('Trial Balance status', '<span class="badge ' . (!empty($status['is_balanced']) ? 'success' : 'danger') . '">' . \eel_accounts\Support\Utf8::html((string)($status['label'] ?? 'Not balanced')) . '</span>', true) . '
                 ' . $this->summaryCard('Profit before tax', $this->money($companySettings, $summary['profit_before_tax'] ?? 0)) . '
                 ' . $this->summaryCard('Net assets', $this->money($companySettings, $summary['net_assets'] ?? 0)) . '
                 ' . $this->summaryCard('Solvency flag', $this->solvencyFlag($summary['net_assets'] ?? 0), true) . '
@@ -115,7 +115,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
             . $this->checkSummaryCard('Period completeness', $checks['period_completeness'] ?? [], $this->greenMonthCount($periodTiles))
             . $this->checkSummaryCard('FRS 105 deferred tax', $checks['frs105_deferred_tax_nominal'] ?? [], (string)(int)($deferredTaxMetrics['deferred_tax_nominal_count'] ?? 0))
             . $this->summaryCard('Review notes', $this->yesNoBadge(!empty($validation['review_warnings_acknowledged']), 'Acknowledged', 'Needed'), true)
-            . $this->summaryCard('Trial balance comparison differences', HelperFramework::escape((string)(int)($validation['comparison_differences'] ?? 0)) . ' ' . $this->statusBadge(((int)($validation['comparison_differences'] ?? 0) === 0) ? 'pass' : 'warning'), true);
+            . $this->summaryCard('Trial balance comparison differences', \eel_accounts\Support\Utf8::html((string)(int)($validation['comparison_differences'] ?? 0)) . ' ' . $this->statusBadge(((int)($validation['comparison_differences'] ?? 0) === 0) ? 'pass' : 'warning'), true);
     }
 
     private function checksByCode(array $validation): array
@@ -142,7 +142,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
             return $this->summaryCard($label, $value);
         }
 
-        return $this->summaryCard($label, HelperFramework::escape($value) . ' ' . $this->statusBadge($status), true);
+        return $this->summaryCard($label, \eel_accounts\Support\Utf8::html($value) . ' ' . $this->statusBadge($status), true);
     }
 
     private function readinessScore(array $validation, string $readiness): int
@@ -203,7 +203,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
 
     private function yesNoBadge(bool $value, string $yes = 'Yes', string $no = 'No'): string
     {
-        return '<span class="badge ' . ($value ? 'success' : 'warning') . '">' . HelperFramework::escape($value ? $yes : $no) . '</span>';
+        return '<span class="badge ' . ($value ? 'success' : 'warning') . '">' . \eel_accounts\Support\Utf8::html($value ? $yes : $no) . '</span>';
     }
 
     private function statusBadge(string $status): string
@@ -215,7 +215,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
             default => 'info',
         };
 
-        return '<span class="badge ' . $class . '">' . HelperFramework::escape($status) . '</span>';
+        return '<span class="badge ' . $class . '">' . \eel_accounts\Support\Utf8::html($status) . '</span>';
     }
 
     private function greenMonthCount(array $monthTiles): string
@@ -231,7 +231,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
 
     private function summaryCard(string $label, string $value, bool $trustedValue = false): string
     {
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . ($trustedValue ? $value : HelperFramework::escape($value)) . '</div></div>';
+        return '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label) . '</div><div class="summary-value">' . ($trustedValue ? $value : \eel_accounts\Support\Utf8::html($value)) . '</div></div>';
     }
 
     private function money(array $companySettings, mixed $value): string
@@ -245,14 +245,14 @@ final class _trial_balance_stateCard extends CardBaseFramework
         $class = $potentiallyInsolvent ? 'danger' : 'success';
         $label = $potentiallyInsolvent ? 'Potentially Insolvent' : 'OK';
 
-        return '<span class="badge ' . $class . '">' . HelperFramework::escape($label) . '</span>';
+        return '<span class="badge ' . $class . '">' . \eel_accounts\Support\Utf8::html($label) . '</span>';
     }
 
     private function renderErrors(array $errors): string
     {
         $html = '';
         foreach ($errors as $error) {
-            $html .= '<div class="helper">' . HelperFramework::escape((string)$error) . '</div>';
+            $html .= '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$error) . '</div>';
         }
 
         return $html;

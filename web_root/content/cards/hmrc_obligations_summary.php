@@ -37,7 +37,7 @@ final class _hmrc_obligations_summaryCard extends CardBaseFramework
                 <a class="button button-inline" href="https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm92190" target="_blank" rel="noopener noreferrer">HMRC - CTM92190: Late Corporation Tax Interest</a>
                 <a class="button button-inline" href="https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim45740" target="_blank" rel="noopener noreferrer">HMRC - BIM45740: Late-Paid Tax Interest</a>
             </div>
-            ' . ($laterObligationCount > 0 ? '<div class="panel-soft warn">' . HelperFramework::escape($laterObligationWarning) . '</div>' : '') . '
+            ' . ($laterObligationCount > 0 ? '<div class="panel-soft warn">' . \eel_accounts\Support\Utf8::html($laterObligationWarning) . '</div>' : '') . '
             <div class="summary-grid">
                 ' . $this->metric('Total currently owed', $this->money($companySettings, $summary['total_owed'] ?? 0)) . '
                 ' . $this->metric('Total overdue', $this->money($companySettings, $summary['total_overdue'] ?? 0)) . '
@@ -51,7 +51,7 @@ final class _hmrc_obligations_summaryCard extends CardBaseFramework
 
     private function metric(string $label, string $value): string
     {
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+        return '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label) . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div></div>';
     }
 
     private function money(array $companySettings, mixed $value): string

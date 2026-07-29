@@ -53,12 +53,12 @@ final class _year_end_empty_month_confirmationsCard extends CardBaseFramework
     {
         $data = (array)($context['services']['emptyMonthConfirmations'] ?? []);
         if (empty($data['available'])) {
-            return '<section class="panel-soft"><div class="helper">' . HelperFramework::escape((string)($data['errors'][0] ?? 'Empty month confirmations are not available.')) . '</div></section>';
+            return '<section class="panel-soft"><div class="helper">' . \eel_accounts\Support\Utf8::html((string)($data['errors'][0] ?? 'Empty month confirmations are not available.')) . '</div></section>';
         }
 
         $months = (array)($data['months'] ?? []);
         if ($months === []) {
-            return '<section class="panel-soft"><div class="helper">' . HelperFramework::escape((string)($data['empty_message'] ?? 'No empty-month confirmations are available for this accounting period.')) . '</div></section>';
+            return '<section class="panel-soft"><div class="helper">' . \eel_accounts\Support\Utf8::html((string)($data['empty_message'] ?? 'No empty-month confirmations are available for this accounting period.')) . '</div></section>';
         }
 
         $company = (array)($context['company'] ?? []);
@@ -92,7 +92,7 @@ final class _year_end_empty_month_confirmationsCard extends CardBaseFramework
         $action = $this->confirmedActionHtml($month, $confirmation, $companyId, $accountingPeriodId);
 
         return '<div class="panel-soft">
-            <h3 class="card-title">' . HelperFramework::escape($this->issueTitle($month)) . '</h3>
+            <h3 class="card-title">' . \eel_accounts\Support\Utf8::html($this->issueTitle($month)) . '</h3>
             ' . $this->evidenceHtml((array)($month['evidence'] ?? []), $companySettings) . '
         </div>
         ' . $action;
@@ -127,7 +127,7 @@ final class _year_end_empty_month_confirmationsCard extends CardBaseFramework
                 continue;
             }
 
-            $html .= '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+            $html .= '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label) . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div></div>';
         }
 
         return $html . '</div>';

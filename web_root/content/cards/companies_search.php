@@ -61,31 +61,31 @@ final class _companies_searchCard extends CardBaseFramework
                     : ($incorporationDate !== '' ? $incorporationDate : 'Not provided');
             $addButtonAttributes = $isSupported
                 ? ''
-                : ' disabled aria-disabled="true" title="' . HelperFramework::escape($eligibilityMessage) . '"';
+                : ' disabled aria-disabled="true" title="' . \eel_accounts\Support\Utf8::html($eligibilityMessage) . '"';
 
             $resultsHtml .= '
             <div class="search-result">
                 <div class="search-result-head">
                     <div>
-                        <div class="search-result-title">' . HelperFramework::escape((string)($result['company_name'] ?? '')) . '</div>
+                        <div class="search-result-title">' . \eel_accounts\Support\Utf8::html((string)($result['company_name'] ?? '')) . '</div>
                         <div class="search-result-meta">
-                            Number: ' . HelperFramework::escape((string)($result['company_number'] ?? ''))
-                            . (trim((string)($result['company_status'] ?? '')) !== '' ? ' | Status: ' . HelperFramework::escape((string)$result['company_status']) : '') . '
+                            Number: ' . \eel_accounts\Support\Utf8::html((string)($result['company_number'] ?? ''))
+                            . (trim((string)($result['company_status'] ?? '')) !== '' ? ' | Status: ' . \eel_accounts\Support\Utf8::html((string)$result['company_status']) : '') . '
                         </div>
                         <div class="search-result-meta">
-                            Incorporation date: ' . HelperFramework::escape($incorporationDateLabel) . '
-                            | Eligibility: ' . HelperFramework::escape($eligibilityLabel) . '
+                            Incorporation date: ' . \eel_accounts\Support\Utf8::html($incorporationDateLabel) . '
+                            | Eligibility: ' . \eel_accounts\Support\Utf8::html($eligibilityLabel) . '
                         </div>
-                        ' . ($eligibilityMessage !== '' ? '<div class="search-result-meta">' . HelperFramework::escape($eligibilityMessage) . '</div>' : '') . '
+                        ' . ($eligibilityMessage !== '' ? '<div class="search-result-meta">' . \eel_accounts\Support\Utf8::html($eligibilityMessage) . '</div>' : '') . '
                     </div>
-                    <span class="status-pill">' . HelperFramework::escape((string)($result['source'] ?? '') === 'profile' ? 'Direct lookup' : 'Search result') . '</span>
+                    <span class="status-pill">' . \eel_accounts\Support\Utf8::html((string)($result['source'] ?? '') === 'profile' ? 'Direct lookup' : 'Search result') . '</span>
                 </div>
                 <form method="post" data-ajax="true" data-invalidate-page="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="Company">
                     <input type="hidden" name="intent" value="add_company">
-                    <input type="hidden" name="company_name" value="' . HelperFramework::escape((string)($result['company_name'] ?? '')) . '">
-                    <input type="hidden" name="selected_company_number" value="' . HelperFramework::escape((string)($result['company_number'] ?? '')) . '">
+                    <input type="hidden" name="company_name" value="' . \eel_accounts\Support\Utf8::html((string)($result['company_name'] ?? '')) . '">
+                    <input type="hidden" name="selected_company_number" value="' . \eel_accounts\Support\Utf8::html((string)($result['company_number'] ?? '')) . '">
                     <button class="button primary" data-processing-text="Adding Company..." data-processing-state="disabled" data-show-card="companies_company_settings" type="submit"' . $addButtonAttributes . '>Add Company</button>
                 </form>
             </div>';
@@ -104,7 +104,7 @@ final class _companies_searchCard extends CardBaseFramework
                 <div class="mini-form">
                     <div class="mini-field">
                         <label for="company_search_term">Companies House Search</label>
-                        <input class="input" id="company_search_term" name="company_search_term" placeholder="Company name or number" value="' . HelperFramework::escape($companySearchTerm) . '">
+                        <input class="input" id="company_search_term" name="company_search_term" placeholder="Company name or number" value="' . \eel_accounts\Support\Utf8::html($companySearchTerm) . '">
                     </div>
                     <button class="button primary" type="submit">Search</button>
                 </div>

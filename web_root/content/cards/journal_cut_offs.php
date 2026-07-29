@@ -101,7 +101,7 @@ final class _journal_cut_offsCard extends CardBaseFramework
                 </form>
                 <div class="form-grid">
                     <div class="form-row"><label for="cutoff-template-type">Template</label><select class="select" id="cutoff-template-type" name="adjustment_template_type" form="' . $formId . '"' . $controlDisabled . '>' . $this->options(['accrual' => 'Create accrual', 'prepayment' => 'Create prepayment', 'deferred_income' => 'Create deferred income', 'custom' => 'Custom journal'], 'accrual') . '</select></div>
-                    <div class="form-row"><label for="cutoff-date">Date</label><input class="input" id="cutoff-date" name="adjustment_date" form="' . $formId . '" type="date" value="' . HelperFramework::escape((string)($accountingPeriod['period_end'] ?? '')) . '"' . $controlDisabled . '></div>
+                    <div class="form-row"><label for="cutoff-date">Date</label><input class="input" id="cutoff-date" name="adjustment_date" form="' . $formId . '" type="date" value="' . \eel_accounts\Support\Utf8::html((string)($accountingPeriod['period_end'] ?? '')) . '"' . $controlDisabled . '></div>
                     <div class="form-row"><label for="cutoff-description">Description</label><input class="input" id="cutoff-description" name="adjustment_description" form="' . $formId . '" value=""' . $controlDisabled . '></div>
                     <div class="form-row"><label for="cutoff-notes">Notes</label><input class="input" id="cutoff-notes" name="adjustment_notes" form="' . $formId . '" value=""' . $controlDisabled . '></div>
                     <div class="form-row"><label for="cutoff-primary-nominal">Primary nominal</label><select class="select" id="cutoff-primary-nominal" name="adjustment_primary_nominal_id" form="' . $formId . '"' . $controlDisabled . '>' . $this->nominalOptions((array)($data['nominals'] ?? []), 0) . '</select></div>
@@ -129,9 +129,9 @@ final class _journal_cut_offsCard extends CardBaseFramework
             $description = (string)($row['line_description'] ?? '');
             $html .= '<tr>
                 <td><select class="select" name="' . $prefix . '_line_' . $index . '_nominal_id" form="' . $formId . '"' . $controlDisabled . '>' . $this->nominalOptions($nominals, $nominalId) . '</select></td>
-                <td><input class="input" name="' . $prefix . '_line_' . $index . '_debit" form="' . $formId . '" value="' . HelperFramework::escape($this->lineAmount($row, 'debit')) . '" inputmode="decimal"' . $controlDisabled . '></td>
-                <td><input class="input" name="' . $prefix . '_line_' . $index . '_credit" form="' . $formId . '" value="' . HelperFramework::escape($this->lineAmount($row, 'credit')) . '" inputmode="decimal"' . $controlDisabled . '></td>
-                <td><input class="input" name="' . $prefix . '_line_' . $index . '_description" form="' . $formId . '" value="' . HelperFramework::escape($description) . '"' . $controlDisabled . '></td>
+                <td><input class="input" name="' . $prefix . '_line_' . $index . '_debit" form="' . $formId . '" value="' . \eel_accounts\Support\Utf8::html($this->lineAmount($row, 'debit')) . '" inputmode="decimal"' . $controlDisabled . '></td>
+                <td><input class="input" name="' . $prefix . '_line_' . $index . '_credit" form="' . $formId . '" value="' . \eel_accounts\Support\Utf8::html($this->lineAmount($row, 'credit')) . '" inputmode="decimal"' . $controlDisabled . '></td>
+                <td><input class="input" name="' . $prefix . '_line_' . $index . '_description" form="' . $formId . '" value="' . \eel_accounts\Support\Utf8::html($description) . '"' . $controlDisabled . '></td>
             </tr>';
         }
 
@@ -147,9 +147,9 @@ final class _journal_cut_offsCard extends CardBaseFramework
         $rows = '';
         foreach ($adjustments as $adjustment) {
             $rows .= '<tr>
-                <td>' . HelperFramework::escape(HelperFramework::displayDate((string)($adjustment['journal_date'] ?? ''))) . '</td>
-                <td>' . HelperFramework::escape((string)($adjustment['description'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($adjustment['journal_tag'] ?? ''), '_')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html(HelperFramework::displayDate((string)($adjustment['journal_date'] ?? ''))) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($adjustment['description'] ?? '')) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)($adjustment['journal_tag'] ?? ''), '_')) . '</td>
                 <td>' . count((array)($adjustment['lines'] ?? [])) . '</td>
             </tr>';
         }
@@ -167,7 +167,7 @@ final class _journal_cut_offsCard extends CardBaseFramework
             }
 
             $label = trim((string)($nominal['code'] ?? '') . ' ' . (string)($nominal['name'] ?? ''));
-            $html .= '<option value="' . $id . '"' . ($id === $selectedId ? ' selected' : '') . '>' . HelperFramework::escape($label) . '</option>';
+            $html .= '<option value="' . $id . '"' . ($id === $selectedId ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html($label) . '</option>';
         }
 
         return $html;
@@ -177,7 +177,7 @@ final class _journal_cut_offsCard extends CardBaseFramework
     {
         $html = '';
         foreach ($options as $value => $label) {
-            $html .= '<option value="' . HelperFramework::escape((string)$value) . '"' . ((string)$value === $selected ? ' selected' : '') . '>' . HelperFramework::escape((string)$label) . '</option>';
+            $html .= '<option value="' . \eel_accounts\Support\Utf8::html((string)$value) . '"' . ((string)$value === $selected ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html((string)$label) . '</option>';
         }
 
         return $html;
@@ -193,7 +193,7 @@ final class _journal_cut_offsCard extends CardBaseFramework
     {
         $html = '';
         foreach ($errors as $error) {
-            $html .= '<div class="helper">' . HelperFramework::escape((string)$error) . '</div>';
+            $html .= '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$error) . '</div>';
         }
 
         return $html;

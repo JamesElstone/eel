@@ -1030,7 +1030,7 @@ final class Ct600aService
             foreach ($item as $key => $child) { $item[$key] = $normalise($child); }
             return $item;
         };
-        return (string)json_encode(
+        return (string)\eel_accounts\Support\Utf8::json(
             $normalise($value),
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION
         );

@@ -60,6 +60,22 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
         $harness->assertSame(true, str_contains($unlockMethod, 'TRIGGER_YEAR_END_PRE_UNLOCK'));
     });
 
+    $harness->check(YearEndAction::class, 'rebuilds all affected Year End review caches only through the developer action', static function () use ($harness): void {
+        $action = (string)file_get_contents(
+            dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content' . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'YearEndAction.php'
+        );
+        $sectionApprovals = (string)file_get_contents(
+            dirname(__DIR__) . DIRECTORY_SEPARATOR . 'classes' . DIRECTORY_SEPARATOR . 'eel_accounts' . DIRECTORY_SEPARATOR . 'service' . DIRECTORY_SEPARATOR . 'YearEndSectionApprovalService.php'
+        );
+
+        $harness->assertTrue(str_contains($action, "'refresh_year_end_review_caches'"));
+        $harness->assertTrue(str_contains($action, 'Developer options must be enabled to refresh Year End review caches.'));
+        $harness->assertTrue(str_contains($action, 'invalidateAllFromAccountingPeriod('));
+        $harness->assertTrue(str_contains($action, 'refreshInvalidatedFromAccountingPeriod('));
+        $harness->assertTrue(str_contains($action, 'RequestCache::clear()'));
+        $harness->assertTrue(str_contains($sectionApprovals, 'Rebuilding Year End review cache:'));
+    });
+
     $harness->check(YearEndAction::class, 'streams standard action progress while approving Corporation Tax for Year End', static function () use ($harness): void {
         $action = (string)file_get_contents(
             dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content' . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'YearEndAction.php'

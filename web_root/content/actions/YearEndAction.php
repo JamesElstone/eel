@@ -52,9 +52,13 @@ final class YearEndAction implements ActionInterfaceFramework
                 ]);
             }
 
-            if ($intent === 'cleanup_unused_historic_filing_evidence'
+            if (in_array($intent, ['cleanup_unused_historic_filing_evidence', 'refresh_year_end_review_caches'], true)
                 && !(bool)AppConfigurationStore::get('developer_options', false)) {
-                return $this->result(false, ['Developer options must be enabled to remove unused historic filing evidence.']);
+                return $this->result(false, [
+                    $intent === 'refresh_year_end_review_caches'
+                        ? 'Developer options must be enabled to refresh Year End review caches.'
+                        : 'Developer options must be enabled to remove unused historic filing evidence.',
+                ]);
             }
 
             if ($this->requiresResolvedSourceCoverage($intent, $request)) {
@@ -68,6 +72,11 @@ final class YearEndAction implements ActionInterfaceFramework
                 'recalculate' => (new \eel_accounts\Service\YearEndChecklistService())->recalculateChecklist($companyId, $accountingPeriodId, $actor),
                 'lock_period' => $this->lockPeriodWithProgress($companyId, $accountingPeriodId, $actor, $services->actionProgress()),
                 'unlock_period' => $this->unlockPeriodWithProgress($companyId, $accountingPeriodId, $actor, $services->actionProgress()),
+                'refresh_year_end_review_caches' => $this->refreshYearEndReviewCachesWithProgress(
+                    $companyId,
+                    $accountingPeriodId,
+                    $services->actionProgress()
+                ),
                 'cleanup_unused_historic_filing_evidence' => (new \eel_accounts\Service\FilingEvidenceService())
                     ->cleanupUnusedHistoricForAccountingPeriod($companyId, $accountingPeriodId, $actor),
                 'save_notes' => (new \eel_accounts\Service\YearEndChecklistService())->saveNotes($companyId, $accountingPeriodId, (string)$request->input('review_notes', ''), $actor),
@@ -263,6 +272,38 @@ final class YearEndAction implements ActionInterfaceFramework
         );
     }
 
+    private function refreshYearEndReviewCachesWithProgress(
+        int $companyId,
+        int $accountingPeriodId,
+        ActionProgressFramework $progress
+    ): array {
+        @set_time_limit(0);
+        $progress->report('Invalidating affected Year End review caches…', 0);
+        $sectionApprovals = new \eel_accounts\Service\YearEndSectionApprovalService();
+        $sectionApprovals->invalidateAllFromAccountingPeriod(
+            $companyId,
+            $accountingPeriodId,
+            'Developer requested a refresh of this and dependent later-period Year End reviews'
+        );
+        \eel_accounts\Support\RequestCache::clear();
+        $result = $sectionApprovals->refreshInvalidatedFromAccountingPeriod(
+            $companyId,
+            $accountingPeriodId,
+            static function (string $message, int $percent) use ($progress): void {
+                $progress->report($message, $percent);
+            }
+        );
+        \eel_accounts\Support\RequestCache::clear();
+        $progress->report(
+            !empty($result['success'])
+                ? 'Year End review caches refreshed.'
+                : 'Some Year End review caches could not be refreshed.',
+            100
+        );
+
+        return $result;
+    }
+
     private function approveSectionReviewWithProgress(
         int $companyId,
         int $accountingPeriodId,
@@ -350,6 +391,10 @@ final class YearEndAction implements ActionInterfaceFramework
             return ['page.context', 'year.end.filing.evidence', 'year.end.audit.log'];
         }
 
+        if ($intent === 'refresh_year_end_review_caches') {
+            return ['page.reload', 'page.context', 'year.end.state', 'year.end.checklist', 'year.end.audit.log'];
+        }
+
         if ($intent === 'save_expense_position_acknowledgement') {
             return ['year.end.expenses.confirmation'];
         }
@@ -375,6 +420,11 @@ final class YearEndAction implements ActionInterfaceFramework
             'unlock_period' => !empty(($result['legacy_director_loan_repair'] ?? [])['repaired'])
                 ? 'Accounting period unlocked and the legacy Director Loan offset was repaired.'
                 : 'Accounting period unlocked.',
+            'refresh_year_end_review_caches' => 'Year End review caches refreshed: '
+                . (int)($result['refreshed_count'] ?? 0) . ' rebuilt'
+                . ((int)($result['failed_count'] ?? 0) > 0
+                    ? ', ' . (int)$result['failed_count'] . ' failed.'
+                    : '.'),
             'cleanup_unused_historic_filing_evidence' => ((int)($result['deleted_count'] ?? 0) > 0)
                 ? (int)$result['deleted_count'] . ' unused historic evidence bundle(s) removed. Artifact files were not deleted.'
                 : 'No unused historic evidence bundles were eligible for removal.',

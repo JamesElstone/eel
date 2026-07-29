@@ -44,13 +44,37 @@ final class _year_end_checklistCard extends CardBaseFramework
     private function renderOverallStatus(array $checklist): string
     {
         $status = (string)($checklist['overall_status'] ?? '');
+        $developerCacheRefresh = $this->developerCacheRefreshHtml($checklist);
 
         return '<section class="panel-soft settings-stack">
             <div class="status-head">
                 <h3 class="card-title">Overall status</h3>
                 <span class="badge ' . \eel_accounts\Support\Utf8::html($this->badgeClass($status)) . '">' . \eel_accounts\Support\Utf8::html($this->overallStatusLabel($status)) . '</span>
             </div>
+            ' . $developerCacheRefresh . '
         </section>';
+    }
+
+    private function developerCacheRefreshHtml(array $checklist): string
+    {
+        if (!(bool)AppConfigurationStore::get('developer_options', false)) {
+            return '';
+        }
+
+        $companyId = (int)($checklist['company_id'] ?? 0);
+        $accountingPeriodId = (int)((array)($checklist['accounting_period'] ?? [])['id'] ?? 0);
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return '';
+        }
+
+        return '<div class="actions-row"><form method="post" action="?page=year_end" data-ajax="true">'
+            . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+            . '<input type="hidden" name="card_action" value="YearEnd">'
+            . '<input type="hidden" name="intent" value="refresh_year_end_review_caches">'
+            . '<input type="hidden" name="company_id" value="' . $companyId . '">'
+            . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
+            . '<button class="button danger" type="submit" title="Developer only" data-chicken-check="true" data-chicken-title="Refresh Year End review caches" data-chicken-message="Invalidate and rebuild all Year End review caches for this accounting period and dependent later periods?<br><br>This does not change accounting data or review approvals." data-chicken-confirm-text="Refresh caches" data-chicken-button-class="button danger">Refresh Year End Review Caches</button>'
+            . '</form></div>';
     }
 
     private function renderBookkeepingSection(array $checklist): string

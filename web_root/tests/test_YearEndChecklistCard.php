@@ -12,6 +12,39 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceClassTestHarness $harness, _year_end_checklistCard $card): void {
+    $harness->check(_year_end_checklistCard::class, 'shows the developer-only Year End review cache refresh below overall status', static function () use ($harness, $card): void {
+        $previous = (bool)AppConfigurationStore::get('developer_options', false);
+        try {
+            AppConfigurationStore::set('developer_options', true);
+            $html = $card->render([
+                'year_end' => ['checklist' => [
+                    'company_id' => 12,
+                    'accounting_period' => ['id' => 34],
+                    'overall_status' => 'in_progress',
+                    'sections' => [],
+                ]],
+            ]);
+            $statusPosition = strpos($html, 'Checks Need Review');
+            $buttonPosition = strpos($html, 'Refresh Year End Review Caches');
+
+            $harness->assertTrue($statusPosition !== false && $buttonPosition !== false && $statusPosition < $buttonPosition);
+            $harness->assertTrue(str_contains($html, 'name="intent" value="refresh_year_end_review_caches"'));
+            $harness->assertTrue(str_contains($html, 'class="button danger"'));
+
+            AppConfigurationStore::set('developer_options', false);
+            $harness->assertFalse(str_contains($card->render([
+                'year_end' => ['checklist' => [
+                    'company_id' => 12,
+                    'accounting_period' => ['id' => 34],
+                    'overall_status' => 'in_progress',
+                    'sections' => [],
+                ]],
+            ]), 'refresh_year_end_review_caches'));
+        } finally {
+            AppConfigurationStore::set('developer_options', $previous);
+        }
+    });
+
     $harness->check(_year_end_checklistCard::class, 'renders workflow links but not inline cut-off review approval', static function () use ($harness, $card): void {
         $html = $card->render([
             'year_end' => [

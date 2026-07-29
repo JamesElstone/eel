@@ -799,7 +799,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         $harness->assertFalse(str_contains((string)$panel, 'Corporation Tax Period 1 iXBRL'));
         $harness->assertFalse(str_contains((string)$panel, 'Companies House Accounting iXBRL'));
     });
-    $harness->check(_ixbrl_generationCard::class, 'shows a previous-run Companies House artifact as historical and blocks current download', static function () use ($harness, $card): void {
+    $harness->check(_ixbrl_generationCard::class, 'shows a previous-run Companies House artifact as not generated and blocks current download', static function () use ($harness, $card): void {
         $context = [
             'company' => ['id' => 49, 'accounting_period_id' => 79],
             'ixbrl' => [
@@ -840,18 +840,46 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         ];
 
         $html = $card->render($context);
-        $harness->assertTrue(str_contains($html, 'Rebuild required'));
-        $harness->assertTrue(str_contains($html, 'earlier Accounting iXBRL run'));
-        $harness->assertTrue(str_contains($html, 'Historical Base Run'));
-        $harness->assertTrue(str_contains($html, '#17'));
-        $harness->assertTrue(str_contains($html, 'Historical Facts'));
-        $harness->assertTrue(str_contains($html, '>64</div>'));
-        $harness->assertTrue(str_contains($html, 'Historical — current download unavailable'));
+        $harness->assertTrue(str_contains($html, '<span class="badge muted">Not Generated</span>'));
+        $harness->assertFalse(str_contains($html, 'panel-soft warn'));
+        $harness->assertFalse(str_contains($html, 'Rebuild required'));
+        $harness->assertFalse(str_contains($html, 'Historical Base Run'));
         $harness->assertFalse(str_contains($html, 'Download Companies House iXBRL'));
         $harness->assertTrue(preg_match(
             '/<button\b[^>]*\bdisabled\b[^>]*>Generate Companies House iXBRL<\/button>/',
             $html
         ) === 1);
+    });
+    $harness->check(_ixbrl_generationCard::class, 'renders the Companies House iXBRL panel after every HMRC panel', static function () use ($harness, $card): void {
+        $context = [
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'ixbrl' => [
+                'readiness' => [],
+                'latest_run' => [],
+                'computation_periods' => [[
+                    'ct_period' => [
+                        'id' => 6,
+                        'sequence_no' => 1,
+                        'period_start' => '2025-01-01',
+                        'period_end' => '2025-12-31',
+                    ],
+                    'status' => [],
+                ]],
+            ],
+            'services' => [
+                'companies_house_ixbrl' => [
+                    'filing_kind' => 'revised',
+                    'prepared_artifact' => [],
+                ],
+            ],
+        ];
+
+        $html = $card->render($context);
+        $ctPosition = strpos($html, 'Corporation Tax Period 1 iXBRL');
+        $companiesHousePosition = strpos($html, 'Companies House Revised Accounting iXBRL');
+        $harness->assertTrue($ctPosition !== false);
+        $harness->assertTrue($companiesHousePosition !== false);
+        $harness->assertTrue($companiesHousePosition > $ctPosition);
     });
     $harness->check(_ixbrl_generationCard::class, 'shows each CT period and gates computation download on fileable status', static function () use ($harness, $card): void {
         $context = [

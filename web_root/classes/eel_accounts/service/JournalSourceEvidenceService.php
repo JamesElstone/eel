@@ -21,6 +21,7 @@ final class JournalSourceEvidenceService
         $transactionReferences = [];
         $claimReferences = [];
         $depreciationJournals = [];
+        $availableForUseAdjustmentJournals = [];
         $disposalAssets = [];
         $assetRegisterJournals = [];
         $dividendJournals = [];
@@ -56,6 +57,15 @@ final class JournalSourceEvidenceService
 
             if ($sourceType === 'asset_depreciation' && preg_match('/^asset:(\d+):depreciation:/', $sourceRef, $matches) === 1) {
                 $depreciationJournals[$journalId] = (int)$matches[1];
+                continue;
+            }
+
+            if ($sourceType === 'asset_depreciation'
+                && preg_match('/^asset:(\d+):available-for-use-adjustment:(\d+)(?::revision:(\d+))?$/', $sourceRef, $matches) === 1) {
+                $availableForUseAdjustmentJournals[$journalId] = [
+                    'asset_id' => (int)$matches[1],
+                    'accounting_period_id' => (int)$matches[2],
+                ];
                 continue;
             }
 
@@ -102,6 +112,13 @@ final class JournalSourceEvidenceService
         $this->verifyTransactions($results, $transactionReferences, $journalsById, $companyId, $accountingPeriodId);
         $this->verifyExpenseClaims($results, $claimReferences, $journalsById, $companyId, $accountingPeriodId);
         $this->verifyDepreciation($results, $depreciationJournals, $journalsById, $companyId);
+        $this->verifyAvailableForUseDepreciationAdjustments(
+            $results,
+            $availableForUseAdjustmentJournals,
+            $journalsById,
+            $companyId,
+            $accountingPeriodId
+        );
         $this->verifyDisposals($results, $disposalAssets, $journalsById, $companyId);
         $this->verifyAssetRegisterJournals($results, $assetRegisterJournals, $journalsById, $companyId);
         $this->verifyDividends($results, $dividendJournals, $companyId, $accountingPeriodId);
@@ -984,6 +1001,78 @@ final class JournalSourceEvidenceService
                     !$linkMatches => 'No matching asset depreciation entry exists for this journal and asset.',
                     !$dateMatches => 'Asset depreciation period end does not match the journal date.',
                     default => 'Asset depreciation amount does not reconcile to the journal totals.',
+                },
+            ];
+        }
+    }
+
+    /**
+     * @param array<int, array{verified: bool, reason: string}> $results
+     * @param array<int, array{asset_id: int, accounting_period_id: int}> $journalReferences
+     * @param array<int, array<string, mixed>> $journalsById
+     */
+    private function verifyAvailableForUseDepreciationAdjustments(
+        array &$results,
+        array $journalReferences,
+        array $journalsById,
+        int $companyId,
+        int $accountingPeriodId
+    ): void {
+        if ($journalReferences === []) {
+            return;
+        }
+
+        if (!\InterfaceDB::tableExists('asset_depreciation_adjustments')) {
+            foreach (array_keys($journalReferences) as $journalId) {
+                $results[(int)$journalId] = [
+                    'verified' => false,
+                    'reason' => 'Available-for-use depreciation adjustment records are unavailable. Apply the asset available-for-use migration.',
+                ];
+            }
+            return;
+        }
+
+        $journalIds = array_values(array_unique(array_map('intval', array_keys($journalReferences))));
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT ada.journal_id,
+                    ada.asset_id,
+                    ada.accounting_period_id,
+                    ada.adjustment_date,
+                    ada.amount
+             FROM asset_depreciation_adjustments ada
+             INNER JOIN asset_register ar ON ar.id = ada.asset_id
+             WHERE ar.company_id = ?
+               AND ada.journal_id IN (' . $this->placeholders($journalIds) . ')',
+            array_merge([$companyId], $journalIds)
+        );
+        $adjustmentsByJournal = [];
+        foreach ($rows as $row) {
+            $adjustmentsByJournal[(int)($row['journal_id'] ?? 0)] = $row;
+        }
+
+        foreach ($journalReferences as $journalId => $reference) {
+            $adjustment = (array)($adjustmentsByJournal[(int)$journalId] ?? []);
+            $journal = (array)($journalsById[(int)$journalId] ?? []);
+            $assetMatches = (int)($adjustment['asset_id'] ?? 0) === (int)($reference['asset_id'] ?? 0);
+            $periodMatches = (int)($reference['accounting_period_id'] ?? 0) === $accountingPeriodId
+                && (int)($adjustment['accounting_period_id'] ?? 0) === $accountingPeriodId;
+            $dateMatches = $assetMatches && $periodMatches
+                && (string)($journal['journal_date'] ?? '') === (string)($adjustment['adjustment_date'] ?? '');
+            $expectedAmount = abs(round((float)($adjustment['amount'] ?? 0), 2));
+            $totalsMatch = $dateMatches
+                && $expectedAmount > 0
+                && $this->sameMoney((float)($journal['debit_total'] ?? 0), $expectedAmount)
+                && $this->sameMoney((float)($journal['credit_total'] ?? 0), $expectedAmount);
+            $verified = $assetMatches && $periodMatches && $dateMatches && $totalsMatch;
+            $results[(int)$journalId] = [
+                'verified' => $verified,
+                'reason' => match (true) {
+                    $verified => 'Available-for-use depreciation adjustment, posting date and amount reconcile to the journal.',
+                    $adjustment === [] => 'No available-for-use depreciation adjustment record links to this journal.',
+                    !$assetMatches => 'Available-for-use depreciation adjustment asset does not match the journal reference.',
+                    !$periodMatches => 'Available-for-use depreciation adjustment period does not match the journal reference.',
+                    !$dateMatches => 'Available-for-use depreciation adjustment date does not match the journal date.',
+                    default => 'Available-for-use depreciation adjustment amount does not reconcile to the journal totals.',
                 },
             ];
         }

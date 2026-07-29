@@ -365,7 +365,7 @@ $harness->run(
 
         $harness->check(
             \eel_accounts\Service\JournalSourceEvidenceService::class,
-            'rejects linked asset journals when their dates or totals do not reconcile',
+            'rejects invalid linked asset journals and verifies available-for-use adjustments',
             static function () use ($harness, $service): void {
                 InterfaceDB::beginTransaction();
                 try {
@@ -507,6 +507,54 @@ $harness->run(
                         '2025-09-30',
                         90.00
                     );
+                    $legacyAvailableForUseJournalId = journalSourceEvidenceTestJournal(
+                        $companyId,
+                        $periodId,
+                        StandardNominalTestFixture::id('6200'),
+                        'asset_depreciation',
+                        'asset:' . $activeAssetId . ':available-for-use-adjustment:' . $periodId,
+                        '2025-11-30',
+                        1.80
+                    );
+                    InterfaceDB::prepareExecute(
+                        'INSERT INTO asset_depreciation_adjustments (
+                            asset_id, accounting_period_id, adjustment_date, amount, reason, journal_id
+                         ) VALUES (
+                            :asset_id, :accounting_period_id, :adjustment_date, :amount, :reason, :journal_id
+                         )',
+                        [
+                            'asset_id' => $activeAssetId,
+                            'accounting_period_id' => $periodId,
+                            'adjustment_date' => '2025-11-30',
+                            'amount' => -1.80,
+                            'reason' => 'Available-for-use evidence fixture.',
+                            'journal_id' => $legacyAvailableForUseJournalId,
+                        ]
+                    );
+                    $revisionedAvailableForUseJournalId = journalSourceEvidenceTestJournal(
+                        $companyId,
+                        $periodId,
+                        StandardNominalTestFixture::id('6200'),
+                        'asset_depreciation',
+                        'asset:' . $activeAssetId . ':available-for-use-adjustment:' . $periodId . ':revision:1',
+                        '2025-12-15',
+                        0.05
+                    );
+                    InterfaceDB::prepareExecute(
+                        'INSERT INTO asset_depreciation_adjustments (
+                            asset_id, accounting_period_id, adjustment_date, amount, reason, journal_id
+                         ) VALUES (
+                            :asset_id, :accounting_period_id, :adjustment_date, :amount, :reason, :journal_id
+                         )',
+                        [
+                            'asset_id' => $activeAssetId,
+                            'accounting_period_id' => $periodId,
+                            'adjustment_date' => '2025-12-15',
+                            'amount' => 0.05,
+                            'reason' => 'Available-for-use evidence fixture revision.',
+                            'journal_id' => $revisionedAvailableForUseJournalId,
+                        ]
+                    );
 
                     $results = $service->verify([
                         [
@@ -533,6 +581,22 @@ $harness->run(
                             'debit_total' => 90.00,
                             'credit_total' => 90.00,
                         ],
+                        [
+                            'id' => $legacyAvailableForUseJournalId,
+                            'source_type' => 'asset_depreciation',
+                            'source_ref' => 'asset:' . $activeAssetId . ':available-for-use-adjustment:' . $periodId,
+                            'journal_date' => '2025-11-30',
+                            'debit_total' => 1.80,
+                            'credit_total' => 1.80,
+                        ],
+                        [
+                            'id' => $revisionedAvailableForUseJournalId,
+                            'source_type' => 'asset_depreciation',
+                            'source_ref' => 'asset:' . $activeAssetId . ':available-for-use-adjustment:' . $periodId . ':revision:1',
+                            'journal_date' => '2025-12-15',
+                            'debit_total' => 0.05,
+                            'credit_total' => 0.05,
+                        ],
                     ], $companyId, $periodId);
 
                     foreach ([$purchaseJournalId, $depreciationJournalId, $disposalJournalId] as $journalId) {
@@ -540,6 +604,13 @@ $harness->run(
                         $harness->assertTrue(str_contains(
                             (string)($results[$journalId]['reason'] ?? ''),
                             'does not reconcile'
+                        ));
+                    }
+                    foreach ([$legacyAvailableForUseJournalId, $revisionedAvailableForUseJournalId] as $journalId) {
+                        $harness->assertSame(true, (bool)($results[$journalId]['verified'] ?? false));
+                        $harness->assertTrue(str_contains(
+                            (string)($results[$journalId]['reason'] ?? ''),
+                            'Available-for-use depreciation adjustment'
                         ));
                     }
                 } finally {

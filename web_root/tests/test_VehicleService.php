@@ -18,6 +18,43 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('1320', \eel_accounts\Service\AssetService::assetNominalCodesForCategory('unreviewed_vehicle')['cost']);
         });
 
+        $harness->check(\eel_accounts\Service\VehicleService::class, 'uses the company vehicle nominal defaults for detection and reclassification', static function () use ($harness, $service): void {
+            vehicleServiceFixture('company-defaults', static function (array $fixture) use ($harness, $service): void {
+                $settings = new \eel_accounts\Store\CompanySettingsStore((int)$fixture['company_id']);
+                $settings->set('motor_vehicle_asset_cost_nominal_id', vehicleServiceNominalId('1300'));
+                $settings->set('van_asset_cost_nominal_id', vehicleServiceNominalId('1310'));
+                $settings->set('car_asset_cost_nominal_id', vehicleServiceNominalId('1350'));
+                $settings->flush();
+
+                \InterfaceDB::prepareExecute(
+                    'UPDATE asset_register SET nominal_account_id = :nominal_account_id WHERE id = :id',
+                    ['nominal_account_id' => vehicleServiceNominalId('1300'), 'id' => $fixture['transaction_asset_id']]
+                );
+                \InterfaceDB::prepareExecute(
+                    'UPDATE transactions SET nominal_account_id = :nominal_account_id WHERE id = :id',
+                    ['nominal_account_id' => vehicleServiceNominalId('1300'), 'id' => $fixture['transaction_id']]
+                );
+
+                $register = $service->fetchRegister((int)$fixture['company_id'], (int)$fixture['period_id']);
+                $rowIds = array_map(static fn(array $row): int => (int)($row['id'] ?? 0), (array)($register['rows'] ?? []));
+                $harness->assertTrue(in_array((int)$fixture['transaction_asset_id'], $rowIds, true));
+
+                $result = $service->saveVehicleDetails(
+                    (int)$fixture['company_id'],
+                    (int)$fixture['transaction_asset_id'],
+                    ['vehicle_type' => 'car', 'acquisition_condition' => 'second_hand', 'co2_emissions_g_km' => '90'],
+                    vehicleServiceNominalId('1000'),
+                    'test'
+                );
+
+                $harness->assertSame(true, (bool)($result['success'] ?? false));
+                $harness->assertSame(vehicleServiceNominalId('1350'), (int)\InterfaceDB::fetchColumn(
+                    'SELECT nominal_account_id FROM asset_register WHERE id = :id',
+                    ['id' => $fixture['transaction_asset_id']]
+                ));
+            });
+        });
+
         $harness->check(\eel_accounts\Service\VehicleService::class, 'saving car details updates linked transaction asset and journal nominal', static function () use ($harness, $service): void {
             vehicleServiceFixture('car-transaction', static function (array $fixture) use ($harness, $service): void {
                 \InterfaceDB::prepareExecute(

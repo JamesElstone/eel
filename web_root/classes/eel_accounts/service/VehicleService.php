@@ -84,7 +84,7 @@ final class VehicleService
             ];
         }
 
-        $vehicleNominalIds = $this->vehicleNominalIds();
+        $vehicleNominalIds = $this->vehicleNominalIds($companyId);
         if ($vehicleNominalIds === []) {
             return [
                 'schema_ready' => true,
@@ -92,7 +92,7 @@ final class VehicleService
                 'acquisition_conditions' => self::acquisitionConditionOptions(),
                 'vehicle_colours' => self::vehicleColourOptions(),
                 'rows' => [],
-                'warnings' => ['Vehicle nominal accounts 1320, 1321, and 1322 are not all available.'],
+                'warnings' => ['Set the Motor Vehicle, Van, and Car asset-cost defaults before using the vehicle register.'],
             ];
         }
 
@@ -102,6 +102,14 @@ final class VehicleService
         if ($accountingPeriodId > 0) {
             $params['accounting_period_id'] = $accountingPeriodId;
         }
+
+        $vehicleNominalPlaceholders = [];
+        foreach ($vehicleNominalIds as $index => $nominalId) {
+            $key = 'vehicle_nominal_id_' . $index;
+            $vehicleNominalPlaceholders[] = ':' . $key;
+            $params[$key] = $nominalId;
+        }
+        $vehicleNominalInClause = implode(', ', $vehicleNominalPlaceholders);
 
         $rows = \InterfaceDB::fetchAll(
             'SELECT ar.id,
@@ -120,7 +128,9 @@ final class VehicleService
                     ar.linked_journal_id,
                     na.code AS nominal_code,
                     na.name AS nominal_name,
+                    t.nominal_account_id AS transaction_nominal_id,
                     tn.code AS transaction_nominal_code,
+                    ecl.nominal_account_id AS expense_nominal_id,
                     en.code AS expense_nominal_code,
                     vd.vehicle_type,
                     vd.registration_mark,
@@ -145,9 +155,9 @@ final class VehicleService
              LEFT JOIN journals j ON j.id = ar.linked_journal_id
              WHERE ar.company_id = :company_id' . $periodClause . '
                AND (
-                   na.code IN (\'1320\', \'1321\', \'1322\')
-                   OR tn.code IN (\'1320\', \'1321\', \'1322\')
-                   OR en.code IN (\'1320\', \'1321\', \'1322\')
+                   na.id IN (' . $vehicleNominalInClause . ')
+                   OR tn.id IN (' . $vehicleNominalInClause . ')
+                   OR en.id IN (' . $vehicleNominalInClause . ')
                    OR vd.asset_id IS NOT NULL
                )
              ORDER BY ar.purchase_date DESC, ar.id DESC',
@@ -156,8 +166,8 @@ final class VehicleService
 
         $warnings = [];
         foreach ($rows as $index => $row) {
-            $integrity = $this->integrityWarning($row);
-            $taxWarnings = $this->taxWarnings($row);
+            $integrity = $this->integrityWarning($row, $vehicleNominalIds);
+            $taxWarnings = $this->taxWarnings($row, $this->motorVehicleNominalId($companyId));
             $rows[$index]['warnings'] = array_values(array_filter(array_merge([$integrity], $taxWarnings)));
             foreach ($rows[$index]['warnings'] as $warning) {
                 $warnings[] = $warning;
@@ -194,7 +204,7 @@ final class VehicleService
             return ['success' => false, 'errors' => $normalised['errors']];
         }
 
-        $targetNominalId = $this->nominalIdForVehicleType((string)$normalised['values']['vehicle_type']);
+        $targetNominalId = $this->nominalIdForVehicleType($companyId, (string)$normalised['values']['vehicle_type']);
         if ($targetNominalId <= 0) {
             return ['success' => false, 'errors' => ['The required motor vehicle nominal is missing.']];
         }
@@ -245,15 +255,11 @@ final class VehicleService
             return;
         }
 
-        $vehicleIds = $this->vehicleNominalIds();
-        if ($vehicleIds === []) {
-            return;
-        }
-
         $transaction = \InterfaceDB::fetchOne(
-            'SELECT nominal_account_id FROM transactions WHERE id = :id LIMIT 1',
+            'SELECT company_id, nominal_account_id FROM transactions WHERE id = :id LIMIT 1',
             ['id' => $transactionId]
         );
+        $vehicleIds = $this->vehicleNominalIds((int)($transaction['company_id'] ?? 0));
         if ($transaction === null || in_array((int)($transaction['nominal_account_id'] ?? 0), $vehicleIds, true)) {
             return;
         }
@@ -274,15 +280,14 @@ final class VehicleService
             return;
         }
 
-        $vehicleIds = $this->vehicleNominalIds();
-        if ($vehicleIds === []) {
-            return;
-        }
-
         $line = \InterfaceDB::fetchOne(
-            'SELECT nominal_account_id FROM expense_claim_lines WHERE id = :id LIMIT 1',
+            'SELECT ecl.nominal_account_id, ec.company_id
+             FROM expense_claim_lines ecl
+             INNER JOIN expense_claims ec ON ec.id = ecl.expense_claim_id
+             WHERE ecl.id = :id LIMIT 1',
             ['id' => $lineId]
         );
+        $vehicleIds = $this->vehicleNominalIds((int)($line['company_id'] ?? 0));
         if ($line === null || in_array((int)($line['nominal_account_id'] ?? 0), $vehicleIds, true)) {
             return;
         }
@@ -301,10 +306,11 @@ final class VehicleService
     {
         $register = $this->fetchRegister($companyId, $accountingPeriodId);
         $warnings = [];
+        $motorVehicleNominalId = $this->motorVehicleNominalId($companyId);
 
         foreach ((array)($register['rows'] ?? []) as $row) {
-            if ((string)($row['nominal_code'] ?? '') === '1320') {
-                $warnings[] = 'Motor vehicle asset ' . (string)($row['asset_code'] ?? '') . ' is still in default nominal 1320. Review it on the Vehicles page before relying on capital allowances.';
+            if ((int)($row['nominal_account_id'] ?? 0) === $motorVehicleNominalId) {
+                $warnings[] = 'Motor vehicle asset ' . (string)($row['asset_code'] ?? '') . ' is still in the configured default vehicle nominal. Review it on the Vehicles page before relying on capital allowances.';
             }
             foreach ((array)($row['warnings'] ?? []) as $warning) {
                 $warnings[] = (string)$warning;
@@ -571,7 +577,7 @@ final class VehicleService
             (int)($asset['company_id'] ?? 0),
             $lineId,
             $targetNominalId,
-            $this->assetCategoryForNominalId($targetNominalId)
+            $this->assetCategoryForNominalId((int)($asset['company_id'] ?? 0), $targetNominalId)
         );
         if (empty($result['success'])) {
             throw new \RuntimeException(implode(' ', array_map('strval', (array)($result['errors'] ?? ['Expense claim asset journal could not be rebuilt.']))));
@@ -689,12 +695,14 @@ final class VehicleService
         return (int)($correction['replacement_journal_id'] ?? 0) ?: $journalId;
     }
 
-    private function nominalIdForVehicleType(string $vehicleType): int
+    private function nominalIdForVehicleType(int $companyId, string $vehicleType): int
     {
+        $mapping = $this->vehicleNominalMapping($companyId);
+
         return match ($vehicleType) {
-            'car' => $this->findNominalIdByCode('1321'),
-            'van', 'lorry_truck', 'motorcycle', 'other_commercial' => $this->findNominalIdByCode('1322'),
-            default => $this->findNominalIdByCode('1320'),
+            'car' => $mapping['car'],
+            'van', 'lorry_truck', 'motorcycle', 'other_commercial' => $mapping['van'],
+            default => $mapping['motor_vehicle'],
         };
     }
 
@@ -707,30 +715,40 @@ final class VehicleService
         };
     }
 
-    private function assetCategoryForNominalId(int $nominalId): string
+    private function assetCategoryForNominalId(int $companyId, int $nominalId): string
     {
-        if ($nominalId === $this->findNominalIdByCode('1321')) {
+        $mapping = $this->vehicleNominalMapping($companyId);
+        if ($nominalId === $mapping['car']) {
             return 'car';
         }
 
-        if ($nominalId === $this->findNominalIdByCode('1322')) {
+        if ($nominalId === $mapping['van']) {
             return 'van';
         }
 
         return 'motor_vehicle';
     }
 
-    private function vehicleNominalIds(): array
+    private function vehicleNominalIds(int $companyId): array
     {
-        $ids = [];
-        foreach (self::vehicleNominalCodes() as $code) {
-            $id = $this->findNominalIdByCode($code);
-            if ($id > 0) {
-                $ids[] = $id;
-            }
-        }
+        return array_values(array_unique(array_filter($this->vehicleNominalMapping($companyId))));
+    }
 
-        return $ids;
+    /** @return array{motor_vehicle: int, van: int, car: int} */
+    private function vehicleNominalMapping(int $companyId): array
+    {
+        $settings = $companyId > 0 ? (new \eel_accounts\Store\CompanySettingsStore($companyId))->all() : [];
+
+        return [
+            'motor_vehicle' => (int)($settings['motor_vehicle_asset_cost_nominal_id'] ?? 0) ?: $this->findNominalIdByCode('1320'),
+            'van' => (int)($settings['van_asset_cost_nominal_id'] ?? 0) ?: $this->findNominalIdByCode('1322'),
+            'car' => (int)($settings['car_asset_cost_nominal_id'] ?? 0) ?: $this->findNominalIdByCode('1321'),
+        ];
+    }
+
+    private function motorVehicleNominalId(int $companyId): int
+    {
+        return $this->vehicleNominalMapping($companyId)['motor_vehicle'];
     }
 
     private function findNominalIdByCode(string $code): int
@@ -741,7 +759,7 @@ final class VehicleService
         );
     }
 
-    private function integrityWarning(array $row): string
+    private function integrityWarning(array $row, array $vehicleNominalIds): string
     {
         $hasVehicleDetails = trim((string)($row['vehicle_type'] ?? '')) !== '';
         if (!$hasVehicleDetails) {
@@ -749,12 +767,12 @@ final class VehicleService
         }
 
         $nominals = array_filter([
-            (string)($row['nominal_code'] ?? ''),
-            (string)($row['transaction_nominal_code'] ?? ''),
-            (string)($row['expense_nominal_code'] ?? ''),
+            (int)($row['nominal_account_id'] ?? 0),
+            (int)($row['transaction_nominal_id'] ?? 0),
+            (int)($row['expense_nominal_id'] ?? 0),
         ]);
-        foreach ($nominals as $code) {
-            if (in_array($code, self::vehicleNominalCodes(), true)) {
+        foreach ($nominals as $nominalId) {
+            if (in_array($nominalId, $vehicleNominalIds, true)) {
                 return '';
             }
         }
@@ -762,12 +780,12 @@ final class VehicleService
         return 'Vehicle details exist for asset ' . (string)($row['asset_code'] ?? '') . ', but the linked source no longer uses a vehicle nominal.';
     }
 
-    private function taxWarnings(array $row): array
+    private function taxWarnings(array $row, int $motorVehicleNominalId): array
     {
         $warnings = [];
         $vehicleType = (string)($row['vehicle_type'] ?? 'unreviewed');
-        if ((string)($row['nominal_code'] ?? '') === '1320') {
-            $warnings[] = 'Asset ' . (string)($row['asset_code'] ?? '') . ' remains in default vehicle nominal 1320.';
+        if ((int)($row['nominal_account_id'] ?? 0) === $motorVehicleNominalId) {
+            $warnings[] = 'Asset ' . (string)($row['asset_code'] ?? '') . ' remains in the configured default vehicle nominal.';
         }
         if ($vehicleType === 'car') {
             if (trim((string)($row['acquisition_condition'] ?? '')) === '') {

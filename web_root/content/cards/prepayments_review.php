@@ -226,8 +226,8 @@ final class _prepayments_reviewCard extends CardBaseFramework
                         <label class="prepayment-date-field" for="' . HelperFramework::escape($formId) . '-service-end-date">Service end
                             <input class="input" id="' . HelperFramework::escape($formId) . '-service-end-date" type="date" name="service_end_date" value="' . HelperFramework::escape($serviceEnd) . '" required>
                         </label>
+                        <button class="button primary" type="submit">Save</button>
                     </span>
-                    <button class="button primary" type="submit">Save</button>
                 </form>') . '
             </td>
         </tr>';

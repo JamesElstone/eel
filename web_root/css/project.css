@@ -411,6 +411,11 @@
   width: auto;
 }
 
+.prepayment-date-actions .button {
+  align-self: flex-end;
+  margin-bottom: 0;
+}
+
 .prepayment-date-field {
   display: grid;
   gap: 4px;

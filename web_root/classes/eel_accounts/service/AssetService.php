@@ -271,6 +271,9 @@ final class AssetService
             return [];
         }
 
+        $parentClause = \InterfaceDB::columnExists('asset_register', 'parent_asset_id')
+            ? ' AND ar.parent_asset_id IS NULL'
+            : '';
         $assets = \InterfaceDB::fetchAll( 'SELECT ar.*,
                     COALESCE(ar.cost, 0) - COALESCE(dep.accumulated_depreciation, 0) AS nbv,
                     COALESCE(dep.accumulated_depreciation, 0) AS accumulated_depreciation,
@@ -285,13 +288,17 @@ final class AssetService
                 WHERE dep_ar.company_id = :depreciation_company_id
                 GROUP BY ade.asset_id
              ) dep ON dep.asset_id = ar.id
-             WHERE ar.company_id = :company_id
+             WHERE ar.company_id = :company_id' . $parentClause . '
              ORDER BY ar.purchase_date DESC, ar.id DESC', [
                 'company_id' => $companyId,
                 'depreciation_company_id' => $companyId,
              ]);
 
-        return $this->assetsWithPeriodDepreciation($assets ?: [], $companyId, $accountingPeriodId);
+        return $this->assetsWithPeriodDepreciation(
+            $this->hydrateAccountingAssetAmounts($assets ?: []),
+            $companyId,
+            $accountingPeriodId
+        );
     }
 
     private function fetchRegisterAssets(int $companyId, int $accountingPeriodId = 0): array {
@@ -304,12 +311,20 @@ final class AssetService
         }
 
         $cutoffDate = $this->registerCutoffDate($companyId, $accountingPeriodId);
+        $parentClause = \InterfaceDB::columnExists('asset_register', 'parent_asset_id')
+            ? ' AND ar.parent_asset_id IS NULL'
+            : '';
         $assets = \InterfaceDB::fetchAll(
             'SELECT ar.id,
                     ar.asset_code,
                     ar.description,
                     ar.nominal_account_id,
                     ar.purchase_date,
+                    ar.available_for_use_date,
+                    ar.available_for_use_evidence,
+                    ar.parent_asset_id,
+                    ar.component_role,
+                    ar.supplier_description,
                     ar.cost,
                     ar.useful_life_years,
                     ar.depreciation_method,
@@ -332,7 +347,7 @@ final class AssetService
                 GROUP BY ade.asset_id
              ) dep ON dep.asset_id = ar.id
              WHERE ar.company_id = :company_id
-               AND ar.purchase_date <= :cutoff_date
+               AND ar.purchase_date <= :cutoff_date' . $parentClause . '
              ORDER BY ar.purchase_date DESC, ar.id DESC',
             [
                 'company_id' => $companyId,
@@ -341,7 +356,11 @@ final class AssetService
             ]
         );
 
-        return $this->assetsWithPeriodDepreciation($assets ?: [], $companyId, $accountingPeriodId);
+        return $this->assetsWithPeriodDepreciation(
+            $this->hydrateAccountingAssetAmounts($assets ?: []),
+            $companyId,
+            $accountingPeriodId
+        );
     }
 
     private function registerCutoffDate(int $companyId, int $accountingPeriodId): string
@@ -1322,12 +1341,17 @@ final class AssetService
 
         try {
             foreach ($assets as $asset) {
-                $periodStart = max((string)$accountingPeriod['period_start'], (string)$asset['purchase_date']);
+                $availableForUseDate = $this->depreciationStartDate($asset);
+                if (!$this->isIsoDate($availableForUseDate)) {
+                    $summary['skipped']++;
+                    continue;
+                }
+                $periodStart = max((string)$accountingPeriod['period_start'], $availableForUseDate);
                 $periodEnd = (string)$accountingPeriod['period_end'];
                 if ((string)($asset['status'] ?? 'active') === 'disposed' && trim((string)($asset['disposal_date'] ?? '')) !== '') {
                     $periodEnd = min($periodEnd, (string)$asset['disposal_date']);
                 }
-                $periodEnd = min($periodEnd, $this->usefulLifeEndDate((string)$asset['purchase_date'], (int)($asset['useful_life_years'] ?? 1)));
+                $periodEnd = min($periodEnd, $this->usefulLifeEndDate($availableForUseDate, (int)($asset['useful_life_years'] ?? 1)));
 
                 if ($periodEnd < $periodStart) {
                     $summary['skipped']++;
@@ -1416,20 +1440,24 @@ final class AssetService
         }
 
         $assets = $this->fetchDepreciableAssets($companyId, (string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end']);
-        $postedDepreciationByAsset = $this->fetchDepreciationByAsset($companyId, $accountingPeriodId);
         $rows = [];
         $total = 0.0;
         $skipped = 0;
 
         foreach ($assets as $asset) {
-            $depreciationPeriodStart = max((string)$accountingPeriod['period_start'], (string)$asset['purchase_date']);
+            $availableForUseDate = $this->depreciationStartDate($asset);
+            if (!$this->isIsoDate($availableForUseDate)) {
+                $skipped++;
+                continue;
+            }
+            $depreciationPeriodStart = max((string)$accountingPeriod['period_start'], $availableForUseDate);
             $depreciationPeriodEnd = (string)$accountingPeriod['period_end'];
             if ((string)($asset['status'] ?? 'active') === 'disposed' && trim((string)($asset['disposal_date'] ?? '')) !== '') {
                 $depreciationPeriodEnd = min($depreciationPeriodEnd, (string)$asset['disposal_date']);
             }
             $depreciationPeriodEnd = min(
                 $depreciationPeriodEnd,
-                $this->usefulLifeEndDate((string)$asset['purchase_date'], (int)($asset['useful_life_years'] ?? 1))
+                $this->usefulLifeEndDate($availableForUseDate, (int)($asset['useful_life_years'] ?? 1))
             );
 
             if ($depreciationPeriodEnd < $depreciationPeriodStart) {
@@ -1442,7 +1470,7 @@ final class AssetService
                 $depreciationPeriodStart,
                 $depreciationPeriodEnd
             );
-            $postedPeriodAmount = (float)($postedDepreciationByAsset[(int)$asset['id']] ?? 0.0);
+            $postedPeriodAmount = $this->sumDepreciationForAccountingPeriod((int)$asset['id'], $accountingPeriodId);
             $amount = round(max(0.0, $expectedPeriodAmount - $postedPeriodAmount), 2);
             if ($amount <= 0) {
                 $skipped++;
@@ -1487,14 +1515,14 @@ final class AssetService
         string $periodEnd
     ): float {
         $boundedPeriodEnd = $this->boundedDepreciationPeriodEnd($asset, $periodStart, $periodEnd);
-        $purchaseDate = trim((string)($asset['purchase_date'] ?? ''));
-        if ($boundedPeriodEnd === null || !$this->isIsoDate($purchaseDate)) {
+        $availableForUseDate = $this->depreciationStartDate($asset);
+        if ($boundedPeriodEnd === null || !$this->isIsoDate($availableForUseDate)) {
             return 0.0;
         }
 
         $closingTarget = $this->calculateDepreciationToDateAmount($asset, $boundedPeriodEnd);
         $openingDate = (new \DateTimeImmutable($periodStart))->modify('-1 day')->format('Y-m-d');
-        $openingTarget = $openingDate >= $purchaseDate
+        $openingTarget = $openingDate >= $availableForUseDate
             ? $this->calculateDepreciationToDateAmount($asset, $openingDate)
             : 0.0;
 
@@ -1503,16 +1531,26 @@ final class AssetService
 
     private function sumDepreciationForAccountingPeriod(int $assetId, int $accountingPeriodId): float
     {
-        return round((float)\InterfaceDB::fetchColumn(
+        $assetIds = $this->assetGroupIds($assetId);
+        $placeholders = implode(', ', array_fill(0, count($assetIds), '?'));
+        $amount = (float)\InterfaceDB::fetchColumn(
             'SELECT COALESCE(SUM(amount), 0)
              FROM asset_depreciation_entries
-             WHERE asset_id = :asset_id
-               AND accounting_period_id = :accounting_period_id',
-            [
-                'asset_id' => $assetId,
-                'accounting_period_id' => $accountingPeriodId,
-            ]
-        ), 2);
+             WHERE asset_id IN (' . $placeholders . ')
+               AND accounting_period_id = ?',
+            array_merge($assetIds, [$accountingPeriodId])
+        );
+        if (\InterfaceDB::tableExists('asset_depreciation_adjustments')) {
+            $amount += (float)\InterfaceDB::fetchColumn(
+                'SELECT COALESCE(SUM(amount), 0)
+                 FROM asset_depreciation_adjustments
+                 WHERE asset_id = :asset_id
+                   AND accounting_period_id = :accounting_period_id',
+                ['asset_id' => $assetId, 'accounting_period_id' => $accountingPeriodId]
+            );
+        }
+
+        return round($amount, 2);
     }
 
     public function disposeAsset(int $companyId, int $assetId, string $disposalDate, float $proceeds, int $bankNominalId): array {
@@ -1761,6 +1799,123 @@ final class AssetService
         $correction['messages'] = ['The disposal journal was reversed and rebuilt from the recorded asset facts.'];
 
         return $correction;
+    }
+
+    /**
+     * Link pre-use expenditure to its operational parent and reconcile only the
+     * accounting depreciation. Source asset rows and their tax expenditure
+     * dates remain unchanged for audit and capital-allowance purposes.
+     *
+     * @param list<int> $directlyAttributableAssetIds
+     * @return array<string,mixed>
+     */
+    public function configureAvailableForUseAsset(
+        int $companyId,
+        int $assetId,
+        string $availableForUseDate,
+        array $directlyAttributableAssetIds,
+        int $accountingPeriodId,
+        string $changedBy = 'web_app',
+        string $evidence = ''
+    ): array {
+        if (!\InterfaceDB::columnExists('asset_register', 'available_for_use_date')
+            || !\InterfaceDB::columnExists('asset_register', 'parent_asset_id')
+            || !\InterfaceDB::tableExists('asset_depreciation_adjustments')) {
+            return ['success' => false, 'errors' => ['Run the available-for-use asset migration before configuring this asset.']];
+        }
+        if (!$this->isIsoDate($availableForUseDate)) {
+            return ['success' => false, 'errors' => ['Record a valid available-for-use date.']];
+        }
+
+        $asset = $this->fetchAsset($companyId, $assetId);
+        if ($asset === null) {
+            return ['success' => false, 'errors' => ['The parent asset could not be found.']];
+        }
+        (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'change available-for-use asset evidence in this period');
+
+        $componentIds = array_values(array_unique(array_filter(array_map('intval', $directlyAttributableAssetIds), static fn(int $id): bool => $id > 0 && $id !== $assetId)));
+        $transaction = $this->beginAssetMutationTransaction('asset_available_for_use');
+        try {
+            \InterfaceDB::prepareExecute(
+                'UPDATE asset_register
+                 SET available_for_use_date = :available_for_use_date,
+                     available_for_use_evidence = :available_for_use_evidence,
+                     component_role = :component_role,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = :id AND company_id = :company_id',
+                [
+                    'available_for_use_date' => $availableForUseDate,
+                    'available_for_use_evidence' => trim($evidence) !== '' ? trim($evidence) : null,
+                    'component_role' => 'operational_parent',
+                    'id' => $assetId,
+                    'company_id' => $companyId,
+                ]
+            );
+            foreach ($componentIds as $componentId) {
+                $component = $this->fetchAsset($companyId, $componentId);
+                if ($component === null) {
+                    throw new \RuntimeException('A directly attributable asset record could not be found.');
+                }
+                $componentPurchaseDate = trim((string)($component['purchase_date'] ?? ''));
+                if (!$this->isIsoDate($componentPurchaseDate) || $componentPurchaseDate > $availableForUseDate) {
+                    throw new \RuntimeException(
+                        'A directly attributable pre-use cost must be incurred on or before the available-for-use date. '
+                        . 'Record a later replacement separately.'
+                    );
+                }
+                \InterfaceDB::prepareExecute(
+                    'UPDATE asset_register
+                     SET parent_asset_id = :parent_asset_id,
+                         component_role = :component_role,
+                         updated_at = CURRENT_TIMESTAMP
+                     WHERE id = :id AND company_id = :company_id',
+                    [
+                        'parent_asset_id' => $assetId,
+                        'component_role' => 'directly_attributable_pre_use',
+                        'id' => $componentId,
+                        'company_id' => $companyId,
+                    ]
+                );
+            }
+
+            $parent = $this->hydrateDirectlyAttributableCosts([$this->fetchAsset($companyId, $assetId) ?? $asset])[0];
+            $period = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+            if ($period === null) {
+                throw new \RuntimeException('The accounting period could not be loaded.');
+            }
+            $periodEnd = (string)$period['period_end'];
+            $expected = $this->calculateDepreciationToDateAmount($parent, $periodEnd);
+            $posted = $this->sumDepreciationToDate($assetId, $periodEnd);
+            $adjustment = round($expected - $posted, 2);
+            $journalId = 0;
+            if (abs($adjustment) >= 0.005) {
+                $journalId = $this->postAvailableForUseDepreciationAdjustment(
+                    $companyId,
+                    $parent,
+                    $accountingPeriodId,
+                    $periodEnd,
+                    $adjustment
+                );
+            }
+
+            $this->commitAssetMutationTransaction($transaction);
+            \eel_accounts\Support\RequestCache::clear();
+
+            return [
+                'success' => true,
+                'asset_id' => $assetId,
+                'component_asset_ids' => $componentIds,
+                'available_for_use_date' => $availableForUseDate,
+                'accounting_cost' => $this->depreciableCost($parent),
+                'expected_depreciation' => $expected,
+                'depreciation_adjustment' => $adjustment,
+                'journal_id' => $journalId ?: null,
+            ];
+        } catch (\Throwable $exception) {
+            $this->rollBackAssetMutationTransaction($transaction);
+
+            return ['success' => false, 'errors' => [$exception->getMessage()]];
+        }
     }
 
     public function fetchTaxView(int $companyId, int $accountingPeriodId): ?array {
@@ -2109,16 +2264,16 @@ final class AssetService
         }
 
         $assetId = (int)($asset['id'] ?? 0);
-        $purchaseDate = trim((string)($asset['purchase_date'] ?? ''));
-        if ($assetId <= 0 || !$this->isIsoDate($purchaseDate) || !$this->isIsoDate($disposalDate)) {
+        $availableForUseDate = $this->depreciationStartDate($asset);
+        if ($assetId <= 0 || !$this->isIsoDate($availableForUseDate) || !$this->isIsoDate($disposalDate)) {
             return;
         }
 
         $depreciationEnd = min(
             $disposalDate,
-            $this->usefulLifeEndDate($purchaseDate, (int)($asset['useful_life_years'] ?? 1))
+            $this->usefulLifeEndDate($availableForUseDate, (int)($asset['useful_life_years'] ?? 1))
         );
-        if ($depreciationEnd < $purchaseDate) {
+        if ($depreciationEnd < $availableForUseDate) {
             return;
         }
 
@@ -2138,7 +2293,7 @@ final class AssetService
             $accountingPeriodStart
         );
 
-        $periodStart = max($purchaseDate, $accountingPeriodStart);
+        $periodStart = max($availableForUseDate, $accountingPeriodStart);
         if ($periodStart > $depreciationEnd) {
             return;
         }
@@ -2200,16 +2355,16 @@ final class AssetService
         string $currentPeriodStart
     ): void {
         $assetId = (int)($asset['id'] ?? 0);
-        $purchaseDate = trim((string)($asset['purchase_date'] ?? ''));
-        if ($assetId <= 0 || !$this->isIsoDate($purchaseDate) || !$this->isIsoDate($currentPeriodStart)) {
+        $availableForUseDate = $this->depreciationStartDate($asset);
+        if ($assetId <= 0 || !$this->isIsoDate($availableForUseDate) || !$this->isIsoDate($currentPeriodStart)) {
             return;
         }
 
         $priorPeriodEnd = min(
             (new \DateTimeImmutable($currentPeriodStart))->modify('-1 day')->format('Y-m-d'),
-            $this->usefulLifeEndDate($purchaseDate, (int)($asset['useful_life_years'] ?? 1))
+            $this->usefulLifeEndDate($availableForUseDate, (int)($asset['useful_life_years'] ?? 1))
         );
-        if ($priorPeriodEnd < $purchaseDate) {
+        if ($priorPeriodEnd < $availableForUseDate) {
             return;
         }
 
@@ -2218,18 +2373,18 @@ final class AssetService
              FROM accounting_periods
              WHERE company_id = :company_id
                AND period_start <= :prior_period_end
-               AND period_end >= :purchase_date
+               AND period_end >= :available_for_use_date
                AND period_end < :current_period_start
              ORDER BY period_start ASC, id ASC',
             [
                 'company_id' => $companyId,
                 'prior_period_end' => $priorPeriodEnd,
-                'purchase_date' => $purchaseDate,
+                'available_for_use_date' => $availableForUseDate,
                 'current_period_start' => $currentPeriodStart,
             ]
         ) ?: [];
         foreach ($priorPeriods as $priorPeriod) {
-            $periodStart = max($purchaseDate, (string)($priorPeriod['period_start'] ?? ''));
+            $periodStart = max($availableForUseDate, (string)($priorPeriod['period_start'] ?? ''));
             $periodEnd = min($priorPeriodEnd, (string)($priorPeriod['period_end'] ?? ''));
             if ($periodEnd < $periodStart) {
                 continue;
@@ -2406,6 +2561,60 @@ final class AssetService
         );
     }
 
+    private function postAvailableForUseDepreciationAdjustment(
+        int $companyId,
+        array $asset,
+        int $accountingPeriodId,
+        string $adjustmentDate,
+        float $amount
+    ): int {
+        $assetId = (int)($asset['id'] ?? 0);
+        if ($assetId <= 0 || abs($amount) < 0.005) {
+            return 0;
+        }
+
+        $revision = (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*) FROM asset_depreciation_adjustments
+             WHERE asset_id = :asset_id AND accounting_period_id = :accounting_period_id',
+            ['asset_id' => $assetId, 'accounting_period_id' => $accountingPeriodId]
+        ) + 1;
+
+        $journalId = $this->insertJournal([
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'source_type' => 'asset_depreciation',
+            'source_ref' => 'asset:' . $assetId . ':available-for-use-adjustment:'
+                . $accountingPeriodId . ':revision:' . $revision,
+            'journal_date' => $adjustmentDate,
+            'description' => 'Available-for-use depreciation adjustment ' . (string)($asset['asset_code'] ?? ''),
+        ]);
+        $lineDescription = 'Adjust depreciation to the evidenced available-for-use date';
+        if ($amount > 0) {
+            $this->insertJournalLine($journalId, $this->findNominalIdByCode('6200'), $amount, 0.0, $lineDescription);
+            $this->insertJournalLine($journalId, (int)$asset['accum_dep_nominal_id'], 0.0, $amount, $lineDescription);
+        } else {
+            $this->insertJournalLine($journalId, (int)$asset['accum_dep_nominal_id'], abs($amount), 0.0, $lineDescription);
+            $this->insertJournalLine($journalId, $this->findNominalIdByCode('6200'), 0.0, abs($amount), $lineDescription);
+        }
+        \InterfaceDB::prepareExecute(
+            'INSERT INTO asset_depreciation_adjustments (
+                asset_id, accounting_period_id, adjustment_date, amount, reason, journal_id
+             ) VALUES (
+                :asset_id, :accounting_period_id, :adjustment_date, :amount, :reason, :journal_id
+             )',
+            [
+                'asset_id' => $assetId,
+                'accounting_period_id' => $accountingPeriodId,
+                'adjustment_date' => $adjustmentDate,
+                'amount' => round($amount, 2),
+                'reason' => 'Available-for-use date and directly attributable pre-use costs reconciled.',
+                'journal_id' => $journalId,
+            ]
+        );
+
+        return $journalId;
+    }
+
     private function availableDepreciationAdjustmentDate(
         int $assetId,
         int $accountingPeriodId,
@@ -2568,20 +2777,83 @@ final class AssetService
     }
 
     private function fetchDepreciableAssets(int $companyId, string $periodStart, string $periodEnd): array {
+        $parentClause = \InterfaceDB::columnExists('asset_register', 'parent_asset_id')
+            ? ' AND parent_asset_id IS NULL'
+            : '';
         $stmt = \InterfaceDB::prepare(
             'SELECT *
              FROM asset_register
              WHERE company_id = :company_id
                AND status IN (\'active\', \'disposed\')
                AND depreciation_method <> \'none\'
-               AND purchase_date <= :period_end
+               AND purchase_date <= :period_end' . $parentClause . '
              ORDER BY purchase_date ASC, id ASC'
         );
         $stmt->execute([
             'company_id' => $companyId,
             'period_end' => $periodEnd,
         ]);
-        return $stmt->fetchAll() ?: [];
+        return $this->hydrateDirectlyAttributableCosts($stmt->fetchAll() ?: []);
+    }
+
+    /** @param list<array<string,mixed>> $assets @return list<array<string,mixed>> */
+    private function hydrateDirectlyAttributableCosts(array $assets): array
+    {
+        if ($assets === [] || !\InterfaceDB::columnExists('asset_register', 'parent_asset_id')) {
+            return $assets;
+        }
+
+        foreach ($assets as $index => $asset) {
+            $assetId = (int)($asset['id'] ?? 0);
+            if ($assetId <= 0) {
+                continue;
+            }
+            $additions = (float)\InterfaceDB::fetchColumn(
+                'SELECT COALESCE(SUM(cost), 0)
+                 FROM asset_register
+                 WHERE parent_asset_id = :parent_asset_id
+                   AND component_role = :component_role',
+                [
+                    'parent_asset_id' => $assetId,
+                    'component_role' => 'directly_attributable_pre_use',
+                ]
+            );
+            $assets[$index]['depreciable_cost'] = round((float)($asset['cost'] ?? 0.0) + $additions, 2);
+            if ($this->depreciationStartDate($assets[$index]) === '') {
+                $assets[$index]['available_for_use_warning'] = 'Record when this asset was available for use before posting depreciation.';
+            }
+        }
+
+        return $assets;
+    }
+
+    /**
+     * Present one operational accounting asset while retaining the source rows
+     * for directly attributable pre-use costs.  The source rows still remain
+     * available to capital-allowance logic, which continues to use their own
+     * expenditure dates.
+     *
+     * @param list<array<string,mixed>> $assets
+     * @return list<array<string,mixed>>
+     */
+    private function hydrateAccountingAssetAmounts(array $assets): array
+    {
+        $assets = $this->hydrateDirectlyAttributableCosts($assets);
+        foreach ($assets as $index => $asset) {
+            $assetId = (int)($asset['id'] ?? 0);
+            if ($assetId <= 0) {
+                continue;
+            }
+
+            $accumulatedDepreciation = $this->sumDepreciationToDate($assetId, '9999-12-31');
+            $assets[$index]['accumulated_depreciation'] = $accumulatedDepreciation;
+            $assets[$index]['nbv'] = round(
+                $this->depreciableCost($assets[$index]) - $accumulatedDepreciation,
+                2
+            );
+        }
+
+        return $assets;
     }
 
     private function assetsWithPeriodDepreciation(array $assets, int $companyId, int $accountingPeriodId): array {
@@ -2619,50 +2891,26 @@ final class AssetService
         }
 
         $cutoffByAssetId = [];
-        $maxCutoff = '';
         foreach ($assets as $asset) {
             $asset = is_array($asset) ? $asset : [];
             $assetId = (int)($asset['id'] ?? 0);
-            $purchaseDate = trim((string)($asset['purchase_date'] ?? ''));
-            if ($assetId <= 0 || !$this->isIsoDate($purchaseDate)) {
+            $availableForUseDate = $this->depreciationStartDate($asset);
+            if ($assetId <= 0 || !$this->isIsoDate($availableForUseDate)) {
                 continue;
             }
 
-            $depreciationPeriodStart = max($periodStart, $purchaseDate);
+            $depreciationPeriodStart = max($periodStart, $availableForUseDate);
             $cutoff = (new \DateTimeImmutable($depreciationPeriodStart))->modify('-1 day')->format('Y-m-d');
             $cutoffByAssetId[$assetId] = $cutoff;
-            $maxCutoff = $maxCutoff === '' ? $cutoff : max($maxCutoff, $cutoff);
         }
 
-        if ($cutoffByAssetId === [] || $maxCutoff === '') {
+        if ($cutoffByAssetId === []) {
             return [];
         }
 
-        $totals = array_fill_keys(array_keys($cutoffByAssetId), 0.0);
-        foreach (array_chunk(array_keys($cutoffByAssetId), 500) as $chunkIndex => $assetIds) {
-            $params = ['max_period_end' => $maxCutoff];
-            $placeholders = [];
-            foreach ($assetIds as $index => $assetId) {
-                $placeholder = 'asset_id_' . $chunkIndex . '_' . $index;
-                $placeholders[] = ':' . $placeholder;
-                $params[$placeholder] = $assetId;
-            }
-
-            foreach (\InterfaceDB::fetchAll(
-                'SELECT asset_id, period_end, amount
-                 FROM asset_depreciation_entries
-                 WHERE asset_id IN (' . implode(', ', $placeholders) . ')
-                   AND period_end <= :max_period_end',
-                $params
-            ) ?: [] as $row) {
-                $assetId = (int)($row['asset_id'] ?? 0);
-                $periodEnd = trim((string)($row['period_end'] ?? ''));
-                if ($assetId <= 0 || $periodEnd === '' || $periodEnd > (string)($cutoffByAssetId[$assetId] ?? '')) {
-                    continue;
-                }
-
-                $totals[$assetId] = round((float)($totals[$assetId] ?? 0.0) + (float)($row['amount'] ?? 0), 2);
-            }
+        $totals = [];
+        foreach ($cutoffByAssetId as $assetId => $cutoff) {
+            $totals[$assetId] = $this->sumDepreciationToDate((int)$assetId, (string)$cutoff);
         }
 
         return $totals;
@@ -2671,12 +2919,12 @@ final class AssetService
     private function calculatePeriodDepreciationAmount(array $asset, array $accountingPeriod, ?float $openingDepreciation = null): float {
         $periodStart = trim((string)($accountingPeriod['period_start'] ?? ''));
         $periodEnd = trim((string)($accountingPeriod['period_end'] ?? ''));
-        $purchaseDate = trim((string)($asset['purchase_date'] ?? ''));
-        if (!$this->isIsoDate($periodStart) || !$this->isIsoDate($periodEnd) || !$this->isIsoDate($purchaseDate)) {
+        $availableForUseDate = $this->depreciationStartDate($asset);
+        if (!$this->isIsoDate($periodStart) || !$this->isIsoDate($periodEnd) || !$this->isIsoDate($availableForUseDate)) {
             return 0.0;
         }
 
-        $depreciationPeriodStart = max($periodStart, $purchaseDate);
+        $depreciationPeriodStart = max($periodStart, $availableForUseDate);
         $depreciationPeriodEnd = $this->periodDepreciationReferenceEnd($periodEnd);
         $disposalDate = trim((string)($asset['disposal_date'] ?? ''));
         if ((string)($asset['status'] ?? 'active') === 'disposed' && $this->isIsoDate($disposalDate)) {
@@ -2710,9 +2958,9 @@ final class AssetService
 
     private function calculateResaleValue(array $asset, array $accountingPeriod): float {
         $periodEnd = trim((string)($accountingPeriod['period_end'] ?? ''));
-        $purchaseDate = trim((string)($asset['purchase_date'] ?? ''));
-        if (!$this->isIsoDate($periodEnd) || !$this->isIsoDate($purchaseDate)) {
-            return round((float)($asset['cost'] ?? 0), 2);
+        $availableForUseDate = $this->depreciationStartDate($asset);
+        if (!$this->isIsoDate($periodEnd) || !$this->isIsoDate($availableForUseDate)) {
+            return $this->depreciableCost($asset);
         }
 
         $referenceEnd = $this->periodDepreciationReferenceEnd($periodEnd);
@@ -2722,7 +2970,7 @@ final class AssetService
         }
 
         $depreciationToDate = $this->calculateDepreciationToDateAmount($asset, $referenceEnd);
-        $cost = round((float)($asset['cost'] ?? 0), 2);
+        $cost = $this->depreciableCost($asset);
         $residual = round((float)($asset['residual_value'] ?? 0), 2);
 
         return round(max($residual, $cost - $depreciationToDate), 2);
@@ -2767,20 +3015,20 @@ final class AssetService
         }
         $periodEnd = $boundedPeriodEnd;
 
-        $cost = round((float)($asset['cost'] ?? 0), 2);
+        $cost = $this->depreciableCost($asset);
         $residual = round((float)($asset['residual_value'] ?? 0), 2);
         $lifeYears = max(1, (int)($asset['useful_life_years'] ?? 1));
 
         if ($method === 'straight_line') {
-            $purchaseDate = trim((string)($asset['purchase_date'] ?? ''));
-            if (!$this->isIsoDate($purchaseDate)) {
+            $availableForUseDate = $this->depreciationStartDate($asset);
+            if (!$this->isIsoDate($availableForUseDate)) {
                 return 0.0;
             }
 
             $depreciableAmount = max(0.0, $cost - $residual);
-            $lifeEnd = $this->usefulLifeEndDate($purchaseDate, $lifeYears);
-            $lifeDays = max(1, $this->dateDiffDaysInclusive($purchaseDate, $lifeEnd));
-            $elapsedDays = max(0, $this->dateDiffDaysInclusive($purchaseDate, $periodEnd));
+            $lifeEnd = $this->usefulLifeEndDate($availableForUseDate, $lifeYears);
+            $lifeDays = max(1, $this->dateDiffDaysInclusive($availableForUseDate, $lifeEnd));
+            $elapsedDays = max(0, $this->dateDiffDaysInclusive($availableForUseDate, $periodEnd));
             $cumulativeTarget = round(
                 min($depreciableAmount, $depreciableAmount * ($elapsedDays / $lifeDays)),
                 2
@@ -2807,30 +3055,30 @@ final class AssetService
 
     private function calculateDepreciationToDateAmount(array $asset, string $referenceEnd): float {
         $method = (string)($asset['depreciation_method'] ?? 'straight_line');
-        $purchaseDate = trim((string)($asset['purchase_date'] ?? ''));
-        if ($method === 'none' || !$this->isIsoDate($purchaseDate) || !$this->isIsoDate($referenceEnd) || $referenceEnd < $purchaseDate) {
+        $availableForUseDate = $this->depreciationStartDate($asset);
+        if ($method === 'none' || !$this->isIsoDate($availableForUseDate) || !$this->isIsoDate($referenceEnd) || $referenceEnd < $availableForUseDate) {
             return 0.0;
         }
 
-        $boundedReferenceEnd = $this->boundedDepreciationPeriodEnd($asset, $purchaseDate, $referenceEnd);
+        $boundedReferenceEnd = $this->boundedDepreciationPeriodEnd($asset, $availableForUseDate, $referenceEnd);
         if ($boundedReferenceEnd === null) {
             return 0.0;
         }
 
-        $cost = round((float)($asset['cost'] ?? 0), 2);
+        $cost = $this->depreciableCost($asset);
         $residual = round((float)($asset['residual_value'] ?? 0), 2);
         $lifeYears = max(1, (int)($asset['useful_life_years'] ?? 1));
         $depreciableAmount = max(0.0, $cost - $residual);
 
         if ($method === 'straight_line') {
-            $lifeDays = max(1, $this->dateDiffDaysInclusive($purchaseDate, $this->usefulLifeEndDate($purchaseDate, $lifeYears)));
-            $elapsedDays = max(0, $this->dateDiffDaysInclusive($purchaseDate, $boundedReferenceEnd));
+            $lifeDays = max(1, $this->dateDiffDaysInclusive($availableForUseDate, $this->usefulLifeEndDate($availableForUseDate, $lifeYears)));
+            $elapsedDays = max(0, $this->dateDiffDaysInclusive($availableForUseDate, $boundedReferenceEnd));
 
             return round(min($depreciableAmount, $depreciableAmount * ($elapsedDays / $lifeDays)), 2);
         }
 
         $total = 0.0;
-        $periodStart = $purchaseDate;
+        $periodStart = $availableForUseDate;
         while ($periodStart <= $boundedReferenceEnd) {
             $yearEnd = (new \DateTimeImmutable($periodStart))->format('Y-12-31');
             $periodEnd = min($boundedReferenceEnd, $yearEnd);
@@ -2847,12 +3095,12 @@ final class AssetService
     }
 
     private function boundedDepreciationPeriodEnd(array $asset, string $periodStart, string $periodEnd): ?string {
-        $purchaseDate = trim((string)($asset['purchase_date'] ?? ''));
-        if (!$this->isIsoDate($purchaseDate) || !$this->isIsoDate($periodStart) || !$this->isIsoDate($periodEnd)) {
+        $availableForUseDate = $this->depreciationStartDate($asset);
+        if (!$this->isIsoDate($availableForUseDate) || !$this->isIsoDate($periodStart) || !$this->isIsoDate($periodEnd)) {
             return null;
         }
 
-        $usefulLifeEnd = $this->usefulLifeEndDate($purchaseDate, (int)($asset['useful_life_years'] ?? 1));
+        $usefulLifeEnd = $this->usefulLifeEndDate($availableForUseDate, (int)($asset['useful_life_years'] ?? 1));
         if ($usefulLifeEnd < $periodStart) {
             return null;
         }
@@ -2870,17 +3118,59 @@ final class AssetService
     }
 
     private function sumDepreciationToDate(int $assetId, string $toDate): float {
-        $stmt = \InterfaceDB::prepare(
+        $assetIds = $this->assetGroupIds($assetId);
+        $placeholders = implode(', ', array_fill(0, count($assetIds), '?'));
+        $amount = (float)\InterfaceDB::fetchColumn(
             'SELECT COALESCE(SUM(amount), 0)
              FROM asset_depreciation_entries
-             WHERE asset_id = :asset_id
-               AND period_end <= :to_date'
+             WHERE asset_id IN (' . $placeholders . ')
+               AND period_end <= ?',
+            array_merge($assetIds, [$toDate])
         );
-        $stmt->execute([
-            'asset_id' => $assetId,
-            'to_date' => $toDate,
-        ]);
-        return round((float)$stmt->fetchColumn(), 2);
+        if (\InterfaceDB::tableExists('asset_depreciation_adjustments')) {
+            $amount += (float)\InterfaceDB::fetchColumn(
+                'SELECT COALESCE(SUM(amount), 0)
+                 FROM asset_depreciation_adjustments
+                 WHERE asset_id = :asset_id
+                   AND adjustment_date <= :to_date',
+                ['asset_id' => $assetId, 'to_date' => $toDate]
+            );
+        }
+
+        return round($amount, 2);
+    }
+
+    /** @return list<int> */
+    private function assetGroupIds(int $assetId): array
+    {
+        if ($assetId <= 0 || !\InterfaceDB::columnExists('asset_register', 'parent_asset_id')) {
+            return [$assetId];
+        }
+
+        $ids = [(int)$assetId];
+        foreach (\InterfaceDB::fetchAll(
+            'SELECT id FROM asset_register WHERE parent_asset_id = :parent_asset_id',
+            ['parent_asset_id' => $assetId]
+        ) ?: [] as $row) {
+            $ids[] = (int)$row['id'];
+        }
+
+        return array_values(array_unique(array_filter($ids)));
+    }
+
+    private function depreciationStartDate(array $asset): string
+    {
+        if (\InterfaceDB::columnExists('asset_register', 'available_for_use_date')) {
+            $date = trim((string)($asset['available_for_use_date'] ?? ''));
+            return $this->isIsoDate($date) ? $date : '';
+        }
+
+        return trim((string)($asset['purchase_date'] ?? ''));
+    }
+
+    private function depreciableCost(array $asset): float
+    {
+        return round((float)($asset['depreciable_cost'] ?? $asset['cost'] ?? 0.0), 2);
     }
 
     private function sumImpairmentToDate(int $assetId, string $toDate): float
@@ -2903,6 +3193,9 @@ final class AssetService
         $category = trim((string)($payload['category'] ?? 'tools_equipment'));
         $purchaseDate = trim((string)($payload['purchase_date'] ?? $defaults['purchase_date'] ?? ''));
         $cost = round((float)($payload['cost'] ?? $defaults['cost'] ?? 0), 2);
+        $availableForUseDate = trim((string)($payload['available_for_use_date'] ?? $defaults['available_for_use_date'] ?? $purchaseDate));
+        $availableForUseEvidence = trim((string)($payload['available_for_use_evidence'] ?? $defaults['available_for_use_evidence'] ?? ''));
+        $supplierDescription = trim((string)($payload['supplier_description'] ?? $defaults['supplier_description'] ?? ''));
         $lifeYears = (int)($payload['useful_life_years'] ?? 3);
         $method = trim((string)($payload['depreciation_method'] ?? 'straight_line'));
         $residualValue = round((float)($payload['residual_value'] ?? 0), 2);
@@ -2918,6 +3211,9 @@ final class AssetService
         }
         if (!$this->isIsoDate($purchaseDate)) {
             $errors[] = 'Enter a valid purchase date.';
+        }
+        if (!$this->isIsoDate($availableForUseDate)) {
+            $errors[] = 'Enter a valid available-for-use date.';
         }
         if ($cost <= 0) {
             $errors[] = 'Asset cost must be greater than zero.';
@@ -2955,6 +3251,9 @@ final class AssetService
                 'nominal_account_id' => $nominalAccountId,
                 'accum_dep_nominal_id' => $accumDepNominalId,
                 'purchase_date' => $purchaseDate,
+                'available_for_use_date' => $availableForUseDate,
+                'available_for_use_evidence' => $availableForUseEvidence,
+                'supplier_description' => $supplierDescription,
                 'cost' => $cost,
                 'useful_life_years' => $lifeYears,
                 'depreciation_method' => $method,
@@ -3090,6 +3389,28 @@ final class AssetService
             array_splice($columns, $insertAt, 0, ['linked_transaction_split_line_id']);
             array_splice($placeholders, $insertAt, 0, [':linked_transaction_split_line_id']);
             $params['linked_transaction_split_line_id'] = $links['linked_transaction_split_line_id'] ?? null;
+        }
+
+        if (\InterfaceDB::columnExists('asset_register', 'available_for_use_date')) {
+            $insertAt = array_search('cost', $columns, true);
+            $insertAt = $insertAt === false ? count($columns) : (int)$insertAt;
+            array_splice($columns, $insertAt, 0, [
+                'available_for_use_date',
+                'available_for_use_evidence',
+                'supplier_description',
+            ]);
+            array_splice($placeholders, $insertAt, 0, [
+                ':available_for_use_date',
+                ':available_for_use_evidence',
+                ':supplier_description',
+            ]);
+            $params['available_for_use_date'] = $values['available_for_use_date'];
+            $params['available_for_use_evidence'] = $values['available_for_use_evidence'] !== ''
+                ? $values['available_for_use_evidence']
+                : null;
+            $params['supplier_description'] = $values['supplier_description'] !== ''
+                ? $values['supplier_description']
+                : null;
         }
 
         if ($this->hasManualAssetSchema()) {

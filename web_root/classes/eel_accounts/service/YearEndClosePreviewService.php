@@ -65,7 +65,7 @@ final class YearEndClosePreviewService
         $allocatedRows = [];
         foreach ($rows as $row) {
             $amount = round((float)($row['amount'] ?? 0), 2);
-            if ($amount <= 0) {
+            if (abs($amount) < 0.005) {
                 continue;
             }
 
@@ -80,7 +80,7 @@ final class YearEndClosePreviewService
                 $amount = round($amount * ($overlapDays / $entryDays), 2);
             }
 
-            if ($amount <= 0) {
+            if (abs($amount) < 0.005) {
                 continue;
             }
 
@@ -521,6 +521,26 @@ final class YearEndClosePreviewService
                 'accounting_period_id' => $accountingPeriodId,
             ]
         ) ?: [];
+
+        if ($this->tableExists('asset_depreciation_adjustments')) {
+            $rows = array_merge($rows, \InterfaceDB::fetchAll(
+                'SELECT ada.asset_id,
+                        COALESCE(ar.asset_code, \'\') AS asset_code,
+                        ar.accum_dep_nominal_id,
+                        ada.adjustment_date AS period_start,
+                        ada.adjustment_date AS period_end,
+                        ada.amount,
+                        0 AS is_pending
+                 FROM asset_depreciation_adjustments ada
+                 INNER JOIN asset_register ar ON ar.id = ada.asset_id
+                 WHERE ada.accounting_period_id = :accounting_period_id
+                   AND ar.company_id = :company_id',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                ]
+            ) ?: []);
+        }
 
         $result = array_map(static fn(array $row): array => [
             'asset_id' => (int)($row['asset_id'] ?? 0),

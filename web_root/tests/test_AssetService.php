@@ -1210,6 +1210,269 @@ if (!class_exists(\eel_accounts\Service\FormattingFramework::class, false)) {
             $harness->assertSame(1, InterfaceDB::countWhere('journal_reversals', ['source_journal_id' => $legacyJournalId]));
         });
 
+        $harness->check(\eel_accounts\Service\AssetService::class, 'models pre-use additions as one available-for-use operating asset without changing source expenditure', static function () use ($harness, $service): void {
+            $harness->assertTrue(InterfaceDB::columnExists('asset_register', 'available_for_use_date'));
+            $harness->assertTrue(InterfaceDB::tableExists('asset_depreciation_adjustments'));
+
+            $fixture = assetServiceTestCreateDisposalFixture('available-for-use');
+            $componentAssetId = (int)$fixture['asset_id'] + 1;
+            InterfaceDB::prepareExecute(
+                'UPDATE accounting_periods
+                 SET period_start = :period_start, period_end = :period_end
+                 WHERE id = :id',
+                [
+                    'period_start' => '2023-10-01',
+                    'period_end' => '2024-09-30',
+                    'id' => $fixture['accounting_period_id'],
+                ]
+            );
+            InterfaceDB::prepareExecute(
+                'UPDATE asset_register
+                 SET cost = :cost,
+                     purchase_date = :purchase_date,
+                     depreciation_method = :depreciation_method,
+                     useful_life_years = :useful_life_years
+                 WHERE id = :id',
+                [
+                    'cost' => 52.00,
+                    'purchase_date' => '2023-12-29',
+                    'depreciation_method' => 'straight_line',
+                    'useful_life_years' => 3,
+                    'id' => $fixture['asset_id'],
+                ]
+            );
+            InterfaceDB::prepareExecute(
+                'INSERT INTO asset_register (
+                    id, company_id, asset_code, description, category, nominal_account_id,
+                    accum_dep_nominal_id, purchase_date, cost, useful_life_years,
+                    depreciation_method, residual_value, status
+                 ) VALUES (
+                    :id, :company_id, :asset_code, :description, :category, :nominal_account_id,
+                    :accum_dep_nominal_id, :purchase_date, :cost, :useful_life_years,
+                    :depreciation_method, :residual_value, :status
+                 )',
+                [
+                    'id' => $componentAssetId,
+                    'company_id' => $fixture['company_id'],
+                    'asset_code' => 'FA-C-' . $fixture['marker'],
+                    'description' => 'Directly attributable pre-use component ' . $fixture['marker'],
+                    'category' => 'tools_equipment',
+                    'nominal_account_id' => assetServiceTestNominalId('1300'),
+                    'accum_dep_nominal_id' => assetServiceTestNominalId('1330'),
+                    'purchase_date' => '2024-02-05',
+                    'cost' => 16.14,
+                    'useful_life_years' => 3,
+                    'depreciation_method' => 'straight_line',
+                    'residual_value' => 0.00,
+                    'status' => 'active',
+                ]
+            );
+            assetServiceTestInsertDepreciationEntry($fixture, '2023-12-29', '2024-09-30', 13.14);
+            InterfaceDB::prepareExecute(
+                'INSERT INTO asset_depreciation_entries (
+                    asset_id, accounting_period_id, period_start, period_end, amount
+                 ) VALUES (
+                    :asset_id, :accounting_period_id, :period_start, :period_end, :amount
+                 )',
+                [
+                    'asset_id' => $componentAssetId,
+                    'accounting_period_id' => $fixture['accounting_period_id'],
+                    'period_start' => '2024-02-05',
+                    'period_end' => '2024-09-30',
+                    'amount' => 3.52,
+                ]
+            );
+
+            $result = $service->configureAvailableForUseAsset(
+                $fixture['company_id'],
+                $fixture['asset_id'],
+                '2024-02-05',
+                [$componentAssetId],
+                $fixture['accounting_period_id'],
+                'golden_test',
+                'Component installation evidenced the operating date.'
+            );
+
+            $harness->assertSame(true, (bool)($result['success'] ?? false));
+            $harness->assertSame('68.14', number_format((float)($result['accounting_cost'] ?? 0), 2, '.', ''));
+            $harness->assertSame('14.86', number_format((float)($result['expected_depreciation'] ?? 0), 2, '.', ''));
+            $harness->assertSame('-1.80', number_format((float)($result['depreciation_adjustment'] ?? 0), 2, '.', ''));
+            $harness->assertTrue((int)($result['journal_id'] ?? 0) > 0);
+
+            $parent = InterfaceDB::fetchOne(
+                'SELECT cost, purchase_date, available_for_use_date, component_role
+                 FROM asset_register WHERE id = :id',
+                ['id' => $fixture['asset_id']]
+            ) ?: [];
+            $component = InterfaceDB::fetchOne(
+                'SELECT cost, purchase_date, parent_asset_id, component_role
+                 FROM asset_register WHERE id = :id',
+                ['id' => $componentAssetId]
+            ) ?: [];
+            $harness->assertSame('52.00', number_format((float)($parent['cost'] ?? 0), 2, '.', ''));
+            $harness->assertSame('2023-12-29', (string)($parent['purchase_date'] ?? ''));
+            $harness->assertSame('2024-02-05', (string)($parent['available_for_use_date'] ?? ''));
+            $harness->assertSame('operational_parent', (string)($parent['component_role'] ?? ''));
+            $harness->assertSame('16.14', number_format((float)($component['cost'] ?? 0), 2, '.', ''));
+            $harness->assertSame('2024-02-05', (string)($component['purchase_date'] ?? ''));
+            $harness->assertSame($fixture['asset_id'], (int)($component['parent_asset_id'] ?? 0));
+            $harness->assertSame('directly_attributable_pre_use', (string)($component['component_role'] ?? ''));
+
+            $assets = $service->fetchRegisterData($fixture['company_id'], $fixture['accounting_period_id'])['assets'] ?? [];
+            $harness->assertCount(1, $assets);
+            $harness->assertSame($fixture['asset_id'], (int)($assets[0]['id'] ?? 0));
+            $harness->assertSame('68.14', number_format((float)($assets[0]['depreciable_cost'] ?? 0), 2, '.', ''));
+            $harness->assertSame('14.86', number_format((float)($assets[0]['accumulated_depreciation'] ?? 0), 2, '.', ''));
+            $harness->assertSame('53.28', number_format((float)($assets[0]['nbv'] ?? 0), 2, '.', ''));
+            $depreciationRows = (new \eel_accounts\Service\YearEndClosePreviewService())
+                ->depreciationRowsForPeriod(
+                    $fixture['company_id'],
+                    $fixture['accounting_period_id'],
+                    '2023-10-01',
+                    '2024-09-30'
+                );
+            $harness->assertSame(
+                '14.86',
+                number_format(array_sum(array_column($depreciationRows, 'amount')), 2, '.', '')
+            );
+            $harness->assertSame(1, InterfaceDB::countWhere('asset_depreciation_adjustments', [
+                'asset_id' => $fixture['asset_id'],
+                'accounting_period_id' => $fixture['accounting_period_id'],
+            ]));
+        });
+
+        $harness->check(\eel_accounts\Service\AssetService::class, 'requires evidence for a later operational date and prevents post-use repairs becoming initial cost', static function () use ($harness, $service): void {
+            $fixture = assetServiceTestCreateDisposalFixture('available-for-use-boundaries');
+            $componentAssetId = (int)$fixture['asset_id'] + 1;
+            InterfaceDB::prepareExecute(
+                'INSERT INTO asset_register (
+                    id, company_id, asset_code, description, category, nominal_account_id,
+                    accum_dep_nominal_id, purchase_date, cost, useful_life_years,
+                    depreciation_method, residual_value, status
+                 ) VALUES (
+                    :id, :company_id, :asset_code, :description, :category, :nominal_account_id,
+                    :accum_dep_nominal_id, :purchase_date, :cost, :useful_life_years,
+                    :depreciation_method, :residual_value, :status
+                 )',
+                [
+                    'id' => $componentAssetId,
+                    'company_id' => $fixture['company_id'],
+                    'asset_code' => 'FA-R-' . $fixture['marker'],
+                    'description' => 'Later replacement component ' . $fixture['marker'],
+                    'category' => 'tools_equipment',
+                    'nominal_account_id' => assetServiceTestNominalId('1300'),
+                    'accum_dep_nominal_id' => assetServiceTestNominalId('1330'),
+                    'purchase_date' => '2026-02-01',
+                    'cost' => 150.00,
+                    'useful_life_years' => 1,
+                    'depreciation_method' => 'straight_line',
+                    'residual_value' => 0.00,
+                    'status' => 'active',
+                ]
+            );
+
+            $unconfigured = $service->fetchRegisterData($fixture['company_id'], $fixture['accounting_period_id'])['assets'] ?? [];
+            $unconfiguredParent = array_values(array_filter(
+                $unconfigured,
+                static fn(array $asset): bool => (int)($asset['id'] ?? 0) === (int)$fixture['asset_id']
+            ))[0] ?? [];
+            $harness->assertSame(
+                'Record when this asset was available for use before posting depreciation.',
+                (string)($unconfiguredParent['available_for_use_warning'] ?? '')
+            );
+
+            $result = $service->configureAvailableForUseAsset(
+                $fixture['company_id'],
+                $fixture['asset_id'],
+                '2026-01-10',
+                [$componentAssetId],
+                $fixture['accounting_period_id'],
+                'golden_test',
+                'Parent was operational before the later replacement was acquired.'
+            );
+            $harness->assertSame(false, (bool)($result['success'] ?? true));
+            $harness->assertTrue(str_contains(
+                (string)(($result['errors'] ?? [])[0] ?? ''),
+                'Record a later replacement separately.'
+            ));
+
+            $replacement = InterfaceDB::fetchOne(
+                'SELECT parent_asset_id, component_role, useful_life_years
+                 FROM asset_register WHERE id = :id',
+                ['id' => $componentAssetId]
+            ) ?: [];
+            $harness->assertSame(0, (int)($replacement['parent_asset_id'] ?? 0));
+            $harness->assertSame('standalone', (string)($replacement['component_role'] ?? ''));
+            $harness->assertSame(1, (int)($replacement['useful_life_years'] ?? 0));
+        });
+
+        $harness->check(\eel_accounts\Service\AssetService::class, 'aggregates several source costs only when they were incurred before the evidenced operating date', static function () use ($harness, $service): void {
+            $fixture = assetServiceTestCreateDisposalFixture('multiple-pre-use-additions');
+            $firstComponentId = (int)$fixture['asset_id'] + 1;
+            $secondComponentId = (int)$fixture['asset_id'] + 2;
+            InterfaceDB::prepareExecute(
+                'UPDATE asset_register
+                 SET cost = :cost, purchase_date = :purchase_date, depreciation_method = :depreciation_method
+                 WHERE id = :id',
+                [
+                    'cost' => 50.00,
+                    'purchase_date' => '2026-01-01',
+                    'depreciation_method' => 'straight_line',
+                    'id' => $fixture['asset_id'],
+                ]
+            );
+            foreach ([[$firstComponentId, '2026-01-02', 10.00], [$secondComponentId, '2026-01-03', 15.00]] as [$id, $purchaseDate, $cost]) {
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO asset_register (
+                        id, company_id, asset_code, description, category, nominal_account_id,
+                        accum_dep_nominal_id, purchase_date, cost, useful_life_years,
+                        depreciation_method, residual_value, status
+                     ) VALUES (
+                        :id, :company_id, :asset_code, :description, :category, :nominal_account_id,
+                        :accum_dep_nominal_id, :purchase_date, :cost, :useful_life_years,
+                        :depreciation_method, :residual_value, :status
+                     )',
+                    [
+                        'id' => $id,
+                        'company_id' => $fixture['company_id'],
+                        'asset_code' => 'FA-M-' . $fixture['marker'] . '-' . $id,
+                        'description' => 'Pre-use component ' . $id,
+                        'category' => 'tools_equipment',
+                        'nominal_account_id' => assetServiceTestNominalId('1300'),
+                        'accum_dep_nominal_id' => assetServiceTestNominalId('1330'),
+                        'purchase_date' => $purchaseDate,
+                        'cost' => $cost,
+                        'useful_life_years' => 3,
+                        'depreciation_method' => 'straight_line',
+                        'residual_value' => 0.00,
+                        'status' => 'active',
+                    ]
+                );
+            }
+
+            $result = $service->configureAvailableForUseAsset(
+                $fixture['company_id'],
+                $fixture['asset_id'],
+                '2026-01-10',
+                [$firstComponentId, $secondComponentId],
+                $fixture['accounting_period_id'],
+                'golden_test',
+                'Several components were installed before the asset was first usable.'
+            );
+            $harness->assertSame(true, (bool)($result['success'] ?? false));
+            $harness->assertSame('75.00', number_format((float)($result['accounting_cost'] ?? 0), 2, '.', ''));
+            $harness->assertSame('2026-01-10', (string)InterfaceDB::fetchColumn(
+                'SELECT available_for_use_date FROM asset_register WHERE id = :id',
+                ['id' => $fixture['asset_id']]
+            ));
+            $harness->assertSame(2, (int)InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM asset_register
+                 WHERE parent_asset_id = :parent_asset_id
+                   AND component_role = :component_role',
+                ['parent_asset_id' => $fixture['asset_id'], 'component_role' => 'directly_attributable_pre_use']
+            ));
+        });
+
         $harness->check(\eel_accounts\Service\AssetService::class, 'rebuilds disposal gains and losses for nil, below-NBV, at-NBV, above-NBV and fully-written-off assets', static function () use ($harness, $service): void {
             assetServiceTestRequireDisposalSchema($harness);
             foreach ([

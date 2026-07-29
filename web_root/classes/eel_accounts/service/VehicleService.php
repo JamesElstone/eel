@@ -108,6 +108,7 @@ final class VehicleService
                     ar.company_id,
                     ar.asset_code,
                     ar.description,
+                    ar.supplier_description,
                     ar.category,
                     ar.nominal_account_id,
                     ' . $periodExpression . ' AS accounting_period_id,

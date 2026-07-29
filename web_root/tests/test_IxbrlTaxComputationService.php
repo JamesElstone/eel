@@ -186,6 +186,15 @@ function ixbrlTaxComputationMappings(array $model): array
 }
 
 (new GeneratedServiceClassTestHarness())->run(\eel_accounts\Service\IxbrlTaxComputationService::class, static function (GeneratedServiceClassTestHarness $h, \eel_accounts\Service\IxbrlTaxComputationService $service): void {
+    $h->check($service::class, 'refreshes a stale reviewed computation mapping before filing generation', static function () use ($h): void {
+        $source = (string)file_get_contents(
+            dirname(__DIR__) . DIRECTORY_SEPARATOR . 'classes' . DIRECTORY_SEPARATOR . 'eel_accounts'
+            . DIRECTORY_SEPARATOR . 'service' . DIRECTORY_SEPARATOR . 'IxbrlTaxComputationService.php'
+        );
+        $h->assertTrue(str_contains($source, 'reviewedTemplate('));
+        $h->assertTrue(str_contains($source, 'prepareMappingsForPackage('));
+        $h->assertTrue(str_contains($source, "'ct-computation-ixbrl'"));
+    });
     $h->check($service::class, 'fails closed without a locked filing context', static function () use ($h, $service): void {
         $result = $service->generateFilingExport(0, 0, 0);
         $h->assertSame(false, $result['success']);

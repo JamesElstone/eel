@@ -113,7 +113,39 @@ final class IxbrlTaxComputationService
         if ($packageHash === null) {
             return $this->failRun($runId, 'The applicable computation-taxonomy package is missing, changed or has no verified inventory hash.');
         }
-        $profile = (new CtFilingMappingService())->activeProfile(CtFilingMappingService::TARGET_COMPUTATION, (int)$package['id']);
+        // A reviewed template revision is a semantic compatibility boundary.
+        // Upgrade a stale active profile before resolving it so installations
+        // that already catalogued this taxonomy cannot keep serializing the
+        // previous meaning of a corrected computation concept.
+        $mappingService = new CtFilingMappingService();
+        $template = $mappingService->reviewedTemplate(
+            CtFilingMappingService::TARGET_COMPUTATION,
+            (string)($package['taxonomy_version'] ?? ''),
+            (string)($package['artifact_version'] ?? '')
+        );
+        $profile = $mappingService->activeProfile(
+            CtFilingMappingService::TARGET_COMPUTATION,
+            (int)$package['id']
+        );
+        if (is_array($template)
+            && (!is_array($profile) || (string)($profile['profile_name'] ?? '') !== (string)$template['profile_name'])) {
+            try {
+                $mappingService->prepareMappingsForPackage(
+                    CtFilingMappingService::TARGET_COMPUTATION,
+                    (int)$package['id'],
+                    'ct-computation-ixbrl'
+                );
+            } catch (\Throwable $exception) {
+                return $this->failRun(
+                    $runId,
+                    'The reviewed computation mapping profile could not be prepared. ' . $exception->getMessage()
+                );
+            }
+            $profile = $mappingService->activeProfile(
+                CtFilingMappingService::TARGET_COMPUTATION,
+                (int)$package['id']
+            );
+        }
         if (!is_array($profile)) {
             return $this->failRun($runId, 'No active, compatible database mapping profile exists for the applicable computation taxonomy.');
         }

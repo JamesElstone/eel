@@ -29,6 +29,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
 
             $harness->assertTrue($statusPosition !== false && $buttonPosition !== false && $statusPosition < $buttonPosition);
             $harness->assertTrue(str_contains($html, 'name="intent" value="refresh_year_end_review_caches"'));
+            $harness->assertTrue(str_contains($html, 'class="actions-row actions-row-right"'));
             $harness->assertTrue(str_contains($html, 'class="button danger"'));
 
             AppConfigurationStore::set('developer_options', false);

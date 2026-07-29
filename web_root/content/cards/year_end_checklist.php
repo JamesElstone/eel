@@ -67,7 +67,7 @@ final class _year_end_checklistCard extends CardBaseFramework
             return '';
         }
 
-        return '<div class="actions-row"><form method="post" action="?page=year_end" data-ajax="true">'
+        return '<div class="actions-row actions-row-right"><form method="post" action="?page=year_end" data-ajax="true">'
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="YearEnd">'
             . '<input type="hidden" name="intent" value="refresh_year_end_review_caches">'

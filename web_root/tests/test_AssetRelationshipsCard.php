@@ -12,8 +12,8 @@ $harness->run(_asset_relationshipsCard::class, static function (GeneratedService
         $harness->assertSame('assetRelationshipData', $relationship['key'] ?? null);
         $harness->assertSame(\eel_accounts\Service\AssetService::class, $relationship['service'] ?? null);
         $harness->assertSame('fetchAssetRelationshipData', $relationship['method'] ?? null);
-        $harness->assertSame(':asset_relationship_parent_id', (array)($relationship['params'] ?? [])['selectedParentAssetId'] ?? null);
-        $harness->assertSame('periodLockState', (array)($services[1] ?? [])['key'] ?? null);
+        $harness->assertSame(':asset_relationship_parent_id', ($relationship['params'] ?? [])['selectedParentAssetId'] ?? null);
+        $harness->assertSame('periodLockState', ($services[1] ?? [])['key'] ?? null);
     });
 
     $harness->check(_asset_relationshipsCard::class, 'renders selected relationship candidates and only relationship rows', static function () use ($harness, $card): void {

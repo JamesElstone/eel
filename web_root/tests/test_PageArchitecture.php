@@ -86,6 +86,7 @@ final class TestPageArchitectureHarness
                 'asset_create',
                 'asset_reconcile_manual',
                 'asset_register',
+                'asset_relationships',
                 'not_an_asset',
             ],
             $page->cards()
@@ -109,6 +110,12 @@ final class TestPageArchitectureHarness
                     'cards' => [
                         'asset_create',
                         'asset_reconcile_manual',
+                    ],
+                ],
+                [
+                    'tab' => 'Asset Relationships',
+                    'cards' => [
+                        'asset_relationships',
                     ],
                 ],
                 [

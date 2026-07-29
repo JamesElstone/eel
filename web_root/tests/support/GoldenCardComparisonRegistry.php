@@ -7,7 +7,7 @@ final class GoldenCardComparisonRegistry
     public static function selectedPages(): array
     {
         return [
-            'assets' => ['asset_register', 'asset_create', 'asset_reconcile_manual', 'not_an_asset'],
+            'assets' => ['asset_register', 'asset_create', 'asset_reconcile_manual', 'asset_relationships', 'not_an_asset'],
             'companies' => ['companies_company_settings', 'settings_setup_health', 'companies_stored_detail', 'companies_search', 'accounting_periods', 'companies_nominals', 'companies_danger'],
             'companies_house' => ['companies_house_snapshot', 'year_end_companies_house_comparison'],
             'dashboard' => ['overview', 'dashboard_action_queue', 'dashboard_year_end_readiness', 'dashboard_recent_transactions', 'activity'],
@@ -16,13 +16,13 @@ final class GoldenCardComparisonRegistry
             'expense_claims' => ['expense_statistics', 'expense_claimants', 'expense_add_claimant', 'expenses_state', 'expense_claim_create', 'expense_claim_editor', 'expense_search', 'year_end_expenses_confirmation'],
             'HMRC' => ['hmrc_obligations_summary', 'hmrc_obligations_action_panel', 'hmrc_obligations_timeline', 'hmrc_obligations_period_checklist', 'hmrc_fines_table'],
             'incorporation' => ['incorporation_status', 'incorporation_share_capital', 'incorporation_payment_matching', 'director_loan_directors', 'incorporation_ownership_parties', 'incorporation_share_allocation', 'incorporation_relationships'],
-            'disclosures' => ['ixbrl_readiness', 'ixbrl_accounts_disclosures', 'ixbrl_accounts_mapping', 'ixbrl_facts_preview', 'ixbrl_generation'],
+            'disclosures' => ['ixbrl_readiness', 'ixbrl_accounts_disclosures', 'ixbrl_accounts_mapping', 'ixbrl_facts_preview', 'ixbrl_generation', 'ixbrl_history'],
             'transmit' => ['hmrc_submission_unavailable', 'companies_house_transmission'],
             'journal' => ['journals_list', 'journal_cut_off_create', 'journal_manual_entry', 'journal_cut_off_confirmation'],
             'minutes' => ['company_minutes'],
             'nominals' => ['nominals_accounts', 'nominals_add_account', 'nominals_categories', 'nominals_add_category', 'nominals_account_types', 'nominals_import_export', 'nominal_opening_balances', 'nominal_closing_balances'],
             'prepayments' => ['prepayments_review', 'year_end_prepayment_approvals'],
-            'profit_loss' => ['pl_summary', 'pl_monthly_trend', 'pl_income_breakdown', 'pl_expense_breakdown', 'pl_net_profit_bridge', 'pl_source_coverage', 'reserve_review', 'year_end_profit_loss_confirm'],
+            'profit_loss' => ['pl_summary', 'pl_trading', 'pl_monthly_trend', 'pl_income_breakdown', 'pl_expense_breakdown', 'pl_net_profit_bridge', 'pl_source_coverage', 'reserve_review', 'year_end_profit_loss_confirm'],
             'source_accounts' => ['banking_accounts', 'banking_reconciliation', 'banking_account_form', 'statement_field_mapping'],
             'corporation_tax' => ['tax_period_selector', 'tax_corporation_tax_summary', 'tax_taxable_profit_bridge', 'tax_prepayment_treatment', 'tax_disallowable_add_backs', 'tax_capital_add_backs', 'tax_depreciation_add_back', 'tax_capital_allowances_summary', 'tax_aia_allocation', 'tax_main_rate_pool', 'tax_special_rate_pool', 'tax_car_co2_treatment', 'tax_disposals_balancing', 'tax_losses', 'tax_rate_bands', 'tax_warnings', 'tax_ct_period_facts', 'corporation_tax_review', 'year_end_tax_readiness'],
             'tax_audit' => ['tax_audit_areas', 'tax_audit_detail'],
@@ -33,7 +33,7 @@ final class GoldenCardComparisonRegistry
             'uploads' => ['uploads_statement_coverage', 'uploads_bank_transactions', 'transactions_monthly_status', 'uploads_details', 'statement_field_mapping', 'uploads_validate_commit', 'csv_export'],
             'vat' => ['vat_turnover_monitoring', 'vat_registration', 'vat_readiness'],
             'vehicles' => ['vehicle_register'],
-            'year_end' => ['year_end_checklist', 'year_end_notes', 'year_end_state', 'year_end_audit_log'],
+            'year_end' => ['year_end_checklist', 'year_end_notes', 'year_end_state', 'year_end_audit_log', 'year_end_evidence_bundles'],
         ];
     }
 

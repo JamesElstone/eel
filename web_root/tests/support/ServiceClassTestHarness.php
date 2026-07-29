@@ -293,6 +293,26 @@ final class GeneratedServiceClassTestHarness
             throw new RuntimeException('Assertion failed. Expected condition to be false.');
         }
     }
+
+    public function assertThrows(callable $callback, string $expectedThrowableClass): void
+    {
+        try {
+            $callback();
+        } catch (Throwable $exception) {
+            if ($exception instanceof $expectedThrowableClass) {
+                return;
+            }
+
+            throw new RuntimeException(
+                'Expected callback to throw an instance of ' . $expectedThrowableClass
+                . ', but it threw ' . $exception::class . ': ' . $exception->getMessage()
+            );
+        }
+
+        throw new RuntimeException(
+            'Expected callback to throw an instance of ' . $expectedThrowableClass . ', but no exception was thrown.'
+        );
+    }
 }
 
 final class GeneratedServiceClassTestSkippedException extends RuntimeException

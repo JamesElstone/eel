@@ -798,7 +798,10 @@ final class GoldenAccountsFixture
             'id' => $id, 'company_id' => self::GOLDEN_COMPANY_ID, 'asset_code' => $code,
             'description' => $description, 'category' => $category,
             'nominal_account_id' => $nominalId, 'accum_dep_nominal_id' => $accumulatedDepreciationNominalId,
-            'purchase_date' => $purchaseDate, 'cost' => $cost, 'useful_life_years' => 3,
+            'purchase_date' => $purchaseDate,
+            'available_for_use_date' => $purchaseDate,
+            'available_for_use_evidence' => 'Synthetic acquisition and installation evidence',
+            'cost' => $cost, 'useful_life_years' => 3,
             'depreciation_method' => 'straight_line', 'residual_value' => 0.00, 'status' => 'active',
             'linked_journal_id' => $journalId, 'linked_transaction_id' => $transactionId,
         ]);

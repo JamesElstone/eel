@@ -107,11 +107,11 @@ $harness->check('GoldenAccountingCardAuditDefects', 'uses pending accumulated de
         InterfaceDB::prepareExecute(
             'INSERT INTO asset_register (
                 id, company_id, asset_code, description, category, nominal_account_id,
-                accum_dep_nominal_id, purchase_date, cost, useful_life_years,
+                accum_dep_nominal_id, purchase_date, available_for_use_date, available_for_use_evidence, cost, useful_life_years,
                 depreciation_method, residual_value, status, linked_journal_id
              ) VALUES (
                 :id, :company_id, :asset_code, :description, :category, :nominal_account_id,
-                :accum_dep_nominal_id, :purchase_date, :cost, :useful_life_years,
+                :accum_dep_nominal_id, :purchase_date, :available_for_use_date, :available_for_use_evidence, :cost, :useful_life_years,
                 :depreciation_method, :residual_value, :status, :linked_journal_id
              )',
             [
@@ -123,6 +123,8 @@ $harness->check('GoldenAccountingCardAuditDefects', 'uses pending accumulated de
                 'nominal_account_id' => 91013,
                 'accum_dep_nominal_id' => 91014,
                 'purchase_date' => '2022-10-01',
+                'available_for_use_date' => '2022-10-01',
+                'available_for_use_evidence' => 'Golden audit acquisition evidence',
                 'cost' => 1200.00,
                 'useful_life_years' => 1,
                 'depreciation_method' => 'straight_line',

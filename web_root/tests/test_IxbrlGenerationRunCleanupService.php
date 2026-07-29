@@ -63,7 +63,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         decision, evidence_text, decided_by, decided_at
                      ) VALUES (
                         :company_id, :period_id, :transaction_id,
-                        :external_id, 'test', 'eligible', 'test', 'test', NOW()
+                        :external_id, 'test', 'eligible', 'test', 'test', CURRENT_TIMESTAMP
                      )",
                     [
                         'company_id' => $companyId,

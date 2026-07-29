@@ -187,8 +187,8 @@ final class _asset_relationshipsCard extends CardBaseFramework
 
     private function assetLabel(array $asset): string
     {
-        $code = trim((string)($asset['asset_code'] ?? ''));
-        $description = trim((string)($asset['description'] ?? ''));
+        $code = \eel_accounts\Support\Utf8::normalize(trim((string)($asset['asset_code'] ?? '')));
+        $description = \eel_accounts\Support\Utf8::normalize(trim((string)($asset['description'] ?? '')));
         return trim($code . ($code !== '' && $description !== '' ? ' — ' : '') . $description);
     }
 

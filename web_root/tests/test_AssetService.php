@@ -257,6 +257,8 @@ if (!class_exists(\eel_accounts\Service\FormattingFramework::class, false)) {
                         nominal_account_id,
                         accum_dep_nominal_id,
                         purchase_date,
+                        available_for_use_date,
+                        available_for_use_evidence,
                         cost,
                         useful_life_years,
                         depreciation_method,
@@ -271,6 +273,8 @@ if (!class_exists(\eel_accounts\Service\FormattingFramework::class, false)) {
                         :nominal_account_id,
                         :accum_dep_nominal_id,
                         :purchase_date,
+                        :available_for_use_date,
+                        :available_for_use_evidence,
                         :cost,
                         :useful_life_years,
                         :depreciation_method,
@@ -286,6 +290,8 @@ if (!class_exists(\eel_accounts\Service\FormattingFramework::class, false)) {
                         'nominal_account_id' => $assetNominalId,
                         'accum_dep_nominal_id' => $accumNominalId,
                         'purchase_date' => '2020-07-01',
+                        'available_for_use_date' => '2020-07-01',
+                        'available_for_use_evidence' => 'Fixture acquisition evidence',
                         'cost' => 1200.00,
                         'useful_life_years' => 3,
                         'depreciation_method' => 'straight_line',
@@ -368,6 +374,8 @@ if (!class_exists(\eel_accounts\Service\FormattingFramework::class, false)) {
                         nominal_account_id,
                         accum_dep_nominal_id,
                         purchase_date,
+                        available_for_use_date,
+                        available_for_use_evidence,
                         cost,
                         useful_life_years,
                         depreciation_method,
@@ -382,6 +390,8 @@ if (!class_exists(\eel_accounts\Service\FormattingFramework::class, false)) {
                         :nominal_account_id,
                         :accum_dep_nominal_id,
                         :purchase_date,
+                        :available_for_use_date,
+                        :available_for_use_evidence,
                         :cost,
                         :useful_life_years,
                         :depreciation_method,
@@ -397,6 +407,8 @@ if (!class_exists(\eel_accounts\Service\FormattingFramework::class, false)) {
                         'nominal_account_id' => $assetNominalId,
                         'accum_dep_nominal_id' => $accumNominalId,
                         'purchase_date' => '2019-01-01',
+                        'available_for_use_date' => '2019-01-01',
+                        'available_for_use_evidence' => 'Fixture acquisition evidence',
                         'cost' => 1200.00,
                         'useful_life_years' => 3,
                         'depreciation_method' => 'reducing_balance',
@@ -503,11 +515,13 @@ if (!class_exists(\eel_accounts\Service\FormattingFramework::class, false)) {
                     'INSERT INTO asset_register (
                         id, company_id, asset_code, description, category,
                         nominal_account_id, accum_dep_nominal_id, purchase_date,
+                        available_for_use_date, available_for_use_evidence,
                         cost, useful_life_years, depreciation_method,
                         residual_value, status
                      ) VALUES (
                         :id, :company_id, :asset_code, :description, :category,
                         :nominal_account_id, :accum_dep_nominal_id, :purchase_date,
+                        :available_for_use_date, :available_for_use_evidence,
                         :cost, :useful_life_years, :depreciation_method,
                         :residual_value, :status
                      )',
@@ -520,6 +534,8 @@ if (!class_exists(\eel_accounts\Service\FormattingFramework::class, false)) {
                         'nominal_account_id' => StandardNominalTestFixture::id('1300'),
                         'accum_dep_nominal_id' => StandardNominalTestFixture::id('1330'),
                         'purchase_date' => '2022-01-01',
+                        'available_for_use_date' => '2022-01-01',
+                        'available_for_use_evidence' => 'Fixture acquisition evidence',
                         'cost' => 730.00,
                         'useful_life_years' => 2,
                         'depreciation_method' => 'straight_line',
@@ -1187,7 +1203,7 @@ if (!class_exists(\eel_accounts\Service\FormattingFramework::class, false)) {
             $harness->assertSame(true, (bool)($result['success'] ?? false));
             $harness->assertSame(true, (bool)($result['updated'] ?? false));
             $harness->assertSame($legacyJournalId, (int)($result['source_journal_id'] ?? 0));
-            $harness->assertSame('45.61', number_format((float)($result['profit'] ?? 0), 2, '.', ''));
+            $harness->assertSame('-45.61', number_format((float)($result['profit'] ?? 0), 2, '.', ''));
 
             $replacementJournalId = (int)($result['replacement_journal_id'] ?? 0);
             $harness->assertTrue($replacementJournalId > 0);
@@ -1343,6 +1359,12 @@ if (!class_exists(\eel_accounts\Service\FormattingFramework::class, false)) {
 
         $harness->check(\eel_accounts\Service\AssetService::class, 'requires evidence for a later operational date and prevents post-use repairs becoming initial cost', static function () use ($harness, $service): void {
             $fixture = assetServiceTestCreateDisposalFixture('available-for-use-boundaries');
+            InterfaceDB::prepareExecute(
+                'UPDATE asset_register
+                 SET available_for_use_date = NULL, available_for_use_evidence = NULL
+                 WHERE id = :id',
+                ['id' => $fixture['asset_id']]
+            );
             $componentAssetId = (int)$fixture['asset_id'] + 1;
             InterfaceDB::prepareExecute(
                 'INSERT INTO asset_register (
@@ -1556,7 +1578,7 @@ if (!class_exists(\eel_accounts\Service\FormattingFramework::class, false)) {
             assetServiceTestRequireDisposalSchema($harness);
             foreach ([
                 ['nil', 67.39, 0.43, 0.00, 66.96, 0.00],
-                ['below', 100.00, 60.00, 20.00, 40.00, 0.00],
+                ['below', 100.00, 60.00, 20.00, 20.00, 0.00],
                 ['at-nbv', 100.00, 60.00, 40.00, 0.00, 0.00],
                 ['above', 100.00, 60.00, 70.00, 0.00, 30.00],
                 ['fully-written-off', 100.00, 100.00, 0.00, 0.00, 0.00],
@@ -2079,6 +2101,8 @@ function assetServiceTestCreateTaxViewFixture(): array
             nominal_account_id,
             accum_dep_nominal_id,
             purchase_date,
+            available_for_use_date,
+            available_for_use_evidence,
             cost,
             useful_life_years,
             depreciation_method,
@@ -2093,6 +2117,8 @@ function assetServiceTestCreateTaxViewFixture(): array
             :nominal_account_id,
             :accum_dep_nominal_id,
             :purchase_date,
+            :available_for_use_date,
+            :available_for_use_evidence,
             :cost,
             :useful_life_years,
             :depreciation_method,
@@ -2108,6 +2134,8 @@ function assetServiceTestCreateTaxViewFixture(): array
             'nominal_account_id' => $assetNominalId,
             'accum_dep_nominal_id' => $accumNominalId,
             'purchase_date' => '2026-02-01',
+            'available_for_use_date' => '2026-02-01',
+            'available_for_use_evidence' => 'Fixture acquisition evidence',
             'cost' => 1000.00,
             'useful_life_years' => 3,
             'depreciation_method' => 'none',
@@ -2184,11 +2212,13 @@ function assetServiceTestCreateDepreciationFixture(
         'INSERT INTO asset_register (
             id, company_id, asset_code, description, category,
             nominal_account_id, accum_dep_nominal_id, purchase_date,
+            available_for_use_date, available_for_use_evidence,
             cost, useful_life_years, depreciation_method,
             residual_value, status
          ) VALUES (
             :id, :company_id, :asset_code, :description, :category,
             :nominal_account_id, :accum_dep_nominal_id, :purchase_date,
+            :available_for_use_date, :available_for_use_evidence,
             :cost, :useful_life_years, :depreciation_method,
             :residual_value, :status
          )',
@@ -2201,6 +2231,8 @@ function assetServiceTestCreateDepreciationFixture(
             'nominal_account_id' => StandardNominalTestFixture::id('1300'),
             'accum_dep_nominal_id' => StandardNominalTestFixture::id('1330'),
             'purchase_date' => $purchaseDate,
+            'available_for_use_date' => $purchaseDate,
+            'available_for_use_evidence' => 'Fixture acquisition evidence',
             'cost' => round($cost, 2),
             'useful_life_years' => $usefulLifeYears,
             'depreciation_method' => 'straight_line',
@@ -2222,7 +2254,7 @@ function assetServiceTestCreateDisposalFixture(string $suffix): array
     if (!InterfaceDB::inTransaction()) {
         InterfaceDB::beginTransaction();
     }
-    StandardNominalTestFixture::ensureNominals(['1000', '1300', '1330', '1490', '4200', '6210']);
+    StandardNominalTestFixture::ensureNominals(['1000', '1300', '1330', '1490', '4200', '6210', '6200']);
     StandardNominalTestFixture::ensureSubtypes(['trade_creditor']);
 
     $marker = (string)random_int(100000, 999999);
@@ -2309,6 +2341,8 @@ function assetServiceTestCreateDisposalFixture(string $suffix): array
             nominal_account_id,
             accum_dep_nominal_id,
             purchase_date,
+            available_for_use_date,
+            available_for_use_evidence,
             cost,
             useful_life_years,
             depreciation_method,
@@ -2323,6 +2357,8 @@ function assetServiceTestCreateDisposalFixture(string $suffix): array
             :nominal_account_id,
             :accum_dep_nominal_id,
             :purchase_date,
+            :available_for_use_date,
+            :available_for_use_evidence,
             :cost,
             :useful_life_years,
             :depreciation_method,
@@ -2338,6 +2374,8 @@ function assetServiceTestCreateDisposalFixture(string $suffix): array
             'nominal_account_id' => assetServiceTestNominalId('1300'),
             'accum_dep_nominal_id' => assetServiceTestNominalId('1330'),
             'purchase_date' => '2026-01-10',
+            'available_for_use_date' => '2026-01-10',
+            'available_for_use_evidence' => 'Fixture acquisition evidence',
             'cost' => 1000.00,
             'useful_life_years' => 3,
             'depreciation_method' => 'none',

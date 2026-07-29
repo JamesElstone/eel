@@ -88,7 +88,7 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
         $descriptionHeaderPosition = strpos($html, '<th>Description</th>');
         $costHeaderPosition = strpos($html, '<th>Cost</th>');
         $periodDepreciationHeaderPosition = strpos($html, '<th class="asset-register-wrap-heading asset-register-period-depreciation-heading">Depreciation in Period</th>');
-        $resaleValueHeaderPosition = strpos($html, '<th>Resale Value</th>');
+        $resaleValueHeaderPosition = strpos($html, '<th>Net book value</th>');
         $residualValueHeaderPosition = strpos($html, '<th>EOL Value</th>');
         $statusHeaderPosition = strpos($html, '<th>Status</th>');
         $harness->assertSame(false, str_contains($html, '&lt;br&gt;'));

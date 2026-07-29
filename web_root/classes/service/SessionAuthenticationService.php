@@ -47,6 +47,14 @@ final class SessionAuthenticationService
             return;
         }
 
+        if (headers_sent()) {
+            if (!isset($_SESSION) || !is_array($_SESSION)) {
+                $_SESSION = [];
+            }
+
+            return;
+        }
+
         ini_set('session.use_strict_mode', '1');
         ini_set('session.use_only_cookies', '1');
         ini_set('session.cookie_httponly', '1');

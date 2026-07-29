@@ -12,6 +12,84 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(SessionAuthenticationService::class);
 
+$runIsolatedPhp = static function (string $script): array {
+    $process = proc_open(
+        [PHP_BINARY, '-r', $script],
+        [
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ],
+        $pipes,
+        PROJECT_ROOT
+    );
+
+    if (!is_resource($process)) {
+        throw new RuntimeException('Unable to start isolated PHP process.');
+    }
+
+    $output = stream_get_contents($pipes[1]);
+    $errorOutput = stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+
+    return [(string)$output, (string)$errorOutput, proc_close($process)];
+};
+
+$harness->check(SessionAuthenticationService::class, 'keeps in-memory CSRF state after CLI output has started without session warnings', function () use ($harness, $runIsolatedPhp): void {
+    $harnessPath = __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+    $script = implode(' ', [
+        'require ' . var_export($harnessPath, true) . ';',
+        'echo "output started\\n";',
+        '$service = new SessionAuthenticationService();',
+        '$token = $service->csrfToken();',
+        '$result = ["headers_sent" => headers_sent(), "token" => $token, "valid" => $service->isValidCsrfToken($token), "session_active" => session_status() === PHP_SESSION_ACTIVE];',
+        'fwrite(STDERR, json_encode($result));',
+    ]);
+
+    [$output, $errorOutput, $exitCode] = $runIsolatedPhp($script);
+    $result = json_decode($errorOutput, true);
+
+    if (!is_array($result)) {
+        throw new RuntimeException('Isolated post-output session check failed: ' . trim($errorOutput));
+    }
+
+    $harness->assertSame(0, $exitCode);
+    $harness->assertTrue(str_contains($output, 'output started'));
+    $harness->assertTrue((bool)($result['headers_sent'] ?? false));
+    $harness->assertTrue((string)($result['token'] ?? '') !== '');
+    $harness->assertTrue((bool)($result['valid'] ?? false));
+    $harness->assertTrue(!((bool)($result['session_active'] ?? true)));
+});
+
+$harness->check(SessionAuthenticationService::class, 'applies secure session configuration before web output starts', function () use ($harness, $runIsolatedPhp): void {
+    $harnessPath = __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+    $script = implode(' ', [
+        'require ' . var_export($harnessPath, true) . ';',
+        '$service = new SessionAuthenticationService();',
+        '$service->startSession();',
+        '$result = ["active" => session_status() === PHP_SESSION_ACTIVE, "name" => session_name(), "params" => session_get_cookie_params(), "strict_mode" => ini_get("session.use_strict_mode"), "only_cookies" => ini_get("session.use_only_cookies")];',
+        'fwrite(STDOUT, json_encode($result));',
+    ]);
+
+    [$output, $errorOutput, $exitCode] = $runIsolatedPhp($script);
+    $result = json_decode($output, true);
+
+    if (!is_array($result)) {
+        throw new RuntimeException('Isolated session configuration check failed: ' . trim($errorOutput));
+    }
+
+    $harness->assertSame(0, $exitCode);
+    $harness->assertSame('', $errorOutput);
+    $harness->assertTrue((bool)($result['active'] ?? false));
+    $harness->assertSame('ELL_ID', $result['name'] ?? null);
+    $harness->assertSame('1', $result['strict_mode'] ?? null);
+    $harness->assertSame('1', $result['only_cookies'] ?? null);
+    $harness->assertSame(0, $result['params']['lifetime'] ?? null);
+    $harness->assertSame('/', $result['params']['path'] ?? null);
+    $harness->assertTrue((bool)($result['params']['httponly'] ?? false));
+    $harness->assertSame('Strict', $result['params']['samesite'] ?? null);
+});
+
 $withRestoredConfig = static function (callable $callback): void {
     $configPath = AppConfigurationStore::configPath();
     $originalConfig = is_file($configPath) ? (string)file_get_contents($configPath) : '';

@@ -736,14 +736,17 @@ final class CompaniesHouseAccountsSubmissionService
             ['environment' => $environment, 'idempotency_key' => $idempotencyKey]
         );
         if (is_array($existing)) {
-            $this->reportProgress($progress, 'The current Companies House iXBRL is already prepared.', 100);
+            $this->reportProgress($progress, 'Companies House iXBRL regenerated and validated.', 100);
             return [
                 'success' => true,
                 'errors' => [],
                 'warnings' => [],
-                'messages' => ['The same revised-accounts artifact is already prepared.'],
+                'messages' => [
+                    'The Companies House revised-accounts iXBRL was regenerated and validated; '
+                        . 'the identical filing record was retained.',
+                ],
                 'submission' => $this->normaliseSubmission($existing),
-                'changed' => false,
+                'changed' => true,
             ];
         }
 
@@ -972,14 +975,17 @@ final class CompaniesHouseAccountsSubmissionService
             ['environment' => $environment, 'idempotency_key' => $idempotencyKey]
         );
         if (is_array($existing)) {
-            $this->reportProgress($progress, 'The current Companies House iXBRL is already prepared.', 100);
+            $this->reportProgress($progress, 'Companies House iXBRL regenerated and validated.', 100);
             return [
                 'success' => true,
                 'errors' => [],
                 'warnings' => [],
-                'messages' => ['The same original-accounts artifact is already prepared.'],
+                'messages' => [
+                    'The Companies House original-accounts iXBRL was regenerated and validated; '
+                        . 'the identical filing record was retained.',
+                ],
                 'submission' => $this->normaliseSubmission($existing),
-                'changed' => false,
+                'changed' => true,
             ];
         }
 

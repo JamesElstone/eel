@@ -71,9 +71,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             \eel_accounts\Service\IxbrlFilingSetGenerationService::class,
-            'reuses a completely current filing set without regeneration',
+            'regenerates every artifact when the complete filing set is already current',
             static function () use ($harness): void {
                 $calls = ['accounts' => 0, 'validation' => 0, 'computation' => 0, 'companies_house' => 0];
+                $progressMessages = [];
                 $service = new \eel_accounts\Service\IxbrlFilingSetGenerationService(
                     readinessResolver: static fn(): array => [
                         'can_generate' => true,
@@ -115,23 +116,44 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ],
                 );
 
-                $result = $service->generate(49002, 80002, 'test');
+                $result = $service->generate(
+                    49002,
+                    80002,
+                    'test',
+                    static function (string $message, int $percent) use (&$progressMessages): void {
+                        $progressMessages[] = $message;
+                    }
+                );
                 $harness->assertTrue((bool)$result['success']);
                 $harness->assertSame(
-                    ['accounts' => 0, 'validation' => 0, 'computation' => 0, 'companies_house' => 0],
+                    ['accounts' => 1, 'validation' => 1, 'computation' => 1, 'companies_house' => 1],
                     $calls
                 );
-                $harness->assertTrue(str_contains(
+                $harness->assertFalse(str_contains(
                     implode(' ', (array)$result['messages']),
                     'reused'
                 ));
+                $harness->assertTrue(in_array('Generating the Accounting iXBRL…', $progressMessages, true));
+                $harness->assertTrue(in_array(
+                    'Generating iXBRL for Corporation Tax period 1 of 1…',
+                    $progressMessages,
+                    true
+                ));
+                $harness->assertTrue(in_array(
+                    'Preparing the Companies House revised-accounts iXBRL…',
+                    $progressMessages,
+                    true
+                ));
+                $harness->assertFalse(str_contains(implode(' ', $progressMessages), 'Reusing'));
             }
         );
 
         $harness->check(
             \eel_accounts\Service\IxbrlFilingSetGenerationService::class,
-            'retry skips current stages and resumes the failed computation',
+            'an explicit retry regenerates current Accounting before retrying a failed computation',
             static function () use ($harness): void {
+                $accountsGenerationCalls = 0;
+                $accountsValidationCalls = 0;
                 $generationCalls = 0;
                 $fileable = false;
                 $service = new \eel_accounts\Service\IxbrlFilingSetGenerationService(
@@ -146,11 +168,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         'filing_required' => false,
                         'filing_kind' => '',
                     ],
-                    accountsGenerator: static function (): array {
-                        throw new RuntimeException('Current Accounting iXBRL must not be regenerated.');
+                    accountsGenerator: static function () use (&$accountsGenerationCalls): array {
+                        $accountsGenerationCalls++;
+                        return ['success' => true, 'warnings' => []];
                     },
-                    accountsValidator: static function (): array {
-                        throw new RuntimeException('Current Accounting iXBRL must not be revalidated.');
+                    accountsValidator: static function () use (&$accountsValidationCalls): array {
+                        $accountsValidationCalls++;
+                        return ['status' => 'passed', 'warnings' => []];
                     },
                     computationStatusResolver: static function () use (&$fileable): array {
                         return ['ready' => true, 'fileable' => $fileable];
@@ -173,6 +197,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $second = $service->generate(49003, 80003, 'test');
                 $harness->assertFalse((bool)$first['success']);
                 $harness->assertTrue((bool)$second['success']);
+                $harness->assertSame(2, $accountsGenerationCalls);
+                $harness->assertSame(2, $accountsValidationCalls);
                 $harness->assertSame(2, $generationCalls);
             }
         );

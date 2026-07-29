@@ -10,8 +10,8 @@ declare(strict_types=1);
 namespace eel_accounts\Service;
 
 /**
- * Plans and generates the complete filing iXBRL set without rebuilding
- * artifacts that remain current and filing-ready.
+ * Plans and generates the complete filing iXBRL set. Planning reports current
+ * artifacts, while an explicit generation command rebuilds every required file.
  */
 final class IxbrlFilingSetGenerationService
 {
@@ -187,34 +187,29 @@ final class IxbrlFilingSetGenerationService
 
         $messages = [];
         $warnings = [];
-        if ((string)$plan['accounts']['state'] === 'current') {
-            $messages[] = 'Accounting iXBRL reused because it is current and filing-ready.';
-            $this->report($progress, 'Reusing the current validated Accounting iXBRL…', 49);
-        } else {
-            $this->report($progress, 'Generating the Accounting iXBRL…', 12);
-            $generated = $this->generateAccounts($companyId, $accountingPeriodId);
-            if (empty($generated['success'])) {
-                return $this->failure((array)($generated['errors'] ?? [
-                    'Accounting iXBRL generation failed.',
-                ]), (array)($generated['warnings'] ?? []), $messages, $plan);
-            }
-            $this->report($progress, 'Running Arelle validation for the Accounting iXBRL…', 15);
-            $validated = $this->validateAccounts($companyId, $accountingPeriodId);
-            if ((string)($validated['status'] ?? '') !== 'passed') {
-                return $this->failure((array)($validated['errors'] ?? [
-                    'The Accounting iXBRL did not pass Arelle validation.',
-                ]), (array)($validated['warnings'] ?? []), $messages, $plan);
-            }
-            \eel_accounts\Support\RequestCache::clear();
-            $readiness = $this->readiness($companyId, $accountingPeriodId);
-            if (empty($readiness['ready_for_filing'])) {
-                return $this->failure((array)($readiness['filing_errors'] ?? [
-                    'The generated Accounting iXBRL is not filing-ready.',
-                ]), [], $messages, $plan);
-            }
-            $messages[] = 'Accounting iXBRL generated and validated.';
-            $warnings = array_merge($warnings, (array)($generated['warnings'] ?? []));
+        $this->report($progress, 'Generating the Accounting iXBRL…', 12);
+        $generated = $this->generateAccounts($companyId, $accountingPeriodId);
+        if (empty($generated['success'])) {
+            return $this->failure((array)($generated['errors'] ?? [
+                'Accounting iXBRL generation failed.',
+            ]), (array)($generated['warnings'] ?? []), $messages, $plan);
         }
+        $this->report($progress, 'Running Arelle validation for the Accounting iXBRL…', 15);
+        $validated = $this->validateAccounts($companyId, $accountingPeriodId);
+        if ((string)($validated['status'] ?? '') !== 'passed') {
+            return $this->failure((array)($validated['errors'] ?? [
+                'The Accounting iXBRL did not pass Arelle validation.',
+            ]), (array)($validated['warnings'] ?? []), $messages, $plan);
+        }
+        \eel_accounts\Support\RequestCache::clear();
+        $readiness = $this->readiness($companyId, $accountingPeriodId);
+        if (empty($readiness['ready_for_filing'])) {
+            return $this->failure((array)($readiness['filing_errors'] ?? [
+                'The generated Accounting iXBRL is not filing-ready.',
+            ]), [], $messages, $plan);
+        }
+        $messages[] = 'Accounting iXBRL generated and validated.';
+        $warnings = array_merge($warnings, (array)($generated['warnings'] ?? []));
 
         $periodCount = count((array)$plan['computations']);
         foreach ((array)$plan['computations'] as $index => $computationStage) {
@@ -226,17 +221,6 @@ final class IxbrlFilingSetGenerationService
                 72,
                 $percent + max(1, (int)floor($periodShare * 0.2))
             );
-            if ((string)$computationStage['state'] === 'current') {
-                $messages[] = 'Corporation Tax period ' . $sequence
-                    . ' iXBRL reused because it is current and filing-ready.';
-                $this->report(
-                    $progress,
-                    'Reusing current iXBRL for Corporation Tax period '
-                        . ($index + 1) . ' of ' . $periodCount . '…',
-                    $percent
-                );
-                continue;
-            }
             $this->report(
                 $progress,
                 'Generating iXBRL for Corporation Tax period '
@@ -286,9 +270,6 @@ final class IxbrlFilingSetGenerationService
         }
         if ((string)$companiesHouseStage['state'] === 'not_required') {
             $messages[] = 'No Companies House filing artifact is required for this accounting period.';
-        } elseif ((string)$companiesHouseStage['state'] === 'current') {
-            $messages[] = 'Companies House accounts iXBRL reused because it is current.';
-            $this->report($progress, 'Reusing the current Companies House accounts iXBRL…', 99);
         } else {
             $kind = (string)($companiesHouseContext['filing_kind'] ?? '');
             $this->report(

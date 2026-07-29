@@ -125,21 +125,6 @@ final class VehicleService
             $params['accounting_period_id'] = $accountingPeriodId;
         }
 
-        // PDO drivers do not all permit a named placeholder to occur more
-        // than once in a prepared statement.  Each source column needs its
-        // own bindings, otherwise configured company defaults can silently
-        // disappear from the register query on native prepares.
-        $vehicleNominalInClauses = [];
-        foreach (['asset', 'transaction', 'expense'] as $source) {
-            $placeholders = [];
-            foreach ($vehicleNominalIds as $index => $nominalId) {
-                $key = 'vehicle_' . $source . '_nominal_id_' . $index;
-                $placeholders[] = ':' . $key;
-                $params[$key] = $nominalId;
-            }
-            $vehicleNominalInClauses[$source] = implode(', ', $placeholders);
-        }
-
         $rows = \InterfaceDB::fetchAll(
             'SELECT ar.id,
                     ar.company_id,
@@ -183,15 +168,19 @@ final class VehicleService
              LEFT JOIN nominal_accounts en ON en.id = ecl.nominal_account_id
              LEFT JOIN journals j ON j.id = ar.linked_journal_id
              WHERE ar.company_id = :company_id' . $periodClause . '
-               AND (
-                   na.id IN (' . $vehicleNominalInClauses['asset'] . ')
-                   OR tn.id IN (' . $vehicleNominalInClauses['transaction'] . ')
-                   OR en.id IN (' . $vehicleNominalInClauses['expense'] . ')
-                   OR vd.asset_id IS NOT NULL
-               )
              ORDER BY ar.purchase_date DESC, ar.id DESC',
             $params
         ) ?: [];
+        // Apply the configured nominal comparison after the joined read.
+        // This avoids reusing a variable-length set of named PDO bindings
+        // across three source columns, which is not portable to native
+        // prepares and previously hid custom company mappings.
+        $rows = array_values(array_filter($rows, static function (array $row) use ($vehicleNominalIds): bool {
+            return trim((string)($row['vehicle_type'] ?? '')) !== ''
+                || in_array((int)($row['nominal_account_id'] ?? 0), $vehicleNominalIds, true)
+                || in_array((int)($row['transaction_nominal_id'] ?? 0), $vehicleNominalIds, true)
+                || in_array((int)($row['expense_nominal_id'] ?? 0), $vehicleNominalIds, true);
+        }));
 
         $warnings = [];
         foreach ($rows as $index => $row) {

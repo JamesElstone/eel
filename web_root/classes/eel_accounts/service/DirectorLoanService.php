@@ -111,6 +111,36 @@ final class DirectorLoanService
         foreach ($directors as $director) {
             $directorMap[(int)$director['id']] = $director;
         }
+        // A control movement may be attributed to a company party before that
+        // party has an ownership role or holding. It is nevertheless valid
+        // evidence for this subledger and must remain in that party's running
+        // balance; ownership is not a substitute for journal attribution.
+        foreach (\InterfaceDB::fetchAll(
+            'SELECT id, company_id, legal_name, party_type, linked_director_id
+             FROM company_parties
+             WHERE company_id = :company_id',
+            ['company_id' => $companyId]
+        ) as $party) {
+            $partyId = (int)($party['id'] ?? 0);
+            if ($partyId <= 0 || isset($directorMap[$partyId])) {
+                continue;
+            }
+            $linkedDirectorId = (int)($party['linked_director_id'] ?? 0);
+            $partyName = (string)($party['legal_name'] ?? '');
+            $director = [
+                'id' => $partyId,
+                'company_id' => $companyId,
+                'full_name' => $partyName . ($linkedDirectorId > 0 ? ' (Director)' : ''),
+                'party_name' => $partyName,
+                'party_type' => (string)($party['party_type'] ?? ''),
+                'linked_director_id' => $linkedDirectorId,
+                'is_active' => 1,
+                'appointed_on' => '',
+                'resigned_on' => '',
+            ];
+            $directors[] = $director;
+            $directorMap[$partyId] = $director;
+        }
 
         $groups = [];
         $statementRows = [];
@@ -182,6 +212,7 @@ final class DirectorLoanService
         }
 
         $perDirector = [];
+        $potentialS455Exposure = 0.0;
         foreach ($groups as $key => $position) {
             $asset = round((float)$position['opening_asset'] + (float)$position['movement_asset'], 2);
             $liability = round((float)$position['opening_liability'] + (float)$position['movement_liability'], 2);
@@ -253,6 +284,7 @@ final class DirectorLoanService
                     : 0.0,
             ];
             $perDirector[] = $position;
+            $potentialS455Exposure += $reportableAsset;
         }
 
         usort($perDirector, static fn(array $a, array $b): int =>
@@ -277,12 +309,26 @@ final class DirectorLoanService
         unset($row);
 
         $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
-        $assetReceivable = round(array_sum(array_column($perDirector, 'gross_asset')), 2);
-        $liabilityPayable = round(array_sum(array_column($perDirector, 'gross_liability')), 2);
-        $reportableAssetReceivable = round(array_sum(array_column($perDirector, 'reportable_asset')), 2);
-        $reportableLiabilityPayable = round(array_sum(array_column($perDirector, 'reportable_liability')), 2);
-        $desiredReclassification = round(array_sum(array_column($perDirector, 'desired_reclassification')), 2);
-        $postedAmount = round(array_sum(array_column($perDirector, 'posted_reclassification')), 2);
+        $assetReceivable = 0.0;
+        $liabilityPayable = 0.0;
+        $reportableAssetReceivable = 0.0;
+        $reportableLiabilityPayable = 0.0;
+        $desiredReclassification = 0.0;
+        $postedAmount = 0.0;
+        foreach ($perDirector as $position) {
+            $assetReceivable += (float)($position['gross_asset'] ?? 0);
+            $liabilityPayable += (float)($position['gross_liability'] ?? 0);
+            $reportableAssetReceivable += (float)($position['reportable_asset'] ?? 0);
+            $reportableLiabilityPayable += (float)($position['reportable_liability'] ?? 0);
+            $desiredReclassification += (float)($position['desired_reclassification'] ?? 0);
+            $postedAmount += (float)($position['posted_reclassification'] ?? 0);
+        }
+        $assetReceivable = round($assetReceivable, 2);
+        $liabilityPayable = round($liabilityPayable, 2);
+        $reportableAssetReceivable = round($reportableAssetReceivable, 2);
+        $reportableLiabilityPayable = round($reportableLiabilityPayable, 2);
+        $desiredReclassification = round($desiredReclassification, 2);
+        $postedAmount = round($postedAmount, 2);
         $pendingMagnitude = round(array_sum(array_map(
             static fn(array $position): float => abs((float)($position['pending_reclassification'] ?? 0)),
             $perDirector
@@ -349,7 +395,7 @@ final class DirectorLoanService
             'posted_reclassification' => $postedAmount,
             'pending_reclassification' => round($desiredReclassification - $postedAmount, 2),
             'pending_reclassification_magnitude' => $pendingMagnitude,
-            'potential_s455_exposure' => round(array_sum(array_column($perDirector, 'potential_s455_exposure')), 2),
+            'potential_s455_exposure' => round($potentialS455Exposure, 2),
             'net_position' => round($liabilityPayable - $assetReceivable, 2),
             'closing_balance' => round($liabilityPayable - $assetReceivable, 2),
             'net_position_label' => $this->balanceDirectionLabel(round($liabilityPayable - $assetReceivable, 2)),
@@ -544,7 +590,7 @@ final class DirectorLoanService
             }
             $directorEvidence[] = [
                 'director_id' => $partyId,
-                'director_name' => (string)($director['full_name'] ?? $director['party_name'] ?? 'Director'),
+                'director_name' => (string)($director['party_name'] ?? $director['full_name'] ?? 'Director'),
                 'party_id' => $partyId,
                 'linked_director_id' => $linkedDirectorId,
                 'is_director' => true,

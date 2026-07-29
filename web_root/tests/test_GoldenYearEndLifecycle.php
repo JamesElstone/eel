@@ -583,61 +583,28 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
             ->fetchForAccountingPeriod($companyId, $periodId);
 
         $beforeLock = goldenYearEndReportingSnapshot($companyId, $periodId);
-        InterfaceDB::beginTransaction();
-        try {
-            $taxReadiness = (new \eel_accounts\Service\YearEndTaxReadinessService())
-                ->fetchAccountingPeriodCtSummary($companyId, $periodId);
-            $approvalBasis = (new \eel_accounts\Service\YearEndTaxFreezeService())->approvalBasis($taxReadiness);
-            if (!is_array($approvalBasis)) {
-                throw new RuntimeException('AP ' . $periodId . ' CT basis was not ready for approval.');
-            }
-            $approval = (new \eel_accounts\Service\YearEndAcknowledgementService())->save(
-                $companyId,
-                $periodId,
-                'tax_readiness_acknowledgement',
-                $approvalBasis,
-                'golden_year_end_test',
-                '',
-                true
-            );
-            if (empty($approval['success'])) {
-                throw new RuntimeException('AP ' . $periodId . ' CT approval failed: ' . implode(' ', (array)($approval['errors'] ?? [])));
-            }
-            $taxPersistence = (new \eel_accounts\Service\CorporationTaxComputationService())
-                ->persistSummariesForYearEndLock($companyId, $periodId);
-            if (empty($taxPersistence['success'])) {
-                throw new RuntimeException('AP ' . $periodId . ' CT persistence failed: ' . implode(' ', (array)($taxPersistence['errors'] ?? [])));
-            }
-            $harness->assertTrue(!empty($taxPersistence['success']));
-            goldenYearEndApproveDirectorLoanReview($companyId, $periodId, 'golden_year_end_test');
-            $approvedFreezeManifestHash = (new \eel_accounts\Service\YearEndAcknowledgementService())
-                ->hashBasis((array)($approvalBasis['freeze_manifest'] ?? []));
-            foreach ((array)($taxPersistence['summaries'] ?? []) as $persistedSummary) {
-                $harness->assertSame(
-                    $approvedFreezeManifestHash,
-                    (string)($persistedSummary['year_end_freeze_manifest_hash'] ?? '')
-                );
-            }
-
-            $lock = (new \eel_accounts\Service\YearEndLockService())
-                ->lockPeriod($companyId, $periodId, 'golden_year_end_test');
-            if (empty($lock['success'])) {
-                throw new RuntimeException('AP ' . $periodId . ' lock failed: ' . implode(' ', (array)($lock['errors'] ?? [])));
-            }
-            $harness->assertTrue(!empty($lock['success']));
-            $filingSeal = (new \eel_accounts\Service\CorporationTaxComputationService())
-                ->sealSummariesForYearEndLock($companyId, $periodId);
-            if (empty($filingSeal['success'])) {
-                throw new RuntimeException('AP ' . $periodId . ' CT filing seal failed: ' . implode(' ', (array)($filingSeal['errors'] ?? [])));
-            }
-            $harness->assertSame(count($ctPeriods), count((array)($filingSeal['sealed_periods'] ?? [])));
-            InterfaceDB::commit();
-        } catch (Throwable $exception) {
-            if (InterfaceDB::inTransaction()) {
-                InterfaceDB::rollBack();
-            }
-            throw $exception;
+        goldenYearEndApproveAllSections($companyId, $periodId, 'golden_year_end_test');
+        $checklist = new \eel_accounts\Service\YearEndChecklistService(
+            backupCreator: goldenYearEndVerifiedBackupCreator()
+        );
+        $beforeCloseChecklist = $checklist->fetchChecklist($companyId, $periodId);
+        if (empty($beforeCloseChecklist['lock_ready'])) {
+            throw new RuntimeException('Golden close checklist is blocked: ' . json_encode(
+                array_map(static fn(array $check): string => (string)($check['check_code'] ?? ''), (array)($beforeCloseChecklist['blocking_checks'] ?? []))
+            ));
         }
+
+        $lock = $checklist->lockPeriod(
+            $companyId,
+            $periodId,
+            'golden_year_end_test',
+            true
+        );
+        if (empty($lock['success'])) {
+            throw new RuntimeException('AP ' . $periodId . ' close and lock failed: ' . implode(' ', (array)($lock['errors'] ?? [])));
+        }
+        $harness->assertTrue(!empty($lock['success']));
+        $harness->assertSame(count($ctPeriods), count((array)(($lock['corporation_tax_filing_basis'] ?? [])['sealed_periods'] ?? [])));
         $harness->assertTrue((new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $periodId));
         ixbrl_test_complete_disclosures($companyId, $periodId, 'golden_year_end_test');
         $filingApproval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
@@ -682,12 +649,194 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
 
     // Periods must reopen newest first: an earlier period remains protected
     // while a following accounting period is still locked.
+    $checklist = new \eel_accounts\Service\YearEndChecklistService(
+        backupCreator: goldenYearEndVerifiedBackupCreator()
+    );
     foreach (array_reverse($periods) as $periodId) {
-        $unlock = (new \eel_accounts\Service\YearEndLockService())
-            ->unlockPeriod($companyId, $periodId, 'golden_year_end_test_cleanup', 'Restore shared in-memory fixture state after lock assertions.');
+        $unlock = $checklist->unlockPeriod(
+            $companyId,
+            $periodId,
+            'golden_year_end_test',
+            'Exercise the Golden Year End reopen lifecycle.',
+            null,
+            true
+        );
         $harness->assertTrue(!empty($unlock['success']));
+        $harness->assertFalse((new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $periodId));
+        goldenAssertYearEndApprovalsAfterUnlock($harness, $companyId, $periodId);
+        $evidenceStatus = (string)InterfaceDB::fetchColumn(
+            'SELECT lifecycle_status FROM filing_evidence_bundles
+             WHERE company_id = :company_id AND accounting_period_id = :period_id
+             ORDER BY id DESC LIMIT 1',
+            ['company_id' => $companyId, 'period_id' => $periodId]
+        );
+        $harness->assertSame('reopened', $evidenceStatus);
+    }
+
+    foreach ($periods as $periodId) {
+        $blockedRelock = $checklist->lockPeriod($companyId, $periodId, 'golden_year_end_test', true);
+        $harness->assertFalse(!empty($blockedRelock['success']));
+        $harness->assertTrue(str_contains(
+            implode(' ', array_map('strval', (array)($blockedRelock['errors'] ?? []))),
+            'Cut-off journals review'
+        ));
+
+        goldenYearEndApproveSection(
+            $companyId,
+            $periodId,
+            'cut_off_journals_review',
+            'golden_year_end_test'
+        );
+        $relock = $checklist->lockPeriod($companyId, $periodId, 'golden_year_end_test', true);
+        if (empty($relock['success'])) {
+            throw new RuntimeException('AP ' . $periodId . ' re-lock failed: ' . implode(' ', (array)($relock['errors'] ?? [])));
+        }
+        $harness->assertTrue(!empty($relock['success']));
+        ixbrl_test_complete_disclosures($companyId, $periodId, 'golden_year_end_test');
+        $renewedApproval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
+            ->approveAndBuildFacts($companyId, $periodId, 'golden_year_end_test', 'Golden lifecycle re-lock filing approval.');
+        $harness->assertTrue((int)($renewedApproval['approval_id'] ?? 0) > 0);
+        $harness->assertTrue((int)($renewedApproval['fact_run_id'] ?? 0) > 0);
+    }
+
+    foreach (array_reverse($periods) as $periodId) {
+        $cleanup = $checklist->unlockPeriod(
+            $companyId,
+            $periodId,
+            'golden_year_end_test_cleanup',
+            'Restore shared Golden fixture state after re-lock assertions.',
+            null,
+            true
+        );
+        $harness->assertTrue(!empty($cleanup['success']));
     }
 });
+
+/** @return \eel_accounts\Contract\DatabaseBackupCreatorInterface */
+function goldenYearEndVerifiedBackupCreator(): \eel_accounts\Contract\DatabaseBackupCreatorInterface
+{
+    return new class implements \eel_accounts\Contract\DatabaseBackupCreatorInterface {
+        public function createBackup(int $companyId, string $trigger = 'Manual'): array
+        {
+            return [
+                'filename' => 'golden-year-end-test.sql.zip',
+                'size_bytes' => 1024,
+                'table_count' => 1,
+                'trigger' => $trigger,
+            ];
+        }
+    };
+}
+
+function goldenYearEndApproveAllSections(int $companyId, int $accountingPeriodId, string $actor): void
+{
+    foreach (goldenYearEndApprovalCodes($companyId, $accountingPeriodId) as $checkCode) {
+        goldenYearEndApproveSection($companyId, $accountingPeriodId, $checkCode, $actor);
+    }
+}
+
+function goldenYearEndApproveSection(int $companyId, int $accountingPeriodId, string $checkCode, string $actor): void
+{
+    $approvals = new \eel_accounts\Service\YearEndSectionApprovalService();
+    $review = $checkCode === 'companies_house_mismatch_acknowledgement'
+        || $checkCode === 'companies_house_no_filing_acknowledgement'
+        ? $approvals->fetchCompaniesHouseReview($companyId, $accountingPeriodId)
+        : $approvals->fetchReview($companyId, $accountingPeriodId, $checkCode);
+    if (empty($review['available']) || empty($review['can_approve'])) {
+        throw new RuntimeException(
+            'AP ' . $accountingPeriodId . ' / ' . $checkCode . ' could not be approved: '
+            . implode(' ', array_map('strval', (array)($review['errors'] ?? $review['approval_errors'] ?? [])))
+        );
+    }
+
+    $result = $approvals->approve(
+        $companyId,
+        $accountingPeriodId,
+        (string)($review['check_code'] ?? $checkCode),
+        goldenYearEndApprovalAnswers((array)($review['questions'] ?? [])),
+        $actor,
+        'Golden lifecycle approval.'
+    );
+    if (!empty($result['requires_review'])) {
+        $review = $approvals->fetchReview($companyId, $accountingPeriodId, $checkCode);
+        $result = $approvals->approve(
+            $companyId,
+            $accountingPeriodId,
+            $checkCode,
+            goldenYearEndApprovalAnswers((array)($review['questions'] ?? [])),
+            $actor,
+            'Golden lifecycle approval after refreshed review.'
+        );
+    }
+    if (empty($result['success'])) {
+        throw new RuntimeException(
+            'AP ' . $accountingPeriodId . ' / ' . $checkCode . ' approval failed: '
+            . implode(' ', array_map('strval', (array)($result['errors'] ?? [])))
+        );
+    }
+}
+
+/** @param list<array<string, mixed>> $questions @return array<string, string> */
+function goldenYearEndApprovalAnswers(array $questions): array
+{
+    $answers = [];
+    foreach ($questions as $question) {
+        $question = (array)$question;
+        $id = trim((string)($question['id'] ?? ''));
+        if ($id === '') {
+            continue;
+        }
+        if (array_key_exists('required_value', $question)) {
+            $answers[$id] = (string)$question['required_value'];
+            continue;
+        }
+        $options = (array)($question['options'] ?? []);
+        if ($options !== []) {
+            $answers[$id] = (string)array_key_first($options);
+            continue;
+        }
+        if (!empty($question['required'])) {
+            $answers[$id] = 'Golden lifecycle approval.';
+        }
+    }
+    return $answers;
+}
+
+/** @return list<string> */
+function goldenYearEndApprovalCodes(int $companyId, int $accountingPeriodId): array
+{
+    $companiesHouse = (new \eel_accounts\Service\YearEndSectionApprovalService())
+        ->fetchCompaniesHouseReview($companyId, $accountingPeriodId);
+    return [
+        'director_loan_year_end_review',
+        'tax_readiness_acknowledgement',
+        'expense_position_acknowledgement',
+        'retained_earnings_close_confirmation',
+        'transaction_tail_review',
+        'prepayment_approvals',
+        'cut_off_journals_review',
+        'fixed_asset_review_placeholder',
+        (string)($companiesHouse['check_code'] ?? 'companies_house_no_filing_acknowledgement'),
+    ];
+}
+
+function goldenAssertYearEndApprovalsAfterUnlock(
+    GeneratedServiceClassTestHarness $harness,
+    int $companyId,
+    int $accountingPeriodId
+): void {
+    $approvals = new \eel_accounts\Service\YearEndSectionApprovalService();
+    foreach (goldenYearEndApprovalCodes($companyId, $accountingPeriodId) as $checkCode) {
+        $review = $checkCode === 'companies_house_mismatch_acknowledgement'
+            || $checkCode === 'companies_house_no_filing_acknowledgement'
+            ? $approvals->fetchCompaniesHouseReview($companyId, $accountingPeriodId)
+            : $approvals->fetchReview($companyId, $accountingPeriodId, $checkCode);
+        $harness->assertSame(
+            $checkCode !== 'cut_off_journals_review',
+            !empty($review['acknowledgement_current'])
+        );
+    }
+}
 
 function goldenYearEndSavePartyLoanTerms(int $companyId): void
 {

@@ -340,6 +340,7 @@ final class IxbrlRevisedAccountsArtifactService
         $this->appendFactParagraph($document, $section, '', 'StatementThatRevisedReportReplacesPreviouslyFiledReportForPeriod', (string)$declarations['replaces_statement']);
         $this->appendFactParagraph($document, $section, '', 'StatementThatThisReportNowStatutoryAccountsForPeriod', (string)$declarations['statutory_accounts_statement']);
         $this->appendFactParagraph($document, $section, '', 'StatementThatThisReportHasBeenPreparedAsDatePreviouslyFiledReport', (string)$declarations['prepared_as_statement']);
+        $this->appendOriginalApprovalStatement($document, $section, $originalApprovalDate);
         $this->appendFactParagraph($document, $section, 'Respects in which the original accounts did not comply', 'StatementRespectsInWhichPreviouslyFiledReportDidNotComplyWithCompaniesAct2006', (string)$declarations['non_compliance_explanation']);
         $this->appendFactParagraph($document, $section, 'Significant amendments made to remedy those defects', 'StatementSignificantAmendmentsToPreviouslyFiledReport', (string)$declarations['significant_amendments']);
         $this->appendRevisionApprovalStatement($document, $section, $approvalDate);
@@ -661,6 +662,21 @@ final class IxbrlRevisedAccountsArtifactService
         $fact->appendChild($document->createTextNode($this->displayDate($approvalDate)));
         $paragraph->appendChild($fact);
         $paragraph->appendChild($document->createTextNode('.'));
+        $container->appendChild($paragraph);
+        $section->appendChild($container);
+    }
+
+    private function appendOriginalApprovalStatement(
+        \DOMDocument $document,
+        \DOMElement $section,
+        string $originalApprovalDate
+    ): void {
+        $container = $document->createElementNS(self::XHTML_NS, 'div');
+        $container->setAttribute('class', 'revision-statement keepTogether');
+        $paragraph = $document->createElementNS(self::XHTML_NS, 'p');
+        $paragraph->appendChild($document->createTextNode(
+            'The original accounts were approved on ' . $this->displayDate($originalApprovalDate) . '.'
+        ));
         $container->appendChild($paragraph);
         $section->appendChild($container);
     }

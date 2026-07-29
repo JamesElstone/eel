@@ -248,7 +248,22 @@ $harness->check('GoldenTaxControlMatrix', 'persists the exact loss checkpoint us
         $harness->assertSame('1866.00', goldenTaxControlMoney($summary['losses_carried_forward'] ?? 0));
         $harness->assertSame('not_persisted', (string)($summary['computation_persistence']['status'] ?? ''));
 
-        $persisted = $computation->persistSummariesForYearEndLock($companyId, 9112);
+        // AP9112 deliberately has a non-zero disallowable add-back.  The
+        // Year End route supplies this prepared approval model and requires
+        // its manifest hash to match the persisted close evidence.
+        $readiness = (new \eel_accounts\Service\YearEndTaxReadinessService())
+            ->fetchAccountingPeriodCtSummary($companyId, 9112);
+        $preparedSummary = (array)($readiness['periods'][0] ?? []);
+        $preparedBreakdown = (array)($preparedSummary['disallowable_expense_breakdown'] ?? []);
+        $harness->assertSame('600.00', goldenTaxControlMoney($preparedBreakdown['expected_amount'] ?? 0));
+        $harness->assertSame(true, (bool)($preparedBreakdown['reconciled'] ?? false));
+
+        $persisted = $computation->persistSummariesForYearEndLock(
+            $companyId,
+            9112,
+            (array)($readiness['periods'] ?? []),
+            (string)($readiness['freeze_manifest_hash'] ?? '')
+        );
         goldenTaxControlRequireSuccess($persisted);
         $harness->assertCount(1, (array)($persisted['summaries'] ?? []));
         $persistedSummary = (array)($persisted['summaries'][0] ?? []);
@@ -260,6 +275,10 @@ $harness->check('GoldenTaxControlMatrix', 'persists the exact loss checkpoint us
         $harness->assertSame(
             (string)($persisted['freeze_manifest_hash'] ?? ''),
             (string)($persistedSummary['year_end_freeze_manifest_hash'] ?? 'different')
+        );
+        $harness->assertSame(
+            (string)($readiness['freeze_manifest_hash'] ?? ''),
+            (string)($persisted['freeze_manifest_hash'] ?? 'different')
         );
         $harness->assertTrue(strlen((string)($persisted['freeze_manifest_hash'] ?? '')) === 64);
 

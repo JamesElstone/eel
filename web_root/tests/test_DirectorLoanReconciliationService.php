@@ -715,6 +715,9 @@ function directorLoanReclassificationSavePartyTerms(
             'deferment_right_confirmed' => false,
             'set_off_right_confirmed' => $setOffPermitted,
             'settlement_intention' => $setOffPermitted ? 'simultaneous' : 'independently',
+            'advance_interest_rate_percent' => 0,
+            'advance_security_type' => 'unsecured',
+            'advance_repayment_basis' => 'no_fixed_date',
         ],
         'test'
     );

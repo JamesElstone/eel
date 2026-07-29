@@ -327,12 +327,18 @@ final class YearEndLockService
                     ?? 'The Participator Loan terms snapshots could not be reopened.'));
             }
 
-            $progress?->__invoke('Invalidating affected Year End review caches…', 68);
+            $progress?->__invoke('Refreshing the Director Loan reversal journal review…', 68);
             $sectionApprovals = new YearEndSectionApprovalService();
-            $sectionApprovals->invalidateAllFromAccountingPeriod(
+            // Unlocking reverses the lock-time Director Loan offset journal.
+            // That changes the cut-off journal evidence, but it does not undo
+            // the other user-reviewed Year End facts. Keep those approvals as
+            // auditable, current evidence and require only the affected journal
+            // review to be signed again before a subsequent lock.
+            $sectionApprovals->invalidateSectionFromAccountingPeriod(
                 $companyId,
                 $accountingPeriodId,
-                'Accounting period unlocked; rebuild this and dependent later-period Year End reviews'
+                'cut_off_journals_review',
+                'Accounting period unlocked; the Director Loan offset reversal requires the cut-off journal review again'
             );
             \eel_accounts\Support\RequestCache::clear();
             $sectionReviewCache = $sectionApprovals->refreshInvalidatedFromAccountingPeriod(

@@ -116,6 +116,11 @@ final class YearEndTaxReadinessService
         }
 
         $periodSummaries = (new CorporationTaxHardGateService())->apply($companyId, $periodSummaries);
+        $periodSummaries = $service->withYearEndDisallowableExpenseBreakdowns(
+            $companyId,
+            $accountingPeriodId,
+            $periodSummaries
+        );
         $totals = $this->totals($periodSummaries);
         $warnings = $this->warnings($periodSummaries);
         $prepaymentPreviewWarnings = array_values(array_unique(array_merge(...array_map(

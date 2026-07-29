@@ -672,6 +672,50 @@ final class S455ReviewService
                 $cutoff,
             ], $allIds)
         );
+        // Retain a direct manual-journal guard alongside the evidence query.
+        // Replacement-bank joins are deliberately complex so that valid cash
+        // evidence remains available; they must not cause a separately posted
+        // manual control movement to disappear from the unsupported-movement
+        // review.
+        $manualCorrectionExclusion = $hasJournalReversals
+            ? ' AND NOT EXISTS (
+                   SELECT 1 FROM journal_reversals jr
+                   WHERE jr.source_journal_id = j.id OR jr.reversal_journal_id = j.id
+               )'
+            : '';
+        $manualUnsupported = \InterfaceDB::fetchAll(
+            'SELECT j.id AS journal_id, jl.id AS journal_line_id, j.journal_date,
+                    COALESCE(j.description, \'\') AS description,
+                    COALESCE(j.source_type, \'\') AS source_type,
+                    COALESCE(j.source_ref, \'\') AS source_ref,
+                    jl.debit, jl.credit
+             FROM journals j
+             INNER JOIN journal_lines jl ON jl.journal_id = j.id
+             WHERE j.company_id = ? AND j.is_posted = 1
+               AND j.journal_date >= ? AND j.journal_date <= ?
+               AND j.created_at <= ? AND j.updated_at <= ?
+               AND jl.nominal_account_id IN (' . $placeholders . ')
+               AND j.source_type <> \'bank_csv\'
+               AND NOT EXISTS (
+                   SELECT 1 FROM journal_entry_metadata jem
+                   WHERE jem.journal_id = j.id AND jem.journal_tag = \'director_loan_offset\'
+               )' . $manualCorrectionExclusion,
+            array_merge([
+                $companyId,
+                $periodStart,
+                min(substr($cutoff, 0, 10), $windowEnd),
+                $cutoff,
+                $cutoff,
+            ], $allIds)
+        );
+        $unsupportedByLine = [];
+        foreach (array_merge($unsupportedMovements, $manualUnsupported) as $movement) {
+            $lineId = (int)($movement['journal_line_id'] ?? 0);
+            if ($lineId > 0) {
+                $unsupportedByLine[$lineId] = $movement;
+            }
+        }
+        $unsupportedMovements = array_values($unsupportedByLine);
         $unsupportedCount = count($unsupportedMovements);
         if ($unsupportedCount > 0) {
             $errors[] = $unsupportedCount . ' non-cash or unsupported loan movement(s) cannot be used in the v1 s455 calculation.';

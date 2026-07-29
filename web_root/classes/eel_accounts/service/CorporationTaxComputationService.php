@@ -495,6 +495,41 @@ final class CorporationTaxComputationService
                 $preparedByCtPeriod[$preparedCtPeriodId] = $preparedSummary;
             }
         }
+        if ($preparedSummaries !== null && trim((string)$expectedFreezeManifestHash) !== '') {
+            // Reject a stale approval before creating any computation evidence.
+            // The Year End route passes the same final readiness model here, so
+            // this is also the authoritative proof that persistence is bound to
+            // the approved model rather than a post-persistence cache variant.
+            $approvedSummaries = (new CorporationTaxHardGateService())->apply(
+                $companyId,
+                array_values($preparedByCtPeriod)
+            );
+            $approvedSummaries = $this->withYearEndDisallowableExpenseBreakdowns(
+                $companyId,
+                $accountingPeriodId,
+                $approvedSummaries
+            );
+            $approvedFreeze = (new YearEndTaxFreezeService())->build(
+                $companyId,
+                $accountingPeriodId,
+                $approvedSummaries,
+                [],
+                count($periods)
+            );
+            $approvedFreezeManifestHash = trim((string)($approvedFreeze['freeze_manifest_hash'] ?? ''));
+            if ($approvedFreezeManifestHash === ''
+                || !hash_equals(trim((string)$expectedFreezeManifestHash), $approvedFreezeManifestHash)) {
+                return [
+                    'success' => false,
+                    'errors' => ['The persisted Corporation Tax evidence does not match the final approved Year End tax basis'
+                        . ' (expected ' . substr(trim((string)$expectedFreezeManifestHash), 0, 12)
+                        . ', generated ' . ($approvedFreezeManifestHash !== '' ? substr($approvedFreezeManifestHash, 0, 12) : 'missing')
+                        . ').'],
+                    'summaries' => $approvedSummaries,
+                    'freeze_manifest_hash' => $approvedFreezeManifestHash,
+                ];
+            }
+        }
         foreach ($periods as $period) {
             $ctPeriodId = (int)($period['id'] ?? 0);
             if ($ctPeriodId <= 0) {
@@ -533,10 +568,22 @@ final class CorporationTaxComputationService
                     || empty($summary['available'])
                     || (int)($summary['accounting_period_id'] ?? 0) !== $accountingPeriodId) {
                     $errors[] = (string)($period['display_label'] ?? ('CT Period ' . (int)($period['sequence_no'] ?? 0)))
-                        . ': The final validated Corporation Tax summary was not available for persistence.';
+                            . ': The final validated Corporation Tax summary was not available for persistence.';
                     continue;
                 }
-                $summary = $this->persistCalculatedSummaryWithCurrentCaches($companyId, $summary);
+                // Persist the freshly validated model, but retain that exact
+                // approved model as the freeze-manifest source. Persistence
+                // adds run/cache state that is not part of the reviewed tax
+                // basis and must not cause the evidence hash to drift.
+                $preparedSummary = $summary;
+                $persistedSummary = $this->persistCalculatedSummaryWithCurrentCaches($companyId, $summary);
+                if (empty($persistedSummary['available'])) {
+                    $summary = $persistedSummary;
+                } else {
+                    $summary = $preparedSummary;
+                    $summary['computation_run_id'] = (int)($persistedSummary['computation_run_id'] ?? 0);
+                    $summary['computation_persistence'] = (array)($persistedSummary['computation_persistence'] ?? []);
+                }
             } else {
                 $summary = $this->persistSummaryForCtPeriodIdWithCurrentCaches($companyId, $ctPeriodId);
             }
@@ -576,16 +623,11 @@ final class CorporationTaxComputationService
             $canonicalSummaries[] = array_merge($summary, $position);
         }
         $summaries = $canonicalSummaries;
-        foreach ($summaries as &$summary) {
-            $ctPeriodId = (int)($summary['ct_period_id'] ?? 0);
-            $workings = (new TaxWorkingsService())->fetchWorkings($companyId, $accountingPeriodId, $ctPeriodId);
-            $summary['disallowable_expense_breakdown'] = (new DisallowableExpenseBreakdownService())
-                ->fromTaxWorkings(
-                    (array)($workings['disallowable_add_backs'] ?? []),
-                    (float)($summary['disallowable_add_backs'] ?? 0)
-                );
-        }
-        unset($summary);
+        $summaries = $this->withYearEndDisallowableExpenseBreakdowns(
+            $companyId,
+            $accountingPeriodId,
+            $summaries
+        );
         $freeze = (new YearEndTaxFreezeService())->build(
             $companyId,
             $accountingPeriodId,
@@ -645,6 +687,39 @@ final class CorporationTaxComputationService
             'summaries' => $summaries,
             'freeze_manifest_hash' => (string)($freeze['freeze_manifest_hash'] ?? ''),
         ];
+    }
+
+    /**
+     * Adds the disallowable-expense evidence that forms part of the canonical
+     * Year End Corporation Tax freeze manifest.
+     *
+     * The live approval model and the persisted close-evidence model must use
+     * precisely the same enrichment. Otherwise a valid approval can acquire a
+     * different manifest hash solely because persistence added this evidence.
+     *
+     * @param list<array<string, mixed>> $summaries
+     * @return list<array<string, mixed>>
+     */
+    public function withYearEndDisallowableExpenseBreakdowns(
+        int $companyId,
+        int $accountingPeriodId,
+        array $summaries
+    ): array {
+        foreach ($summaries as &$summary) {
+            if (is_array($summary['disallowable_expense_breakdown'] ?? null)) {
+                continue;
+            }
+            $ctPeriodId = (int)($summary['ct_period_id'] ?? 0);
+            $workings = (new TaxWorkingsService())->fetchWorkings($companyId, $accountingPeriodId, $ctPeriodId);
+            $summary['disallowable_expense_breakdown'] = (new DisallowableExpenseBreakdownService())
+                ->fromTaxWorkings(
+                    (array)($workings['disallowable_add_backs'] ?? []),
+                    (float)($summary['disallowable_add_backs'] ?? 0)
+                );
+        }
+        unset($summary);
+
+        return $summaries;
     }
 
     /** Seals immutable calculation evidence; post-Year-End filing approval is separate. */

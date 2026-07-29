@@ -271,9 +271,20 @@ final class Ct600BuilderService
         }
         $profitsBeforeDonationsPath = 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/'
             . 'ChargesAndReliefs/ProfitsBeforeDonationsAndGroupRelief';
-        if ($this->positive($values, $profitsBeforeDonationsPath)) {
+        // CT600 box 300 is required when box 235 is present, including where
+        // carried-forward losses reduce the derived amount to zero.
+        if ($this->positive($values, $profitsBeforeDonationsPath)
+            || $this->positive($values, $profitsBeforePath)) {
             $charges = $this->element($document, $calculation, 'ChargesAndReliefs');
-            $this->element($document, $charges, 'ProfitsBeforeDonationsAndGroupRelief', $values[$profitsBeforeDonationsPath]);
+            $profitsBeforeDonations = array_key_exists($profitsBeforeDonationsPath, $values)
+                ? $values[$profitsBeforeDonationsPath]
+                : number_format(
+                    max(0, (float)$values[$profitsBeforePath] - (float)($values[$deductionsTotalPath] ?? 0)),
+                    2,
+                    '.',
+                    ''
+                );
+            $this->element($document, $charges, 'ProfitsBeforeDonationsAndGroupRelief', $profitsBeforeDonations);
         }
         // The CT600 schema defines ChargeableProfits as a whole-pound value.
         // The frozen computation remains in pence for reconciliation elsewhere,

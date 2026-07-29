@@ -2778,11 +2778,10 @@ final class CompaniesHouseAccountsSubmissionService
                 ?? $input['original_non_compliance_explanation']
                 ?? ''
         ));
-        $nonComplianceText = $suppliedNonCompliance !== ''
-            ? $suppliedNonCompliance
-            : $this->finaliseRevisionDisclosure($nonCompliance);
         // A user-supplied explanation supplements the generated statutory
-        // restatements; it must not suppress fact-model-derived amendments.
+        // restatements; it must not suppress the fact-model-derived account of
+        // non-compliance or the amendments made to remedy it.
+        $nonComplianceText = $this->finaliseRevisionDisclosure($nonCompliance);
         $amendmentsText = $this->finaliseRevisionDisclosure($amendments);
         if (mb_strtolower($nonComplianceText) === mb_strtolower($amendmentsText)) {
             $amendmentsText = $this->finaliseRevisionDisclosure([

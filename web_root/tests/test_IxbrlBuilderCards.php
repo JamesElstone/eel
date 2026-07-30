@@ -410,6 +410,22 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, 'name="approval_note" rows="2" disabled aria-disabled="true"'));
         $harness->assertTrue(str_contains($html, '>I Approve this Statement of Fact</button>'));
         $harness->assertTrue(str_contains($html, 'type="submit" disabled aria-disabled="true"'));
+        $harness->assertTrue(str_contains(
+            $html,
+            'name="declarant_authority" required data-state-default="" disabled aria-disabled="true"'
+        ));
+        $harness->assertTrue(str_contains(
+            $html,
+            'name="original_unfiled_confirmed" value="1" required data-ct600-authorisation-field="true"'
+        ));
+        $harness->assertTrue(str_contains(
+            $html,
+            'data-ct600-authorisation-field="true" disabled aria-disabled="true"'
+        ));
+        $harness->assertTrue(str_contains(
+            $html,
+            'id="save_ct600_return_authorisation_button" type="submit" disabled aria-disabled="true"'
+        ));
     });
 
     $harness->check(_ixbrl_accounts_disclosuresCard::class, 'renders Companies House revised accounts disclosure immediately after FRS 105 notes', static function () use ($harness, $card): void {

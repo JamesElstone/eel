@@ -276,7 +276,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                     </div>
                 </section>
             </form>
-                ' . $this->ct600AuthorisationPanel($companyId, $accountingPeriodId, $context) . '
+                ' . $this->ct600AuthorisationPanel($companyId, $accountingPeriodId, $context, $approvalCurrent) . '
                 <div class="settings-stack">
                     <section class="panel-soft ixbrl-dormancy-summary">
                         <div class="status-head">
@@ -390,7 +390,12 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         </section>';
     }
 
-    private function ct600AuthorisationPanel(int $companyId, int $accountingPeriodId, array $context): string
+    private function ct600AuthorisationPanel(
+        int $companyId,
+        int $accountingPeriodId,
+        array $context,
+        bool $approvalCurrent = false
+    ): string
     {
         $service = new \eel_accounts\Service\Ct600ReturnAuthorisationService();
         $saved = $service->fetch($companyId, $accountingPeriodId);
@@ -421,10 +426,11 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         $eligibilityNotice = !$hasEligibleAuthorisers
             ? '<div class="standout helper">No individual has an eligible authority effective today. Add a current director or filing-authority relationship before saving a new declaration.</div>'
             : '';
-        $question = static function (string $key, string $label, bool $value): string {
+        $disabledAttribute = $approvalCurrent ? ' disabled aria-disabled="true"' : '';
+        $question = static function (string $key, string $label, bool $value) use ($disabledAttribute): string {
             return '<fieldset class="panel-soft"><legend>' . \eel_accounts\Support\Utf8::html($label) . '</legend><div class="actions-row">'
-                . '<label><input type="radio" name="' . $key . '" value="1" required data-ct600-authorisation-field="true"' . ($value ? ' checked' : '') . '> Yes</label>'
-                . '<label><input type="radio" name="' . $key . '" value="0" required data-ct600-authorisation-field="true"' . (!$value ? ' checked' : '') . '> No</label>'
+                . '<label><input type="radio" name="' . $key . '" value="1" required data-ct600-authorisation-field="true"' . ($value ? ' checked' : '') . $disabledAttribute . '> Yes</label>'
+                . '<label><input type="radio" name="' . $key . '" value="0" required data-ct600-authorisation-field="true"' . (!$value ? ' checked' : '') . $disabledAttribute . '> No</label>'
                 . '</div></fieldset>';
         };
         return '<section class="panel-soft ixbrl-approval-panel"><div class="status-head"><h3 class="card-title">Corporation Tax Return Authorisation</h3></div>'
@@ -438,7 +444,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
             . '<input type="hidden" name="card_action" value="Ixbrl">' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="intent" value="save_ct600_return_authorisation"><input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
             . '<div class="form-row full table-scroll"><table><tbody>'
-            . '<tr><th scope="row"><label for="ct600_declarant_authority">Authoriser and capacity</label></th><td><select class="select" id="ct600_declarant_authority" name="declarant_authority" required data-state-default="' . \eel_accounts\Support\Utf8::html($renderedSelectedReference) . '">' . $options . '</select></td></tr>'
+            . '<tr><th scope="row"><label for="ct600_declarant_authority">Authoriser and capacity</label></th><td><select class="select" id="ct600_declarant_authority" name="declarant_authority" required data-state-default="' . \eel_accounts\Support\Utf8::html($renderedSelectedReference) . '"' . $disabledAttribute . '>' . $options . '</select></td></tr>'
             . '<tr><th scope="row">Saved declarant</th><td>' . \eel_accounts\Support\Utf8::html($savedName !== '' ? $savedName : 'Not recorded in the legacy authorisation') . '</td></tr>'
             . '<tr><th scope="row">Saved capacity</th><td>' . \eel_accounts\Support\Utf8::html($savedStatus !== '' ? $savedStatus : 'Not saved') . '</td></tr>'
             . '<tr><th scope="row">Last updated on</th><td>' . \eel_accounts\Support\Utf8::html((string)($saved['saved_at'] ?? 'Not saved')) . '</td></tr>'
@@ -447,7 +453,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
             . $question('original_unfiled_confirmed', 'Is this an original return that has not already been filed for this CT period?', !empty($saved['original_unfiled_confirmed']))
             . $question('authority_confirmed', 'Are you authorised to file this Corporation Tax return for the company?', !empty($saved['authority_confirmed']))
             . $question('declaration_confirmed', 'Do you declare that the information in this return is correct and complete to the best of your knowledge and belief?', !empty($saved['declaration_confirmed']))
-            . '<div class="actions-row"><button class="button primary" id="save_ct600_return_authorisation_button" type="submit" disabled>Approve Corporation Tax Return</button></div></form></section>';
+            . '<div class="actions-row"><button class="button primary" id="save_ct600_return_authorisation_button" type="submit" disabled' . ($approvalCurrent ? ' aria-disabled="true"' : '') . '>Approve Corporation Tax Return</button></div></form></section>';
     }
 
     private function approvalBlockerNotice(array $status): string

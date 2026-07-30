@@ -36,18 +36,23 @@ $harness->run(_incorporation_relationshipsCard::class, static function (
         ]);
 
         $harness->assertSame(
-            'Record effective Participator and Associate relationships. Shareholder status is derived from effective share allocations.',
+            'Record effective ownership and filing-authority relationships. Shareholder status is derived from effective share allocations, and each party may hold multiple roles.',
             $card->helper([])
         );
         $harness->assertTrue(str_contains($html, '<option value="participator">Participator</option>'));
         $harness->assertTrue(str_contains($html, '<option value="associate">Associate</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="company_secretary">Company Secretary</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="authorised_agent">Authorised Agent</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="authorised_employee">Authorised Employee</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="tax_agent_or_accountant">Tax Agent or Accountant</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="liquidator">Liquidator</option>'));
         $harness->assertFalse(str_contains($html, '<option value="shareholder">Shareholder</option>'));
         $harness->assertTrue(str_contains($html, 'Shareholder (calculated)'));
         $harness->assertTrue(str_contains($html, '<th>Manage</th>'));
         $harness->assertTrue(str_contains($html, 'aria-label="Last effective date"'));
         $harness->assertTrue(str_contains($html, '>End role</button>'));
         $harness->assertFalse(str_contains($html, 'End an ownership role'));
-        $harness->assertFalse(str_contains($html, '<option value="12">Example Owner</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="12">Example Owner</option>'));
         $harness->assertTrue(str_contains($html, '<option value="13">Unrelated Party</option>'));
     });
 });

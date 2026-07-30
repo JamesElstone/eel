@@ -421,7 +421,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         int $accountingPeriodId,
         ActionProgressFramework $progress
     ): array {
-        $progress->report('Starting Companies House CompanyData preflight…', 0);
+        $progress->report('Checking the Companies House company authentication code…', 0);
         $submissionId = (int)$request->input('submission_id', 0);
         $companyAuthCode = trim((string)$request->input('company_auth_code', ''));
         if (preg_match('/^[A-Za-z0-9]{6}$/D', $companyAuthCode) !== 1) {

@@ -273,15 +273,24 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertFalse(str_contains($html, 'name="prepared_under_small_companies_regime"'));
         $harness->assertFalse(str_contains($html, 'value="James Elstone"'));
         $harness->assertTrue(str_contains($html, 'Required'));
-        $harness->assertTrue(str_contains($html, 'Save Basic Information'));
+        $harness->assertTrue(str_contains($html, 'Approve Company Accounts'));
         $harness->assertTrue(str_contains($html, 'data-state-fields="ixbrl_average_number_employees,ixbrl_accounts_approval_date,ixbrl_approving_director_id"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_ixbrl_core_details"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_ixbrl_disclosure_field"'));
         $harness->assertTrue(str_contains($html, 'data-submit-on-change="true"'));
-        $saveButtonPosition = strpos($html, 'Save Basic Information');
-        $corePanelEnd = strpos($html, "</form>\n                <div class=\"settings-stack\">");
-        $harness->assertTrue($saveButtonPosition !== false && $corePanelEnd !== false && $saveButtonPosition < $corePanelEnd);
-        $harness->assertTrue(str_contains($html, '<h3 class="card-title">Account Period Basic Information</h3>'));
+        $saveButtonPosition = strpos($html, 'Approve Company Accounts');
+        $corePanelEnd = $saveButtonPosition !== false ? strpos($html, '</form>', $saveButtonPosition) : false;
+        $ct600AuthorisationPosition = strpos($html, 'Corporation Tax Return Authorisation');
+        $harness->assertSame(true,
+            $saveButtonPosition !== false
+            && $corePanelEnd !== false
+            && $ct600AuthorisationPosition !== false
+            && $saveButtonPosition < $corePanelEnd
+            && $corePanelEnd < $ct600AuthorisationPosition
+        );
+        $harness->assertSame(true, str_contains($html, 'name="declarant_authority" required'));
+        $harness->assertFalse(str_contains($html, 'name="declarant_status"'));
+        $harness->assertTrue(str_contains($html, '<h3 class="card-title">Accounts Approval</h3>'));
         $harness->assertTrue(str_contains($html, '<th scope="row">Last updated on</th><td>Not yet saved</td>'));
         $harness->assertTrue(str_contains($html, '<th scope="row">Last updated by</th><td>Not yet saved</td>'));
         $harness->assertTrue(str_contains($html, '>Director signing and approving the accounts</label>'));

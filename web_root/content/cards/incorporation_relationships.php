@@ -14,7 +14,7 @@ final class _incorporation_relationshipsCard extends CardBaseFramework
 
     public function helper(array $context): string
     {
-        return 'Record effective Participator and Associate relationships. Shareholder status is derived from effective share allocations.';
+        return 'Record effective ownership and filing-authority relationships. Shareholder status is derived from effective share allocations, and each party may hold multiple roles.';
     }
 
     public function services(): array
@@ -64,8 +64,11 @@ final class _incorporation_relationshipsCard extends CardBaseFramework
                     . '<td>Current</td><td>—</td></tr>';
             }
             foreach ((array)($party['roles'] ?? []) as $role) {
+                $roleType = (string)($role['role_type'] ?? '');
+                $roleLabel = \eel_accounts\Service\OwnershipPartyService::ROLE_LABELS[$roleType]
+                    ?? HelperFramework::labelFromKey($roleType, '_');
                 $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)$party['legal_name']) . '</td>'
-                    . '<td>' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)$role['role_type'], '_')) . '</td>'
+                    . '<td>' . \eel_accounts\Support\Utf8::html($roleLabel) . '</td>'
                     . '<td>' . \eel_accounts\Support\Utf8::html(HelperFramework::displayDate((string)($role['effective_from'] ?? ''))) . '</td>'
                     . '<td>' . \eel_accounts\Support\Utf8::html(
                         trim((string)($role['effective_to'] ?? '')) !== ''
@@ -84,12 +87,17 @@ final class _incorporation_relationshipsCard extends CardBaseFramework
 
     private function roleForm(int $companyId, string $partyOptions): string
     {
+        $roleOptions = '';
+        foreach (\eel_accounts\Service\OwnershipPartyService::ROLE_LABELS as $roleType => $label) {
+            $roleOptions .= '<option value="' . \eel_accounts\Support\Utf8::html($roleType) . '">'
+                . \eel_accounts\Support\Utf8::html($label) . '</option>';
+        }
         return '<form method="post" data-ajax="true" class="panel-soft settings-stack">'
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="Incorporation"><input type="hidden" name="intent" value="save_ownership_role">'
             . '<input type="hidden" name="company_id" value="' . $companyId . '"><h4 class="card-title">Add effective role</h4>'
             . '<div class="form-grid"><div class="form-row"><label>Party</label><select class="select" name="party_id" required><option value="">Select</option>' . $partyOptions . '</select></div>'
-            . '<div class="form-row"><label>Role</label><select class="select" name="role_type"><option value="participator">Participator</option><option value="associate">Associate</option></select></div>'
+            . '<div class="form-row"><label>Role</label><select class="select" name="role_type">' . $roleOptions . '</select></div>'
             . '<div class="form-row"><label>Effective from</label><input class="input" type="date" name="effective_from" required></div></div>'
             . '<div class="actions-row"><button class="button primary" type="submit">Add role</button></div></form>';
     }
@@ -128,9 +136,6 @@ final class _incorporation_relationshipsCard extends CardBaseFramework
     {
         $html = '';
         foreach ($parties as $party) {
-            if ($this->calculatedShareholderFrom($party) !== null || !empty($party['roles'])) {
-                continue;
-            }
             $html .= '<option value="' . (int)$party['id'] . '">' . \eel_accounts\Support\Utf8::html((string)$party['legal_name']) . '</option>';
         }
         return $html;

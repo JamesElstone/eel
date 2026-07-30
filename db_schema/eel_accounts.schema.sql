@@ -1196,7 +1196,7 @@ CREATE TABLE `company_party_roles` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
   `party_id` bigint(20) NOT NULL,
-  `role_type` enum('participator','associate') NOT NULL,
+  `role_type` enum('participator','associate','company_secretary','authorised_agent','authorised_employee','tax_agent_or_accountant','liquidator') NOT NULL,
   `effective_from` date NOT NULL,
   `effective_to` date DEFAULT NULL,
   `source_note` text DEFAULT NULL,
@@ -3603,7 +3603,53 @@ CREATE TABLE `year_end_reviews` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 DROP TABLE IF EXISTS `ct_period_filing_bases`;
+DROP TABLE IF EXISTS `ct600_generated_artifacts`;
+DROP TABLE IF EXISTS `ct600_return_authorisations`;
 DROP TABLE IF EXISTS `ixbrl_accounts_filing_approvals`;
+CREATE TABLE `ct600_return_authorisations` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `declarant_name` varchar(100) DEFAULT NULL,
+  `declarant_status` varchar(64) NOT NULL,
+  `declarant_party_id` bigint(20) DEFAULT NULL,
+  `declarant_director_id` bigint(20) DEFAULT NULL,
+  `declarant_role_id` bigint(20) DEFAULT NULL,
+  `original_unfiled_confirmed` tinyint(1) NOT NULL DEFAULT 0,
+  `authority_confirmed` tinyint(1) NOT NULL DEFAULT 0,
+  `declaration_confirmed` tinyint(1) NOT NULL DEFAULT 0,
+  `saved_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `saved_by` varchar(100) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ct600_return_authorisation` (`company_id`,`accounting_period_id`),
+  KEY `idx_ct600_authorisation_company` (`company_id`),
+  KEY `idx_ct600_authorisation_period` (`accounting_period_id`),
+  KEY `idx_ct600_authorisation_party` (`declarant_party_id`),
+  KEY `idx_ct600_authorisation_director` (`declarant_director_id`),
+  KEY `idx_ct600_authorisation_party_role` (`declarant_role_id`),
+  CONSTRAINT `fk_ct600_authorisation_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct600_authorisation_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct600_authorisation_party` FOREIGN KEY (`declarant_party_id`) REFERENCES `company_parties` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct600_authorisation_director` FOREIGN KEY (`declarant_director_id`) REFERENCES `company_directors` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct600_authorisation_party_role` FOREIGN KEY (`declarant_role_id`) REFERENCES `company_party_roles` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE `ct600_generated_artifacts` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `ct_period_id` int(11) NOT NULL,
+  `filing_approval_id` bigint(20) NOT NULL,
+  `filing_approval_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `source_manifest_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `output_path` varchar(1000) NOT NULL,
+  `output_filename` varchar(255) NOT NULL,
+  `output_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `validation_status` varchar(32) NOT NULL DEFAULT 'passed',
+  `generated_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ct600_generated_artifact_hash` (`output_sha256`),
+  KEY `idx_ct600_generated_artifact_current` (`company_id`,`accounting_period_id`,`ct_period_id`,`filing_approval_id`,`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE `ixbrl_accounts_filing_approvals` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `evidence_bundle_id` bigint(20) DEFAULT NULL,
@@ -3619,6 +3665,11 @@ CREATE TABLE `ixbrl_accounts_filing_approvals` (
   `approved_at` datetime NOT NULL DEFAULT current_timestamp(),
   `approved_by` varchar(100) NOT NULL,
   `approval_note` text DEFAULT NULL,
+  `declarant_name` varchar(100) DEFAULT NULL,
+  `declarant_status` varchar(64) DEFAULT NULL,
+  `original_unfiled_confirmed` tinyint(1) NOT NULL DEFAULT 0,
+  `authority_confirmed` tinyint(1) NOT NULL DEFAULT 0,
+  `declaration_confirmed` tinyint(1) NOT NULL DEFAULT 0,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   KEY `idx_ixbrl_filing_approval_period` (`company_id`,`accounting_period_id`,`id`),
@@ -4311,6 +4362,10 @@ INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_30_001_companies_house_schema_inventory.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_30_002_companies_house_transmission_archive_history.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_30_003_ct600_generated_artifacts.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_30_004_filing_authority_roles.sql');
 
 DROP TRIGGER IF EXISTS `trg_journals_append_only_update`;
 CREATE TRIGGER `trg_journals_append_only_update`

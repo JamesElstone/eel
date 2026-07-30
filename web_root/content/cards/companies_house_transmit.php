@@ -30,6 +30,11 @@ final class _companies_house_transmitCard extends CardBaseFramework
                     'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
+            [
+                'key' => 'companies_house_schema_status',
+                'service' => \eel_accounts\Service\CompaniesHouseAccountsSchemaService::class,
+                'method' => 'fetchStatus',
+            ],
         ];
     }
 
@@ -55,6 +60,13 @@ final class _companies_house_transmitCard extends CardBaseFramework
         $model = (array)(($context['services'] ?? [])['companies_house_transmit_context'] ?? []);
         if ($model === []) {
             return '<div class="notice warning">The Companies House transmission status could not be loaded.</div>';
+        }
+        $schemaStatus = (array)(($context['services'] ?? [])['companies_house_schema_status'] ?? []);
+        $schemaState = (array)($schemaStatus['state'] ?? []);
+        $schemaReady = !empty($schemaState['ready']);
+        $schemaError = trim((string)($schemaState['error'] ?? ''));
+        if ($schemaError === '') {
+            $schemaError = 'The installed Companies House XML schema status could not be verified.';
         }
 
         $feature = (array)($model['feature'] ?? []);
@@ -111,6 +123,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
                     $accountingPeriodId,
                     $artifactCurrent
                 )
+                . $this->schemaMetric($schemaReady, $schemaState)
                 . $this->metric('Private archive', $archive !== [] ? 'Captured and hashed' : 'Created on send')
                 . $this->metric(
                     'CompanyData preflight',
@@ -132,13 +145,17 @@ final class _companies_house_transmitCard extends CardBaseFramework
                 $html .= $this->transmissionMessage((string)$blocker);
             }
             if ($lifecycle === 'prepared' && !empty($model['can_submit'])) {
-                $html .= $this->submitForm(
-                    $companyId,
-                    $accountingPeriodId,
-                    (int)$submission['id'],
-                    strtoupper((string)($feature['mode'] ?? 'TEST')),
-                    $filingKind
-                );
+                if ($schemaReady) {
+                    $html .= $this->submitForm(
+                        $companyId,
+                        $accountingPeriodId,
+                        (int)$submission['id'],
+                        strtoupper((string)($feature['mode'] ?? 'TEST')),
+                        $filingKind
+                    );
+                } else {
+                    $html .= $this->schemaBlocker($schemaError, 'Accounts transmission');
+                }
                 if ($developerOptions) {
                     $html .= $this->developerPreparedControls(
                         $companyId,
@@ -147,7 +164,9 @@ final class _companies_house_transmitCard extends CardBaseFramework
                         strtoupper((string)($feature['mode'] ?? 'TEST')),
                         $preflight,
                         !empty($feature['developer_binding_configured']),
-                        $filingKind
+                        $filingKind,
+                        $schemaReady,
+                        $schemaError
                     );
                 }
             } elseif (in_array($lifecycle, ['submitting', 'transport_unknown', 'pending', 'parked'], true)) {
@@ -248,12 +267,18 @@ final class _companies_house_transmitCard extends CardBaseFramework
         string $mode,
         ?array $preflight,
         bool $bindingConfigured,
-        string $filingKind
+        string $filingKind,
+        bool $schemaReady,
+        string $schemaError
     ): string {
         $html = '<section class="panel-soft"><h3 class="card-title">Test Companies House Connection</h3>'
             . $this->sectionHelper(
-                'Send a CompanyData preflight to confirm the presenter and company credentials before transmitting accounts.'
+                'Check the company authentication code against Companies House before transmitting accounts.'
             );
+        if (!$schemaReady) {
+            return $html . $this->schemaBlocker($schemaError, 'The company authentication-code check')
+                . '</section>';
+        }
         if (!$bindingConfigured) {
             return $html . '<div class="notice warning">The preflight binding key could not be prepared for '
                 . \eel_accounts\Support\Utf8::html($mode) . '.</div></section>';
@@ -268,7 +293,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
                 . $this->hidden($companyId, $accountingPeriodId, 'preflight_accounts')
                 . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
                 . $this->companyAuthenticationCodeField()
-                . '<button class="button" type="submit">Send CompanyData preflight</button></form>';
+                . '<button class="button" type="submit">Check Company Authentication Code</button></form>';
         } else {
             $filingKind = in_array($filingKind, ['original', 'revised'], true) ? $filingKind : 'accounts';
             $confirmationPhrase = 'SUBMIT LIVE ' . strtoupper($filingKind) . ' ACCOUNTS';
@@ -445,6 +470,31 @@ final class _companies_house_transmitCard extends CardBaseFramework
             . 'pattern="[A-Za-z0-9]{6}" title="Enter exactly six letters or numbers." '
             . 'required autocomplete="off" autocapitalize="none" spellcheck="false">'
             . '<span class="helper">Enter exactly six letters or numbers.</span></label>';
+    }
+
+    private function schemaMetric(bool $ready, array $state): string
+    {
+        $fileCount = (int)($state['file_count'] ?? 0);
+        $detail = $ready
+            ? $fileCount . ' verified schema file' . ($fileCount === 1 ? '' : 's') . ' installed.'
+            : 'Refresh the installed schemas before checking credentials or transmitting accounts.';
+
+        return '<div class="summary-card ' . ($ready ? 'success' : 'danger') . '">'
+            . '<div class="summary-label">Companies House XML schemas</div>'
+            . '<div class="summary-value">' . ($ready ? 'Verified' : 'Refresh required') . '</div>'
+            . '<div class="helper">' . \eel_accounts\Support\Utf8::html($detail) . '</div>'
+            . '<div class="actions-row actions-row-right">'
+            . '<a class="button" href="?page=tax_artifacts">Manage filing schemas</a></div></div>';
+    }
+
+    private function schemaBlocker(string $error, string $operation): string
+    {
+        return '<div class="notice danger"><strong>'
+            . \eel_accounts\Support\Utf8::html($operation) . ' is blocked.</strong> '
+            . \eel_accounts\Support\Utf8::html($error)
+            . ' Open Tax Artifacts and refresh Companies House Filing Schema before trying again.'
+            . '<div class="actions-row"><a class="button" href="?page=tax_artifacts">'
+            . 'Open Tax Artifacts</a></div></div>';
     }
 
     private function artifactDownloadMetric(

@@ -142,16 +142,22 @@
             }
 
             const status = form.querySelector('[data-ownership-director-status]');
+            const directorCell = form.querySelector('[data-ownership-director-cell]');
             const directorName = form.querySelector('[data-ownership-director-name]');
-            const directorLegalName = form.querySelector('[data-ownership-director-legal-name]');
-            const nonDirectorName = form.querySelector('[data-ownership-non-director-name]');
+            const surnameCell = form.querySelector('[data-ownership-surname-cell]');
+            const surname = form.querySelector('[data-ownership-surname]');
+            const firstMiddleNamesCell = form.querySelector('[data-ownership-first-middle-names-cell]');
+            const firstMiddleNames = form.querySelector('[data-ownership-first-middle-names]');
             const directorPartyType = form.querySelector('[data-ownership-director-party-type]');
             const partyType = form.querySelector('[data-ownership-party-type]');
 
             if (!(status instanceof HTMLSelectElement)
+                || !(directorCell instanceof HTMLTableCellElement)
                 || !(directorName instanceof HTMLSelectElement)
-                || !(directorLegalName instanceof HTMLInputElement)
-                || !(nonDirectorName instanceof HTMLInputElement)
+                || !(surnameCell instanceof HTMLTableCellElement)
+                || !(surname instanceof HTMLInputElement)
+                || !(firstMiddleNamesCell instanceof HTMLTableCellElement)
+                || !(firstMiddleNames instanceof HTMLInputElement)
                 || !(directorPartyType instanceof HTMLInputElement)
                 || !(partyType instanceof HTMLSelectElement)) {
                 return;
@@ -159,14 +165,15 @@
 
             const sync = () => {
                 const isDirector = status.value === 'director';
-                directorName.hidden = !isDirector;
+                directorCell.hidden = !isDirector;
                 directorName.disabled = !isDirector;
                 directorName.required = isDirector;
-                directorLegalName.disabled = !isDirector;
-                directorLegalName.value = isDirector ? String(directorName.selectedOptions[0]?.textContent || '').trim() : '';
-                nonDirectorName.hidden = isDirector;
-                nonDirectorName.disabled = isDirector;
-                nonDirectorName.required = !isDirector;
+                surnameCell.hidden = isDirector;
+                surname.disabled = isDirector;
+                surname.required = !isDirector;
+                firstMiddleNamesCell.hidden = isDirector;
+                firstMiddleNames.disabled = isDirector;
+                firstMiddleNames.required = !isDirector;
                 directorPartyType.disabled = !isDirector;
                 partyType.disabled = isDirector;
                 partyType.value = isDirector ? 'individual' : partyType.value;
@@ -248,6 +255,51 @@
             });
             window.setTimeout(sync, 0);
             section.dataset.hmrcRequiredFieldsBound = '1';
+        });
+    }
+
+    function initialiseCt600AuthorisationForms(root = document) {
+        const forms = root.querySelectorAll
+            ? root.querySelectorAll('[data-ct600-authorisation-form="true"]')
+            : [];
+
+        forms.forEach((form) => {
+            if (!(form instanceof HTMLFormElement) || form.dataset.ct600AuthorisationBound === '1') {
+                return;
+            }
+
+            const declarant = form.querySelector('#ct600_declarant_authority');
+            const saveButton = form.querySelector('#save_ct600_return_authorisation_button');
+            if (!(declarant instanceof HTMLSelectElement) || !(saveButton instanceof HTMLButtonElement)) {
+                return;
+            }
+
+            const defaultValues = {
+                original_unfiled_confirmed: String(form.dataset.originalUnfiledDefault || '0'),
+                authority_confirmed: String(form.dataset.authorityDefault || '0'),
+                declaration_confirmed: String(form.dataset.declarationDefault || '0'),
+            };
+            const radioNames = Object.keys(defaultValues);
+            const currentRadioValue = (name) => {
+                const checked = form.querySelector('input[type="radio"][name="' + name + '"]:checked');
+                return checked instanceof HTMLInputElement ? checked.value : '';
+            };
+            const sync = () => {
+                const declarantChanged = declarant.value !== String(declarant.dataset.stateDefault || '');
+                const confirmationChanged = radioNames.some(
+                    (name) => currentRadioValue(name) !== defaultValues[name]
+                );
+                saveButton.disabled = !declarantChanged && !confirmationChanged;
+            };
+
+            form.querySelectorAll('[data-ct600-authorisation-field="true"]').forEach((field) => {
+                field.addEventListener('input', sync);
+                field.addEventListener('change', sync);
+            });
+            declarant.addEventListener('input', sync);
+            declarant.addEventListener('change', sync);
+            form.dataset.ct600AuthorisationBound = '1';
+            sync();
         });
     }
 
@@ -1323,6 +1375,7 @@
     initialiseOwnershipPartyForms(document);
     initialiseShareAllocationForms(document);
     initialiseHmrcNoticeRequiredFields(document);
+    initialiseCt600AuthorisationForms(document);
     initialiseDirectorLoanOffsetAcknowledgements(document);
     initialiseUploadProcessingIndicators(document);
     initialiseVehicleRows(document);
@@ -1345,6 +1398,7 @@
                     initialiseOwnershipPartyForms(node);
                     initialiseShareAllocationForms(node);
                     initialiseHmrcNoticeRequiredFields(node);
+                    initialiseCt600AuthorisationForms(node);
                     initialiseDirectorLoanOffsetAcknowledgements(node);
                     initialiseUploadProcessingIndicators(node);
                     initialiseVehicleRows(node);

@@ -275,6 +275,20 @@ $harness->run(\eel_accounts\Service\IxbrlAccountsDisclosureService::class, stati
 
                 InterfaceDB::prepareExecute(
                     'UPDATE company_directors
+                     SET officer_role = :role, appointed_on = :appointed_on, resigned_on = NULL, is_active = 1
+                     WHERE id = :id',
+                    ['role' => 'director', 'appointed_on' => '2026-01-15', 'id' => $directorId]
+                );
+                $appointedAfterYearEnd = $service->save(
+                    $companyId,
+                    $periodId,
+                    $input,
+                    'test:appointed-after-year-end'
+                );
+                $harness->assertSame(true, (bool)($appointedAfterYearEnd['success'] ?? false));
+
+                InterfaceDB::prepareExecute(
+                    'UPDATE company_directors
                      SET officer_role = :role, appointed_on = :appointed_on
                      WHERE id = :id',
                     ['role' => 'director', 'appointed_on' => '2026-03-01', 'id' => $directorId]

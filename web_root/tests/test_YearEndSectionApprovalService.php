@@ -169,6 +169,96 @@ $harness->run(\eel_accounts\Service\YearEndSectionApprovalService::class, static
         $harness->assertSame(false, hash_equals($before, (string)$method->invoke($service, $bundle)));
     });
 
+    $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'ignores administrative-only parties in the Director Loan source token', static function () use ($harness, $service): void {
+        foreach (['companies', 'accounting_periods', 'company_parties', 'company_party_roles'] as $table) {
+            if (!InterfaceDB::tableExists($table)) {
+                $harness->skip($table . ' schema is not available.');
+            }
+        }
+        if (!InterfaceDB::columnExists('ct600_return_authorisations', 'declarant_role_id')) {
+            $harness->skip('The filing-authority role migration is not applied.');
+        }
+
+        InterfaceDB::beginTransaction();
+        try {
+            $lastInsertId = static fn(): int => (int)(InterfaceDB::fetchColumn(
+                strtolower(InterfaceDB::driverName()) === 'sqlite'
+                    ? 'SELECT last_insert_rowid()'
+                    : 'SELECT LAST_INSERT_ID()'
+            ) ?: 0);
+            $marker = strtoupper(substr(hash('sha256', __FILE__ . microtime(true)), 0, 10));
+            InterfaceDB::prepareExecute(
+                'INSERT INTO companies (company_name, company_number) VALUES (:name, :number)',
+                ['name' => 'DLA Token Authority Fixture Limited', 'number' => 'DTA' . $marker]
+            );
+            $companyId = $lastInsertId();
+            InterfaceDB::prepareExecute(
+                'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+                 VALUES (:company_id, :label, :period_start, :period_end)',
+                [
+                    'company_id' => $companyId,
+                    'label' => 'DLA authority token fixture',
+                    'period_start' => '2025-01-01',
+                    'period_end' => '2025-12-31',
+                ]
+            );
+            $periodId = $lastInsertId();
+            $sourceToken = new ReflectionMethod($service, 'sourceToken');
+            $before = (string)$sourceToken->invoke(
+                $service,
+                $companyId,
+                $periodId,
+                'director_loan_year_end_review'
+            );
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO company_parties (company_id, party_type, legal_name)
+                 VALUES (:company_id, :party_type, :legal_name)',
+                ['company_id' => $companyId, 'party_type' => 'individual', 'legal_name' => 'Administrative Person']
+            );
+            $partyId = $lastInsertId();
+            InterfaceDB::prepareExecute(
+                'INSERT INTO company_party_roles (company_id, party_id, role_type, effective_from)
+                 VALUES (:company_id, :party_id, :role_type, :effective_from)',
+                [
+                    'company_id' => $companyId,
+                    'party_id' => $partyId,
+                    'role_type' => 'authorised_agent',
+                    'effective_from' => '2025-01-01',
+                ]
+            );
+            $afterAdministrativeRole = (string)$sourceToken->invoke(
+                $service,
+                $companyId,
+                $periodId,
+                'director_loan_year_end_review'
+            );
+            $harness->assertSame($before, $afterAdministrativeRole);
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO company_party_roles (company_id, party_id, role_type, effective_from)
+                 VALUES (:company_id, :party_id, :role_type, :effective_from)',
+                [
+                    'company_id' => $companyId,
+                    'party_id' => $partyId,
+                    'role_type' => 'participator',
+                    'effective_from' => '2025-01-01',
+                ]
+            );
+            $afterParticipatorRole = (string)$sourceToken->invoke(
+                $service,
+                $companyId,
+                $periodId,
+                'director_loan_year_end_review'
+            );
+            $harness->assertSame(false, hash_equals($before, $afterParticipatorRole));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
     $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'uses the persisted filing-scope answers instead of browser-submitted duplicates', static function () use ($harness, $service): void {
         $method = new ReflectionMethod($service, 'approvalAnswers');
         $answers = (array)$method->invoke($service, [

@@ -1292,7 +1292,7 @@ final class YearEndSectionApprovalService
         }
 
         foreach (['company_directors', 'company_parties', 'company_party_roles', 'company_shareholdings'] as $table) {
-            $token = $this->companyTableToken($table, $companyId);
+            $token = $this->directorLoanOwnershipToken($table, $companyId);
             if ($token !== null) {
                 $tokens[$table] = $token;
             }
@@ -1524,6 +1524,67 @@ final class YearEndSectionApprovalService
         $row = \InterfaceDB::fetchOne(
             'SELECT COUNT(*) AS item_count, COALESCE(MAX(id), 0) AS last_id, ' . $updatedAt . ' AS last_change
              FROM ' . $table . ' WHERE company_id = :company_id',
+            ['company_id' => $companyId]
+        );
+        return is_array($row) ? $row : null;
+    }
+
+    private function directorLoanOwnershipToken(string $table, int $companyId): ?array
+    {
+        if (!\InterfaceDB::tableExists($table)) {
+            return null;
+        }
+        if ($table === 'company_shareholdings') {
+            return $this->companyTableToken($table, $companyId);
+        }
+
+        $updatedAt = \InterfaceDB::columnExists($table, 'updated_at')
+            ? 'COALESCE(MAX(source.updated_at), \'\')'
+            : "''";
+        $where = 'source.company_id = :company_id';
+        if ($table === 'company_party_roles') {
+            $where .= ' AND source.role_type IN (\'participator\', \'associate\')';
+        } elseif ($table === 'company_parties') {
+            $where .= ' AND (
+                EXISTS (
+                    SELECT 1 FROM company_party_roles loan_role
+                    WHERE loan_role.company_id = source.company_id
+                      AND loan_role.party_id = source.id
+                      AND loan_role.role_type IN (\'participator\', \'associate\')
+                )
+                OR EXISTS (
+                    SELECT 1 FROM company_shareholdings loan_holding
+                    WHERE loan_holding.company_id = source.company_id
+                      AND loan_holding.party_id = source.id
+                )
+            )';
+        } elseif ($table === 'company_directors') {
+            $where .= ' AND EXISTS (
+                SELECT 1
+                FROM company_parties loan_party
+                WHERE loan_party.company_id = source.company_id
+                  AND loan_party.linked_director_id = source.id
+                  AND (
+                    EXISTS (
+                        SELECT 1 FROM company_party_roles loan_role
+                        WHERE loan_role.company_id = loan_party.company_id
+                          AND loan_role.party_id = loan_party.id
+                          AND loan_role.role_type IN (\'participator\', \'associate\')
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM company_shareholdings loan_holding
+                        WHERE loan_holding.company_id = loan_party.company_id
+                          AND loan_holding.party_id = loan_party.id
+                    )
+                  )
+            )';
+        }
+
+        $row = \InterfaceDB::fetchOne(
+            'SELECT COUNT(*) AS item_count, COALESCE(MAX(source.id), 0) AS last_id, '
+                . $updatedAt . ' AS last_change
+             FROM ' . $table . ' source
+             WHERE ' . $where,
             ['company_id' => $companyId]
         );
         return is_array($row) ? $row : null;

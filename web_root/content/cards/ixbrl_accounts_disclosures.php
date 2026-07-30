@@ -392,38 +392,62 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
 
     private function ct600AuthorisationPanel(int $companyId, int $accountingPeriodId, array $context): string
     {
-        $saved = (new \eel_accounts\Service\Ct600ReturnAuthorisationService())->fetch($companyId, $accountingPeriodId);
-        $userId = (int)($context['auth']['user_id'] ?? 0);
-        $user = $userId > 0 ? ((new UserAuthenticationService())->userById($userId) ?? []) : [];
-        $name = trim((string)($user['display_name'] ?? $user['full_name'] ?? $user['email_address'] ?? ''));
-        if ($name === '') {
-            $name = 'Current signed-in user';
+        $service = new \eel_accounts\Service\Ct600ReturnAuthorisationService();
+        $saved = $service->fetch($companyId, $accountingPeriodId);
+        $selectedReference = (int)($saved['declarant_director_id'] ?? 0) > 0
+            ? 'director:' . (int)$saved['declarant_director_id']
+            : ((int)($saved['declarant_role_id'] ?? 0) > 0
+                ? 'party-role:' . (int)$saved['declarant_role_id']
+                : '');
+        $options = '<option value="">Select authoriser and capacity</option>';
+        $hasEligibleAuthorisers = false;
+        $renderedSelectedReference = '';
+        foreach ($service->eligibleAuthorisers($companyId, (new \DateTimeImmutable('today'))->format('Y-m-d')) as $authoriser) {
+            $reference = (string)$authoriser['reference'];
+            if ($reference === $selectedReference) {
+                $renderedSelectedReference = $reference;
+            }
+            $options .= '<option value="' . \eel_accounts\Support\Utf8::html($reference) . '"'
+                . ($reference === $selectedReference ? ' selected' : '') . '>'
+                . \eel_accounts\Support\Utf8::html((string)$authoriser['name'] . ' — ' . (string)$authoriser['status'])
+                . '</option>';
+            $hasEligibleAuthorisers = true;
         }
-        $options = '';
-        foreach (\eel_accounts\Service\Ct600ReturnAuthorisationService::STATUSES as $status) {
-            $options .= '<option value="' . \eel_accounts\Support\Utf8::html($status) . '"' . ((string)($saved['declarant_status'] ?? 'Director') === $status ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html($status) . '</option>';
-        }
+        $savedName = trim((string)($saved['declarant_name'] ?? ''));
+        $savedStatus = trim((string)($saved['declarant_status'] ?? ''));
+        $legacyNotice = $saved !== [] && !$service->isStructured($saved)
+            ? '<div class="helper">This existing legacy authorisation remains preserved. Select a named authoriser only when replacing it.</div>'
+            : '';
+        $eligibilityNotice = !$hasEligibleAuthorisers
+            ? '<div class="standout helper">No individual has an eligible authority effective today. Add a current director or filing-authority relationship before saving a new declaration.</div>'
+            : '';
         $question = static function (string $key, string $label, bool $value): string {
             return '<fieldset class="panel-soft"><legend>' . \eel_accounts\Support\Utf8::html($label) . '</legend><div class="actions-row">'
-                . '<label><input type="radio" name="' . $key . '" value="1" required' . ($value ? ' checked' : '') . '> Yes</label>'
-                . '<label><input type="radio" name="' . $key . '" value="0" required' . (!$value ? ' checked' : '') . '> No</label>'
+                . '<label><input type="radio" name="' . $key . '" value="1" required data-ct600-authorisation-field="true"' . ($value ? ' checked' : '') . '> Yes</label>'
+                . '<label><input type="radio" name="' . $key . '" value="0" required data-ct600-authorisation-field="true"' . (!$value ? ' checked' : '') . '> No</label>'
                 . '</div></fieldset>';
         };
         return '<section class="panel-soft ixbrl-approval-panel"><div class="status-head"><h3 class="card-title">Corporation Tax Return Authorisation</h3></div>'
-            . '<div class="helper">This authorisation is frozen into the next Disclosure Approval and covers every CT600 for that approval.</div>'
-            . '<form method="post" action="?page=disclosures" data-ajax="true">'
+            . '<div class="helper">This authorisation is frozen into the next Disclosure Approval and covers every CT600 for that the Accounting Period.</div>'
+            . $legacyNotice . $eligibilityNotice
+            . '<form method="post" action="?page=disclosures" data-ajax="true" data-ct600-authorisation-form="true"'
+            . ' data-state-fields="ct600_declarant_authority" data-state-target="save_ct600_return_authorisation_button"'
+            . ' data-original-unfiled-default="' . (!empty($saved['original_unfiled_confirmed']) ? '1' : '0') . '"'
+            . ' data-authority-default="' . (!empty($saved['authority_confirmed']) ? '1' : '0') . '"'
+            . ' data-declaration-default="' . (!empty($saved['declaration_confirmed']) ? '1' : '0') . '">'
             . '<input type="hidden" name="card_action" value="Ixbrl">' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="intent" value="save_ct600_return_authorisation"><input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
             . '<div class="form-row full table-scroll"><table><tbody>'
-            . '<tr><th scope="row"><label>Declarant name</label></th><td><input class="input" disabled value="' . \eel_accounts\Support\Utf8::html($name) . '"></td></tr>'
-            . '<tr><th scope="row"><label for="ct600_declarant_status">Declarant status or capacity</label></th><td><select class="select" id="ct600_declarant_status" name="declarant_status">' . $options . '</select></td></tr>'
+            . '<tr><th scope="row"><label for="ct600_declarant_authority">Authoriser and capacity</label></th><td><select class="select" id="ct600_declarant_authority" name="declarant_authority" required data-state-default="' . \eel_accounts\Support\Utf8::html($renderedSelectedReference) . '">' . $options . '</select></td></tr>'
+            . '<tr><th scope="row">Saved declarant</th><td>' . \eel_accounts\Support\Utf8::html($savedName !== '' ? $savedName : 'Not recorded in the legacy authorisation') . '</td></tr>'
+            . '<tr><th scope="row">Saved capacity</th><td>' . \eel_accounts\Support\Utf8::html($savedStatus !== '' ? $savedStatus : 'Not saved') . '</td></tr>'
             . '<tr><th scope="row">Last updated on</th><td>' . \eel_accounts\Support\Utf8::html((string)($saved['saved_at'] ?? 'Not saved')) . '</td></tr>'
-            . '<tr><th scope="row">Last updated by</th><td>' . \eel_accounts\Support\Utf8::html((string)($saved['saved_by'] ?? 'Not saved')) . '</td></tr>'
+            . '<tr><th scope="row">Last updated by</th><td>' . \eel_accounts\Support\Utf8::html((string)($saved['saved_by_display_name'] ?? 'Not saved')) . '</td></tr>'
             . '</tbody></table></div>'
             . $question('original_unfiled_confirmed', 'Is this an original return that has not already been filed for this CT period?', !empty($saved['original_unfiled_confirmed']))
             . $question('authority_confirmed', 'Are you authorised to file this Corporation Tax return for the company?', !empty($saved['authority_confirmed']))
             . $question('declaration_confirmed', 'Do you declare that the information in this return is correct and complete to the best of your knowledge and belief?', !empty($saved['declaration_confirmed']))
-            . '<div class="actions-row"><button class="button primary" type="submit">Approve Corporation Tax Returns</button></div></form></section>';
+            . '<div class="actions-row"><button class="button primary" id="save_ct600_return_authorisation_button" type="submit" disabled>Approve Corporation Tax Return</button></div></form></section>';
     }
 
     private function approvalBlockerNotice(array $status): string

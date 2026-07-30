@@ -118,7 +118,9 @@ final class IxbrlAccountsFilingApprovalService
                     'basis_json' => (string)$candidate['basis_json'],
                     'approved_by' => $approvedBy,
                     'approval_note' => trim($note) !== '' ? trim($note) : null,
-                    'declarant_name' => $approvedBy,
+                    'declarant_name' => trim((string)($authorisation['declarant_name'] ?? '')) !== ''
+                        ? (string)$authorisation['declarant_name']
+                        : null,
                     'declarant_status' => (string)$authorisation['declarant_status'],
                     'original_unfiled_confirmed' => 1,
                     'authority_confirmed' => 1,
@@ -292,6 +294,8 @@ final class IxbrlAccountsFilingApprovalService
             throw new \RuntimeException('No active Corporation Tax periods are available for filing approval.');
         }
 
+        $authorisationBasis = $this->authorisationBasis($authorisation);
+
         $basis = [
             'basis_version' => self::BASIS_VERSION,
             'company' => (array)$report['basis']['company'],
@@ -315,12 +319,6 @@ final class IxbrlAccountsFilingApprovalService
                 'id' => (int)$disclosure['id'],
                 'revision' => (int)$disclosure['revision'],
                 'values' => (array)$report['basis']['disclosures'],
-            ],
-            'corporation_tax_return_authorisation' => [
-                'declarant_status' => (string)$authorisation['declarant_status'],
-                'original_unfiled_confirmed' => true,
-                'authority_confirmed' => true,
-                'declaration_confirmed' => true,
             ],
             'corporation_tax_filing_scope' => [
                 'scope_version' => CorporationTaxFilingScopeService::SCOPE_VERSION,
@@ -354,6 +352,12 @@ final class IxbrlAccountsFilingApprovalService
                 'ct600a_review_hash' => (string)($period['ct600a']['review']['basis_hash'] ?? ''),
             ], $periods),
         ];
+        if ($this->shouldIncludeAuthorisationBasis(
+            $authorisation,
+            $this->latestApproval($companyId, $accountingPeriodId)
+        )) {
+            $basis['corporation_tax_return_authorisation'] = $authorisationBasis;
+        }
         $json = $this->canonicalJson($basis);
         return [
             'basis' => $basis,
@@ -819,6 +823,43 @@ final class IxbrlAccountsFilingApprovalService
         }
 
         return $changed;
+    }
+
+    private function authorisationBasis(array $authorisation): array
+    {
+        if (!(new Ct600ReturnAuthorisationService())->isStructured($authorisation)) {
+            return [
+                'declarant_status' => (string)$authorisation['declarant_status'],
+                'original_unfiled_confirmed' => true,
+                'authority_confirmed' => true,
+                'declaration_confirmed' => true,
+            ];
+        }
+
+        return [
+            'declarant_name' => (string)$authorisation['declarant_name'],
+            'declarant_status' => (string)$authorisation['declarant_status'],
+            'declaration_at' => (string)$authorisation['saved_at'],
+            'declarant_party_id' => (int)($authorisation['declarant_party_id'] ?? 0) ?: null,
+            'declarant_director_id' => (int)($authorisation['declarant_director_id'] ?? 0) ?: null,
+            'declarant_role_id' => (int)($authorisation['declarant_role_id'] ?? 0) ?: null,
+            'original_unfiled_confirmed' => true,
+            'authority_confirmed' => true,
+            'declaration_confirmed' => true,
+        ];
+    }
+
+    private function shouldIncludeAuthorisationBasis(array $authorisation, ?array $latestApproval): bool
+    {
+        if ((new Ct600ReturnAuthorisationService())->isStructured($authorisation)) {
+            return true;
+        }
+
+        $storedBasis = is_array($latestApproval)
+            ? json_decode((string)($latestApproval['basis_json'] ?? ''), true)
+            : null;
+        return is_array($storedBasis)
+            && array_key_exists('corporation_tax_return_authorisation', $storedBasis);
     }
 
     private function latestApproval(int $companyId, int $accountingPeriodId): ?array

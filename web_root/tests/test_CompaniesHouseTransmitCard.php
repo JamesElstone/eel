@@ -16,16 +16,22 @@ $harness->run(_companies_house_transmitCard::class, static function (
 ): void {
     $harness->check(
         _companies_house_transmitCard::class,
-        'declares the transmission status read service',
+        'declares the transmission and schema status read services',
         static function () use ($harness, $card): void {
             $services = $card->services();
-            $harness->assertCount(1, $services);
+            $harness->assertCount(2, $services);
             $harness->assertSame('companies_house_transmit_context', (string)$services[0]['key']);
             $harness->assertSame(
                 \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
                 (string)$services[0]['service']
             );
             $harness->assertSame('fetchContext', (string)$services[0]['method']);
+            $harness->assertSame('companies_house_schema_status', (string)$services[1]['key']);
+            $harness->assertSame(
+                \eel_accounts\Service\CompaniesHouseAccountsSchemaService::class,
+                (string)$services[1]['service']
+            );
+            $harness->assertSame('fetchStatus', (string)$services[1]['method']);
         }
     );
 
@@ -64,6 +70,9 @@ $harness->run(_companies_house_transmitCard::class, static function (
                         'can_submit' => true,
                         'submission_blockers' => [],
                     ],
+                    'companies_house_schema_status' => [
+                        'state' => ['ready' => true, 'file_count' => 17],
+                    ],
                     'companies_house_transmit_history' => [],
                 ],
             ]);
@@ -94,6 +103,13 @@ $harness->run(_companies_house_transmitCard::class, static function (
             $harness->assertFalse(str_contains($html, 'revised-accounts.xhtml'));
             $harness->assertTrue(str_contains($html, 'action="?page=transmit"'));
             $harness->assertTrue(str_contains($html, 'value="submit_accounts"'));
+            $harness->assertTrue(str_contains(
+                $html,
+                '<div class="summary-label">Companies House XML schemas</div>'
+                . '<div class="summary-value">Verified</div>'
+            ));
+            $harness->assertTrue(str_contains($html, '17 verified schema files installed.'));
+            $harness->assertTrue(str_contains($html, 'href="?page=tax_artifacts"'));
             $harness->assertTrue(str_contains(
                 $html,
                 '<section class="panel-soft"><h3 class="card-title">'
@@ -201,7 +217,7 @@ $harness->run(_companies_house_transmitCard::class, static function (
             $previous = AppConfigurationStore::get('developer_options', false);
             AppConfigurationStore::set('developer_options', true);
             try {
-                $html = $card->render([
+                $renderContext = [
                     'company' => ['id' => 49, 'accounting_period_id' => 80],
                     'services' => [
                         'companies_house_transmit_context' => [
@@ -237,16 +253,20 @@ $harness->run(_companies_house_transmitCard::class, static function (
                             'can_submit' => true,
                             'submission_blockers' => [],
                         ],
+                        'companies_house_schema_status' => [
+                            'state' => ['ready' => true, 'file_count' => 17],
+                        ],
                         'companies_house_transmit_history' => [],
                     ],
-                ]);
+                ];
+                $html = $card->render($renderContext);
                 $harness->assertTrue(str_contains($html, 'Transmit Company Accounts'));
-                $harness->assertTrue(str_contains($html, 'Send CompanyData preflight'));
+                $harness->assertTrue(str_contains($html, 'Check Company Authentication Code'));
                 $harness->assertTrue(str_contains(
                     $html,
                     '<section class="panel-soft"><h3 class="card-title">Test Companies House Connection</h3>'
                     . '<div class="helper companies-house-transmit-section-helper">'
-                    . 'Send a CompanyData preflight to confirm the presenter and company credentials before transmitting accounts.'
+                    . 'Check the company authentication code against Companies House before transmitting accounts.'
                     . '</div>'
                 ));
                 $harness->assertFalse(str_contains(
@@ -257,6 +277,29 @@ $harness->run(_companies_house_transmitCard::class, static function (
                 $harness->assertFalse(str_contains($html, 'value="download_protocol_evidence"'));
                 $harness->assertTrue(str_contains($html, 'maxlength="6"'));
                 $harness->assertFalse(str_contains($html, 'maxlength="8"'));
+
+                $schemaError = 'An installed Companies House schema is missing or has changed.';
+                $renderContext['services']['companies_house_schema_status']['state'] = [
+                    'ready' => false,
+                    'file_count' => 17,
+                    'error' => $schemaError,
+                ];
+                $blocked = $card->render($renderContext);
+                $harness->assertTrue(str_contains(
+                    $blocked,
+                    '<div class="summary-value">Refresh required</div>'
+                ));
+                $harness->assertTrue(str_contains(
+                    $blocked,
+                    'The company authentication-code check is blocked.'
+                ));
+                $harness->assertTrue(str_contains($blocked, $schemaError));
+                $harness->assertTrue(str_contains($blocked, '>Open Tax Artifacts</a>'));
+                $harness->assertFalse(str_contains(
+                    $blocked,
+                    '<button class="button" type="submit">Check Company Authentication Code</button>'
+                ));
+                $harness->assertFalse(str_contains($blocked, '>Transmit Company Accounts</button>'));
             } finally {
                 AppConfigurationStore::set('developer_options', (bool)$previous);
             }

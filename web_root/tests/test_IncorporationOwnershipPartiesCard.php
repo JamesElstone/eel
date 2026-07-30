@@ -34,5 +34,20 @@ $harness->run(_incorporation_ownership_partiesCard::class, static function (
         ]);
 
         $harness->assertTrue(str_contains($html, 'Shareholder (from recorded holdings)'));
+        $harness->assertTrue(str_contains($html, '<th>Surname</th><th>First and Middle Names</th>'));
+        $harness->assertTrue(str_contains($html, 'name="surname"'));
+        $harness->assertTrue(str_contains($html, 'name="first_middle_names"'));
+        $harness->assertFalse(str_contains($html, 'name="legal_name"'));
+    });
+
+    $harness->check(_incorporation_ownership_partiesCard::class, 'constructs manual legal names on the server', static function () use ($harness): void {
+        $action = new IncorporationAction();
+        $method = new ReflectionMethod($action, 'manualLegalName');
+        $method->setAccessible(true);
+
+        $harness->assertSame('ELSTONE, James William', $method->invoke($action, ' elstone ', 'james william'));
+        $harness->assertSame('SMITH-JONES, Alice Mary', $method->invoke($action, 'smith-jones', 'alice mary'));
+        $harness->assertSame('', $method->invoke($action, '', 'Alice Mary'));
+        $harness->assertSame('', $method->invoke($action, 'Smith', ''));
     });
 });

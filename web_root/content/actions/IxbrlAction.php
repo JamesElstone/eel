@@ -125,7 +125,7 @@ final class IxbrlAction implements ActionInterfaceFramework
                     $companyId,
                     $accountingPeriodId,
                     [
-                        'declarant_status' => $request->input('declarant_status', ''),
+                        'declarant_authority' => $request->input('declarant_authority', ''),
                         'original_unfiled_confirmed' => $request->input('original_unfiled_confirmed', false),
                         'authority_confirmed' => $request->input('authority_confirmed', false),
                         'declaration_confirmed' => $request->input('declaration_confirmed', false),

@@ -95,7 +95,7 @@ final class IncorporationAction implements ActionInterfaceFramework
 
         return new ActionResultFramework(
             $success,
-            ['page.context', 'incorporation.status', 'incorporation.share.capital', 'incorporation.payment.matching', 'ownership.parties', 'tax.s455', 'year.end.checklist'],
+            $this->changedFacts($intent, $result),
             $messages
         );
     }
@@ -115,11 +115,32 @@ final class IncorporationAction implements ActionInterfaceFramework
         };
     }
 
+    private function changedFacts(string $intent, array $result): array
+    {
+        $base = ['page.context', 'ownership.parties'];
+        if (in_array($intent, ['save_ownership_role', 'end_ownership_role'], true)
+            && in_array(
+                (string)($result['role_type'] ?? ''),
+                \eel_accounts\Service\OwnershipPartyService::AUTHORISATION_ROLE_TYPES,
+                true
+            )) {
+            return [...$base, 'ct600.authorisers', 'ixbrl.disclosures'];
+        }
+
+        return [
+            ...$base,
+            'incorporation.status',
+            'incorporation.share.capital',
+            'incorporation.payment.matching',
+            'tax.s455',
+            'year.end.checklist',
+        ];
+    }
+
     private function ownershipPartyInput(RequestFramework $request, int $companyId): array
     {
         $directorStatus = (string)$request->input('director_status', 'non_director');
         $linkedDirectorId = (int)$request->input('linked_director_id', 0);
-        $legalName = (string)$request->input('legal_name', '');
         $partyType = (string)$request->input('party_type', 'individual');
 
         if ($directorStatus === 'director') {
@@ -128,6 +149,10 @@ final class IncorporationAction implements ActionInterfaceFramework
             $partyType = 'individual';
         } else {
             $linkedDirectorId = 0;
+            $legalName = $this->manualLegalName(
+                (string)$request->input('surname', ''),
+                (string)$request->input('first_middle_names', '')
+            );
         }
 
         return [
@@ -138,6 +163,17 @@ final class IncorporationAction implements ActionInterfaceFramework
             'linked_director_id' => $linkedDirectorId,
             'source_note' => (string)$request->input('source_note', ''),
         ];
+    }
+
+    private function manualLegalName(string $surname, string $firstMiddleNames): string
+    {
+        $surname = trim($surname);
+        $firstMiddleNames = trim($firstMiddleNames);
+        if ($surname === '' || $firstMiddleNames === '') {
+            return '';
+        }
+
+        return strtoupper($surname) . ', ' . ucwords($firstMiddleNames);
     }
 
     private function populateShareDraftFromNewinc(int $companyId): ActionResultFramework

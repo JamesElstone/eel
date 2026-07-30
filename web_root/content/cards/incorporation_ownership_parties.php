@@ -14,7 +14,7 @@ final class _incorporation_ownership_partiesCard extends CardBaseFramework
 
     public function helper(array $context): string
     {
-        return 'Ownership records are entered and maintained by people, not created automatically. They are effective-dated, so ending a holding keeps the history needed for earlier Corporation Tax periods.';
+        return 'Company parties are entered and maintained by people, not created automatically. They can represent owners, directors, or individuals with filing-authority roles; effective dating preserves the relevant history.';
     }
 
     public function services(): array
@@ -84,13 +84,15 @@ final class _incorporation_ownership_partiesCard extends CardBaseFramework
         return '<form method="post" data-ajax="true" data-ownership-party-form="true" class="panel-soft settings-stack">'
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="Incorporation"><input type="hidden" name="intent" value="save_ownership_party">'
-            . '<input type="hidden" name="company_id" value="' . $companyId . '"><h4 class="card-title">Add ownership details</h4>'
-            . '<table class="table"><thead><tr><th>Director status</th><th>Owner name</th><th>Owner basis</th><th>Notes</th><th></th></tr></thead><tbody><tr>'
+            . '<input type="hidden" name="company_id" value="' . $companyId . '"><h4 class="card-title">Add company party</h4>'
+            . '<table class="table"><thead><tr><th>Director status</th><th>Surname</th><th>First and Middle Names</th><th>Owner basis</th><th>Notes</th><th></th></tr></thead><tbody><tr>'
             . '<td><select class="select" name="director_status" data-ownership-director-status data-no-submit-on-change="true"><option value="director">Director</option><option value="non_director">Non-Director</option></select></td>'
-            . '<td><input type="hidden" name="legal_name" data-ownership-director-legal-name><select class="select" name="linked_director_id" data-ownership-director-name data-no-submit-on-change="true" required><option value="">Select director</option>' . $directorOptions . '</select><input class="input" name="legal_name" data-ownership-non-director-name required hidden></td>'
+            . '<td colspan="2" data-ownership-director-cell><select class="select" name="linked_director_id" data-ownership-director-name data-no-submit-on-change="true" required><option value="">Select director</option>' . $directorOptions . '</select></td>'
+            . '<td data-ownership-surname-cell hidden><input class="input" name="surname" autocomplete="family-name" data-ownership-surname required disabled></td>'
+            . '<td data-ownership-first-middle-names-cell hidden><input class="input" name="first_middle_names" autocomplete="given-name" data-ownership-first-middle-names required disabled></td>'
             . '<td><input type="hidden" name="party_type" value="individual" data-ownership-director-party-type><select class="select" name="party_type" data-ownership-party-type data-no-submit-on-change="true" disabled><option value="individual" selected>Individual</option><option value="company">Company</option><option value="trust">Trust</option><option value="partnership">Partnership</option><option value="other">Other</option></select></td>'
             . '<td><input class="input" name="source_note"></td>'
-            . '<td class="cell-fit"><button class="button primary" type="submit">Add ownership details</button></td>'
+            . '<td class="cell-fit"><button class="button primary" type="submit">Add company party</button></td>'
             . '</tr></tbody></table></form>';
     }
 

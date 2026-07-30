@@ -12,7 +12,23 @@ namespace eel_accounts\Service;
 final class OwnershipPartyService
 {
     private const PARTY_TYPES = ['individual', 'company', 'trust', 'partnership', 'other'];
-    private const ROLE_TYPES = ['participator', 'associate'];
+    public const LOAN_ELIGIBLE_ROLE_TYPES = ['participator', 'associate'];
+    public const AUTHORISATION_ROLE_TYPES = [
+        'company_secretary',
+        'authorised_agent',
+        'authorised_employee',
+        'tax_agent_or_accountant',
+        'liquidator',
+    ];
+    public const ROLE_LABELS = [
+        'participator' => 'Participator',
+        'associate' => 'Associate',
+        'company_secretary' => 'Company Secretary',
+        'authorised_agent' => 'Authorised Agent',
+        'authorised_employee' => 'Authorised Employee',
+        'tax_agent_or_accountant' => 'Tax Agent or Accountant',
+        'liquidator' => 'Liquidator',
+    ];
 
     /** @var array<int,array{parties:array,roles:array,holdings:array}> */
     private array $timelineCache = [];
@@ -78,7 +94,7 @@ final class OwnershipPartyService
         $timeline = $this->ownershipTimeline($companyId);
         $effectiveRolePartyIds = [];
         foreach ($timeline['roles'] as $role) {
-            if (in_array((string)($role['role_type'] ?? ''), self::ROLE_TYPES, true)
+            if (in_array((string)($role['role_type'] ?? ''), self::LOAN_ELIGIBLE_ROLE_TYPES, true)
                 && $this->effectiveOn($role, $date)) {
                 $effectiveRolePartyIds[(int)$role['party_id']] = true;
             }
@@ -105,6 +121,49 @@ final class OwnershipPartyService
                     || isset($effectiveHoldingPartyIds[(int)$party['id']])
             )
         ));
+    }
+
+    /**
+     * @return list<array{id:int,party_id:int,legal_name:string,role_type:string,role_label:string}>
+     */
+    public function effectiveAuthorisationRoles(int $companyId, string $date): array
+    {
+        $date = $this->normaliseDate($date);
+        if ($companyId <= 0 || $date === null || !$this->schemaAvailable()) {
+            return [];
+        }
+
+        $partiesById = [];
+        foreach ($this->ownershipTimeline($companyId)['parties'] as $party) {
+            if ((string)($party['party_type'] ?? '') !== 'individual') {
+                continue;
+            }
+            $partiesById[(int)$party['id']] = $party;
+        }
+
+        $roles = [];
+        foreach ($this->ownershipTimeline($companyId)['roles'] as $role) {
+            $roleType = (string)($role['role_type'] ?? '');
+            $partyId = (int)($role['party_id'] ?? 0);
+            if (!isset($partiesById[$partyId])
+                || !in_array($roleType, self::AUTHORISATION_ROLE_TYPES, true)
+                || !$this->effectiveOn($role, $date)) {
+                continue;
+            }
+            $roles[] = [
+                'id' => (int)$role['id'],
+                'party_id' => $partyId,
+                'legal_name' => (string)$partiesById[$partyId]['legal_name'],
+                'role_type' => $roleType,
+                'role_label' => self::ROLE_LABELS[$roleType],
+            ];
+        }
+
+        usort($roles, static fn(array $left, array $right): int =>
+            [(string)$left['legal_name'], (string)$left['role_label'], (int)$left['id']]
+            <=> [(string)$right['legal_name'], (string)$right['role_label'], (int)$right['id']]
+        );
+        return $roles;
     }
 
     public function isEffectiveParty(int $companyId, int $partyId, string $date): bool
@@ -265,7 +324,7 @@ final class OwnershipPartyService
                     'source_note' => $this->nullableText($input['source_note'] ?? null),
                 ]
             );
-            $partyId = (int)\InterfaceDB::lastInsertId();
+            $partyId = $this->lastInsertId();
         }
 
         $this->invalidateOwnershipCache($companyId);
@@ -279,11 +338,16 @@ final class OwnershipPartyService
         $roleType = strtolower(trim((string)($input['role_type'] ?? '')));
         $from = $this->normaliseDate($input['effective_from'] ?? null);
         $to = $this->normaliseDate($input['effective_to'] ?? null);
-        if (!in_array($roleType, self::ROLE_TYPES, true) || $from === null || ($to !== null && $to < $from)) {
+        if (!array_key_exists($roleType, self::ROLE_LABELS) || $from === null || ($to !== null && $to < $from)) {
             return ['success' => false, 'errors' => ['Enter a valid role and effective date range.']];
         }
         $this->requireParty($companyId, $partyId);
-        $this->assertRangeUnlocked($companyId, $from, $to);
+        if ($this->roleRangeOverlaps($companyId, $partyId, $roleType, $from, $to)) {
+            return ['success' => false, 'errors' => ['This party already has the same role during part of the selected date range.']];
+        }
+        if (in_array($roleType, self::LOAN_ELIGIBLE_ROLE_TYPES, true)) {
+            $this->assertRangeUnlocked($companyId, $from, $to);
+        }
         \InterfaceDB::prepareExecute(
             'INSERT INTO company_party_roles (company_id, party_id, role_type, effective_from, effective_to, source_note)
              VALUES (:company_id, :party_id, :role_type, :effective_from, :effective_to, :source_note)',
@@ -297,7 +361,7 @@ final class OwnershipPartyService
             ]
         );
         $this->invalidateOwnershipCache($companyId);
-        return ['success' => true, 'errors' => []];
+        return ['success' => true, 'errors' => [], 'role_type' => $roleType];
     }
 
     public function saveHolding(array $input): array
@@ -350,24 +414,26 @@ final class OwnershipPartyService
     {
         $effectiveTo = $this->normaliseDate($effectiveTo) ?? '';
         $role = \InterfaceDB::fetchOne(
-            'SELECT id, effective_from FROM company_party_roles
+            'SELECT id, role_type, effective_from FROM company_party_roles
              WHERE id = :id AND company_id = :company_id AND effective_to IS NULL',
             ['id' => $roleId, 'company_id' => $companyId]
         );
         if (!is_array($role) || $effectiveTo === '' || $effectiveTo < (string)$role['effective_from']) {
             return ['success' => false, 'errors' => ['Select a valid current role and end date.']];
         }
-        $this->assertRangeUnlocked(
-            $companyId,
-            (new \DateTimeImmutable($effectiveTo))->modify('+1 day')->format('Y-m-d'),
-            null
-        );
+        if (in_array((string)$role['role_type'], self::LOAN_ELIGIBLE_ROLE_TYPES, true)) {
+            $this->assertRangeUnlocked(
+                $companyId,
+                (new \DateTimeImmutable($effectiveTo))->modify('+1 day')->format('Y-m-d'),
+                null
+            );
+        }
         \InterfaceDB::prepareExecute(
             'UPDATE company_party_roles SET effective_to = :effective_to WHERE id = :id AND company_id = :company_id',
             ['effective_to' => $effectiveTo, 'id' => $roleId, 'company_id' => $companyId]
         );
         $this->invalidateOwnershipCache($companyId);
-        return ['success' => true, 'errors' => []];
+        return ['success' => true, 'errors' => [], 'role_type' => (string)$role['role_type']];
     }
 
     public function endHolding(int $companyId, int $holdingId, string $effectiveTo): array
@@ -524,6 +590,31 @@ final class OwnershipPartyService
         }
     }
 
+    private function roleRangeOverlaps(
+        int $companyId,
+        int $partyId,
+        string $roleType,
+        string $from,
+        ?string $to
+    ): bool {
+        return (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*)
+             FROM company_party_roles
+             WHERE company_id = :company_id
+               AND party_id = :party_id
+               AND role_type = :role_type
+               AND effective_from <= :effective_to
+               AND (effective_to IS NULL OR effective_to >= :effective_from)',
+            [
+                'company_id' => $companyId,
+                'party_id' => $partyId,
+                'role_type' => $roleType,
+                'effective_from' => $from,
+                'effective_to' => $to ?? '9999-12-31',
+            ]
+        ) > 0;
+    }
+
     private function assertPartyMutationUnlocked(int $companyId, int $partyId): void
     {
         $locked = (int)\InterfaceDB::fetchColumn(
@@ -535,6 +626,7 @@ final class OwnershipPartyService
                AND (EXISTS (
                     SELECT 1 FROM company_party_roles r
                     WHERE r.company_id = ap.company_id AND r.party_id = :party_id
+                      AND r.role_type IN (\'participator\', \'associate\')
                       AND r.effective_from <= ap.period_end
                       AND (r.effective_to IS NULL OR r.effective_to >= ap.period_start)
                ) OR EXISTS (
@@ -620,6 +712,15 @@ final class OwnershipPartyService
     {
         $value = trim((string)$value);
         return $value !== '' ? $value : null;
+    }
+
+    private function lastInsertId(): int
+    {
+        return (int)(\InterfaceDB::fetchColumn(
+            strtolower(\InterfaceDB::driverName()) === 'sqlite'
+                ? 'SELECT last_insert_rowid()'
+                : 'SELECT LAST_INSERT_ID()'
+        ) ?: 0);
     }
 
     private function schemaAvailable(): bool

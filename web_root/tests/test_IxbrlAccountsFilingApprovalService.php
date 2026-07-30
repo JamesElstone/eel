@@ -54,5 +54,62 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $h->assertSame('accounts-filing-approval-v6', $service::BASIS_VERSION);
             $h->assertSame('ct-period-filing-model-v10', $service::CT_BASIS_VERSION);
         });
+
+        $h->check($service::class, 'preserves the legacy CT600 authorisation basis shape', static function () use ($h, $service): void {
+            $method = new ReflectionMethod($service, 'authorisationBasis');
+            $method->setAccessible(true);
+            $includeMethod = new ReflectionMethod($service, 'shouldIncludeAuthorisationBasis');
+            $includeMethod->setAccessible(true);
+
+            $legacyAuthorisation = [
+                'declarant_status' => 'Director',
+                'original_unfiled_confirmed' => 1,
+                'authority_confirmed' => 1,
+                'declaration_confirmed' => 1,
+                'saved_at' => '2026-07-30 11:02:45',
+            ];
+            $basis = $method->invoke($service, $legacyAuthorisation);
+
+            $h->assertSame([
+                'declarant_status' => 'Director',
+                'original_unfiled_confirmed' => true,
+                'authority_confirmed' => true,
+                'declaration_confirmed' => true,
+            ], $basis);
+            $h->assertSame(false, (bool)$includeMethod->invoke(
+                $service,
+                $legacyAuthorisation,
+                ['basis_json' => '{"basis_version":"accounts-filing-approval-v6"}']
+            ));
+            $h->assertSame(true, (bool)$includeMethod->invoke(
+                $service,
+                $legacyAuthorisation,
+                ['basis_json' => '{"corporation_tax_return_authorisation":{"declarant_status":"Director"}}']
+            ));
+        });
+
+        $h->check($service::class, 'adds the frozen person and capacity only for structured authorisations', static function () use ($h, $service): void {
+            $method = new ReflectionMethod($service, 'authorisationBasis');
+            $method->setAccessible(true);
+            $includeMethod = new ReflectionMethod($service, 'shouldIncludeAuthorisationBasis');
+            $includeMethod->setAccessible(true);
+
+            $authorisation = [
+                'declarant_name' => 'Jane Smith',
+                'declarant_status' => 'Authorised Agent',
+                'declarant_party_id' => 12,
+                'declarant_director_id' => null,
+                'declarant_role_id' => 34,
+                'saved_at' => '2026-07-30 12:30:00',
+            ];
+            $basis = $method->invoke($service, $authorisation);
+
+            $h->assertSame('Jane Smith', (string)($basis['declarant_name'] ?? ''));
+            $h->assertSame('Authorised Agent', (string)($basis['declarant_status'] ?? ''));
+            $h->assertSame(12, (int)($basis['declarant_party_id'] ?? 0));
+            $h->assertSame(34, (int)($basis['declarant_role_id'] ?? 0));
+            $h->assertSame('2026-07-30 12:30:00', (string)($basis['declaration_at'] ?? ''));
+            $h->assertSame(true, (bool)$includeMethod->invoke($service, $authorisation, null));
+        });
     }
 );

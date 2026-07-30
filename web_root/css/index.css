@@ -1468,7 +1468,7 @@ body.card-maximized-active {
 }
 
 .card-title-toggle {
-  cursor: pointer;
+  cursor: n-resize;
   user-select: none;
 }
 
@@ -1479,6 +1479,7 @@ body.card-maximized-active {
 }
 
 .card-collapsed .card-title-toggle {
+  cursor: s-resize;
   opacity: 0.9;
 }
 

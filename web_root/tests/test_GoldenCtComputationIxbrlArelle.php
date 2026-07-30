@@ -182,6 +182,35 @@ function goldenCtIxbrlArelleFixture(): array
         throw $exception;
     }
     ixbrl_test_complete_disclosures($companyId, $accountingPeriodId, 'golden_ct_ixbrl_arelle');
+    $authorisers = (new \eel_accounts\Service\Ct600ReturnAuthorisationService())
+        ->eligibleAuthorisers($companyId, (new DateTimeImmutable('now'))->format('Y-m-d'));
+    $director = null;
+    foreach ($authorisers as $authoriser) {
+        if ((string)($authoriser['status'] ?? '') === 'Director') {
+            $director = $authoriser;
+            break;
+        }
+    }
+    if (!is_array($director)) {
+        throw new RuntimeException('Golden AP79 has no eligible CT600 Director authoriser.');
+    }
+    $authorisation = (new \eel_accounts\Service\Ct600ReturnAuthorisationService())->save(
+        $companyId,
+        $accountingPeriodId,
+        [
+            'declarant_authority' => (string)$director['reference'],
+            'original_unfiled_confirmed' => '1',
+            'authority_confirmed' => '1',
+            'declaration_confirmed' => '1',
+        ],
+        'golden_ct_ixbrl_arelle'
+    );
+    if (empty($authorisation['success'])) {
+        throw new RuntimeException(
+            'Golden AP79 CT600 return authorisation failed: '
+            . implode(' ', (array)($authorisation['errors'] ?? []))
+        );
+    }
     $filingApproval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
         ->approveAndBuildFacts($companyId, $accountingPeriodId, 'golden_ct_ixbrl_arelle', 'Golden CT iXBRL Arelle regression fixture.');
     if ((int)($filingApproval['approval_id'] ?? 0) <= 0) {

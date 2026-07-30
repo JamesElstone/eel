@@ -15,7 +15,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
 
     public function helper(array $context): string
     {
-        return 'Generates the HMRC accounts and computation iXBRLs. The required Companies House original or revised artifact is shown when prepared from the locked Year End workflow.';
+        return 'Generates the HMRC accounts and computation iXBRLs, the prepared CT600 XML for each Corporation Tax Period, and the required Companies House artifact.';
     }
 
     public function services(): array
@@ -24,6 +24,14 @@ final class _ixbrl_generationCard extends CardBaseFramework
             'key' => 'companies_house_ixbrl',
             'service' => \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
             'method' => 'fetchContext',
+            'params' => [
+                'companyId' => ':company.id',
+                'accountingPeriodId' => ':company.accounting_period_id',
+            ],
+        ], [
+            'key' => 'ct600_generated_artifacts',
+            'service' => \eel_accounts\Service\Ct600GenerationService::class,
+            'method' => 'statusForAccountingPeriod',
             'params' => [
                 'companyId' => ':company.id',
                 'accountingPeriodId' => ':company.accounting_period_id',
@@ -91,7 +99,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 <div class="status-head">
                     <div>
                         <h3 class="card-title">Complete Filing Set</h3>
-                        <div class="helper ixbrl-complete-filing-set-helper">Generate and validate the Accounting iXBRL, every Corporation Tax iXBRL, and the required Companies House original or revised accounts iXBRL.</div>
+                        <div class="helper ixbrl-complete-filing-set-helper">Generate and validate the Accounting iXBRL, each Corporation Tax computation iXBRL and CT600 XML, and the required Companies House original or revised accounts iXBRL.</div>
                     </div>
                 </div>
                 <div class="actions-row ixbrl-complete-filing-actions">
@@ -485,7 +493,94 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . '<input type="hidden" name="intent" value="generate_computation_ixbrl"><button class="button primary" type="submit"'
                 . ($ready ? '' : ' disabled') . '>Generate ' . \eel_accounts\Support\Utf8::html($ctPeriodLabel) . ' iXBRL</button></form>';
             $html .= '</div></section>';
+            $html .= $this->ct600Panel(
+                $context,
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId,
+                $ctPeriodNumber,
+                $start,
+                $end,
+                $hidden
+            );
         }
+        return $html;
+    }
+
+    private function ct600Panel(
+        array $context,
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        int $ctPeriodNumber,
+        string $start,
+        string $end,
+        string $hidden
+    ): string {
+        $service = (array)(($context['services'] ?? [])['ct600_generated_artifacts'] ?? []);
+        $status = (array)(($service['periods'] ?? [])[(string)$ctPeriodId] ?? []);
+        $artifact = (array)($status['artifact'] ?? []);
+        $current = !empty($status['current']);
+        $ready = !empty($status['ready_to_generate']);
+        $state = (string)($status['state'] ?? 'blocked');
+        $stateLabel = match ($state) {
+            'current' => 'Filing ready',
+            'stale' => 'Regeneration required',
+            'not_generated' => 'Ready to generate',
+            default => 'Blocked',
+        };
+        $stateClass = match ($state) {
+            'current' => 'success',
+            'stale', 'not_generated' => 'warning',
+            default => 'muted',
+        };
+        $filename = trim((string)($artifact['filename'] ?? ''));
+        $sha256 = trim((string)($artifact['sha256'] ?? ''));
+        $validation = $current
+            ? 'Passed'
+            : (trim((string)($artifact['validation_status'] ?? '')) !== ''
+                ? HelperFramework::labelFromKey((string)$artifact['validation_status'], '_')
+                : 'Not run');
+        $download = 'Not generated';
+        if ($filename !== '') {
+            $download = '<form method="post" action="?page=disclosures">'
+                . $hidden
+                . '<input type="hidden" name="intent" value="download_ct600_xml">'
+                . '<button class="button compact primary" type="submit"'
+                . ($current ? '' : ' disabled')
+                . '>Download Corporation Tax Period ' . $ctPeriodNumber . ' CT600 XML</button></form>';
+        }
+        $html = '<section class="panel-soft"><div class="status-head"><h3>'
+            . 'Corporation Tax Period ' . $ctPeriodNumber . ' CT600 XML</h3>'
+            . '<span class="badge ' . $stateClass . '">' . \eel_accounts\Support\Utf8::html($stateLabel)
+            . '</span></div>'
+            . '<div class="helper ixbrl-complete-filing-set-helper">Generate the final CT/5 return body with its approved declaration, Accounting and Computation iXBRLs, and verified IRmark. This is the exact body HMRC Transmit will send.</div>'
+            . '<div class="summary-grid four">'
+            . $this->metric('CT period', $start . ' to ' . $end)
+            . $this->metric('Generation state', $stateLabel)
+            . $this->metric('Validation', $validation)
+            . $this->metric('Generated At', (string)($artifact['generated_at'] ?? 'Not Generated'))
+            . $this->metric('Filename', $filename !== '' ? $filename : 'Not generated')
+            . $this->metric('SHA-256', $sha256 !== '' ? $sha256 : 'Not generated')
+            . $this->metricHtml('Artifact', $download)
+            . '</div>';
+        foreach (array_values(array_unique(array_map(
+            'strval',
+            (array)($status['errors'] ?? ['The CT600 XML readiness could not be loaded.'])
+        ))) as $error) {
+            if (trim($error) !== '') {
+                $html .= '<div class="helper ixbrl-computation-helper">'
+                    . \eel_accounts\Support\Utf8::html($error) . '</div>';
+            }
+        }
+        $html .= '<div class="form-row-actions"><form method="post" action="?page=disclosures" data-ajax="true">'
+            . $hidden
+            . '<input type="hidden" name="intent" value="generate_ct600_xml">'
+            . '<button class="button primary" type="submit" data-processing-text="Generating Corporation Tax Period '
+            . $ctPeriodNumber . ' CT600 XML…" data-processing-state="disabled"'
+            . ($ready ? '' : ' disabled')
+            . '>Generate Corporation Tax Period ' . $ctPeriodNumber . ' CT600 XML</button>'
+            . '</form></div></section>';
         return $html;
     }
 

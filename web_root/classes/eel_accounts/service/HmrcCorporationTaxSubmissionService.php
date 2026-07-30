@@ -34,7 +34,7 @@ final class HmrcCorporationTaxSubmissionService
     /** @var null|\Closure(): mixed */
     private ?\Closure $clock;
 
-    /** @var null|\Closure(int,int,string,array): array */
+    /** @var null|\Closure(int,int,string): array */
     private ?\Closure $packagePreparer;
 
     /** @var null|\Closure(int,int): array */
@@ -236,14 +236,6 @@ final class HmrcCorporationTaxSubmissionService
                 'filing_dependencies' => $filingDependencies,
                 'latest_submission' => $submissions[0] ?? null,
                 'pending_submission' => $pending,
-                'declaration' => [
-                    'declaration_name' => (string)($latestTest['declarant_name'] ?? ''),
-                    'declaration_status' => (string)($latestTest['declarant_status'] ?? ''),
-                    'declaration_confirmed' => false,
-                    'supplementary_scope_confirmed' => false,
-                    'original_unfiled_confirmed' => false,
-                    'authority_confirmed' => false,
-                ],
                 'test_ready' => $testBlockers === [],
                 'live_ready' => $liveBlockers === [],
                 'test_blockers' => array_values(array_unique($testBlockers)),
@@ -261,8 +253,7 @@ final class HmrcCorporationTaxSubmissionService
     public function submitTest(
         int $companyId,
         int $ctPeriodId,
-        int|string|null $actor = null,
-        array $declaration = []
+        int|string|null $actor = null
     ): array {
         $xmlEnvironment = $this->xmlEnvironment();
         if ($xmlEnvironment === 'DISABLED') {
@@ -273,18 +264,16 @@ final class HmrcCorporationTaxSubmissionService
             $companyId,
             $ctPeriodId,
             $xmlEnvironment === 'TEST' ? 'TEST' : 'TIL',
-            $actor,
-            $declaration
+            $actor
         );
     }
 
     public function submitLive(
         int $companyId,
         int $ctPeriodId,
-        int|string|null $actor = null,
-        array $declaration = []
+        int|string|null $actor = null
     ): array {
-        return $this->submitMode($companyId, $ctPeriodId, 'LIVE', $actor, $declaration);
+        return $this->submitMode($companyId, $ctPeriodId, 'LIVE', $actor);
     }
 
     public function poll(int $submissionId, int|string|null $actor = null): array
@@ -421,8 +410,7 @@ final class HmrcCorporationTaxSubmissionService
         int $companyId,
         int $ctPeriodId,
         string $mode,
-        int|string|null $actor,
-        array $declaration
+        int|string|null $actor
     ): array {
         $xmlEnvironment = $this->xmlEnvironment();
         if (!$this->environmentPermitted($mode, $xmlEnvironment)) {
@@ -454,11 +442,6 @@ final class HmrcCorporationTaxSubmissionService
                 ?? 'HMRC Transaction Engine credentials are not configured.'));
         }
 
-        $declaration = $this->normaliseDeclaration($declaration);
-        $declarationErrors = $this->declarationErrors($declaration);
-        if ($declarationErrors !== []) {
-            return $this->failure($declarationErrors);
-        }
         $pending = $this->firstPendingSubmissionForPeriod($companyId, $ctPeriodId);
         if (is_array($pending)) {
             $message = (string)$pending['protocol_state'] === 'transport_uncertain'
@@ -479,12 +462,11 @@ final class HmrcCorporationTaxSubmissionService
 
         try {
             $package = $this->packagePreparer instanceof \Closure
-                ? ($this->packagePreparer)($companyId, $ctPeriodId, $mode, $declaration)
+                ? ($this->packagePreparer)($companyId, $ctPeriodId, $mode)
                 : $this->packages->prepareForSubmission(
                     $companyId,
                     $ctPeriodId,
-                    $mode,
-                    $declaration
+                    $mode
                 );
         } catch (\Throwable $exception) {
             return $this->failure('The CT600 package could not be prepared: ' . $exception->getMessage());
@@ -500,12 +482,38 @@ final class HmrcCorporationTaxSubmissionService
         ) {
             return $this->failure('The prepared CT600 package identity does not match the selected CT period.');
         }
+        $declaration = (array)($package['approval_declaration'] ?? []);
+        $declarationErrors = $this->approvalDeclarationErrors($declaration);
+        if ($declarationErrors !== []) {
+            return $this->failure(array_merge(
+                ['The prepared CT600 artifact has no valid frozen return authorisation.'],
+                $declarationErrors
+            ));
+        }
         try {
             $evidenceBundle = (new FilingEvidenceService())->ensureCurrentBundle(
                 $companyId,
                 (int)$package['accounting_period_id'],
                 $this->actor($actor)
             );
+            $preparedEvidenceId = trim((string)(
+                $package['source_manifest']['filing_evidence_id'] ?? ''
+            ));
+            $preparedEvidenceHash = strtolower(trim((string)(
+                $package['source_manifest']['filing_evidence_bundle_hash'] ?? ''
+            )));
+            if ($preparedEvidenceId === ''
+                || !hash_equals($preparedEvidenceId, (string)$evidenceBundle['evidence_id'])
+                || $preparedEvidenceHash === ''
+                || !hash_equals(
+                    $preparedEvidenceHash,
+                    strtolower((string)($evidenceBundle['bundle_hash'] ?? ''))
+                )) {
+                return $this->failure(
+                    'The prepared CT600 XML belongs to an earlier filing-evidence bundle. '
+                    . 'Regenerate it from iXBRL Generation before transmission.'
+                );
+            }
             $package['evidence_bundle_id'] = (int)$evidenceBundle['id'];
             $package['evidence_id'] = (string)$evidenceBundle['evidence_id'];
             $package['source_manifest']['filing_evidence_id'] = (string)$evidenceBundle['evidence_id'];
@@ -754,8 +762,8 @@ final class HmrcCorporationTaxSubmissionService
             }
 
             // The CT-period row is the per-period conversation mutex. Recheck
-            // while it is locked so two distinct declaration bodies cannot
-            // reserve and transmit concurrent original returns.
+            // while it is locked so two callers cannot reserve and transmit
+            // concurrent original returns for the same CT period.
             $pending = $this->firstPendingSubmissionForPeriod(
                 (int)$package['company_id'],
                 (int)$package['ct_period_id']
@@ -828,16 +836,16 @@ final class HmrcCorporationTaxSubmissionService
                     'source_manifest_json' => $manifestJson,
                     'source_manifest_sha256' => $package['source_manifest_sha256'],
                     'test_submission_id' => $testSubmissionId,
-                    'declarant_name' => $declaration['declaration_name'],
-                    'declarant_status' => $declaration['declaration_status'],
-                    'declaration_confirmed' => $declaration['declaration_confirmed'] ? 1 : 0,
-                    'authority_confirmed' => $declaration['authority_confirmed'] ? 1 : 0,
-                    'authority_confirmed_at' => $now,
-                    'authority_confirmed_by' => $this->actor($actor),
-                    'supplementary_scope_confirmed' => $declaration['supplementary_scope_confirmed'] ? 1 : 0,
-                    'original_unfiled_confirmed' => $declaration['original_unfiled_confirmed'] ? 1 : 0,
-                    'declaration_approved_at' => $mode === 'LIVE' ? $now : null,
-                    'declaration_approved_by' => $mode === 'LIVE' ? $this->actor($actor) : null,
+                    'declarant_name' => (string)$declaration['declarant_name'],
+                    'declarant_status' => (string)$declaration['declarant_status'],
+                    'declaration_confirmed' => !empty($declaration['declaration_confirmed']) ? 1 : 0,
+                    'authority_confirmed' => !empty($declaration['authority_confirmed']) ? 1 : 0,
+                    'authority_confirmed_at' => (string)$declaration['declaration_at'],
+                    'authority_confirmed_by' => (string)($declaration['approved_by'] ?? ''),
+                    'supplementary_scope_confirmed' => 1,
+                    'original_unfiled_confirmed' => !empty($declaration['original_unfiled_confirmed']) ? 1 : 0,
+                    'declaration_approved_at' => (string)($declaration['approved_at'] ?? $declaration['declaration_at']),
+                    'declaration_approved_by' => (string)($declaration['approved_by'] ?? ''),
                     'approved_package_hash' => $mode === 'LIVE' ? $package['package_hash'] : null,
                     'prepared_by' => $this->actor($actor),
                     'created_at' => $now,
@@ -1277,6 +1285,9 @@ final class HmrcCorporationTaxSubmissionService
             'irmark' => (string)($package['irmark'] ?? ''),
             'schema_version' => (string)($package['schema_version'] ?? ''),
             'validation' => (array)($package['validation'] ?? []),
+            'approval_declaration' => (array)($package['approval_declaration'] ?? []),
+            'filing_approval_id' => (int)($package['filing_approval_id'] ?? 0),
+            'filing_approval_hash' => (string)($package['filing_approval_hash'] ?? ''),
             'errors' => [],
             'warnings' => (array)($package['warnings'] ?? []),
         ]);
@@ -1284,20 +1295,12 @@ final class HmrcCorporationTaxSubmissionService
 
     private function safeCurrentManifest(int $companyId, int $ctPeriodId, array $filingSnapshot = []): array
     {
-        if (!$this->manifestResolver instanceof \Closure
-            && !method_exists($this->packages, 'currentSourceManifest')) {
-            return ['ok' => false, 'errors' => ['The CT600 source-manifest service is unavailable.']];
-        }
         try {
             $current = $this->manifestResolver instanceof \Closure
                 ? ($this->manifestResolver)($companyId, $ctPeriodId)
-                : $this->packages->currentSourceManifest(
+                : (new Ct600GenerationService($this->packages))->currentManifest(
                     $companyId,
-                    $ctPeriodId,
-                    isset($filingSnapshot['return']) ? (array)$filingSnapshot['return'] : null,
-                    isset($filingSnapshot['accounts']) ? (array)$filingSnapshot['accounts'] : null,
-                    isset($filingSnapshot['computations']) ? (array)$filingSnapshot['computations'] : null,
-                    false
+                    $ctPeriodId
                 );
         } catch (\Throwable $exception) {
             return ['ok' => false, 'errors' => [$exception->getMessage()]];
@@ -1424,53 +1427,35 @@ final class HmrcCorporationTaxSubmissionService
         ];
     }
 
-    private function normaliseDeclaration(array $declaration): array
-    {
-        return [
-            'declaration_name' => trim((string)(
-                $declaration['declaration_name'] ?? $declaration['declarant_name'] ?? ''
-            )),
-            'declaration_status' => trim((string)(
-                $declaration['declaration_status'] ?? $declaration['declarant_status'] ?? ''
-            )),
-            'declaration_confirmed' => $this->truthy($declaration['declaration_confirmed'] ?? false),
-            'authority_confirmed' => $this->truthy($declaration['authority_confirmed'] ?? false),
-            'supplementary_scope_confirmed' => true,
-            'original_unfiled_confirmed' => $this->truthy(
-                $declaration['original_unfiled_confirmed'] ?? false
-            ),
-        ];
-    }
-
-    private function declarationErrors(array $declaration): array
+    private function approvalDeclarationErrors(array $declaration): array
     {
         $errors = [];
-        if ($declaration['declaration_name'] === '') {
-            $errors[] = 'Enter the declarant name.';
-        } elseif (mb_strlen($declaration['declaration_name']) > 255) {
-            $errors[] = 'The declarant name must be 255 characters or fewer.';
+        $name = trim((string)($declaration['declarant_name'] ?? ''));
+        $status = trim((string)($declaration['declarant_status'] ?? ''));
+        if ($name === '') {
+            $errors[] = 'The frozen declarant name is missing.';
+        } elseif (mb_strlen($name) > 100) {
+            $errors[] = 'The frozen declarant name is too long.';
         }
-        if ($declaration['declaration_status'] === '') {
-            $errors[] = 'Enter the declarant capacity or status.';
-        } elseif (mb_strlen($declaration['declaration_status']) > 255) {
-            $errors[] = 'The declarant capacity or status must be 255 characters or fewer.';
+        if ($status === '') {
+            $errors[] = 'The frozen declarant capacity or status is missing.';
+        } elseif (mb_strlen($status) > 64) {
+            $errors[] = 'The frozen declarant capacity or status is too long.';
         }
-        if (!$declaration['authority_confirmed']) {
-            $errors[] = 'Confirm authority to file this Company Tax Return.';
+        if (trim((string)($declaration['declaration_at'] ?? '')) === '') {
+            $errors[] = 'The frozen Corporation Tax return authorisation date is missing.';
         }
-        if (!$declaration['declaration_confirmed']) {
-            $errors[] = 'Confirm the Company Tax Return declaration.';
+        if (empty($declaration['authority_confirmed'])) {
+            $errors[] = 'The frozen authority-to-file confirmation is missing.';
         }
-        if (!$declaration['original_unfiled_confirmed']) {
-            $errors[] = 'Confirm that this is the original unfiled return for the CT period.';
+        if (empty($declaration['declaration_confirmed'])) {
+            $errors[] = 'The frozen Corporation Tax return declaration is missing.';
+        }
+        if (empty($declaration['original_unfiled_confirmed'])) {
+            $errors[] = 'The frozen original-return confirmation is missing.';
         }
 
         return $errors;
-    }
-
-    private function truthy(mixed $value): bool
-    {
-        return $value === true || in_array(strtolower(trim((string)$value)), ['1', 'yes', 'on', 'true'], true);
     }
 
     private function fetchForCtPeriod(int $companyId, int $ctPeriodId): array
@@ -2032,12 +2017,11 @@ final class HmrcCorporationTaxSubmissionService
     {
         try {
             $package = $this->packagePreparer instanceof \Closure
-                ? ($this->packagePreparer)($companyId, $ctPeriodId, strtoupper(trim($mode)), [])
+                ? ($this->packagePreparer)($companyId, $ctPeriodId, strtoupper(trim($mode)))
                 : $this->packages->prepareForSubmission(
                     $companyId,
                     $ctPeriodId,
-                    strtoupper(trim($mode)),
-                    []
+                    strtoupper(trim($mode))
                 );
             $package = $this->normalisePackage($package, $companyId, $ctPeriodId);
         } catch (\Throwable $exception) {

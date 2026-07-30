@@ -22,6 +22,7 @@ final class IxbrlFilingSetGenerationService
     private ?\Closure $accountsValidator;
     private ?\Closure $computationStatusResolver;
     private ?\Closure $computationGenerator;
+    private ?\Closure $ct600Generator;
     private ?\Closure $companiesHousePreparer;
     private ?\Closure $revisionReadinessResolver;
 
@@ -35,6 +36,7 @@ final class IxbrlFilingSetGenerationService
         ?callable $computationGenerator = null,
         ?callable $companiesHousePreparer = null,
         ?callable $revisionReadinessResolver = null,
+        ?callable $ct600Generator = null,
         private readonly ?IxbrlFilingOperationLockService $lockService = null,
     ) {
         $this->readinessResolver = $this->closure($readinessResolver);
@@ -44,6 +46,7 @@ final class IxbrlFilingSetGenerationService
         $this->accountsValidator = $this->closure($accountsValidator);
         $this->computationStatusResolver = $this->closure($computationStatusResolver);
         $this->computationGenerator = $this->closure($computationGenerator);
+        $this->ct600Generator = $this->closure($ct600Generator);
         $this->companiesHousePreparer = $this->closure($companiesHousePreparer);
         $this->revisionReadinessResolver = $this->closure($revisionReadinessResolver);
     }
@@ -255,6 +258,31 @@ final class IxbrlFilingSetGenerationService
             }
             $messages[] = 'Corporation Tax period ' . $sequence . ' iXBRL generated and validated.';
             $warnings = array_merge($warnings, (array)($computation['warnings'] ?? []));
+            $ct600Percent = min(
+                72,
+                $validationPercent + max(1, (int)floor($periodShare * 0.35))
+            );
+            $this->report(
+                $progress,
+                'Generating CT600 XML for Corporation Tax period '
+                    . ($index + 1) . ' of ' . $periodCount . '…',
+                $ct600Percent
+            );
+            $ct600 = $this->generateCt600(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId
+            );
+            if (empty($ct600['success'])) {
+                return $this->failure(array_map(
+                    static fn(mixed $error): string => 'CT period #' . $ctPeriodId
+                        . ' CT600 XML: ' . (string)$error,
+                    (array)($ct600['errors'] ?? ['CT600 XML generation failed.'])
+                ), array_merge($warnings, (array)($ct600['warnings'] ?? [])), $messages, $plan);
+            }
+            $messages[] = 'Corporation Tax period ' . $sequence
+                . ' CT600 XML generated and validated.';
+            $warnings = array_merge($warnings, (array)($ct600['warnings'] ?? []));
         }
 
         \eel_accounts\Support\RequestCache::clear();
@@ -469,6 +497,24 @@ final class IxbrlFilingSetGenerationService
                 [],
                 $actor,
                 $progress
+            );
+    }
+
+    private function generateCt600(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId
+    ): array {
+        return $this->ct600Generator !== null
+            ? (array)($this->ct600Generator)(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId
+            )
+            : (new Ct600GenerationService())->generate(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId
             );
     }
 

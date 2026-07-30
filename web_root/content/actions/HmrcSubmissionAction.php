@@ -41,14 +41,9 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
 
             $actor = (int)$security['user_id'];
             if (in_array($intent, ['hmrc_submit_test', 'hmrc_submit_live'], true)) {
-                $declaration = $this->declaration($request);
-                $declarationErrors = $this->declarationErrors($declaration);
-                if ($declarationErrors !== []) {
-                    return $this->result(false, $declarationErrors, [], $changedFacts);
-                }
                 $command = $intent === 'hmrc_submit_test'
-                    ? $service->submitTest($companyId, $ctPeriodId, $actor, $declaration)
-                    : $service->submitLive($companyId, $ctPeriodId, $actor, $declaration);
+                    ? $service->submitTest($companyId, $ctPeriodId, $actor)
+                    : $service->submitLive($companyId, $ctPeriodId, $actor);
             } else {
                 if ($submissionId <= 0) {
                     return $this->result(false, ['Select a pending HMRC submission to check.'], [], $changedFacts);
@@ -147,45 +142,6 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
             }
         }
         return ['error' => 'The selected CT period does not belong to the authenticated accounting period.'];
-    }
-
-    private function declaration(RequestFramework $request): array
-    {
-        return [
-            'declaration_name' => trim((string)$request->input('declaration_name', '')),
-            'declaration_status' => trim((string)$request->input('declaration_status', '')),
-            'declaration_confirmed' => $this->confirmed($request->input('declaration_confirmed', null)),
-            'authority_confirmed' => $this->confirmed($request->input('authority_confirmed', null)),
-            'supplementary_scope_confirmed' => true,
-            'original_unfiled_confirmed' => $this->confirmed($request->input('original_unfiled_confirmed', null)),
-        ];
-    }
-
-    private function declarationErrors(array $declaration): array
-    {
-        $errors = [];
-        if ((string)($declaration['declaration_name'] ?? '') === '') {
-            $errors[] = 'Enter the declarant name.';
-        }
-        if ((string)($declaration['declaration_status'] ?? '') === '') {
-            $errors[] = 'Enter the declarant status or capacity.';
-        }
-        $confirmations = [
-            'original_unfiled_confirmed' => 'Confirm that this is an original, unfiled return.',
-            'authority_confirmed' => 'Confirm your authority to file this return.',
-            'declaration_confirmed' => 'Confirm the Corporation Tax return declaration.',
-        ];
-        foreach ($confirmations as $key => $message) {
-            if (empty($declaration[$key])) {
-                $errors[] = $message;
-            }
-        }
-        return $errors;
-    }
-
-    private function confirmed(mixed $value): bool
-    {
-        return in_array(strtolower(trim((string)$value)), ['1', 'true', 'yes', 'on'], true);
     }
 
     private function successMessage(string $intent, array $command): string

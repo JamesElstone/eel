@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace eel_accounts\Service;
 
-/** Builds the exact, immutable CT600 filing body handed to Transaction Engine. */
+/**
+ * Assembles prepared CT600 bodies for generation and verifies registered
+ * prepared artifacts before they are handed to Transaction Engine.
+ */
 final class HmrcSubmissionPackageService
 {
     public const PACKAGE_VERSION = 'ct600-package-v1';
@@ -185,20 +188,44 @@ final class HmrcSubmissionPackageService
         ];
     }
 
-    /** @return array<string,mixed> */
+    /**
+     * Load the already-generated CT600 body for transmission. Declaration and
+     * source overrides are retained only as compatibility parameters and are
+     * deliberately ignored: transmission may not rebuild or alter the body.
+     *
+     * @return array<string,mixed>
+     */
     public function prepareForSubmission(
         int $companyId,
         int $ctPeriodId,
         string $mode,
+        array $declaration = [],
+        ?array $returnOverride = null,
+        ?array $accountsOverride = null,
+        ?array $computationOverride = null
+    ): array {
+        unset($declaration, $returnOverride, $accountsOverride, $computationOverride);
+        return (new Ct600GenerationService($this))->loadForSubmission(
+            $companyId,
+            $ctPeriodId,
+            $mode
+        );
+    }
+
+    /**
+     * Build the environment-independent final CT/5 IRenvelope. Only
+     * Ct600GenerationService should call this method.
+     *
+     * @return array<string,mixed>
+     */
+    public function assembleForGeneration(
+        int $companyId,
+        int $ctPeriodId,
         array $declaration,
         ?array $returnOverride = null,
         ?array $accountsOverride = null,
         ?array $computationOverride = null
     ): array {
-        $mode = strtoupper(trim($mode));
-        if (!in_array($mode, ['TEST', 'TIL', 'LIVE'], true)) {
-            return $this->failure('CT600 submission mode must be TEST, TIL or LIVE.');
-        }
         $period = $this->period($companyId, $ctPeriodId);
         if (!is_array($period)) {
             return $this->failure('The selected CT period does not belong to this company or is superseded.');
@@ -207,7 +234,7 @@ final class HmrcSubmissionPackageService
 
         $builder = $this->ct600Builder !== null
             ? (array)($this->ct600Builder)($companyId, $accountingPeriodId, $ctPeriodId, $declaration)
-            : (new Ct600BuilderService())->buildForIds(
+            : (new Ct600BuilderService())->buildForGeneration(
                 $companyId,
                 $accountingPeriodId,
                 $ctPeriodId,
@@ -254,8 +281,7 @@ final class HmrcSubmissionPackageService
             $attachedBody = $this->attachIxbrl((string)$builder['filing_body_xml'], $accounts, $computation);
             $validationEnvelope = $this->validationEnvelope(
                 $attachedBody,
-                (string)$filingModel['filing_identity']['utr'],
-                $mode
+                (string)$filingModel['filing_identity']['utr']
             );
             $marked = (new HmrcIrmarkService())->apply($validationEnvelope);
             if (empty($marked['ok'])) {
@@ -271,7 +297,7 @@ final class HmrcSubmissionPackageService
             }
             $filingBody = $this->extractFilingBody($finalEnvelope);
             $bodyHash = hash('sha256', $filingBody);
-            $path = $this->storeFinalBody($companyId, $ctPeriodId, $bodyHash, $filingBody);
+            $path = '';
         } catch (\Throwable $exception) {
             return $this->failure('The immutable CT600 package could not be assembled.', [$exception->getMessage()]);
         }
@@ -310,13 +336,13 @@ final class HmrcSubmissionPackageService
                 $accounts,
                 $computation,
                 $bodyHash,
-                basename($path),
+                'ct600-prepared-' . $bodyHash . '.xml',
                 'passed'
             ),
         ]);
         $manifestJson = $this->canonicalJson($sourceManifest);
         $manifestHash = hash('sha256', $manifestJson);
-        $packageHash = hash('sha256', self::PACKAGE_VERSION . '|' . $mode . '|' . $manifestHash . '|' . $bodyHash);
+        $packageHash = hash('sha256', self::PACKAGE_VERSION . '|PREPARED|' . $manifestHash . '|' . $bodyHash);
 
         return [
             'ok' => true,
@@ -329,7 +355,7 @@ final class HmrcSubmissionPackageService
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
             'ct_period_id' => $ctPeriodId,
-            'environment' => $mode,
+            'environment' => 'PREPARED',
             'utr' => (string)$filingModel['filing_identity']['utr'],
             'filing_body_xml' => $filingBody,
             'body' => $filingBody,
@@ -366,8 +392,7 @@ final class HmrcSubmissionPackageService
     }
 
     /**
-     * Rebuilds current source evidence. If a prior declaration exists, it also
-     * rebuilds the exact current body for TIL/LIVE byte matching.
+     * Returns the verified manifest of the current prepared CT600 artifact.
      * @return array<string,mixed>
      */
     public function currentSourceManifest(
@@ -379,113 +404,16 @@ final class HmrcSubmissionPackageService
         bool $includeCurrentBody = true
     ): array
     {
-        $period = $this->period($companyId, $ctPeriodId);
-        if (!is_array($period)) {
-            return $this->failure('The selected CT period is unavailable.');
-        }
-        $accountingPeriodId = (int)$period['accounting_period_id'];
-        $return = $returnOverride ?? (new Ct600ReturnModelService())->build($companyId, $accountingPeriodId, $ctPeriodId);
-        if (empty($return['ok'])) {
-            return $this->failure('The current CT600 source model is not ready.', (array)($return['errors'] ?? []));
-        }
-        $filingModel = (array)($return['filing_model']['model'] ?? []);
-        $accounts = $accountsOverride ?? $this->locateAccountsIxbrl($companyId, $accountingPeriodId);
-        $computation = $computationOverride ?? $this->locateComputationsIxbrlForCtPeriod($companyId, $ctPeriodId);
-        if (empty($accounts['ok']) || empty($computation['ok'])) {
-            return $this->failure('The current filing iXBRL artifacts are not ready.', array_merge(
-                (array)($accounts['errors'] ?? []),
-                (array)($computation['errors'] ?? [])
-            ));
-        }
-        $cross = $this->crossDocumentChecks(
-            $filingModel,
-            $accounts,
-            $computation,
-            (string)($return['filing_model']['basis_hash'] ?? '')
+        unset(
+            $returnOverride,
+            $accountsOverride,
+            $computationOverride,
+            $includeCurrentBody
         );
-        if (empty($cross['ok'])) {
-            return $this->failure('The current filing artifacts are inconsistent.', (array)$cross['errors']);
-        }
-        $resolved = (new HmrcCt600ValidationService())->resolveArtifacts((array)$return['rim']);
-        if (empty($resolved['ok'])) {
-            return $resolved;
-        }
-        $artifactHashes = [];
-        foreach ((array)$resolved['artifacts'] as $role => $artifact) {
-            $artifactHashes[(string)$role] = (string)$artifact['sha256'];
-        }
-        ksort($artifactHashes, SORT_STRING);
-        $manifest = array_replace((array)$return['source_manifest'], [
-            'package_version' => self::PACKAGE_VERSION,
-            'accounts_ixbrl' => [
-                'run_id' => (int)$accounts['run_id'],
-                'basis_hash' => (string)($accounts['basis_hash'] ?? ''),
-                'sha256' => (string)$accounts['hash'],
-                'filename' => (string)$accounts['filename'],
-            ],
-            'computations_ixbrl' => [
-                'run_id' => (int)$computation['run_id'],
-                'basis_hash' => (string)($computation['basis_hash'] ?? ''),
-                'sha256' => (string)$computation['hash'],
-                'filename' => (string)$computation['filename'],
-                'mapping_profile_id' => (int)($computation['mapping_profile_id'] ?? 0),
-                'mapping_hash' => (string)($computation['mapping_hash'] ?? ''),
-                'tagging_version' => (string)($computation['tagging_version'] ?? ''),
-                'presentation_version' => (string)($computation['presentation_version'] ?? ''),
-                'taxonomy_package_id' => (int)($computation['taxonomy_package_id'] ?? 0),
-                'taxonomy_package_hash' => (string)($computation['taxonomy_package_hash'] ?? ''),
-            ],
-            'rim_validation_artifact_hashes' => $artifactHashes,
-            'cross_document_policy' => (string)$cross['policy_version'],
-            'artifacts' => $this->manifestArtifacts(
-                $return,
-                [],
-                $accounts,
-                $computation,
-                '',
-                '',
-                'pending_declaration'
-            ),
-        ]);
-        $manifestHash = hash('sha256', $this->canonicalJson($manifest));
-
-        $bodyHash = hash('sha256', 'pending-declaration|' . $manifestHash);
-        if ($includeCurrentBody && \InterfaceDB::tableExists('hmrc_ct600_submissions')) {
-            $row = \InterfaceDB::fetchOne(
-                'SELECT environment, declarant_name, declarant_status, declaration_confirmed,
-                        authority_confirmed,
-                        supplementary_scope_confirmed, original_unfiled_confirmed
-                 FROM hmrc_ct600_submissions
-                 WHERE company_id = :company_id AND ct_period_id = :ct_period_id
-                   AND declaration_confirmed = 1
-                 ORDER BY id DESC LIMIT 1',
-                ['company_id' => $companyId, 'ct_period_id' => $ctPeriodId]
-            );
-            if (is_array($row)) {
-                $prepared = $this->prepareForSubmission($companyId, $ctPeriodId, (string)$row['environment'], [
-                    'declarant_name' => (string)$row['declarant_name'],
-                    'declarant_status' => (string)$row['declarant_status'],
-                    'declaration_confirmed' => !empty($row['declaration_confirmed']),
-                    'authority_confirmed' => !empty($row['authority_confirmed']),
-                    'supplementary_scope_confirmed' => !empty($row['supplementary_scope_confirmed']),
-                    'original_unfiled_confirmed' => !empty($row['original_unfiled_confirmed']),
-                ], $return, $accounts, $computation);
-                if (!empty($prepared['ok'])) {
-                    $manifest = (array)$prepared['source_manifest'];
-                    $manifestHash = (string)$prepared['source_manifest_sha256'];
-                    $bodyHash = (string)$prepared['body_sha256'];
-                }
-            }
-        }
-        return [
-            'ok' => true,
-            'errors' => [],
-            'warnings' => [],
-            'source_manifest' => $manifest,
-            'source_manifest_sha256' => $manifestHash,
-            'body_sha256' => $includeCurrentBody ? $bodyHash : '',
-            'package_hash' => hash('sha256', $manifestHash . '|' . $bodyHash),
-        ];
+        return (new Ct600GenerationService($this))->currentManifest(
+            $companyId,
+            $ctPeriodId
+        );
     }
 
     /** Compatibility accessor for already persisted outbound evidence. */
@@ -666,40 +594,31 @@ final class HmrcSubmissionPackageService
         $encoded->setAttribute('entryPoint', 'yes');
     }
 
-    private function validationEnvelope(string $filingBody, string $utr, string $mode): string
+    private function validationEnvelope(string $filingBody, string $utr): string
     {
-        $document = new \DOMDocument('1.0', 'UTF-8');
-        $document->preserveWhiteSpace = false;
-        $document->formatOutput = false;
-        $root = $document->createElementNS(self::ENVELOPE_NAMESPACE, 'GovTalkMessage');
-        $document->appendChild($root);
-        $this->hdElement($document, $root, 'EnvelopeVersion', '2.0');
-        $header = $this->hdElement($document, $root, 'Header');
-        $details = $this->hdElement($document, $header, 'MessageDetails');
-        $class = $mode === 'TIL' ? 'HMRC-CT-CT600-TIL' : 'HMRC-CT-CT600';
-        $this->hdElement($document, $details, 'Class', $class);
-        $this->hdElement($document, $details, 'Qualifier', 'request');
-        $this->hdElement($document, $details, 'Function', 'submit');
-        $this->hdElement($document, $details, 'TransactionID', str_repeat('0', 31) . '1');
-        $this->hdElement($document, $details, 'GatewayTest', $mode === 'TEST' ? '1' : '0');
-        $govTalk = $this->hdElement($document, $root, 'GovTalkDetails');
-        $keys = $this->hdElement($document, $govTalk, 'Keys');
-        $key = $this->hdElement($document, $keys, 'Key', $utr);
+        $draft = (new \eel_accounts\Client\GovTalkEnvelopeBuilder())->create(
+            '2.0',
+            'HMRC-CT-CT600',
+            'request',
+            str_repeat('0', 31) . '1',
+            'submit'
+        );
+        $document = $draft->document;
+        $root = $draft->root;
+        $govTalk = $draft->element($root, 'GovTalkDetails');
+        $keys = $draft->element($govTalk, 'Keys');
+        $key = $draft->text($keys, 'Key', $utr);
         $key->setAttribute('Type', 'UTR');
-        $target = $this->hdElement($document, $govTalk, 'TargetDetails');
-        $this->hdElement($document, $target, 'Organisation', 'HMRC');
-        $body = $this->hdElement($document, $root, 'Body');
+        $target = $draft->element($govTalk, 'TargetDetails');
+        $draft->text($target, 'Organisation', 'HMRC');
+        $body = $draft->appendBody();
         $inner = new \DOMDocument();
         if (!$inner->loadXML($filingBody, LIBXML_NONET | LIBXML_NOBLANKS | LIBXML_COMPACT)
             || !$inner->documentElement instanceof \DOMElement) {
             throw new \RuntimeException('The attached filing body could not be imported into GovTalk.');
         }
         $body->appendChild($document->importNode($inner->documentElement, true));
-        $xml = $document->saveXML();
-        if (!is_string($xml) || $xml === '') {
-            throw new \RuntimeException('The local GovTalk validation envelope could not be serialized.');
-        }
-        return $xml;
+        return $draft->xml();
     }
 
     private function extractFilingBody(string $govTalkXml): string
@@ -741,38 +660,6 @@ final class HmrcSubmissionPackageService
         if ($value !== null) { $element->appendChild($document->createTextNode(\eel_accounts\Support\Utf8::normalize($value))); }
         $parent->appendChild($element);
         return $element;
-    }
-
-    private function hdElement(\DOMDocument $document, \DOMElement $parent, string $name, ?string $value = null): \DOMElement
-    {
-        $element = $document->createElementNS(self::ENVELOPE_NAMESPACE, $name);
-        if ($value !== null) { $element->appendChild($document->createTextNode(\eel_accounts\Support\Utf8::normalize($value))); }
-        $parent->appendChild($element);
-        return $element;
-    }
-
-    private function storeFinalBody(int $companyId, int $ctPeriodId, string $hash, string $xml): string
-    {
-        $root = defined('PROJECT_ROOT') ? (string)PROJECT_ROOT : dirname(__DIR__, 4);
-        $directory = rtrim($root, '\\/') . DIRECTORY_SEPARATOR . 'files' . DIRECTORY_SEPARATOR
-            . 'ct600' . DIRECTORY_SEPARATOR . $companyId . DIRECTORY_SEPARATOR . $ctPeriodId;
-        if (!is_dir($directory) && !@mkdir($directory, 0770, true) && !is_dir($directory)) {
-            throw new \RuntimeException('The immutable CT600 package directory could not be created.');
-        }
-        $path = $directory . DIRECTORY_SEPARATOR . 'ct600-final-' . $hash . '.xml';
-        if (is_file($path)) {
-            $existing = hash_file('sha256', $path);
-            if (!is_string($existing) || !hash_equals($hash, $existing)) {
-                throw new \RuntimeException('An existing CT600 package failed its content hash check.');
-            }
-            return $path;
-        }
-        if (file_put_contents($path, $xml, LOCK_EX) !== strlen($xml)) {
-            @unlink($path);
-            throw new \RuntimeException('The immutable CT600 package could not be stored completely.');
-        }
-        @chmod($path, 0660);
-        return $path;
     }
 
     /** @return list<array<string,mixed>> */

@@ -150,8 +150,9 @@ $harness->run(_hmrc_transmitCard::class, static function (
         $harness->assertTrue(str_contains($html, 'data-chicken-confirm-text="Submit Tax Return"'));
         foreach (['declaration_name', 'declaration_status', 'original_unfiled_confirmed',
                   'authority_confirmed', 'declaration_confirmed'] as $field) {
-            $harness->assertTrue(str_contains($html, 'name="' . $field . '"'));
+            $harness->assertFalse(str_contains($html, 'name="' . $field . '"'));
         }
+        $harness->assertSame(2, substr_count($html, '<h3>Transmit Submission</h3>'));
         $harness->assertFalse(str_contains($html, 'supplementary_scope_confirmed'));
         $harness->assertFalse(str_contains($html, 'A successful TIL result for the current body and source manifest is required before LIVE submission.'));
         $harness->assertSame(1, preg_match('/name="ct_period_id" value="6"[\s\S]*?<button class="button danger" type="submit" name="intent" value="hmrc_submit_live" disabled/', $html));
@@ -174,6 +175,51 @@ $harness->run(_hmrc_transmitCard::class, static function (
         $harness->assertTrue(str_contains($html, '<div class="actions-row actions-row-right hmrc-credential-summary-actions">'));
         $harness->assertTrue(str_contains($html, '<a class="button" href="?page=settings&amp;show_card=api_keys_editor">Configure HMRC XML credentials</a>'));
         $harness->assertFalse(str_contains($html, 'HMRC TEST does not file the return.'));
+    });
+
+    $harness->check(_hmrc_transmitCard::class, 'blocks transmission until the current prepared CT600 artifact exists', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'services' => ['hmrc_ct600_status' => [
+                'success' => true,
+                'xml_environment' => 'TEST',
+                'test_environment' => 'TEST',
+                'live_environment' => 'DISABLED',
+                'environments' => [
+                    'TEST' => [
+                        'ready' => true,
+                        'credentials_configured' => true,
+                        'blockers' => [],
+                    ],
+                ],
+                'periods' => [[
+                    'ct_period_id' => 6,
+                    'xml_environment' => 'TEST',
+                    'period_start' => '2025-01-01',
+                    'period_end' => '2025-12-31',
+                    'test_ready' => false,
+                    'live_ready' => false,
+                    'filing_dependencies' => [
+                        ['label' => 'Disclosures and filing basis', 'ready' => true],
+                        ['label' => 'CT-period filing basis', 'ready' => true],
+                        ['label' => 'CT600 source model', 'ready' => true],
+                        ['label' => 'Filing iXBRL artifacts', 'ready' => true],
+                    ],
+                    'blockers' => [
+                        'The current CT600 XML artifact is not ready. Generate it from iXBRL Generation.',
+                    ],
+                ]],
+            ]],
+        ]);
+
+        $harness->assertTrue(str_contains(
+            $html,
+            'The current CT600 XML artifact is not ready. Generate it from iXBRL Generation.'
+        ));
+        $harness->assertTrue(str_contains(
+            $html,
+            'name="intent" value="hmrc_submit_test" disabled>Transmit Submission</button>'
+        ));
     });
 
     $harness->check(_hmrc_transmitCard::class, 'disables every filing control when HMRC XML is disabled', static function () use ($harness, $card): void {
@@ -202,8 +248,9 @@ $harness->run(_hmrc_transmitCard::class, static function (
         ]);
 
         $harness->assertTrue(str_contains($html, '<strong>HMRC XML transmission is disabled.</strong>'));
-        $harness->assertTrue(str_contains($html, 'name="declaration_name" type="text" value="" required disabled'));
-        $harness->assertTrue(str_contains($html, 'name="original_unfiled_confirmed" type="checkbox" value="1" required disabled'));
+        $harness->assertFalse(str_contains($html, 'name="declaration_name"'));
+        $harness->assertFalse(str_contains($html, 'name="original_unfiled_confirmed"'));
+        $harness->assertTrue(str_contains($html, '<h3>Transmit Submission</h3>'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="hmrc_submit_test" disabled>Transmit Submission</button>'));
         $harness->assertFalse(str_contains($html, 'name="intent" value="hmrc_submit_live"'));
         $harness->assertFalse(str_contains($html, 'name="intent" value="hmrc_poll"'));
@@ -322,9 +369,9 @@ $harness->run(HmrcSubmissionAction::class, static function (
         }
         foreach (['declaration_name', 'declaration_status', 'declaration_confirmed', 'authority_confirmed',
                   'original_unfiled_confirmed'] as $field) {
-            $harness->assertTrue(str_contains($source, "'" . $field . "'"));
+            $harness->assertFalse(str_contains($source, "'" . $field . "'"));
         }
-        $harness->assertTrue(str_contains($source, 'submitTest($companyId, $ctPeriodId, $actor, $declaration)'));
+        $harness->assertTrue(str_contains($source, 'submitTest($companyId, $ctPeriodId, $actor)'));
         $harness->assertTrue(str_contains($source, '$submissionId !== $authorisedSubmissionId'));
         foreach (['$request->isPost()', 'isValidCsrfToken($csrfToken)', 'RoleAssignmentService::ADMIN_ROLE_ID'] as $securityGate) {
             $harness->assertTrue(str_contains($source, $securityGate));

@@ -16,7 +16,7 @@ final class IxbrlAction implements ActionInterfaceFramework
         $accountingPeriodId = (int)$request->input('accounting_period_id', 0);
         $ctPeriodId = (int)$request->input('ct_period_id', 0);
         $runId = (int)$request->input('run_id', 0);
-        $changedFacts = ['ixbrl.readiness', 'ixbrl.disclosures', 'ixbrl.trial.balance', 'ixbrl.accounts.mapping', 'ixbrl.facts.preview', 'ixbrl.generation', 'ct.filing', 'page.context'];
+        $changedFacts = ['ixbrl.readiness', 'ixbrl.disclosures', 'ixbrl.trial.balance', 'ixbrl.accounts.mapping', 'ixbrl.facts.preview', 'ixbrl.generation', 'ct.filing', 'hmrc.ct600.submissions', 'page.context'];
 
         $contextError = $this->accountingContextError($companyId, $accountingPeriodId);
         if ($contextError !== null) {
@@ -29,6 +29,9 @@ final class IxbrlAction implements ActionInterfaceFramework
             }
             if ($intent === 'download_computation_ixbrl') {
                 $this->downloadComputation($companyId, $accountingPeriodId, $ctPeriodId);
+            }
+            if ($intent === 'download_ct600_xml') {
+                $this->downloadCt600($companyId, $accountingPeriodId, $ctPeriodId);
             }
             if ($intent === 'download_arelle_log') {
                 $this->downloadArelleLog(
@@ -231,8 +234,13 @@ final class IxbrlAction implements ActionInterfaceFramework
                 ];
             } elseif (in_array($intent, ['generate_computation_ixbrl', 'validate_computation_ixbrl', 'generate_ct600_xml'], true)) {
                 if ($intent === 'generate_ct600_xml') {
+                    $progress = $services->actionProgress();
+                    $progress->report('Generating and validating the Corporation Tax CT600 XML…', 0);
                     $result = $this->withFilingLock($companyId, $accountingPeriodId,
                         fn(): array => (new \eel_accounts\Service\Ct600GenerationService())->generate($companyId, $accountingPeriodId, $ctPeriodId));
+                    if (!empty($result['success'])) {
+                        $progress->report('Corporation Tax CT600 XML generated and validated.', 100);
+                    }
                 } elseif ($intent === 'generate_computation_ixbrl') {
                     $progress = $services->actionProgress();
                     @set_time_limit(0);
@@ -492,6 +500,50 @@ final class IxbrlAction implements ActionInterfaceFramework
         header('Content-Disposition: attachment; filename="' . str_replace('"', '', basename((string)$artifact['filename'])) . '"');
         $size = filesize($path);
         if (is_int($size)) { header('Content-Length: ' . $size); }
+        readfile($path);
+        exit;
+    }
+
+    private function downloadCt600(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId
+    ): never {
+        $context = new \eel_accounts\Service\AccountingContextService();
+        if ($companyId <= 0 || $companyId !== $context->authCompanyId()
+            || $accountingPeriodId <= 0
+            || $accountingPeriodId !== $context->authAccountingPeriodId()) {
+            header('Content-Type: text/plain; charset=utf-8', true, 403);
+            echo 'The submitted CT600 XML does not match the authenticated accounting context.';
+            exit;
+        }
+        $result = (new \eel_accounts\Service\Ct600GenerationService())->downloadArtifact(
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId
+        );
+        if (empty($result['success'])) {
+            header('Content-Type: text/plain; charset=utf-8', true, 409);
+            echo (string)(($result['errors'] ?? [])[0]
+                ?? 'The current validated CT600 XML artifact is unavailable.');
+            exit;
+        }
+        $artifact = (array)$result['artifact'];
+        $path = (string)($artifact['path'] ?? '');
+        if ($path === '' || !is_file($path)) {
+            header('Content-Type: text/plain; charset=utf-8', true, 404);
+            echo 'The current validated CT600 XML artifact was not found.';
+            exit;
+        }
+        header('Content-Type: application/xml; charset=utf-8');
+        header('Content-Disposition: attachment; filename="'
+            . str_replace('"', '', basename((string)$artifact['filename'])) . '"');
+        header('X-Content-Type-Options: nosniff');
+        header('Cache-Control: private, no-store');
+        $size = filesize($path);
+        if (is_int($size)) {
+            header('Content-Length: ' . $size);
+        }
         readfile($path);
         exit;
     }

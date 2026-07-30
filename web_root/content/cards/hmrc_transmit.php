@@ -243,25 +243,11 @@ final class _hmrc_transmitCard extends CardBaseFramework
         $submissionDisabled = ($isLive ? $liveEnabled : $testEnabled) && !$controlsDisabled
             && $credentialsConfigured && $dependenciesReady ? '' : ' disabled';
         $submissionClass = $xmlEnvironment === 'DISABLED' ? '' : ($isLive ? ' danger' : ' success');
-        $fieldDisabled = $controlsDisabled ? ' disabled' : '';
         $periodLabel = trim($start . ' to ' . $end);
-        $declaration = (array)($period['declaration'] ?? []);
-        $declarationName = trim((string)($declaration['declaration_name'] ?? $period['declaration_name'] ?? ''));
-        $declarationStatus = trim((string)($declaration['declaration_status'] ?? $period['declaration_status'] ?? ''));
 
         return '<section class="panel-soft"><form method="post" action="?page=transmit" data-ajax="true" class="settings-stack">'
             . $this->hiddenFields($companyId, $accountingPeriodId, $ctPeriodId)
-            . '<h3>Return declaration</h3>'
-            . '<div class="helper">These details form part of the tested filing body. Leave them unchanged between a successful TIL test and LIVE submission.</div>'
-            . '<div class="form-row half"><label for="hmrc-declaration-name-' . $ctPeriodId . '">Declarant name</label>'
-            . '<input class="input" id="hmrc-declaration-name-' . $ctPeriodId . '" name="declaration_name" type="text" value="'
-            . \eel_accounts\Support\Utf8::html($declarationName) . '" required' . $fieldDisabled . '></div>'
-            . '<div class="form-row half"><label for="hmrc-declaration-status-' . $ctPeriodId . '">Declarant status or capacity</label>'
-            . '<input class="input" id="hmrc-declaration-status-' . $ctPeriodId . '" name="declaration_status" type="text" value="'
-            . \eel_accounts\Support\Utf8::html($declarationStatus) . '" required' . $fieldDisabled . '></div>'
-            . $this->confirmation('original_unfiled_confirmed', $ctPeriodId, 'This is an original return and has not already been filed for this CT period.', $controlsDisabled)
-            . $this->confirmation('authority_confirmed', $ctPeriodId, 'I am authorised to file this Corporation Tax return for the company.', $controlsDisabled)
-            . $this->confirmation('declaration_confirmed', $ctPeriodId, 'I declare that the information in this return is correct and complete to the best of my knowledge and belief.', $controlsDisabled)
+            . '<h3>Transmit Submission</h3>'
             . '<div class="actions-row">'
             . '<button class="button' . $submissionClass . '" type="submit" name="intent" value="' . $submissionIntent . '"' . $submissionDisabled
             . ($isLive
@@ -272,15 +258,6 @@ final class _hmrc_transmitCard extends CardBaseFramework
                 : '')
             . '>Transmit Submission</button></div>'
             . '</form></section>';
-    }
-
-    private function confirmation(string $name, int $ctPeriodId, string $label, bool $disabled): string
-    {
-        $id = 'hmrc-' . str_replace('_', '-', $name) . '-' . $ctPeriodId;
-        return '<label class="checkbox-row" for="' . $id . '"><input id="' . $id . '" name="'
-            . \eel_accounts\Support\Utf8::html($name) . '" type="checkbox" value="1" required'
-            . ($disabled ? ' disabled' : '') . '> '
-            . \eel_accounts\Support\Utf8::html($label) . '</label>';
     }
 
     private function hiddenFields(int $companyId, int $accountingPeriodId, int $ctPeriodId): string

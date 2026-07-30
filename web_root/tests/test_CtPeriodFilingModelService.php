@@ -1008,6 +1008,23 @@ function ctPeriodFilingModelFixture(
             $accountingPeriodId,
             'ct-filing-model-fixture'
         );
+        $returnAuthorisation = (new \eel_accounts\Service\Ct600ReturnAuthorisationService())->save(
+            $companyId,
+            $accountingPeriodId,
+            [
+                'declarant_authority' => 'director:' . (int)$approvingDirector['id'],
+                'original_unfiled_confirmed' => '1',
+                'authority_confirmed' => '1',
+                'declaration_confirmed' => '1',
+            ],
+            'test'
+        );
+        if (empty($returnAuthorisation['success'])) {
+            throw new RuntimeException(
+                'CT filing return authorisation failed: '
+                . implode(' ', (array)($returnAuthorisation['errors'] ?? []))
+            );
+        }
         if ($approve) {
             $filingApproval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
                 ->approveAndBuildFacts($companyId, $accountingPeriodId, 'test', 'CT filing model fixture.');

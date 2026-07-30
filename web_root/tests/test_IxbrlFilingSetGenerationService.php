@@ -13,7 +13,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             \eel_accounts\Service\IxbrlFilingSetGenerationService::class,
             'fails complete preflight before invoking any generator',
             static function () use ($harness): void {
-                $calls = ['accounts' => 0, 'validation' => 0, 'computation' => 0, 'companies_house' => 0];
+                $calls = ['accounts' => 0, 'validation' => 0, 'computation' => 0, 'ct600' => 0, 'companies_house' => 0];
                 $service = new \eel_accounts\Service\IxbrlFilingSetGenerationService(
                     readinessResolver: static function (): array {
                         throw new RuntimeException('General iXBRL readiness must not run before the revision gate.');
@@ -50,6 +50,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         $calls['computation']++;
                         return ['success' => true];
                     },
+                    ct600Generator: static function () use (&$calls): array {
+                        $calls['ct600']++;
+                        return ['success' => true];
+                    },
                     companiesHousePreparer: static function () use (&$calls): array {
                         $calls['companies_house']++;
                         return ['success' => true];
@@ -59,7 +63,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $result = $service->generate(49001, 80001, 'test');
                 $harness->assertFalse((bool)$result['success']);
                 $harness->assertSame(
-                    ['accounts' => 0, 'validation' => 0, 'computation' => 0, 'companies_house' => 0],
+                    ['accounts' => 0, 'validation' => 0, 'computation' => 0, 'ct600' => 0, 'companies_house' => 0],
                     $calls
                 );
                 $harness->assertTrue(str_contains(
@@ -73,7 +77,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             \eel_accounts\Service\IxbrlFilingSetGenerationService::class,
             'regenerates every artifact when the complete filing set is already current',
             static function () use ($harness): void {
-                $calls = ['accounts' => 0, 'validation' => 0, 'computation' => 0, 'companies_house' => 0];
+                $calls = ['accounts' => 0, 'validation' => 0, 'computation' => 0, 'ct600' => 0, 'companies_house' => 0];
                 $progressMessages = [];
                 $service = new \eel_accounts\Service\IxbrlFilingSetGenerationService(
                     readinessResolver: static fn(): array => [
@@ -106,6 +110,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         $calls['computation']++;
                         return ['success' => true];
                     },
+                    ct600Generator: static function () use (&$calls): array {
+                        $calls['ct600']++;
+                        return ['success' => true];
+                    },
                     companiesHousePreparer: static function () use (&$calls): array {
                         $calls['companies_house']++;
                         return ['success' => true];
@@ -126,7 +134,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 );
                 $harness->assertTrue((bool)$result['success']);
                 $harness->assertSame(
-                    ['accounts' => 1, 'validation' => 1, 'computation' => 1, 'companies_house' => 1],
+                    ['accounts' => 1, 'validation' => 1, 'computation' => 1, 'ct600' => 1, 'companies_house' => 1],
                     $calls
                 );
                 $harness->assertFalse(str_contains(
@@ -155,6 +163,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $accountsGenerationCalls = 0;
                 $accountsValidationCalls = 0;
                 $generationCalls = 0;
+                $ct600Calls = 0;
                 $fileable = false;
                 $service = new \eel_accounts\Service\IxbrlFilingSetGenerationService(
                     readinessResolver: static fn(): array => [
@@ -187,6 +196,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         $fileable = true;
                         return ['success' => true];
                     },
+                    ct600Generator: static function () use (&$ct600Calls): array {
+                        $ct600Calls++;
+                        return ['success' => true];
+                    },
                     revisionReadinessResolver: static fn(): array => [
                         'applicable' => false,
                         'ready' => true,
@@ -200,6 +213,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame(2, $accountsGenerationCalls);
                 $harness->assertSame(2, $accountsValidationCalls);
                 $harness->assertSame(2, $generationCalls);
+                $harness->assertSame(1, $ct600Calls);
             }
         );
 
@@ -283,6 +297,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         $ctCurrent[$ctPeriodId] = true;
                         return ['success' => true, 'warnings' => []];
                     },
+                    ct600Generator: static fn(): array => [
+                        'success' => true,
+                        'warnings' => [],
+                    ],
                     companiesHousePreparer: static function (
                         int $companyId,
                         int $accountingPeriodId,
@@ -322,8 +340,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ['Running Arelle validation for the Accounting iXBRL…', 15],
                     ['Generating iXBRL for Corporation Tax period 1 of 2…', 49],
                     ['Running Arelle validation for Corporation Tax period 1 of 2…', 51],
+                    ['Generating CT600 XML for Corporation Tax period 1 of 2…', 55],
                     ['Generating iXBRL for Corporation Tax period 2 of 2…', 61],
                     ['Running Arelle validation for Corporation Tax period 2 of 2…', 63],
+                    ['Generating CT600 XML for Corporation Tax period 2 of 2…', 67],
                     ['Preparing the Companies House revised-accounts iXBRL…', 73],
                     ['Checking Companies House iXBRL preparation requirements…', 73],
                     ['Preparing the filing-evidence bundle…', 76],

@@ -51,6 +51,24 @@ function hmrcPackageTestIxbrl(string $startDate, string $endDate, bool $includeU
     ): void {
         $harness->check(
             \eel_accounts\Service\HmrcSubmissionPackageService::class,
+            'does not invoke CT600 serialization while preparing a transmission',
+            static function () use ($harness): void {
+                $builderCalls = 0;
+                $service = new \eel_accounts\Service\HmrcSubmissionPackageService(
+                    ct600Builder: static function () use (&$builderCalls): array {
+                        $builderCalls++;
+                        throw new RuntimeException('The CT600 builder must not run during transmission.');
+                    }
+                );
+                $result = $service->prepareForSubmission(996001, 996003, 'TIL');
+                $harness->assertFalse((bool)($result['ok'] ?? false));
+                $harness->assertSame(0, $builderCalls);
+                $harness->assertTrue((array)($result['errors'] ?? []) !== []);
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Service\HmrcSubmissionPackageService::class,
             'fails closed when a persisted submission body is unavailable',
             static function () use ($harness, $service): void {
                 $result = $service->buildSubmissionEnvelope(0);
@@ -175,7 +193,7 @@ function hmrcPackageTestIxbrl(string $startDate, string $endDate, bool $includeU
                         'errors' => ['Injected builder rejected an incomplete frozen filing model.'],
                     ]
                 );
-                $failedBuild = $builderFailure->prepareForSubmission(996001, 996003, 'TIL', []);
+                $failedBuild = $builderFailure->assembleForGeneration(996001, 996003, []);
                 $harness->assertSame(false, (bool)($failedBuild['ok'] ?? true));
                 $harness->assertSame('The CT600 filing body is not ready.', (string)($failedBuild['errors'][0] ?? ''));
                 $harness->assertTrue(str_contains(
@@ -201,7 +219,7 @@ function hmrcPackageTestIxbrl(string $startDate, string $endDate, bool $includeU
                         'return_model' => ['filing_model' => ['model' => []]],
                     ]
                 );
-                $failedArtifacts = $artifactFailure->prepareForSubmission(996001, 996003, 'TIL', []);
+                $failedArtifacts = $artifactFailure->assembleForGeneration(996001, 996003, []);
                 $errors = implode(' ', (array)($failedArtifacts['errors'] ?? []));
                 $harness->assertSame(false, (bool)($failedArtifacts['ok'] ?? true));
                 $harness->assertSame('The filing iXBRL artifacts are not ready.', (string)($failedArtifacts['errors'][0] ?? ''));

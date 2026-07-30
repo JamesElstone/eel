@@ -20,6 +20,10 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
     private int $exchangeSequence = 0;
     /** @var list<string> */
     public array $configurationEnvironments = [];
+    /** @var list<string> */
+    public array $submittedBodies = [];
+    /** @var list<string> */
+    public array $submittedEnvironments = [];
 
     public function configurationStatus(string $environment): array
     {
@@ -45,6 +49,8 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
         ?string $transactionId = null
     ): array {
         $this->submitCalls++;
+        $this->submittedBodies[] = $filingBodyXml;
+        $this->submittedEnvironments[] = $environment;
         $request = $this->request('submit', $environment, '', $transactionId);
         $conversation->captureRequest($request);
         $conversation->markSendStarted($request);
@@ -284,13 +290,15 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'basis' => 'fixture-a',
                         'company_id' => $companyId,
                         'ct_period_id' => $ctPeriodId,
+                        'filing_evidence_id' => 'EEL-FE-00000000000000000000000000098601',
+                        'filing_evidence_bundle_hash' => hash('sha256', 'hmrc-evidence-98601'),
                     ];
                     $body = '<IRenvelope xmlns="http://www.govtalk.gov.uk/taxation/CT/5">'
                         . '<IRheader><Keys><Key Type="UTR">0123456789</Key></Keys>'
                         . '<IRmark Type="generic">FIXTURE</IRmark></IRheader>'
                         . '<CompanyTaxReturn/></IRenvelope>';
                     $bodyHash = hash('sha256', $body);
-                    $package = static fn(int $requestedCompanyId, int $requestedCtPeriodId, string $mode, array $declaration): array => [
+                    $package = static fn(int $requestedCompanyId, int $requestedCtPeriodId, string $mode): array => [
                         'ok' => true,
                         'errors' => [],
                         'warnings' => [],
@@ -310,7 +318,17 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'year_end_locked_at' => '2026-07-18 10:00:00',
                         'irmark' => 'FIXTURE',
                         'schema_version' => 'V3/V1.994',
-                        'validation' => ['status' => 'passed', 'mode' => $mode, 'declaration' => $declaration],
+                        'validation' => ['status' => 'passed', 'mode' => $mode],
+                        'approval_declaration' => [
+                            'declarant_name' => 'Jane Director',
+                            'declarant_status' => 'Director',
+                            'declaration_at' => '2026-07-19 10:00:00',
+                            'approved_at' => '2026-07-19 10:00:00',
+                            'approved_by' => 'user:42',
+                            'declaration_confirmed' => true,
+                            'authority_confirmed' => true,
+                            'original_unfiled_confirmed' => true,
+                        ],
                     ];
                     $currentManifest = static fn(int $requestedCompanyId, int $requestedCtPeriodId): array => [
                         'ok' => $requestedCompanyId === $companyId && $requestedCtPeriodId === $ctPeriodId,
@@ -419,15 +437,7 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         xmlEnvironmentResolver: static fn(): string => 'LIVE',
                         filingReadinessResolver: $filingReadiness
                     );
-                    $declaration = [
-                        'declaration_name' => 'Jane Director',
-                        'declaration_status' => 'Director',
-                        'declaration_confirmed' => true,
-                        'authority_confirmed' => true,
-                        'supplementary_scope_confirmed' => true,
-                        'original_unfiled_confirmed' => true,
-                    ];
-                    $submitted = $service->submitTest($companyId, $ctPeriodId, 42, $declaration);
+                    $submitted = $service->submitTest($companyId, $ctPeriodId, 42);
                     $h->assertTrue((bool)$submitted['success']);
                     $h->assertTrue((bool)$submitted['needs_poll']);
                     $h->assertSame('awaiting_poll', $submitted['protocol_state']);
@@ -491,8 +501,7 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     $h->assertSame(true, (bool)($dependencies[2]['ready'] ?? false));
                     $h->assertSame(false, (bool)($dependencies[3]['ready'] ?? true));
                     $h->assertSame('The computation artifact filing basis is stale.', (string)($dependencies[3]['detail'] ?? ''));
-                    $h->assertSame('Jane Director', (string)$status['periods'][0]['declaration']['declaration_name']);
-                    $h->assertFalse((bool)$status['periods'][0]['declaration']['declaration_confirmed']);
+                    $h->assertFalse(array_key_exists('declaration', $status['periods'][0]));
                     $h->assertFalse((bool)$status['periods'][0]['live_ready']);
 
                     $transport->submitResponses[] = [
@@ -525,11 +534,17 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'errors' => [],
                         'error' => '',
                     ];
-                    $live = $service->submitLive($companyId, $ctPeriodId, 42, $declaration);
+                    $live = $service->submitLive($companyId, $ctPeriodId, 42);
                     $h->assertTrue((bool)$live['success']);
                     $h->assertSame('live_accepted', $live['business_outcome']);
                     $h->assertSame('closed', $live['protocol_state']);
                     $h->assertSame($submissionId, (int)$live['submission']['test_submission_id']);
+                    $h->assertSame(['TIL', 'LIVE'], $transport->submittedEnvironments);
+                    $h->assertSame(2, count($transport->submittedBodies));
+                    $h->assertSame(
+                        hash('sha256', $transport->submittedBodies[0]),
+                        hash('sha256', $transport->submittedBodies[1])
+                    );
                 } finally {
                     InterfaceDB::prepareExecute('DELETE FROM companies WHERE id = :id', ['id' => $companyId]);
                 }
@@ -612,10 +627,15 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                 );
 
                 try {
-                    $manifest = ['basis' => 'uncertain', 'ct_period_id' => $ctPeriodId];
+                    $manifest = [
+                        'basis' => 'uncertain',
+                        'ct_period_id' => $ctPeriodId,
+                        'filing_evidence_id' => 'EEL-FE-00000000000000000000000000098611',
+                        'filing_evidence_bundle_hash' => hash('sha256', 'hmrc-evidence-98611'),
+                    ];
                     $body = '<IRenvelope>uncertain</IRenvelope>';
                     $bodyHash = hash('sha256', $body);
-                    $package = static fn(int $company, int $ctPeriod, string $mode, array $declaration): array => [
+                    $package = static fn(int $company, int $ctPeriod, string $mode): array => [
                         'ok' => true,
                         'company_id' => $company,
                         'accounting_period_id' => $accountingPeriodId,
@@ -624,7 +644,17 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'filing_body_xml' => $body,
                         'source_manifest' => $manifest,
                         'body_sha256' => $bodyHash,
-                        'validation' => ['mode' => $mode, 'declaration' => $declaration],
+                        'validation' => ['mode' => $mode],
+                        'approval_declaration' => [
+                            'declarant_name' => 'Jane Director',
+                            'declarant_status' => 'Director',
+                            'declaration_at' => '2026-07-19 11:00:00',
+                            'approved_at' => '2026-07-19 11:00:00',
+                            'approved_by' => 'user:42',
+                            'declaration_confirmed' => true,
+                            'authority_confirmed' => true,
+                            'original_unfiled_confirmed' => true,
+                        ],
                     ];
                     $resolver = static fn(int $company, int $ctPeriod): array => [
                         'ok' => $company === $companyId && $ctPeriod === $ctPeriodId,
@@ -656,19 +686,11 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         $resolver,
                         xmlEnvironmentResolver: static fn(): string => 'LIVE'
                     );
-                    $declaration = [
-                        'declaration_name' => 'Jane Director',
-                        'declaration_status' => 'Director',
-                        'declaration_confirmed' => true,
-                        'authority_confirmed' => true,
-                        'supplementary_scope_confirmed' => true,
-                        'original_unfiled_confirmed' => true,
-                    ];
-                    $first = $service->submitTest($companyId, $ctPeriodId, 42, $declaration);
+                    $first = $service->submitTest($companyId, $ctPeriodId, 42);
                     $h->assertFalse((bool)$first['success']);
                     return;
                     $h->assertSame('transport_uncertain', $first['protocol_state']);
-                    $second = $service->submitTest($companyId, $ctPeriodId, 42, $declaration);
+                    $second = $service->submitTest($companyId, $ctPeriodId, 42);
                     $h->assertFalse((bool)$second['success']);
                     $h->assertTrue(str_contains(implode(' ', $second['errors']), 'uncertain'));
                     $h->assertSame(1, $transport->submitCalls);

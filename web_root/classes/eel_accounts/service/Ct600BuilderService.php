@@ -100,6 +100,48 @@ final class Ct600BuilderService
         array $declaration = [],
         ?array $returnOverride = null
     ): array {
+        return $this->buildInternal(
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId,
+            $declaration,
+            $returnOverride,
+            true
+        );
+    }
+
+    /**
+     * Serialize the provisional CT600 body without writing an intermediate
+     * artifact. The prepared-artifact pipeline owns final immutable storage.
+     *
+     * @return array<string,mixed>
+     */
+    public function buildForGeneration(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        array $declaration = [],
+        ?array $returnOverride = null
+    ): array {
+        return $this->buildInternal(
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId,
+            $declaration,
+            $returnOverride,
+            false
+        );
+    }
+
+    /** @return array<string,mixed> */
+    private function buildInternal(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        array $declaration,
+        ?array $returnOverride,
+        bool $storeArtifact
+    ): array {
         try {
             $return = $returnOverride ?? ($this->returnModelBuilder !== null
                 ? (array)($this->returnModelBuilder)($companyId, $accountingPeriodId, $ctPeriodId)
@@ -127,7 +169,7 @@ final class Ct600BuilderService
                 throw new \RuntimeException('The XML serializer produced no output.');
             }
             $hash = hash('sha256', $xml);
-            $path = $this->store($companyId, $ctPeriodId, $hash, $xml);
+            $path = $storeArtifact ? $this->store($companyId, $ctPeriodId, $hash, $xml) : '';
         } catch (\Throwable $exception) {
             return $this->failure('The CT600 XML could not be serialized.', [$exception->getMessage()]);
         }
@@ -144,7 +186,7 @@ final class Ct600BuilderService
             'filing_body_xml' => $xml,
             'body_sha256' => $hash,
             'path' => $path,
-            'filename' => basename($path),
+            'filename' => $path !== '' ? basename($path) : 'ct600-provisional-' . $hash . '.xml',
             'return_model' => $return,
             'source_manifest' => (array)$return['source_manifest'],
             'source_manifest_sha256' => (string)$return['source_manifest_sha256'],

@@ -531,6 +531,22 @@ $harness->run(_ixbrl_facts_previewCard::class, static function (GeneratedService
 });
 
 $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceClassTestHarness $harness, _ixbrl_generationCard $card): void {
+    $harness->check(_ixbrl_generationCard::class, 'declares the prepared CT600 artifact read model', static function () use ($harness, $card): void {
+        $services = $card->services();
+        $ct600 = null;
+        foreach ($services as $service) {
+            if ((string)($service['key'] ?? '') === 'ct600_generated_artifacts') {
+                $ct600 = $service;
+                break;
+            }
+        }
+        $harness->assertTrue(is_array($ct600));
+        $harness->assertSame(
+            \eel_accounts\Service\Ct600GenerationService::class,
+            (string)($ct600['service'] ?? '')
+        );
+        $harness->assertSame('statusForAccountingPeriod', (string)($ct600['method'] ?? ''));
+    });
     $harness->check(_ixbrl_generationCard::class, 'renders structured Arelle diagnostics safely with a scoped log download', static function () use ($harness, $card): void {
         $context = [
             'company' => ['id' => 1, 'accounting_period_id' => 1],
@@ -770,7 +786,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                 'missing-run synchronisation button' => str_contains($readyHtml, '>Synchronise missing iXBRL files</button>'),
                 'complete-filing action order' => preg_match(
                     '/<div class="actions-row ixbrl-complete-filing-actions">.*'
-                        . 'Generate All Filing iXBRLs.*Synchronise missing iXBRL files.*<\/div>/s',
+                        . 'Generate All Filing Artifacts.*Synchronise missing iXBRL files.*<\/div>/s',
                     $readyHtml
                 ) === 1,
                 'retention explanation' => str_contains($readyHtml, 'Filing approvals, evidence bundles, and runs used by transmitted or in-flight Companies House filings are retained.'),
@@ -795,7 +811,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $harness->assertFalse(str_contains($readyHtml, 'Synchronise missing iXBRL runs'));
             $harness->assertTrue(preg_match(
                 '/<div class="actions-row ixbrl-complete-filing-actions">.*'
-                    . 'Generate All Filing iXBRLs.*Synchronise missing iXBRL files.*<\/div>/s',
+                    . 'Generate All Filing Artifacts.*Synchronise missing iXBRL files.*<\/div>/s',
                 $readyHtml
             ) === 1);
             $harness->assertTrue(str_contains($readyHtml, 'Filing approvals, evidence bundles, and runs used by transmitted or in-flight Companies House filings are retained.'));
@@ -830,6 +846,18 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                     'filing_required' => false,
                     'revision_required' => false,
                 ],
+                'ct600_generated_artifacts' => [
+                    'success' => true,
+                    'periods' => [
+                        '6' => [
+                            'ready_to_generate' => false,
+                            'current' => false,
+                            'state' => 'blocked',
+                            'artifact' => [],
+                            'errors' => ['The Accounting iXBRL is not ready.'],
+                        ],
+                    ],
+                ],
             ],
         ];
         $buttonDisabled = static function (string $html, string $label): bool {
@@ -844,19 +872,28 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         };
 
         $blocked = $card->render($context);
-        $harness->assertTrue($buttonDisabled($blocked, 'Generate All Filing iXBRLs'));
+        $harness->assertTrue($buttonDisabled($blocked, 'Generate All Filing Artifacts'));
         $harness->assertTrue($buttonDisabled($blocked, 'Generate Accounting iXBRL'));
         $harness->assertTrue($buttonDisabled($blocked, 'Generate Companies House iXBRL'));
         $harness->assertTrue($buttonDisabled($blocked, 'Generate Corporation Tax Period 6 iXBRL'));
+        $harness->assertTrue($buttonDisabled($blocked, 'Generate Corporation Tax Period 6 CT600 XML'));
 
         $context['ixbrl']['readiness']['can_generate'] = true;
         $context['ixbrl']['readiness']['ready_for_filing'] = true;
+        $context['services']['ct600_generated_artifacts']['periods']['6'] = [
+            'ready_to_generate' => true,
+            'current' => false,
+            'state' => 'not_generated',
+            'artifact' => [],
+            'errors' => ['Generate the current CT600 XML artifact from iXBRL Generation.'],
+        ];
         $ready = $card->render($context);
         foreach ([
-            'Generate All Filing iXBRLs',
+            'Generate All Filing Artifacts',
             'Generate Accounting iXBRL',
             'Generate Companies House iXBRL',
             'Generate Corporation Tax Period 6 iXBRL',
+            'Generate Corporation Tax Period 6 CT600 XML',
         ] as $label) {
             if ($buttonDisabled($ready, $label)) {
                 throw new RuntimeException('Expected the ready control to be enabled: ' . $label);
@@ -871,7 +908,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             'Generate the HMRC Accounting iXBRL; internal and Arelle validation run automatically.',
         ];
         $prerequisiteGeneratedByAction = $card->render($context);
-        if ($buttonDisabled($prerequisiteGeneratedByAction, 'Generate All Filing iXBRLs')) {
+        if ($buttonDisabled($prerequisiteGeneratedByAction, 'Generate All Filing Artifacts')) {
             throw new RuntimeException('The combined action should resolve the Accounting iXBRL prerequisite.');
         }
         $harness->assertTrue($buttonDisabled($prerequisiteGeneratedByAction, 'Generate Companies House iXBRL'));
@@ -884,14 +921,14 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             'Latest export failed Arelle external validation.',
         ];
         $failedExportCanBeRebuilt = $card->render($context);
-        if ($buttonDisabled($failedExportCanBeRebuilt, 'Generate All Filing iXBRLs')) {
+        if ($buttonDisabled($failedExportCanBeRebuilt, 'Generate All Filing Artifacts')) {
             throw new RuntimeException('The combined action should rebuild a failed HMRC Accounting iXBRL export.');
         }
 
         $context['services']['companies_house_ixbrl']['preparation_blockers'][] = 'Record Companies House written confirmation.';
         $context['services']['companies_house_ixbrl']['can_prepare_after_accounts_generation'] = false;
         $genuineBlocker = $card->render($context);
-        $harness->assertTrue($buttonDisabled($genuineBlocker, 'Generate All Filing iXBRLs'));
+        $harness->assertTrue($buttonDisabled($genuineBlocker, 'Generate All Filing Artifacts'));
         $harness->assertTrue($buttonDisabled($genuineBlocker, 'Generate Companies House iXBRL'));
     });
     $harness->check(_ixbrl_generationCard::class, 'summarises only current iXBRL generation blockers above the filing actions', static function () use ($harness, $card): void {
@@ -918,7 +955,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
 
         $blocked = $card->render($context);
         $harness->assertTrue(str_contains($blocked, 'iXBRL generation blocked'));
-        $harness->assertTrue(str_contains($blocked, 'Corporation Tax Period 2 iXBRL'));
+        $harness->assertTrue(str_contains($blocked, 'Corporation Tax Period 2 Computation iXBRL'));
         $harness->assertTrue(str_contains($blocked, 'Approve the Corporation Tax computation for this period.'));
         $harness->assertTrue(
             strpos($blocked, 'iXBRL generation blocked') < strpos($blocked, 'Complete Filing Set')
@@ -965,7 +1002,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(is_string($panel));
         $harness->assertTrue(str_contains((string)$panel, 'Complete and lock Year End, then approve the Accounts Disclosures filing basis.'));
         $harness->assertFalse(str_contains((string)$panel, 'The Accounts Report basis changed'));
-        $harness->assertFalse(str_contains((string)$panel, 'Corporation Tax Period 1 iXBRL'));
+        $harness->assertFalse(str_contains((string)$panel, 'Corporation Tax Period 1 Computation iXBRL'));
         $harness->assertFalse(str_contains((string)$panel, 'Companies House Accounting iXBRL'));
     });
     $harness->check(_ixbrl_generationCard::class, 'shows a previous-run Companies House artifact as not generated and blocks current download', static function () use ($harness, $card): void {
@@ -1049,12 +1086,15 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         ];
 
         $html = $card->render($context);
-        $ctPosition = strpos($html, 'Corporation Tax Period 3 iXBRL');
+        $ctPosition = strpos($html, 'Corporation Tax Period 3 Computation iXBRL');
+        $ct600Position = strpos($html, 'Corporation Tax Period 3 CT600 XML');
         $companiesHousePosition = strpos($html, 'Companies House Accounting iXBRL');
         $harness->assertTrue($ctPosition !== false);
-        $harness->assertFalse(str_contains($html, 'Corporation Tax Period 1 iXBRL'));
+        $harness->assertTrue($ct600Position !== false);
+        $harness->assertFalse(str_contains($html, 'Corporation Tax Period 1 Computation iXBRL'));
         $harness->assertTrue($companiesHousePosition !== false);
-        $harness->assertTrue($companiesHousePosition > $ctPosition);
+        $harness->assertTrue($ct600Position > $ctPosition);
+        $harness->assertTrue($companiesHousePosition > $ct600Position);
     });
     $harness->check(_ixbrl_generationCard::class, 'shows each CT period and gates computation download on fileable status', static function () use ($harness, $card): void {
         $context = [
@@ -1073,9 +1113,18 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             ],
         ];
         $draft = $card->render($context);
-        $harness->assertTrue(str_contains($draft, 'Corporation Tax iXBRL'));
+        $computationPosition = strpos($draft, 'Corporation Tax Period 6 Computation iXBRL');
+        $ct600Position = strpos($draft, 'Corporation Tax Period 6 CT600 XML');
+        $harness->assertTrue($computationPosition !== false);
+        $harness->assertTrue($ct600Position !== false);
+        $harness->assertTrue($ct600Position > $computationPosition);
+        $harness->assertTrue(str_contains($draft, 'name="intent" value="generate_ct600_xml"'));
+        $harness->assertTrue(str_contains(
+            $draft,
+            'Generate Corporation Tax Period 6 CT600 XML</button>'
+        ));
         return;
-        $harness->assertTrue(str_contains($draft, '<h3>Corporation Tax Period 6 iXBRL</h3>'));
+        $harness->assertTrue(str_contains($draft, '<h3>Corporation Tax Period 6 Computation iXBRL</h3>'));
         $harness->assertTrue(str_contains($draft, 'Generate a separate Corporation Tax computation iXBRL for this filing period and review its validation status.'));
         $harness->assertTrue(str_contains($draft, '<div class="summary-label">CT period</div>'));
         $harness->assertTrue(str_contains($draft, '2025-01-01 to 2025-12-31'));
@@ -1145,7 +1194,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         ];
 
         $html = $card->render($context);
-        $harness->assertTrue(str_contains($html, 'Corporation Tax Period 3 iXBRL'));
+        $harness->assertTrue(str_contains($html, 'Corporation Tax Period 3 Computation iXBRL'));
         $harness->assertTrue(str_contains($html, '<div class="summary-label">Arelle Status</div>'));
         $harness->assertTrue(str_contains($html, '<div class="summary-value">Installed</div>'));
         $harness->assertTrue(str_contains($html, '<div class="summary-label">Arelle Validated At</div>'));
@@ -1158,17 +1207,31 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                 'readiness' => ['can_generate' => true],
                 'latest_run' => [],
                 'computation_periods' => [[
-                    'ct_period' => ['id' => 6, 'period_start' => '2022-09-05', 'period_end' => '2023-09-04'],
+                    'ct_period' => ['id' => 6, 'sequence_no' => 1, 'period_start' => '2022-09-05', 'period_end' => '2023-09-04'],
                     'status' => ['ready' => true],
                 ], [
-                    'ct_period' => ['id' => 7, 'period_start' => '2023-09-05', 'period_end' => '2023-09-30'],
+                    'ct_period' => ['id' => 7, 'sequence_no' => 2, 'period_start' => '2023-09-05', 'period_end' => '2023-09-30'],
                     'status' => ['ready' => true],
                 ]],
             ],
         ];
 
         $ready = $card->render($context);
-        $harness->assertTrue(str_contains($ready, 'iXBRL'));
+        $positions = [
+            strpos($ready, 'Complete Filing Set'),
+            strpos($ready, 'HMRC Accounting iXBRL'),
+            strpos($ready, 'Corporation Tax Period 1 Computation iXBRL'),
+            strpos($ready, 'Corporation Tax Period 1 CT600 XML'),
+            strpos($ready, 'Corporation Tax Period 2 Computation iXBRL'),
+            strpos($ready, 'Corporation Tax Period 2 CT600 XML'),
+            strpos($ready, 'Companies House Accounting iXBRL'),
+        ];
+        $harness->assertFalse(in_array(false, $positions, true));
+        $harness->assertSame($positions, array_values(array_unique($positions)));
+        $sorted = $positions;
+        sort($sorted);
+        $harness->assertSame($sorted, $positions);
+        $harness->assertTrue(str_contains($ready, '>Generate All Filing Artifacts</button>'));
         return;
         $harness->assertTrue(str_contains($ready, 'name="intent" value="generate_all_filing_ixbrl"'));
         $harness->assertTrue(str_contains($ready, '>Generate all filing iXBRLs</button>'));

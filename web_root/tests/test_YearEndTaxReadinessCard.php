@@ -27,6 +27,28 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame('fetch', (string)($services[1]['method'] ?? ''));
     });
 
+    $harness->check(_year_end_tax_readinessCard::class, 'shows obsolete Tax Audit cleanup only with developer options', static function () use ($harness, $card): void {
+        $context = yearEndTaxReadinessCardContext([
+            'available' => false,
+            'errors' => ['Fixture unavailable.'],
+        ]);
+        $developerOptions = (bool)AppConfigurationStore::get('developer_options', false);
+        try {
+            AppConfigurationStore::set('developer_options', false);
+            $harness->assertFalse(str_contains($card->render($context), 'cleanup_unsubmitted_tax_history'));
+
+            AppConfigurationStore::set('developer_options', true);
+            $html = $card->render($context);
+            $harness->assertTrue(str_contains($html, 'actions-row-right'));
+            $harness->assertTrue(str_contains($html, 'name="card_action" value="YearEnd"'));
+            $harness->assertTrue(str_contains($html, 'name="intent" value="cleanup_unsubmitted_tax_history"'));
+            $harness->assertTrue(str_contains($html, '>Remove Unsubmitted Tax History</button>'));
+            $harness->assertTrue(str_contains($html, 'The newest approval and newest audit snapshot for each CT period are retained.'));
+        } finally {
+            AppConfigurationStore::set('developer_options', $developerOptions);
+        }
+    });
+
     $harness->check(_year_end_tax_readinessCard::class, 'renders the Corporation Tax filing-scope questions on the tax review card', static function () use ($harness, $card): void {
         $context = yearEndTaxReadinessCardContext([
             'available' => true,

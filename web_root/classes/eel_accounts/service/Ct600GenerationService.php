@@ -56,12 +56,21 @@ final class Ct600GenerationService
         // command or test harness rather than through IxbrlAction.
         @ini_set('max_execution_time', '0');
         @set_time_limit(0);
-        $report = static function (string $message, int $percent) use ($progress): void {
+        $lastReportedPercent = -1;
+        $report = static function (string $message, int $percent) use ($progress, &$lastReportedPercent): void {
+            // Several internal checks complete within a few milliseconds.
+            // Keep the progress stream readable while preserving meaningful
+            // stage changes and the final completion signal.
+            if ($percent < 100 && $lastReportedPercent >= 0
+                && $percent - $lastReportedPercent < 5) {
+                return;
+            }
             if ($progress !== null) {
                 $progress($message, $percent);
             }
+            $lastReportedPercent = $percent;
         };
-        $report('Checking the prepared CT600 artifact registry…', 0);
+        $report('Checking the prepared CT600 artifact registry…', 5);
         $schemaError = $this->schemaError();
         if ($schemaError !== null) {
             return $this->failure($schemaError);
@@ -214,15 +223,25 @@ final class Ct600GenerationService
             }
         }
 
-        \eel_accounts\Support\RequestCache::clear();
         $report('Rechecking the stored CT600 file, attachments and IRmark…', 96);
-        $status = $this->status($companyId, $accountingPeriodId, $ctPeriodId, true);
-        if (empty($status['current'])) {
+        // The complete, deep source context above is still authoritative for
+        // this request. Reuse it for the persisted-file check rather than
+        // rebuilding every approval, filing model and artifact a second time.
+        $registered = is_array($existing) ? $existing : $this->artifactByIdentity($values);
+        if (!is_array($registered)) {
             return $this->failure(
-                'The generated CT600 XML did not pass its persisted integrity check.',
-                (array)($status['errors'] ?? [])
+                'The generated CT600 XML could not be read back from its registry entry.'
             );
         }
+        $persistedErrors = $this->verifyRow($registered, $context, true);
+        if ($persistedErrors !== []) {
+            return $this->failure(
+                'The generated CT600 XML did not pass its persisted integrity check.',
+                $persistedErrors
+            );
+        }
+        $artifact = $this->normaliseArtifact($registered);
+        \eel_accounts\Support\RequestCache::clear();
         $report('Corporation Tax CT600 XML generated and validated.', 100);
 
         return [
@@ -232,7 +251,7 @@ final class Ct600GenerationService
             'warnings' => (array)($assembled['warnings'] ?? []),
             'messages' => ['Corporation Tax Period ' . (int)($ctPeriod['sequence_no'] ?? 0)
                 . ' CT600 XML generated and validated.'],
-            'artifact' => (array)$status['artifact'],
+            'artifact' => $artifact,
             'path' => $path,
             'filename' => $filename,
             'sha256' => $sha256,
@@ -852,12 +871,21 @@ final class Ct600GenerationService
         if ($deep && $errors === []) {
             try {
                 $attachmentHashes = [
-                    'Accounts' => strtolower((string)$accounts['hash']),
-                    'Computations' => strtolower((string)$computation['hash']),
+                    'Accounts' => [
+                        'element' => 'Accounts',
+                        'hash' => strtolower((string)$accounts['hash']),
+                    ],
+                    'Computations' => [
+                        // CT/5 uses singular <Computation>; the UI label is
+                        // plural because it describes the iXBRL artifact.
+                        'element' => 'Computation',
+                        'hash' => strtolower((string)$computation['hash']),
+                    ],
                 ];
-                foreach ($attachmentHashes as $role => $expectedHash) {
+                foreach ($attachmentHashes as $role => $attachment) {
                     $nodes = $xpath->query(
-                        '//*[local-name()="AttachedFiles"]/*[local-name()="' . $role . '"]'
+                        '//*[local-name()="AttachedFiles"]/*[local-name()="XBRLsubmission"]'
+                        . '/*[local-name()="' . $attachment['element'] . '"]'
                         . '/*[local-name()="Instance"]/*[local-name()="EncodedInlineXBRLDocument"]'
                     );
                     if (!$nodes instanceof \DOMNodeList || $nodes->length !== 1) {
@@ -870,7 +898,7 @@ final class Ct600GenerationService
                         true
                     );
                     if (!is_string($decoded)
-                        || !hash_equals($expectedHash, hash('sha256', $decoded))) {
+                        || !hash_equals((string)$attachment['hash'], hash('sha256', $decoded))) {
                         $errors[] = 'The embedded ' . $role
                             . ' iXBRL does not match the current validated artifact.';
                     }

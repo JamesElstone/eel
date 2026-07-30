@@ -57,12 +57,18 @@ final class YearEndAction implements ActionInterfaceFramework
                 ]);
             }
 
-            if (in_array($intent, ['cleanup_unused_historic_filing_evidence', 'refresh_year_end_review_caches'], true)
+            if (in_array($intent, [
+                'cleanup_unused_historic_filing_evidence',
+                'cleanup_unsubmitted_tax_history',
+                'refresh_year_end_review_caches',
+            ], true)
                 && !(bool)AppConfigurationStore::get('developer_options', false)) {
                 return $this->result(false, [
                     $intent === 'refresh_year_end_review_caches'
                         ? 'Developer options must be enabled to refresh Year End review caches.'
-                        : 'Developer options must be enabled to remove unused historic filing evidence.',
+                        : ($intent === 'cleanup_unsubmitted_tax_history'
+                            ? 'Developer options must be enabled to remove unsubmitted Corporation Tax history.'
+                            : 'Developer options must be enabled to remove unused historic filing evidence.'),
                 ]);
             }
 
@@ -84,6 +90,8 @@ final class YearEndAction implements ActionInterfaceFramework
                 ),
                 'cleanup_unused_historic_filing_evidence' => (new \eel_accounts\Service\FilingEvidenceService())
                     ->cleanupUnusedHistoricForAccountingPeriod($companyId, $accountingPeriodId, $actor),
+                'cleanup_unsubmitted_tax_history' => (new \eel_accounts\Service\IxbrlUntransmittedHistoryCleanupService())
+                    ->clean($companyId, $accountingPeriodId, null, $actor),
                 'save_notes' => (new \eel_accounts\Service\YearEndChecklistService())->saveNotes($companyId, $accountingPeriodId, (string)$request->input('review_notes', ''), $actor),
                 'confirm_empty_month' => (new \eel_accounts\Service\EmptyMonthConfirmationService())->confirmMonth(
                     $companyId,
@@ -406,6 +414,14 @@ final class YearEndAction implements ActionInterfaceFramework
             return ['page.context', 'year.end.filing.evidence', 'year.end.audit.log'];
         }
 
+        if ($intent === 'cleanup_unsubmitted_tax_history') {
+            return [
+                'page.context', 'year.end.filing.evidence', 'year.end.audit.log',
+                'year.end.tax.readiness', 'ixbrl.readiness', 'ixbrl.facts.preview',
+                'ixbrl.generation', 'ct.filing',
+            ];
+        }
+
         if ($intent === 'refresh_year_end_review_caches') {
             return ['page.reload', 'page.context', 'year.end.state', 'year.end.checklist', 'year.end.audit.log'];
         }
@@ -443,6 +459,12 @@ final class YearEndAction implements ActionInterfaceFramework
             'cleanup_unused_historic_filing_evidence' => ((int)($result['deleted_count'] ?? 0) > 0)
                 ? (int)$result['deleted_count'] . ' unused historic evidence bundle(s) removed. Artifact files were not deleted.'
                 : 'No unused historic evidence bundles were eligible for removal.',
+            'cleanup_unsubmitted_tax_history' => (int)($result['deleted_tax_audit_snapshots'] ?? 0)
+                . ' obsolete Corporation Tax audit snapshot(s), '
+                . (int)($result['deleted_tax_audit_areas'] ?? 0) . ' audit-area record(s), '
+                . (int)($result['deleted_approvals'] ?? 0) . ' old approval(s), and '
+                . (int)($result['deleted_bundles'] ?? 0) . ' unused evidence bundle(s) removed. '
+                . 'Generated files were not deleted.',
             'save_notes' => 'Year-end notes saved.',
             'confirm_empty_month' => 'Empty month confirmation saved.',
             'confirm_empty_months' => 'Empty month confirmations saved.',
@@ -532,7 +554,11 @@ final class YearEndAction implements ActionInterfaceFramework
     private function requiresActionVatSupportScopeCheck(string $intent): bool
     {
         // Expense approval performs this guard once at its mutation boundary.
-        return !in_array($intent, ['save_expense_position_acknowledgement', 'set_participator_loan_attribution'], true);
+        return !in_array($intent, [
+            'save_expense_position_acknowledgement',
+            'set_participator_loan_attribution',
+            'cleanup_unsubmitted_tax_history',
+        ], true);
     }
 
     private function requiresUnlockedPeriod(string $intent): bool

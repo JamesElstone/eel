@@ -54,7 +54,9 @@ $h->run(YearEndAction::class, static function (GeneratedServiceClassTestHarness 
     $h->check(YearEndAction::class, 'server-guards the destructive evidence cleanup behind developer options', static function () use ($h): void {
         $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content' . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'YearEndAction.php');
         $h->assertTrue(str_contains($source, "cleanup_unused_historic_filing_evidence"));
+        $h->assertTrue(str_contains($source, "cleanup_unsubmitted_tax_history"));
         $h->assertTrue(str_contains($source, "AppConfigurationStore::get('developer_options', false)"));
+        $h->assertTrue(str_contains($source, 'IxbrlUntransmittedHistoryCleanupService'));
         $h->assertTrue(str_contains($source, "'year.end.filing.evidence'"));
     });
 });

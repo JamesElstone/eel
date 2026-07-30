@@ -1343,7 +1343,8 @@ $harness->run(_ixbrl_historyCard::class, static function (GeneratedServiceClassT
             $harness->assertTrue(str_contains($html, 'name="intent" value="cleanup_untransmitted_ixbrl_history"'));
             $harness->assertTrue(str_contains($html, '>Clean Untransmitted History</button>'));
             $harness->assertTrue(str_contains($html, 'data-chicken-title="Clean untransmitted iXBRL history"'));
-            $harness->assertTrue(str_contains($html, 'Transmitted or in-flight filings are retained. Evidence bundles and all generated files are retained.'));
+            $harness->assertTrue(str_contains($html, 'The newest approval and newest Tax Audit snapshot for each CT period are retained.'));
+            $harness->assertTrue(str_contains($html, 'Transmitted or in-flight filings remain protected.'));
         } finally {
             AppConfigurationStore::set('developer_options', $developerOptions);
         }

@@ -190,7 +190,7 @@ final class IxbrlAccountsFilingApprovalService
         );
     }
 
-    /** @return array{approval_id:int, approval_hash:string, fact_run_id:int, ct_basis_ids:list<int>} */
+    /** @return array{approval_id:int, approval_hash:string, fact_run_id:int, ct_basis_ids:list<int>, history_cleanup:array<string,mixed>} */
     public function approveAndBuildFacts(
         int $companyId,
         int $accountingPeriodId,
@@ -337,12 +337,20 @@ final class IxbrlAccountsFilingApprovalService
             $progress?->__invoke('Verifying the approval and fact snapshot…', 95);
             $this->verifyPersisted($approvalId, $factRunId, $candidate, $ctBasisIds);
             $this->verifyCurrentCandidate($companyId, $accountingPeriodId, $candidate);
+            $progress?->__invoke('Removing superseded unsubmitted filing history…', 98);
+            $historyCleanup = (new IxbrlUntransmittedHistoryCleanupService())->clean(
+                $companyId,
+                $accountingPeriodId,
+                $approvalId,
+                $approvedBy
+            );
 
             return [
                 'approval_id' => $approvalId,
                 'approval_hash' => (string)$candidate['basis_hash'],
                 'fact_run_id' => $factRunId,
                 'ct_basis_ids' => $ctBasisIds,
+                'history_cleanup' => $historyCleanup,
             ];
         });
     }

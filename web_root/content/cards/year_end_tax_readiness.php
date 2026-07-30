@@ -72,9 +72,11 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $filingScope = (array)($context['services']['corporation_tax_filing_scope'] ?? []);
+        $developerCleanup = $this->developerHistoryCleanupHtml($companyId, $accountingPeriodId);
 
         if (empty($taxReadiness['available'])) {
-            return '<section class="settings-stack" id="tax-readiness"><div class="helper">' . \eel_accounts\Support\Utf8::html((string)($taxReadiness['errors'][0] ?? 'Tax readiness is not available.')) . '</div></section>';
+            return '<section class="settings-stack" id="tax-readiness">' . $developerCleanup
+                . '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)($taxReadiness['errors'][0] ?? 'Tax readiness is not available.')) . '</div></section>';
         }
 
         $provision = (array)($taxReadiness['provision'] ?? []);
@@ -91,6 +93,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         );
 
         return '<section class="settings-stack" id="tax-readiness">
+            ' . $developerCleanup . '
             ' . $this->overallTaxPositionHtml($companySettings, $taxReadiness, $provision) . '
             ' . $this->ctPeriodSectionsHtml($companySettings, $taxReadiness, $companyId, $accountingPeriodId) . '
             ' . $this->provisionHtml($companySettings, $provision) . '
@@ -102,6 +105,22 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             ) . '
             ' . $this->reviewApprovalHtml($acknowledgementForm) . '
         </section>';
+    }
+
+    private function developerHistoryCleanupHtml(int $companyId, int $accountingPeriodId): string
+    {
+        if (!(bool)AppConfigurationStore::get('developer_options', false)) {
+            return '';
+        }
+
+        return '<div class="actions-row actions-row-right"><form method="post" action="?page=corporation_tax" data-ajax="true">'
+            . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+            . '<input type="hidden" name="card_action" value="YearEnd">'
+            . '<input type="hidden" name="intent" value="cleanup_unsubmitted_tax_history">'
+            . '<input type="hidden" name="company_id" value="' . $companyId . '">'
+            . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
+            . '<button class="button danger" type="submit" title="Developer only" data-chicken-check="true" data-chicken-title="Remove unsubmitted Corporation Tax history" data-chicken-message="Remove obsolete unsubmitted Corporation Tax history for this accounting period?<br><br>The newest approval and newest audit snapshot for each CT period are retained. Transmitted filing records and their evidence remain protected. Older untransmitted approvals, submission drafts, evidence bundles, audit snapshots, and audit-area details are permanently removed. Generated files on disk are not deleted." data-chicken-confirm-text="Remove history" data-chicken-button-class="button danger">Remove Unsubmitted Tax History</button>'
+            . '</form></div>';
     }
 
     private function corporationTaxScope(array $scope, int $companyId, int $accountingPeriodId, bool $disabled): string

@@ -809,14 +809,24 @@ final class FilingEvidenceService
     }
 
     /** @return array{success:bool,deleted_count:int,deleted_bundles:list<array{id:int,evidence_id:string}>} */
-    public function cleanupUnusedHistoricForAccountingPeriod(int $companyId, int $accountingPeriodId, string $actor): array
+    public function cleanupUnusedHistoricForAccountingPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        string $actor,
+        string $cleanupContext = 'developer'
+    ): array
     {
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             throw new \InvalidArgumentException('Select a company and accounting period before removing filing evidence.');
         }
         $this->requireSchema();
 
-        return (array)\InterfaceDB::transaction(function () use ($companyId, $accountingPeriodId, $actor): array {
+        return (array)\InterfaceDB::transaction(function () use (
+            $companyId,
+            $accountingPeriodId,
+            $actor,
+            $cleanupContext
+        ): array {
             $state = $this->listForAccountingPeriod($companyId, $accountingPeriodId);
             $candidates = array_values(array_filter(
                 (array)$state['bundles'],
@@ -858,13 +868,16 @@ final class FilingEvidenceService
             }
 
             if ($deleted !== [] && \InterfaceDB::tableExists('year_end_audit_log')) {
+                $automatic = $cleanupContext === 'approval_replacement';
                 \InterfaceDB::prepareExecute(
                     'INSERT INTO year_end_audit_log (company_id, accounting_period_id, action, action_by, action_at, new_value_json, notes)
                      VALUES (:company_id, :period_id, :action, :actor, CURRENT_TIMESTAMP, :value, :notes)',
                     ['company_id' => $companyId, 'period_id' => $accountingPeriodId, 'action' => 'filing_evidence_cleanup',
                         'actor' => substr(trim($actor) !== '' ? trim($actor) : 'web_app', 0, 100),
                         'value' => $this->canonicalJson(['deleted_bundles' => $deleted]),
-                        'notes' => 'Developer cleanup removed unused historic filing evidence. Artifact files were not deleted.']
+                        'notes' => $automatic
+                            ? 'A replacement filing approval removed unused historic filing evidence. Artifact files were not deleted.'
+                            : 'Developer cleanup removed unused historic filing evidence. Artifact files were not deleted.']
                 );
             }
 

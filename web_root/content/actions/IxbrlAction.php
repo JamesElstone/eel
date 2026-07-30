@@ -206,7 +206,9 @@ final class IxbrlAction implements ActionInterfaceFramework
                         . ((int)$cleanup['deleted_companies_house_drafts'] + (int)$cleanup['deleted_hmrc_drafts'])
                         . ' untransmitted submission draft(s) removed; '
                         . (int)($cleanup['cleared_ct600_outputs'] ?? 0) . ' untransmitted CT600 iXBRL output(s) cleared. '
-                        . 'Evidence bundles and generated files were retained.',
+                        . (int)($cleanup['deleted_bundles'] ?? 0) . ' unused evidence bundle(s) and '
+                        . (int)($cleanup['deleted_tax_audit_snapshots'] ?? 0) . ' obsolete Tax Audit snapshot(s) removed. '
+                        . 'Generated files were retained.',
                     ],
                     []
                 );
@@ -276,7 +278,6 @@ final class IxbrlAction implements ActionInterfaceFramework
                 if ($intent === 'generate_ct600_xml') {
                     $progress = $services->actionProgress();
                     $progress->report('Unlimited generation timeout enabled; preparing Corporation Tax CT600 XML generation…', 0);
-                    $progress->report('Waiting for the exclusive filing-generation lock…', 1);
                     $result = $this->withFilingLock($companyId, $accountingPeriodId,
                         function () use ($companyId, $accountingPeriodId, $ctPeriodId, $progress): array {
                             $progress->report('Exclusive filing-generation lock acquired.', 2);

@@ -534,15 +534,13 @@ final class _ixbrl_generationCard extends CardBaseFramework
             'stale', 'not_generated' => 'warning',
             default => 'muted',
         };
-        $filename = trim((string)($artifact['filename'] ?? ''));
-        $sha256 = trim((string)($artifact['sha256'] ?? ''));
         $validation = $current
             ? 'Passed'
             : (trim((string)($artifact['validation_status'] ?? '')) !== ''
                 ? HelperFramework::labelFromKey((string)$artifact['validation_status'], '_')
                 : 'Not run');
         $download = 'Not generated';
-        if ($filename !== '') {
+        if (trim((string)($artifact['filename'] ?? '')) !== '') {
             $download = '<form method="post" action="?page=disclosures">'
                 . $hidden
                 . '<input type="hidden" name="intent" value="download_ct600_xml">'
@@ -560,8 +558,6 @@ final class _ixbrl_generationCard extends CardBaseFramework
             . $this->metric('Generation state', $stateLabel)
             . $this->metric('Validation', $validation)
             . $this->metric('Generated At', (string)($artifact['generated_at'] ?? 'Not Generated'))
-            . $this->metric('Filename', $filename !== '' ? $filename : 'Not generated')
-            . $this->metric('SHA-256', $sha256 !== '' ? $sha256 : 'Not generated')
             . $this->metricHtml('Artifact', $download)
             . '</div>';
         foreach (array_values(array_unique(array_map(

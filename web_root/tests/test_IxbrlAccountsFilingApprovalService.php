@@ -32,6 +32,19 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             }
         });
 
+        $h->check($service::class, 'removes superseded unsubmitted history after verifying a replacement approval', static function () use ($h): void {
+            $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'classes'
+                . DIRECTORY_SEPARATOR . 'eel_accounts' . DIRECTORY_SEPARATOR . 'service'
+                . DIRECTORY_SEPARATOR . 'IxbrlAccountsFilingApprovalService.php');
+            $verify = strpos($source, '$this->verifyCurrentCandidate');
+            $cleanup = strpos($source, 'IxbrlUntransmittedHistoryCleanupService');
+
+            $h->assertTrue($verify !== false);
+            $h->assertTrue($cleanup !== false);
+            $h->assertTrue((int)$cleanup > (int)$verify);
+            $h->assertTrue(str_contains($source, "'history_cleanup' => \$historyCleanup"));
+        });
+
         $h->check($service::class, 'explains a report-only approval mismatch as a report-generation change', static function () use ($h, $service): void {
             $method = new ReflectionMethod($service, 'staleApprovalErrors');
             $method->setAccessible(true);

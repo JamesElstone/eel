@@ -167,6 +167,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'Checking the HMRC Accounting iXBRL artifact',
                     'Applying and verifying the HMRC IRmark',
                     'Rechecking the stored CT600 file, attachments and IRmark',
+                    'XBRLsubmission',
+                    "'element' => 'Computation'",
                 ] as $message) {
                     $harness->assertTrue(str_contains($progressSource, $message));
                 }

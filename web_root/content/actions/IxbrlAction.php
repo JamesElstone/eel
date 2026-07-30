@@ -132,6 +132,7 @@ final class IxbrlAction implements ActionInterfaceFramework
                     ],
                     $this->actor($request)
                 );
+                \eel_accounts\Support\RequestCache::clear();
                 return $this->result(!empty($result['success']), (array)($result['errors'] ?? []), $changedFacts,
                     !empty($result['success']) ? ['Corporation Tax return authorisation saved.'] : []);
             }

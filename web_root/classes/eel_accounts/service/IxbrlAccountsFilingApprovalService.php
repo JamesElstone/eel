@@ -256,6 +256,10 @@ final class IxbrlAccountsFilingApprovalService
         if (!is_array($disclosure)) {
             throw new \RuntimeException('Complete the accounts disclosures before approving the filing basis.');
         }
+        $authorisation = (new Ct600ReturnAuthorisationService())->current($companyId, $accountingPeriodId);
+        if ($authorisation === []) {
+            throw new \RuntimeException('Complete and save the Corporation Tax return authorisation before approving the filing basis.');
+        }
 
         $disclosureStatus = (new IxbrlAccountsDisclosureService())->fetch($companyId, $accountingPeriodId);
         if (empty($disclosureStatus['complete']) || empty($disclosureStatus['profile_supported'])) {
@@ -311,6 +315,12 @@ final class IxbrlAccountsFilingApprovalService
                 'id' => (int)$disclosure['id'],
                 'revision' => (int)$disclosure['revision'],
                 'values' => (array)$report['basis']['disclosures'],
+            ],
+            'corporation_tax_return_authorisation' => [
+                'declarant_status' => (string)$authorisation['declarant_status'],
+                'original_unfiled_confirmed' => true,
+                'authority_confirmed' => true,
+                'declaration_confirmed' => true,
             ],
             'corporation_tax_filing_scope' => [
                 'scope_version' => CorporationTaxFilingScopeService::SCOPE_VERSION,

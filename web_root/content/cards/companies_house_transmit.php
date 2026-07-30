@@ -70,6 +70,9 @@ final class _companies_house_transmitCard extends CardBaseFramework
             . '<section class="panel-soft"><div class="status-head"><h3 class="card-title">Companies House Connection</h3>'
             . '<span class="badge ' . (!empty($feature['credentials_configured']) ? 'success' : 'warning') . '">'
             . (!empty($feature['credentials_configured']) ? 'Configured' : 'Unavailable') . '</span></div>'
+            . $this->sectionHelper(
+                'Review the active XML environment, presenter credentials and submission-number sequence before filing.'
+            )
             . '<div class="summary-grid">'
             . $this->environmentMetric((string)($feature['mode'] ?? 'DISABLED'))
             . $this->credentialMetric(
@@ -84,7 +87,10 @@ final class _companies_house_transmitCard extends CardBaseFramework
 
         $html .= '<section class="panel-soft"><div class="status-head"><h3 class="card-title">Prepared transmission</h3>'
             . '<span class="badge ' . $this->badge($lifecycle) . '">'
-            . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($lifecycle, '_')) . '</span></div>';
+            . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($lifecycle, '_')) . '</span></div>'
+            . $this->sectionHelper(
+                'Review the prepared Companies House iXBRL artifact and its filing readiness before transmission.'
+            );
         if ($submission === null) {
             $html .= '<div class="notice warning">No Companies House accounts artifact is prepared. Generate it from the approved filing basis.</div>';
         } else {
@@ -199,23 +205,27 @@ final class _companies_house_transmitCard extends CardBaseFramework
         $live = $mode === 'LIVE'
             ? '<label class="checkbox-row"><input type="checkbox" name="authority_confirmed" value="1" required> '
                 . '<span>I am authorised to file these statutory accounts.</span></label>'
-                . '<label>Type <strong>' . \eel_accounts\Support\Utf8::html($confirmationPhrase) . '</strong> to confirm'
+                . '<label><span>Type <strong>' . \eel_accounts\Support\Utf8::html($confirmationPhrase)
+                . '</strong> to confirm</span>'
                 . '<input type="text" name="live_confirmation_phrase" required autocomplete="off"></label>'
             : '';
 
-        return '<section class="panel-soft"><h3 class="card-title">Submit accounts</h3>'
-            . '<form method="post" action="?page=transmit" data-ajax="true" class="settings-stack">'
+        return '<section class="panel-soft"><h3 class="card-title">'
+            . 'Transmit Company accounts to Companies House Public Register.</h3>'
+            . $this->sectionHelper(
+                'Enter the six-character company authentication code to transmit the prepared statutory accounts.'
+            )
+            . '<form method="post" action="?page=transmit" data-ajax="true" '
+            . 'class="settings-stack companies-house-transmit-form">'
             . $this->hidden($companyId, $accountingPeriodId, 'submit_accounts')
             . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
-            . '<label>Company authentication code'
-            . '<input type="password" name="company_auth_code" minlength="6" maxlength="6" '
-            . 'pattern="[A-Za-z0-9]{6}" required autocomplete="off"></label>'
+            . $this->companyAuthenticationCodeField()
             . $live
             . '<button class="button danger" type="submit" data-chicken-check="true" '
             . 'data-chicken-title="Send ' . \eel_accounts\Support\Utf8::html($filingLabel) . ' accounts" '
             . 'data-chicken-message="Send this immutable ' . \eel_accounts\Support\Utf8::html($filingKind) . '-accounts package to Companies House '
-            . \eel_accounts\Support\Utf8::html($mode) . '?" data-chicken-confirm-text="Send accounts">Send / continue '
-            . \eel_accounts\Support\Utf8::html($mode) . ' filing</button></form></section>';
+            . \eel_accounts\Support\Utf8::html($mode) . '?" data-chicken-confirm-text="Send accounts">'
+            . 'Transmit Company Accounts</button></form></section>';
     }
 
     private function refreshForm(
@@ -240,7 +250,10 @@ final class _companies_house_transmitCard extends CardBaseFramework
         bool $bindingConfigured,
         string $filingKind
     ): string {
-        $html = '<section class="panel-soft"><h3 class="card-title">Companies House protocol controls</h3>';
+        $html = '<section class="panel-soft"><h3 class="card-title">Test Companies House Connection</h3>'
+            . $this->sectionHelper(
+                'Send a CompanyData preflight to confirm the presenter and company credentials before transmitting accounts.'
+            );
         if (!$bindingConfigured) {
             return $html . '<div class="notice warning">The preflight binding key could not be prepared for '
                 . \eel_accounts\Support\Utf8::html($mode) . '.</div></section>';
@@ -250,12 +263,11 @@ final class _companies_house_transmitCard extends CardBaseFramework
             && empty($preflight['consumed_at'])
             && $this->utcTimestamp((string)($preflight['binding_expires_at'] ?? '')) >= time();
         if (!$verified) {
-            $html .= '<form method="post" action="?page=transmit" data-ajax="true" class="settings-stack">'
+            $html .= '<form method="post" action="?page=transmit" data-ajax="true" '
+                . 'class="settings-stack companies-house-transmit-form">'
                 . $this->hidden($companyId, $accountingPeriodId, 'preflight_accounts')
                 . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
-                . '<label>Company authentication code'
-                . '<input type="password" name="company_auth_code" minlength="6" maxlength="6" '
-                . 'pattern="[A-Za-z0-9]{6}" required autocomplete="off"></label>'
+                . $this->companyAuthenticationCodeField()
                 . '<button class="button" type="submit">Send CompanyData preflight</button></form>';
         } else {
             $filingKind = in_array($filingKind, ['original', 'revised'], true) ? $filingKind : 'accounts';
@@ -263,17 +275,17 @@ final class _companies_house_transmitCard extends CardBaseFramework
             $live = $mode === 'LIVE'
                 ? '<label class="checkbox-row"><input type="checkbox" name="authority_confirmed" value="1" required> '
                     . '<span>I am authorised to file these statutory accounts.</span></label>'
-                    . '<label>Type <strong>' . \eel_accounts\Support\Utf8::html($confirmationPhrase) . '</strong> to confirm'
+                    . '<label><span>Type <strong>' . \eel_accounts\Support\Utf8::html($confirmationPhrase)
+                    . '</strong> to confirm</span>'
                     . '<input type="text" name="live_confirmation_phrase" required autocomplete="off"></label>'
                 : '';
             $html .= '<div class="notice success">CompanyData preflight verified. Re-enter the same code to submit Accounts.</div>'
-                . '<form method="post" action="?page=transmit" data-ajax="true" class="settings-stack">'
+                . '<form method="post" action="?page=transmit" data-ajax="true" '
+                . 'class="settings-stack companies-house-transmit-form">'
                 . $this->hidden($companyId, $accountingPeriodId, 'submit_preflighted_accounts')
                 . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
                 . '<input type="hidden" name="preflight_id" value="' . (int)$preflight['id'] . '">'
-                . '<label>Company authentication code'
-                . '<input type="password" name="company_auth_code" minlength="6" maxlength="6" '
-                . 'pattern="[A-Za-z0-9]{6}" required autocomplete="off"></label>'
+                . $this->companyAuthenticationCodeField()
                 . $live
                 . '<button class="button danger" type="submit" data-chicken-check="true" '
                 . 'data-chicken-message="Send the Accounts exchange using submission number allocation?" '
@@ -289,7 +301,10 @@ final class _companies_house_transmitCard extends CardBaseFramework
         ?array $statusCycle
     ): string {
         $state = strtolower((string)($statusCycle['acknowledgement_state'] ?? 'acknowledged'));
-        $html = '<section class="panel-soft"><h3 class="card-title">Companies House protocol controls</h3>';
+        $html = '<section class="panel-soft"><h3 class="card-title">Test Companies House Connection</h3>'
+            . $this->sectionHelper(
+                'Continue the Companies House XML conversation by checking status, acknowledging the result or reconciling uncertainty.'
+            );
         if ($state === 'required'
             || ($state === 'failed' && trim((string)($statusCycle['result_json'] ?? '')) !== '')) {
             $html .= $this->simpleProtocolForm(
@@ -302,14 +317,16 @@ final class _companies_house_transmitCard extends CardBaseFramework
         } elseif ($state === 'transport_unknown') {
             $html .= '<div class="notice danger">The status or StatusAck exchange has an uncertain transport result. '
                 . 'Further polling is blocked pending confirmation from Companies House.</div>'
-                . '<form method="post" action="?page=transmit" data-ajax="true" class="settings-stack">'
+                . '<form method="post" action="?page=transmit" data-ajax="true" '
+                . 'class="settings-stack companies-house-transmit-form">'
                 . $this->hidden($companyId, $accountingPeriodId, 'reconcile_accounts_status')
                 . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
                 . '<input type="hidden" name="resolution" value="'
                 . (trim((string)($statusCycle['result_json'] ?? '')) !== ''
                     ? 'ack_confirmed'
                     : 'poll_not_received') . '">'
-                . '<label>After obtaining confirmation, type <strong>RECONCILE COMPANIES HOUSE</strong>'
+                . '<label><span>After obtaining confirmation, type '
+                . '<strong>RECONCILE COMPANIES HOUSE</strong></span>'
                 . '<input type="text" name="reconciliation_phrase" required autocomplete="off"></label>'
                 . '<button class="button danger" type="submit" data-chicken-check="true" '
                 . 'data-chicken-message="Only reconcile after Companies House has confirmed the remote state." '
@@ -413,6 +430,21 @@ final class _companies_house_transmitCard extends CardBaseFramework
         }
 
         return '<div class="notice warning">' . \eel_accounts\Support\Utf8::html($message) . '</div>';
+    }
+
+    private function sectionHelper(string $message): string
+    {
+        return '<div class="helper companies-house-transmit-section-helper">'
+            . \eel_accounts\Support\Utf8::html($message) . '</div>';
+    }
+
+    private function companyAuthenticationCodeField(): string
+    {
+        return '<label><span>Company authentication code</span>'
+            . '<input type="password" name="company_auth_code" minlength="6" maxlength="6" '
+            . 'pattern="[A-Za-z0-9]{6}" title="Enter exactly six letters or numbers." '
+            . 'required autocomplete="off" autocapitalize="none" spellcheck="false">'
+            . '<span class="helper">Enter exactly six letters or numbers.</span></label>';
     }
 
     private function artifactDownloadMetric(

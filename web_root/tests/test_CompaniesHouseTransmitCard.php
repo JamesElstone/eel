@@ -96,8 +96,33 @@ $harness->run(_companies_house_transmitCard::class, static function (
             $harness->assertTrue(str_contains($html, 'value="submit_accounts"'));
             $harness->assertTrue(str_contains(
                 $html,
-                '<section class="panel-soft"><h3 class="card-title">Submit accounts</h3>'
-                . '<form method="post" action="?page=transmit" data-ajax="true" class="settings-stack">'
+                '<section class="panel-soft"><h3 class="card-title">'
+                . 'Transmit Company accounts to Companies House Public Register.</h3>'
+                . '<div class="helper companies-house-transmit-section-helper">'
+                . 'Enter the six-character company authentication code to transmit the prepared statutory accounts.'
+                . '</div>'
+                . '<form method="post" action="?page=transmit" data-ajax="true" '
+                . 'class="settings-stack companies-house-transmit-form">'
+            ));
+            $harness->assertTrue(str_contains($html, '>Transmit Company Accounts</button>'));
+            $harness->assertTrue(str_contains(
+                $html,
+                '<label><span>Company authentication code</span><input type="password"'
+            ));
+            $harness->assertTrue(str_contains($html, 'pattern="[A-Za-z0-9]{6}"'));
+            $harness->assertTrue(str_contains($html, 'minlength="6" maxlength="6"'));
+            $harness->assertTrue(str_contains($html, 'title="Enter exactly six letters or numbers."'));
+            $harness->assertTrue(str_contains(
+                $html,
+                '<span class="helper">Enter exactly six letters or numbers.</span></label>'
+            ));
+            $harness->assertTrue(str_contains(
+                $html,
+                'Review the active XML environment, presenter credentials and submission-number sequence before filing.'
+            ));
+            $harness->assertTrue(str_contains(
+                $html,
+                'Review the prepared Companies House iXBRL artifact and its filing readiness before transmission.'
             ));
             $harness->assertTrue(str_contains($html, 'Original'));
             $harness->assertFalse(str_contains($html, $secret));
@@ -215,11 +240,14 @@ $harness->run(_companies_house_transmitCard::class, static function (
                         'companies_house_transmit_history' => [],
                     ],
                 ]);
-                $harness->assertTrue(str_contains($html, 'Send / continue TEST filing'));
+                $harness->assertTrue(str_contains($html, 'Transmit Company Accounts'));
                 $harness->assertTrue(str_contains($html, 'Send CompanyData preflight'));
                 $harness->assertTrue(str_contains(
                     $html,
-                    '<section class="panel-soft"><h3 class="card-title">Companies House protocol controls</h3>'
+                    '<section class="panel-soft"><h3 class="card-title">Test Companies House Connection</h3>'
+                    . '<div class="helper companies-house-transmit-section-helper">'
+                    . 'Send a CompanyData preflight to confirm the presenter and company credentials before transmitting accounts.'
+                    . '</div>'
                 ));
                 $harness->assertFalse(str_contains(
                     $html,

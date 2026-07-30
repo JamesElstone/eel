@@ -3496,6 +3496,17 @@
   margin-block: 1rem;
 }
 
+.card-body .companies-house-transmit-section-helper {
+  margin-block: 1rem;
+}
+
+.card-body .companies-house-transmit-form > label:not(.checkbox-row) {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
 .card-body .companies-house-variance-actions {
   margin-top: 0.75rem;
 }

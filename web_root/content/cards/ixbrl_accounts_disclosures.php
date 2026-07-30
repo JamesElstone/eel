@@ -221,7 +221,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
             <input type="hidden" name="accounting_standard" value="FRS_105">
             <section class="panel-soft">
                 <div class="status-head">
-                    <h3 class="card-title">Account Period Basic Information</h3>
+                    <h3 class="card-title">Accounts Approval</h3>
                     <span class="badge ' . ($complete ? 'success' : 'danger') . '">' . ($complete ? 'Complete' : 'Required') . '</span>
                 </div>
                 ' . $sourceSummary . '
@@ -276,6 +276,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                     </div>
                 </section>
             </form>
+                ' . $this->ct600AuthorisationPanel($companyId, $accountingPeriodId, $context) . '
                 <div class="settings-stack">
                     <section class="panel-soft ixbrl-dormancy-summary">
                         <div class="status-head">
@@ -387,6 +388,27 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                 <div class="actions-row"><button class="button primary" type="submit"' . $disabled . '>I Approve this Statement of Fact</button></div>
             </form>
         </section>';
+    }
+
+    private function ct600AuthorisationPanel(int $companyId, int $accountingPeriodId, array $context): string
+    {
+        $saved = (new \eel_accounts\Service\Ct600ReturnAuthorisationService())->fetch($companyId, $accountingPeriodId);
+        $name = (string)($context['auth']['user_name'] ?? $context['auth']['username'] ?? $context['auth']['email'] ?? 'Logged-on user');
+        $options = '';
+        foreach (\eel_accounts\Service\Ct600ReturnAuthorisationService::STATUSES as $status) {
+            $options .= '<option value="' . \eel_accounts\Support\Utf8::html($status) . '"' . ((string)($saved['declarant_status'] ?? 'Director') === $status ? ' selected' : '') . '>' . \eel_accounts\Support\Utf8::html($status) . '</option>';
+        }
+        $checked = static fn(string $key): string => !empty($saved[$key]) ? ' checked' : '';
+        return '<section class="panel-soft"><div class="status-head"><h3 class="card-title">Corporation Tax Return Authorisation</h3></div>'
+            . '<div class="helper">This authorisation is frozen into the next Disclosure Approval and covers every CT600 for that approval.</div>'
+            . '<form method="post" action="?page=disclosures" data-ajax="true">'
+            . '<input type="hidden" name="card_action" value="Ixbrl">' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+            . '<input type="hidden" name="intent" value="save_ct600_return_authorisation"><input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
+            . '<div class="form-grid"><div class="form-row half"><label>Declarant name</label><input class="input" disabled value="' . \eel_accounts\Support\Utf8::html($name) . '"></div><div class="form-row half"><label for="ct600_declarant_status">Declarant status or capacity</label><select class="select" id="ct600_declarant_status" name="declarant_status">' . $options . '</select></div></div>'
+            . '<label><input type="checkbox" name="original_unfiled_confirmed" value="1"' . $checked('original_unfiled_confirmed') . '> This is an original return and has not already been filed for this CT period.</label><br>'
+            . '<label><input type="checkbox" name="authority_confirmed" value="1"' . $checked('authority_confirmed') . '> I am authorised to file this Corporation Tax return for the company.</label><br>'
+            . '<label><input type="checkbox" name="declaration_confirmed" value="1"' . $checked('declaration_confirmed') . '> I declare that the information in this return is correct and complete to the best of my knowledge and belief.</label>'
+            . '<div class="actions-row"><button class="button primary" type="submit">Save Corporation Tax Return Authorisation</button></div></form></section>';
     }
 
     private function approvalBlockerNotice(array $status): string

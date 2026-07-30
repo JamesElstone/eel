@@ -120,6 +120,21 @@ final class IxbrlAction implements ActionInterfaceFramework
                     []
                 );
             }
+            if ($intent === 'save_ct600_return_authorisation') {
+                $result = (new \eel_accounts\Service\Ct600ReturnAuthorisationService())->save(
+                    $companyId,
+                    $accountingPeriodId,
+                    [
+                        'declarant_status' => $request->input('declarant_status', ''),
+                        'original_unfiled_confirmed' => $request->input('original_unfiled_confirmed', false),
+                        'authority_confirmed' => $request->input('authority_confirmed', false),
+                        'declaration_confirmed' => $request->input('declaration_confirmed', false),
+                    ],
+                    $this->actor($request)
+                );
+                return $this->result(!empty($result['success']), (array)($result['errors'] ?? []), $changedFacts,
+                    !empty($result['success']) ? ['Corporation Tax return authorisation saved.'] : []);
+            }
             if ($intent === 'approve_ixbrl_accounts_filing_basis') {
                 $progress = $services->actionProgress();
                 @set_time_limit(0);

@@ -82,6 +82,10 @@ final class IxbrlAccountsFilingApprovalService
         }
 
         return (array)\InterfaceDB::transaction(function () use ($companyId, $accountingPeriodId, $approvedBy, $note, $progress): array {
+            $authorisation = (new Ct600ReturnAuthorisationService())->current($companyId, $accountingPeriodId);
+            if ($authorisation === []) {
+                throw new \RuntimeException('Save the complete Corporation Tax return authorisation before approving the filing basis.');
+            }
             $candidate = $this->candidate($companyId, $accountingPeriodId, true);
             if ($this->matchingApprovalForCandidate($companyId, $accountingPeriodId, $candidate) !== null) {
                 throw new \RuntimeException('This Statement of Fact is already approved and current for this locked accounting period.');
@@ -94,11 +98,13 @@ final class IxbrlAccountsFilingApprovalService
                 'INSERT INTO ixbrl_accounts_filing_approvals (
                     company_id, accounting_period_id, disclosure_id, disclosure_revision,
                     year_end_review_id, year_end_locked_at, basis_version, basis_hash,
-                    basis_json, approved_by, approval_note
+                    basis_json, approved_by, approval_note, declarant_name, declarant_status,
+                    original_unfiled_confirmed, authority_confirmed, declaration_confirmed
                  ) VALUES (
                     :company_id, :accounting_period_id, :disclosure_id, :disclosure_revision,
                     :year_end_review_id, :year_end_locked_at, :basis_version, :basis_hash,
-                    :basis_json, :approved_by, :approval_note
+                    :basis_json, :approved_by, :approval_note, :declarant_name, :declarant_status,
+                    :original_unfiled_confirmed, :authority_confirmed, :declaration_confirmed
                  )',
                 [
                     'company_id' => $companyId,
@@ -112,6 +118,11 @@ final class IxbrlAccountsFilingApprovalService
                     'basis_json' => (string)$candidate['basis_json'],
                     'approved_by' => $approvedBy,
                     'approval_note' => trim($note) !== '' ? trim($note) : null,
+                    'declarant_name' => $approvedBy,
+                    'declarant_status' => (string)$authorisation['declarant_status'],
+                    'original_unfiled_confirmed' => 1,
+                    'authority_confirmed' => 1,
+                    'declaration_confirmed' => 1,
                 ]
             );
             $approvalId = (int)\InterfaceDB::fetchColumn(

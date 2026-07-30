@@ -156,63 +156,55 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         $service->status('TEST', $presenter)['status_in_flight_submission_id']
                     );
 
-                    $snapshot = InterfaceDB::fetchOne(
-                        'SELECT id, manifest_sha256 FROM companies_house_schema_snapshots
-                         WHERE is_active = 1 ORDER BY id DESC LIMIT 1'
+                    $submission = [
+                        'id' => $submissionIds[1],
+                        'company_id' => $companyIds[1],
+                        'accounting_period_id' => $periodIds[1],
+                        'company_number' => (string)$companyIds[1],
+                        'environment' => 'TEST',
+                    ];
+                    $preflight = $conversation->beginPreflight(
+                        $submission,
+                        'TEST',
+                        hash('sha256', 'OUTPUT-PRESENTER'),
+                        'ABC123',
+                        'user:test',
+                        true
                     );
-                    if (is_array($snapshot)) {
-                        $submission = [
-                            'id' => $submissionIds[1],
-                            'company_id' => $companyIds[1],
-                            'accounting_period_id' => $periodIds[1],
-                            'company_number' => (string)$companyIds[1],
-                            'environment' => 'TEST',
-                        ];
-                        $preflight = $conversation->beginPreflight(
-                            $submission,
-                            'TEST',
-                            (int)$snapshot['id'],
-                            (string)$snapshot['manifest_sha256'],
-                            hash('sha256', 'OUTPUT-PRESENTER'),
-                            'ABC123',
-                            'user:test',
-                            true
-                        );
-                        $conversation->finishPreflight((int)$preflight['id'], [
-                            'success' => true,
-                            'authenticated' => true,
-                            'environment' => 'TEST',
-                            'company_number' => (string)$companyIds[1],
-                            'company_name' => 'Sequence Test ' . $companyIds[1],
-                        ]);
-                        $wrongBindingBlocked = false;
-                        try {
-                            $conversation->consumePreflight(
-                                (int)$preflight['id'],
-                                $submission,
-                                'WRONG1',
-                                'user:test',
-                                true
-                            );
-                        } catch (RuntimeException $exception) {
-                            $wrongBindingBlocked = true;
-                        }
-                        $h->assertSame(true, $wrongBindingBlocked);
+                    $conversation->finishPreflight((int)$preflight['id'], [
+                        'success' => true,
+                        'authenticated' => true,
+                        'environment' => 'TEST',
+                        'company_number' => (string)$companyIds[1],
+                        'company_name' => 'Sequence Test ' . $companyIds[1],
+                    ]);
+                    $wrongBindingBlocked = false;
+                    try {
                         $conversation->consumePreflight(
                             (int)$preflight['id'],
                             $submission,
-                            'ABC123',
+                            'WRONG1',
                             'user:test',
                             true
                         );
-                        $stored = InterfaceDB::fetchOne(
-                            'SELECT binding_hmac, consumed_at
-                             FROM companies_house_company_auth_preflights WHERE id = :id',
-                            ['id' => (int)$preflight['id']]
-                        );
-                        $h->assertSame(null, $stored['binding_hmac'] ?? null);
-                        $h->assertSame(true, trim((string)($stored['consumed_at'] ?? '')) !== '');
+                    } catch (RuntimeException $exception) {
+                        $wrongBindingBlocked = true;
                     }
+                    $h->assertSame(true, $wrongBindingBlocked);
+                    $conversation->consumePreflight(
+                        (int)$preflight['id'],
+                        $submission,
+                        'ABC123',
+                        'user:test',
+                        true
+                    );
+                    $stored = InterfaceDB::fetchOne(
+                        'SELECT binding_hmac, consumed_at
+                         FROM companies_house_company_auth_preflights WHERE id = :id',
+                        ['id' => (int)$preflight['id']]
+                    );
+                    $h->assertSame(null, $stored['binding_hmac'] ?? null);
+                    $h->assertSame(true, trim((string)($stored['consumed_at'] ?? '')) !== '');
                 } finally {
                     InterfaceDB::prepareExecute(
                         'DELETE FROM companies_house_submission_sequences WHERE presenter_fingerprint = :fingerprint',

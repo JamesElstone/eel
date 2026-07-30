@@ -52,7 +52,19 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 . '<div class="accountspage titlepage"><h1><ix:nonNumeric name="bus:EntityCurrentLegalOrRegisteredName" contextRef="current_period_duration">Example Limited</ix:nonNumeric></h1>'
                 . '<p><ix:nonNumeric name="bus:UKCompaniesHouseRegisteredNumber" contextRef="current_period_duration">01234567</ix:nonNumeric></p>'
                 . '<h2>MICRO-ENTITY ACCOUNTS</h2></div>'
-                . '<div class="accountspage pagebreak" id="preserved"><ix:nonNumeric name="core:DateAuthorisationFinancialStatementsForIssue" contextRef="current_period_end" format="ixt:datedaymonthyearen">21 July 2026</ix:nonNumeric>'
+                . '<div class="accountspage pagebreak" id="preserved">'
+                . '<table class="page-header" id="ordinary-notes-header"><colgroup>'
+                . '<col class="page-header-name-column"/><col class="page-header-number-column"/>'
+                . '</colgroup><tbody><tr><td class="page-header-name">'
+                . '<ix:nonNumeric id="ordinary-header-name-fact" name="bus:EntityCurrentLegalOrRegisteredName" contextRef="current_period_duration">Example Limited</ix:nonNumeric>'
+                . '</td><td class="page-header-number">Registered number '
+                . '<ix:nonNumeric id="ordinary-header-number-fact" name="bus:UKCompaniesHouseRegisteredNumber" contextRef="current_period_duration">01234567</ix:nonNumeric>'
+                . '</td></tr><tr><td class="page-header-title" colspan="2">'
+                . 'Notes to the Micro-entity Accounts · For the period ended '
+                . '<ix:nonNumeric id="ordinary-header-end-fact" name="bus:EndDateForPeriodCoveredByReport" contextRef="current_period_end" format="ixt:datedaymonthyearen">31 December 2025</ix:nonNumeric>'
+                . '</td></tr></tbody></table>'
+                . '<h2>Notes to the Micro-entity Accounts</h2>'
+                . '<ix:nonNumeric name="core:DateAuthorisationFinancialStatementsForIssue" contextRef="current_period_end" format="ixt:datedaymonthyearen">21 July 2026</ix:nonNumeric>'
                 . '<ix:nonFraction name="core:FixedAssets" contextRef="current_period_end" unitRef="GBP" decimals="2" format="ixt:numdotdecimal">100.00</ix:nonFraction>'
                 . '<ix:nonFraction name="core:Creditors" contextRef="current_period_end_creditors_within_one_year" unitRef="GBP" decimals="2" format="ixt:numdotdecimal">279.00</ix:nonFraction>'
                 . '<ix:nonFraction name="core:Creditors" contextRef="current_period_end_creditors_after_one_year" unitRef="GBP" decimals="2" format="ixt:numdotdecimal">1035.63</ix:nonFraction></div>'
@@ -125,6 +137,63 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $factXpath->registerNamespace('xhtml', 'http://www.w3.org/1999/xhtml');
             $revisionPage = $factXpath->query('//xhtml:div[@id="revised-accounts-statements"]')->item(0);
             $harness->assertTrue($revisionPage instanceof DOMElement);
+            $pageHeaders = $factXpath->query(
+                '//xhtml:table[contains(concat(" ", normalize-space(@class), " "), " page-header ")]'
+            );
+            $harness->assertSame(2, $pageHeaders->length);
+            $harness->assertSame(0, $factXpath->query(
+                '//xhtml:div[contains(concat(" ", normalize-space(@class), " "), " page-header ")]'
+            )->length);
+            $revisionHeader = $factXpath->query(
+                '//xhtml:div[@id="revised-accounts-statements"]'
+                . '/xhtml:table[contains(concat(" ", normalize-space(@class), " "), " page-header ")]'
+            )->item(0);
+            $harness->assertTrue($revisionHeader instanceof DOMElement);
+            $harness->assertTrue(str_contains($revisionHeader->textContent, 'REVISED ACCOUNTS'));
+            $harness->assertSame(1, $factXpath->query(
+                '//xhtml:h2[normalize-space(.)="Notes to the Revised Micro-entity Accounts"]'
+            )->length);
+            $notesHeader = $factXpath->query(
+                '//xhtml:table[@id="ordinary-notes-header"]/xhtml:tbody/xhtml:tr'
+                . '/xhtml:td[contains(concat(" ", normalize-space(@class), " "), " page-header-title ")]'
+            )->item(0);
+            $harness->assertTrue($notesHeader instanceof DOMElement);
+            $harness->assertTrue(str_contains(
+                $notesHeader->textContent,
+                'Notes to the Revised Micro-entity Accounts · For the period ended 31 December 2025'
+            ));
+            $harness->assertSame(1, $factXpath->query(
+                '//xhtml:table[@id="ordinary-notes-header"]'
+                . '//ix:nonNumeric[@name="bus:EndDateForPeriodCoveredByReport"'
+                . ' and @contextRef="current_period_end"]'
+            )->length);
+            foreach ([
+                'bus:EntityCurrentLegalOrRegisteredName',
+                'bus:UKCompaniesHouseRegisteredNumber',
+                'bus:EndDateForPeriodCoveredByReport',
+            ] as $headerConcept) {
+                $facts = $factXpath->query(
+                    '//xhtml:table[contains(concat(" ", normalize-space(@class), " "), " page-header ")]'
+                    . '//ix:nonNumeric[@name="' . $headerConcept . '"]'
+                );
+                $harness->assertSame(2, $facts->length);
+                $first = $facts->item(0);
+                $second = $facts->item(1);
+                $harness->assertTrue($first instanceof DOMElement);
+                $harness->assertTrue($second instanceof DOMElement);
+                $harness->assertSame($first->getAttribute('contextRef'), $second->getAttribute('contextRef'));
+                $harness->assertSame($first->getAttribute('format'), $second->getAttribute('format'));
+                $harness->assertSame(trim($first->textContent), trim($second->textContent));
+            }
+            $ids = [];
+            foreach ($factXpath->query('//*[@id]') as $elementWithId) {
+                if ($elementWithId instanceof DOMElement) {
+                    $ids[] = $elementWithId->getAttribute('id');
+                }
+            }
+            $harness->assertSame(count($ids), count(array_unique($ids)));
+            $harness->assertTrue(in_array('ordinary-notes-header-revision', $ids, true));
+            $harness->assertTrue(in_array('ordinary-header-end-fact-revision', $ids, true));
             $harness->assertTrue(str_contains($revisionPage->textContent, 'The original report contained an error.'));
             $harness->assertSame(1, $factXpath->query(
                 '//ix:nonNumeric[@name="bus:StatementRespectsInWhichPreviouslyFiledReportDidNotComplyWithCompaniesAct2006"]'

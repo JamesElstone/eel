@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace eel_accounts\Service;
 
+use eel_accounts\Store\AccountingConfigurationStore;
+
 /** Serialises iXBRL mutations for one company and accounting period. */
 final class IxbrlFilingOperationLockService
 {
@@ -17,8 +19,7 @@ final class IxbrlFilingOperationLockService
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             throw new \InvalidArgumentException('Select a valid company and accounting period.');
         }
-        $directory = rtrim(\PROJECT_ROOT, '\\/')
-            . DIRECTORY_SEPARATOR . 'files'
+        $directory = rtrim(AccountingConfigurationStore::temporaryDirectory(), '\\/')
             . DIRECTORY_SEPARATOR . '.ixbrl-locks';
         if (!is_dir($directory) && !mkdir($directory, 0770, true) && !is_dir($directory)) {
             throw new \RuntimeException('The iXBRL generation lock directory could not be created.');

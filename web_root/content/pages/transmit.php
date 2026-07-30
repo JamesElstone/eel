@@ -22,7 +22,11 @@ final class _transmit extends PageContextFramework
 
     public function cards(): array
     {
-        return ['hmrc_transmit', 'companies_house_transmit'];
+        return [
+            'hmrc_transmit',
+            'companies_house_transmit',
+            'companies_house_transmission_history',
+        ];
     }
 
     public function cardLayout(): array
@@ -30,6 +34,7 @@ final class _transmit extends PageContextFramework
         return [
             ['tab' => 'HMRC', 'cards' => ['hmrc_transmit']],
             ['tab' => 'Companies House', 'cards' => ['companies_house_transmit']],
+            ['tab' => 'History', 'cards' => ['companies_house_transmission_history']],
         ];
     }
 }

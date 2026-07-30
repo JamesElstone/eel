@@ -90,7 +90,10 @@ function hmrcPackageTestIxbrl(string $startDate, string $endDate, bool $includeU
                     [
                         'filename' => 'computation.xhtml', 'hash' => str_repeat('c', 64),
                         'taxonomy_profile' => '2025/V1.0.0', 'mapping_profile_id' => 8,
-                        'mapping_hash' => str_repeat('d', 64), 'validation_status' => 'passed',
+                        'mapping_hash' => str_repeat('d', 64),
+                        'tagging_version' => 'hmrc-ct-computations-format-1.1/loss-and-allowance-tagging-v2',
+                        'presentation_version' => 'ct-computation-presentation-v2',
+                        'validation_status' => 'passed',
                     ],
                     str_repeat('e', 64),
                     'ct600-final.xml',
@@ -109,6 +112,14 @@ function hmrcPackageTestIxbrl(string $startDate, string $endDate, bool $includeU
                 $harness->assertSame('FRS-102/2025', (string)$byRole['statutory_accounts_ixbrl']['schema_version']);
                 $harness->assertSame('2025/V1.0.0', (string)$byRole['ct_computation_ixbrl']['schema_version']);
                 $harness->assertSame(8, (int)$byRole['ct_computation_ixbrl']['mapping_profile_id']);
+                $harness->assertSame(
+                    'hmrc-ct-computations-format-1.1/loss-and-allowance-tagging-v2',
+                    (string)$byRole['ct_computation_ixbrl']['tagging_version']
+                );
+                $harness->assertSame(
+                    'ct-computation-presentation-v2',
+                    (string)$byRole['ct_computation_ixbrl']['presentation_version']
+                );
             }
         );
 

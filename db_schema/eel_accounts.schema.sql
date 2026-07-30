@@ -333,27 +333,8 @@ CREATE TABLE `companies_house_schema_catalogue` (
   UNIQUE KEY `uq_ch_schema_catalogue_url` (`source_url`),
   KEY `idx_ch_schema_catalogue_status` (`lifecycle_status`,`schema_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-CREATE TABLE `companies_house_schema_snapshots` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `manifest_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  `catalogue_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  `local_path` varchar(1000) NOT NULL,
-  `is_active` tinyint(1) NOT NULL DEFAULT 0,
-  `profile_name` varchar(64) NOT NULL DEFAULT 'revised_accounts',
-  `root_count` int(11) NOT NULL DEFAULT 0,
-  `dependency_count` int(11) NOT NULL DEFAULT 0,
-  `file_count` int(11) NOT NULL DEFAULT 0,
-  `checked_at` datetime NOT NULL,
-  `verified_at` datetime NOT NULL,
-  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
-  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_ch_schema_snapshot_manifest` (`manifest_sha256`),
-  KEY `idx_ch_schema_snapshot_active` (`profile_name`,`is_active`,`verified_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE `companies_house_schema_files` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `snapshot_id` bigint(20) NOT NULL,
   `source_url` varchar(500) NOT NULL,
   `relative_path` varchar(500) NOT NULL,
   `schema_name` varchar(255) NOT NULL,
@@ -364,16 +345,17 @@ CREATE TABLE `companies_house_schema_files` (
   `sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `etag` varchar(255) DEFAULT NULL,
   `last_modified` varchar(255) DEFAULT NULL,
+  `checked_at` datetime NOT NULL,
+  `verified_at` datetime NOT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_ch_schema_file_url` (`snapshot_id`,`source_url`),
-  UNIQUE KEY `uq_ch_schema_file_path` (`snapshot_id`,`relative_path`),
-  KEY `idx_ch_schema_file_snapshot_role` (`snapshot_id`,`file_role`),
-  CONSTRAINT `fk_ch_schema_file_snapshot` FOREIGN KEY (`snapshot_id`) REFERENCES `companies_house_schema_snapshots` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  UNIQUE KEY `uq_ch_schema_file_url` (`source_url`),
+  UNIQUE KEY `uq_ch_schema_file_path` (`relative_path`),
+  KEY `idx_ch_schema_file_role_status` (`file_role`,`catalogue_status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE `companies_house_schema_dependencies` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `snapshot_id` bigint(20) NOT NULL,
   `parent_file_id` bigint(20) NOT NULL,
   `child_file_id` bigint(20) NOT NULL,
   `relation_type` enum('include','import','redefine') NOT NULL,
@@ -382,8 +364,6 @@ CREATE TABLE `companies_house_schema_dependencies` (
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_ch_schema_dependency` (`parent_file_id`,`child_file_id`,`relation_type`),
-  KEY `idx_ch_schema_dependency_snapshot` (`snapshot_id`),
-  CONSTRAINT `fk_ch_schema_dependency_snapshot` FOREIGN KEY (`snapshot_id`) REFERENCES `companies_house_schema_snapshots` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_ch_schema_dependency_parent` FOREIGN KEY (`parent_file_id`) REFERENCES `companies_house_schema_files` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_ch_schema_dependency_child` FOREIGN KEY (`child_file_id`) REFERENCES `companies_house_schema_files` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -417,8 +397,6 @@ CREATE TABLE `companies_house_accounts_submissions` (
   `artifact_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
   `revised_artifact_path` varchar(1000) DEFAULT NULL,
   `revised_artifact_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
-  `schema_snapshot_id` bigint(20) DEFAULT NULL,
-  `schema_manifest_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
   `schema_validated_at` datetime DEFAULT NULL,
   `basis_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `idempotency_key` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -451,7 +429,6 @@ CREATE TABLE `companies_house_accounts_submissions` (
   KEY `idx_ch_accounts_submission_document` (`original_document_id`),
   KEY `idx_ch_accounts_submission_ixbrl_run` (`ixbrl_generation_run_id`),
   KEY `idx_ch_accounts_submission_gateway_status` (`environment`,`lifecycle`,`raw_gateway_status`),
-  KEY `idx_ch_accounts_submission_schema_snapshot` (`schema_snapshot_id`),
   KEY `idx_ch_accounts_submission_preflight` (`preflight_id`),
   KEY `idx_ch_accounts_submission_status_cycle` (`pending_status_cycle_id`),
   CONSTRAINT `chk_ch_accounts_submission_number` CHECK (`submission_number` is null or `submission_number` regexp '^[0-9]{6}$'),
@@ -460,7 +437,6 @@ CREATE TABLE `companies_house_accounts_submissions` (
   CONSTRAINT `fk_ch_accounts_submission_eligibility` FOREIGN KEY (`eligibility_id`) REFERENCES `companies_house_accounts_eligibility` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_ch_accounts_submission_ixbrl_run` FOREIGN KEY (`ixbrl_generation_run_id`) REFERENCES `ixbrl_generation_runs` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_ch_accounts_submission_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-  ,CONSTRAINT `fk_ch_accounts_submission_schema_snapshot` FOREIGN KEY (`schema_snapshot_id`) REFERENCES `companies_house_schema_snapshots` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -493,8 +469,6 @@ CREATE TABLE `companies_house_company_auth_preflights` (
   `accounting_period_id` int(11) NOT NULL,
   `environment` enum('TEST','LIVE') NOT NULL,
   `output_presenter_fingerprint` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  `schema_snapshot_id` bigint(20) NOT NULL,
-  `schema_manifest_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `transaction_id` varchar(32) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
   `outcome` enum('sending','verified','rejected','transport_unknown','failed') NOT NULL,
   `matched_company_number` varchar(8) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
@@ -513,12 +487,11 @@ CREATE TABLE `companies_house_company_auth_preflights` (
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_ch_company_auth_preflight_reference` (`archive_reference`),
+  KEY `idx_ch_company_auth_preflight_archive_reference` (`archive_reference`),
   KEY `idx_ch_company_auth_preflight_submission` (`submission_id`,`outcome`,`created_at`),
   CONSTRAINT `fk_ch_company_auth_preflight_submission` FOREIGN KEY (`submission_id`) REFERENCES `companies_house_accounts_submissions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_ch_company_auth_preflight_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_ch_company_auth_preflight_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_ch_company_auth_preflight_schema` FOREIGN KEY (`schema_snapshot_id`) REFERENCES `companies_house_schema_snapshots` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+  CONSTRAINT `fk_ch_company_auth_preflight_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `companies_house_accounts_status_cycles` (
@@ -548,7 +521,7 @@ CREATE TABLE `companies_house_protocol_exchanges` (
   `operation` enum('company_data','accounts','submission_status','status_ack','get_document') NOT NULL,
   `environment` enum('TEST','LIVE') NOT NULL,
   `transaction_id` varchar(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  `exchange_state` enum('prepared','sent','received','succeeded','rejected','transport_unknown','failed') NOT NULL,
+  `exchange_state` enum('prepared','sent','received','succeeded','rejected','transport_unknown','evidence_incomplete','failed') NOT NULL,
   `request_path` varchar(1000) DEFAULT NULL,
   `request_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
   `response_path` varchar(1000) DEFAULT NULL,
@@ -1446,6 +1419,8 @@ CREATE TABLE `corporation_tax_computation_runs` (
   `computation_taxonomy_package_hash` char(64) DEFAULT NULL,
   `ixbrl_mapping_profile_id` bigint(20) DEFAULT NULL,
   `ixbrl_mapping_hash` char(64) DEFAULT NULL,
+  `ixbrl_tagging_version` varchar(100) DEFAULT NULL,
+  `ixbrl_presentation_version` varchar(100) DEFAULT NULL,
   `filing_basis_version` varchar(50) DEFAULT NULL,
   `filing_basis_hash` char(64) DEFAULT NULL,
   `generated_path` varchar(1000) DEFAULT NULL,
@@ -4067,6 +4042,10 @@ SELECT DISTINCT `role_id`, 'companies_house_transmit'
 FROM `role_card_permissions`
 WHERE `card_key` = 'year_end_companies_house_comparison';
 INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
+SELECT DISTINCT `role_id`, 'companies_house_transmission_history'
+FROM `role_card_permissions`
+WHERE `card_key` = 'companies_house_transmit';
+INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
 SELECT DISTINCT `role_id`, 'corporation_tax_review'
 FROM `role_card_permissions`
 WHERE `card_key` = 'year_end_tax_readiness';
@@ -4326,6 +4305,12 @@ DELETE FROM `role_card_permissions`
 WHERE `card_key` = 'companies_house_transmission';
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_29_007_rename_companies_house_transmit_card.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_29_008_ct_ixbrl_presentation_provenance.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_30_001_companies_house_schema_inventory.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_30_002_companies_house_transmission_archive_history.sql');
 
 DROP TRIGGER IF EXISTS `trg_journals_append_only_update`;
 CREATE TRIGGER `trg_journals_append_only_update`

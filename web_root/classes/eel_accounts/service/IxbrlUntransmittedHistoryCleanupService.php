@@ -99,6 +99,8 @@ final class IxbrlUntransmittedHistoryCleanupService
                      computation_taxonomy_package_hash = NULL,
                      ixbrl_mapping_profile_id = NULL,
                      ixbrl_mapping_hash = NULL,
+                     ixbrl_tagging_version = NULL,
+                     ixbrl_presentation_version = NULL,
                      filing_basis_version = NULL,
                      filing_basis_hash = NULL,
                      generated_path = NULL,

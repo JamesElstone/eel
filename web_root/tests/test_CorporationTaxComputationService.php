@@ -90,9 +90,30 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('558.54', number_format((float)$post['carried_forward'], 2, '.', ''));
             $harness->assertSame('0.00', number_format((float)$pre['brought_forward'], 2, '.', ''));
             $harness->assertSame('356164.38', number_format((float)($result['deduction_allowance']['amount'] ?? 0), 2, '.', ''));
+            $harness->assertSame(26, (int)$result['deduction_allowance']['ct_period_days']);
+            $harness->assertSame(365, (int)$result['deduction_allowance']['statutory_denominator_days']);
+            $harness->assertSame('5000000.00', number_format((float)$result['deduction_allowance']['annual_allowance'], 2, '.', ''));
+            $harness->assertSame('356164.38', number_format((float)$result['deduction_allowance']['calculated_allowance'], 2, '.', ''));
+            $harness->assertSame(true, $result['deduction_allowance']['apportionment_applied']);
             $harness->assertSame('4.67', number_format((float)$result['qualifying_profits'], 2, '.', ''));
             $harness->assertSame('4.67', number_format((float)$result['carried_forward_loss_relief_claimed'], 2, '.', ''));
             $harness->assertSame('none', (string)$result['loss_restriction']);
+
+            $fullYear = $disclosure->invoke(
+                $service,
+                '2024-10-01',
+                '2025-09-30',
+                0.00,
+                0.00,
+                0.00,
+                0.00,
+                0.00
+            );
+            $harness->assertSame(false, $fullYear['deduction_allowance']['apportionment_applied']);
+            $harness->assertSame(
+                $fullYear['deduction_allowance']['annual_allowance'],
+                $fullYear['deduction_allowance']['calculated_allowance']
+            );
         });
 
         $harness->check(\eel_accounts\Service\CorporationTaxComputationService::class, 'apportions the adjusted result before reconciling naturally rounded component disclosures', static function () use ($harness, $service): void {

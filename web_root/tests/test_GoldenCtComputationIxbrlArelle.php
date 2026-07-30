@@ -54,6 +54,45 @@ $harness->run('eel_accounts\\Service\\IxbrlTaxComputationService', static functi
     });
 });
 
+goldenCtIxbrlCleanupSharedLock();
+
+function goldenCtIxbrlCleanupSharedLock(): void
+{
+    $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
+    $accountingPeriodId = 9111;
+    $lockService = new \eel_accounts\Service\YearEndLockService();
+    if (!$lockService->isLocked($companyId, $accountingPeriodId)) {
+        return;
+    }
+    $backupCreator = new class implements \eel_accounts\Contract\DatabaseBackupCreatorInterface {
+        public function createBackup(int $companyId, string $trigger = 'Manual'): array
+        {
+            return [
+                'filename' => 'golden-ct-ixbrl-cleanup.sql.zip',
+                'size_bytes' => 1024,
+                'table_count' => 1,
+                'trigger' => $trigger,
+            ];
+        }
+    };
+    $cleanup = (new \eel_accounts\Service\YearEndChecklistService(backupCreator: $backupCreator))
+        ->unlockPeriod(
+            $companyId,
+            $accountingPeriodId,
+            'golden_ct_ixbrl_arelle_cleanup',
+            'Restore the shared Golden accounting fixture after Arelle assertions.',
+            null,
+            true
+        );
+    if (empty($cleanup['success'])) {
+        throw new RuntimeException(
+            'Golden CT iXBRL cleanup could not unlock AP 9111: '
+            . implode(' ', array_map('strval', (array)($cleanup['errors'] ?? [])))
+        );
+    }
+    \eel_accounts\Support\RequestCache::clear();
+}
+
 /** @return array{package: array<string,mixed>, periods: list<array<string,mixed>>} */
 function goldenCtIxbrlArelleFixture(): array
 {

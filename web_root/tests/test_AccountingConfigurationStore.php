@@ -40,3 +40,10 @@ $harness->check(\eel_accounts\Store\AccountingConfigurationStore::class, 'limits
         )
     );
 });
+
+$harness->check(\eel_accounts\Store\AccountingConfigurationStore::class, 'resolves the application temporary directory below the configured upload root', static function () use ($harness): void {
+    $harness->assertSame(
+        test_tmp_directory(),
+        \eel_accounts\Store\AccountingConfigurationStore::temporaryDirectory()
+    );
+});

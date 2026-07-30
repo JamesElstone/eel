@@ -42,7 +42,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
     /** @var null|\Closure(): string */
     private ?\Closure $transactionIdFactory;
 
-    /** @var null|\Closure(string,string): array */
+    /** @var null|\Closure(string,array): array */
     private ?\Closure $requestValidator;
 
     private int $timeoutSeconds;
@@ -76,9 +76,9 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         string $companyNumber,
         string $companyAuthenticationCode,
         string $environment,
-        string $schemaManifestSha256,
-        ?callable $beforeSend = null,
-        ?callable $afterReceive = null
+        array $schemaInventory,
+        callable $beforeSend,
+        callable $afterReceive
     ): array {
         try {
             $environment = $this->normaliseEnvironment($environment);
@@ -95,7 +95,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             );
             $this->validateOperationRequest(
                 $requestXml,
-                $schemaManifestSha256,
+                $schemaInventory,
                 'CompanyData-v3-6.xsd',
                 'CompanyDataRequest'
             );
@@ -111,7 +111,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             $this->secretValues($credentials, $companyAuthenticationCode),
             $beforeSend,
             $afterReceive,
-            $schemaManifestSha256,
+            $schemaInventory,
             fn(array $response, string $redactedRequest, array $secrets): array =>
                 $this->parseCompanyDataResponse(
                     $response,
@@ -127,7 +127,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
     public function prepareAccounts(
         array $payload,
         string $environment,
-        string $schemaManifestSha256
+        array $schemaInventory
     ): CompaniesHousePreparedAccountsRequest
     {
         $environment = $this->normaliseEnvironment($environment);
@@ -139,13 +139,11 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         $redactedRequest = $this->redactXml($requestXml, $secrets);
 
         $validation = $this->requestValidator instanceof \Closure
-            ? ($this->requestValidator)($requestXml, $schemaManifestSha256)
+            ? ($this->requestValidator)($requestXml, $schemaInventory)
             : (new \eel_accounts\Service\CompaniesHouseAccountsSchemaValidator())
-                ->validateAccountsRequest($requestXml, $schemaManifestSha256);
-        if (empty($validation['success'])
-            || (int)($validation['snapshot_id'] ?? 0) <= 0
-            || !hash_equals(strtolower($schemaManifestSha256), strtolower((string)($validation['manifest_sha256'] ?? '')))) {
-            throw new \RuntimeException('The prepared Companies House request was not validated against the selected schema snapshot.');
+                ->validateAccountsRequest($requestXml, $schemaInventory);
+        if (empty($validation['success'])) {
+            throw new \RuntimeException('The prepared Companies House request was not validated against the selected schema files.');
         }
 
         return new CompaniesHousePreparedAccountsRequest(
@@ -155,16 +153,39 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             $requestXml,
             $redactedRequest,
             $secrets,
-            (int)$validation['snapshot_id'],
-            strtolower($schemaManifestSha256)
+            $schemaInventory
         );
     }
 
     public function sendPreparedAccounts(
         CompaniesHousePreparedAccountsRequest $request,
-        ?callable $afterReceive = null
+        callable $beforeSend,
+        callable $afterReceive
     ): array
     {
+        try {
+            $this->persistRequestEvidence(
+                $beforeSend,
+                'submit',
+                $request->environment(),
+                $request->transactionId(),
+                $request->requestXml()
+            );
+        } catch (\Throwable) {
+            return array_replace(
+                $this->failureResult(
+                    $request->environment(),
+                    'The Companies House submit request evidence could not be persisted; nothing was sent.',
+                    false,
+                    $request->submissionNumber()
+                ),
+                [
+                    'pre_send_failure' => true,
+                    'transaction_id' => $request->transactionId(),
+                    'request_xml' => $request->redactedRequestXml(),
+                ]
+            );
+        }
         try {
             $response = $this->send($request->requestXml());
         } catch (\Throwable $exception) {
@@ -190,6 +211,22 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             (string)($response['body'] ?? ''),
             (int)($response['status_code'] ?? 0)
         );
+        if ($captureError !== '') {
+            return array_replace(
+                $this->failureResult(
+                    $request->environment(),
+                    $captureError,
+                    true,
+                    $request->submissionNumber()
+                ),
+                [
+                    'transaction_id' => $request->transactionId(),
+                    'request_xml' => $request->redactedRequestXml(),
+                    'evidence_error' => $captureError,
+                    'evidence_incomplete' => true,
+                ]
+            );
+        }
         $result = $this->parseSubmissionResponse(
             $response,
             $request->environment(),
@@ -200,26 +237,22 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         );
         $responseValidationError = $this->responseValidationError(
             (string)($response['body'] ?? ''),
-            $request->schemaManifestSha256()
+            $request->schemaInventory()
         );
         if ($responseValidationError !== '') {
             $result['success'] = false;
             $result['transport_unknown'] = true;
             $result['error'] = $responseValidationError;
         }
-        if ($captureError !== '') {
-            $result['evidence_error'] = $captureError;
-        }
-
         return $result;
     }
 
     public function getSubmissionStatus(
         string $submissionNumber,
         string $environment,
-        ?callable $beforeSend = null,
-        ?callable $afterReceive = null,
-        string $schemaManifestSha256 = ''
+        callable $beforeSend,
+        callable $afterReceive,
+        array $schemaInventory = []
     ): array
     {
         try {
@@ -233,10 +266,10 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
                 $environment,
                 $transactionId
             );
-            if ($schemaManifestSha256 !== '') {
+            if ($schemaInventory !== []) {
                 $this->validateOperationRequest(
                     $requestXml,
-                    $schemaManifestSha256,
+                    $schemaInventory,
                     'GetSubmissionStatus-v2-9.xsd',
                     'GetSubmissionStatus'
                 );
@@ -248,16 +281,13 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         $secrets = $this->secretValues($credentials);
         $redactedRequest = $this->redactXml($requestXml, $secrets);
         try {
-            if ($beforeSend !== null) {
-                $beforeSend([
-                    'operation' => 'status',
-                    'environment' => $environment,
-                    'transaction_id' => $transactionId,
-                    'request_xml' => $requestXml,
-                    'request_sha256' => hash('sha256', $requestXml),
-                    'request_bytes' => strlen($requestXml),
-                ]);
-            }
+            $this->persistRequestEvidence(
+                $beforeSend,
+                'status',
+                $environment,
+                $transactionId,
+                $requestXml
+            );
         } catch (\Throwable) {
             return array_replace(
                 $this->failureResult(
@@ -299,6 +329,17 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             (string)($response['body'] ?? ''),
             (int)($response['status_code'] ?? 0)
         );
+        if ($captureError !== '') {
+            return array_replace(
+                $this->failureResult($environment, $captureError, true, $submissionNumber),
+                [
+                    'transaction_id' => $transactionId,
+                    'request_xml' => $redactedRequest,
+                    'evidence_error' => $captureError,
+                    'evidence_incomplete' => true,
+                ]
+            );
+        }
         $result = $this->parseStatusResponse(
             $response,
             $environment,
@@ -307,10 +348,10 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             $redactedRequest,
             $secrets
         );
-        if ($schemaManifestSha256 !== '') {
+        if ($schemaInventory !== []) {
             $responseValidationError = $this->responseValidationError(
                 (string)($response['body'] ?? ''),
-                $schemaManifestSha256
+                $schemaInventory
             );
             if ($responseValidationError !== '') {
                 $result['success'] = false;
@@ -318,18 +359,14 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
                 $result['error'] = $responseValidationError;
             }
         }
-        if ($captureError !== '') {
-            $result['evidence_error'] = $captureError;
-        }
-
         return $result;
     }
 
     public function acknowledgeSubmissionStatus(
         string $environment,
-        string $schemaManifestSha256,
-        ?callable $beforeSend = null,
-        ?callable $afterReceive = null
+        array $schemaInventory,
+        callable $beforeSend,
+        callable $afterReceive
     ): array {
         try {
             $environment = $this->normaliseEnvironment($environment);
@@ -338,7 +375,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             $requestXml = $this->buildStatusAckRequest($credentials, $environment, $transactionId);
             $this->validateOperationRequest(
                 $requestXml,
-                $schemaManifestSha256,
+                $schemaInventory,
                 'GetStatusAck-v1-1.xsd',
                 'StatusAck'
             );
@@ -354,7 +391,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             $this->secretValues($credentials),
             $beforeSend,
             $afterReceive,
-            $schemaManifestSha256,
+            $schemaInventory,
             fn(array $response, string $redactedRequest, array $secrets): array =>
                 $this->parseAcknowledgementResponse(
                     $response,
@@ -369,9 +406,9 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
     public function getDocument(
         string $documentRequestKey,
         string $environment,
-        string $schemaManifestSha256,
-        ?callable $beforeSend = null,
-        ?callable $afterReceive = null
+        array $schemaInventory,
+        callable $beforeSend,
+        callable $afterReceive
     ): array {
         try {
             $environment = $this->normaliseEnvironment($environment);
@@ -389,7 +426,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             );
             $this->validateOperationRequest(
                 $requestXml,
-                $schemaManifestSha256,
+                $schemaInventory,
                 'GetDocument-v1-1.xsd',
                 'GetDocument'
             );
@@ -405,7 +442,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             $this->secretValues($credentials),
             $beforeSend,
             $afterReceive,
-            $schemaManifestSha256,
+            $schemaInventory,
             fn(array $response, string $redactedRequest, array $secrets): array =>
                 $this->parseDocumentResponse(
                     $response,
@@ -958,27 +995,22 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
 
     private function validateOperationRequest(
         string $requestXml,
-        string $schemaManifestSha256,
+        array $schemaInventory,
         string $schemaName,
         string $elementName
     ): void {
         $validation = $this->requestValidator instanceof \Closure
-            ? ($this->requestValidator)($requestXml, $schemaManifestSha256)
+            ? ($this->requestValidator)($requestXml, $schemaInventory)
             : (new \eel_accounts\Service\CompaniesHouseAccountsSchemaValidator())->validateOperationRequest(
                 $requestXml,
-                $schemaManifestSha256,
+                $schemaInventory,
                 $schemaName,
                 $elementName,
                 self::STATUS_NAMESPACE
             );
-        if (empty($validation['success'])
-            || (int)($validation['snapshot_id'] ?? 0) <= 0
-            || !hash_equals(
-                strtolower($schemaManifestSha256),
-                strtolower((string)($validation['manifest_sha256'] ?? ''))
-            )) {
+        if (empty($validation['success'])) {
             throw new \RuntimeException(
-                'The Companies House ' . $elementName . ' request was not validated against the selected schema snapshot.'
+                'The Companies House ' . $elementName . ' request was not validated against the selected schema files.'
             );
         }
     }
@@ -989,23 +1021,20 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         string $transactionId,
         string $requestXml,
         array $secrets,
-        ?callable $beforeSend,
-        ?callable $afterReceive,
-        string $schemaManifestSha256,
+        callable $beforeSend,
+        callable $afterReceive,
+        array $schemaInventory,
         callable $parser
     ): array {
         $redactedRequest = $this->redactXml($requestXml, $secrets);
         try {
-            if ($beforeSend !== null) {
-                $beforeSend([
-                    'operation' => $operation,
-                    'environment' => $environment,
-                    'transaction_id' => $transactionId,
-                    'request_xml' => $requestXml,
-                    'request_sha256' => hash('sha256', $requestXml),
-                    'request_bytes' => strlen($requestXml),
-                ]);
-            }
+            $this->persistRequestEvidence(
+                $beforeSend,
+                $operation,
+                $environment,
+                $transactionId,
+                $requestXml
+            );
         } catch (\Throwable) {
             return array_replace(
                 $this->failureResult(
@@ -1044,59 +1073,103 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             (string)($response['body'] ?? ''),
             (int)($response['status_code'] ?? 0)
         );
+        if ($captureError !== '') {
+            return array_replace(
+                $this->failureResult($environment, $captureError, true, null),
+                [
+                    'transaction_id' => $transactionId,
+                    'request_xml' => $redactedRequest,
+                    'evidence_error' => $captureError,
+                    'evidence_incomplete' => true,
+                ]
+            );
+        }
         $result = $parser($response, $redactedRequest, $secrets);
         $responseValidationError = $this->responseValidationError(
             (string)($response['body'] ?? ''),
-            $schemaManifestSha256
+            $schemaInventory
         );
         if ($responseValidationError !== '') {
             $result['success'] = false;
             $result['transport_unknown'] = true;
             $result['error'] = $responseValidationError;
         }
-        if ($captureError !== '') {
-            $result['evidence_error'] = $captureError;
-        }
-
         return $result;
     }
 
-    private function responseValidationError(string $responseXml, string $schemaManifestSha256): string
+    private function responseValidationError(string $responseXml, array $schemaInventory): string
     {
         try {
             $validation = $this->requestValidator instanceof \Closure
-                ? ($this->requestValidator)($responseXml, $schemaManifestSha256)
+                ? ($this->requestValidator)($responseXml, $schemaInventory)
                 : (new \eel_accounts\Service\CompaniesHouseAccountsSchemaValidator())
-                    ->validateEnvelopeResponse($responseXml, $schemaManifestSha256);
-            if (empty($validation['success'])
-                || !hash_equals(
-                    strtolower($schemaManifestSha256),
-                    strtolower((string)($validation['manifest_sha256'] ?? ''))
-                )) {
+                    ->validateEnvelopeResponse($responseXml, $schemaInventory);
+            if (empty($validation['success'])) {
                 throw new \RuntimeException(
-                    'Companies House response validation did not use the selected schema snapshot.'
+                    'Companies House response validation did not use the selected schema files.'
                 );
             }
             return '';
         } catch (\Throwable $exception) {
-            return 'The Companies House response could not be validated against the pinned schema snapshot: '
+            return 'The Companies House response could not be validated against the pinned schema files: '
                 . $exception->getMessage();
         }
     }
 
+    private function persistRequestEvidence(
+        callable $beforeSend,
+        string $operation,
+        string $environment,
+        string $transactionId,
+        string $requestXml
+    ): void {
+        $receipt = $beforeSend([
+            'operation' => $operation,
+            'environment' => $environment,
+            'transaction_id' => $transactionId,
+            'request_xml' => $requestXml,
+            'request_sha256' => hash('sha256', $requestXml),
+            'request_bytes' => strlen($requestXml),
+        ]);
+        $this->assertEvidenceReceipt($receipt, $transactionId, $requestXml, 'request');
+    }
+
+    private function assertEvidenceReceipt(
+        mixed $receipt,
+        string $transactionId,
+        string $contents,
+        string $direction
+    ): void {
+        if (!is_array($receipt)) {
+            throw new \RuntimeException('The Companies House evidence archive did not return a receipt.');
+        }
+        $receiptTransactionId = strtoupper(trim((string)($receipt['transaction_id'] ?? '')));
+        $expectedTransactionId = strtoupper(trim($transactionId));
+        $shaKey = $direction . '_sha256';
+        $bytesKey = $direction . '_bytes';
+        $expectedSha256 = $contents !== '' ? hash('sha256', $contents) : null;
+        $receiptSha256 = $receipt[$shaKey] ?? null;
+        if ($receiptTransactionId === ''
+            || !hash_equals($expectedTransactionId, $receiptTransactionId)
+            || (int)($receipt[$bytesKey] ?? -1) !== strlen($contents)
+            || ($expectedSha256 !== null
+                && (!is_string($receiptSha256)
+                    || !hash_equals($expectedSha256, strtolower($receiptSha256))))
+            || ($expectedSha256 === null && $receiptSha256 !== null)) {
+            throw new \RuntimeException('The Companies House evidence receipt did not match the exact exchange bytes.');
+        }
+    }
+
     private function captureResponse(
-        ?callable $afterReceive,
+        callable $afterReceive,
         string $operation,
         string $environment,
         string $transactionId,
         string $responseXml,
         int $statusCode
     ): string {
-        if ($afterReceive === null || $responseXml === '') {
-            return '';
-        }
         try {
-            $afterReceive([
+            $receipt = $afterReceive([
                 'operation' => $operation,
                 'environment' => $environment,
                 'transaction_id' => $transactionId,
@@ -1105,6 +1178,12 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
                 'response_sha256' => hash('sha256', $responseXml),
                 'response_bytes' => strlen($responseXml),
             ]);
+            $this->assertEvidenceReceipt(
+                $receipt,
+                $transactionId,
+                $responseXml,
+                'response'
+            );
             return '';
         } catch (\Throwable) {
             return 'The exact Companies House response could not be added to the private transmission archive.';

@@ -16,18 +16,16 @@ $harness->run(_companies_house_transmitCard::class, static function (
 ): void {
     $harness->check(
         _companies_house_transmitCard::class,
-        'declares read services for transmission status and history',
+        'declares the transmission status read service',
         static function () use ($harness, $card): void {
             $services = $card->services();
-            $harness->assertCount(2, $services);
+            $harness->assertCount(1, $services);
             $harness->assertSame('companies_house_transmit_context', (string)$services[0]['key']);
             $harness->assertSame(
                 \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
                 (string)$services[0]['service']
             );
             $harness->assertSame('fetchContext', (string)$services[0]['method']);
-            $harness->assertSame('companies_house_transmit_history', (string)$services[1]['key']);
-            $harness->assertSame('submissionHistory', (string)$services[1]['method']);
         }
     );
 
@@ -173,7 +171,7 @@ $harness->run(_companies_house_transmitCard::class, static function (
 
     $harness->check(
         _companies_house_transmitCard::class,
-        'adds one-exchange controls and exact XML evidence only in developer mode',
+            'adds protocol controls only in developer mode',
         static function () use ($harness, $card): void {
             $previous = AppConfigurationStore::get('developer_options', false);
             AppConfigurationStore::set('developer_options', true);
@@ -221,11 +219,14 @@ $harness->run(_companies_house_transmitCard::class, static function (
                 $harness->assertTrue(str_contains($html, 'Send CompanyData preflight'));
                 $harness->assertTrue(str_contains(
                     $html,
-                    '<section class="panel-soft"><h3 class="card-title">Developer step controls</h3>'
+                    '<section class="panel-soft"><h3 class="card-title">Companies House protocol controls</h3>'
                 ));
-                $harness->assertFalse(str_contains($html, '<h4 class="card-title">Developer step controls</h4>'));
-                $harness->assertTrue(str_contains($html, 'Developer XML exchange timeline'));
-                $harness->assertTrue(str_contains($html, 'value="download_protocol_evidence"'));
+                $harness->assertFalse(str_contains(
+                    $html,
+                    'Each button performs one XML send/receive pair and then pauses.'
+                ));
+                $harness->assertFalse(str_contains($html, 'Developer XML exchange timeline'));
+                $harness->assertFalse(str_contains($html, 'value="download_protocol_evidence"'));
                 $harness->assertTrue(str_contains($html, 'maxlength="6"'));
                 $harness->assertFalse(str_contains($html, 'maxlength="8"'));
             } finally {
@@ -234,42 +235,4 @@ $harness->run(_companies_house_transmitCard::class, static function (
         }
     );
 
-    $harness->check(
-        _companies_house_transmitCard::class,
-        'shows only attempted filings in Submission History',
-        static function () use ($harness, $card): void {
-            $html = $card->render([
-                'company' => ['id' => 49, 'accounting_period_id' => 80],
-                'services' => [
-                    'companies_house_transmit_context' => [
-                        'feature' => ['mode' => 'TEST'],
-                        'sequence' => ['next_number' => '000002'],
-                        'submission' => null,
-                    ],
-                    'companies_house_transmit_history' => [
-                        [
-                            'id' => 711,
-                            'lifecycle' => 'prepared',
-                            'environment' => 'TEST',
-                            'submission_number' => null,
-                            'prepared_at' => '2026-07-27 10:00:00',
-                        ],
-                        [
-                            'id' => 712,
-                            'lifecycle' => 'rejected',
-                            'environment' => 'TEST',
-                            'submission_number' => '000001',
-                            'submitted_at' => '2026-07-28 10:00:00',
-                        ],
-                    ],
-                ],
-            ]);
-
-            $harness->assertTrue(str_contains($html, 'Submission History'));
-            $harness->assertTrue(str_contains($html, '000001'));
-            $harness->assertTrue(str_contains($html, '2026-07-28 10:00:00'));
-            $harness->assertFalse(str_contains($html, '2026-07-27 10:00:00'));
-            $harness->assertFalse(str_contains($html, 'Not sent'));
-        }
-    );
 });

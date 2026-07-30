@@ -6,6 +6,10 @@ namespace eel_accounts\Service;
 
 final class IxbrlTaxComputationService
 {
+    public const PRESENTATION_VERSION = 'ct-computation-presentation-v2';
+
+    private const VISIBLE_AMOUNT_STYLE_STANDARD = 'standard';
+    private const VISIBLE_AMOUNT_STYLE_ACCOUNTING_NEGATIVE = 'accounting_negative';
     private const SECTION_ORDER = [
         'identity' => 0,
         'detailed_profit_and_loss' => 10,
@@ -20,14 +24,13 @@ final class IxbrlTaxComputationService
         'filing_identity.utr' => 'Unique Taxpayer Reference',
         'ct_period.start_date' => 'Period start',
         'ct_period.end_date' => 'Period end',
-        'computation.summary.accounting_profit' => 'Profit or loss per accounts',
+        'computation.summary.accounting_profit' => 'Profit/(loss) before tax per statutory accounts',
         'computation.summary.disallowable_add_backs' => 'Disallowable expenses added back',
         'computation.summary.capital_expenditure_add_backs' => 'Capital expenditure added back',
-        'computation.summary.disposal_profit_or_loss_adjustment' => 'Loss or profit on disposal of fixed assets',
         'computation.summary.depreciation_add_back' => 'Depreciation added back',
-        'report.accounts_adjustment.revised_figure_before_tax' => 'Revised figure before tax',
-        'report.accounts_adjustment.adjusted_loss_of_period' => 'Adjusted loss of period',
-        'report.accounts_adjustment.adjusted_profit_for_period' => 'Adjusted profit for the period',
+        'report.accounts_adjustment.revised_figure_before_tax' => 'Adjusted profit or loss before accounting-period adjustments',
+        'report.accounts_adjustment.adjusted_loss_of_period' => 'Adjusted trading loss for the period',
+        'report.accounts_adjustment.adjusted_profit_for_period' => 'Adjusted trading profit for the period',
         'report.main_pool.opening_wdv' => 'Main pool, written down value',
         'report.main_pool.aia_qualifying_expenditure' => 'Main pool, expenditure qualifying for annual investment allowance',
         'report.main_pool.wda_qualifying_expenditure' => 'Main pool, expenditure qualifying for writing down allowance',
@@ -152,7 +155,7 @@ final class IxbrlTaxComputationService
         if (preg_match('/^[a-f0-9]{64}$/i', (string)($profile['content_hash'] ?? '')) !== 1) {
             return $this->failRun($runId, 'The active computation mapping profile has no valid content hash.');
         }
-        $reportProfileHash = $this->reportProfileHash((string)$profile['content_hash']);
+        $mappingProfileHash = strtolower((string)$profile['content_hash']);
         $mappingModel = $model;
         $ct600aTax = round((float)($model['model']['ct600a']['tax_payable'] ?? 0), 2);
         $ordinaryTax = round((float)($model['model']['computation']['summary']['ordinary_corporation_tax'] ?? 0), 2);
@@ -227,6 +230,8 @@ final class IxbrlTaxComputationService
                    computation_taxonomy_package_hash = :package_hash,
                    ixbrl_mapping_profile_id = :profile_id,
                    ixbrl_mapping_hash = :profile_hash,
+                   ixbrl_tagging_version = :tagging_version,
+                   ixbrl_presentation_version = :presentation_version,
                    filing_basis_version = :basis_version,
                    filing_basis_hash = :basis_hash,
                    generated_path = :path,
@@ -250,7 +255,9 @@ final class IxbrlTaxComputationService
                     'package_id' => (int)$package['id'],
                     'package_hash' => $packageHash,
                     'profile_id' => (int)$profile['id'],
-                    'profile_hash' => $reportProfileHash,
+                    'profile_hash' => $mappingProfileHash,
+                    'tagging_version' => HmrcCtComputationReportProfile::TAGGING_VERSION,
+                    'presentation_version' => self::PRESENTATION_VERSION,
                     'basis_version' => (string)$model['basis_version'],
                     'basis_hash' => (string)$model['basis_hash'],
                     'path' => $artifact['path'],
@@ -280,7 +287,12 @@ final class IxbrlTaxComputationService
                 'validator_version' => $validatorVersion,
                 'validation_status' => $externalStatus,
                 'identifier_embedded' => true,
-                'metadata' => ['computation_run_id' => $runId, 'mapping_hash' => $reportProfileHash],
+                'metadata' => [
+                    'computation_run_id' => $runId,
+                    'mapping_profile_hash' => $mappingProfileHash,
+                    'tagging_version' => HmrcCtComputationReportProfile::TAGGING_VERSION,
+                    'presentation_version' => self::PRESENTATION_VERSION,
+                ],
             ]);
             return [
                 'success' => $fileable,
@@ -480,7 +492,11 @@ final class IxbrlTaxComputationService
             }
             $facts[$canonicalKey] = [
                 'canonical_key' => $canonicalKey,
-                'label' => $this->presentationLabel($canonicalKey, $value),
+                'presentation_semantic' => (string)($mapping['presentation_semantic'] ?? ''),
+                'label' => $this->presentationLabel(
+                    $canonicalKey,
+                    (string)($mapping['presentation_semantic'] ?? '')
+                ),
                 'value' => $value,
                 'numeric' => $numeric,
                 'html' => $generator->renderFact($fact),
@@ -566,44 +582,10 @@ final class IxbrlTaxComputationService
             throw new \RuntimeException('The frozen adjusted result does not reconcile to capital allowances and the trading result.');
         }
         $profileRows = (array)($report['accounts_adjustment_rows'] ?? []);
-        if ($profileRows !== []) {
-            $tradingRows = $this->reportMoneyRows($generator, $facts, $profileRows);
-        } else {
-            $tradingRows = $this->factMoneyRow($generator, $facts, 'computation.summary.accounting_profit')
-                . $this->factMoneyRow($generator, $facts, 'computation.summary.disallowable_add_backs')
-                . $this->factMoneyRow($generator, $facts, 'computation.summary.capital_add_backs')
-                . $this->factMoneyRow($generator, $facts, 'computation.summary.depreciation_add_back');
-        }
         if ($profileRows === []) {
-            $roundingAdjustment = round((float)($allocation['apportionment_rounding_adjustment'] ?? 0), 2);
-            if (abs($roundingAdjustment) >= 0.005) {
-                $tradingRows .= $this->moneyRow(
-                    $generator,
-                    'Apportionment rounding adjustment',
-                    $roundingAdjustment
-                );
-            }
-            $tradingRows .= $this->moneyRow(
-                $generator,
-                'Adjusted profit or loss before capital allowances',
-                $adjusted,
-                false,
-                'subtotal'
-            )
-                . $this->factMoneyRow(
-                    $generator,
-                    $facts,
-                    'computation.summary.capital_allowances',
-                    true
-                )
-                . $this->factMoneyRow(
-                    $generator,
-                    $facts,
-                    'computation.summary.taxable_before_losses',
-                    false,
-                    'final-total'
-                );
+            throw new \RuntimeException('The current CT computation presentation policy has no trading rows.');
         }
+        $tradingRows = $this->reportMoneyRows($generator, $facts, $profileRows);
         $html .= '<div class="ct-section trading-section"><h2>Trading profit or loss computation</h2>'
             . '<table class="financial-table"><thead><tr><th scope="col">Trading computation</th>'
             . '<th scope="col" class="amount">£</th></tr></thead><tbody>' . $tradingRows . '</tbody></table></div>';
@@ -615,7 +597,7 @@ final class IxbrlTaxComputationService
         $html .= $this->renderAiaSchedule($generator, $model);
         $html .= $this->renderMainPoolSchedule($generator, $report, $facts);
 
-        $lossRestriction = $this->lossRestrictionForReport($summary, (array)($model['ct_period'] ?? []));
+        $lossRestriction = $this->lossRestrictionForReport($summary);
         $postLosses = (array)$lossRestriction['post_2017_trading_losses'];
         $preLosses = (array)$lossRestriction['pre_2017_trading_losses'];
         foreach ([$postLosses, $preLosses] as $movement) {
@@ -699,7 +681,7 @@ final class IxbrlTaxComputationService
             }
         }
         $total = (float)($breakdown['amount'] ?? 0);
-        return '<div class="ct-section disallowable-expenses-section"><h2>Disallowable expense supporting analysis</h2>'
+        return '<div class="ct-section disallowable-expenses-section"><h2>Supporting analysis of disallowable expenses</h2>'
             . '<p>These source rows support the aggregate disallowable-expenses adjustment above. The HMRC computation taxonomy provides an aggregate fact for this adjustment, so the category and source analysis is intentionally not separately tagged.</p>'
             . '<table class="financial-table"><thead><tr><th scope="col">Category</th><th scope="col" class="amount">£</th></tr></thead><tbody>'
             . $categoryRows . '<tr class="final-total"><th scope="row">Total disallowable expenses added back</th><td class="amount">'
@@ -720,42 +702,91 @@ final class IxbrlTaxComputationService
     }
 
     /** @return array<string,mixed> */
-    private function lossRestrictionForReport(array $summary, array $ctPeriod): array
+    private function lossRestrictionForReport(array $summary): array
     {
         $stored = (array)($summary['loss_restriction'] ?? []);
-        if (isset($stored['post_2017_trading_losses'], $stored['pre_2017_trading_losses'], $stored['deduction_allowance'])) {
-            return $stored;
+        if (!isset(
+            $stored['post_2017_trading_losses'],
+            $stored['pre_2017_trading_losses'],
+            $stored['deduction_allowance']
+        )) {
+            throw new \RuntimeException(
+                'The frozen computation is missing its authoritative loss-restriction calculation model.'
+            );
         }
 
-        $start = (string)($ctPeriod['start_date'] ?? '');
-        $end = (string)($ctPeriod['end_date'] ?? '');
-        if ($start === '' || $end === '') {
-            throw new \RuntimeException('The frozen loss disclosure has no CT-period dates.');
+        foreach (['post_2017_trading_losses', 'pre_2017_trading_losses'] as $movementKey) {
+            $movement = (array)$stored[$movementKey];
+            foreach (['brought_forward', 'arising', 'used', 'carried_forward'] as $amountKey) {
+                if (!is_numeric($movement[$amountKey] ?? null)) {
+                    throw new \RuntimeException(
+                        'The frozen loss-restriction model is missing ' . $movementKey . '.' . $amountKey . '.'
+                    );
+                }
+            }
         }
-        $days = (int)(new \DateTimeImmutable($start))->diff(new \DateTimeImmutable($end))->days + 1;
-        $postReform = $start >= '2017-04-01';
-        $broughtForward = $this->money($summary, 'losses_brought_forward');
-        $arising = $this->money($summary, 'loss_created_in_period');
-        $used = $this->money($summary, 'losses_used');
-        $carriedForward = $this->money($summary, 'losses_carried_forward');
-        $movement = static fn(float $bf, float $created, float $utilised, float $cf): array => [
-            'brought_forward' => $bf, 'arising' => $created, 'used' => $utilised, 'carried_forward' => $cf,
-        ];
-        $allowance = $postReform ? round(5000000.00 * $days / 365, 2) : 0.00;
-        return [
-            'post_2017_trading_losses' => $postReform
-                ? $movement($broughtForward, $arising, $used, $carriedForward)
-                : $movement(0, 0, 0, 0),
-            'pre_2017_trading_losses' => $postReform
-                ? $movement(0, 0, 0, 0)
-                : $movement($broughtForward, $arising, $used, $carriedForward),
-            'post_2017_relief_basis' => $postReform ? 'trading_loss_available_against_total_profits' : 'not_applicable',
-            'deduction_allowance' => ['basis' => 'non_group', 'period_days' => $days, 'days_in_year' => 365, 'amount' => $allowance],
-            'qualifying_profits' => round(max(0.0, $this->money($summary, 'taxable_before_losses')), 2),
-            'carried_forward_loss_relief_claimed' => $used,
-            'calculated_loss_restriction' => 0.00,
-            'loss_restriction' => 'none',
-        ];
+        foreach ([
+            'qualifying_profits',
+            'carried_forward_loss_relief_claimed',
+            'calculated_loss_restriction',
+        ] as $amountKey) {
+            if (!is_numeric($stored[$amountKey] ?? null)) {
+                throw new \RuntimeException(
+                    'The frozen loss-restriction model is missing ' . $amountKey . '.'
+                );
+            }
+        }
+
+        $allowance = (array)$stored['deduction_allowance'];
+        $ctPeriodDays = $allowance['ct_period_days'] ?? $allowance['period_days'] ?? null;
+        $denominatorDays = $allowance['statutory_denominator_days'] ?? $allowance['days_in_year'] ?? null;
+        $annualAllowance = $allowance['annual_allowance'] ?? $allowance['annual_amount'] ?? null;
+        $calculatedAllowance = $allowance['calculated_allowance'] ?? $allowance['amount'] ?? null;
+        if (!is_numeric($ctPeriodDays)
+            || !is_numeric($denominatorDays)
+            || !is_numeric($annualAllowance)
+            || !is_numeric($calculatedAllowance)
+        ) {
+            throw new \RuntimeException(
+                'The frozen deductions allowance is missing authoritative calculation-model fields.'
+            );
+        }
+        $ctPeriodDays = (int)$ctPeriodDays;
+        $denominatorDays = (int)$denominatorDays;
+        $annualAllowance = round((float)$annualAllowance, 2);
+        $calculatedAllowance = round((float)$calculatedAllowance, 2);
+        if ($ctPeriodDays <= 0 || $denominatorDays <= 0 || $annualAllowance < 0 || $calculatedAllowance < 0) {
+            throw new \RuntimeException('The frozen deductions allowance has invalid calculation-model fields.');
+        }
+        if (isset($allowance['amount'])
+            && abs(round((float)$allowance['amount'], 2) - $calculatedAllowance) > 0.009
+        ) {
+            throw new \RuntimeException(
+                'The frozen deductions allowance fact does not agree with its calculation model.'
+            );
+        }
+
+        if (array_key_exists('apportionment_applied', $allowance)) {
+            if (!is_bool($allowance['apportionment_applied'])) {
+                throw new \RuntimeException(
+                    'The frozen deductions allowance has an invalid apportionment indicator.'
+                );
+            }
+            $apportionmentApplied = $allowance['apportionment_applied'];
+        } else {
+            // Frozen models created before the presentation field was added
+            // already contain both authoritative allowance amounts. Deriving
+            // this boolean does not recalculate either monetary value.
+            $apportionmentApplied = abs($calculatedAllowance - $annualAllowance) >= 0.005;
+        }
+
+        $allowance['ct_period_days'] = $ctPeriodDays;
+        $allowance['statutory_denominator_days'] = $denominatorDays;
+        $allowance['annual_allowance'] = $annualAllowance;
+        $allowance['calculated_allowance'] = $calculatedAllowance;
+        $allowance['apportionment_applied'] = $apportionmentApplied;
+        $stored['deduction_allowance'] = $allowance;
+        return $stored;
     }
 
     private function lossMovementRow(
@@ -778,7 +809,24 @@ final class IxbrlTaxComputationService
             return '';
         }
         $allowance = (array)($lossRestriction['deduction_allowance'] ?? []);
-        $allowanceAmount = round((float)($allowance['amount'] ?? 0), 2);
+        foreach ([
+            'ct_period_days',
+            'statutory_denominator_days',
+            'annual_allowance',
+            'calculated_allowance',
+        ] as $field) {
+            if (!is_numeric($allowance[$field] ?? null)) {
+                throw new \RuntimeException(
+                    'The deductions-allowance report model is missing ' . $field . '.'
+                );
+            }
+        }
+        if (!is_bool($allowance['apportionment_applied'] ?? null)) {
+            throw new \RuntimeException(
+                'The deductions-allowance report model is missing its apportionment indicator.'
+            );
+        }
+        $allowanceAmount = round((float)$allowance['calculated_allowance'], 2);
         $allowanceHtml = isset($facts['computation.summary.loss_restriction.deduction_allowance.amount'])
             ? $this->factMoneyHtml($generator, $facts, 'computation.summary.loss_restriction.deduction_allowance.amount')
             : $this->moneyHtml($generator, $allowanceAmount);
@@ -794,15 +842,21 @@ final class IxbrlTaxComputationService
         $reliefClaimedHtml = isset($facts['report.loss.carried_forward_relief_claimed'])
             ? $this->factMoneyHtml($generator, $facts, 'report.loss.carried_forward_relief_claimed')
             : $this->moneyHtml($generator, $reliefClaimed);
-        $days = (int)($allowance['period_days'] ?? 0);
-        $daysInYear = (int)($allowance['days_in_year'] ?? 365);
+        $days = (int)$allowance['ct_period_days'];
+        $daysInYear = (int)$allowance['statutory_denominator_days'];
         if ($days <= 0 || $daysInYear <= 0) {
             throw new \RuntimeException('The frozen deductions allowance has invalid period days.');
         }
+        $annualAllowance = round((float)$allowance['annual_allowance'], 2);
+        $allowanceNarrative = $allowance['apportionment_applied']
+            ? 'Non-group deductions allowance, apportioned for the ' . $days . '-day CT period: '
+                . $days . ' / ' . $daysInYear . ' of '
+                . $this->narrativeCurrencyHtml($generator, $annualAllowance) . '.'
+            : 'Non-group deductions allowance for the ' . $days . '-day CT period: '
+                . $this->narrativeCurrencyHtml($generator, $allowanceAmount) . '.';
         $restrictionText = $restriction < 0.005 ? 'None' : $this->moneyHtml($generator, $restriction, false, '£');
         return '<div class="deductions-allowance keep-together"><h3>Deductions allowance</h3>'
-            . '<p>Non-group deductions allowance, apportioned for the ' . $days . '-day CT period ('
-            . $days . ' / ' . $daysInYear . ' of £5,000,000).</p><table class="financial-table"><tbody>'
+            . '<p>' . $allowanceNarrative . '</p><table class="financial-table"><tbody>'
             . '<tr><th scope="row">Non-group deductions allowance for the period</th><td class="amount">'
             . $allowanceHtml . '</td></tr><tr><th scope="row">Qualifying profits</th><td class="amount">'
             . $qualifyingProfitsHtml
@@ -825,6 +879,13 @@ final class IxbrlTaxComputationService
             || abs((float)($lossRestriction['carried_forward_loss_relief_claimed'] ?? 0)) >= 0.005
             || abs((float)($lossRestriction['calculated_loss_restriction'] ?? 0)) >= 0.005
             || !in_array((string)($lossRestriction['loss_restriction'] ?? 'none'), ['', 'none', 'not_applicable'], true);
+    }
+
+    private function narrativeCurrencyHtml(IxbrlGeneratorService $generator, float $amount): string
+    {
+        $amount = round($amount, 2);
+        $decimals = abs($amount - round($amount)) < 0.005 ? 0 : 2;
+        return $generator->escape('£' . number_format($amount, $decimals, '.', ','));
     }
 
     private function renderAiaSchedule(IxbrlGeneratorService $generator, array $model): string
@@ -1004,12 +1065,17 @@ final class IxbrlTaxComputationService
             . $body . '</tbody></table></div>';
     }
 
-    private function presentationLabel(string $canonicalKey, mixed $value = null): string
+    private function presentationLabel(string $canonicalKey, string $presentationSemantic = ''): string
     {
         if ($canonicalKey === 'computation.summary.disposal_profit_or_loss_adjustment') {
-            return (float)$value < 0
-                ? 'Profit on disposal of fixed assets deducted'
-                : 'Loss on disposal of fixed assets added back';
+            return match ($presentationSemantic) {
+                'loss_add_back' => 'Loss on disposal of fixed assets added back',
+                'profit_deduction' => 'Profit on disposal of fixed assets deducted',
+                'nil_adjustment' => 'Adjustment for loss or profit on disposal of fixed assets',
+                default => throw new \RuntimeException(
+                    'The disposal adjustment has no recognised presentation semantic.'
+                ),
+            };
         }
         $label = self::PRESENTATION_LABELS[$canonicalKey] ?? '';
         if ($label === '') {
@@ -1074,14 +1140,25 @@ final class IxbrlTaxComputationService
         float $amount,
         ?string $factHtml = null,
         bool $deduction = false,
-        string $currencyPrefix = ''
+        string $currencyPrefix = '',
+        string $visibleAmountStyle = self::VISIBLE_AMOUNT_STYLE_STANDARD
     ): string {
+        if (!in_array($visibleAmountStyle, [
+            self::VISIBLE_AMOUNT_STYLE_STANDARD,
+            self::VISIBLE_AMOUNT_STYLE_ACCOUNTING_NEGATIVE,
+        ], true)) {
+            throw new \RuntimeException('The computation row has an unsupported visible amount style.');
+        }
         $amount = round($amount, 2);
         $display = $factHtml ?? $generator->escape(number_format(abs($amount), 2, '.', ','));
         if ($currencyPrefix !== '') {
             $display = $generator->escape($currencyPrefix) . $display;
         }
-        if ($amount < -0.004 || ($deduction && $amount > 0.004)) {
+        if ($amount < -0.004
+            || ($deduction && $amount > 0.004)
+            || ($visibleAmountStyle === self::VISIBLE_AMOUNT_STYLE_ACCOUNTING_NEGATIVE
+                && abs($amount) > 0.004)
+        ) {
             return '<span class="accounting-negative">(' . $display . ')</span>';
         }
         return $display;
@@ -1100,13 +1177,21 @@ final class IxbrlTaxComputationService
         IxbrlGeneratorService $generator,
         array $facts,
         string $canonicalKey,
-        bool $deduction = false
+        bool $deduction = false,
+        string $visibleAmountStyle = self::VISIBLE_AMOUNT_STYLE_STANDARD
     ): string {
         if (!isset($facts[$canonicalKey]) || empty($facts[$canonicalKey]['numeric'])) {
             throw new \RuntimeException('The computation report is missing required monetary fact ' . $canonicalKey . '.');
         }
         $fact = (array)$facts[$canonicalKey];
-        return $this->monetaryDisplayHtml($generator, (float)$fact['value'], (string)$fact['html'], $deduction);
+        return $this->monetaryDisplayHtml(
+            $generator,
+            (float)$fact['value'],
+            (string)$fact['html'],
+            $deduction,
+            '',
+            $visibleAmountStyle
+        );
     }
 
     private function factMoneyRow(
@@ -1130,21 +1215,36 @@ final class IxbrlTaxComputationService
     {
         $html = '';
         foreach ($rows as $row) {
-            $label = trim((string)($row['label'] ?? ''));
             $class = trim((string)($row['class'] ?? ''));
             $factKey = trim((string)($row['fact_key'] ?? ''));
-            if ($label === '') {
-                throw new \RuntimeException('The computation report profile contains a row without a visible label.');
-            }
             if ($factKey !== '') {
                 if (!isset($facts[$factKey])) {
                     throw new \RuntimeException('The computation report profile refers to an unavailable fact ' . $factKey . '.');
                 }
+                $label = trim((string)($facts[$factKey]['label'] ?? ''));
+                if ($label === '') {
+                    throw new \RuntimeException(
+                        'The computation fact has no canonical visible label: ' . $factKey . '.'
+                    );
+                }
+                $visibleAmountStyle = (string)(
+                    $row['visible_amount_style'] ?? self::VISIBLE_AMOUNT_STYLE_STANDARD
+                );
                 $html .= '<tr' . ($class !== '' ? ' class="' . $generator->escape($class) . '"' : '') . '><th scope="row">'
                     . $generator->escape($label) . '</th><td class="amount">'
-                    . $this->factMoneyHtml($generator, $facts, $factKey, (string)($row['direction'] ?? '') === 'deduction')
+                    . $this->factMoneyHtml(
+                        $generator,
+                        $facts,
+                        $factKey,
+                        (string)($row['direction'] ?? '') === 'deduction',
+                        $visibleAmountStyle
+                    )
                     . '</td></tr>';
                 continue;
+            }
+            $label = trim((string)($row['label'] ?? ''));
+            if ($label === '') {
+                throw new \RuntimeException('The computation report profile contains an untagged row without a visible label.');
             }
             if (!is_numeric($row['amount'] ?? null)) {
                 throw new \RuntimeException('The computation report profile contains an untagged row without an amount.');
@@ -1384,7 +1484,10 @@ CSS;
         $sections = [];
         foreach ($included as $mapping) {
             $canonicalKey = (string)$mapping['canonical_key'];
-            $label = $this->presentationLabel($canonicalKey, $mapping['source_value']);
+            $label = $this->presentationLabel(
+                $canonicalKey,
+                (string)($mapping['presentation_semantic'] ?? '')
+            );
             $section = (string)$mapping['presentation_section'];
             $sections[$section][] = [
                 'canonical_key' => $canonicalKey,
@@ -1409,7 +1512,8 @@ CSS;
             'main_pool_rows' => (array)$profile['main_pool_rows'],
             'loss_schedule_rows' => (array)$profile['loss_schedule_rows'],
             'untagged_row_allowlist' => (array)$profile['untagged_row_allowlist'],
-            'format_version' => (string)$profile['format_version'],
+            'tagging_version' => (string)$profile['tagging_version'],
+            'presentation_version' => self::PRESENTATION_VERSION,
         ];
     }
 
@@ -1449,9 +1553,15 @@ CSS;
             || preg_match('/^[a-f0-9]{64}$/i', (string)($stored['ixbrl_mapping_hash'] ?? '')) !== 1
             || !hash_equals(
                 (string)($stored['ixbrl_mapping_hash'] ?? ''),
-                $this->reportProfileHash((string)($profile['content_hash'] ?? ''))
+                strtolower((string)($profile['content_hash'] ?? ''))
             )) {
             $errors[] = 'The computation mapping profile is stale or changed.';
+        }
+        if ((string)($stored['ixbrl_tagging_version'] ?? '') !== HmrcCtComputationReportProfile::TAGGING_VERSION) {
+            $errors[] = 'The computation tagging version is stale or missing.';
+        }
+        if ((string)($stored['ixbrl_presentation_version'] ?? '') !== self::PRESENTATION_VERSION) {
+            $errors[] = 'The computation presentation version is stale or missing.';
         }
         $outputHash = strtolower(trim((string)($stored['output_sha256'] ?? '')));
         if ($artifactHash === null || preg_match('/^[a-f0-9]{64}$/', $outputHash) !== 1 || !hash_equals($outputHash, $artifactHash)) {
@@ -1469,11 +1579,6 @@ CSS;
             }
         }
         return array_values(array_unique($errors));
-    }
-
-    private function reportProfileHash(string $mappingProfileHash): string
-    {
-        return hash('sha256', $mappingProfileHash . '|' . HmrcCtComputationReportProfile::VERSION);
     }
 
     private function failRun(int $runId, string $message): array

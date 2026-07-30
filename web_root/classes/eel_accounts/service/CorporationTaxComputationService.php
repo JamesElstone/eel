@@ -16,6 +16,7 @@ final class CorporationTaxComputationService
     private const FINAL_CT_STATUSES = ['submitted', 'accepted'];
     private const POST_LOSS_REFORM_START = '2017-04-01';
     private const NON_GROUP_DEDUCTION_ALLOWANCE = 5000000.00;
+    private const DEDUCTION_ALLOWANCE_DENOMINATOR_DAYS = 365;
 
     private array $accountingPeriodLossScheduleCache = [];
     private array $activeCtPeriodsCache = [];
@@ -1738,8 +1739,15 @@ final class CorporationTaxComputationService
         $postReform = $periodStart >= self::POST_LOSS_REFORM_START;
         $periodDays = $this->inclusiveDays($periodStart, $periodEnd);
         $deductionAllowance = $postReform
-            ? round(self::NON_GROUP_DEDUCTION_ALLOWANCE * $periodDays / 365, 2)
+            ? round(
+                self::NON_GROUP_DEDUCTION_ALLOWANCE
+                    * $periodDays
+                    / self::DEDUCTION_ALLOWANCE_DENOMINATOR_DAYS,
+                2
+            )
             : 0.00;
+        $apportionmentApplied = $postReform
+            && abs($deductionAllowance - self::NON_GROUP_DEDUCTION_ALLOWANCE) >= 0.005;
         $qualifyingProfits = round(max(0.0, $qualifyingProfits), 2);
         $used = round(max(0.0, $used), 2);
         $maximumRelief = $postReform
@@ -1769,8 +1777,13 @@ final class CorporationTaxComputationService
                 'basis' => 'non_group',
                 'annual_amount' => self::NON_GROUP_DEDUCTION_ALLOWANCE,
                 'period_days' => $periodDays,
-                'days_in_year' => 365,
+                'days_in_year' => self::DEDUCTION_ALLOWANCE_DENOMINATOR_DAYS,
                 'amount' => $deductionAllowance,
+                'ct_period_days' => $periodDays,
+                'statutory_denominator_days' => self::DEDUCTION_ALLOWANCE_DENOMINATOR_DAYS,
+                'annual_allowance' => self::NON_GROUP_DEDUCTION_ALLOWANCE,
+                'calculated_allowance' => $deductionAllowance,
+                'apportionment_applied' => $apportionmentApplied,
             ],
             'qualifying_profits' => $qualifyingProfits,
             'carried_forward_loss_relief_claimed' => $used,

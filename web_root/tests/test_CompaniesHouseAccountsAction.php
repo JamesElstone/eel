@@ -259,6 +259,10 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
                     static fn(array $call): bool => ($call['method'] ?? '') === 'preflightRevision'
                 ));
                 $harness->assertCount(1, $calls);
+                $harness->assertSame([], array_values(array_filter(
+                    $service->calls,
+                    static fn(array $call): bool => ($call['method'] ?? '') === 'fetchContext'
+                )));
             } finally {
                 AppConfigurationStore::set('developer_options', (bool)$previous);
             }
@@ -320,6 +324,17 @@ final class CompaniesHouseAccountsActionFakeService
         $this->calls[] = compact('companyId', 'accountingPeriodId') + ['method' => 'fetchContext'];
 
         return $this->context;
+    }
+
+    public function submissionBelongsToContext(
+        int $submissionId,
+        int $companyId,
+        int $accountingPeriodId
+    ): bool {
+        $this->calls[] = compact('submissionId', 'companyId', 'accountingPeriodId')
+            + ['method' => 'submissionBelongsToContext'];
+
+        return (int)($this->context['submission']['id'] ?? 0) === $submissionId;
     }
 
     public function submitAccounts(

@@ -40,6 +40,11 @@ function clearAuthenticatedTestSession(): void
 
 function createTestPageServiceFramework(): PageServiceFramework
 {
+    // Each factory call represents a new HTTP request. Production completes an
+    // active stream in index.php after dispatch; focused action tests call the
+    // action directly, so finish any stream left by the preceding test request.
+    ActionProgressFramework::failActive('The preceding test request has ended.');
+
     return new PageServiceFramework(
         new AppService(testPageServiceUploadBasePath()),
         new SiteContextCoordinatorFramework(new \eel_accounts\Service\AccountingContextService(), true),

@@ -15,42 +15,43 @@ interface CompaniesHouseAccountsGatewayTransportInterface
         string $companyNumber,
         string $companyAuthenticationCode,
         string $environment,
-        string $schemaManifestSha256,
-        ?callable $beforeSend = null,
-        ?callable $afterReceive = null
+        array $schemaInventory,
+        callable $beforeSend,
+        callable $afterReceive
     ): array;
 
     public function prepareAccounts(
         array $payload,
         string $environment,
-        string $schemaManifestSha256
+        array $schemaInventory
     ): CompaniesHousePreparedAccountsRequest;
 
     public function sendPreparedAccounts(
         CompaniesHousePreparedAccountsRequest $request,
-        ?callable $afterReceive = null
+        callable $beforeSend,
+        callable $afterReceive
     ): array;
 
     public function getSubmissionStatus(
         string $submissionNumber,
         string $environment,
-        ?callable $beforeSend = null,
-        ?callable $afterReceive = null,
-        string $schemaManifestSha256 = ''
+        callable $beforeSend,
+        callable $afterReceive,
+        array $schemaInventory = []
     ): array;
 
     public function acknowledgeSubmissionStatus(
         string $environment,
-        string $schemaManifestSha256,
-        ?callable $beforeSend = null,
-        ?callable $afterReceive = null
+        array $schemaInventory,
+        callable $beforeSend,
+        callable $afterReceive
     ): array;
 
     public function getDocument(
         string $documentRequestKey,
         string $environment,
-        string $schemaManifestSha256,
-        ?callable $beforeSend = null,
-        ?callable $afterReceive = null
+        array $schemaInventory,
+        callable $beforeSend,
+        callable $afterReceive
     ): array;
 }

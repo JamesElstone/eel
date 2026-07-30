@@ -122,6 +122,8 @@ final class HmrcSubmissionPackageService
             'basis_hash' => (string)($run['filing_basis_hash'] ?? ''),
             'mapping_profile_id' => (int)($run['ixbrl_mapping_profile_id'] ?? 0),
             'mapping_hash' => (string)($run['ixbrl_mapping_hash'] ?? ''),
+            'tagging_version' => (string)($run['ixbrl_tagging_version'] ?? ''),
+            'presentation_version' => (string)($run['ixbrl_presentation_version'] ?? ''),
             'taxonomy_package_id' => (int)($run['computation_taxonomy_package_id'] ?? 0),
             'taxonomy_package_hash' => (string)($run['computation_taxonomy_package_hash'] ?? ''),
             'taxonomy_profile' => trim((string)($taxonomy['taxonomy_version'] ?? '')) !== ''
@@ -154,6 +156,13 @@ final class HmrcSubmissionPackageService
             || (string)($run['external_validation_status'] ?? '') !== 'passed') {
             return $this->artifactFailure('not_ready', 'The current computation iXBRL artifact has not passed validation.');
         }
+        if ((string)($run['ixbrl_tagging_version'] ?? '') !== HmrcCtComputationReportProfile::TAGGING_VERSION
+            || (string)($run['ixbrl_presentation_version'] ?? '') !== IxbrlTaxComputationService::PRESENTATION_VERSION) {
+            return $this->artifactFailure(
+                'not_ready',
+                'The current computation iXBRL artifact uses a stale or missing tagging/presentation version.'
+            );
+        }
         $path = trim((string)($run['generated_path'] ?? ''));
         $hash = strtolower(trim((string)($run['output_sha256'] ?? '')));
         if ($path === '' || !is_file($path) || $hash === ''
@@ -168,6 +177,8 @@ final class HmrcSubmissionPackageService
             'basis_hash' => (string)($run['filing_basis_hash'] ?? ''),
             'mapping_profile_id' => (int)($run['ixbrl_mapping_profile_id'] ?? 0),
             'mapping_hash' => (string)($run['ixbrl_mapping_hash'] ?? ''),
+            'tagging_version' => (string)($run['ixbrl_tagging_version'] ?? ''),
+            'presentation_version' => (string)($run['ixbrl_presentation_version'] ?? ''),
             'taxonomy_package_id' => (int)($run['computation_taxonomy_package_id'] ?? 0),
             'taxonomy_package_hash' => (string)($run['computation_taxonomy_package_hash'] ?? ''),
             'validation_status' => (string)($run['external_validation_status'] ?? ''), 'warnings' => [], 'errors' => [],
@@ -286,6 +297,8 @@ final class HmrcSubmissionPackageService
                 'filename' => (string)$computation['filename'],
                 'mapping_profile_id' => (int)($computation['mapping_profile_id'] ?? 0),
                 'mapping_hash' => (string)($computation['mapping_hash'] ?? ''),
+                'tagging_version' => (string)($computation['tagging_version'] ?? ''),
+                'presentation_version' => (string)($computation['presentation_version'] ?? ''),
                 'taxonomy_package_id' => (int)($computation['taxonomy_package_id'] ?? 0),
                 'taxonomy_package_hash' => (string)($computation['taxonomy_package_hash'] ?? ''),
             ],
@@ -417,6 +430,8 @@ final class HmrcSubmissionPackageService
                 'filename' => (string)$computation['filename'],
                 'mapping_profile_id' => (int)($computation['mapping_profile_id'] ?? 0),
                 'mapping_hash' => (string)($computation['mapping_hash'] ?? ''),
+                'tagging_version' => (string)($computation['tagging_version'] ?? ''),
+                'presentation_version' => (string)($computation['presentation_version'] ?? ''),
                 'taxonomy_package_id' => (int)($computation['taxonomy_package_id'] ?? 0),
                 'taxonomy_package_hash' => (string)($computation['taxonomy_package_hash'] ?? ''),
             ],
@@ -826,6 +841,8 @@ final class HmrcSubmissionPackageService
                 'mapping_profile_name' => '',
                 'mapping_revision_no' => null,
                 'mapping_content_hash' => (string)($computation['mapping_hash'] ?? ''),
+                'tagging_version' => (string)($computation['tagging_version'] ?? ''),
+                'presentation_version' => (string)($computation['presentation_version'] ?? ''),
                 'validation_status' => (string)($computation['validation_status'] ?? 'passed'),
                 'supplementary_pages' => [],
             ],

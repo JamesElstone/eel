@@ -6,12 +6,24 @@ require_once dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content' . DIRECTORY_SEPA
 
 $harness = new GeneratedServiceClassTestHarness();
 $card = new _tax_companies_house_accounts_schemasCard();
-$harness->check($card::class, 'renders verified profile status and refresh control', static function () use ($harness, $card): void {
+$harness->check($card::class, 'renders verified file status and refresh control', static function () use ($harness, $card): void {
     $html = $card->render(['services'=>['companies_house_accounts_schemas'=>[
-        'snapshot'=>['file_count'=>12,'checked_at'=>'2026-07-21 12:00:00','manifest_sha256'=>str_repeat('a',64)],
-        'roots'=>['form_submission'=>'https://xmlgw.companieshouse.gov.uk/v1-0/schema/forms/FormSubmission-v2-11.xsd'],
+        'state'=>['ready'=>true,'file_count'=>17,'checked_at'=>'2026-07-21 12:00:00'],
+        'files'=>[[
+            'schema_name'=>'FormSubmission-v2-11.xsd',
+            'file_role'=>'profile_root',
+            'relative_path'=>'v1-0/schema/forms/FormSubmission-v2-11.xsd',
+            'catalogue_status'=>'live',
+            'sha256'=>str_repeat('b',64),
+            'verified_at'=>'2026-07-21 12:00:00',
+        ]],
     ]]]);
     $harness->assertTrue(str_contains($html, 'refresh_companies_house_accounts_schemas'));
     $harness->assertTrue(str_contains($html, 'FormSubmission-v2-11.xsd'));
-    $harness->assertTrue(str_contains($html, str_repeat('a',64)));
+    $harness->assertTrue(str_contains($html, 'v1-0/schema/forms/FormSubmission-v2-11.xsd'));
+    $harness->assertTrue(str_contains($html, str_repeat('b',64)));
+    $harness->assertTrue(str_contains($html, 'Last verification'));
+    $harness->assertTrue(str_contains($html, 'Refresh Companies House Filing Schema'));
+    $harness->assertFalse(str_contains(strtolower($html), 'snapshot'));
+    $harness->assertFalse(str_contains(strtolower($html), 'manifest'));
 });

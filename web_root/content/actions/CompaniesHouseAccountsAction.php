@@ -94,7 +94,11 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             return $this->error($contextError);
         }
 
-        if (!in_array($intent, ['record_gateway_eligibility', 'save_variance_explanation'], true)
+        if (!in_array($intent, [
+            'record_gateway_eligibility',
+            'save_variance_explanation',
+            'download_protocol_evidence',
+        ], true)
             && !$this->isLocked($companyId, $accountingPeriodId)) {
             return $this->error('Complete and lock Year End before using Companies House accounts filing.');
         }
@@ -104,7 +108,6 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             'poll_accounts_status',
             'ack_accounts_status',
             'retrieve_accounts_document',
-            'download_protocol_evidence',
             'reconcile_accounts_status',
         ], true);
         if ($developerIntent && !(bool)AppConfigurationStore::get('developer_options', false)) {
@@ -418,13 +421,17 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         int $accountingPeriodId,
         ActionProgressFramework $progress
     ): array {
+        $progress->report('Starting Companies House CompanyData preflight…', 0);
         $submissionId = (int)$request->input('submission_id', 0);
         $companyAuthCode = trim((string)$request->input('company_auth_code', ''));
         if (preg_match('/^[A-Za-z0-9]{6}$/D', $companyAuthCode) !== 1) {
             return ['success' => false, 'errors' => ['The company authentication code must contain exactly 6 letters or numbers.']];
         }
-        $context = (array)$this->service()->fetchContext($companyId, $accountingPeriodId);
-        if ((int)(($context['submission'] ?? [])['id'] ?? 0) !== $submissionId) {
+        if (!$this->service()->submissionBelongsToContext(
+            $submissionId,
+            $companyId,
+            $accountingPeriodId
+        )) {
             return ['success' => false, 'errors' => ['The prepared submission does not belong to this period.']];
         }
         return $this->service()->preflightRevision(
@@ -479,18 +486,20 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         int $companyId,
         int $accountingPeriodId
     ): never {
-        $submissionId = (int)$request->input('submission_id', 0);
         $exchangeId = (int)$request->input('exchange_id', 0);
         $direction = (string)$request->input('direction', '');
-        $context = (array)$this->service()->fetchContext($companyId, $accountingPeriodId);
-        if ($submissionId <= 0
-            || (int)(($context['submission'] ?? [])['id'] ?? 0) !== $submissionId) {
-            header('Content-Type: text/plain; charset=utf-8', true, 403);
-            echo 'The Companies House evidence is not available in this accounting context.';
-            exit;
-        }
         try {
-            $file = $this->service()->protocolEvidenceFile($submissionId, $exchangeId, $direction);
+            $file = $this->service()->protocolEvidenceFileForContext(
+                $companyId,
+                $accountingPeriodId,
+                $exchangeId,
+                $direction
+            );
+            $this->service()->recordProtocolEvidenceDownload(
+                $exchangeId,
+                $direction,
+                $this->actor($request)
+            );
         } catch (Throwable $exception) {
             header('Content-Type: text/plain; charset=utf-8', true, 404);
             echo $exception->getMessage();

@@ -24,6 +24,14 @@ $schemaMigration = (string)file_get_contents(
     $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
     . DIRECTORY_SEPARATOR . '2026_07_21_001_companies_house_accounts_schemas.sql'
 );
+$schemaInventoryMigration = (string)file_get_contents(
+    $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
+    . DIRECTORY_SEPARATOR . '2026_07_30_001_companies_house_schema_inventory.sql'
+);
+$transmissionHistoryMigration = (string)file_get_contents(
+    $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
+    . DIRECTORY_SEPARATOR . '2026_07_30_002_companies_house_transmission_archive_history.sql'
+);
 $transmissionMigration = (string)file_get_contents(
     $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
     . DIRECTORY_SEPARATOR . '2026_07_23_001_safe_transmission_archives.sql'
@@ -54,7 +62,6 @@ $harness->check(
             'companies_house_accounts_submissions',
             'companies_house_accounts_submission_events',
             'companies_house_schema_catalogue',
-            'companies_house_schema_snapshots',
             'companies_house_schema_files',
             'companies_house_schema_dependencies',
             'companies_house_submission_sequences',
@@ -81,8 +88,6 @@ $harness->check(
             'idempotency_key',
             'rejection_code',
             'examiner_comments',
-            'schema_snapshot_id',
-            'schema_manifest_sha256',
             'schema_validated_at',
             'preflight_id',
             'pending_status_cycle_id',
@@ -91,6 +96,13 @@ $harness->check(
         ] as $column) {
             $harness->assertTrue(InterfaceDB::columnExists('companies_house_accounts_submissions', $column));
         }
+        $harness->assertFalse(InterfaceDB::tableExists('companies_house_schema_snapshots'));
+        $harness->assertFalse(
+            InterfaceDB::columnExists('companies_house_accounts_submissions', 'schema_snapshot_id')
+        );
+        $harness->assertFalse(
+            InterfaceDB::columnExists('companies_house_accounts_submissions', 'schema_manifest_sha256')
+        );
         foreach ([
             'request_path',
             'request_sha256',
@@ -155,6 +167,28 @@ $harness->check(
 
 $harness->check(
     'Companies House accounts filing schema',
+    'transmission history migration supports shared pending bundles and evidence failures',
+    static function () use ($harness, $transmissionHistoryMigration, $masterSchema): void {
+        foreach ([$transmissionHistoryMigration, $masterSchema] as $schema) {
+            $harness->assertTrue(str_contains($schema, 'evidence_incomplete'));
+            $harness->assertTrue(str_contains(
+                $schema,
+                'idx_ch_company_auth_preflight_archive_reference'
+            ));
+            $harness->assertTrue(str_contains(
+                $schema,
+                'companies_house_transmission_history'
+            ));
+        }
+        $harness->assertFalse(str_contains(
+            $masterSchema,
+            'UNIQUE KEY `uq_ch_company_auth_preflight_reference`'
+        ));
+    }
+);
+
+$harness->check(
+    'Companies House accounts filing schema',
     'archive metadata addresses exact request and response evidence',
     static function () use ($harness, $archiveMetadataMigration, $masterSchema): void {
         foreach ([$archiveMetadataMigration, $masterSchema] as $schema) {
@@ -199,13 +233,31 @@ $harness->check(
 
 $harness->check(
     'Companies House accounts filing schema',
-    'schema refresh migration and master schema retain snapshot provenance',
-    static function () use ($harness, $schemaMigration, $masterSchema): void {
-        foreach ([$schemaMigration, $masterSchema] as $schema) {
-            foreach (['companies_house_schema_catalogue','companies_house_schema_snapshots','companies_house_schema_files','companies_house_schema_dependencies','schema_snapshot_id','schema_manifest_sha256','schema_validated_at'] as $token) {
+    'schema inventory migration and master schema retain file-level provenance',
+    static function () use ($harness, $schemaMigration, $schemaInventoryMigration, $masterSchema): void {
+        foreach ([$schemaInventoryMigration, $masterSchema] as $schema) {
+            foreach ([
+                'companies_house_schema_files',
+                'companies_house_schema_dependencies',
+                'source_url',
+                'relative_path',
+                'sha256',
+                'catalogue_status',
+                'verified_at',
+                'filing_metadata_json',
+            ] as $token) {
                 $harness->assertTrue(str_contains($schema, $token));
             }
         }
+        $harness->assertTrue(str_contains($masterSchema, 'companies_house_schema_catalogue'));
+        $harness->assertTrue(str_contains($schemaInventoryMigration, 'schema_validations'));
+        $harness->assertTrue(str_contains($schemaMigration, 'companies_house_schema_snapshots'));
+        $harness->assertTrue(str_contains(
+            $schemaInventoryMigration,
+            'DROP TABLE companies_house_schema_snapshots'
+        ));
+        $harness->assertFalse(str_contains($masterSchema, 'CREATE TABLE `companies_house_schema_snapshots`'));
+        $harness->assertFalse(str_contains($masterSchema, '`schema_snapshot_id`'));
     }
 );
 

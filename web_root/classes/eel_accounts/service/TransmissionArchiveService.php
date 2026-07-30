@@ -12,12 +12,22 @@ namespace eel_accounts\Service;
 final class TransmissionArchiveService
 {
     private const TABLE = 'transmission_archives';
+    private const PENDING_REFERENCE_PREFIX = 'pending-submission-';
 
     private string $baseRoot;
 
     public function __construct(?string $baseRoot = null)
     {
         $this->baseRoot = $this->resolveBaseRoot($baseRoot);
+    }
+
+    public static function companiesHousePendingReference(int $submissionId): string
+    {
+        if ($submissionId <= 0) {
+            throw new \InvalidArgumentException('A Companies House internal submission ID is required.');
+        }
+
+        return self::PENDING_REFERENCE_PREFIX . $submissionId;
     }
 
     /**
@@ -49,6 +59,7 @@ final class TransmissionArchiveService
         $path = $directory . DIRECTORY_SEPARATOR . $filename;
         $sha256 = hash('sha256', $contents);
         $this->writeImmutable($path, $contents, $sha256);
+        $this->verifyStoredFile($path, $sha256, strlen($contents));
         $this->upsertArchive(
             $companyId,
             $accountingPeriodId,
@@ -65,6 +76,270 @@ final class TransmissionArchiveService
             'archive_path' => $directory,
             'manifest_path' => $manifest['path'],
         ];
+    }
+
+    /**
+     * Promote all pending CompanyData evidence for an internal submission into
+     * its permanent Companies House submission-number bundle.
+     *
+     * @return array{path:string,manifest_path:string,files:int}
+     */
+    public function promoteCompaniesHousePendingBundle(
+        int $companyId,
+        int $accountingPeriodId,
+        string $environment,
+        int $submissionId,
+        string $submissionNumber
+    ): array {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || $submissionId <= 0) {
+            throw new \InvalidArgumentException('A complete Companies House submission is required for promotion.');
+        }
+        if (preg_match('/^[0-9]{6}$/D', $submissionNumber) !== 1) {
+            throw new \InvalidArgumentException('A six-digit Companies House submission number is required.');
+        }
+
+        $pendingReference = self::companiesHousePendingReference($submissionId);
+        $this->consolidateCompaniesHousePendingBundle(
+            $companyId,
+            $accountingPeriodId,
+            $environment,
+            $submissionId
+        );
+        $source = $this->identity($companyId, 'companies_house', $environment, $pendingReference);
+        $target = $this->identity($companyId, 'companies_house', $environment, $submissionNumber);
+        $submission = \InterfaceDB::fetchOne(
+            'SELECT lifecycle
+             FROM companies_house_accounts_submissions
+             WHERE id = :id LIMIT 1',
+            ['id' => $submissionId]
+        );
+        $targetLifecycle = trim((string)($submission['lifecycle'] ?? '')) ?: 'prepared';
+        $sourceIdentities = [];
+        if (is_dir($source['directory'])) {
+            $sourceIdentities[$pendingReference] = $source;
+        }
+
+        $this->ensureDirectory($target['directory']);
+        $copied = 0;
+        foreach ($sourceIdentities as $sourceIdentity) {
+            foreach ($this->artifactFiles($sourceIdentity['directory']) as $file) {
+                $contents = file_get_contents($file['path']);
+                if (!is_string($contents) || $contents === '') {
+                    throw new \RuntimeException('A pending Companies House evidence file could not be read.');
+                }
+                $targetPath = $target['directory'] . DIRECTORY_SEPARATOR . $file['filename'];
+                $this->writeImmutable($targetPath, $contents, $file['sha256']);
+                $this->verifyStoredFile($targetPath, $file['sha256'], $file['bytes']);
+                $copied++;
+            }
+        }
+
+        $this->upsertArchive(
+            $companyId,
+            $accountingPeriodId,
+            $target,
+            $targetLifecycle
+        );
+        $this->writeManifest($companyId, $accountingPeriodId, $target, $targetLifecycle);
+
+        \InterfaceDB::transaction(function () use (
+            $companyId,
+            $environment,
+            $submissionId,
+            $submissionNumber,
+            $pendingReference,
+            $sourceIdentities,
+            $target
+        ): void {
+            foreach ($sourceIdentities as $sourceReference => $sourceIdentity) {
+                $this->replaceProtocolPaths(
+                    $submissionId,
+                    $sourceIdentity['directory'],
+                    $target['directory']
+                );
+                \InterfaceDB::prepareExecute(
+                    'DELETE FROM ' . self::TABLE . '
+                     WHERE authority = :authority
+                       AND environment = :environment
+                       AND company_id = :company_id
+                       AND submission_reference = :reference',
+                    [
+                        'authority' => 'companies_house',
+                        'environment' => strtoupper($environment),
+                        'company_id' => $companyId,
+                        'reference' => $sourceReference,
+                    ]
+                );
+            }
+            \InterfaceDB::prepareExecute(
+                'UPDATE companies_house_company_auth_preflights
+                 SET archive_reference = :reference,
+                     updated_at = :updated_at
+                 WHERE submission_id = :submission_id',
+                [
+                    'reference' => $submissionNumber,
+                    'updated_at' => gmdate('Y-m-d H:i:s'),
+                    'submission_id' => $submissionId,
+                ]
+            );
+        });
+
+        $this->writeManifest($companyId, $accountingPeriodId, $target, $targetLifecycle);
+        foreach ($sourceIdentities as $sourceIdentity) {
+            try {
+                $this->removeArtifactDirectory($sourceIdentity['directory']);
+            } catch (\Throwable) {
+                // Promotion is already committed. A later idempotent promotion
+                // or maintenance pass can remove the verified duplicate.
+            }
+        }
+
+        return [
+            'path' => $target['directory'],
+            'manifest_path' => $target['directory'] . DIRECTORY_SEPARATOR . 'manifest.json',
+            'files' => $copied,
+        ];
+    }
+
+    public function migrateAllCompaniesHousePreflightBundles(): int
+    {
+        if (!\InterfaceDB::tableExists('companies_house_company_auth_preflights')
+            || !\InterfaceDB::tableExists('companies_house_accounts_submissions')) {
+            return 0;
+        }
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT DISTINCT s.id AS submission_id,
+                    s.company_id,
+                    s.accounting_period_id,
+                    s.environment,
+                    s.submission_number
+             FROM companies_house_company_auth_preflights p
+             INNER JOIN companies_house_accounts_submissions s ON s.id = p.submission_id
+             WHERE p.archive_reference LIKE :legacy_prefix
+             ORDER BY s.id ASC',
+            ['legacy_prefix' => 'preflight-%']
+        );
+        $migrated = 0;
+        foreach ($rows as $row) {
+            $submissionNumber = trim((string)($row['submission_number'] ?? ''));
+            if ($submissionNumber !== '') {
+                $this->promoteCompaniesHousePendingBundle(
+                    (int)$row['company_id'],
+                    (int)$row['accounting_period_id'],
+                    (string)$row['environment'],
+                    (int)$row['submission_id'],
+                    $submissionNumber
+                );
+            } else {
+                $this->consolidateCompaniesHousePendingBundle(
+                    (int)$row['company_id'],
+                    (int)$row['accounting_period_id'],
+                    (string)$row['environment'],
+                    (int)$row['submission_id']
+                );
+            }
+            $migrated++;
+        }
+
+        return $migrated;
+    }
+
+    public function consolidateCompaniesHousePendingBundle(
+        int $companyId,
+        int $accountingPeriodId,
+        string $environment,
+        int $submissionId
+    ): void {
+        $legacyReferences = $this->legacyPreflightReferences($submissionId);
+        if ($legacyReferences === []) {
+            return;
+        }
+        $pendingReference = self::companiesHousePendingReference($submissionId);
+        $target = $this->identity($companyId, 'companies_house', $environment, $pendingReference);
+        $this->ensureDirectory($target['directory']);
+        $legacyIdentities = [];
+        foreach ($legacyReferences as $legacyReference) {
+            $legacy = $this->identity($companyId, 'companies_house', $environment, $legacyReference);
+            if (!is_dir($legacy['directory'])) {
+                continue;
+            }
+            $legacyIdentities[$legacyReference] = $legacy;
+            foreach ($this->artifactFiles($legacy['directory']) as $file) {
+                $contents = file_get_contents($file['path']);
+                if (!is_string($contents) || $contents === '') {
+                    throw new \RuntimeException('A legacy Companies House evidence file could not be read.');
+                }
+                $targetPath = $target['directory'] . DIRECTORY_SEPARATOR . $file['filename'];
+                $this->writeImmutable($targetPath, $contents, $file['sha256']);
+                $this->verifyStoredFile($targetPath, $file['sha256'], $file['bytes']);
+            }
+        }
+        if ($legacyIdentities === []) {
+            \InterfaceDB::prepareExecute(
+                'UPDATE companies_house_company_auth_preflights
+                 SET archive_reference = :reference,
+                     updated_at = :updated_at
+                 WHERE submission_id = :submission_id
+                   AND archive_reference LIKE :legacy_prefix',
+                [
+                    'reference' => $pendingReference,
+                    'updated_at' => gmdate('Y-m-d H:i:s'),
+                    'submission_id' => $submissionId,
+                    'legacy_prefix' => 'preflight-%',
+                ]
+            );
+            return;
+        }
+
+        $this->upsertArchive($companyId, $accountingPeriodId, $target, 'prepared');
+        $this->writeManifest($companyId, $accountingPeriodId, $target, 'prepared');
+        \InterfaceDB::transaction(function () use (
+            $companyId,
+            $environment,
+            $submissionId,
+            $pendingReference,
+            $target,
+            $legacyIdentities
+        ): void {
+            foreach ($legacyIdentities as $legacyReference => $legacyIdentity) {
+                $this->replaceProtocolPaths(
+                    $submissionId,
+                    $legacyIdentity['directory'],
+                    $target['directory']
+                );
+                \InterfaceDB::prepareExecute(
+                    'DELETE FROM ' . self::TABLE . '
+                     WHERE authority = :authority
+                       AND environment = :environment
+                       AND company_id = :company_id
+                       AND submission_reference = :reference',
+                    [
+                        'authority' => 'companies_house',
+                        'environment' => strtoupper($environment),
+                        'company_id' => $companyId,
+                        'reference' => $legacyReference,
+                    ]
+                );
+            }
+            \InterfaceDB::prepareExecute(
+                'UPDATE companies_house_company_auth_preflights
+                 SET archive_reference = :reference,
+                     updated_at = :updated_at
+                 WHERE submission_id = :submission_id',
+                [
+                    'reference' => $pendingReference,
+                    'updated_at' => gmdate('Y-m-d H:i:s'),
+                    'submission_id' => $submissionId,
+                ]
+            );
+        });
+        $this->writeManifest($companyId, $accountingPeriodId, $target, 'prepared');
+        foreach ($legacyIdentities as $legacyIdentity) {
+            try {
+                $this->removeArtifactDirectory($legacyIdentity['directory']);
+            } catch (\Throwable) {
+            }
+        }
     }
 
     public function updateLifecycle(
@@ -84,6 +359,24 @@ final class TransmissionArchiveService
         }
         $this->upsertArchive($companyId, $accountingPeriodId, $identity, $lifecycle);
         $this->writeManifest($companyId, $accountingPeriodId, $identity, $lifecycle);
+    }
+
+    public function refreshManifest(
+        int $companyId,
+        int $accountingPeriodId,
+        string $authority,
+        string $environment,
+        string $submissionReference,
+        string $lifecycle
+    ): void {
+        $this->updateLifecycle(
+            $companyId,
+            $accountingPeriodId,
+            $authority,
+            $environment,
+            $submissionReference,
+            $lifecycle
+        );
     }
 
     public function find(
@@ -132,8 +425,14 @@ final class TransmissionArchiveService
         $directory = $this->baseRoot
             . DIRECTORY_SEPARATOR . $companyNumber
             . DIRECTORY_SEPARATOR . $authority
-            . DIRECTORY_SEPARATOR . $environment
-            . DIRECTORY_SEPARATOR . $reference;
+            . DIRECTORY_SEPARATOR . $environment;
+        if ($authority === 'companies_house'
+            && preg_match('/^' . self::PENDING_REFERENCE_PREFIX . '([1-9][0-9]*)$/D', $reference, $matches) === 1) {
+            $directory .= DIRECTORY_SEPARATOR . '_pending'
+                . DIRECTORY_SEPARATOR . 'submission-' . $matches[1];
+        } else {
+            $directory .= DIRECTORY_SEPARATOR . $reference;
+        }
 
         return [
             'company_number' => $companyNumber,
@@ -213,25 +512,17 @@ final class TransmissionArchiveService
         array $identity,
         string $lifecycle
     ): array {
-        $files = [];
-        foreach (scandir($identity['directory']) ?: [] as $filename) {
-            if ($filename === '.' || $filename === '..' || $filename === 'manifest.json'
-                || str_starts_with($filename, '.archive-')) {
-                continue;
-            }
-            $path = $identity['directory'] . DIRECTORY_SEPARATOR . $filename;
-            if (!is_file($path)) {
-                continue;
-            }
-            $files[] = [
-                'filename' => $filename,
-                'bytes' => (int)filesize($path),
-                'sha256' => (string)hash_file('sha256', $path),
-            ];
-        }
-        usort($files, static fn(array $left, array $right): int => strcmp($left['filename'], $right['filename']));
+        $files = array_map(
+            static fn(array $file): array => [
+                'filename' => $file['filename'],
+                'path' => $file['filename'],
+                'bytes' => $file['bytes'],
+                'sha256' => $file['sha256'],
+            ],
+            $this->artifactFiles($identity['directory'])
+        );
         $payload = [
-            'format' => 'eel-transmission-archive-v1',
+            'format' => 'eel-transmission-archive-v2',
             'authority' => $identity['authority'],
             'environment' => $identity['environment'],
             'company_id' => $companyId,
@@ -240,6 +531,9 @@ final class TransmissionArchiveService
             'submission_reference' => $identity['submission_reference'],
             'lifecycle' => trim($lifecycle) !== '' ? trim($lifecycle) : 'unknown',
             'files' => $files,
+            'exchanges' => $identity['authority'] === 'companies_house'
+                ? $this->protocolExchanges($companyId, $identity)
+                : [],
         ];
         $json = \eel_accounts\Support\Utf8::json(
             $payload,
@@ -307,6 +601,231 @@ final class TransmissionArchiveService
                 'reference' => $identity['submission_reference'],
             ]
         );
+    }
+
+    /** @return list<array{filename:string,path:string,bytes:int,sha256:string}> */
+    private function artifactFiles(string $directory): array
+    {
+        $files = [];
+        foreach (scandir($directory) ?: [] as $filename) {
+            if ($filename === '.' || $filename === '..' || $filename === 'manifest.json'
+                || str_starts_with($filename, '.archive-')) {
+                continue;
+            }
+            $path = $directory . DIRECTORY_SEPARATOR . $filename;
+            if (!is_file($path)) {
+                continue;
+            }
+            $sha256 = hash_file('sha256', $path);
+            $bytes = filesize($path);
+            if (!is_string($sha256) || !is_int($bytes)) {
+                throw new \RuntimeException('A transmission archive artifact could not be inspected.');
+            }
+            $files[] = [
+                'filename' => $filename,
+                'path' => $path,
+                'bytes' => $bytes,
+                'sha256' => strtolower($sha256),
+            ];
+        }
+        usort($files, static fn(array $left, array $right): int => strcmp($left['filename'], $right['filename']));
+
+        return $files;
+    }
+
+    private function verifyStoredFile(string $path, string $sha256, int $bytes): void
+    {
+        clearstatcache(true, $path);
+        $actualBytes = filesize($path);
+        $actualSha256 = hash_file('sha256', $path);
+        if (!is_int($actualBytes)
+            || $actualBytes !== $bytes
+            || !is_string($actualSha256)
+            || !hash_equals(strtolower($sha256), strtolower($actualSha256))) {
+            throw new \RuntimeException('The transmission archive artifact failed its read-back verification.');
+        }
+    }
+
+    /** @return list<string> */
+    private function legacyPreflightReferences(int $submissionId): array
+    {
+        if (!\InterfaceDB::tableExists('companies_house_company_auth_preflights')) {
+            return [];
+        }
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT DISTINCT archive_reference
+             FROM companies_house_company_auth_preflights
+             WHERE submission_id = :submission_id',
+            ['submission_id' => $submissionId]
+        );
+        $references = [];
+        foreach ($rows as $row) {
+            $reference = trim((string)($row['archive_reference'] ?? ''));
+            if ($reference !== ''
+                && preg_match('/^preflight-[1-9][0-9]*$/D', $reference) === 1) {
+                $references[] = $reference;
+            }
+        }
+
+        return array_values(array_unique($references));
+    }
+
+    private function replaceProtocolPaths(
+        int $submissionId,
+        string $sourceDirectory,
+        string $targetDirectory
+    ): void {
+        $replace = static function (mixed $value) use ($sourceDirectory, $targetDirectory): ?string {
+            $path = trim((string)$value);
+            if ($path === '') {
+                return null;
+            }
+            $sourcePrefix = rtrim($sourceDirectory, '\\/') . DIRECTORY_SEPARATOR;
+            if (!str_starts_with($path, $sourcePrefix)) {
+                return $path;
+            }
+
+            return rtrim($targetDirectory, '\\/') . DIRECTORY_SEPARATOR . substr($path, strlen($sourcePrefix));
+        };
+
+        foreach (\InterfaceDB::fetchAll(
+            'SELECT id, request_path, response_path
+             FROM companies_house_protocol_exchanges
+             WHERE submission_id = :submission_id',
+            ['submission_id' => $submissionId]
+        ) as $row) {
+            \InterfaceDB::prepareExecute(
+                'UPDATE companies_house_protocol_exchanges
+                 SET request_path = :request_path,
+                     response_path = :response_path,
+                     updated_at = :updated_at
+                 WHERE id = :id',
+                [
+                    'request_path' => $replace($row['request_path'] ?? null),
+                    'response_path' => $replace($row['response_path'] ?? null),
+                    'updated_at' => gmdate('Y-m-d H:i:s'),
+                    'id' => (int)$row['id'],
+                ]
+            );
+        }
+        foreach (\InterfaceDB::fetchAll(
+            'SELECT id, request_path, response_path
+             FROM companies_house_company_auth_preflights
+             WHERE submission_id = :submission_id',
+            ['submission_id' => $submissionId]
+        ) as $row) {
+            \InterfaceDB::prepareExecute(
+                'UPDATE companies_house_company_auth_preflights
+                 SET request_path = :request_path,
+                     response_path = :response_path,
+                     updated_at = :updated_at
+                 WHERE id = :id',
+                [
+                    'request_path' => $replace($row['request_path'] ?? null),
+                    'response_path' => $replace($row['response_path'] ?? null),
+                    'updated_at' => gmdate('Y-m-d H:i:s'),
+                    'id' => (int)$row['id'],
+                ]
+            );
+        }
+    }
+
+    private function removeArtifactDirectory(string $directory): void
+    {
+        $resolvedRoot = realpath($this->baseRoot);
+        $resolvedDirectory = realpath($directory);
+        if (!is_string($resolvedRoot)
+            || !is_string($resolvedDirectory)
+            || !$this->pathWithin($resolvedDirectory, $resolvedRoot)
+            || $resolvedDirectory === $resolvedRoot) {
+            throw new \RuntimeException('Refusing to remove an unverified transmission archive directory.');
+        }
+        foreach (scandir($resolvedDirectory) ?: [] as $filename) {
+            if ($filename === '.' || $filename === '..') {
+                continue;
+            }
+            $path = $resolvedDirectory . DIRECTORY_SEPARATOR . $filename;
+            if (!is_file($path) || !@unlink($path)) {
+                throw new \RuntimeException('A migrated transmission archive directory could not be cleaned up.');
+            }
+        }
+        if (!@rmdir($resolvedDirectory)) {
+            throw new \RuntimeException('A migrated transmission archive directory could not be removed.');
+        }
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function protocolExchanges(int $companyId, array $identity): array
+    {
+        if (!\InterfaceDB::tableExists('companies_house_protocol_exchanges')
+            || !\InterfaceDB::tableExists('companies_house_accounts_submissions')) {
+            return [];
+        }
+        $reference = (string)$identity['submission_reference'];
+        $submissionId = 0;
+        if (preg_match('/^' . self::PENDING_REFERENCE_PREFIX . '([1-9][0-9]*)$/D', $reference, $matches) === 1) {
+            $submissionId = (int)$matches[1];
+        } elseif (preg_match('/^[0-9]{6}$/D', $reference) === 1) {
+            $submission = \InterfaceDB::fetchOne(
+                'SELECT id
+                 FROM companies_house_accounts_submissions
+                 WHERE company_id = :company_id
+                   AND environment = :environment
+                   AND submission_number = :submission_number
+                 LIMIT 1',
+                [
+                    'company_id' => $companyId,
+                    'environment' => (string)$identity['environment'],
+                    'submission_number' => $reference,
+                ]
+            );
+            $submissionId = (int)($submission['id'] ?? 0);
+        }
+        if ($submissionId <= 0) {
+            return [];
+        }
+
+        $result = [];
+        foreach (\InterfaceDB::fetchAll(
+            'SELECT operation, transaction_id, exchange_state,
+                    request_path, request_sha256, response_path, response_sha256,
+                    response_status_code, error_summary, sent_at, received_at
+             FROM companies_house_protocol_exchanges
+             WHERE submission_id = :submission_id
+             ORDER BY id ASC',
+            ['submission_id' => $submissionId]
+        ) as $row) {
+            $result[] = [
+                'operation' => (string)$row['operation'],
+                'transaction_id' => (string)$row['transaction_id'],
+                'state' => (string)$row['exchange_state'],
+                'request' => $this->manifestArtifact($identity['directory'], $row['request_path'] ?? null, $row['request_sha256'] ?? null),
+                'response' => $this->manifestArtifact($identity['directory'], $row['response_path'] ?? null, $row['response_sha256'] ?? null),
+                'http_status' => $row['response_status_code'] !== null
+                    ? (int)$row['response_status_code']
+                    : null,
+                'sent_at' => $row['sent_at'],
+                'received_at' => $row['received_at'],
+                'error' => $row['error_summary'],
+            ];
+        }
+
+        return $result;
+    }
+
+    private function manifestArtifact(string $directory, mixed $pathValue, mixed $shaValue): ?array
+    {
+        $path = trim((string)$pathValue);
+        $sha256 = strtolower(trim((string)$shaValue));
+        $prefix = rtrim($directory, '\\/') . DIRECTORY_SEPARATOR;
+        if ($path === '' || !str_starts_with($path, $prefix)) {
+            return null;
+        }
+
+        return [
+            'path' => substr($path, strlen($prefix)),
+            'sha256' => $sha256 !== '' ? $sha256 : null,
+        ];
     }
 
     private function writeImmutable(string $path, string $contents, string $sha256): void

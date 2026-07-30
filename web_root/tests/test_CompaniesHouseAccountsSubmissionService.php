@@ -25,6 +25,48 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             $service::class,
+            'reloads the latest immutable schema file inventory for each filing operation',
+            static function () use ($harness, $service, $invokePrivate): void {
+                $file = static fn(string $suffix, string $hash): array => [
+                    'source_url' => 'https://xmlgw.companieshouse.gov.uk/v1-0/schema/' . $suffix,
+                    'relative_path' => 'v1-0/schema/' . $suffix,
+                    'sha256' => $hash,
+                ];
+                $submission = ['filing_metadata_json' => json_encode([
+                    'schema_validations' => [
+                        ['operation'=>'accounts','preflight_id'=>null,'validated_at'=>'2026-07-29 10:00:00']
+                            + $file('Egov_ch-v2-0.xsd', str_repeat('a', 64)),
+                        ['operation'=>'accounts','preflight_id'=>null,'validated_at'=>'2026-07-29 10:00:00']
+                            + $file('CompanyData-v3-6.xsd', str_repeat('b', 64)),
+                        ['operation'=>'company_data','preflight_id'=>41,'validated_at'=>'2026-07-29 11:00:00']
+                            + $file('CompanyData-v3-6.xsd', str_repeat('b', 64)),
+                        ['operation'=>'company_data','preflight_id'=>42,'validated_at'=>'2026-07-29 12:00:00']
+                            + $file('CompanyData-v3-6.xsd', str_repeat('c', 64)),
+                    ],
+                ], JSON_THROW_ON_ERROR)];
+
+                $accounts = $invokePrivate(
+                    $service,
+                    'schemaInventoryFromSubmission',
+                    $submission,
+                    'accounts'
+                );
+                $companyData = $invokePrivate(
+                    $service,
+                    'schemaInventoryFromSubmission',
+                    $submission,
+                    'company_data'
+                );
+
+                $harness->assertSame(2, count($accounts['files']));
+                $harness->assertSame(str_repeat('a', 64), $accounts['files'][0]['sha256']);
+                $harness->assertSame(1, count($companyData['files']));
+                $harness->assertSame(str_repeat('c', 64), $companyData['files'][0]['sha256']);
+            }
+        );
+
+        $harness->check(
+            $service::class,
             'applies the configured taxonomy and Gateway date policy before filing',
             static function () use ($harness, $invokePrivate): void {
                 $compatibility = new \eel_accounts\Service\IxbrlTaxonomyCompatibilityService([
@@ -73,6 +115,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame(987, (int)$metadata['base_run_id']);
                 $harness->assertSame(73, (int)$metadata['fact_count']);
                 $harness->assertSame(
+                    \eel_accounts\Service\IxbrlRevisedAccountsArtifactService::PRESENTATION_VERSION,
+                    (string)$metadata['presentation_version']
+                );
+                $harness->assertSame(
                     $validation,
                     (array)$metadata['arelle_validation']
                 );
@@ -107,6 +153,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         'company_id' => 49,
                         'accounting_period_id' => 79,
                         'ixbrl_generation_run_id' => 18,
+                        'filing_type' => 'revised',
+                        'revision_declarations' => [
+                            'original_approval_date' => '2025-05-29',
+                            'revision_approval_date' => '2026-07-21',
+                        ],
+                        'filing_metadata' => [
+                            'presentation_version' =>
+                                \eel_accounts\Service\IxbrlRevisedAccountsArtifactService::PRESENTATION_VERSION,
+                        ],
                         'revised_artifact_path' => $path,
                         'revised_artifact_sha256' => hash_file('sha256', $path),
                         'basis_hash' => str_repeat('b', 64),
@@ -118,6 +173,32 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $harness->assertSame('current', (string)$current['state']);
                     $harness->assertSame(true, (bool)$current['current']);
                     $harness->assertSame(2, (int)$current['fact_count']);
+                    $harness->assertSame(
+                        \eel_accounts\Service\IxbrlRevisedAccountsArtifactService::PRESENTATION_VERSION,
+                        (string)$current['presentation_version']
+                    );
+
+                    $legacyPresentation = $submission;
+                    $legacyPresentation['filing_metadata']['presentation_version'] =
+                        'companies-house-revised-accounts-presentation-v1';
+                    $legacy = $invokePrivate($service, 'preparedArtifactState', $legacyPresentation, [
+                        'ok' => true,
+                        'run_id' => 18,
+                    ]);
+                    $harness->assertSame('stale', (string)$legacy['state']);
+                    $harness->assertSame(false, (bool)$legacy['current']);
+                    $harness->assertTrue(str_contains(
+                        implode(' ', (array)$legacy['errors']),
+                        'earlier presentation profile'
+                    ));
+                    $missingPresentation = $submission;
+                    unset($missingPresentation['filing_metadata']['presentation_version']);
+                    $missing = $invokePrivate($service, 'preparedArtifactState', $missingPresentation, [
+                        'ok' => true,
+                        'run_id' => 18,
+                    ]);
+                    $harness->assertSame('stale', (string)$missing['state']);
+                    $harness->assertSame(false, (bool)$missing['current']);
 
                     $stale = $invokePrivate($service, 'preparedArtifactState', $submission, [
                         'ok' => true,

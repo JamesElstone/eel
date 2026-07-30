@@ -6,8 +6,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 (new GeneratedServiceClassTestHarness())->run(
     \eel_accounts\Service\CompaniesHouseAccountsSchemaValidator::class,
     static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\CompaniesHouseAccountsSchemaValidator $validator): void {
-        $harness->check($validator::class, 'rejects an unverified schema manifest', static function () use ($harness, $validator): void {
-            try { $validator->validateAccountsRequest('<xml/>', 'invalid'); $harness->assertTrue(false); }
+        $harness->check($validator::class, 'rejects an empty schema inventory', static function () use ($harness, $validator): void {
+            try { $validator->validateAccountsRequest('<xml/>', []); $harness->assertTrue(false); }
             catch (InvalidArgumentException) { $harness->assertTrue(true); }
         });
     }

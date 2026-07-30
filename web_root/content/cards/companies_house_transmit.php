@@ -30,15 +30,6 @@ final class _companies_house_transmitCard extends CardBaseFramework
                     'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
-            [
-                'key' => 'companies_house_transmit_history',
-                'service' => \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
-                'method' => 'submissionHistory',
-                'params' => [
-                    'companyId' => ':company.id',
-                    'accountingPeriodId' => ':company.accounting_period_id',
-                ],
-            ],
         ];
     }
 
@@ -62,7 +53,6 @@ final class _companies_house_transmitCard extends CardBaseFramework
         }
 
         $model = (array)(($context['services'] ?? [])['companies_house_transmit_context'] ?? []);
-        $history = (array)(($context['services'] ?? [])['companies_house_transmit_history'] ?? []);
         if ($model === []) {
             return '<div class="notice warning">The Companies House transmission status could not be loaded.</div>';
         }
@@ -74,7 +64,6 @@ final class _companies_house_transmitCard extends CardBaseFramework
         $artifact = (array)($model['prepared_artifact'] ?? []);
         $preflight = is_array($model['preflight'] ?? null) ? (array)$model['preflight'] : null;
         $statusCycle = is_array($model['status_cycle'] ?? null) ? (array)$model['status_cycle'] : null;
-        $exchanges = (array)($model['exchanges'] ?? []);
         $developerOptions = (bool)AppConfigurationStore::get('developer_options', false);
         $lifecycle = strtolower(trim((string)($submission['lifecycle'] ?? 'not_prepared')));
         $html = '<div class="settings-stack">'
@@ -191,15 +180,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
             }
         }
         $html .= '</section>';
-        if ($developerOptions && $submission !== null) {
-            $html .= $this->exchangeTimeline(
-                $companyId,
-                $accountingPeriodId,
-                (int)$submission['id'],
-                $exchanges
-            );
-        }
-        $html .= $this->history($history) . '</div>';
+        $html .= '</div>';
 
         return $html;
     }
@@ -259,8 +240,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
         bool $bindingConfigured,
         string $filingKind
     ): string {
-        $html = '<section class="panel-soft"><h3 class="card-title">Developer step controls</h3>'
-            . '<div class="helper">Each button performs one XML send/receive pair and then pauses.</div>';
+        $html = '<section class="panel-soft"><h3 class="card-title">Companies House protocol controls</h3>';
         if (!$bindingConfigured) {
             return $html . '<div class="notice warning">The preflight binding key could not be prepared for '
                 . \eel_accounts\Support\Utf8::html($mode) . '.</div></section>';
@@ -309,7 +289,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
         ?array $statusCycle
     ): string {
         $state = strtolower((string)($statusCycle['acknowledgement_state'] ?? 'acknowledged'));
-        $html = '<section class="panel-soft"><h3 class="card-title">Developer step controls</h3>';
+        $html = '<section class="panel-soft"><h3 class="card-title">Companies House protocol controls</h3>';
         if ($state === 'required'
             || ($state === 'failed' && trim((string)($statusCycle['result_json'] ?? '')) !== '')) {
             $html .= $this->simpleProtocolForm(
@@ -359,69 +339,6 @@ final class _companies_house_transmitCard extends CardBaseFramework
             . '<button class="button" type="submit">' . \eel_accounts\Support\Utf8::html($label) . '</button></form>';
     }
 
-    private function exchangeTimeline(
-        int $companyId,
-        int $accountingPeriodId,
-        int $submissionId,
-        array $exchanges
-    ): string {
-        $rows = '';
-        foreach ($exchanges as $exchange) {
-            $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)$exchange['operation'])
-                . '</td><td>' . \eel_accounts\Support\Utf8::html((string)$exchange['transaction_id'])
-                . '</td><td>' . \eel_accounts\Support\Utf8::html((string)$exchange['exchange_state'])
-                . '</td><td>' . $this->evidenceButton(
-                    $companyId,
-                    $accountingPeriodId,
-                    $submissionId,
-                    (int)$exchange['id'],
-                    'request',
-                    !empty($exchange['request_path'])
-                )
-                . '</td><td>' . $this->evidenceButton(
-                    $companyId,
-                    $accountingPeriodId,
-                    $submissionId,
-                    (int)$exchange['id'],
-                    'response',
-                    !empty($exchange['response_path'])
-                ) . '</td></tr>';
-        }
-        return '<section class="panel-soft"><h3 class="card-title">Developer XML exchange timeline</h3>'
-            . '<div class="notice warning">Exact outbound XML can contain presenter and company authentication values. '
-            . 'Downloads are private and are not cached.</div>'
-            . ($rows === ''
-                ? '<div class="helper">No XML exchanges have been sent.</div>'
-                : '<div class="table-scroll"><table><thead><tr><th>Operation</th><th>Transaction</th>'
-                    . '<th>State</th><th>Sent XML</th><th>Received XML</th></tr></thead><tbody>'
-                    . $rows . '</tbody></table></div>')
-            . '</section>';
-    }
-
-    private function evidenceButton(
-        int $companyId,
-        int $accountingPeriodId,
-        int $submissionId,
-        int $exchangeId,
-        string $direction,
-        bool $available
-    ): string {
-        if (!$available) {
-            return '—';
-        }
-        $warning = $direction === 'request'
-            ? 'This exact outbound XML may contain authentication values. Download it?'
-            : 'Download the exact received Companies House XML?';
-        return '<form method="post" action="?page=transmit" class="actions-row">'
-            . $this->hidden($companyId, $accountingPeriodId, 'download_protocol_evidence')
-            . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
-            . '<input type="hidden" name="exchange_id" value="' . $exchangeId . '">'
-            . '<input type="hidden" name="direction" value="' . $direction . '">'
-            . '<button class="button button-inline" type="submit" data-chicken-check="true" '
-            . 'data-chicken-message="' . \eel_accounts\Support\Utf8::html($warning) . '" '
-            . 'data-chicken-confirm-text="Download XML">Download</button></form>';
-    }
-
     private function hidden(int $companyId, int $accountingPeriodId, string $intent): string
     {
         return HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
@@ -429,34 +346,6 @@ final class _companies_house_transmitCard extends CardBaseFramework
             . '<input type="hidden" name="intent" value="' . \eel_accounts\Support\Utf8::html($intent) . '">'
             . '<input type="hidden" name="company_id" value="' . $companyId . '">'
             . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">';
-    }
-
-    private function history(array $history): string
-    {
-        $history = array_values(array_filter(
-            $history,
-            static fn(mixed $submission): bool => is_array($submission)
-                && (trim((string)($submission['submission_number'] ?? '')) !== ''
-                    || trim((string)($submission['submitted_at'] ?? '')) !== '')
-        ));
-        if ($history === []) {
-            return '<section class="panel-soft"><h3 class="card-title">Submission History</h3>'
-                . '<div class="helper">No Companies House submission attempts are recorded.</div></section>';
-        }
-        $rows = '';
-        foreach ($history as $submission) {
-            $archive = (array)($submission['transmission_archive'] ?? []);
-            $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)($submission['submission_number'] ?? 'Not sent'))
-                . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($submission['environment'] ?? ''))
-                . '</td><td>' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey((string)($submission['lifecycle'] ?? ''), '_'))
-                . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($submission['submitted_at'] ?? ''))
-                . '</td><td>' . ($archive !== [] ? 'Captured' : '—') . '</td></tr>';
-        }
-
-        return '<section class="panel-soft"><h3 class="card-title">Submission History</h3>'
-            . '<div class="table-scroll"><table><thead><tr><th>Number</th><th>Environment</th>'
-            . '<th>Status</th><th>When</th><th>Evidence</th></tr></thead><tbody>'
-            . $rows . '</tbody></table></div></section>';
     }
 
     private function badge(string $lifecycle): string

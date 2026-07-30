@@ -1209,7 +1209,10 @@ final class YearEndSectionApprovalService
      */
     private function usesJournalCutOffCacheValidation(string $checkCode): bool
     {
-        return $checkCode === 'cut_off_journals_review';
+        return in_array($checkCode, [
+            'cut_off_journals_review',
+            'director_loan_year_end_review',
+        ], true);
     }
 
     private function bundleHashMatchesLive(
@@ -1298,7 +1301,7 @@ final class YearEndSectionApprovalService
         // fetchReview() reads that can otherwise reuse a persisted bundle.
         // Audit and lock-snapshot rows are deliberately excluded: recording
         // history or taking an equivalent snapshot must not stale approval.
-        $termsToken = $this->companyTableToken('participator_loan_party_terms', $companyId);
+        $termsToken = $this->participatorLoanTermsToken($companyId);
         if ($termsToken !== null) {
             $tokens['participator_loan_party_terms'] = $termsToken;
         }
@@ -1524,6 +1527,38 @@ final class YearEndSectionApprovalService
             ['company_id' => $companyId]
         );
         return is_array($row) ? $row : null;
+    }
+
+    /** @return array{basis_hash:string,row_count:int}|null */
+    private function participatorLoanTermsToken(int $companyId): ?array
+    {
+        $table = 'participator_loan_party_terms';
+        if (!\InterfaceDB::tableExists($table)) {
+            return null;
+        }
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT * FROM ' . $table . ' WHERE company_id = :company_id ORDER BY party_id, id',
+            ['company_id' => $companyId]
+        );
+        foreach ($rows as &$row) {
+            foreach ([
+                'id',
+                'company_id',
+                'created_by',
+                'created_at',
+                'updated_by',
+                'updated_at',
+            ] as $metadataKey) {
+                unset($row[$metadataKey]);
+            }
+            ksort($row, SORT_STRING);
+        }
+        unset($row);
+
+        return [
+            'basis_hash' => hash('sha256', $this->canonicalJson($rows)),
+            'row_count' => count($rows),
+        ];
     }
 
     private function companyPeriodTableToken(string $table, int $companyId, int $accountingPeriodId): ?array

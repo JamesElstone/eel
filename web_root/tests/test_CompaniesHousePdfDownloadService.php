@@ -82,12 +82,15 @@ $harness->run(\eel_accounts\Service\CompaniesHousePdfDownloadService::class, fun
     );
 
     try {
-        $harness->check(\eel_accounts\Service\CompaniesHousePdfDownloadService::class, 'downloads filing PDF into the managed Companies House upload directory', function () use ($harness, $service, $baseDirectory, $pdfBody): void {
+        $harness->check(\eel_accounts\Service\CompaniesHousePdfDownloadService::class, 'downloads filing PDF into the managed Companies House PDF directory', function () use ($harness, $service, $baseDirectory, $pdfBody): void {
             $result = $service->downloadForCompany(7, '12344321');
-            $path = $baseDirectory . DIRECTORY_SEPARATOR . '12344321' . DIRECTORY_SEPARATOR . 'companies_house' . DIRECTORY_SEPARATOR . '12344321_newinc_2022-09-05.pdf';
+            $path = $baseDirectory . DIRECTORY_SEPARATOR . '12344321' . DIRECTORY_SEPARATOR
+                . 'companies_house' . DIRECTORY_SEPARATOR . 'pdfs' . DIRECTORY_SEPARATOR
+                . '12344321_newinc_2022-09-05.pdf';
 
             $harness->assertSame(1, (int)($result['downloaded_count'] ?? 0));
             $harness->assertSame(0, (int)($result['failed_count'] ?? 1));
+            $harness->assertSame(dirname($path), (string)($result['directory'] ?? ''));
             $harness->assertTrue(is_file($path));
             $harness->assertSame($pdfBody, (string)file_get_contents($path));
         });

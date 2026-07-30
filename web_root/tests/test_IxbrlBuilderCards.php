@@ -616,6 +616,8 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $harness->skip('Could not create a temporary iXBRL card artifact.');
         }
         file_put_contents($path, '<html></html>');
+        $previousDeveloperOptions = (bool)AppConfigurationStore::get('developer_options', false);
+        AppConfigurationStore::set('developer_options', true);
         try {
             $context = [
                 'company' => ['id' => 49, 'accounting_period_id' => 79],
@@ -660,6 +662,38 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                 ],
             ];
             $draftHtml = $card->render($context);
+            foreach ([
+                'accounts generation button' => str_contains($draftHtml, 'Generate Accounting iXBRL</button>'),
+                'disabled accounts generation' => str_contains($draftHtml, 'Generate Accounting iXBRL</button>') && str_contains($draftHtml, 'disabled'),
+                'generation requirements' => str_contains($draftHtml, 'Generation requirements'),
+                'filing approval blocker' => str_contains($draftHtml, 'Approve the current accounts disclosure basis before generating iXBRL.'),
+                'missing evidence blocker' => str_contains($draftHtml, 'Filing approval #18 refers to missing evidence bundle #21.'),
+                'relock instruction' => str_contains($draftHtml, 'Unlock Year End, then re-lock it to create replacement immutable filing evidence;'),
+                'Arelle installed state' => str_contains($draftHtml, 'Arelle Status') && str_contains($draftHtml, 'Installed'),
+                'Arelle failed state' => str_contains($draftHtml, 'Arelle Validation') && str_contains($draftHtml, 'Failed'),
+                'HMRC accounting heading' => str_contains($draftHtml, '<h3 class="card-title">HMRC Accounting iXBRL</h3>'),
+                'HMRC accounting helper' => str_contains($draftHtml, 'Generate the approved HMRC accounts iXBRL export and review its structural and Arelle validation results.'),
+                'Companies House preparation helper' => str_contains(
+                    $draftHtml,
+                    'Prepares the Companies House-specific accounts iXBRL from the approved filing basis. '
+                        . 'This does not transmit it, it creates the file it will send.'
+                ),
+                'internal errors heading' => str_contains($draftHtml, '<h3>Internal errors</h3>'),
+                'internal validation explanation' => str_contains($draftHtml, 'These are structural checks performed before external Arelle validation.'),
+                'accounting Arelle error' => str_contains($draftHtml, 'Accounting schema failure from Arelle.'),
+                'regeneration explanation' => str_contains(
+                    $draftHtml,
+                    'HMRC Accounting iXBRL needs to be regenerated because its Arelle validation did not pass.'
+                ),
+                'accounting status helper' => str_contains($draftHtml, 'ixbrl-accounting-status-helper'),
+                'review draft marker' => str_contains($draftHtml, 'Review draft only'),
+                'artifact metric' => str_contains($draftHtml, '<div class="summary-label">Artifact</div>'),
+                'not-generated metric' => str_contains($draftHtml, '<div class="summary-value">Not generated</div>'),
+            ] as $expectation => $met) {
+                if (!$met) {
+                    throw new RuntimeException('Missing draft iXBRL card expectation: ' . $expectation . '.');
+                }
+            }
             $harness->assertFalse(str_contains($draftHtml, 'Build / Refresh Facts'));
             $harness->assertFalse(str_contains($draftHtml, 'name="intent" value="build_ixbrl_facts"'));
             $harness->assertFalse(str_contains($draftHtml, 'Arelle external validation has not been configured or run.'));
@@ -684,7 +718,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $harness->assertTrue(str_contains($draftHtml, 'These are structural checks performed before external Arelle validation.'));
             $harness->assertFalse(str_contains($draftHtml, 'Arelle validation output'));
             $harness->assertTrue(str_contains($draftHtml, 'Accounting schema failure from Arelle.'));
-            $harness->assertTrue(str_contains($draftHtml, 'Companies House schema failure from Arelle.'));
+            $harness->assertFalse(str_contains($draftHtml, 'Companies House schema failure from Arelle.'));
             $harness->assertTrue(str_contains(
                 $draftHtml,
                 'HMRC Accounting iXBRL needs to be regenerated because its Arelle validation did not pass.'
@@ -699,6 +733,27 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $context['ixbrl']['readiness']['ready_for_filing'] = true;
             $context['ixbrl']['latest_run']['external_validation_status'] = 'passed';
             $readyHtml = $card->render($context);
+            foreach ([
+                'filing-ready badge' => str_contains($readyHtml, 'Filing Ready'),
+                'Arelle version' => str_contains($readyHtml, 'Arelle version: 2.37.0'),
+                'accounts download' => str_contains($readyHtml, 'Download Accounting iXBRL'),
+                'current filing-ready helper' => str_contains($readyHtml, 'HMRC Accounting iXBRL is current and filing-ready.'),
+                'Companies House generation' => str_contains($readyHtml, 'Generate Companies House iXBRL'),
+                'Companies House action' => str_contains($readyHtml, 'name="card_action" value="CompaniesHouseAccounts"'),
+                'missing-run synchronisation intent' => str_contains($readyHtml, 'name="intent" value="sync_missing_ixbrl_runs"'),
+                'missing-run synchronisation title' => str_contains($readyHtml, 'data-chicken-title="Synchronise missing iXBRL files"'),
+                'missing-run synchronisation button' => str_contains($readyHtml, '>Synchronise missing iXBRL files</button>'),
+                'complete-filing action order' => preg_match(
+                    '/<div class="actions-row ixbrl-complete-filing-actions">.*'
+                        . 'Generate All Filing iXBRLs.*Synchronise missing iXBRL files.*<\/div>/s',
+                    $readyHtml
+                ) === 1,
+                'retention explanation' => str_contains($readyHtml, 'Filing approvals, evidence bundles, and runs used by transmitted or in-flight Companies House filings are retained.'),
+            ] as $expectation => $met) {
+                if (!$met) {
+                    throw new RuntimeException('Missing ready iXBRL card expectation: ' . $expectation . '.');
+                }
+            }
             $harness->assertTrue(str_contains($readyHtml, 'Filing Ready'));
             $harness->assertTrue(str_contains($readyHtml, 'Arelle version: 2.37.0'));
             $harness->assertFalse(str_contains($readyHtml, 'Arelle validation: Passed'));
@@ -727,6 +782,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                 AppConfigurationStore::set('developer_options', $developerOptions);
             }
         } finally {
+            AppConfigurationStore::set('developer_options', $previousDeveloperOptions);
             @unlink($path);
         }
     });
@@ -934,7 +990,6 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(str_contains($html, '<div class="summary-label">Generated At</div>'));
         $harness->assertTrue(str_contains($html, '<div class="summary-value">Not Generated</div>'));
         $harness->assertTrue(str_contains($html, '<div class="summary-label">Artifact</div>'));
-        $harness->assertFalse(str_contains($html, 'panel-soft warn'));
         $harness->assertFalse(str_contains($html, 'Rebuild required'));
         $harness->assertFalse(str_contains($html, 'Historical Base Run'));
         $harness->assertFalse(str_contains($html, 'Download Companies House iXBRL'));

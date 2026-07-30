@@ -22,10 +22,11 @@ final class CompaniesHouseSchemaArtifactsAction implements ActionInterfaceFramew
         try {
             $result = $this->refresh instanceof Closure
                 ? ($this->refresh)($services->actionProgress())
-                : (new \eel_accounts\Service\CompaniesHouseAccountsSchemaService())->ensureCurrent($services->actionProgress());
+                : (new \eel_accounts\Service\CompaniesHouseAccountsSchemaService())
+                    ->refreshInstalledSchemas($services->actionProgress());
             $message = !empty($result['changed'])
-                ? 'A new Companies House accounts schema snapshot was downloaded, verified and activated.'
-                : 'The Companies House accounts schema snapshot is current and verified.';
+                ? 'The Companies House filing schemas were downloaded, verified and installed.'
+                : 'The Companies House filing schemas are current and verified.';
             return $this->result(true, $message);
         } catch (Throwable $exception) {
             return $this->result(false, 'Companies House schema refresh failed: ' . $exception->getMessage());

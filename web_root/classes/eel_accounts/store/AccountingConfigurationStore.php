@@ -130,6 +130,25 @@ final class AccountingConfigurationStore
         return $uploads;
     }
 
+    public static function temporaryDirectory(): string
+    {
+        $uploads = self::uploads();
+        $baseDirectory = rtrim(
+            trim((string)($uploads['upload_base_dir'] ?? '')),
+            '/\\'
+        );
+        if ($baseDirectory === '') {
+            throw new \RuntimeException(
+                'Configure uploads.upload_base_dir before using temporary application storage.'
+            );
+        }
+        if (self::isConfiguredTestUploadPath($baseDirectory)) {
+            return $baseDirectory;
+        }
+
+        return $baseDirectory . DIRECTORY_SEPARATOR . 'tmp';
+    }
+
     public static function hmrcConfig(string $service): array
     {
         $config = \AppConfigurationStore::get('hmrc.' . trim($service), []);

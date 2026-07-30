@@ -34,6 +34,14 @@ final class DatabaseMigrationService
         if ($exitCode !== 0) {
             throw new \RuntimeException('Outstanding database migrations failed: ' . ($output !== '' ? $output : 'exit code ' . $exitCode));
         }
+        $migratedArchives = (new TransmissionArchiveService())
+            ->migrateAllCompaniesHousePreflightBundles();
+        if ($migratedArchives > 0) {
+            $progress?->__invoke(
+                'Migrated ' . $migratedArchives . ' Companies House transmission archive bundle(s).',
+                100
+            );
+        }
         return ['success' => true, 'exit_code' => $exitCode, 'output' => $output];
     }
 }

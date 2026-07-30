@@ -5,11 +5,11 @@ namespace eel_accounts\Service;
 
 final class CompaniesHouseAccountsSchemaValidator
 {
-    public function validateAccountsRequest(string $xml, string $manifestSha256): array
+    public function validateAccountsRequest(string $xml, array $schemaInventory): array
     {
         return $this->validateOperationRequest(
             $xml,
-            $manifestSha256,
+            $schemaInventory,
             'FormSubmission-v2-11.xsd',
             'FormSubmission',
             'http://xmlgw.companieshouse.gov.uk/Header'
@@ -18,26 +18,12 @@ final class CompaniesHouseAccountsSchemaValidator
 
     public function validateOperationRequest(
         string $xml,
-        string $manifestSha256,
+        array $schemaInventory,
         string $schemaName,
         string $elementName,
         string $namespace
     ): array {
-        if (!preg_match('/^[a-f0-9]{64}$/', strtolower($manifestSha256))) {
-            throw new \InvalidArgumentException('A verified Companies House schema manifest is required.');
-        }
-        $snapshot = \InterfaceDB::fetchOne(
-            'SELECT * FROM companies_house_schema_snapshots WHERE manifest_sha256 = :manifest AND profile_name = :profile AND is_active = 1 LIMIT 1',
-            ['manifest' => strtolower($manifestSha256), 'profile' => CompaniesHouseAccountsSchemaService::PROFILE_NAME]
-        );
-        if (!is_array($snapshot)) {
-            throw new \RuntimeException('The selected Companies House schema snapshot is not active.');
-        }
-        $files = \InterfaceDB::fetchAll('SELECT * FROM companies_house_schema_files WHERE snapshot_id = :id', ['id'=>(int)$snapshot['id']]);
-        if ($files === []) {
-            throw new \RuntimeException('The Companies House schema snapshot has no verified files.');
-        }
-        $root = rtrim((string)$snapshot['local_path'], '/\\');
+        [$root, $files] = $this->verifiedFiles($schemaInventory);
         $envelope = null;
         $operationSchema = null;
         foreach ($files as $file) {
@@ -65,30 +51,12 @@ final class CompaniesHouseAccountsSchemaValidator
         $subtree = new \DOMDocument('1.0', 'UTF-8');
         $subtree->appendChild($subtree->importNode($element, true));
         $this->schemaValidate($subtree, $operationSchema, $elementName);
-        return ['success'=>true,'snapshot_id'=>(int)$snapshot['id'],'manifest_sha256'=>(string)$snapshot['manifest_sha256']];
+        return ['success'=>true,'files'=>$schemaInventory['files'] ?? $schemaInventory];
     }
 
-    public function validateEnvelopeResponse(string $xml, string $manifestSha256): array
+    public function validateEnvelopeResponse(string $xml, array $schemaInventory): array
     {
-        if (!preg_match('/^[a-f0-9]{64}$/', strtolower($manifestSha256))) {
-            throw new \InvalidArgumentException('A verified Companies House schema manifest is required.');
-        }
-        $snapshot = \InterfaceDB::fetchOne(
-            'SELECT * FROM companies_house_schema_snapshots
-             WHERE manifest_sha256 = :manifest AND profile_name = :profile AND is_active = 1 LIMIT 1',
-            [
-                'manifest' => strtolower($manifestSha256),
-                'profile' => CompaniesHouseAccountsSchemaService::PROFILE_NAME,
-            ]
-        );
-        if (!is_array($snapshot)) {
-            throw new \RuntimeException('The selected Companies House schema snapshot is not active.');
-        }
-        $root = rtrim((string)$snapshot['local_path'], '/\\');
-        $files = \InterfaceDB::fetchAll(
-            'SELECT * FROM companies_house_schema_files WHERE snapshot_id = :id',
-            ['id' => (int)$snapshot['id']]
-        );
+        [$root, $files] = $this->verifiedFiles($schemaInventory);
         $envelope = null;
         foreach ($files as $file) {
             $path = $root . '/' . ltrim(str_replace('\\', '/', (string)$file['relative_path']), '/');
@@ -111,9 +79,42 @@ final class CompaniesHouseAccountsSchemaValidator
         $this->schemaValidate($this->loadXml($xml), $envelope, 'GovTalk response envelope');
         return [
             'success' => true,
-            'snapshot_id' => (int)$snapshot['id'],
-            'manifest_sha256' => (string)$snapshot['manifest_sha256'],
+            'files' => $schemaInventory['files'] ?? $schemaInventory,
         ];
+    }
+
+    private function verifiedFiles(array $schemaInventory): array
+    {
+        $evidenceFiles = array_is_list($schemaInventory)
+            ? $schemaInventory
+            : (array)($schemaInventory['files'] ?? []);
+        if ($evidenceFiles === []) {
+            throw new \InvalidArgumentException('A verified Companies House schema file inventory is required.');
+        }
+        $root = rtrim(
+            (string)($schemaInventory['root_path']
+                ?? dirname(__DIR__, 4) . '/third_party/companies_house/assets'),
+            '/\\'
+        );
+        $files = [];
+        foreach ($evidenceFiles as $evidence) {
+            $url = trim((string)($evidence['source_url'] ?? ''));
+            $relativePath = ltrim(str_replace('\\', '/', (string)($evidence['relative_path'] ?? '')), '/');
+            $expectedHash = strtolower(trim((string)($evidence['sha256'] ?? '')));
+            if ($url === '' || $relativePath === '' || preg_match('/^[a-f0-9]{64}$/D', $expectedHash) !== 1) {
+                throw new \RuntimeException('Companies House schema validation evidence is incomplete.');
+            }
+            $stored = \InterfaceDB::fetchOne(
+                'SELECT * FROM companies_house_schema_files
+                 WHERE source_url = :url AND relative_path = :path AND sha256 = :sha LIMIT 1',
+                ['url' => $url, 'path' => $relativePath, 'sha' => $expectedHash]
+            );
+            if (!is_array($stored)) {
+                throw new \RuntimeException('A recorded Companies House schema file is no longer installed.');
+            }
+            $files[] = $stored;
+        }
+        return [$root, $files];
     }
 
     private function loadXml(string $xml): \DOMDocument

@@ -533,6 +533,7 @@ function yearEndLockPartyLoanWithFixture(
         $harness->skip('The automated prepayment schedule schema is not available.');
     }
 
+    \eel_accounts\Support\RequestCache::clear();
     InterfaceDB::beginTransaction();
     try {
         $marker = substr(hash('sha256', __FILE__ . microtime(true) . random_int(1, PHP_INT_MAX)), 0, 12);
@@ -648,6 +649,7 @@ function yearEndLockPartyLoanWithFixture(
         if (InterfaceDB::inTransaction()) {
             InterfaceDB::rollBack();
         }
+        \eel_accounts\Support\RequestCache::clear();
     }
 }
 
@@ -800,6 +802,12 @@ function yearEndLockPartyLoanApprove(
         true,
         'lifecycle-test'
     );
+    if (empty($approval['success'])) {
+        throw new RuntimeException(
+            'Director-loan lifecycle approval failed: '
+            . implode(' ', array_map('strval', (array)($approval['errors'] ?? [])))
+        );
+    }
     $harness->assertSame(true, (bool)($approval['success'] ?? false));
 }
 

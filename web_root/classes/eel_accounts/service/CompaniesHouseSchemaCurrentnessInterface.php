@@ -12,5 +12,8 @@ namespace eel_accounts\Service;
 interface CompaniesHouseSchemaCurrentnessInterface
 {
     /** @return array<string, mixed> */
-    public function ensureCurrent(mixed $progress = null): array;
+    public function refreshInstalledSchemas(mixed $progress = null): array;
+
+    /** @return array<string, mixed> */
+    public function installedSchemas(): array;
 }

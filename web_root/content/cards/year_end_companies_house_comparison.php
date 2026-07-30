@@ -444,9 +444,8 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             . $this->metric('Gateway status', (string)($submission['gateway_status'] ?? $submission['raw_gateway_status'] ?? $submission['raw_status'] ?? $submission['lifecycle'] ?? $submission['status'] ?? ''))
             . $this->metric('Submitted at', (string)($submission['submitted_at'] ?? ''))
             . $this->metric('Last checked', (string)($submission['last_polled_at'] ?? $submission['status_checked_at'] ?? ''))
-            . (!empty($submission['schema_manifest_sha256'])
-                ? $this->metric('Schema manifest SHA-256', (string)$submission['schema_manifest_sha256'])
-                    . $this->metric('Schema validated at', (string)($submission['schema_validated_at'] ?? ''))
+            . (!empty($submission['schema_validated_at'])
+                ? $this->metric('Schema validated at', (string)$submission['schema_validated_at'])
                 : '')
             . '</div>';
     }

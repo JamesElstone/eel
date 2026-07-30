@@ -12,8 +12,15 @@ namespace eel_accounts\Service;
 /** Creates a complete revised-report copy without mutating the ordinary accounts artifact. */
 final class IxbrlRevisedAccountsArtifactService
 {
+    public const PRESENTATION_VERSION = 'companies-house-revised-accounts-presentation-v2';
+
     private const XHTML_NS = 'http://www.w3.org/1999/xhtml';
     private const IX_NS = 'http://www.xbrl.org/2013/inlineXBRL';
+    private const HEADER_FACTS = [
+        'bus:EntityCurrentLegalOrRegisteredName',
+        'bus:UKCompaniesHouseRegisteredNumber',
+        'bus:EndDateForPeriodCoveredByReport',
+    ];
     private const REVISION_FACTS = [
         'ReportAnAmendedRevisedVersionPreviouslyFiledReportTruefalse',
         'StatementThatRevisedReportReplacesPreviouslyFiledReportForPeriod',
@@ -93,6 +100,7 @@ final class IxbrlRevisedAccountsArtifactService
             'declarations' => $declarations,
             'superseded_facts' => $supersededFacts,
             'taxonomy_profile' => IxbrlTaxonomyProfileService::PROFILE,
+            'presentation_version' => self::PRESENTATION_VERSION,
         ];
         $basisHash = hash('sha256', $this->canonicalJson($basis));
 
@@ -210,6 +218,7 @@ final class IxbrlRevisedAccountsArtifactService
             'declarations' => $declarations,
             'validation' => $validation,
             'evidence_artifact_id' => $evidenceArtifactId,
+            'presentation_version' => self::PRESENTATION_VERSION,
         ];
     }
 
@@ -316,13 +325,16 @@ final class IxbrlRevisedAccountsArtifactService
         if ($headTitle instanceof \DOMElement) {
             $headTitle->textContent = 'Revised micro-entity accounts';
         }
-        foreach ($xpath->query('//xhtml:h2 | //xhtml:div[contains(@class, "page-header-title")]') ?: [] as $heading) {
+        foreach ($xpath->query(
+            '//xhtml:h2'
+            . ' | //xhtml:td[contains(concat(" ", normalize-space(@class), " "), " page-header-title ")]'
+        ) ?: [] as $heading) {
             if ($heading instanceof \DOMElement
                 && str_contains($heading->textContent, 'Notes to the Micro-entity Accounts')) {
-                $heading->textContent = str_replace(
+                $this->replaceVisibleText(
+                    $heading,
                     'Notes to the Micro-entity Accounts',
-                    'Notes to the Revised Micro-entity Accounts',
-                    $heading->textContent
+                    'Notes to the Revised Micro-entity Accounts'
                 );
             }
         }
@@ -351,7 +363,10 @@ final class IxbrlRevisedAccountsArtifactService
         $section = $document->createElementNS(self::XHTML_NS, 'div');
         $section->setAttribute('id', 'revised-accounts-statements');
         $section->setAttribute('class', 'accountspage pagebreak revision-page');
-        $this->appendRevisionPageHeader($document, $section, $xpath);
+        $headerError = $this->appendRevisionPageHeader($document, $section, $xpath);
+        if ($headerError !== '') {
+            return ['success' => false, 'errors' => [$headerError], 'warnings' => []];
+        }
         $heading = $document->createElementNS(self::XHTML_NS, 'h2');
         $heading->appendChild($document->createTextNode('REVISED ACCOUNTS'));
         $section->appendChild($heading);
@@ -394,6 +409,7 @@ final class IxbrlRevisedAccountsArtifactService
             return ['success' => false, 'errors' => ['The revised XHTML is not well-formed XML.'], 'warnings' => []];
         }
         $checkXpath = new \DOMXPath($check);
+        $checkXpath->registerNamespace('xhtml', self::XHTML_NS);
         $checkXpath->registerNamespace('ix', self::IX_NS);
         $checkXpath->registerNamespace('xbrli', 'http://www.xbrl.org/2003/instance');
         $checkXpath->registerNamespace('xbrldi', 'http://xbrl.org/2006/xbrldi');
@@ -414,6 +430,14 @@ final class IxbrlRevisedAccountsArtifactService
         if (($checkXpath->query('//text()[normalize-space(.)="true" and not(ancestor::ix:hidden)]')->length ?? 0) > 0
             || str_contains($xhtml, 'EEL filing evidence artifact:')) {
             return ['success' => false, 'errors' => ['Internal values are visible in the revised statutory accounts.'], 'warnings' => []];
+        }
+        $idError = $this->duplicateIdError($checkXpath);
+        if ($idError !== '') {
+            return ['success' => false, 'errors' => [$idError], 'warnings' => []];
+        }
+        $headerError = $this->repeatedHeaderFactError($checkXpath);
+        if ($headerError !== '') {
+            return ['success' => false, 'errors' => [$headerError], 'warnings' => []];
         }
 
         return [
@@ -609,30 +633,231 @@ final class IxbrlRevisedAccountsArtifactService
         $hidden->appendChild($fact);
     }
 
+    /** Returns an error string, or an empty string on success. */
     private function appendRevisionPageHeader(
         \DOMDocument $document,
         \DOMElement $section,
         \DOMXPath $xpath
-    ): void {
-        $companyName = trim((string)$xpath->query(
-            '//*[@name="bus:EntityCurrentLegalOrRegisteredName"]'
-        )->item(0)?->textContent);
-        $companyNumber = trim((string)$xpath->query(
-            '//*[@name="bus:UKCompaniesHouseRegisteredNumber"]'
-        )->item(0)?->textContent);
-        $header = $document->createElementNS(self::XHTML_NS, 'div');
-        $header->setAttribute('class', 'page-header');
-        foreach ([
-            ['page-header-name', $companyName],
-            ['page-header-number', 'Registered number ' . $companyNumber],
-            ['page-header-title', 'REVISED ACCOUNTS'],
-        ] as [$class, $value]) {
-            $item = $document->createElementNS(self::XHTML_NS, 'div');
-            $item->setAttribute('class', $class);
-            $item->appendChild($document->createTextNode(\eel_accounts\Support\Utf8::normalize($value)));
-            $header->appendChild($item);
+    ): string {
+        $source = $xpath->query(
+            '//xhtml:table[contains(concat(" ", normalize-space(@class), " "), " page-header ")]'
+        )->item(0);
+        if (!$source instanceof \DOMElement) {
+            return 'The ordinary accounts artifact has no canonical tagged page header.';
+        }
+        foreach (self::HEADER_FACTS as $concept) {
+            if (($xpath->query('.//ix:nonNumeric[@name="' . $concept . '"]', $source)->length ?? 0) !== 1) {
+                return 'The ordinary page header is missing or duplicates required fact ' . $concept . '.';
+            }
+        }
+
+        $header = $source->cloneNode(true);
+        if (!$header instanceof \DOMElement) {
+            return 'The revision-page header could not be created.';
+        }
+        $this->reallocateClonedIds($document, $header);
+        $title = $xpath->query(
+            './/xhtml:td[contains(concat(" ", normalize-space(@class), " "), " page-header-title ")]',
+            $header
+        )->item(0);
+        if (!$title instanceof \DOMElement || !$this->replaceHeaderTitle($title, 'REVISED ACCOUNTS')) {
+            return 'The canonical page-header title could not be adapted for the revision page.';
         }
         $section->appendChild($header);
+
+        return '';
+    }
+
+    private function replaceVisibleText(\DOMElement $element, string $search, string $replacement): bool
+    {
+        $changed = false;
+        foreach (iterator_to_array($element->childNodes) as $child) {
+            if ($child instanceof \DOMText && str_contains($child->nodeValue ?? '', $search)) {
+                $child->nodeValue = str_replace($search, $replacement, $child->nodeValue ?? '');
+                $changed = true;
+                continue;
+            }
+            if ($child instanceof \DOMElement
+                && $child->namespaceURI !== self::IX_NS
+                && $this->replaceVisibleText($child, $search, $replacement)) {
+                $changed = true;
+            }
+        }
+
+        return $changed;
+    }
+
+    private function replaceHeaderTitle(\DOMElement $title, string $replacement): bool
+    {
+        $marker = '· For the period ended';
+        foreach (iterator_to_array($title->childNodes) as $child) {
+            if (!$child instanceof \DOMText) {
+                continue;
+            }
+            $value = $child->nodeValue ?? '';
+            $position = mb_strpos($value, $marker);
+            if ($position === false) {
+                continue;
+            }
+            $child->nodeValue = $replacement . ' ' . mb_substr($value, $position);
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private function reallocateClonedIds(\DOMDocument $document, \DOMElement $clone): void
+    {
+        $used = [];
+        foreach ($document->getElementsByTagName('*') as $element) {
+            if (!$element instanceof \DOMElement) {
+                continue;
+            }
+            foreach ([
+                $element->getAttribute('id'),
+                $element->getAttributeNS('http://www.w3.org/XML/1998/namespace', 'id'),
+            ] as $id) {
+                if ($id !== '') {
+                    $used[$id] = true;
+                }
+            }
+        }
+
+        $idMap = [];
+        $elements = [$clone];
+        foreach ($clone->getElementsByTagName('*') as $element) {
+            if ($element instanceof \DOMElement) {
+                $elements[] = $element;
+            }
+        }
+        foreach ($elements as $element) {
+            foreach ([
+                ['namespace' => null, 'qualified_name' => 'id', 'local_name' => 'id'],
+                [
+                    'namespace' => 'http://www.w3.org/XML/1998/namespace',
+                    'qualified_name' => 'xml:id',
+                    'local_name' => 'id',
+                ],
+            ] as $attribute) {
+                $old = $attribute['namespace'] === null
+                    ? $element->getAttribute($attribute['local_name'])
+                    : $element->getAttributeNS($attribute['namespace'], $attribute['local_name']);
+                if ($old === '') {
+                    continue;
+                }
+                $base = preg_replace('/[^A-Za-z0-9_.-]+/', '-', $old . '-revision');
+                $base = is_string($base) && preg_match('/^[A-Za-z_]/', $base) === 1
+                    ? $base
+                    : 'revision-' . ltrim((string)$base, '-');
+                $candidate = $base;
+                $suffix = 2;
+                while (isset($used[$candidate])) {
+                    $candidate = $base . '-' . $suffix++;
+                }
+                if ($attribute['namespace'] === null) {
+                    $element->setAttribute($attribute['qualified_name'], $candidate);
+                } else {
+                    $element->setAttributeNS(
+                        $attribute['namespace'],
+                        $attribute['qualified_name'],
+                        $candidate
+                    );
+                }
+                $used[$candidate] = true;
+                $idMap[$old] = $candidate;
+            }
+        }
+
+        if ($idMap === []) {
+            return;
+        }
+        foreach ($elements as $element) {
+            foreach (['continuedAt', 'footnoteRefs', 'aria-labelledby', 'aria-describedby', 'headers', 'for'] as $name) {
+                if (!$element->hasAttribute($name)) {
+                    continue;
+                }
+                $tokens = preg_split('/\s+/', trim($element->getAttribute($name))) ?: [];
+                $element->setAttribute(
+                    $name,
+                    implode(' ', array_map(
+                        static fn(string $token): string => $idMap[$token] ?? $token,
+                        $tokens
+                    ))
+                );
+            }
+            foreach (['href', 'xlink:href'] as $name) {
+                if (!$element->hasAttribute($name)) {
+                    continue;
+                }
+                $reference = $element->getAttribute($name);
+                if (str_starts_with($reference, '#') && isset($idMap[substr($reference, 1)])) {
+                    $element->setAttribute($name, '#' . $idMap[substr($reference, 1)]);
+                }
+            }
+        }
+    }
+
+    private function duplicateIdError(\DOMXPath $xpath): string
+    {
+        $ids = [];
+        foreach ($xpath->query('//*[@id or @xml:id]') ?: [] as $element) {
+            if (!$element instanceof \DOMElement) {
+                continue;
+            }
+            foreach ([
+                $element->getAttribute('id'),
+                $element->getAttributeNS('http://www.w3.org/XML/1998/namespace', 'id'),
+            ] as $id) {
+                if ($id === '') {
+                    continue;
+                }
+                if (isset($ids[$id])) {
+                    return 'The revised artifact contains a duplicate XML ID: ' . $id . '.';
+                }
+                $ids[$id] = true;
+            }
+        }
+
+        return '';
+    }
+
+    private function repeatedHeaderFactError(\DOMXPath $xpath): string
+    {
+        $headers = $xpath->query(
+            '//xhtml:table[contains(concat(" ", normalize-space(@class), " "), " page-header ")]'
+        );
+        if (($headers?->length ?? 0) < 2) {
+            return 'The revised artifact does not contain canonical ordinary and revision page headers.';
+        }
+        $expected = [];
+        foreach ($headers ?: [] as $header) {
+            if (!$header instanceof \DOMElement) {
+                continue;
+            }
+            foreach (self::HEADER_FACTS as $concept) {
+                $facts = $xpath->query('.//ix:nonNumeric[@name="' . $concept . '"]', $header);
+                if (($facts?->length ?? 0) !== 1) {
+                    return 'A page header is missing or duplicates required fact ' . $concept . '.';
+                }
+                $fact = $facts->item(0);
+                if (!$fact instanceof \DOMElement) {
+                    return 'A page-header fact could not be inspected: ' . $concept . '.';
+                }
+                $signature = [
+                    'contextRef' => $fact->getAttribute('contextRef'),
+                    'format' => $fact->getAttribute('format'),
+                    'escape' => $fact->getAttribute('escape'),
+                    'value' => trim(preg_replace('/\s+/', ' ', $fact->textContent) ?? ''),
+                ];
+                if (isset($expected[$concept]) && $expected[$concept] !== $signature) {
+                    return 'Repeated page-header facts conflict for ' . $concept . '.';
+                }
+                $expected[$concept] = $signature;
+            }
+        }
+
+        return '';
     }
 
     private function appendFactParagraph(

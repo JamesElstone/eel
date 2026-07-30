@@ -13,7 +13,8 @@ namespace eel_accounts\Service;
  */
 final class HmrcCtComputationReportProfile
 {
-    public const VERSION = 'hmrc-ct-computations-format-1.1/loss-and-allowance-tagging-v2';
+    public const TAGGING_VERSION = 'hmrc-ct-computations-format-1.1/loss-and-allowance-tagging-v2';
+    private const MATERIAL_ZERO_TOLERANCE = 0.005;
 
     /**
      * Visible support rows intentionally left as text or display-only values.
@@ -48,7 +49,7 @@ final class HmrcCtComputationReportProfile
 
     /**
      * @param list<array<string,mixed>> $mappings
-     * @return array{mappings:list<array<string,mixed>>,accounts_adjustment_rows:list<array<string,mixed>>,main_pool_rows:list<array<string,mixed>>,loss_schedule_rows:list<array<string,mixed>>,untagged_row_allowlist:array<string,array{taxonomy_version:string,reason:string}>,format_version:string}
+     * @return array{mappings:list<array<string,mixed>>,accounts_adjustment_rows:list<array<string,mixed>>,main_pool_rows:list<array<string,mixed>>,loss_schedule_rows:list<array<string,mixed>>,untagged_row_allowlist:array<string,array{taxonomy_version:string,reason:string}>,tagging_version:string}
      */
     public function apply(array $filing, array $mappings): array
     {
@@ -134,6 +135,14 @@ final class HmrcCtComputationReportProfile
                 $mapping['source_value'] = $wholeSourceValues[$key];
                 $mapping['context_role'] = 'statutory_accounts_period';
             }
+            if ($key === 'computation.summary.disposal_profit_or_loss_adjustment') {
+                if (!is_numeric($mapping['source_value'] ?? null)) {
+                    throw new \RuntimeException('The frozen disposal adjustment is not numeric.');
+                }
+                $mapping['presentation_semantic'] = $this->disposalPresentationSemantic(
+                    (float)$mapping['source_value']
+                );
+            }
             $outputMappings[] = $mapping;
         }
 
@@ -197,12 +206,12 @@ final class HmrcCtComputationReportProfile
         $sourceRole = $timeApportioned ? 'statutory_accounts_period' : 'ct_period';
         $sourceReference = $timeApportioned ? 'whole_period_' : 'frozen_ct_period_';
         $rows = [
-            $this->row('accounts_profit_loss', 'computation.summary.accounting_profit', $timeApportioned ? 'Profit/(loss) before tax per statutory accounts' : 'Profit or loss per accounts', 'normal', $sourceRole, $sourceReference . 'profit_before_tax'),
-            $this->row('accounting_disallowable_expenses', 'computation.summary.disallowable_add_backs', $timeApportioned ? 'Accounting adjustment for disallowable expenses' : 'Disallowable expenses added back', 'normal', $sourceRole, $sourceReference . 'disallowable_add_backs'),
-            $this->row('accounting_capital_expenditure', 'computation.summary.capital_expenditure_add_backs', $timeApportioned ? 'Accounting adjustment for capital expenditure' : 'Capital expenditure added back', 'normal', $sourceRole, $sourceReference . 'capital_expenditure_add_backs'),
-            $this->row('accounting_disposal_profit_or_loss', 'computation.summary.disposal_profit_or_loss_adjustment', 'Loss or profit on disposal of fixed assets', 'normal', $sourceRole, $sourceReference . 'disposal_profit_or_loss_adjustment'),
-            $this->row('accounting_depreciation', 'computation.summary.depreciation_add_back', $timeApportioned ? 'Accounting adjustment for depreciation' : 'Depreciation added back', 'normal', $sourceRole, $sourceReference . 'depreciation_add_back'),
-            $this->row('revised_figure_before_tax', 'report.accounts_adjustment.revised_figure_before_tax', $timeApportioned ? 'Revised figure before tax' : 'Adjusted profit or loss before capital allowances', 'normal', $sourceRole, $sourceReference . 'adjusted_result_before_capital_allowances', 'subtotal'),
+            $this->row('accounts_profit_loss', 'computation.summary.accounting_profit', null, 'normal', $sourceRole, $sourceReference . 'profit_before_tax'),
+            $this->row('accounting_disallowable_expenses', 'computation.summary.disallowable_add_backs', null, 'normal', $sourceRole, $sourceReference . 'disallowable_add_backs'),
+            $this->row('accounting_capital_expenditure', 'computation.summary.capital_expenditure_add_backs', null, 'normal', $sourceRole, $sourceReference . 'capital_expenditure_add_backs'),
+            $this->row('accounting_disposal_profit_or_loss', 'computation.summary.disposal_profit_or_loss_adjustment', null, 'normal', $sourceRole, $sourceReference . 'disposal_profit_or_loss_adjustment'),
+            $this->row('accounting_depreciation', 'computation.summary.depreciation_add_back', null, 'normal', $sourceRole, $sourceReference . 'depreciation_add_back'),
+            $this->row('revised_figure_before_tax', 'report.accounts_adjustment.revised_figure_before_tax', null, 'normal', $sourceRole, $sourceReference . 'adjusted_result_before_capital_allowances', 'subtotal'),
         ];
         if ($timeApportioned) {
             $rows[] = [
@@ -217,11 +226,20 @@ final class HmrcCtComputationReportProfile
                 'source_calculation_reference' => 'whole_period_adjusted_result_time_apportionment',
             ];
         }
-        $rows[] = $this->row('capital_allowances', 'computation.summary.capital_allowances', 'Capital allowances', 'deduction', 'ct_period', 'frozen_ct_period_capital_allowances');
+        $rows[] = $this->row('capital_allowances', 'computation.summary.capital_allowances', null, 'deduction', 'ct_period', 'frozen_ct_period_capital_allowances');
         if ($finalResult < -0.004) {
-            $rows[] = $this->row('adjusted_loss_of_period', 'report.accounts_adjustment.adjusted_loss_of_period', $timeApportioned ? 'Adjusted loss of period' : 'Trading profit or loss for the period', 'normal', 'ct_period', 'frozen_ct_period_adjusted_loss', 'final-total');
+            $rows[] = $this->row(
+                'adjusted_loss_of_period',
+                'report.accounts_adjustment.adjusted_loss_of_period',
+                null,
+                'normal',
+                'ct_period',
+                'frozen_ct_period_adjusted_loss',
+                'final-total',
+                'accounting_negative'
+            );
         } elseif ($finalResult > 0.004) {
-            $rows[] = $this->row('adjusted_profit_for_period', 'report.accounts_adjustment.adjusted_profit_for_period', $timeApportioned ? 'Adjusted profit for the period' : 'Trading profit or loss for the period', 'normal', 'ct_period', 'frozen_ct_period_adjusted_profit', 'final-total');
+            $rows[] = $this->row('adjusted_profit_for_period', 'report.accounts_adjustment.adjusted_profit_for_period', null, 'normal', 'ct_period', 'frozen_ct_period_adjusted_profit', 'final-total');
         }
         $mappedByKey = [];
         foreach ($outputMappings as $mapping) {
@@ -273,7 +291,7 @@ final class HmrcCtComputationReportProfile
             'main_pool_rows' => $mainPool['rows'],
             'loss_schedule_rows' => $lossSchedule['rows'],
             'untagged_row_allowlist' => self::UNTAGGED_ROW_ALLOWLIST,
-            'format_version' => self::VERSION,
+            'tagging_version' => self::TAGGING_VERSION,
         ];
     }
 
@@ -463,19 +481,32 @@ final class HmrcCtComputationReportProfile
     }
 
     /** @return array<string,mixed> */
-    private function row(string $id, string $factKey, string $label, string $direction, string $contextRole, string $source, string $class = ''): array
+    private function row(
+        string $id,
+        string $factKey,
+        ?string $label,
+        string $direction,
+        string $contextRole,
+        string $source,
+        string $class = '',
+        string $visibleAmountStyle = 'standard'
+    ): array
     {
-        return [
+        $row = [
             'id' => $id,
             'fact_key' => $factKey,
-            'label' => $label,
             'direction' => $direction,
+            'visible_amount_style' => $visibleAmountStyle,
             'context_role' => $contextRole,
             'visibility' => 'always',
             'nil_rule' => 'omit_when_null',
             'source_calculation_reference' => $source,
             'class' => $class,
         ];
+        if ($label !== null) {
+            $row['label'] = $label;
+        }
+        return $row;
     }
 
     /** @return array<string,mixed> */
@@ -501,5 +532,16 @@ final class HmrcCtComputationReportProfile
             throw new \RuntimeException('The frozen long-period filing basis contains a non-numeric monetary value.');
         }
         return round((float)$value, 2);
+    }
+
+    private function disposalPresentationSemantic(float $authoritativeAmount): string
+    {
+        if ($authoritativeAmount >= self::MATERIAL_ZERO_TOLERANCE) {
+            return 'loss_add_back';
+        }
+        if ($authoritativeAmount <= -self::MATERIAL_ZERO_TOLERANCE) {
+            return 'profit_deduction';
+        }
+        return 'nil_adjustment';
     }
 }

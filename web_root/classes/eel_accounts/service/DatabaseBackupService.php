@@ -977,11 +977,11 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
                     @chmod($target, 0600);
                 }
             }
-            if (!is_dir($live) || !@rename($live, $previous)) {
+            if (!is_dir($live) || !$this->renameDirectoryWithRetry($live, $previous)) {
                 throw new RuntimeException('Unable to stage the current protected configuration for replacement.');
             }
-            if (!@rename($stage, $live)) {
-                @rename($previous, $live);
+            if (!$this->renameDirectoryWithRetry($stage, $live)) {
+                $this->renameDirectoryWithRetry($previous, $live);
                 throw new RuntimeException('Unable to replace the protected configuration directory.');
             }
             $this->removeDirectory($previous);
@@ -989,6 +989,23 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
             $this->removeDirectory($stage);
             throw $exception;
         }
+    }
+
+    private function renameDirectoryWithRetry(string $source, string $target): bool
+    {
+        for ($attempt = 0; $attempt < 6; $attempt++) {
+            if (@rename($source, $target)) {
+                return true;
+            }
+            clearstatcache(true, $source);
+            clearstatcache(true, $target);
+            if (is_dir($target) && !is_dir($source)) {
+                return true;
+            }
+            usleep(50000);
+        }
+
+        return false;
     }
 
     private function removeDirectory(string $directory): void

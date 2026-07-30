@@ -31,8 +31,8 @@ $harness->run(_pl_tradingCard::class, static function (GeneratedServiceClassTest
     $harness->check(_pl_tradingCard::class, 'renders the accounting-period sales heatmap', static function () use ($harness, $html): void {
         $harness->assertTrue(str_contains($html, 'class="calendar-heatmap"'));
         $harness->assertTrue(str_contains($html, 'Sales by day'));
-        $harness->assertTrue(str_contains($html, '£1,250.50 sales on 15 January 2025'));
-        $harness->assertTrue(str_contains($html, '<strong>Total sales:</strong> £1,750.50'));
+        $harness->assertTrue(str_contains($html, '£ 1,250.50 sales on 15 January 2025'));
+        $harness->assertTrue(str_contains($html, '<strong>Total sales:</strong> £ 1,750.50'));
         $harness->assertSame(false, str_contains($html, 'calendar-heatmap-year-select'));
     });
 });

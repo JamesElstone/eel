@@ -17,7 +17,7 @@ final class GoldenCardComparisonRegistry
             'HMRC' => ['hmrc_obligations_summary', 'hmrc_obligations_action_panel', 'hmrc_obligations_timeline', 'hmrc_obligations_period_checklist', 'hmrc_fines_table'],
             'incorporation' => ['incorporation_status', 'incorporation_share_capital', 'incorporation_payment_matching', 'director_loan_directors', 'incorporation_ownership_parties', 'incorporation_share_allocation', 'incorporation_relationships'],
             'disclosures' => ['ixbrl_readiness', 'ixbrl_accounts_disclosures', 'ixbrl_accounts_mapping', 'ixbrl_facts_preview', 'ixbrl_generation', 'ixbrl_history'],
-            'transmit' => ['hmrc_transmit', 'companies_house_transmit'],
+            'transmit' => ['hmrc_transmit', 'companies_house_transmit', 'companies_house_transmission_history'],
             'journal' => ['journals_list', 'journal_cut_off_create', 'journal_manual_entry', 'journal_cut_off_confirmation'],
             'minutes' => ['company_minutes'],
             'nominals' => ['nominals_accounts', 'nominals_add_account', 'nominals_categories', 'nominals_add_category', 'nominals_account_types', 'nominals_import_export', 'nominal_opening_balances', 'nominal_closing_balances'],

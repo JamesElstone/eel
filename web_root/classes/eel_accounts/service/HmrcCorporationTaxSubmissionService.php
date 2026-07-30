@@ -592,12 +592,15 @@ final class HmrcCorporationTaxSubmissionService
                 $ctPeriodId,
                 $manifestHash,
                 $bodyHash,
+                $package,
                 $actor,
                 $govtalkEvidence
             ): void {
                 // Close the small prepare/send race: the approved source basis
                 // must still be byte-identical at the pre-send boundary.
-                $current = $this->safeCurrentManifest($companyId, $ctPeriodId);
+                $current = $this->safeCurrentManifest($companyId, $ctPeriodId, [
+                    'filing_evidence_id' => (string)($package['evidence_id'] ?? ''),
+                ]);
                 if (
                     empty($current['ok'])
                     || !hash_equals($manifestHash, (string)($current['source_manifest_sha256'] ?? ''))
@@ -1245,6 +1248,10 @@ final class HmrcCorporationTaxSubmissionService
         }
         if (!is_array($manifest)) {
             return ['ok' => false, 'errors' => ['The current filing source manifest is invalid.']];
+        }
+        $filingEvidenceId = trim((string)($filingSnapshot['filing_evidence_id'] ?? ''));
+        if ($filingEvidenceId !== '') {
+            $manifest['filing_evidence_id'] = $filingEvidenceId;
         }
         $manifestHash = hash('sha256', $this->canonicalJson($manifest));
         $provided = strtolower(trim((string)($current['source_manifest_sha256'] ?? '')));

@@ -193,6 +193,17 @@ $harness->run('eel_accounts\Service\FileCheckService', function (GeneratedServic
             $harness->assertTrue(is_dir($directory));
         });
 
+        $harness->check('eel_accounts\Service\FileCheckService', 'ensureCompaniesHousePdfDirectory creates the nested Companies House PDF directory', function () use ($harness, $service, $uploads): void {
+            $directory = $uploads['upload_base_dir'] . DIRECTORY_SEPARATOR . '12345678'
+                . DIRECTORY_SEPARATOR . 'companies_house' . DIRECTORY_SEPARATOR . 'pdfs';
+
+            $resolved = $service->ensureCompaniesHousePdfDirectory(42);
+
+            $harness->assertSame($directory, $resolved);
+            $harness->assertSame($directory, $service->getCompaniesHousePdfDirectory(42));
+            $harness->assertTrue(is_dir($directory));
+        });
+
         $harness->check('eel_accounts\Service\FileCheckService', 'ensureStatementDirectory rejects creation when the configured base upload root is missing', function () use ($harness, $uploads): void {
             $missingBase = dirname($uploads['upload_base_dir']) . DIRECTORY_SEPARATOR . 'missing-upload-root';
             $service = new \eel_accounts\Service\FileCheckService([

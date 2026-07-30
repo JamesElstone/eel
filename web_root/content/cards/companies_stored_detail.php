@@ -90,7 +90,7 @@ final class _companies_stored_detailCard extends CardBaseFramework
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                         <input type="hidden" name="card_action" value="Company">
                         <input type="hidden" name="intent" value="refresh_company">
-                        <button class="button primary" data-processing-text="Syncronising with Companies House..." data-processing-state="disabled" type="submit">Syncronise with Companies House</button>
+                        <button class="button primary" data-processing-text="Synchronising with Companies House..." data-processing-state="disabled" type="submit">Synchronise with Companies House</button>
                     </form>
                     <form method="post" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '

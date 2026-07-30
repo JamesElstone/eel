@@ -42,8 +42,6 @@ final class CompaniesHouseProtocolConversationService
     public function beginPreflight(
         array $submission,
         string $environment,
-        int $schemaSnapshotId,
-        string $schemaManifestSha256,
         string $outputPresenterFingerprint,
         string $companyAuthenticationCode,
         string $actor,
@@ -61,7 +59,13 @@ final class CompaniesHouseProtocolConversationService
         if ($submissionId <= 0 || $companyId <= 0 || $accountingPeriodId <= 0 || $companyNumber === '') {
             throw new \InvalidArgumentException('A complete Companies House submission is required for preflight.');
         }
-        $token = 'pending-' . bin2hex(random_bytes(12));
+        $this->archives()->consolidateCompaniesHousePendingBundle(
+            $companyId,
+            $accountingPeriodId,
+            $environment,
+            $submissionId
+        );
+        $archiveReference = TransmissionArchiveService::companiesHousePendingReference($submissionId);
         $now = gmdate('Y-m-d H:i:s');
         $expiresAt = $developerStep ? gmdate('Y-m-d H:i:s', time() + self::BINDING_SECONDS) : null;
         $bindingHmac = $developerStep
@@ -76,12 +80,12 @@ final class CompaniesHouseProtocolConversationService
         \InterfaceDB::prepareExecute(
             'INSERT INTO ' . self::PREFLIGHTS . ' (
                 submission_id, company_id, accounting_period_id, environment,
-                output_presenter_fingerprint, schema_snapshot_id, schema_manifest_sha256,
+                output_presenter_fingerprint,
                 outcome, binding_hmac, binding_actor, binding_expires_at,
                 archive_reference, created_at, updated_at
              ) VALUES (
                 :submission_id, :company_id, :accounting_period_id, :environment,
-                :fingerprint, :snapshot_id, :manifest,
+                :fingerprint,
                 :outcome, :binding_hmac, :binding_actor, :binding_expires_at,
                 :archive_reference, :created_at, :updated_at
              )',
@@ -91,30 +95,24 @@ final class CompaniesHouseProtocolConversationService
                 'accounting_period_id' => $accountingPeriodId,
                 'environment' => strtoupper($environment),
                 'fingerprint' => strtolower($outputPresenterFingerprint),
-                'snapshot_id' => $schemaSnapshotId,
-                'manifest' => strtolower($schemaManifestSha256),
                 'outcome' => 'sending',
                 'binding_hmac' => $bindingHmac,
                 'binding_actor' => $developerStep ? $actor : null,
                 'binding_expires_at' => $expiresAt,
-                'archive_reference' => $token,
+                'archive_reference' => $archiveReference,
                 'created_at' => $now,
                 'updated_at' => $now,
             ]
         );
         $row = \InterfaceDB::fetchOne(
-            'SELECT * FROM ' . self::PREFLIGHTS . ' WHERE archive_reference = :reference LIMIT 1',
-            ['reference' => $token]
+            'SELECT * FROM ' . self::PREFLIGHTS . '
+             WHERE submission_id = :submission_id
+             ORDER BY id DESC LIMIT 1',
+            ['submission_id' => $submissionId]
         );
         if (!is_array($row)) {
             throw new \RuntimeException('The Companies House preflight record could not be created.');
         }
-        $reference = 'preflight-' . (int)$row['id'];
-        \InterfaceDB::prepareExecute(
-            'UPDATE ' . self::PREFLIGHTS . ' SET archive_reference = :reference WHERE id = :id',
-            ['reference' => $reference, 'id' => (int)$row['id']]
-        );
-        $row['archive_reference'] = $reference;
 
         return $row;
     }
@@ -147,8 +145,8 @@ final class CompaniesHouseProtocolConversationService
             $operation,
             $environment,
             (string)$request['transaction_id'],
-            'sent',
-            $stored,
+            'prepared',
+            $stored ?? [],
             null,
             null,
             ''
@@ -168,7 +166,78 @@ final class CompaniesHouseProtocolConversationService
             );
         }
 
-        return $stored;
+        $this->refreshExchangeManifest(
+            (int)$submission['id'],
+            $environment,
+            $archiveReference,
+            'prepared'
+        );
+
+        return $stored + [
+            'transaction_id' => (string)$request['transaction_id'],
+            'request_sha256' => $stored['sha256'],
+            'request_bytes' => $stored['bytes'],
+        ];
+    }
+
+    public function markSendStarted(string $environment, string $transactionId): void
+    {
+        if (!$this->schemaReady() || trim($transactionId) === '') {
+            throw new \RuntimeException('The Companies House request evidence is unavailable.');
+        }
+        $now = gmdate('Y-m-d H:i:s');
+        \InterfaceDB::prepareExecute(
+            'UPDATE ' . self::EXCHANGES . '
+             SET exchange_state = :state,
+                 sent_at = COALESCE(sent_at, :sent_at),
+                 updated_at = :updated_at
+             WHERE environment = :environment
+               AND transaction_id = :transaction_id
+               AND request_path IS NOT NULL',
+            [
+                'state' => 'sent',
+                'sent_at' => $now,
+                'updated_at' => $now,
+                'environment' => strtoupper($environment),
+                'transaction_id' => strtoupper(trim($transactionId)),
+            ]
+        );
+        $row = \InterfaceDB::fetchOne(
+            'SELECT id FROM ' . self::EXCHANGES . '
+             WHERE environment = :environment
+               AND transaction_id = :transaction_id
+               AND exchange_state = :state
+             LIMIT 1',
+            [
+                'environment' => strtoupper($environment),
+                'transaction_id' => strtoupper(trim($transactionId)),
+                'state' => 'sent',
+            ]
+        );
+        if (!is_array($row)) {
+            throw new \RuntimeException('The Companies House request was not durably prepared before transport.');
+        }
+        try {
+            $this->refreshManifestForTransaction($environment, $transactionId, 'sending');
+        } catch (\Throwable $exception) {
+            \InterfaceDB::prepareExecute(
+                'UPDATE ' . self::EXCHANGES . '
+                 SET exchange_state = :state,
+                     sent_at = NULL,
+                     updated_at = :updated_at
+                 WHERE environment = :environment
+                   AND transaction_id = :transaction_id
+                   AND exchange_state = :sent_state',
+                [
+                    'state' => 'prepared',
+                    'updated_at' => gmdate('Y-m-d H:i:s'),
+                    'environment' => strtoupper($environment),
+                    'transaction_id' => strtoupper(trim($transactionId)),
+                    'sent_state' => 'sent',
+                ]
+            );
+            throw $exception;
+        }
     }
 
     public function captureResponse(
@@ -181,17 +250,21 @@ final class CompaniesHouseProtocolConversationService
         ?int $statusCycleId = null
     ): array {
         $transactionId = strtolower(trim((string)($response['transaction_id'] ?? '')));
-        $filename = $this->filename($operation, $transactionId, 'response');
-        $stored = $this->archives()->store(
-            (int)$submission['company_id'],
-            (int)$submission['accounting_period_id'],
-            'companies_house',
-            $environment,
-            $archiveReference,
-            'received',
-            $filename,
-            (string)$response['response_xml']
-        );
+        $responseXml = (string)($response['response_xml'] ?? '');
+        $stored = null;
+        if ($responseXml !== '') {
+            $filename = $this->filename($operation, $transactionId, 'response');
+            $stored = $this->archives()->store(
+                (int)$submission['company_id'],
+                (int)$submission['accounting_period_id'],
+                'companies_house',
+                $environment,
+                $archiveReference,
+                'received',
+                $filename,
+                $responseXml
+            );
+        }
         $this->upsertExchange(
             (int)$submission['id'],
             $preflightId,
@@ -201,7 +274,7 @@ final class CompaniesHouseProtocolConversationService
             (string)$response['transaction_id'],
             'received',
             null,
-            $stored,
+            $stored ?? [],
             (int)($response['status_code'] ?? 0),
             ''
         );
@@ -211,15 +284,33 @@ final class CompaniesHouseProtocolConversationService
                  SET response_path = :path, response_sha256 = :sha256,
                      updated_at = :updated_at WHERE id = :id',
                 [
-                    'path' => $stored['path'],
-                    'sha256' => $stored['sha256'],
+                    'path' => $stored['path'] ?? null,
+                    'sha256' => $stored['sha256'] ?? null,
                     'updated_at' => gmdate('Y-m-d H:i:s'),
                     'id' => $preflightId,
                 ]
             );
         }
 
-        return $stored;
+        $this->refreshExchangeManifest(
+            (int)$submission['id'],
+            $environment,
+            $archiveReference,
+            'received'
+        );
+
+        return ($stored ?? [
+            'path' => null,
+            'sha256' => null,
+            'bytes' => 0,
+            'archive_path' => null,
+            'manifest_path' => null,
+        ]) + [
+            'transaction_id' => (string)$response['transaction_id'],
+            'response_sha256' => $responseXml !== '' ? hash('sha256', $responseXml) : null,
+            'response_bytes' => strlen($responseXml),
+            'status_code' => (int)($response['status_code'] ?? 0),
+        ];
     }
 
     public function finishPreflight(int $preflightId, array $result): void
@@ -227,7 +318,9 @@ final class CompaniesHouseProtocolConversationService
         $success = !empty($result['success']) && !empty($result['authenticated']);
         $outcome = $success
             ? 'verified'
-            : (!empty($result['transport_unknown']) ? 'transport_unknown' : 'rejected');
+            : (!empty($result['transport_unknown']) || !empty($result['evidence_incomplete'])
+                ? 'transport_unknown'
+                : 'rejected');
         \InterfaceDB::prepareExecute(
             'UPDATE ' . self::PREFLIGHTS . '
              SET outcome = :outcome, matched_company_number = :company_number,
@@ -244,12 +337,20 @@ final class CompaniesHouseProtocolConversationService
                 'id' => $preflightId,
             ]
         );
-        $this->completeExchange(
-            (string)($result['environment'] ?? ''),
-            (string)($result['transaction_id'] ?? ''),
-            $success ? 'succeeded' : ($outcome === 'transport_unknown' ? 'transport_unknown' : 'rejected'),
-            (string)($result['error'] ?? '')
-        );
+        if (!empty($result['evidence_incomplete'])) {
+            $this->markEvidenceIncomplete(
+                (string)($result['environment'] ?? ''),
+                (string)($result['transaction_id'] ?? ''),
+                (string)($result['error'] ?? '')
+            );
+        } else {
+            $this->completeExchange(
+                (string)($result['environment'] ?? ''),
+                (string)($result['transaction_id'] ?? ''),
+                $success ? 'succeeded' : ($outcome === 'transport_unknown' ? 'transport_unknown' : 'rejected'),
+                (string)($result['error'] ?? '')
+            );
+        }
     }
 
     public function consumePreflight(
@@ -335,6 +436,28 @@ final class CompaniesHouseProtocolConversationService
         );
     }
 
+    public function hasUnresolvedExchange(int $submissionId, string $operation): bool
+    {
+        if (!$this->schemaReady() || $submissionId <= 0) {
+            return false;
+        }
+        $operation = str_replace('-', '_', strtolower(trim($operation)));
+
+        return (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*)
+             FROM ' . self::EXCHANGES . '
+             WHERE submission_id = :submission_id
+               AND operation = :operation
+               AND exchange_state IN (:transport_unknown, :evidence_incomplete)',
+            [
+                'submission_id' => $submissionId,
+                'operation' => $operation,
+                'transport_unknown' => 'transport_unknown',
+                'evidence_incomplete' => 'evidence_incomplete',
+            ]
+        ) > 0;
+    }
+
     public function evidenceFile(int $submissionId, int $exchangeId, string $direction): array
     {
         if (!$this->schemaReady() || $submissionId <= 0 || $exchangeId <= 0) {
@@ -360,9 +483,17 @@ final class CompaniesHouseProtocolConversationService
         if (!is_string($actual) || !hash_equals($sha256, strtolower($actual))) {
             throw new \RuntimeException('The Companies House protocol evidence hash does not match.');
         }
+        $uploads = \eel_accounts\Store\AccountingConfigurationStore::uploads();
+        $uploadRoot = realpath(trim((string)($uploads['upload_base_dir'] ?? '')));
+        $resolvedPath = realpath($path);
+        if (!is_string($uploadRoot)
+            || !is_string($resolvedPath)
+            || !$this->pathWithin($resolvedPath, $uploadRoot)) {
+            throw new \RuntimeException('The Companies House protocol evidence path is outside private storage.');
+        }
 
         return [
-            'path' => $path,
+            'path' => $resolvedPath,
             'sha256' => $sha256,
             'filename' => basename($path),
             'operation' => (string)$row['operation'],
@@ -467,6 +598,22 @@ final class CompaniesHouseProtocolConversationService
                 'transaction_id' => strtoupper($transactionId),
             ]
         );
+        $this->refreshManifestForTransaction($environment, $transactionId, $state);
+    }
+
+    public function markEvidenceIncomplete(
+        string $environment,
+        string $transactionId,
+        string $error
+    ): void {
+        $this->completeExchange(
+            $environment,
+            $transactionId,
+            'evidence_incomplete',
+            trim($error) !== ''
+                ? trim($error)
+                : 'The exact Companies House response could not be archived.'
+        );
     }
 
     private function upsertExchange(
@@ -498,6 +645,7 @@ final class CompaniesHouseProtocolConversationService
                      response_sha256 = COALESCE(:response_sha256, response_sha256),
                      response_status_code = COALESCE(:status_code, response_status_code),
                      received_at = COALESCE(:received_at, received_at),
+                     error_summary = COALESCE(:error, error_summary),
                      updated_at = :updated_at
                  WHERE id = :id',
                 [
@@ -506,6 +654,7 @@ final class CompaniesHouseProtocolConversationService
                     'response_sha256' => $response['sha256'] ?? null,
                     'status_code' => $statusCode,
                     'received_at' => $response !== null ? $now : null,
+                    'error' => trim($error) !== '' ? trim($error) : null,
                     'updated_at' => $now,
                     'id' => (int)$row['id'],
                 ]
@@ -538,7 +687,7 @@ final class CompaniesHouseProtocolConversationService
                 'response_sha256' => $response['sha256'] ?? null,
                 'status_code' => $statusCode,
                 'error' => trim($error) !== '' ? trim($error) : null,
-                'sent_at' => $request !== null ? $now : null,
+                'sent_at' => null,
                 'received_at' => $response !== null ? $now : null,
                 'created_at' => $now,
                 'updated_at' => $now,
@@ -583,6 +732,80 @@ final class CompaniesHouseProtocolConversationService
         return $key;
     }
 
+    private function refreshExchangeManifest(
+        int $submissionId,
+        string $environment,
+        string $archiveReference,
+        string $fallbackLifecycle
+    ): void {
+        $submission = \InterfaceDB::fetchOne(
+            'SELECT company_id, accounting_period_id, lifecycle
+             FROM ' . self::SUBMISSIONS . '
+             WHERE id = :id LIMIT 1',
+            ['id' => $submissionId]
+        );
+        if (!is_array($submission)) {
+            return;
+        }
+        $this->archives()->refreshManifest(
+            (int)$submission['company_id'],
+            (int)$submission['accounting_period_id'],
+            'companies_house',
+            $environment,
+            $archiveReference,
+            trim((string)$submission['lifecycle']) !== ''
+                ? (string)$submission['lifecycle']
+                : $fallbackLifecycle
+        );
+    }
+
+    private function refreshManifestForTransaction(
+        string $environment,
+        string $transactionId,
+        string $fallbackLifecycle
+    ): void {
+        $row = \InterfaceDB::fetchOne(
+            'SELECT e.submission_id,
+                    s.company_id,
+                    s.accounting_period_id,
+                    s.lifecycle,
+                    s.submission_number,
+                    p.archive_reference
+             FROM ' . self::EXCHANGES . ' e
+             INNER JOIN ' . self::SUBMISSIONS . ' s ON s.id = e.submission_id
+             LEFT JOIN ' . self::PREFLIGHTS . ' p ON p.id = e.preflight_id
+             WHERE e.environment = :environment
+               AND e.transaction_id = :transaction_id
+             LIMIT 1',
+            [
+                'environment' => strtoupper(trim($environment)),
+                'transaction_id' => strtoupper(trim($transactionId)),
+            ]
+        );
+        if (!is_array($row)) {
+            return;
+        }
+        $reference = trim((string)($row['submission_number'] ?? ''));
+        if ($reference === '') {
+            $reference = trim((string)($row['archive_reference'] ?? ''));
+        }
+        if ($reference === '') {
+            $reference = TransmissionArchiveService::companiesHousePendingReference(
+                (int)$row['submission_id']
+            );
+        }
+        $this->archives()->refreshManifest(
+            (int)$row['company_id'],
+            (int)$row['accounting_period_id'],
+            'companies_house',
+            $environment,
+            $reference,
+            trim((string)$row['lifecycle']) !== ''
+                ? (string)$row['lifecycle']
+                : $fallbackLifecycle
+        );
+    }
+
     private function archives(): TransmissionArchiveService
     {
         return $this->archiveService ?? new TransmissionArchiveService();
@@ -593,6 +816,18 @@ final class CompaniesHouseProtocolConversationService
         $operation = preg_replace('/[^a-z0-9-]+/', '-', strtolower($operation)) ?: 'exchange';
         $transactionId = preg_replace('/[^a-z0-9]+/', '', strtolower($transactionId)) ?: 'unknown';
         return $operation . '-' . $transactionId . '-' . $direction . '.xml';
+    }
+
+    private function pathWithin(string $path, string $parent): bool
+    {
+        $path = rtrim(str_replace('\\', '/', $path), '/');
+        $parent = rtrim(str_replace('\\', '/', $parent), '/');
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $path = strtolower($path);
+            $parent = strtolower($parent);
+        }
+
+        return $path === $parent || str_starts_with($path, $parent . '/');
     }
 
     private function utcTimestamp(string $value): int

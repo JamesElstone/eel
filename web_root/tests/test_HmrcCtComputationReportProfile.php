@@ -26,7 +26,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check($service::class, 'publishes a stable versioned report profile', static function () use ($harness): void {
             $harness->assertTrue(str_starts_with(
-                \eel_accounts\Service\HmrcCtComputationReportProfile::VERSION,
+                \eel_accounts\Service\HmrcCtComputationReportProfile::TAGGING_VERSION,
                 'hmrc-ct-computations-format-1.1/'
             ));
         });

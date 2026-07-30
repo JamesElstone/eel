@@ -32,7 +32,7 @@ final class CompaniesHousePdfDownloadService
             return $this->emptyResult($companyId, '');
         }
 
-        $directory = $this->fileCheckService()->ensureCompaniesHouseDirectory($companyId);
+        $directory = $this->fileCheckService()->ensureCompaniesHousePdfDirectory($companyId);
         $items = $this->fetchFilingHistoryItems($companyNumber);
         $documents = [];
         $downloaded = 0;

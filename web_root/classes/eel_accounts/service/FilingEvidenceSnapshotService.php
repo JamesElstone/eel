@@ -181,7 +181,7 @@ final class FilingEvidenceSnapshotService
     {
         $rows = \InterfaceDB::tableExists('companies_house_accounts_submissions')
             ? $this->rows('SELECT id, environment, filing_type, lifecycle, submission_number, gateway_submission_reference,
-                    artifact_path, artifact_sha256, revised_artifact_path, revised_artifact_sha256, schema_manifest_sha256,
+                    artifact_path, artifact_sha256, revised_artifact_path, revised_artifact_sha256, filing_metadata_json,
                     basis_hash, gateway_status_summary, rejection_code, rejection_description, examiner_comments,
                     prepared_at, submitted_at, accepted_at, rejected_at
                  FROM companies_house_accounts_submissions WHERE company_id = :company_id AND accounting_period_id = :period_id ORDER BY id', $companyId, $periodId) : [];

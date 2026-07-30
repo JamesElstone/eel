@@ -23,7 +23,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
                 $harness->assertSame(3, $prepare->getNumberOfParameters());
                 $harness->assertSame(\eel_accounts\Client\CompaniesHousePreparedAccountsRequest::class, (string)$prepare->getReturnType());
-                $harness->assertSame(2, $submit->getNumberOfParameters());
+                $harness->assertSame(3, $submit->getNumberOfParameters());
                 $harness->assertSame('array', (string)$submit->getReturnType());
                 $harness->assertSame(5, $status->getNumberOfParameters());
                 $harness->assertSame('array', (string)$status->getReturnType());

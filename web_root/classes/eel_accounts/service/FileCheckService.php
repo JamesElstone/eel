@@ -300,6 +300,11 @@ final class FileCheckService
         return $this->categoryUploadForResolvedPathSegment($baseDirectory, $this->companyPathSegment($companyId), 'companies_house');
     }
 
+    public function getCompaniesHousePdfDirectory(int $companyId): string
+    {
+        return $this->joinPath($this->getCompaniesHouseDirectory($companyId), 'pdfs');
+    }
+
     public function getIxbrlDirectory(int $companyId): string
     {
         $baseDirectory = $this->getUploadBaseDirectoryForCompany($companyId);
@@ -383,6 +388,23 @@ final class FileCheckService
 
         return $this->ensureManagedUploadDirectory(
             $this->categoryUploadForResolvedPathSegment($baseDirectory, $this->companyPathSegment($companyId), 'companies_house'),
+            $baseDirectory
+        );
+    }
+
+    public function ensureCompaniesHousePdfDirectory(int $companyId): string
+    {
+        $baseDirectory = $this->getUploadBaseDirectoryForCompany($companyId);
+
+        return $this->ensureManagedUploadDirectory(
+            $this->joinPath(
+                $this->categoryUploadForResolvedPathSegment(
+                    $baseDirectory,
+                    $this->companyPathSegment($companyId),
+                    'companies_house'
+                ),
+                'pdfs'
+            ),
             $baseDirectory
         );
     }

@@ -461,6 +461,9 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
                 ['company_id' => (int)$fixture['company_id'], 'accounting_period_id' => (int)$fixture['accounting_period_id'], 'check_code' => 'tax_readiness_acknowledgement']
             ));
 
+            $reviewedTaxBasis = (new \eel_accounts\Service\YearEndSectionApprovalService())
+                ->fetchReview($companyId, $accountingPeriodId, 'tax_readiness_acknowledgement');
+            $harness->assertSame(true, (bool)($reviewedTaxBasis['available'] ?? false));
             $v2Approval = $instance->handle(
                 yearEndActionDirectorLoanTestRequest(
                     $companyId,
@@ -476,6 +479,12 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
                 ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'check_code' => 'tax_readiness_acknowledgement']
             ), true);
 
+            if (!$v2Approval->isSuccess()) {
+                throw new RuntimeException(
+                    'Tax readiness V2 approval failed: '
+                    . json_encode($v2Approval->flashMessages(), JSON_UNESCAPED_SLASHES)
+                );
+            }
             $harness->assertSame(true, $v2Approval->isSuccess());
             $harness->assertSame('no', (string)($signedBasis['answers']['filing_scope.ct600b'] ?? ''));
 
@@ -911,6 +920,7 @@ function yearEndActionDirectorLoanTestWithFixture(GeneratedServiceClassTestHarne
         $harness->skip('Ledger metadata tables are not available on the default InterfaceDB connection.');
     }
 
+    \eel_accounts\Support\RequestCache::clear();
     InterfaceDB::beginTransaction();
     try {
         StandardNominalTestFixture::ensureNominals(['1200', '2100']);
@@ -974,6 +984,7 @@ function yearEndActionDirectorLoanTestWithFixture(GeneratedServiceClassTestHarne
         if (InterfaceDB::inTransaction()) {
             InterfaceDB::rollBack();
         }
+        \eel_accounts\Support\RequestCache::clear();
     }
 }
 

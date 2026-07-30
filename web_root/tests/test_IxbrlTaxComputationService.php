@@ -44,6 +44,9 @@ function ixbrlTaxComputationModel(array $overrides = []): array
     ], (array)($overrides['summary'] ?? []));
     if (!isset($summary['loss_restriction'])) {
         $days = (int)(new DateTimeImmutable($periodStart))->diff(new DateTimeImmutable($periodEnd))->days + 1;
+        $annualAllowance = 5000000.00;
+        $statutoryDenominatorDays = 365;
+        $calculatedAllowance = round($annualAllowance * $days / $statutoryDenominatorDays, 2);
         $summary['loss_restriction'] = [
             'post_2017_trading_losses' => [
                 'brought_forward' => (float)$summary['losses_brought_forward'],
@@ -52,7 +55,18 @@ function ixbrlTaxComputationModel(array $overrides = []): array
                 'carried_forward' => (float)$summary['losses_carried_forward'],
             ],
             'pre_2017_trading_losses' => ['brought_forward' => 0.00, 'arising' => 0.00, 'used' => 0.00, 'carried_forward' => 0.00],
-            'deduction_allowance' => ['basis' => 'non_group', 'period_days' => $days, 'days_in_year' => 365, 'amount' => round(5000000 * $days / 365, 2)],
+            'deduction_allowance' => [
+                'basis' => 'non_group',
+                'annual_amount' => $annualAllowance,
+                'period_days' => $days,
+                'days_in_year' => $statutoryDenominatorDays,
+                'amount' => $calculatedAllowance,
+                'ct_period_days' => $days,
+                'statutory_denominator_days' => $statutoryDenominatorDays,
+                'annual_allowance' => $annualAllowance,
+                'calculated_allowance' => $calculatedAllowance,
+                'apportionment_applied' => abs($calculatedAllowance - $annualAllowance) >= 0.005,
+            ],
             'qualifying_profits' => max(0.00, (float)$summary['taxable_before_losses']),
             'carried_forward_loss_relief_claimed' => (float)$summary['losses_used'],
             'calculated_loss_restriction' => 0.00,
@@ -213,6 +227,24 @@ function ixbrlTaxComputationMappings(array $model): array
         $h->assertFalse(str_contains($stylesheet, 'width: 210mm'));
         $h->assertFalse(str_contains($stylesheet, '.ct-report { max-width: none; }'));
     });
+    $h->check($service::class, 'classifies disposal presentation before monetary formatting', static function () use ($h, $service): void {
+        $profile = new \eel_accounts\Service\HmrcCtComputationReportProfile();
+        $method = new ReflectionMethod($profile, 'disposalPresentationSemantic');
+        $method->setAccessible(true);
+        $h->assertSame('loss_add_back', $method->invoke($profile, 0.005));
+        $h->assertSame('loss_add_back', $method->invoke($profile, 112.57));
+        $h->assertSame('profit_deduction', $method->invoke($profile, -0.005));
+        $h->assertSame('profit_deduction', $method->invoke($profile, -1.25));
+        $h->assertSame('nil_adjustment', $method->invoke($profile, 0.004));
+        $h->assertSame('nil_adjustment', $method->invoke($profile, -0.004));
+        $h->assertSame('nil_adjustment', $method->invoke($profile, 0.00));
+        $label = new ReflectionMethod($service, 'presentationLabel');
+        $label->setAccessible(true);
+        $key = 'computation.summary.disposal_profit_or_loss_adjustment';
+        $h->assertSame('Loss on disposal of fixed assets added back', $label->invoke($service, $key, 'loss_add_back'));
+        $h->assertSame('Profit on disposal of fixed assets deducted', $label->invoke($service, $key, 'profit_deduction'));
+        $h->assertSame('Adjustment for loss or profit on disposal of fixed assets', $label->invoke($service, $key, 'nil_adjustment'));
+    });
     $h->check($service::class, 'renders deductions allowance only for a relevant loss claim or restriction', static function () use ($h, $service): void {
         $method = new ReflectionMethod($service::class, 'renderDeductionsAllowance');
         $method->setAccessible(true);
@@ -226,15 +258,58 @@ function ixbrlTaxComputationMappings(array $model): array
                     'carried_forward_loss_relief_claimed' => $reliefClaimed,
                     'calculated_loss_restriction' => $restriction,
                     'loss_restriction' => $restriction === 0.0 ? 'none' : 'applies',
-                    'deduction_allowance' => ['amount' => 5000000.00, 'period_days' => 365, 'days_in_year' => 365],
+                    'deduction_allowance' => [
+                        'amount' => 5000000.00,
+                        'ct_period_days' => 365,
+                        'statutory_denominator_days' => 365,
+                        'annual_allowance' => 5000000.00,
+                        'calculated_allowance' => 5000000.00,
+                        'apportionment_applied' => false,
+                    ],
                 ]
             );
         };
         $h->assertSame('', $render(0.00, 0.00, 0.00));
-        $h->assertTrue(str_contains($render(1.00, 0.00, 0.00), 'Deductions allowance'));
+        $fullYear = $render(1.00, 0.00, 0.00);
+        $h->assertTrue(str_contains($fullYear, 'Deductions allowance'));
+        $h->assertTrue(str_contains(
+            $fullYear,
+            'Non-group deductions allowance for the 365-day CT period: £5,000,000.'
+        ));
+        $h->assertFalse(str_contains($fullYear, 'apportioned'));
         $h->assertTrue(str_contains($render(0.00, 1.00, 0.00), 'Deductions allowance'));
         $h->assertTrue(str_contains($render(1.00, 1.00, 0.00), 'Deductions allowance'));
         $h->assertTrue(str_contains($render(0.00, 0.00, 1.00), 'Deductions allowance'));
+    });
+    $h->check($service::class, 'describes an apportioned allowance from report-model fields', static function () use ($h, $service): void {
+        $method = new ReflectionMethod($service::class, 'renderDeductionsAllowance');
+        $method->setAccessible(true);
+        $html = (string)$method->invoke(
+            $service,
+            new \eel_accounts\Service\IxbrlGeneratorService(),
+            [],
+            [
+                'post_2017_trading_losses' => ['used' => 1.00],
+                'carried_forward_loss_relief_claimed' => 1.00,
+                'calculated_loss_restriction' => 0.00,
+                'loss_restriction' => 'none',
+                'deduction_allowance' => [
+                    'amount' => 535714.29,
+                    'ct_period_days' => 30,
+                    'statutory_denominator_days' => 420,
+                    'annual_allowance' => 7500000.00,
+                    'calculated_allowance' => 535714.29,
+                    'apportionment_applied' => true,
+                ],
+            ]
+        );
+        $h->assertTrue(str_contains(
+            $html,
+            'Non-group deductions allowance, apportioned for the 30-day CT period: '
+                . '30 / 420 of £7,500,000.'
+        ));
+        $h->assertFalse(str_contains($html, '365'));
+        $h->assertFalse(str_contains($html, '5,000,000'));
     });
     $h->check($service::class, 'uses Format 1.1 whole-period accounts facts for a split accounting period', static function () use ($h, $service): void {
         $model = ixbrlTaxComputationModel();
@@ -264,8 +339,12 @@ function ixbrlTaxComputationMappings(array $model): array
         $h->assertTrue(str_contains($body, '365 / 391 days'));
         $h->assertFalse(str_contains($body, 'Apportionment rounding adjustment'));
         $h->assertTrue(str_contains($body, 'Profit/(loss) before tax per statutory accounts'));
-        $h->assertTrue(str_contains($body, 'Accounting adjustment for depreciation'));
-        $h->assertTrue(str_contains($body, 'Revised figure before tax'));
+        $h->assertTrue(str_contains($body, 'Disallowable expenses added back'));
+        $h->assertTrue(str_contains($body, 'Capital expenditure added back'));
+        $h->assertTrue(str_contains($body, 'Adjustment for loss or profit on disposal of fixed assets'));
+        $h->assertTrue(str_contains($body, 'Depreciation added back'));
+        $h->assertTrue(str_contains($body, 'Adjusted profit or loss before accounting-period adjustments'));
+        $h->assertTrue(str_contains($body, 'Adjusted trading loss for the period'));
         $h->assertTrue(str_contains($body, 'Time apportionment figure (365 / 391 days)'));
         $h->assertTrue(str_contains($body, '65.63'));
         $h->assertTrue(str_contains($body, 'Post-1 April 2017 trading losses'));
@@ -306,6 +385,8 @@ function ixbrlTaxComputationMappings(array $model): array
         $h->assertSame('70.30', $revised?->textContent);
         $loss = $xpath->query('//ix:nonFraction[@name="ct:AdjustedLossOfPeriod"]')->item(0);
         $h->assertSame('563.21', $loss?->textContent);
+        $h->assertSame('', $loss?->getAttribute('sign'));
+        $h->assertSame('(563.21)', trim((string)$loss?->parentNode?->textContent));
         $h->assertSame(0, $xpath->query('//ix:nonFraction[@name="ct:AdjustedProfitForThePeriod"]')->length);
         $h->assertSame(0, $xpath->query('//ix:nonFraction[@name="ct:ProfitsBeforeOtherDeductionsAndReliefs"]')->length);
         $allowances = $xpath->query('//ix:nonFraction[@name="ct:TotalCapitalAllowances"]')->item(0);
@@ -487,6 +568,11 @@ function ixbrlTaxComputationMappings(array $model): array
         $deductionsAllowance = $xpath->query('//*[local-name()="div" and contains(concat(" ", normalize-space(@class), " "), " deductions-allowance ")]');
         $h->assertSame(1, $deductionsAllowance->length);
         $deductionsAllowanceText = (string)$deductionsAllowance->item(0)?->textContent;
+        $h->assertTrue(str_contains(
+            $deductionsAllowanceText,
+            'Non-group deductions allowance, apportioned for the 26-day CT period: '
+                . '26 / 365 of £5,000,000.'
+        ));
         $h->assertTrue(str_contains($deductionsAllowanceText, '356,164.38'));
         $h->assertTrue(str_contains($deductionsAllowanceText, 'Qualifying profits'));
         $h->assertTrue(str_contains($deductionsAllowanceText, 'Carried-forward loss relief claimed against total profits'));
@@ -551,9 +637,24 @@ function ixbrlTaxComputationMappings(array $model): array
             $h->assertSame('2023-10-01', $xpath->evaluate('string(//xbrli:context[@id="' . $context . '"]/xbrli:period/xbrli:startDate)'));
             $h->assertSame('2024-09-30', $xpath->evaluate('string(//xbrli:context[@id="' . $context . '"]/xbrli:period/xbrli:endDate)'));
         }
+        $adjustedLoss = $xpath->query('//ix:nonFraction[@name="ct:AdjustedLossOfPeriod"]')->item(0);
+        $h->assertSame('', $adjustedLoss?->getAttribute('sign'));
+        $h->assertSame('(7,022.81)', trim((string)$adjustedLoss?->parentNode?->textContent));
+        $visibleText = trim((string)preg_replace('/\s+/', ' ', (string)$document->textContent));
+        foreach ([
+            'Profit/(loss) before tax per statutory accounts',
+            'Disallowable expenses added back',
+            'Capital expenditure added back',
+            'Depreciation added back',
+            'Adjusted profit or loss before accounting-period adjustments',
+            'Adjusted trading loss for the period',
+        ] as $canonicalLabel) {
+            $h->assertTrue(str_contains($visibleText, $canonicalLabel));
+        }
+        $h->assertFalse(str_contains($visibleText, 'Trading profit or loss for the period'));
         $carriedForward = $xpath->query('//ix:nonFraction[@name="ct:BalanceOfLossesBroughtForwardCarriedForward"]')->item(0);
         $h->assertSame('7,618.42', $carriedForward?->textContent);
-        $h->assertTrue(str_contains((string)$document->textContent, 'Disallowable expense supporting analysis'));
+        $h->assertTrue(str_contains((string)$document->textContent, 'Supporting analysis of disallowable expenses'));
         $h->assertTrue(str_contains((string)$document->textContent, 'Parking Fines and Penalties'));
         $h->assertTrue(str_contains((string)$document->textContent, 'TFL ROAD CHG-PENALTY W'));
         $h->assertSame(1, $xpath->query('//ix:nonFraction[@name="ct:AdjustmentsMiscellaneousExpensesPerAccounts"]')->length);
@@ -614,6 +715,13 @@ function ixbrlTaxComputationMappings(array $model): array
             $h->assertSame('2024-10-01', $xpath->evaluate('string(//xbrli:context[@id="' . $context . '"]/xbrli:period/xbrli:startDate)'));
             $h->assertSame('2025-09-30', $xpath->evaluate('string(//xbrli:context[@id="' . $context . '"]/xbrli:period/xbrli:endDate)'));
         }
+        $adjustedProfit = $xpath->query('//ix:nonFraction[@name="ct:AdjustedProfitForThePeriod"]')->item(0);
+        $h->assertSame('', $adjustedProfit?->getAttribute('sign'));
+        $h->assertSame('1,749.32', trim((string)$adjustedProfit?->parentNode?->textContent));
+        $visibleText = trim((string)preg_replace('/\s+/', ' ', (string)$document->textContent));
+        $h->assertTrue(str_contains($visibleText, 'Adjusted trading profit for the period'));
+        $h->assertTrue(str_contains($visibleText, 'Profit/(loss) before tax per statutory accounts'));
+        $h->assertFalse(str_contains($visibleText, 'Trading profit or loss for the period'));
         $carriedForward = $xpath->query('//ix:nonFraction[@name="ct:BalanceOfLossesBroughtForwardCarriedForward"]')->item(0);
         $h->assertSame('5,869.10', $carriedForward?->textContent);
         $carriedForwardContext = (string)$carriedForward?->getAttribute('contextRef');

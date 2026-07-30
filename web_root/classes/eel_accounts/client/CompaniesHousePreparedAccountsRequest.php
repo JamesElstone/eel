@@ -19,8 +19,7 @@ final class CompaniesHousePreparedAccountsRequest
         private readonly string $requestXml,
         private readonly string $redactedRequestXml,
         private readonly array $secrets,
-        private readonly int $schemaSnapshotId,
-        private readonly string $schemaManifestSha256,
+        private readonly array $schemaInventory,
     ) {
     }
 
@@ -31,6 +30,5 @@ final class CompaniesHousePreparedAccountsRequest
     public function redactedRequestXml(): string { return $this->redactedRequestXml; }
     /** @return list<string> */
     public function secrets(): array { return $this->secrets; }
-    public function schemaSnapshotId(): int { return $this->schemaSnapshotId; }
-    public function schemaManifestSha256(): string { return $this->schemaManifestSha256; }
+    public function schemaInventory(): array { return $this->schemaInventory; }
 }

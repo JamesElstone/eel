@@ -33,28 +33,150 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     "$host/v1-0/schema/forms/FormCommon-v1-0.xsd" => '<?xml version="1.0"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:simpleType name="Unused"><xs:restriction base="xs:string"/></xs:simpleType></xs:schema>',
                 ];
                 $calls = [];
-                $fetcher = static function (string $url) use (&$calls, $rows, $schemas): array {
+                $downloadRound = 0;
+                $fetcher = static function (string $url) use (&$calls, &$downloadRound, $rows, $schemas): array {
                     $calls[] = $url;
+                    if ($url === \eel_accounts\Service\CompaniesHouseAccountsSchemaService::SOURCE_URL) {
+                        $downloadRound++;
+                    }
                     $body = $url === \eel_accounts\Service\CompaniesHouseAccountsSchemaService::SOURCE_URL
                         ? '<html><table>' . $rows . '</table></html>'
                         : ($schemas[$url] ?? null);
                     if (!is_string($body)) { return ['status_code'=>404,'headers'=>[],'body'=>'','final_url'=>$url]; }
-                    return ['status_code'=>200,'headers'=>['ETag'=>'fixture'],'body'=>$body,'final_url'=>$url];
+                    return [
+                        'status_code'=>200,
+                        'headers'=>[
+                            'ETag'=>'fixture-' . $downloadRound,
+                            'Last-Modified'=>'round-' . $downloadRound,
+                        ],
+                        'body'=>$body,
+                        'final_url'=>$url,
+                    ];
                 };
-                $cache = test_tmp_directory() . DIRECTORY_SEPARATOR
+                $testRoot = test_tmp_directory() . DIRECTORY_SEPARATOR
                     . 'eel-ch-schema-' . bin2hex(random_bytes(5));
-                $service = new \eel_accounts\Service\CompaniesHouseAccountsSchemaService($fetcher, $cache);
-                $first = $service->ensureCurrent();
-                $second = $service->ensureCurrent();
+                $cache = $testRoot . DIRECTORY_SEPARATOR . 'companies_house'
+                    . DIRECTORY_SEPARATOR . 'assets';
+                $staging = test_tmp_directory() . DIRECTORY_SEPARATOR
+                    . 'companies-house-schema-staging-' . bin2hex(random_bytes(5));
+                $service = new \eel_accounts\Service\CompaniesHouseAccountsSchemaService(
+                    $fetcher,
+                    $cache,
+                    $staging
+                );
+                $first = $service->refreshInstalledSchemas();
+                $second = $service->refreshInstalledSchemas();
                 $harness->assertSame(true, $first['success']);
                 $harness->assertSame(true, $first['changed']);
                 $harness->assertSame(false, $second['changed']);
+                $harness->assertSame($first['files'], $second['files']);
+                $harness->assertSame($cache, $first['root_path']);
+                $harness->assertTrue(
+                    is_file($cache . DIRECTORY_SEPARATOR . 'v1-0'
+                        . DIRECTORY_SEPARATOR . 'schema' . DIRECTORY_SEPARATOR
+                        . 'CompanyData-v3-6.xsd')
+                );
+                $harness->assertFalse(is_dir($cache . DIRECTORY_SEPARATOR . 'snapshots'));
                 $harness->assertTrue(in_array("$host/v1-0/schema/forms/FormCommon-v1-0.xsd", $calls, true));
-                $harness->assertSame(7, (int)\InterfaceDB::fetchColumn('SELECT COUNT(*) FROM companies_house_schema_files WHERE snapshot_id = :id', ['id'=>$first['snapshot_id']]));
+                $harness->assertSame(7, (int)\InterfaceDB::fetchColumn('SELECT COUNT(*) FROM companies_house_schema_files'));
 
                 $xml = '<?xml version="1.0"?><GovTalkMessage xmlns="http://www.govtalk.gov.uk/CM/envelope"><Body><FormSubmission xmlns="http://xmlgw.companieshouse.gov.uk/Header"/></Body></GovTalkMessage>';
-                $validated = (new \eel_accounts\Service\CompaniesHouseAccountsSchemaValidator())->validateAccountsRequest($xml, $first['manifest_sha256']);
-                $harness->assertSame($first['snapshot_id'], $validated['snapshot_id']);
+                $validated = (new \eel_accounts\Service\CompaniesHouseAccountsSchemaValidator())->validateAccountsRequest($xml, $first);
+                $harness->assertSame(true, $validated['success']);
+
+                $callsBeforeInstalledCheck = count($calls);
+                $installed = $service->installedSchemas();
+                $harness->assertSame($first['files'], $installed['files']);
+                $harness->assertSame($callsBeforeInstalledCheck, count($calls));
+
+                $legacyRoot = $testRoot . DIRECTORY_SEPARATOR . 'companies_house'
+                    . DIRECTORY_SEPARATOR . 'schema'
+                    . DIRECTORY_SEPARATOR . 'snapshots' . DIRECTORY_SEPARATOR . str_repeat('c', 64);
+                $storedFiles = \InterfaceDB::fetchAll('SELECT relative_path FROM companies_house_schema_files');
+                foreach ($storedFiles as $storedFile) {
+                    $relative = str_replace('/', DIRECTORY_SEPARATOR, (string)$storedFile['relative_path']);
+                    $source = $cache . DIRECTORY_SEPARATOR . $relative;
+                    $destination = $legacyRoot . DIRECTORY_SEPARATOR . $relative;
+                    if (!is_dir(dirname($destination))) {
+                        mkdir(dirname($destination), 0777, true);
+                    }
+                    copy($source, $destination);
+                }
+                $migrated = $service->refreshInstalledSchemas();
+                $harness->assertSame(false, $migrated['changed']);
+                $harness->assertFalse(is_dir($legacyRoot));
+
+                $companyDataPath = $cache . DIRECTORY_SEPARATOR . 'v1-0'
+                    . DIRECTORY_SEPARATOR . 'schema' . DIRECTORY_SEPARATOR
+                    . 'CompanyData-v3-6.xsd';
+                $companyData = file_get_contents($companyDataPath);
+                file_put_contents($companyDataPath, (string)$companyData . "\n<!-- changed -->");
+                try {
+                    try {
+                        $service->installedSchemas();
+                        $harness->assertTrue(false, 'A damaged installed schema must block filing.');
+                    } catch (RuntimeException $exception) {
+                        $harness->assertTrue(str_contains(
+                            $exception->getMessage(),
+                            'missing or has changed'
+                        ));
+                    }
+                    $service->refreshInstalledSchemas();
+                    $harness->assertTrue(false, 'Changed content at an existing pathname must fail.');
+                } catch (RuntimeException $exception) {
+                    $harness->assertTrue(str_contains(
+                        $exception->getMessage(),
+                        'changed an existing schema pathname'
+                    ));
+                } finally {
+                    file_put_contents($companyDataPath, (string)$companyData);
+                }
+
+                InterfaceDB::prepareExecute(
+                    'DELETE FROM companies_house_schema_dependencies
+                     WHERE child_file_id = (
+                         SELECT id FROM companies_house_schema_files
+                         WHERE relative_path = :path
+                     )',
+                    ['path' => 'v1-0/schema/forms/FormCommon-v1-0.xsd']
+                );
+                try {
+                    $service->installedSchemas();
+                    $harness->assertTrue(false, 'An incomplete dependency inventory must block filing.');
+                } catch (RuntimeException $exception) {
+                    $harness->assertTrue(str_contains(
+                        $exception->getMessage(),
+                        'dependency inventory is incomplete'
+                    ));
+                }
+                $service->refreshInstalledSchemas();
+
+                $newVersionSource = tempnam(test_tmp_directory(), 'ch-schema-new-version-');
+                if (!is_string($newVersionSource)) {
+                    $harness->skip('Could not create a new-version schema fixture.');
+                }
+                file_put_contents(
+                    $newVersionSource,
+                    '<?xml version="1.0"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"/>'
+                );
+                try {
+                    $publish = new ReflectionMethod($service, 'publishFile');
+                    $publish->setAccessible(true);
+                    $publish->invoke(
+                        $service,
+                        $newVersionSource,
+                        'v1-0/schema/CompanyData-v3-7.xsd',
+                        hash_file('sha256', $newVersionSource)
+                    );
+                    $harness->assertTrue(is_file($companyDataPath));
+                    $harness->assertTrue(is_file(
+                        $cache . DIRECTORY_SEPARATOR . 'v1-0'
+                            . DIRECTORY_SEPARATOR . 'schema' . DIRECTORY_SEPARATOR
+                            . 'CompanyData-v3-7.xsd'
+                    ));
+                } finally {
+                    @unlink($newVersionSource);
+                }
             }
         );
 
@@ -71,9 +193,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $service = new \eel_accounts\Service\CompaniesHouseAccountsSchemaService(
                     $fetcher,
                     test_tmp_directory() . DIRECTORY_SEPARATOR
-                        . 'eel-ch-schema-' . bin2hex(random_bytes(5))
+                        . 'eel-ch-schema-' . bin2hex(random_bytes(5)),
+                    test_tmp_directory() . DIRECTORY_SEPARATOR
+                        . 'companies-house-schema-staging-' . bin2hex(random_bytes(5))
                 );
-                try { $service->ensureCurrent(); $harness->assertTrue(false, 'Deprecated profile should block.'); }
+                try { $service->refreshInstalledSchemas(); $harness->assertTrue(false, 'Deprecated profile should block.'); }
                 catch (RuntimeException $exception) { $harness->assertTrue(str_contains($exception->getMessage(), 'software update is required')); }
                 $harness->assertSame(1, count($calls));
             }

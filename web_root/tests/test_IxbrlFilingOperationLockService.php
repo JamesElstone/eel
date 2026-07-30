@@ -27,8 +27,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
             $second = $service->execute($companyId, $periodId, static fn(): string => 'released');
             $harness->assertSame('released', $second);
-            $path = rtrim((string)PROJECT_ROOT, '\\/')
-                . DIRECTORY_SEPARATOR . 'files' . DIRECTORY_SEPARATOR . '.ixbrl-locks'
+            $path = rtrim(test_tmp_directory(), '\\/')
+                . DIRECTORY_SEPARATOR . '.ixbrl-locks'
                 . DIRECTORY_SEPARATOR . 'company-' . $companyId . '-period-' . $periodId . '.lock';
             if (is_file($path)) {
                 unlink($path);

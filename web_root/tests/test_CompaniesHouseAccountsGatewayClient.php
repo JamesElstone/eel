@@ -72,11 +72,20 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
             return $node instanceof DOMNode ? trim($node->textContent) : '';
         };
-        $validator = static fn(string $xml, string $manifest): array => [
+        $validator = static fn(string $xml, array $inventory): array => [
             'success' => true,
-            'snapshot_id' => 7,
-            'manifest_sha256' => $manifest,
+            'files' => $inventory['files'] ?? $inventory,
         ];
+        $evidenceReceipt = static function (array $exchange): array {
+            $direction = array_key_exists('request_xml', $exchange) ? 'request' : 'response';
+            $xml = (string)($exchange[$direction . '_xml'] ?? '');
+
+            return [
+                'transaction_id' => (string)($exchange['transaction_id'] ?? ''),
+                $direction . '_sha256' => $xml !== '' ? hash('sha256', $xml) : null,
+                $direction . '_bytes' => strlen($xml),
+            ];
+        };
 
         $harness->check(
             \eel_accounts\Client\CompaniesHouseAccountsGatewayClient::class,
@@ -88,7 +97,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $config,
                 $submissionPayload,
                 $acknowledgement,
-                $xmlText
+                $xmlText,
+                $evidenceReceipt
             ): void {
                 $captured = [];
                 $transport = static function (array $request) use (&$captured, $acknowledgement): array {
@@ -108,15 +118,20 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $credentials,
                     $transactionId,
                     $config,
-                    static fn(string $xml, string $manifest): array => ['success'=>true,'snapshot_id'=>7,'manifest_sha256'=>$manifest]
+                    static fn(string $xml, array $inventory): array => [
+                        'success' => true,
+                        'files' => $inventory['files'] ?? $inventory,
+                    ]
                 );
                 $payload = $submissionPayload();
-                $prepared = $client->prepareAccounts($payload, 'TEST', str_repeat('a', 64));
+                $prepared = $client->prepareAccounts($payload, 'TEST', ['files' => []]);
                 $capturedResponse = [];
                 $result = $client->sendPreparedAccounts(
                     $prepared,
-                    static function (array $exchange) use (&$capturedResponse): void {
+                    $evidenceReceipt,
+                    static function (array $exchange) use (&$capturedResponse, $evidenceReceipt): array {
                         $capturedResponse = $exchange;
+                        return $evidenceReceipt($exchange);
                     }
                 );
                 $requestXml = (string)$captured['body'];
@@ -172,7 +187,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $transactionId,
                 $config,
                 $xmlText,
-                $validator
+                $validator,
+                $evidenceReceipt
             ): void {
                 $captured = [];
                 $response = '<?xml version="1.0"?><GovTalkMessage xmlns="http://www.govtalk.gov.uk/CM/envelope">'
@@ -197,7 +213,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     '14337285',
                     'ABC123',
                     'TEST',
-                    str_repeat('a', 64)
+                    ['files' => []],
+                    $evidenceReceipt,
+                    $evidenceReceipt
                 );
                 $requestXml = (string)$captured['body'];
 
@@ -215,6 +233,86 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             \eel_accounts\Client\CompaniesHouseAccountsGatewayClient::class,
+            'refuses transport without a matching durable request receipt',
+            static function () use (
+                $harness,
+                $credentials,
+                $transactionId,
+                $config,
+                $submissionPayload,
+                $evidenceReceipt
+            ): void {
+                $transportCalled = false;
+                $client = new \eel_accounts\Client\CompaniesHouseAccountsGatewayClient(
+                    static function (array $request) use (&$transportCalled): array {
+                        $transportCalled = true;
+                        return ['status_code' => 200, 'headers' => [], 'body' => '<unexpected/>'];
+                    },
+                    $credentials,
+                    $transactionId,
+                    $config,
+                    static fn(string $xml, array $inventory): array => ['success' => true]
+                );
+                $result = $client->sendPreparedAccounts(
+                    $client->prepareAccounts($submissionPayload(), 'TEST', ['files' => []]),
+                    static fn(array $exchange): array => [
+                        'transaction_id' => (string)$exchange['transaction_id'],
+                        'request_sha256' => str_repeat('0', 64),
+                        'request_bytes' => (int)$exchange['request_bytes'],
+                    ],
+                    $evidenceReceipt
+                );
+
+                $harness->assertSame(false, $transportCalled);
+                $harness->assertSame(false, $result['success']);
+                $harness->assertSame(true, $result['pre_send_failure']);
+                $harness->assertSame(false, $result['transport_unknown']);
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Client\CompaniesHouseAccountsGatewayClient::class,
+            'stops before parsing when an exact response cannot be archived',
+            static function () use (
+                $harness,
+                $credentials,
+                $transactionId,
+                $config,
+                $submissionPayload,
+                $acknowledgement,
+                $evidenceReceipt
+            ): void {
+                $client = new \eel_accounts\Client\CompaniesHouseAccountsGatewayClient(
+                    static fn(array $request): array => [
+                        'status_code' => 200,
+                        'headers' => [],
+                        'body' => $acknowledgement(
+                            'md5#' . md5('TEST-PRESENTER'),
+                            'md5#' . md5('TEST-CODE')
+                        ),
+                    ],
+                    $credentials,
+                    $transactionId,
+                    $config,
+                    static fn(string $xml, array $inventory): array => ['success' => true]
+                );
+                $result = $client->sendPreparedAccounts(
+                    $client->prepareAccounts($submissionPayload(), 'TEST', ['files' => []]),
+                    $evidenceReceipt,
+                    static function (array $exchange): array {
+                        throw new RuntimeException('Archive unavailable.');
+                    }
+                );
+
+                $harness->assertSame(false, $result['success']);
+                $harness->assertSame(true, $result['transport_unknown']);
+                $harness->assertSame(true, $result['evidence_incomplete']);
+                $harness->assertTrue(str_contains($result['error'], 'private transmission archive'));
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Client\CompaniesHouseAccountsGatewayClient::class,
             'builds the empty StatusAck and decodes GetDocument PDF evidence',
             static function () use (
                 $harness,
@@ -222,7 +320,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $transactionId,
                 $config,
                 $xmlText,
-                $validator
+                $validator,
+                $evidenceReceipt
             ): void {
                 $requests = [];
                 $pdf = "%PDF-1.4\nmock filing\n%%EOF";
@@ -255,8 +354,19 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $config,
                     $validator
                 );
-                $ack = $client->acknowledgeSubmissionStatus('TEST', str_repeat('a', 64));
-                $document = $client->getDocument('DOC-KEY-1', 'TEST', str_repeat('a', 64));
+                $ack = $client->acknowledgeSubmissionStatus(
+                    'TEST',
+                    ['files' => []],
+                    $evidenceReceipt,
+                    $evidenceReceipt
+                );
+                $document = $client->getDocument(
+                    'DOC-KEY-1',
+                    'TEST',
+                    ['files' => []],
+                    $evidenceReceipt,
+                    $evidenceReceipt
+                );
 
                 $harness->assertSame(true, $ack['success']);
                 $harness->assertSame('StatusAck', $xmlText($requests[0], 'Class'));
@@ -277,7 +387,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $transactionId,
                 $config,
                 $statusResponse,
-                $xmlText
+                $xmlText,
+                $evidenceReceipt
             ): void {
                 $captured = [];
                 $transport = static function (array $request) use (&$captured, $statusResponse): array {
@@ -300,11 +411,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $result = $client->getSubmissionStatus(
                     '000001',
                     'LIVE',
-                    static function (array $exchange) use (&$capturedRequest): void {
+                    static function (array $exchange) use (&$capturedRequest, $evidenceReceipt): array {
                         $capturedRequest = $exchange;
+                        return $evidenceReceipt($exchange);
                     },
-                    static function (array $exchange) use (&$capturedExchange): void {
+                    static function (array $exchange) use (&$capturedExchange, $evidenceReceipt): array {
                         $capturedExchange = $exchange;
+                        return $evidenceReceipt($exchange);
                     }
                 );
                 $requestXml = (string)$captured['body'];
@@ -336,7 +449,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $credentials,
                 $transactionId,
                 $config,
-                $statusResponse
+                $statusResponse,
+                $evidenceReceipt
             ): void {
                 $expected = [
                     'ACCEPT' => 'accepted',
@@ -358,7 +472,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         $transactionId,
                         $config
                     );
-                    $result = $client->getSubmissionStatus('000001', 'TEST');
+                    $result = $client->getSubmissionStatus(
+                        '000001',
+                        'TEST',
+                        $evidenceReceipt,
+                        $evidenceReceipt
+                    );
 
                     $harness->assertSame(true, $result['success']);
                     $harness->assertSame($raw, $result['submission_status']);
@@ -371,7 +490,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $harness->check(
             \eel_accounts\Client\CompaniesHouseAccountsGatewayClient::class,
             'parses rejection reasons and examiner comments for the requested submission only',
-            static function () use ($harness, $credentials, $transactionId, $config): void {
+            static function () use (
+                $harness,
+                $credentials,
+                $transactionId,
+                $config,
+                $evidenceReceipt
+            ): void {
                 $body = '<?xml version="1.0"?><GovTalkMessage xmlns="http://www.govtalk.gov.uk/CM/envelope">'
                     . '<EnvelopeVersion>1.0</EnvelopeVersion><Header><MessageDetails>'
                     . '<Class>GetSubmissionStatus</Class><Qualifier>response</Qualifier>'
@@ -396,7 +521,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $transactionId,
                     $config
                 );
-                $result = $client->getSubmissionStatus('000001', 'TEST');
+                $result = $client->getSubmissionStatus(
+                    '000001',
+                    'TEST',
+                    $evidenceReceipt,
+                    $evidenceReceipt
+                );
 
                 $harness->assertSame(true, $result['success']);
                 $harness->assertSame('REJECT', $result['submission_status']);
@@ -420,7 +550,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $credentials,
                 $transactionId,
                 $config,
-                $submissionPayload
+                $submissionPayload,
+                $evidenceReceipt
             ): void {
                 $body = '<?xml version="1.0"?><GovTalkMessage xmlns="http://www.govtalk.gov.uk/CM/envelope">'
                     . '<EnvelopeVersion>1.0</EnvelopeVersion><Header><MessageDetails>'
@@ -438,9 +569,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $credentials,
                     $transactionId,
                     $config,
-                    static fn(string $xml, string $manifest): array => ['success'=>true,'snapshot_id'=>7,'manifest_sha256'=>$manifest]
+                    static fn(string $xml, array $inventory): array => [
+                        'success' => true,
+                        'files' => $inventory['files'] ?? $inventory,
+                    ]
                 );
-                $result = $client->sendPreparedAccounts($client->prepareAccounts($submissionPayload(), 'TEST', str_repeat('a', 64)));
+                $result = $client->sendPreparedAccounts(
+                    $client->prepareAccounts($submissionPayload(), 'TEST', ['files' => []]),
+                    $evidenceReceipt,
+                    $evidenceReceipt
+                );
 
                 $harness->assertSame(false, $result['success']);
                 $harness->assertSame(false, $result['transport_unknown']);
@@ -458,7 +596,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $credentials,
                 $transactionId,
                 $config,
-                $submissionPayload
+                $submissionPayload,
+                $evidenceReceipt
             ): void {
                 $called = false;
                 $transport = static function (array $request) use (&$called): array {
@@ -470,10 +609,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $credentials,
                     $transactionId,
                     $config,
-                    static fn(string $xml, string $manifest): array => ['success'=>true,'snapshot_id'=>7,'manifest_sha256'=>$manifest]
+                    static fn(string $xml, array $inventory): array => [
+                        'success' => true,
+                        'files' => $inventory['files'] ?? $inventory,
+                    ]
                 );
                 try {
-                    $client->prepareAccounts($submissionPayload(), 'DISABLED', str_repeat('a', 64));
+                    $client->prepareAccounts($submissionPayload(), 'DISABLED', ['files' => []]);
                     $harness->assertTrue(false, 'Invalid environment should throw before transport.');
                 } catch (InvalidArgumentException $exception) {
                     $harness->assertTrue(str_contains($exception->getMessage(), 'TEST or LIVE'));
@@ -490,7 +632,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $credentials,
                 $transactionId,
                 $config,
-                $submissionPayload
+                $submissionPayload,
+                $evidenceReceipt
             ): void {
                 $transportCalls = 0;
                 $validatorCalls = 0;
@@ -502,15 +645,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $credentials,
                     $transactionId,
                     $config,
-                    static function (string $xml, string $manifest) use (&$validatorCalls): array {
+                    static function (string $xml, array $inventory) use (&$validatorCalls): array {
                         $validatorCalls++;
-                        return ['success'=>true,'snapshot_id'=>7,'manifest_sha256'=>$manifest];
+                        return ['success' => true, 'files' => $inventory['files'] ?? $inventory];
                     }
                 );
                 $payload = $submissionPayload();
                 $payload['accounts_xml'] = '<?xml version="1.0" encoding="UTF-8"?>' . "\n<html/>";
                 try {
-                    $client->prepareAccounts($payload, 'TEST', str_repeat('a', 64));
+                    $client->prepareAccounts($payload, 'TEST', ['files' => []]);
                     $harness->assertTrue(false, 'Legacy declaration should be rejected.');
                 } catch (InvalidArgumentException $exception) {
                     $harness->assertTrue(str_contains($exception->getMessage(), 'regenerate'));
@@ -528,7 +671,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $credentials,
                 $transactionId,
                 $config,
-                $submissionPayload
+                $submissionPayload,
+                $evidenceReceipt
             ): void {
                 $client = new \eel_accounts\Client\CompaniesHouseAccountsGatewayClient(
                     static function (array $request): array {
@@ -537,9 +681,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $credentials,
                     $transactionId,
                     $config,
-                    static fn(string $xml, string $manifest): array => ['success'=>true,'snapshot_id'=>7,'manifest_sha256'=>$manifest]
+                    static fn(string $xml, array $inventory): array => [
+                        'success' => true,
+                        'files' => $inventory['files'] ?? $inventory,
+                    ]
                 );
-                $result = $client->sendPreparedAccounts($client->prepareAccounts($submissionPayload(), 'TEST', str_repeat('a', 64)));
+                $result = $client->sendPreparedAccounts(
+                    $client->prepareAccounts($submissionPayload(), 'TEST', ['files' => []]),
+                    $evidenceReceipt,
+                    $evidenceReceipt
+                );
 
                 $harness->assertSame(false, $result['success']);
                 $harness->assertSame(true, $result['transport_unknown']);
@@ -555,7 +706,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness,
                 $credentials,
                 $transactionId,
-                $statusResponse
+                $statusResponse,
+                $evidenceReceipt
             ): void {
                 $responses = [
                     '<not-closed',
@@ -579,7 +731,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                             'max_response_bytes' => $index === 2 ? 128 : 65536,
                         ]
                     );
-                    $result = $client->getSubmissionStatus('000001', 'TEST');
+                    $result = $client->getSubmissionStatus(
+                        '000001',
+                        'TEST',
+                        $evidenceReceipt,
+                        $evidenceReceipt
+                    );
 
                     $harness->assertSame(false, $result['success']);
                     $harness->assertTrue(str_contains($result['error'], $errors[$index]));

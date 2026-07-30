@@ -74,7 +74,7 @@ final class _tax_companies_house_accounts_schemasCard extends CardBaseFramework
 
     private function refreshForm(): string
     {
-        return '<form method="post" action="?page=tax_artifacts" data-ajax="true">'
+        return '<form method="post" action="?page=artefacts" data-ajax="true">'
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="CompaniesHouseSchemaArtifacts">'
             . '<input type="hidden" name="intent" value="refresh_companies_house_accounts_schemas">'

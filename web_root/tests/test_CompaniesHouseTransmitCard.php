@@ -110,7 +110,7 @@ $harness->run(_companies_house_transmitCard::class, static function (
                 . '<div class="summary-value">Verified</div>'
             ));
             $harness->assertTrue(str_contains($html, '17 verified schema files installed.'));
-            $harness->assertTrue(str_contains($html, 'href="?page=tax_artifacts"'));
+            $harness->assertTrue(str_contains($html, 'href="?page=artefacts"'));
             $harness->assertTrue(str_contains(
                 $html,
                 '<section class="panel-soft"><h3 class="card-title">'
@@ -319,7 +319,7 @@ $harness->run(_companies_house_transmitCard::class, static function (
                     'The company authentication-code check is blocked because'
                 ));
                 $harness->assertTrue(str_contains($blocked, $schemaError));
-                $harness->assertTrue(str_contains($blocked, 'href="?page=tax_artifacts"'));
+                $harness->assertTrue(str_contains($blocked, 'href="?page=artefacts"'));
                 $harness->assertTrue(str_contains(
                     $blocked,
                     '<button class="button" type="submit" disabled aria-disabled="true">'

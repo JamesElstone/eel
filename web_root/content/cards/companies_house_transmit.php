@@ -501,7 +501,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
             . '<div class="summary-value">' . ($ready ? 'Verified' : 'Refresh required') . '</div>'
             . '<div class="helper">' . \eel_accounts\Support\Utf8::html($detail) . '</div>'
             . '<div class="actions-row actions-row-right">'
-            . '<a class="button" href="?page=tax_artifacts">Manage filing schemas</a></div></div>';
+            . '<a class="button" href="?page=artefacts">Manage filing schemas</a></div></div>';
     }
 
     private function artifactDownloadMetric(

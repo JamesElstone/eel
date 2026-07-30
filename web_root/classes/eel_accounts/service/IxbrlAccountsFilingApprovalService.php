@@ -192,7 +192,7 @@ final class IxbrlAccountsFilingApprovalService
                 $ctBasisIds[] = $ctBasisId;
             }
 
-            $progress?->__invoke('Building the immutable accounts iXBRL fact snapshot…', 78);
+            $progress?->__invoke('Building the immutable accounts facts snapshot for iXBRL generation…', 78);
             $factRunId = $this->factBuilder !== null
                 ? (int)($this->factBuilder)(
                     $companyId,

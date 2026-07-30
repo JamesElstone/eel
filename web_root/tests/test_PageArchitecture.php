@@ -25,7 +25,7 @@ final class TestPageArchitectureHarness
         $this->runTest('assets page groups cards into asset tabs', [$this, 'testAssetsPageCardLayout']);
         $this->runTest('vehicles page resolves the vehicle register card', [$this, 'testVehiclesPageResolvesVehicleRegisterCard']);
         $this->runTest('tax page resolves read-only tax workings cards', [$this, 'testTaxPageResolvesTaxWorkingsCards']);
-        $this->runTest('tax artifacts page remains rate and treatment rule workflow', [$this, 'testTaxRatesPageRemainsRateWorkflow']);
+        $this->runTest('artefacts page remains rate and treatment rule workflow', [$this, 'testTaxRatesPageRemainsRateWorkflow']);
         $this->runTest('CT filing mapping maintenance is global and separate from tax workings', [$this, 'testCtFilingMappingsPage']);
         $this->runTest('AJAX delta responses include only stale cards', [$this, 'testAjaxDeltaResponseReturnsOnlyStaleCards']);
         $this->runTest('AJAX delta responses expose a nonce refresh slot', [$this, 'testAjaxDeltaResponseIncludesAjaxNonceField']);
@@ -221,9 +221,9 @@ final class TestPageArchitectureHarness
 
     private function testTaxRatesPageRemainsRateWorkflow(): void
     {
-        $page = $this->loadPageCards('tax_artifacts');
+        $page = $this->loadPageCards('artefacts');
 
-        $this->assertSame(_tax_artifacts::class, $page::class);
+        $this->assertSame(_artefacts::class, $page::class);
         $this->assertSame([
             'tax_artifacts_refresh',
             'tax_treatment_rules',

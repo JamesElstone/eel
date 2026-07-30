@@ -107,7 +107,7 @@ final class GoldenWorkflowCoverageFixture
                 ],
             ],
             'ct600a' => [
-                'pages' => ['loans', 'profit_loss', 'corporation_tax', 'year_end', 'tax_artifacts'],
+                'pages' => ['loans', 'profit_loss', 'corporation_tax', 'year_end', 'artefacts'],
                 'evidence' => [
                     self::evidence('transaction-backed participator loan movements', 'SELECT COUNT(*) FROM transactions WHERE company_id = 9800 AND nominal_account_id = 91006', 3),
                     self::evidence('confirmed participator-linked loan journal lines', 'SELECT COUNT(*) FROM journal_lines jl INNER JOIN journals j ON j.id = jl.journal_id WHERE j.company_id = 9800 AND jl.nominal_account_id = 91006 AND jl.party_id = 980101', 3),
@@ -123,7 +123,7 @@ final class GoldenWorkflowCoverageFixture
                 ],
             ],
             'reporting_and_tax' => [
-                'pages' => ['trial_balance', 'profit_loss', 'corporation_tax', 'tax_audit', 'tax_artifacts', 'filing_mappings'],
+                'pages' => ['trial_balance', 'profit_loss', 'corporation_tax', 'tax_audit', 'artefacts', 'filing_mappings'],
                 'evidence' => [
                     self::evidence('corporation-tax periods', 'SELECT COUNT(*) FROM corporation_tax_periods WHERE company_id IN (9100, 9400)', 2),
                     self::evidence('persisted computation runs', 'SELECT COUNT(*) FROM corporation_tax_computation_runs WHERE company_id = 9400', 2),

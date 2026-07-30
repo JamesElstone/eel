@@ -188,7 +188,7 @@ final class _tax_rates_ct600_rimCard extends CardBaseFramework
 
     private function refreshForm(): string
     {
-        return '<form method="post" action="?page=tax_artifacts" data-ajax="true">' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+        return '<form method="post" action="?page=artefacts" data-ajax="true">' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="TaxRates"><input type="hidden" name="intent" value="hmrc_ct_artifacts_refresh"><button class="button primary" type="submit">Refresh and install HMRC filing artefacts</button></form>';
     }
 
@@ -202,7 +202,7 @@ final class _tax_rates_ct600_rimCard extends CardBaseFramework
     {
         if ($packageId <= 0) { return ''; }
         $label = trim($formVersion . ' ' . $artifactVersion);
-        return '<form method="post" action="?page=tax_artifacts" data-ajax="true">' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+        return '<form method="post" action="?page=artefacts" data-ajax="true">' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="TaxRates"><input type="hidden" name="intent" value="hmrc_ct_rim_delete"><input type="hidden" name="package_id" value="' . $packageId . '"><button class="button button-inline danger" type="submit" data-chicken-check="true" data-chicken-title="Delete HMRC CT600 RIM package" data-chicken-message="Delete HMRC CT600 RIM ' . \eel_accounts\Support\Utf8::html($label) . '?<br><br>This removes the database row, ZIP file, extracted directory, and validation-file catalogue records. This cannot be undone." data-chicken-confirm-text="Delete" data-chicken-button-class="button danger">Delete</button></form>';
     }
 
@@ -210,7 +210,7 @@ final class _tax_rates_ct600_rimCard extends CardBaseFramework
     {
         if ($packageId <= 0) { return ''; }
         $label = trim($taxonomyVersion . ' ' . $artifactVersion);
-        return '<form method="post" action="?page=tax_artifacts" data-ajax="true">' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+        return '<form method="post" action="?page=artefacts" data-ajax="true">' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="TaxRates"><input type="hidden" name="intent" value="hmrc_ct_computation_delete"><input type="hidden" name="package_id" value="' . $packageId . '"><button class="button button-inline danger" type="submit" data-chicken-check="true" data-chicken-title="Delete HMRC computation taxonomy package" data-chicken-message="Delete HMRC computation taxonomy ' . \eel_accounts\Support\Utf8::html($label) . '?<br><br>This removes the package database row, catalogue and mapping records, ZIP file, and extracted directory. This cannot be undone." data-chicken-confirm-text="Delete" data-chicken-button-class="button danger">Delete</button></form>';
     }
 }

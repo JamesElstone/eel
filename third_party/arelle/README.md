@@ -25,7 +25,7 @@ sample Inline XBRL file in `samples/`. Arelle settings are held centrally in
 `secure/app.php` under `arelle`.
 
 Validation runs offline. Download and verify the FRC Taxonomy Suite from the
-Tax Artifacts page; the verified package is stored under
+Artefacts page; the verified package is stored under
 `third_party/frc/taxonomies` and selected by the application, rather than by
 Arelle scanning a private folder.
 
@@ -38,7 +38,7 @@ third_party\arelle\bin\validate_ixbrl.bat outbound\ixbrl\accounts_ixbrl_1_1_1.xh
 ```
 
 The script uses managed ZIPs in `third_party/frc/taxonomies`; install one from
-Tax Artifacts first. Logs are written to `logs/arelle/`.
+Artefacts first. Logs are written to `logs/arelle/`.
 
 ## Licence Boundary
 

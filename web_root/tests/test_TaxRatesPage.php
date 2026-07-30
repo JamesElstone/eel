@@ -10,8 +10,8 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-$harness->run(_tax_artifacts::class, static function (GeneratedServiceClassTestHarness $harness, _tax_artifacts $page): void {
-    $harness->check(_tax_artifacts::class, 'includes refresh, rate, taxonomy and treatment rule cards', static function () use ($harness, $page): void {
+$harness->run(_artefacts::class, static function (GeneratedServiceClassTestHarness $harness, _artefacts $page): void {
+    $harness->check(_artefacts::class, 'includes refresh, rate, taxonomy and treatment rule cards', static function () use ($harness, $page): void {
         $harness->assertSame('Rates / Thresholds / Artefacts', $page->title());
         $harness->assertSame(['tax_artifacts_refresh', 'tax_treatment_rules', 'tax_rates_ct', 'tax_rates_ct600_rim', 'tax_frc_taxonomy', 'tax_arelle_download', 'tax_companies_house_accounts_schemas', 'tax_rates_vat', 'tax_thresholds_vat'], $page->cards());
     });

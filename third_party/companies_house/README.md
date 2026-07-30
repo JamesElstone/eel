@@ -3,7 +3,7 @@
 This directory is the runtime cache for XML schemas downloaded from the
 Companies House XML Gateway.
 
-An administrator populates and refreshes the cache from the **Tax Artifacts**
+An administrator populates and refreshes the cache from the **Artefacts**
 page. The application downloads the pinned filing schemas and their recursive
 dependencies, verifies them, and records their inventory and hashes in the
 database. Filing validation then uses only these installed local files.

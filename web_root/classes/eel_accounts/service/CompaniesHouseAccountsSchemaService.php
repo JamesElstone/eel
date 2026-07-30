@@ -136,7 +136,7 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
         );
         if ($rows === []) {
             throw new \RuntimeException(
-                'No Companies House filing schemas are installed. Refresh them from Tax Artifacts before filing.'
+                'No Companies House filing schemas are installed. Refresh them from Artefacts before filing.'
             );
         }
         $byUrl = [];
@@ -165,7 +165,7 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
             if (!is_array($file)) {
                 throw new \RuntimeException(
                     'The installed Companies House schema inventory does not cover the current filing profile. '
-                    . 'Refresh it from Tax Artifacts before filing.'
+                    . 'Refresh it from Artefacts before filing.'
                 );
             }
             $path = $this->cacheDirectory . '/' . ltrim(
@@ -177,14 +177,14 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
                 || !hash_equals(strtolower((string)$file['sha256']), strtolower($hash))) {
                 throw new \RuntimeException(
                     'An installed Companies House schema is missing or has changed. '
-                    . 'Refresh it from Tax Artifacts before filing.'
+                    . 'Refresh it from Artefacts before filing.'
                 );
             }
             $xml = file_get_contents($path);
             if (!is_string($xml)) {
                 throw new \RuntimeException(
                     'An installed Companies House schema could not be read. '
-                    . 'Refresh it from Tax Artifacts before filing.'
+                    . 'Refresh it from Artefacts before filing.'
                 );
             }
             $document = $this->loadXml($xml, $url);
@@ -207,7 +207,7 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
                 if (!isset($recordedChildren[$childUrl])) {
                     throw new \RuntimeException(
                         'The installed Companies House schema dependency inventory is incomplete. '
-                        . 'Refresh it from Tax Artifacts before filing.'
+                        . 'Refresh it from Artefacts before filing.'
                     );
                 }
                 $queue[] = $childUrl;
@@ -222,7 +222,7 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
                 && strtolower((string)($selected[$this->canonicalUrl($url)]['catalogue_status'] ?? '')) !== 'live') {
                 throw new \RuntimeException(
                     'Companies House does not mark a pinned filing schema as Live. '
-                    . 'Refresh Tax Artifacts or update the filing profile.'
+                    . 'Refresh Artefacts or update the filing profile.'
                 );
             }
         }

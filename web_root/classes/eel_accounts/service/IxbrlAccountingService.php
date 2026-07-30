@@ -32,6 +32,8 @@ final class IxbrlAccountingService
         $stored = null;
         $evidenceArtifact = null;
         try {
+            $facts = $builder->getFacts((int)$run['id']);
+            $generationWarnings = $this->negativeEquityOmissionWarnings($facts);
             $evidenceArtifact = (new FilingEvidenceService())->reserveArtifact(
                 $companyId,
                 $accountingPeriodId,
@@ -40,11 +42,11 @@ final class IxbrlAccountingService
                 ['ixbrl_generation_run_id' => (int)$run['id']]
             );
             $xhtml = $this->renderXhtml(
-                $builder->getFacts((int)$run['id']),
+                $facts,
                 $this->comparativeFactsRequired($companyId, $accountingPeriodId),
                 (string)$evidenceArtifact['display_id']
             );
-            $validationErrors = $this->validateInlineXbrl($xhtml);
+            $validationErrors = $this->validateInlineXbrl($xhtml, $facts);
             if ($validationErrors !== []) {
                 throw new \RuntimeException('Generated iXBRL failed internal validation: ' . implode(' ', $validationErrors));
             }
@@ -108,11 +110,15 @@ final class IxbrlAccountingService
                 'schema_identity' => IxbrlTaxonomyProfileService::SCHEMA_REF,
                 'validation_status' => 'passed',
                 'identifier_embedded' => false,
-                'metadata' => ['ixbrl_generation_run_id' => (int)$run['id']],
+                'metadata' => [
+                    'ixbrl_generation_run_id' => (int)$run['id'],
+                    'generation_warnings' => $generationWarnings,
+                ],
             ]);
 
             return ['success' => true, 'errors' => [], 'filename' => $filename, 'path' => $path, 'sha256' => $hash,
-                'evidence_artifact_id' => (string)$evidenceArtifact['display_id']];
+                'evidence_artifact_id' => (string)$evidenceArtifact['display_id'],
+                'warnings' => $generationWarnings];
         } catch (\Throwable $exception) {
             if (is_array($evidenceArtifact)) {
                 (new FilingEvidenceService())->failArtifact((int)$evidenceArtifact['id'], $exception->getMessage());
@@ -567,7 +573,7 @@ final class IxbrlAccountingService
                 . $this->e((string)$row['label']) . '</th><td class="amount">';
             $html .= is_callable($computed)
                 ? $this->visibleAmount((float)$computed(false))
-                : $this->inlineFact($current, [
+                : $this->statementFact($current, [
                     'accounting' => true,
                     'brackets' => !empty($row['brackets']),
                     'zero_dash' => true,
@@ -578,7 +584,7 @@ final class IxbrlAccountingService
                 $html .= '<td class="amount">';
                 $html .= is_callable($computed)
                     ? $this->visibleAmount((float)$computed(true))
-                    : $this->inlineFact($comparative, [
+                    : $this->statementFact($comparative, [
                         'accounting' => true,
                         'brackets' => !empty($row['brackets']),
                         'zero_dash' => true,
@@ -589,6 +595,17 @@ final class IxbrlAccountingService
         }
 
         return $html . '</tbody></table>';
+    }
+
+    private function statementFact(array $fact, array $options): string
+    {
+        if ((string)($fact['taxonomy_concept'] ?? '') === 'core:Equity'
+            && (string)($fact['value_type'] ?? '') === 'numeric'
+            && (float)($fact['numeric_value'] ?? 0) < 0) {
+            return $this->visibleAmount((float)$fact['numeric_value']);
+        }
+
+        return $this->inlineFact($fact, $options);
     }
 
     private function notes(array $indexed, string $periodEnd): string
@@ -1187,7 +1204,7 @@ CSS;
         }
     }
 
-    private function validateInlineXbrl(string $xhtml): array
+    private function validateInlineXbrl(string $xhtml, array $sourceFacts = []): array
     {
         $errors = [];
         if (!str_starts_with($xhtml, CompaniesHouseIxbrlDocumentPolicyService::DOCUMENT_PREFIX)) {
@@ -1391,7 +1408,6 @@ CSS;
             'core:ProvisionsForLiabilitiesBalanceSheetSubtotal',
             'core:AccruedLiabilitiesNotExpressedWithinCreditorsSubtotal',
             'core:NetAssetsLiabilities',
-            'core:Equity',
             'core:AverageNumberEmployeesDuringPeriod',
             'core:GeneralDescriptionAnyOff-balanceSheetArrangementsIncludingNaturePurposeFinancialImpactOnEntity',
             'core:DescriptionCapitalCommitments',
@@ -1437,6 +1453,12 @@ CSS;
             $errors[] = 'Negative transformed numbers must use the sign attribute and positive lexical content.';
             break;
         }
+        if (($xpath->query('//ix:nonFraction[@name="core:Equity" and @sign="-"]')->length ?? 0) > 0) {
+            $errors[] = 'A negative core:Equity fact must not be emitted because it fails HMRC.5.3.';
+        }
+        foreach ($this->equityOutputPolicyErrors($xpath, $sourceFacts) as $equityError) {
+            $errors[] = $equityError;
+        }
         foreach ($xpath->query('//ix:nonFraction[@sign="-" and not(ancestor::ix:hidden)]') ?: [] as $negativeFact) {
             if (!$negativeFact instanceof \DOMElement) {
                 continue;
@@ -1458,6 +1480,89 @@ CSS;
         }
 
         return array_values(array_unique($errors));
+    }
+
+    /** @return list<string> */
+    private function equityOutputPolicyErrors(\DOMXPath $xpath, array $sourceFacts): array
+    {
+        $errors = [];
+        foreach ($sourceFacts as $sourceFact) {
+            if (!is_array($sourceFact)
+                || (string)($sourceFact['taxonomy_concept'] ?? '') !== 'core:Equity'
+                || (string)($sourceFact['value_type'] ?? '') !== 'numeric') {
+                continue;
+            }
+            $context = (string)($sourceFact['context_ref'] ?? '');
+            $expected = round((float)($sourceFact['numeric_value'] ?? 0), 2);
+            $equityValues = $this->numericFactValues($xpath, 'core:Equity', $context);
+            if ($expected < 0) {
+                if ($equityValues !== []) {
+                    $errors[] = 'Negative core:Equity must be omitted for context ' . $context . '.';
+                }
+                $netAssetValues = $this->numericFactValues($xpath, 'core:NetAssetsLiabilities', $context);
+                if (!$this->containsMatchingAmount($netAssetValues, $expected)) {
+                    $errors[] = 'Omitted negative core:Equity requires a matching core:NetAssetsLiabilities fact for context '
+                        . $context . '.';
+                }
+                continue;
+            }
+            if (!$this->containsMatchingAmount($equityValues, $expected)) {
+                $errors[] = 'Non-negative core:Equity is missing or mismatched for context ' . $context . '.';
+            }
+        }
+
+        return $errors;
+    }
+
+    /** @return list<float> */
+    private function numericFactValues(\DOMXPath $xpath, string $concept, string $context): array
+    {
+        $values = [];
+        foreach ($xpath->query('//ix:nonFraction[@name="' . $concept . '"]') ?: [] as $fact) {
+            if (!$fact instanceof \DOMElement || $fact->getAttribute('contextRef') !== $context) {
+                continue;
+            }
+            $lexical = trim(str_replace(',', '', $fact->textContent));
+            $value = $fact->getAttribute('format') === 'ixt:zerodash' ? 0.0 : (float)$lexical;
+            if ($fact->getAttribute('sign') === '-') {
+                $value *= -1;
+            }
+            $values[] = round($value, 2);
+        }
+
+        return $values;
+    }
+
+    /** @param list<float> $values */
+    private function containsMatchingAmount(array $values, float $expected): bool
+    {
+        foreach ($values as $value) {
+            if (abs($value - $expected) < 0.005) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @return list<string> */
+    private function negativeEquityOmissionWarnings(array $facts): array
+    {
+        $warnings = [];
+        foreach ($facts as $fact) {
+            if (!is_array($fact)
+                || (string)($fact['taxonomy_concept'] ?? '') !== 'core:Equity'
+                || (string)($fact['value_type'] ?? '') !== 'numeric'
+                || (float)($fact['numeric_value'] ?? 0) >= 0) {
+                continue;
+            }
+            $context = (string)($fact['context_ref'] ?? 'unknown');
+            $warnings[] = 'IXBRL-HMRC-NEGATIVE-EQUITY: The ' . $context
+                . ' core:Equity fact was omitted because the correct negative value would trigger HMRC.5.3 '
+                . 'against the standard label "Equity". The equivalent core:NetAssetsLiabilities fact remains tagged.';
+        }
+
+        return $warnings;
     }
 
     /**

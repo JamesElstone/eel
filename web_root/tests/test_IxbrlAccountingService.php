@@ -258,6 +258,183 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             ));
         });
 
+        $harness->check(\eel_accounts\Service\IxbrlAccountingService::class, 'omits only negative equity facts while preserving visible amounts and net assets', static function () use ($harness, $service): void {
+            $facts = ixbrlRenderFixtureFacts();
+            $currentAmounts = [
+                'creditors_within_one_year' => 5667.80,
+                'net_current_assets_liabilities' => -5167.80,
+                'total_assets_less_current_liabilities' => -4167.80,
+                'net_assets_liabilities' => -4567.80,
+                'equity' => -4567.80,
+            ];
+            foreach ($facts as &$fact) {
+                $key = (string)$fact['fact_key'];
+                if (array_key_exists($key, $currentAmounts)) {
+                    $fact['numeric_value'] = $currentAmounts[$key];
+                }
+            }
+            unset($fact);
+
+            $comparativeKeys = [];
+            foreach ((new \eel_accounts\Service\IxbrlTaxonomyProfileService())->mappings() as $mapping) {
+                if (!empty($mapping['comparative_enabled'])) {
+                    $comparativeKeys[(string)$mapping['fact_key']] = true;
+                }
+            }
+            $comparativeAmounts = [
+                'creditors_within_one_year' => 50.0,
+                'net_current_assets_liabilities' => 450.0,
+                'total_assets_less_current_liabilities' => 1450.0,
+                'net_assets_liabilities' => 1050.0,
+                'equity' => 1050.0,
+            ];
+            foreach (array_values($facts) as $fact) {
+                $key = (string)$fact['fact_key'];
+                if (!isset($comparativeKeys[$key])) {
+                    continue;
+                }
+                $comparative = $fact;
+                $comparative['context_ref'] = str_replace(
+                    'current_',
+                    'comparative_',
+                    (string)$fact['context_ref']
+                );
+                $comparative['source_json'] = json_encode([
+                    'period_start' => '2024-01-01',
+                    'period_end' => '2024-12-31',
+                ]);
+                if (array_key_exists($key, $comparativeAmounts)) {
+                    $comparative['numeric_value'] = $comparativeAmounts[$key];
+                }
+                $facts[] = $comparative;
+            }
+
+            $render = new ReflectionMethod($service, 'renderXhtml');
+            $render->setAccessible(true);
+            $xhtml = (string)$render->invoke($service, $facts, true);
+            $document = new DOMDocument();
+            $harness->assertTrue($document->loadXML($xhtml, LIBXML_NONET));
+            $xpath = new DOMXPath($document);
+            $xpath->registerNamespace('xhtml', 'http://www.w3.org/1999/xhtml');
+            $xpath->registerNamespace('ix', 'http://www.xbrl.org/2013/inlineXBRL');
+            $equityRow = $xpath->query(
+                '//xhtml:tr[xhtml:th[normalize-space(.)="Capital and reserves"]]'
+            )->item(0);
+            $harness->assertTrue($equityRow instanceof DOMElement);
+            $harness->assertSame('(4,567.80)', trim((string)$xpath->query('./xhtml:td[1]', $equityRow)->item(0)?->textContent));
+            $harness->assertSame(0, $xpath->query(
+                './/ix:nonFraction[@name="core:Equity" and @contextRef="current_period_end"]',
+                $equityRow
+            )->length);
+            $harness->assertSame(1, $xpath->query(
+                './/ix:nonFraction[@name="core:Equity" and @contextRef="comparative_period_end"]',
+                $equityRow
+            )->length);
+            $harness->assertSame(1, $xpath->query(
+                '//ix:nonFraction[@name="core:NetAssetsLiabilities"'
+                . ' and @contextRef="current_period_end" and @sign="-"]'
+            )->length);
+
+            $validator = new ReflectionMethod($service, 'validateInlineXbrl');
+            $validator->setAccessible(true);
+            $harness->assertSame([], $validator->invoke($service, $xhtml, $facts));
+
+            $invalidNegativeEquity = str_replace(
+                '</ix:hidden>',
+                '<ix:nonFraction name="core:Equity" contextRef="current_period_end" unitRef="GBP"'
+                . ' decimals="2" format="ixt:numdotdecimal" sign="-">4567.80</ix:nonFraction></ix:hidden>',
+                $xhtml
+            );
+            $harness->assertTrue(in_array(
+                'A negative core:Equity fact must not be emitted because it fails HMRC.5.3.',
+                $validator->invoke($service, $invalidNegativeEquity, $facts),
+                true
+            ));
+
+            $withoutNetAssets = preg_replace(
+                '/<ix:nonFraction name="core:NetAssetsLiabilities" contextRef="current_period_end"[^>]*>[^<]*<\\/ix:nonFraction>/',
+                '',
+                $xhtml
+            );
+            $harness->assertTrue(is_string($withoutNetAssets));
+            $harness->assertTrue(in_array(
+                'Omitted negative core:Equity requires a matching core:NetAssetsLiabilities fact for context current_period_end.',
+                $validator->invoke($service, $withoutNetAssets, $facts),
+                true
+            ));
+
+            $warningMethod = new ReflectionMethod($service, 'negativeEquityOmissionWarnings');
+            $warningMethod->setAccessible(true);
+            $warnings = (array)$warningMethod->invoke($service, $facts);
+            $harness->assertSame(1, count($warnings));
+            $harness->assertTrue(str_starts_with(
+                (string)$warnings[0],
+                'IXBRL-HMRC-NEGATIVE-EQUITY:'
+            ));
+
+            foreach ($facts as &$fact) {
+                $key = (string)$fact['fact_key'];
+                $context = (string)$fact['context_ref'];
+                if (str_starts_with($context, 'current_') && array_key_exists($key, $comparativeAmounts)) {
+                    $fact['numeric_value'] = $comparativeAmounts[$key];
+                } elseif (str_starts_with($context, 'comparative_') && array_key_exists($key, $currentAmounts)) {
+                    $fact['numeric_value'] = $currentAmounts[$key];
+                }
+            }
+            unset($fact);
+            $inverseXhtml = (string)$render->invoke($service, $facts, true);
+            $inverseDocument = new DOMDocument();
+            $harness->assertTrue($inverseDocument->loadXML($inverseXhtml, LIBXML_NONET));
+            $inverseXpath = new DOMXPath($inverseDocument);
+            $inverseXpath->registerNamespace('ix', 'http://www.xbrl.org/2013/inlineXBRL');
+            $harness->assertSame(1, $inverseXpath->query(
+                '//ix:nonFraction[@name="core:Equity" and @contextRef="current_period_end"]'
+            )->length);
+            $harness->assertSame(0, $inverseXpath->query(
+                '//ix:nonFraction[@name="core:Equity" and @contextRef="comparative_period_end"]'
+            )->length);
+            $harness->assertSame([], $validator->invoke($service, $inverseXhtml, $facts));
+        });
+
+        $harness->check(\eel_accounts\Service\IxbrlAccountingService::class, 'keeps zero equity tagged and detects a missing non-negative equity fact', static function () use ($harness, $service): void {
+            $facts = ixbrlRenderFixtureFacts();
+            $amounts = [
+                'creditors_within_one_year' => 1100.0,
+                'net_current_assets_liabilities' => -600.0,
+                'total_assets_less_current_liabilities' => 400.0,
+                'net_assets_liabilities' => 0.0,
+                'equity' => 0.0,
+            ];
+            foreach ($facts as &$fact) {
+                $key = (string)$fact['fact_key'];
+                if (array_key_exists($key, $amounts)) {
+                    $fact['numeric_value'] = $amounts[$key];
+                }
+            }
+            unset($fact);
+            $render = new ReflectionMethod($service, 'renderXhtml');
+            $render->setAccessible(true);
+            $xhtml = (string)$render->invoke($service, $facts);
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                'name="core:Equity" contextRef="current_period_end" unitRef="GBP" decimals="2" format="ixt:zerodash">-</ix:nonFraction>'
+            ));
+            $validator = new ReflectionMethod($service, 'validateInlineXbrl');
+            $validator->setAccessible(true);
+            $harness->assertSame([], $validator->invoke($service, $xhtml, $facts));
+            $withoutEquity = preg_replace(
+                '/<ix:nonFraction name="core:Equity" contextRef="current_period_end"[^>]*>[^<]*<\\/ix:nonFraction>/',
+                '',
+                $xhtml
+            );
+            $harness->assertTrue(is_string($withoutEquity));
+            $harness->assertTrue(in_array(
+                'Non-negative core:Equity is missing or mismatched for context current_period_end.',
+                $validator->invoke($service, $withoutEquity, $facts),
+                true
+            ));
+        });
+
         $harness->check(\eel_accounts\Service\IxbrlAccountingService::class, 'renders an untagged AP80 gross-profit bridge from subcontractor provenance', static function () use ($harness, $service): void {
             $facts = ixbrlRenderFixtureFacts();
             foreach ($facts as &$fact) {

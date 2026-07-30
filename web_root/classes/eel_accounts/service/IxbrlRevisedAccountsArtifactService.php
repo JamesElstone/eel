@@ -112,6 +112,7 @@ final class IxbrlRevisedAccountsArtifactService
         if (empty($transformed['success'])) {
             return $transformed;
         }
+        $generationWarnings = (array)($transformed['warnings'] ?? []);
 
         $directory = $this->managedDirectory($companyId);
         if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
@@ -187,7 +188,10 @@ final class IxbrlRevisedAccountsArtifactService
             return [
                 'success' => false,
                 'errors' => (array)($validation['errors'] ?? ['The revised accounts did not pass Arelle validation.']),
-                'warnings' => (array)($validation['warnings'] ?? []),
+                'warnings' => array_values(array_merge(
+                    $generationWarnings,
+                    (array)($validation['warnings'] ?? [])
+                )),
                 'validation' => $validation,
             ];
         }
@@ -206,7 +210,10 @@ final class IxbrlRevisedAccountsArtifactService
         return [
             'success' => true,
             'errors' => [],
-            'warnings' => (array)($validation['warnings'] ?? []),
+            'warnings' => array_values(array_merge(
+                $generationWarnings,
+                (array)($validation['warnings'] ?? [])
+            )),
             'path' => $path,
             'filename' => $filename,
             'sha256' => $sha256,
@@ -349,6 +356,7 @@ final class IxbrlRevisedAccountsArtifactService
         $revisionMarker->appendChild($document->createTextNode('true'));
         $hidden->appendChild($revisionMarker);
 
+        $generationWarnings = $this->negativeSupersededEquityWarnings($supersededFacts);
         $changedSupersededFacts = $this->changedSupersededFacts($xpath, $supersededFacts);
         if ($changedSupersededFacts !== []) {
             $contextResult = $this->appendSupersededContexts($document, $xpath, $changedSupersededFacts);
@@ -443,7 +451,7 @@ final class IxbrlRevisedAccountsArtifactService
         return [
             'success' => true,
             'errors' => [],
-            'warnings' => [],
+            'warnings' => $generationWarnings,
             'xhtml' => $xhtml,
             'fact_count' => (int)($checkXpath->query('//ix:nonFraction | //ix:nonNumeric')->length ?? 0),
             'superseded_fact_count' => count($changedSupersededFacts),
@@ -530,7 +538,16 @@ final class IxbrlRevisedAccountsArtifactService
             };
             $concept = (string)($fact['concept'] ?? '');
             $currentKey = $concept . '|' . $currentContext;
+            if ($concept === 'core:Equity' && !array_key_exists($currentKey, $currentValues)) {
+                $netAssetsKey = 'core:NetAssetsLiabilities|' . $currentContext;
+                if (array_key_exists($netAssetsKey, $currentValues)) {
+                    $currentValues[$currentKey] = $currentValues[$netAssetsKey];
+                }
+            }
             if ($concept === '' || $currentContext === '' || !array_key_exists($currentKey, $currentValues)) {
+                continue;
+            }
+            if ($concept === 'core:Equity' && (float)($fact['value'] ?? 0) < 0) {
                 continue;
             }
             if (abs((float)($fact['value'] ?? 0) - $currentValues[$currentKey]) < 0.005) {
@@ -545,6 +562,25 @@ final class IxbrlRevisedAccountsArtifactService
         );
 
         return $changed;
+    }
+
+    /** @return list<string> */
+    private function negativeSupersededEquityWarnings(array $facts): array
+    {
+        $warnings = [];
+        foreach ($facts as $fact) {
+            if (!is_array($fact)
+                || (string)($fact['concept'] ?? '') !== 'core:Equity'
+                || (float)($fact['value'] ?? 0) >= 0) {
+                continue;
+            }
+            $context = (string)($fact['context_ref'] ?? 'unknown');
+            $warnings[] = 'IXBRL-HMRC-NEGATIVE-EQUITY: The ' . $context
+                . ' core:Equity fact was omitted because the correct negative value would trigger HMRC.5.3 '
+                . 'against the standard label "Equity".';
+        }
+
+        return $warnings;
     }
 
     /** Returns an error string, or an empty string on success. */

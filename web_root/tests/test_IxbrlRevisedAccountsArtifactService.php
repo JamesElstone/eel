@@ -66,6 +66,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 . '<h2>Notes to the Micro-entity Accounts</h2>'
                 . '<ix:nonNumeric name="core:DateAuthorisationFinancialStatementsForIssue" contextRef="current_period_end" format="ixt:datedaymonthyearen">21 July 2026</ix:nonNumeric>'
                 . '<ix:nonFraction name="core:FixedAssets" contextRef="current_period_end" unitRef="GBP" decimals="2" format="ixt:numdotdecimal">100.00</ix:nonFraction>'
+                . '<ix:nonFraction name="core:Equity" contextRef="current_period_end" unitRef="GBP" decimals="2" format="ixt:numdotdecimal">100.00</ix:nonFraction>'
                 . '<ix:nonFraction name="core:Creditors" contextRef="current_period_end_creditors_within_one_year" unitRef="GBP" decimals="2" format="ixt:numdotdecimal">279.00</ix:nonFraction>'
                 . '<ix:nonFraction name="core:Creditors" contextRef="current_period_end_creditors_after_one_year" unitRef="GBP" decimals="2" format="ixt:numdotdecimal">1035.63</ix:nonFraction></div>'
                 . '<div id="hmrc-revision-explanation"><p><ix:nonNumeric name="bus:StatementRespectsInWhichPreviouslyFiledReportDidNotComplyWithCompaniesAct2006" contextRef="current_period_duration">The original report contained an error.</ix:nonNumeric></p></div>'
@@ -100,6 +101,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 'unit_ref' => 'GBP',
                 'decimals' => '2',
                 'source_document_id' => 90,
+            ], [
+                'concept' => 'core:Equity',
+                'context_ref' => 'current_period_end_superseded',
+                'value' => -4567.80,
+                'unit_ref' => 'GBP',
+                'decimals' => '2',
+                'source_document_id' => 90,
             ]];
             $result = $service->transform(
                 $source,
@@ -127,6 +135,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(str_contains($xhtml, 'ReportAnAmendedRevisedVersionPreviouslyFiledReportTruefalse'));
             $harness->assertTrue(str_contains($xhtml, 'dimension="bus:OriginalRevisedDataDimension">bus:Superseded'));
             $harness->assertTrue(str_contains($xhtml, 'name="core:FixedAssets" contextRef="current_period_end_superseded"'));
+            $harness->assertFalse(str_contains($xhtml, 'name="core:Equity" contextRef="current_period_end_superseded"'));
             $harness->assertTrue(str_contains($xhtml, 'format="ixt:datedaymonthyearen">21 July 2026'));
             $harness->assertFalse(str_contains($xhtml, 'EEL-AR-NOT-VISIBLE'));
             $harness->assertSame(3, (int)($result['superseded_fact_count'] ?? 0));
@@ -205,6 +214,55 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 (int)($result['fact_count'] ?? 0)
             );
             $harness->assertTrue((int)($result['fact_count'] ?? 0) > 4);
+
+            $negativeEquityOnly = $service->transform(
+                $source,
+                $oldDeclarations,
+                '',
+                [[
+                    'concept' => 'core:Equity',
+                    'context_ref' => 'current_period_end_superseded',
+                    'value' => -4567.80,
+                    'unit_ref' => 'GBP',
+                    'decimals' => '2',
+                    'source_document_id' => 90,
+                ]]
+            );
+            $harness->assertTrue((bool)($negativeEquityOnly['success'] ?? false));
+            $harness->assertSame(0, (int)($negativeEquityOnly['superseded_fact_count'] ?? -1));
+            $harness->assertFalse(str_contains(
+                (string)($negativeEquityOnly['xhtml'] ?? ''),
+                'id="current_period_end_superseded"'
+            ));
+            $harness->assertTrue(str_starts_with(
+                (string)(($negativeEquityOnly['warnings'] ?? [])[0] ?? ''),
+                'IXBRL-HMRC-NEGATIVE-EQUITY:'
+            ));
+
+            $sourceWithOmittedNegativeEquity = str_replace(
+                '<ix:nonFraction name="core:Equity" contextRef="current_period_end" unitRef="GBP" decimals="2" format="ixt:numdotdecimal">100.00</ix:nonFraction>',
+                '<ix:nonFraction name="core:NetAssetsLiabilities" contextRef="current_period_end" unitRef="GBP" decimals="2" format="ixt:numdotdecimal" sign="-">4567.80</ix:nonFraction>',
+                $source
+            );
+            $positiveSupersededEquity = $service->transform(
+                $sourceWithOmittedNegativeEquity,
+                $oldDeclarations,
+                '',
+                [[
+                    'concept' => 'core:Equity',
+                    'context_ref' => 'current_period_end_superseded',
+                    'value' => 100.0,
+                    'unit_ref' => 'GBP',
+                    'decimals' => '2',
+                    'source_document_id' => 90,
+                ]]
+            );
+            $harness->assertTrue((bool)($positiveSupersededEquity['success'] ?? false));
+            $harness->assertSame(1, (int)($positiveSupersededEquity['superseded_fact_count'] ?? 0));
+            $harness->assertTrue(str_contains(
+                (string)($positiveSupersededEquity['xhtml'] ?? ''),
+                'name="core:Equity" contextRef="current_period_end_superseded"'
+            ));
 
             $enhancedDeclarations = $oldDeclarations;
             $enhancedDeclarations['non_compliance_explanation'] =

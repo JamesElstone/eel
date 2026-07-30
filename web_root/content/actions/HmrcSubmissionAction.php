@@ -27,8 +27,22 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
         if ($contextError !== null) {
             return $this->result(false, [$contextError], [], $changedFacts);
         }
-        if (!in_array($intent, ['hmrc_submit_test', 'hmrc_submit_live', 'hmrc_poll'], true)) {
+        if (!in_array($intent, [
+            'hmrc_submit_test',
+            'hmrc_submit_live',
+            'hmrc_generate_request',
+            'hmrc_poll',
+        ], true)) {
             return $this->result(false, ['Unknown Corporation Tax submission action.'], [], $changedFacts);
+        }
+        if ($intent === 'hmrc_generate_request'
+            && !(bool)AppConfigurationStore::get('developer_options', false)) {
+            return $this->result(
+                false,
+                ['Developer options must be enabled to generate an unsent HMRC GovTalk request file.'],
+                [],
+                $changedFacts
+            );
         }
 
         try {
@@ -46,7 +60,18 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
             $report = static function (string $message, int $percent) use ($progress): void {
                 $progress->report($message, $percent);
             };
-            if (in_array($intent, ['hmrc_submit_test', 'hmrc_submit_live'], true)) {
+            if ($intent === 'hmrc_generate_request') {
+                $progress->report(
+                    'Preparing the exact HMRC GovTalk request without transmitting it…',
+                    8
+                );
+                $command = $service->generateRequestFile(
+                    $companyId,
+                    $ctPeriodId,
+                    $actor,
+                    $report
+                );
+            } elseif (in_array($intent, ['hmrc_submit_test', 'hmrc_submit_live'], true)) {
                 $progress->report(
                     $intent === 'hmrc_submit_live'
                         ? 'Preparing the approved return for LIVE HMRC transmission…'
@@ -74,7 +99,12 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
                 $command = $service->poll($submissionId, $actor, $report);
             }
             if (!empty($command['success'])) {
-                $progress->report('HMRC transmission processing is complete.', 100);
+                $progress->report(
+                    $intent === 'hmrc_generate_request'
+                        ? 'The HMRC GovTalk request file is ready; nothing was transmitted.'
+                        : 'HMRC transmission processing is complete.',
+                    100
+                );
             }
         } catch (Throwable $exception) {
             $command = ['success' => false, 'errors' => [$exception->getMessage()], 'warnings' => []];
@@ -162,6 +192,11 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
 
     private function successMessage(string $intent, array $command): string
     {
+        if ($intent === 'hmrc_generate_request') {
+            $path = trim((string)($command['path'] ?? ''));
+            return 'The HMRC GovTalk request file was generated without transmission'
+                . ($path !== '' ? ': ' . $path : '.');
+        }
         if (!empty($command['needs_poll'])) {
             return 'HMRC acknowledged the submission. Use Check HMRC status after the requested polling interval.';
         }

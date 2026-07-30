@@ -159,6 +159,79 @@ $harness->run(_hmrc_transmitCard::class, static function (
         $harness->assertSame(1, preg_match('/name="ct_period_id" value="7"[\s\S]*?<button class="button danger" type="submit" name="intent" value="hmrc_submit_live" disabled data-chicken-check/', $html));
     });
 
+    $harness->check(_hmrc_transmitCard::class, 'shows request-file generation only with developer options enabled', static function () use ($harness, $card): void {
+        $context = [
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'services' => ['hmrc_ct600_status' => [
+                'success' => true,
+                'xml_environment' => 'TEST',
+                'test_environment' => 'TEST',
+                'live_environment' => 'DISABLED',
+                'environments' => [
+                    'TEST' => [
+                        'ready' => true,
+                        'credentials_configured' => true,
+                        'blockers' => [],
+                    ],
+                ],
+                'periods' => [[
+                    'ct_period_id' => 6,
+                    'xml_environment' => 'TEST',
+                    'period_start' => '2025-01-01',
+                    'period_end' => '2025-12-31',
+                    'test_ready' => true,
+                    'live_ready' => false,
+                    'filing_dependencies' => [
+                        ['label' => 'Disclosures and filing basis', 'ready' => true],
+                        ['label' => 'CT-period filing basis', 'ready' => true],
+                        ['label' => 'CT600 source model', 'ready' => true],
+                        ['label' => 'Filing iXBRL artifacts', 'ready' => true],
+                    ],
+                    'blockers' => [],
+                ]],
+            ]],
+        ];
+        $previous = AppConfigurationStore::get('developer_options', false);
+        try {
+            AppConfigurationStore::set('developer_options', false);
+            $standard = $card->render($context);
+            $harness->assertFalse(str_contains($standard, 'hmrc_generate_request'));
+            $harness->assertFalse(str_contains($standard, 'Generate Request File'));
+
+            AppConfigurationStore::set('developer_options', true);
+            $developer = $card->render($context);
+            $harness->assertTrue(str_contains(
+                $developer,
+                'name="intent" value="hmrc_generate_request">Generate Request File</button>'
+            ));
+            $harness->assertTrue(str_contains(
+                $developer,
+                'without contacting HMRC'
+            ));
+            $harness->assertTrue(str_contains(
+                $developer,
+                'otherwise clearly labelled non-transmittable placeholders'
+            ));
+
+            $context['services']['hmrc_ct600_status']['environments']['TEST'] = [
+                'ready' => false,
+                'credentials_configured' => false,
+                'blockers' => ['HMRC XML Sender ID is missing or invalid.'],
+            ];
+            $withoutCredentials = $card->render($context);
+            $harness->assertTrue(str_contains(
+                $withoutCredentials,
+                'name="intent" value="hmrc_generate_request">Generate Request File</button>'
+            ));
+            $harness->assertTrue(str_contains(
+                $withoutCredentials,
+                'name="intent" value="hmrc_submit_test" disabled>Transmit Submission</button>'
+            ));
+        } finally {
+            AppConfigurationStore::set('developer_options', (bool)$previous);
+        }
+    });
+
     $harness->check(_hmrc_transmitCard::class, 'shows missing selected-profile credentials as danger helper text', static function () use ($harness, $card): void {
         $html = $card->render([
             'company' => ['id' => 49, 'accounting_period_id' => 79],
@@ -358,13 +431,13 @@ $harness->run(HmrcSubmissionAction::class, static function (
         ));
     });
 
-    $harness->check(HmrcSubmissionAction::class, 'exposes only the Test LIVE and Poll command intents', static function () use ($harness): void {
+    $harness->check(HmrcSubmissionAction::class, 'exposes only the Test LIVE request-file and Poll command intents', static function () use ($harness): void {
         $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content'
             . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'HmrcSubmissionAction.php');
-        foreach (['hmrc_submit_test', 'hmrc_submit_live', 'hmrc_poll'] as $intent) {
+        foreach (['hmrc_submit_test', 'hmrc_submit_live', 'hmrc_generate_request', 'hmrc_poll'] as $intent) {
             $harness->assertTrue(str_contains($source, "'" . $intent . "'"));
         }
-        foreach (['->submitTest(', '->submitLive(', '->poll(', '->status('] as $call) {
+        foreach (['->submitTest(', '->submitLive(', '->generateRequestFile(', '->poll(', '->status('] as $call) {
             $harness->assertTrue(str_contains($source, $call));
         }
         foreach (['declaration_name', 'declaration_status', 'declaration_confirmed', 'authority_confirmed',
@@ -378,6 +451,7 @@ $harness->run(HmrcSubmissionAction::class, static function (
         foreach ([
             'Checking the selected HMRC transmission and CT Period',
             'Preparing the approved return for LIVE HMRC transmission',
+            'Preparing the exact HMRC GovTalk request without transmitting it',
             'HMRC transmission processing is complete',
         ] as $progressMessage) {
             $harness->assertTrue(str_contains($source, $progressMessage));
@@ -386,7 +460,8 @@ $harness->run(HmrcSubmissionAction::class, static function (
         foreach (['$request->isPost()', 'isValidCsrfToken($csrfToken)', 'RoleAssignmentService::ADMIN_ROLE_ID'] as $securityGate) {
             $harness->assertTrue(str_contains($source, $securityGate));
         }
+        $harness->assertTrue(str_contains($source, "AppConfigurationStore::get('developer_options', false)"));
         $harness->assertFalse(str_contains($source, "return 'web_app';"));
-        $harness->assertFalse((bool)preg_match('/GovTalk|stream_context_create|curl_exec|file_get_contents\s*\(\s*[\'\"]https?:/i', $source));
+        $harness->assertFalse((bool)preg_match('/stream_context_create|curl_exec|file_get_contents\s*\(\s*[\'\"]https?:/i', $source));
     });
 });

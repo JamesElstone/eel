@@ -87,6 +87,103 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $h->check(
             \eel_accounts\Client\HmrcCtTransactionEngineClient::class,
+            'prepares the exact GovTalk submission request without transport',
+            static function () use ($h, $credentials, $transactionId, $body): void {
+                $transportCalled = false;
+                $client = new \eel_accounts\Client\HmrcCtTransactionEngineClient(
+                    static function (array $request) use (&$transportCalled): array {
+                        unset($request);
+                        $transportCalled = true;
+                        throw new RuntimeException('Transport must not run while generating a request file.');
+                    },
+                    $credentials,
+                    $transactionId
+                );
+                $prepared = $client->prepareSubmissionRequest(
+                    $body,
+                    '0123456789',
+                    'TEST'
+                );
+
+                $h->assertTrue((bool)$prepared['success']);
+                $h->assertFalse($transportCalled);
+                $h->assertSame('prepared', (string)$prepared['protocol_state']);
+                $h->assertFalse((bool)$prepared['credentials_placeholder']);
+                $h->assertSame('ABCDEF1234567890', (string)$prepared['transaction_id']);
+                $h->assertTrue(str_contains(
+                    (string)$prepared['request_xml'],
+                    '<Class>HMRC-CT-CT600</Class>'
+                ));
+                $h->assertTrue(str_contains(
+                    (string)$prepared['request_xml'],
+                    '<GatewayTest>1</GatewayTest>'
+                ));
+                $h->assertTrue(str_contains(
+                    (string)$prepared['request_xml'],
+                    '<SenderID>TEST-SENDER</SenderID>'
+                ));
+                $h->assertTrue(str_contains(
+                    (string)$prepared['request_xml'],
+                    '<Value>TEST-PASSWORD</Value>'
+                ));
+                $h->assertSame(
+                    hash('sha256', (string)$prepared['request_xml']),
+                    (string)$prepared['request_sha256']
+                );
+                $h->assertSame(
+                    strlen((string)$prepared['request_xml']),
+                    (int)$prepared['request_bytes']
+                );
+            }
+        );
+
+        $h->check(
+            \eel_accounts\Client\HmrcCtTransactionEngineClient::class,
+            'uses explicit placeholders for an unsent request while real submission remains fail closed',
+            static function () use ($h, $transactionId, $body, $recorders, $conversation): void {
+                $transportCalled = false;
+                $client = new \eel_accounts\Client\HmrcCtTransactionEngineClient(
+                    static function (array $request) use (&$transportCalled): array {
+                        unset($request);
+                        $transportCalled = true;
+                        throw new RuntimeException('Transport must remain blocked without credentials.');
+                    },
+                    static fn(string $environment): array => [],
+                    $transactionId
+                );
+
+                $status = $client->configurationStatus('TEST');
+                $prepared = $client->prepareSubmissionRequest($body, '0123456789', 'TEST');
+                [$before, $after] = $recorders();
+                $submitted = $client->submit(
+                    $body,
+                    '0123456789',
+                    'TEST',
+                    $conversation('TEST', $before, $after)
+                );
+
+                $h->assertFalse((bool)$status['ready']);
+                $h->assertTrue((bool)$prepared['success']);
+                $h->assertTrue((bool)$prepared['credentials_placeholder']);
+                $h->assertTrue(str_contains(
+                    (string)$prepared['request_xml'],
+                    '<SenderID>DEVELOPER-SENDER-ID</SenderID>'
+                ));
+                $h->assertTrue(str_contains(
+                    (string)$prepared['request_xml'],
+                    '<Value>DEVELOPER-PASSWORD</Value>'
+                ));
+                $h->assertTrue(str_contains(
+                    (string)$prepared['request_xml'],
+                    '<URI>0000</URI>'
+                ));
+                $h->assertFalse((bool)$submitted['success']);
+                $h->assertFalse($transportCalled);
+            }
+        );
+
+        $h->check(
+            \eel_accounts\Client\HmrcCtTransactionEngineClient::class,
             'uses the live endpoint and TIL class, persists before send, and redacts credentials',
             static function () use ($h, $credentials, $transactionId, $body, $response, $recorders, $conversation): void {
                 $order = [];

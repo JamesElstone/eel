@@ -283,6 +283,116 @@ final class HmrcCorporationTaxSubmissionService
         return $this->submitMode($companyId, $ctPeriodId, 'LIVE', $actor, $progress);
     }
 
+    /**
+     * Developer-only preparation of the exact submit envelope. This performs
+     * no transport and deliberately creates no submission/conversation row.
+     *
+     * @return array<string,mixed>
+     */
+    public function generateRequestFile(
+        int $companyId,
+        int $ctPeriodId,
+        int|string|null $actor = null,
+        ?callable $progress = null
+    ): array {
+        unset($actor);
+        $report = static function (string $message, int $percent) use ($progress): void {
+            if ($progress !== null) {
+                $progress($message, $percent);
+            }
+        };
+        $report('Verifying the configured HMRC XML environment…', 12);
+        $xmlEnvironment = $this->xmlEnvironment();
+        if ($xmlEnvironment === 'DISABLED') {
+            return $this->failure('HMRC XML transmission is disabled in Application API Credentials.');
+        }
+        $mode = $xmlEnvironment === 'TEST' ? 'TEST' : 'LIVE';
+        $schemaError = $this->schemaError();
+        if ($schemaError !== null) {
+            return $this->failure($schemaError);
+        }
+        if ($companyId <= 0 || $ctPeriodId <= 0) {
+            return $this->failure('Select a company and CT period.');
+        }
+        $ctPeriod = \InterfaceDB::fetchOne(
+            'SELECT company_id, accounting_period_id
+             FROM corporation_tax_periods
+             WHERE id = :ct_period_id AND company_id = :company_id
+             LIMIT 1',
+            ['ct_period_id' => $ctPeriodId, 'company_id' => $companyId]
+        );
+        if (!is_array($ctPeriod)) {
+            return $this->failure('The selected CT period does not belong to this company.');
+        }
+        $report('Loading and verifying the prepared CT600 XML artifact…', 35);
+        try {
+            $package = $this->packagePreparer instanceof \Closure
+                ? ($this->packagePreparer)($companyId, $ctPeriodId, $mode)
+                : $this->packages->prepareForSubmission($companyId, $ctPeriodId, $mode);
+            $package = $this->normalisePackage($package, $companyId, $ctPeriodId);
+        } catch (\Throwable $exception) {
+            return $this->failure('The CT600 package could not be prepared: ' . $exception->getMessage());
+        }
+        if (empty($package['ok'])) {
+            return $this->failure((array)($package['errors'] ?? ['The CT600 package is not ready.']));
+        }
+        if (
+            (int)$package['company_id'] !== $companyId
+            || (int)$package['ct_period_id'] !== $ctPeriodId
+            || (int)$package['accounting_period_id'] !== (int)$ctPeriod['accounting_period_id']
+        ) {
+            return $this->failure('The prepared CT600 package identity does not match the selected CT period.');
+        }
+
+        $report('Building the exact environment-specific GovTalk request…', 65);
+        $prepared = $this->transport->prepareSubmissionRequest(
+            (string)$package['filing_body_xml'],
+            (string)$package['utr'],
+            $mode
+        );
+        if (empty($prepared['success'])) {
+            return $this->failure($this->transportErrors($prepared));
+        }
+
+        try {
+            $artifact = $this->storeDeveloperRequestFile(
+                $package,
+                $mode,
+                (string)$prepared['transaction_id'],
+                (string)($prepared['raw_request_xml'] ?? $prepared['request_xml'] ?? '')
+            );
+        } catch (\Throwable $exception) {
+            return $this->failure('The GovTalk request file could not be stored: ' . $exception->getMessage());
+        }
+        $report('The GovTalk request file was generated without transmission.', 100);
+        $credentialsPlaceholder = !empty($prepared['credentials_placeholder']);
+        $credentialWarning = $credentialsPlaceholder
+            ? 'The generated GovTalk request uses developer placeholder sender credentials and cannot be transmitted.'
+            : 'The generated GovTalk request contains configured HMRC sender credentials; keep it private.';
+
+        return [
+            'success' => true,
+            'submission_id' => 0,
+            'mode' => $mode,
+            'status' => 'generated',
+            'protocol_state' => 'not_sent',
+            'business_outcome' => '',
+            'needs_poll' => false,
+            'poll_after_seconds' => null,
+            'errors' => [],
+            'warnings' => array_values(array_unique(array_merge(
+                (array)($package['warnings'] ?? []),
+                [$credentialWarning]
+            ))),
+            'path' => $artifact['path'],
+            'filename' => $artifact['filename'],
+            'sha256' => $artifact['sha256'],
+            'bytes' => $artifact['bytes'],
+            'transaction_id' => $artifact['transaction_id'],
+            'credentials_placeholder' => $credentialsPlaceholder,
+        ];
+    }
+
     public function poll(
         int $submissionId,
         int|string|null $actor = null,
@@ -1868,6 +1978,84 @@ final class HmrcCorporationTaxSubmissionService
             'errors' => array_values(array_filter(array_map('strval', $errors))),
             'warnings' => [],
             'submission' => $submission,
+        ];
+    }
+
+    /**
+     * @return array{path:string,filename:string,sha256:string,bytes:int,transaction_id:string}
+     */
+    private function storeDeveloperRequestFile(
+        array $package,
+        string $mode,
+        string $transactionId,
+        string $xml
+    ): array {
+        if ($xml === '') {
+            throw new \RuntimeException('The prepared GovTalk request is empty.');
+        }
+        $sourcePath = trim((string)($package['ct600_xml_path'] ?? ''));
+        $resolvedSource = $sourcePath !== '' ? realpath($sourcePath) : false;
+        if (!is_string($resolvedSource) || !is_file($resolvedSource)) {
+            throw new \RuntimeException('The prepared CT600 XML path is unavailable.');
+        }
+        $directory = realpath(dirname($resolvedSource));
+        if (!is_string($directory)
+            || !$this->pathWithin($resolvedSource, $this->artifactRoot)
+            || !$this->pathWithin($directory, $this->artifactRoot)) {
+            throw new \RuntimeException('The prepared CT600 XML is outside protected artifact storage.');
+        }
+        $mode = strtolower(trim($mode));
+        $transactionId = strtolower(trim($transactionId));
+        if (!in_array($mode, ['test', 'live'], true)
+            || preg_match('/^[a-f0-9]{1,32}$/D', $transactionId) !== 1) {
+            throw new \RuntimeException('The GovTalk request identity is invalid.');
+        }
+        $filename = 'govtalk_ctperiod-' . (int)$package['ct_period_id']
+            . '_' . $mode . '_' . $transactionId . '.xml';
+        $path = $directory . DIRECTORY_SEPARATOR . $filename;
+        $sha256 = hash('sha256', $xml);
+        $bytes = strlen($xml);
+        if (is_file($path)) {
+            $existing = hash_file('sha256', $path);
+            if (!is_string($existing) || !hash_equals($sha256, strtolower($existing))) {
+                throw new \RuntimeException('A generated GovTalk request already exists with different bytes.');
+            }
+        } else {
+            $temporary = tempnam($directory, '.govtalk-');
+            if (!is_string($temporary) || $temporary === '') {
+                throw new \RuntimeException('Unable to stage the GovTalk request file.');
+            }
+            try {
+                if (file_put_contents($temporary, $xml, LOCK_EX) !== $bytes) {
+                    throw new \RuntimeException('The GovTalk request file was not written completely.');
+                }
+                @chmod($temporary, 0600);
+                if (!@rename($temporary, $path)) {
+                    throw new \RuntimeException('Unable to publish the GovTalk request file.');
+                }
+                $temporary = '';
+            } finally {
+                if ($temporary !== '' && is_file($temporary)) {
+                    @unlink($temporary);
+                }
+            }
+        }
+        clearstatcache(true, $path);
+        $storedHash = hash_file('sha256', $path);
+        $storedBytes = filesize($path);
+        if (!is_string($storedHash)
+            || !hash_equals($sha256, strtolower($storedHash))
+            || !is_int($storedBytes)
+            || $storedBytes !== $bytes) {
+            throw new \RuntimeException('The generated GovTalk request failed its read-back check.');
+        }
+
+        return [
+            'path' => $path,
+            'filename' => $filename,
+            'sha256' => $sha256,
+            'bytes' => $bytes,
+            'transaction_id' => strtoupper($transactionId),
         ];
     }
 

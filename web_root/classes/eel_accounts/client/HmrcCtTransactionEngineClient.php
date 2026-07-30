@@ -93,6 +93,60 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         }
     }
 
+    /**
+     * Build the exact environment-specific submit request without performing
+     * transport. Missing sender credentials are replaced with explicit,
+     * non-transmittable developer placeholders.
+     */
+    public function prepareSubmissionRequest(
+        string $filingBodyXml,
+        string $utr,
+        string $environment,
+        ?string $transactionId = null
+    ): array {
+        $profile = null;
+        $credentials = [];
+        try {
+            $prepared = $this->prepareSubmissionRequestData(
+                $filingBodyXml,
+                $utr,
+                $environment,
+                $transactionId,
+                true
+            );
+            $profile = $prepared['profile'];
+            $credentials = $prepared['credentials'];
+            $transactionId = $prepared['transaction_id'];
+            $requestXml = $prepared['request_xml'];
+        } catch (\Throwable $exception) {
+            return $this->localFailure(
+                'submit',
+                $environment,
+                $profile,
+                $transactionId,
+                '',
+                $this->redactText($exception->getMessage(), $this->secretValues($credentials))
+            );
+        }
+
+        $result = $this->baseResult(
+            'submit',
+            $profile,
+            (string)$profile['submission_url'],
+            $transactionId,
+            ''
+        );
+        $result['success'] = true;
+        $result['protocol_state'] = 'prepared';
+        $result['request_xml'] = $requestXml;
+        $result['raw_request_xml'] = $requestXml;
+        $result['request_sha256'] = hash('sha256', $requestXml);
+        $result['request_bytes'] = strlen($requestXml);
+        $result['credentials_placeholder'] = !empty($prepared['credentials_placeholder']);
+
+        return $result;
+    }
+
     public function submit(
         string $filingBodyXml,
         string $utr,
@@ -103,18 +157,16 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         $profile = null;
         $credentials = [];
         try {
-            $profile = HmrcCtTransactionEngineEnvironment::profile($environment);
-            $credentials = $this->credentials($profile);
-            $utr = $this->utr($utr);
-            $transactionId = $this->transactionId($transactionId);
-            $document = $this->filingBody($filingBodyXml, $utr);
-            $requestXml = $this->submissionRequest(
-                $document,
+            $prepared = $this->prepareSubmissionRequestData(
+                $filingBodyXml,
                 $utr,
-                $profile,
-                $credentials,
+                $environment,
                 $transactionId
             );
+            $profile = $prepared['profile'];
+            $credentials = $prepared['credentials'];
+            $transactionId = $prepared['transaction_id'];
+            $requestXml = $prepared['request_xml'];
         } catch (\Throwable $exception) {
             return $this->localFailure(
                 'submit',
@@ -136,6 +188,65 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
             $this->secretValues($credentials),
             $conversation
         );
+    }
+
+    /**
+     * @return array{
+     *   profile:array<string,mixed>,
+     *   credentials:array<string,string>,
+     *   credentials_placeholder:bool,
+     *   transaction_id:string,
+     *   request_xml:string
+     * }
+     */
+    private function prepareSubmissionRequestData(
+        string $filingBodyXml,
+        string $utr,
+        string $environment,
+        ?string $transactionId,
+        bool $allowCredentialPlaceholders = false
+    ): array {
+        $profile = HmrcCtTransactionEngineEnvironment::profile($environment);
+        $credentialsPlaceholder = false;
+        try {
+            $credentials = $this->credentials($profile);
+        } catch (\Throwable $exception) {
+            if (!$allowCredentialPlaceholders) {
+                throw $exception;
+            }
+            $credentials = $this->developerPlaceholderCredentials();
+            $credentialsPlaceholder = true;
+        }
+        $utr = $this->utr($utr);
+        $transactionId = $this->transactionId($transactionId);
+        $document = $this->filingBody($filingBodyXml, $utr);
+
+        return [
+            'profile' => $profile,
+            'credentials' => $credentials,
+            'credentials_placeholder' => $credentialsPlaceholder,
+            'transaction_id' => $transactionId,
+            'request_xml' => $this->submissionRequest(
+                $document,
+                $utr,
+                $profile,
+                $credentials,
+                $transactionId
+            ),
+        ];
+    }
+
+    /** @return array<string,string> */
+    private function developerPlaceholderCredentials(): array
+    {
+        return [
+            'sender_id' => 'DEVELOPER-SENDER-ID',
+            'password' => 'DEVELOPER-PASSWORD',
+            'vendor_id' => '0000',
+            'product' => 'EEL Accounts',
+            'version' => '1.0',
+            'email' => '',
+        ];
     }
 
     public function poll(

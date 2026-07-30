@@ -20,6 +20,13 @@ interface HmrcCtTransactionEngineTransportInterface
 {
     public function configurationStatus(string $environment): array;
 
+    public function prepareSubmissionRequest(
+        string $filingBodyXml,
+        string $utr,
+        string $environment,
+        ?string $transactionId = null
+    ): array;
+
     public function submit(
         string $filingBodyXml,
         string $utr,

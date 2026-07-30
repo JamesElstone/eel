@@ -242,12 +242,21 @@ final class _hmrc_transmitCard extends CardBaseFramework
         $dependenciesReady = $this->filingDependenciesReady((array)($period['filing_dependencies'] ?? []));
         $submissionDisabled = ($isLive ? $liveEnabled : $testEnabled) && !$controlsDisabled
             && $credentialsConfigured && $dependenciesReady ? '' : ' disabled';
+        $developerOptions = (bool)AppConfigurationStore::get('developer_options', false);
+        $requestDisabled = !$controlsDisabled && $dependenciesReady
+            ? ''
+            : ' disabled';
         $submissionClass = $xmlEnvironment === 'DISABLED' ? '' : ($isLive ? ' danger' : ' success');
         $periodLabel = trim($start . ' to ' . $end);
 
         return '<section class="panel-soft"><form method="post" action="?page=transmit" data-ajax="true" class="settings-stack">'
             . $this->hiddenFields($companyId, $accountingPeriodId, $ctPeriodId)
             . '<h3>Transmit Submission</h3>'
+            . ($developerOptions
+                ? '<div class="helper">Developer option: build the exact environment-specific GovTalk submit envelope '
+                    . 'beside the prepared CT600 XML without contacting HMRC. It uses configured sender credentials when available, '
+                    . 'otherwise clearly labelled non-transmittable placeholders.</div>'
+                : '')
             . '<div class="actions-row">'
             . '<button class="button' . $submissionClass . '" type="submit" name="intent" value="' . $submissionIntent . '"' . $submissionDisabled
             . ($isLive
@@ -256,7 +265,12 @@ final class _hmrc_transmitCard extends CardBaseFramework
                     . ' to HMRC LIVE?&lt;br&gt;&lt;br&gt;This is a statutory filing and cannot be undone in this application."'
                     . ' data-chicken-confirm-text="Submit Tax Return"'
                 : '')
-            . '>Transmit Submission</button></div>'
+            . '>Transmit Submission</button>'
+            . ($developerOptions
+                ? '<button class="button" type="submit" name="intent" value="hmrc_generate_request"'
+                    . $requestDisabled . '>Generate Request File</button>'
+                : '')
+            . '</div>'
             . '</form></section>';
     }
 

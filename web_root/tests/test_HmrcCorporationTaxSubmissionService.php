@@ -17,6 +17,7 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
     public int $submitCalls = 0;
     public int $pollCalls = 0;
     public int $deleteCalls = 0;
+    public bool $credentialsPlaceholder = false;
     private int $exchangeSequence = 0;
     /** @var list<string> */
     public array $configurationEnvironments = [];
@@ -38,6 +39,34 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
             'poll_endpoint' => 'https://transaction-engine.tax.service.gov.uk/poll',
             'statutory' => $environment === 'LIVE',
             'blockers' => [],
+        ];
+    }
+
+    public function prepareSubmissionRequest(
+        string $filingBodyXml,
+        string $utr,
+        string $environment,
+        ?string $transactionId = null
+    ): array {
+        if ($filingBodyXml === '' || $utr !== '0123456789') {
+            return $this->failure('The service did not pass the prepared package to the request builder.');
+        }
+        $request = $this->request('submit', $environment, '', $transactionId);
+        return [
+            'success' => true,
+            'pre_send_failure' => false,
+            'operation' => 'submit',
+            'environment' => $environment,
+            'endpoint' => (string)$request['endpoint'],
+            'transaction_id' => (string)$request['transaction_id'],
+            'protocol_state' => 'prepared',
+            'request_xml' => (string)$request['request_xml'],
+            'raw_request_xml' => (string)$request['raw_request_xml'],
+            'request_sha256' => (string)$request['request_sha256'],
+            'request_bytes' => (int)$request['request_bytes'],
+            'credentials_placeholder' => $this->credentialsPlaceholder,
+            'errors' => [],
+            'warnings' => [],
         ];
     }
 
@@ -108,7 +137,7 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
         ?string $transactionId
     ): array {
         $transactionId = $transactionId === null || $transactionId === ''
-            ? sprintf('FAKE%012d', ++$this->exchangeSequence)
+            ? sprintf('FACE%012d', ++$this->exchangeSequence)
             : $transactionId;
         $xml = '<GovTalkMessage><Operation>' . $operation . '</Operation></GovTalkMessage>';
         return [
@@ -206,6 +235,137 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                 $h->assertSame('TIL', $liveStatus['test_environment']);
                 $h->assertSame('LIVE', $liveStatus['live_environment']);
                 $h->assertSame(['TIL', 'LIVE'], $liveTransport->configurationEnvironments);
+            }
+        );
+
+        $h->check(
+            \eel_accounts\Service\HmrcCorporationTaxSubmissionService::class,
+            'generates the exact GovTalk request beside the CT600 XML without transmission',
+            static function () use ($h): void {
+                $companyId = 98621;
+                $accountingPeriodId = 98622;
+                $ctPeriodId = 98623;
+                $now = '2026-07-30 10:00:00';
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO companies (id, company_name, company_number, is_active, created_at)
+                     VALUES (:id, :name, :number, 1, :created_at)',
+                    [
+                        'id' => $companyId,
+                        'name' => 'HMRC Request File Test Limited',
+                        'number' => '09862100',
+                        'created_at' => $now,
+                    ]
+                );
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end, created_at)
+                     VALUES (:id, :company_id, :label, :period_start, :period_end, :created_at)',
+                    [
+                        'id' => $accountingPeriodId,
+                        'company_id' => $companyId,
+                        'label' => 'HMRC-REQUEST-98622',
+                        'period_start' => '2025-10-01',
+                        'period_end' => '2026-09-30',
+                        'created_at' => $now,
+                    ]
+                );
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO corporation_tax_periods (
+                        id, company_id, accounting_period_id, sequence_no,
+                        period_start, period_end, status, created_at, updated_at
+                     ) VALUES (
+                        :id, :company_id, :accounting_period_id, 1,
+                        :period_start, :period_end, :status, :created_at, :updated_at
+                     )',
+                    [
+                        'id' => $ctPeriodId,
+                        'company_id' => $companyId,
+                        'accounting_period_id' => $accountingPeriodId,
+                        'period_start' => '2025-10-01',
+                        'period_end' => '2026-09-30',
+                        'status' => 'ready',
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]
+                );
+
+                try {
+                    $artifactRoot = test_register_cleanup_path(
+                        test_tmp_directory() . DIRECTORY_SEPARATOR . 'hmrc-request-' . bin2hex(random_bytes(4))
+                    );
+                    $artifactDirectory = $artifactRoot . DIRECTORY_SEPARATOR . '09862100'
+                        . DIRECTORY_SEPARATOR . 'xml';
+                    if (!mkdir($artifactDirectory, 0700, true) && !is_dir($artifactDirectory)) {
+                        throw new RuntimeException('Unable to create the request-file test directory.');
+                    }
+                    $body = '<IRenvelope xmlns="http://www.govtalk.gov.uk/taxation/CT/5">'
+                        . '<IRheader><Keys><Key Type="UTR">0123456789</Key></Keys></IRheader>'
+                        . '<CompanyTaxReturn/></IRenvelope>';
+                    $ct600Path = $artifactDirectory . DIRECTORY_SEPARATOR . 'ct600.xml';
+                    if (file_put_contents($ct600Path, $body) !== strlen($body)) {
+                        throw new RuntimeException('Unable to create the request-file CT600 fixture.');
+                    }
+                    $manifest = [
+                        'company_id' => $companyId,
+                        'accounting_period_id' => $accountingPeriodId,
+                        'ct_period_id' => $ctPeriodId,
+                        'basis' => 'request-file-fixture',
+                    ];
+                    $package = static fn(int $requestedCompanyId, int $requestedCtPeriodId, string $mode): array => [
+                        'ok' => true,
+                        'errors' => [],
+                        'warnings' => [],
+                        'company_id' => $requestedCompanyId,
+                        'accounting_period_id' => $accountingPeriodId,
+                        'ct_period_id' => $requestedCtPeriodId,
+                        'utr' => '0123456789',
+                        'filing_body_xml' => $body,
+                        'source_manifest' => $manifest,
+                        'body_sha256' => hash('sha256', $body),
+                        'ct600_xml_path' => $ct600Path,
+                        'validation' => ['mode' => $mode],
+                    ];
+                    $transport = new HmrcCtTestTransport();
+                    $transport->credentialsPlaceholder = true;
+                    $before = (int)InterfaceDB::fetchValue(
+                        'SELECT COUNT(*) FROM hmrc_ct600_submissions WHERE company_id = :company_id',
+                        ['company_id' => $companyId]
+                    );
+                    $service = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService(
+                        transport: $transport,
+                        artifactRoot: $artifactRoot,
+                        packagePreparer: $package,
+                        xmlEnvironmentResolver: static fn(): string => 'TEST'
+                    );
+                    $generated = $service->generateRequestFile($companyId, $ctPeriodId, 42);
+                    $after = (int)InterfaceDB::fetchValue(
+                        'SELECT COUNT(*) FROM hmrc_ct600_submissions WHERE company_id = :company_id',
+                        ['company_id' => $companyId]
+                    );
+
+                    $h->assertTrue((bool)$generated['success']);
+                    $h->assertSame('not_sent', (string)$generated['protocol_state']);
+                    $h->assertSame('TEST', (string)$generated['mode']);
+                    $h->assertSame(0, $transport->submitCalls);
+                    $h->assertSame([], $transport->configurationEnvironments);
+                    $h->assertSame($before, $after);
+                    $h->assertTrue((bool)$generated['credentials_placeholder']);
+                    $h->assertTrue(str_contains(
+                        implode(' ', (array)$generated['warnings']),
+                        'placeholder sender credentials'
+                    ));
+                    $h->assertSame($artifactDirectory, dirname((string)$generated['path']));
+                    $h->assertTrue(is_file((string)$generated['path']));
+                    $h->assertTrue(str_starts_with(
+                        (string)$generated['filename'],
+                        'govtalk_ctperiod-98623_test_'
+                    ));
+                    $stored = (string)file_get_contents((string)$generated['path']);
+                    $h->assertTrue(str_contains($stored, '<GovTalkMessage>'));
+                    $h->assertSame(hash('sha256', $stored), (string)$generated['sha256']);
+                    $h->assertSame(strlen($stored), (int)$generated['bytes']);
+                } finally {
+                    InterfaceDB::prepareExecute('DELETE FROM companies WHERE id = :id', ['id' => $companyId]);
+                }
             }
         );
 

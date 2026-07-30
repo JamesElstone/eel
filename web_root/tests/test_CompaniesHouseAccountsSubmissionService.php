@@ -57,6 +57,28 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             $service::class,
+            'submits Accounts without running or consuming a CompanyData check',
+            static function () use ($harness): void {
+                $method = new ReflectionMethod(
+                    \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
+                    'submitRevision'
+                );
+                $path = $method->getFileName();
+                $source = is_string($path) ? file($path) : false;
+                $harness->assertTrue(is_array($source));
+                $body = implode('', array_slice(
+                    $source,
+                    $method->getStartLine() - 1,
+                    $method->getEndLine() - $method->getStartLine() + 1
+                ));
+                $harness->assertFalse(str_contains($body, 'performCompanyDataPreflight('));
+                $harness->assertFalse(str_contains($body, 'consumePreflight('));
+                $harness->assertFalse(str_contains($body, 'verifiedPreflightId'));
+            }
+        );
+
+        $harness->check(
+            $service::class,
             'reloads the latest immutable schema file inventory for each filing operation',
             static function () use ($harness, $service, $invokePrivate): void {
                 $file = static fn(string $suffix, string $hash): array => [

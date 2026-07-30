@@ -373,6 +373,7 @@ CREATE TABLE `companies_house_schema_dependencies` (
   CONSTRAINT `fk_ch_schema_dependency_child` FOREIGN KEY (`child_file_id`) REFERENCES `companies_house_schema_files` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+DROP TABLE IF EXISTS `govtalk_protocol_exchanges`;
 DROP TABLE IF EXISTS `companies_house_protocol_exchanges`;
 DROP TABLE IF EXISTS `companies_house_accounts_status_cycles`;
 DROP TABLE IF EXISTS `companies_house_company_auth_preflights`;
@@ -475,7 +476,7 @@ CREATE TABLE `companies_house_company_auth_preflights` (
   `environment` enum('TEST','LIVE') NOT NULL,
   `output_presenter_fingerprint` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `transaction_id` varchar(32) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
-  `outcome` enum('sending','verified','rejected','transport_unknown','failed') NOT NULL,
+  `outcome` enum('sending','verified','presenter_authorisation_failed','rejected','transport_unknown','failed') NOT NULL,
   `matched_company_number` varchar(8) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
   `matched_company_name` varchar(160) DEFAULT NULL,
   `binding_hmac` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
@@ -518,32 +519,50 @@ CREATE TABLE `companies_house_accounts_status_cycles` (
   CONSTRAINT `fk_ch_status_cycle_submission` FOREIGN KEY (`submission_id`) REFERENCES `companies_house_accounts_submissions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE `companies_house_protocol_exchanges` (
+CREATE TABLE `govtalk_protocol_exchanges` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `authority` enum('companies_house','hmrc') NOT NULL,
+  `transmission_archive_id` bigint(20) NOT NULL,
   `submission_id` bigint(20) DEFAULT NULL,
   `preflight_id` bigint(20) DEFAULT NULL,
   `status_cycle_id` bigint(20) DEFAULT NULL,
-  `operation` enum('company_data','accounts','submission_status','status_ack','get_document') NOT NULL,
-  `environment` enum('TEST','LIVE') NOT NULL,
-  `transaction_id` varchar(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `hmrc_submission_id` bigint(20) DEFAULT NULL,
+  `operation` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `request_message_class` varchar(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `request_qualifier` varchar(32) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `request_function` varchar(32) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `environment` enum('TEST','TIL','LIVE') NOT NULL,
+  `endpoint` varchar(1000) DEFAULT NULL,
+  `transaction_id` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `correlation_id` varchar(255) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
   `exchange_state` enum('prepared','sent','received','succeeded','rejected','transport_unknown','evidence_incomplete','failed') NOT NULL,
   `request_path` varchar(1000) DEFAULT NULL,
   `request_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `request_bytes` bigint(20) unsigned DEFAULT NULL,
   `response_path` varchar(1000) DEFAULT NULL,
   `response_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `response_bytes` bigint(20) unsigned DEFAULT NULL,
   `response_status_code` int(11) DEFAULT NULL,
+  `response_headers_json` longtext DEFAULT NULL,
+  `response_headers_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `govtalk_errors_json` longtext DEFAULT NULL,
+  `outcome_code` varchar(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `outcome_summary` text DEFAULT NULL,
   `error_summary` text DEFAULT NULL,
   `sent_at` datetime DEFAULT NULL,
   `received_at` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_ch_protocol_exchange_transaction` (`environment`,`transaction_id`),
-  KEY `idx_ch_protocol_exchange_submission` (`submission_id`,`id`),
-  KEY `idx_ch_protocol_exchange_preflight` (`preflight_id`,`id`),
-  CONSTRAINT `fk_ch_protocol_exchange_submission` FOREIGN KEY (`submission_id`) REFERENCES `companies_house_accounts_submissions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_ch_protocol_exchange_preflight` FOREIGN KEY (`preflight_id`) REFERENCES `companies_house_company_auth_preflights` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_ch_protocol_exchange_status_cycle` FOREIGN KEY (`status_cycle_id`) REFERENCES `companies_house_accounts_status_cycles` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  UNIQUE KEY `uq_govtalk_exchange_transaction` (`authority`,`environment`,`transaction_id`),
+  KEY `idx_govtalk_exchange_archive` (`transmission_archive_id`,`id`),
+  KEY `idx_govtalk_exchange_submission` (`submission_id`,`id`),
+  KEY `idx_govtalk_exchange_preflight` (`preflight_id`,`id`),
+  KEY `idx_govtalk_exchange_hmrc_submission` (`hmrc_submission_id`,`id`),
+  KEY `idx_govtalk_exchange_company_history` (`authority`,`environment`,`created_at`),
+  CONSTRAINT `fk_govtalk_exchange_submission` FOREIGN KEY (`submission_id`) REFERENCES `companies_house_accounts_submissions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_govtalk_exchange_preflight` FOREIGN KEY (`preflight_id`) REFERENCES `companies_house_company_auth_preflights` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_govtalk_exchange_status_cycle` FOREIGN KEY (`status_cycle_id`) REFERENCES `companies_house_accounts_status_cycles` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE `companies_house_accounts_submissions`
@@ -578,6 +597,11 @@ CREATE TABLE `transmission_archives` (
   CONSTRAINT `fk_transmission_archive_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_transmission_archive_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE `govtalk_protocol_exchanges`
+  ADD CONSTRAINT `fk_govtalk_exchange_archive`
+  FOREIGN KEY (`transmission_archive_id`) REFERENCES `transmission_archives` (`id`)
+  ON DELETE RESTRICT ON UPDATE CASCADE;
 
 --
 -- Table structure for table `companies_house_accounts_submission_events`
@@ -1599,6 +1623,11 @@ CREATE TABLE `hmrc_ct600_submissions` (
   CONSTRAINT `fk_hmrc_ct600_test_submission` FOREIGN KEY (`test_submission_id`) REFERENCES `hmrc_ct600_submissions` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+ALTER TABLE `govtalk_protocol_exchanges`
+  ADD CONSTRAINT `fk_govtalk_exchange_hmrc_submission`
+  FOREIGN KEY (`hmrc_submission_id`) REFERENCES `hmrc_ct600_submissions` (`id`)
+  ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
 -- Table structure for table `hmrc_submission_events`
@@ -4098,7 +4127,7 @@ SELECT DISTINCT `role_id`, 'companies_house_transmit'
 FROM `role_card_permissions`
 WHERE `card_key` = 'year_end_companies_house_comparison';
 INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
-SELECT DISTINCT `role_id`, 'companies_house_transmission_history'
+SELECT DISTINCT `role_id`, 'govtalk_transmission_history'
 FROM `role_card_permissions`
 WHERE `card_key` = 'companies_house_transmit';
 INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
@@ -4375,6 +4404,14 @@ INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_30_005_companies_house_authentication_checks.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_30_006_companies_house_schema_validation_assets.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_30_007_companies_house_protocol_metadata.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_30_008_rename_govtalk_transmission_history_card.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_30_009_shared_govtalk_exchange_ledger.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_30_010_govtalk_exchange_identity.sql');
 
 DROP TRIGGER IF EXISTS `trg_journals_append_only_update`;
 CREATE TRIGGER `trg_journals_append_only_update`

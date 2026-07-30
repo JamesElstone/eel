@@ -17,6 +17,7 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
     public int $submitCalls = 0;
     public int $pollCalls = 0;
     public int $deleteCalls = 0;
+    private int $exchangeSequence = 0;
     /** @var list<string> */
     public array $configurationEnvironments = [];
 
@@ -40,22 +41,19 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
         string $filingBodyXml,
         string $utr,
         string $environment,
-        ?string $transactionId = null,
-        ?callable $beforeSend = null,
-        ?callable $afterReceive = null
+        \eel_accounts\Client\GovTalkConversationContext $conversation,
+        ?string $transactionId = null
     ): array {
         $this->submitCalls++;
         $request = $this->request('submit', $environment, '', $transactionId);
-        if ($beforeSend !== null) {
-            $beforeSend($request);
-        }
+        $conversation->captureRequest($request);
+        $conversation->markSendStarted($request);
         if ($filingBodyXml === '' || $utr !== '0123456789') {
             throw new RuntimeException('The service did not pass the prepared package to the transport.');
         }
         $response = array_shift($this->submitResponses) ?? $this->failure('Missing fake submit response.');
-        if ($afterReceive !== null && trim((string)($response['response_xml'] ?? '')) !== '') {
-            $afterReceive($this->response($request, $response));
-        }
+        $response['transaction_id'] = (string)$request['transaction_id'];
+        $conversation->captureResponse($this->response($request, $response));
         return $response;
     }
 
@@ -63,22 +61,19 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
         string $correlationId,
         string $responseEndpoint,
         string $environment,
-        ?string $transactionId = null,
-        ?callable $beforeSend = null,
-        ?callable $afterReceive = null
+        \eel_accounts\Client\GovTalkConversationContext $conversation,
+        ?string $transactionId = null
     ): array {
         $this->pollCalls++;
         $request = $this->request('poll', $environment, $correlationId, $transactionId);
-        if ($beforeSend !== null) {
-            $beforeSend($request);
-        }
+        $conversation->captureRequest($request);
+        $conversation->markSendStarted($request);
         if ($responseEndpoint === '') {
             throw new RuntimeException('The service omitted the response endpoint.');
         }
         $response = array_shift($this->pollResponses) ?? $this->failure('Missing fake poll response.');
-        if ($afterReceive !== null && trim((string)($response['response_xml'] ?? '')) !== '') {
-            $afterReceive($this->response($request, $response));
-        }
+        $response['transaction_id'] = (string)$request['transaction_id'];
+        $conversation->captureResponse($this->response($request, $response));
         return $response;
     }
 
@@ -86,19 +81,16 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
         string $correlationId,
         string $responseEndpoint,
         string $environment,
-        ?string $transactionId = null,
-        ?callable $beforeSend = null,
-        ?callable $afterReceive = null
+        \eel_accounts\Client\GovTalkConversationContext $conversation,
+        ?string $transactionId = null
     ): array {
         $this->deleteCalls++;
         $request = $this->request('delete', $environment, $correlationId, $transactionId);
-        if ($beforeSend !== null) {
-            $beforeSend($request);
-        }
+        $conversation->captureRequest($request);
+        $conversation->markSendStarted($request);
         $response = array_shift($this->deleteResponses) ?? $this->failure('Missing fake delete response.');
-        if ($afterReceive !== null && trim((string)($response['response_xml'] ?? '')) !== '') {
-            $afterReceive($this->response($request, $response));
-        }
+        $response['transaction_id'] = (string)$request['transaction_id'];
+        $conversation->captureResponse($this->response($request, $response));
         return $response;
     }
 
@@ -110,7 +102,7 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
         ?string $transactionId
     ): array {
         $transactionId = $transactionId === null || $transactionId === ''
-            ? 'ABCDEF1234567890'
+            ? sprintf('FAKE%012d', ++$this->exchangeSequence)
             : $transactionId;
         $xml = '<GovTalkMessage><Operation>' . $operation . '</Operation></GovTalkMessage>';
         return [
@@ -147,6 +139,7 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
     private function response(array $request, array $response): array
     {
         $xml = (string)($response['response_xml'] ?? '');
+        $headersJson = \eel_accounts\Support\Utf8::json([], JSON_THROW_ON_ERROR);
         return [
             'operation' => (string)$request['operation'],
             'environment' => (string)$request['environment'],
@@ -154,8 +147,10 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
             'transaction_id' => (string)$request['transaction_id'],
             'correlation_id' => (string)$request['correlation_id'],
             'status_code' => (int)($response['status_code'] ?? 0),
+            'response_headers' => [],
+            'response_headers_sha256' => hash('sha256', $headersJson),
             'response_xml' => $xml,
-            'response_sha256' => hash('sha256', $xml),
+            'response_sha256' => $xml !== '' ? hash('sha256', $xml) : null,
             'response_bytes' => strlen($xml),
         ];
     }

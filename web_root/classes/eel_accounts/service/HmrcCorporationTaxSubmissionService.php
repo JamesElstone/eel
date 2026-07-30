@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace eel_accounts\Service;
 
+use eel_accounts\Client\GovTalkConversationContext;
 use eel_accounts\Client\HmrcCtTransactionEngineClient;
 use eel_accounts\Client\HmrcCtTransactionEngineTransportInterface;
 
@@ -47,6 +48,7 @@ final class HmrcCorporationTaxSubmissionService
 
     private string $artifactRoot;
     private TransmissionArchiveService $archives;
+    private GovTalkProtocolConversationService $govTalk;
 
     public function __construct(
         ?HmrcCtTransactionEngineTransportInterface $transport = null,
@@ -57,7 +59,8 @@ final class HmrcCorporationTaxSubmissionService
         ?callable $manifestResolver = null,
         ?TransmissionArchiveService $archiveService = null,
         ?callable $xmlEnvironmentResolver = null,
-        ?callable $filingReadinessResolver = null
+        ?callable $filingReadinessResolver = null,
+        ?GovTalkProtocolConversationService $govTalkConversation = null
     ) {
         $this->transport = $transport ?? new HmrcCtTransactionEngineClient();
         $this->packages = $packages ?? new HmrcSubmissionPackageService();
@@ -76,6 +79,8 @@ final class HmrcCorporationTaxSubmissionService
             : \Closure::fromCallable($filingReadinessResolver);
         $this->artifactRoot = $this->resolveArtifactRoot($artifactRoot);
         $this->archives = $archiveService ?? new TransmissionArchiveService($this->artifactRoot);
+        $this->govTalk = $govTalkConversation
+            ?? new GovTalkProtocolConversationService($this->archives);
     }
 
     /** @return array<string, mixed> */
@@ -342,8 +347,10 @@ final class HmrcCorporationTaxSubmissionService
             (string)$submission['hmrc_correlation_id'],
             (string)$submission['response_endpoint'],
             (string)$submission['environment'],
-            null,
-            function (array $request) use ($submissionId, $previousAttempt, $attempt, $actor): void {
+            GovTalkConversationContext::fromCallbacks(
+                'hmrc',
+                (string)$submission['environment'],
+                function (array $request) use ($submissionId, $previousAttempt, $attempt, $actor): array {
                 $statement = \InterfaceDB::prepareExecute(
                     'UPDATE ' . self::SUBMISSIONS . '
                      SET poll_attempts = :attempt,
@@ -368,10 +375,19 @@ final class HmrcCorporationTaxSubmissionService
                         'The HMRC conversation changed before polling; no poll request was sent.'
                     );
                 }
-                $artifact = $this->storeArtifact(
-                    $submissionId,
-                    sprintf('poll-%04d-request.xml', $attempt),
-                    (string)$request['raw_request_xml']
+                $artifact = $this->govTalk->captureRequest(
+                    $this->hmrcGovTalkIdentity(
+                        $submissionId,
+                        'poll',
+                        sprintf('poll-%04d-request.xml', $attempt),
+                        sprintf('poll-%04d-response.xml', $attempt)
+                    ),
+                    $request
+                );
+                $this->govTalk->markSendStarted(
+                    'hmrc',
+                    (string)$request['environment'],
+                    (string)$request['transaction_id']
                 );
                 $this->event($submissionId, 'info', 'HMRC poll request persisted before transmission.', [
                     'attempt' => $attempt,
@@ -379,15 +395,23 @@ final class HmrcCorporationTaxSubmissionService
                     'request_sha256' => (string)$request['request_sha256'],
                     'request_bytes' => (int)$request['request_bytes'],
                 ]);
-            },
-            function (array $response) use ($submissionId, $attempt, &$capturedResponse): void {
-                $capturedResponse = $this->storeArtifact(
-                    $submissionId,
-                    sprintf('poll-%04d-response.xml', $attempt),
-                    (string)$response['response_xml']
-                );
-            }
+                return $artifact;
+                },
+                function (array $response) use ($submissionId, $attempt, &$capturedResponse): array {
+                    $capturedResponse = $this->govTalk->captureResponse(
+                        $this->hmrcGovTalkIdentity(
+                            $submissionId,
+                            'poll',
+                            sprintf('poll-%04d-request.xml', $attempt),
+                            sprintf('poll-%04d-response.xml', $attempt)
+                        ),
+                        $response
+                    );
+                    return $capturedResponse;
+                }
+            )
         );
+        $this->completeHmrcGovTalkResult((string)$submission['environment'], $result);
         $result['archived_response'] = $capturedResponse;
 
         return $this->applyConversationResult($submissionId, $result, $actor, true);
@@ -585,17 +609,19 @@ final class HmrcCorporationTaxSubmissionService
             (string)$package['filing_body_xml'],
             (string)$package['utr'],
             $mode,
-            (string)$govtalkEvidence['transaction_hex'],
-            function (array $request) use (
-                $submissionId,
-                $companyId,
-                $ctPeriodId,
-                $manifestHash,
-                $bodyHash,
-                $package,
-                $actor,
-                $govtalkEvidence
-            ): void {
+            GovTalkConversationContext::fromCallbacks(
+                'hmrc',
+                $mode,
+                function (array $request) use (
+                    $submissionId,
+                    $companyId,
+                    $ctPeriodId,
+                    $manifestHash,
+                    $bodyHash,
+                    $package,
+                    $actor,
+                    $govtalkEvidence
+                ): array {
                 // Close the small prepare/send race: the approved source basis
                 // must still be byte-identical at the pre-send boundary.
                 $current = $this->safeCurrentManifest($companyId, $ctPeriodId, [
@@ -610,10 +636,14 @@ final class HmrcCorporationTaxSubmissionService
                         'The filing source changed after preparation; no HMRC request was sent.'
                     );
                 }
-                $artifact = $this->storeArtifact(
-                    $submissionId,
-                    'submission-request.xml',
-                    (string)$request['raw_request_xml']
+                $artifact = $this->govTalk->captureRequest(
+                    $this->hmrcGovTalkIdentity(
+                        $submissionId,
+                        'submit',
+                        'submission-request.xml',
+                        'submission-response.xml'
+                    ),
+                    $request
                 );
                 $statement = \InterfaceDB::prepareExecute(
                     'UPDATE ' . self::SUBMISSIONS . '
@@ -651,6 +681,11 @@ final class HmrcCorporationTaxSubmissionService
                         'The HMRC submission changed before transmission; no request was sent.'
                     );
                 }
+                $this->govTalk->markSendStarted(
+                    'hmrc',
+                    (string)$request['environment'],
+                    (string)$request['transaction_id']
+                );
                 $this->event($submissionId, 'info', 'GovTalk request persisted before transmission.', [
                     'request_path' => $artifact['path'],
                     'request_sha256' => (string)$request['request_sha256'],
@@ -666,15 +701,24 @@ final class HmrcCorporationTaxSubmissionService
                     'identifier_embedded' => true,
                     'metadata' => ['submission_id' => $submissionId, 'persisted_exact_sha256' => $artifact['sha256']],
                 ]);
-            },
-            function (array $response) use ($submissionId, &$capturedResponse): void {
-                $capturedResponse = $this->storeArtifact(
-                    $submissionId,
-                    'submission-response.xml',
-                    (string)$response['response_xml']
-                );
-            }
+                return $artifact;
+                },
+                function (array $response) use ($submissionId, &$capturedResponse): array {
+                    $capturedResponse = $this->govTalk->captureResponse(
+                        $this->hmrcGovTalkIdentity(
+                            $submissionId,
+                            'submit',
+                            'submission-request.xml',
+                            'submission-response.xml'
+                        ),
+                        $response
+                    );
+                    return $capturedResponse;
+                }
+            ),
+            (string)$govtalkEvidence['transaction_hex']
         );
+        $this->completeHmrcGovTalkResult($mode, $result);
         $result['archived_response'] = $capturedResponse;
 
         return $this->applyConversationResult($submissionId, $result, $actor, false);
@@ -1065,8 +1109,10 @@ final class HmrcCorporationTaxSubmissionService
             $correlationId,
             (string)($submission['response_endpoint'] ?? ''),
             (string)$submission['environment'],
-            null,
-            function (array $request) use ($submissionId, $previousAttempt, $attempt, $actor): void {
+            GovTalkConversationContext::fromCallbacks(
+                'hmrc',
+                (string)$submission['environment'],
+                function (array $request) use ($submissionId, $previousAttempt, $attempt, $actor): array {
                 $statement = \InterfaceDB::prepareExecute(
                     'UPDATE ' . self::SUBMISSIONS . '
                      SET cleanup_attempts = :attempt,
@@ -1091,25 +1137,42 @@ final class HmrcCorporationTaxSubmissionService
                         'The HMRC conversation changed before cleanup; no delete request was sent.'
                     );
                 }
-                $artifact = $this->storeArtifact(
-                    $submissionId,
-                    sprintf('delete-%04d-request.xml', $attempt),
-                    (string)$request['raw_request_xml']
+                $artifact = $this->govTalk->captureRequest(
+                    $this->hmrcGovTalkIdentity(
+                        $submissionId,
+                        'delete',
+                        sprintf('delete-%04d-request.xml', $attempt),
+                        sprintf('delete-%04d-response.xml', $attempt)
+                    ),
+                    $request
+                );
+                $this->govTalk->markSendStarted(
+                    'hmrc',
+                    (string)$request['environment'],
+                    (string)$request['transaction_id']
                 );
                 $this->event($submissionId, 'info', 'HMRC delete request persisted before transmission.', [
                     'attempt' => $attempt,
                     'request_path' => $artifact['path'],
                     'request_sha256' => (string)$request['request_sha256'],
                 ]);
-            },
-            function (array $response) use ($submissionId, $attempt, &$capturedResponse): void {
-                $capturedResponse = $this->storeArtifact(
-                    $submissionId,
-                    sprintf('delete-%04d-response.xml', $attempt),
-                    (string)$response['response_xml']
-                );
-            }
+                return $artifact;
+                },
+                function (array $response) use ($submissionId, $attempt, &$capturedResponse): array {
+                    $capturedResponse = $this->govTalk->captureResponse(
+                        $this->hmrcGovTalkIdentity(
+                            $submissionId,
+                            'delete',
+                            sprintf('delete-%04d-request.xml', $attempt),
+                            sprintf('delete-%04d-response.xml', $attempt)
+                        ),
+                        $response
+                    );
+                    return $capturedResponse;
+                }
+            )
         );
+        $this->completeHmrcGovTalkResult((string)$submission['environment'], $result);
 
         if (!empty($result['pre_send_failure'])) {
             $message = trim((string)($result['error'] ?? 'HMRC cleanup request evidence could not be persisted.'));
@@ -1796,6 +1859,69 @@ final class HmrcCorporationTaxSubmissionService
         );
     }
 
+    /**
+     * @return array<string,mixed>
+     */
+    private function hmrcGovTalkIdentity(
+        int $submissionId,
+        string $operation,
+        string $requestFilename,
+        string $responseFilename
+    ): array {
+        $submission = $this->fetchById($submissionId);
+        if (!is_array($submission)) {
+            throw new \RuntimeException(
+                'The HMRC GovTalk conversation identity could not be resolved.'
+            );
+        }
+
+        return [
+            'authority' => 'hmrc',
+            'company_id' => (int)$submission['company_id'],
+            'accounting_period_id' => (int)$submission['accounting_period_id'],
+            'environment' => (string)$submission['environment'],
+            'archive_reference' => $this->archiveReference($submissionId),
+            'lifecycle' => (string)$submission['protocol_state'],
+            'operation' => strtolower(trim($operation)),
+            'request_filename' => $requestFilename,
+            'response_filename' => $responseFilename,
+            'submission_id' => null,
+            'preflight_id' => null,
+            'status_cycle_id' => null,
+            'hmrc_submission_id' => $submissionId,
+        ];
+    }
+
+    /** @param array<string,mixed> $result */
+    private function completeHmrcGovTalkResult(string $environment, array $result): void
+    {
+        $transactionId = trim((string)($result['transaction_id'] ?? ''));
+        if ($transactionId === '' || !$this->govTalk->schemaReady()) {
+            return;
+        }
+        $businessOutcome = strtolower(trim((string)($result['business_outcome'] ?? '')));
+        $state = !empty($result['evidence_incomplete'])
+            ? 'evidence_incomplete'
+            : (!empty($result['transport_unknown'])
+                ? 'transport_unknown'
+                : (!empty($result['success'])
+                    ? 'succeeded'
+                    : ($businessOutcome === 'rejected' ? 'rejected' : 'failed')));
+        $outcomeCode = $businessOutcome !== ''
+            ? $businessOutcome
+            : strtolower(trim((string)($result['protocol_state'] ?? $state)));
+        $summary = trim((string)($result['error'] ?? ''));
+        $this->govTalk->completeExchange(
+            'hmrc',
+            $environment,
+            $transactionId,
+            $state,
+            $outcomeCode,
+            $summary,
+            $summary
+        );
+    }
+
     private function resolveArtifactRoot(?string $artifactRoot): string
     {
         $artifactRoot = trim((string)$artifactRoot);
@@ -1840,6 +1966,9 @@ final class HmrcCorporationTaxSubmissionService
             if (!\InterfaceDB::columnExists(self::SUBMISSIONS, $column)) {
                 return 'Run the downstream HMRC CT600 source-manifest migration before filing.';
             }
+        }
+        if (!$this->govTalk->schemaReady()) {
+            return 'Run the shared GovTalk exchange-ledger migration before HMRC filing.';
         }
 
         return null;

@@ -249,6 +249,7 @@ $harness->run(_companies_house_transmitCard::class, static function (
                                 'credentials_configured' => true,
                                 'protocol_ready' => true,
                                 'developer_binding_configured' => true,
+                                'company_data_capability' => 'available',
                             ],
                             'sequence' => ['next_number' => '000001'],
                             'submission' => [
@@ -285,13 +286,15 @@ $harness->run(_companies_house_transmitCard::class, static function (
                 $html = $card->render($renderContext);
                 $harness->assertTrue(str_contains($html, 'Transmit Company Accounts'));
                 $harness->assertTrue(str_contains($html, 'Check Company Authentication Code'));
-                $harness->assertTrue(str_contains($html, 'Company authentication check'));
+                $harness->assertTrue(str_contains($html, 'CompanyData capability'));
+                $harness->assertTrue(str_contains($html, 'Optional presenter diagnostic'));
                 $harness->assertFalse(str_contains($html, 'CompanyData preflight'));
                 $harness->assertTrue(str_contains(
                     $html,
                     '<section class="panel-soft"><h3 class="card-title">Test Companies House Connection</h3>'
                     . '<div class="helper companies-house-transmit-section-helper">'
-                    . 'Check the company authentication code against Companies House before transmitting accounts.'
+                    . 'Optionally check the presenter and company authentication values with Companies House CompanyData. '
+                    . 'This diagnostic is not required before transmitting Accounts.'
                     . '</div>'
                 ));
                 $harness->assertFalse(str_contains(

@@ -11,6 +11,7 @@ namespace eel_accounts\Service;
 
 use eel_accounts\Client\CompaniesHouseAccountsGatewayClient;
 use eel_accounts\Client\CompaniesHouseAccountsGatewayTransportInterface;
+use eel_accounts\Client\GovTalkConversationContext;
 use eel_accounts\Store\AccountingConfigurationStore;
 
 final class CompaniesHouseAccountsSubmissionService
@@ -76,6 +77,12 @@ final class CompaniesHouseAccountsSubmissionService
                 $sequence['configured'] = false;
             }
         }
+        $companyDataCapability = $credentialsConfigured
+            ? $this->conversation()->companyDataCapability(
+                $mode,
+                (string)($sequence['presenter_fingerprint'] ?? '')
+            )
+            : 'unknown';
         $liveApproved = AccountingConfigurationStore::companiesHouseAccountsLiveApproved();
         $testAccepted = $this->testAccepted($companyId, $accountingPeriodId, $filingKind);
         $needsRevision = $filingKind === 'revised' && $correctionRequired;
@@ -233,6 +240,7 @@ final class CompaniesHouseAccountsSubmissionService
                 'protocol_ready' => $protocolReady,
                 'developer_binding_configured' => $featureEnabled
                     && $this->conversation()->bindingConfigured($mode),
+                'company_data_capability' => $companyDataCapability,
                 'live_approved' => $liveApproved,
                 'test_accepted' => $testAccepted,
             ],
@@ -1082,15 +1090,13 @@ final class CompaniesHouseAccountsSubmissionService
         int $submissionId,
         string $companyAuthCode,
         string $actor,
-        mixed $progress = null,
-        ?int $verifiedPreflightId = null
+        mixed $progress = null
     ): array {
         return $this->submitRevision(
             $submissionId,
             $companyAuthCode,
             $actor,
-            $progress,
-            $verifiedPreflightId
+            $progress
         );
     }
 
@@ -1099,8 +1105,7 @@ final class CompaniesHouseAccountsSubmissionService
         int $submissionId,
         string $companyAuthCode,
         string $actor,
-        mixed $progress = null,
-        ?int $verifiedPreflightId = null
+        mixed $progress = null
     ): array
     {
         $submission = $this->submission($submissionId);
@@ -1214,41 +1219,6 @@ final class CompaniesHouseAccountsSubmissionService
             if (!$this->conversation()->schemaReady()) {
                 throw new \RuntimeException(
                     'Run the Companies House protocol-conversation migration before filing.'
-                );
-            }
-            if ($verifiedPreflightId !== null && $verifiedPreflightId > 0) {
-                $this->conversation()->consumePreflight(
-                    $verifiedPreflightId,
-                    $submission,
-                    $companyAuthCode,
-                    $actor,
-                    true
-                );
-            } else {
-                $this->reportProgress(
-                    $progress,
-                    'Checking the company authentication code with Companies House CompanyData.',
-                    45
-                );
-                $preflight = $this->performCompanyDataPreflight(
-                    $submission,
-                    $companyAuthCode,
-                    $actor,
-                    $mode,
-                    $schema,
-                    false
-                );
-                if (empty($preflight['success'])) {
-                    throw new \RuntimeException(
-                        trim((string)($preflight['error'] ?? 'Companies House CompanyData preflight failed.'))
-                    );
-                }
-                $this->conversation()->consumePreflight(
-                    (int)$preflight['preflight_id'],
-                    $submission,
-                    $companyAuthCode,
-                    $actor,
-                    false
                 );
             }
             $allocation = $this->sequences()->allocate(
@@ -1420,42 +1390,12 @@ final class CompaniesHouseAccountsSubmissionService
         $this->reportProgress($progress, 'Sending the already validated Companies House request.', 90);
         $result = $gateway->sendPreparedAccounts(
             $preparedRequest,
-            function (array $request) use ($submission, $mode): array {
-                $receipt = $this->conversation()->captureRequest(
-                    $submission,
-                    $mode,
-                    (string)$submission['submission_number'],
-                    'accounts',
-                    $request
-                );
-                $this->conversation()->markSendStarted(
-                    $mode,
-                    (string)$request['transaction_id']
-                );
-
-                return $receipt;
-            },
-            function (array $response) use ($submission, $mode): array {
-                if ((string)($response['response_xml'] ?? '') !== '') {
-                    $this->archives()->store(
-                        (int)$submission['company_id'],
-                        (int)$submission['accounting_period_id'],
-                        'companies_house',
-                        $mode,
-                        (string)$submission['submission_number'],
-                        'submitting',
-                        'submission-response.xml',
-                        (string)$response['response_xml']
-                    );
-                }
-                return $this->conversation()->captureResponse(
-                    $submission,
-                    $mode,
-                    (string)$submission['submission_number'],
-                    'accounts',
-                    $response
-                );
-            }
+            $this->exchangeContext(
+                $submission,
+                $mode,
+                (string)$submission['submission_number'],
+                'accounts'
+            )
         );
 
         $success = !empty($result['success']);
@@ -1659,34 +1599,14 @@ final class CompaniesHouseAccountsSubmissionService
         $result = $gateway->getSubmissionStatus(
             (string)$submission['submission_number'],
             $mode,
-            function (array $request) use ($submission, $mode, $cycleId): array {
-                $receipt = $this->conversation()->captureRequest(
-                    $submission,
-                    $mode,
-                    (string)$submission['submission_number'],
-                    'submission_status',
-                    $request,
-                    null,
-                    $cycleId
-                );
-                $this->conversation()->markSendStarted(
-                    $mode,
-                    (string)$request['transaction_id']
-                );
-
-                return $receipt;
-            },
-            function (array $response) use ($submission, $mode, $cycleId): array {
-                return $this->conversation()->captureResponse(
-                    $submission,
-                    $mode,
-                    (string)$submission['submission_number'],
-                    'submission_status',
-                    $response,
-                    null,
-                    $cycleId
-                );
-            },
+            $this->exchangeContext(
+                $submission,
+                $mode,
+                (string)$submission['submission_number'],
+                'submission_status',
+                null,
+                $cycleId
+            ),
             $this->schemaInventoryFromSubmission($submission, 'accounts')
         );
         $now = gmdate('Y-m-d H:i:s');
@@ -1826,34 +1746,14 @@ final class CompaniesHouseAccountsSubmissionService
         $result = $gateway->acknowledgeSubmissionStatus(
             $mode,
             $this->schemaInventoryFromSubmission($submission, 'accounts'),
-            function (array $request) use ($submission, $mode, $cycleId): array {
-                $receipt = $this->conversation()->captureRequest(
-                    $submission,
-                    $mode,
-                    (string)$submission['submission_number'],
-                    'status_ack',
-                    $request,
-                    null,
-                    $cycleId
-                );
-                $this->conversation()->markSendStarted(
-                    $mode,
-                    (string)$request['transaction_id']
-                );
-
-                return $receipt;
-            },
-            function (array $response) use ($submission, $mode, $cycleId): array {
-                return $this->conversation()->captureResponse(
-                    $submission,
-                    $mode,
-                    (string)$submission['submission_number'],
-                    'status_ack',
-                    $response,
-                    null,
-                    $cycleId
-                );
-            }
+            $this->exchangeContext(
+                $submission,
+                $mode,
+                (string)$submission['submission_number'],
+                'status_ack',
+                null,
+                $cycleId
+            )
         );
         if (empty($result['success'])) {
             $uncertain = !empty($result['transport_unknown']);
@@ -1966,30 +1866,12 @@ final class CompaniesHouseAccountsSubmissionService
             $requestKey,
             $mode,
             $this->schemaInventoryFromSubmission($submission, 'accounts'),
-            function (array $request) use ($submission, $mode): array {
-                $receipt = $this->conversation()->captureRequest(
-                    $submission,
-                    $mode,
-                    (string)$submission['submission_number'],
-                    'get_document',
-                    $request
-                );
-                $this->conversation()->markSendStarted(
-                    $mode,
-                    (string)$request['transaction_id']
-                );
-
-                return $receipt;
-            },
-            function (array $response) use ($submission, $mode): array {
-                return $this->conversation()->captureResponse(
-                    $submission,
-                    $mode,
-                    (string)$submission['submission_number'],
-                    'get_document',
-                    $response
-                );
-            }
+            $this->exchangeContext(
+                $submission,
+                $mode,
+                (string)$submission['submission_number'],
+                'get_document'
+            )
         );
         if (empty($result['success'])) {
             if (!empty($result['evidence_incomplete'])) {
@@ -3485,8 +3367,9 @@ final class CompaniesHouseAccountsSubmissionService
                  s.submission_number IS NOT NULL
                  OR EXISTS (
                    SELECT 1
-                   FROM companies_house_protocol_exchanges attempted
+                   FROM govtalk_protocol_exchanges attempted
                    WHERE attempted.submission_id = s.id
+                     AND attempted.authority = :authority
                      AND attempted.operation = :accounts_operation
                      AND attempted.sent_at IS NOT NULL
                  )
@@ -3495,6 +3378,7 @@ final class CompaniesHouseAccountsSubmissionService
             [
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
+                'authority' => 'companies_house',
                 'accounts_operation' => 'accounts',
             ]
         );
@@ -3508,11 +3392,12 @@ final class CompaniesHouseAccountsSubmissionService
         int $submissionId = 0
     ): array {
         if ($companyId <= 0
-            || !\InterfaceDB::tableExists('companies_house_protocol_exchanges')) {
+            || !\InterfaceDB::tableExists('govtalk_protocol_exchanges')) {
             return [];
         }
         $submissionFilter = $submissionId > 0 ? ' AND s.id = :submission_id' : '';
         $params = [
+            'authority' => 'companies_house',
             'submission_company_id' => $companyId,
             'preflight_company_id' => $companyId,
         ];
@@ -3524,14 +3409,17 @@ final class CompaniesHouseAccountsSubmissionService
                     s.submission_number,
                     s.filing_type,
                     s.lifecycle AS submission_lifecycle,
+                    COALESCE(s.accounting_period_id, p.accounting_period_id)
+                        AS evidence_accounting_period_id,
                     p.outcome AS preflight_outcome,
                     cycle.normalized_status,
                     cycle.acknowledgement_state
-             FROM companies_house_protocol_exchanges e
+             FROM govtalk_protocol_exchanges e
              LEFT JOIN ' . self::SUBMISSIONS_TABLE . ' s ON s.id = e.submission_id
              LEFT JOIN companies_house_company_auth_preflights p ON p.id = e.preflight_id
              LEFT JOIN companies_house_accounts_status_cycles cycle ON cycle.id = e.status_cycle_id
-             WHERE (
+             WHERE e.authority = :authority
+               AND (
                  s.company_id = :submission_company_id
                  OR
                  p.company_id = :preflight_company_id
@@ -3541,9 +3429,30 @@ final class CompaniesHouseAccountsSubmissionService
              LIMIT 500',
             $params
         );
+        $metadata = new GovTalkProtocolMetadataService();
         foreach ($rows as &$row) {
             $row['request_available'] = trim((string)($row['request_path'] ?? '')) !== '';
             $row['response_available'] = trim((string)($row['response_path'] ?? '')) !== '';
+            $messageClass = trim((string)($row['request_message_class'] ?? ''));
+            $row['request_message_class'] = $messageClass !== ''
+                ? $messageClass
+                : $metadata->messageClassForOperation((string)($row['operation'] ?? ''));
+            $row['display_http_status'] = $metadata->httpStatusLabel(
+                $row['response_status_code'] !== null
+                    ? (int)$row['response_status_code']
+                    : null
+            );
+            $row['govtalk_errors'] = $this->decodedProtocolErrors(
+                $row['govtalk_errors_json'] ?? null
+            );
+            if ($row['govtalk_errors'] === [] && !empty($row['response_available'])) {
+                $row['govtalk_errors'] = $this->historicalGovTalkErrors(
+                    $companyId,
+                    (int)($row['evidence_accounting_period_id'] ?? 0),
+                    (int)$row['id'],
+                    $metadata
+                );
+            }
             $row['display_outcome'] = $this->exchangeOutcome($row);
         }
         unset($row);
@@ -3571,10 +3480,11 @@ final class CompaniesHouseAccountsSubmissionService
     ): array {
         $row = \InterfaceDB::fetchOne(
             'SELECT e.id
-             FROM companies_house_protocol_exchanges e
+             FROM govtalk_protocol_exchanges e
              LEFT JOIN ' . self::SUBMISSIONS_TABLE . ' s ON s.id = e.submission_id
              LEFT JOIN companies_house_company_auth_preflights p ON p.id = e.preflight_id
              WHERE e.id = :exchange_id
+               AND e.authority = :authority
                AND (
                    (s.company_id = :submission_company_id
                     AND s.accounting_period_id = :submission_accounting_period_id)
@@ -3585,6 +3495,7 @@ final class CompaniesHouseAccountsSubmissionService
              LIMIT 1',
             [
                 'exchange_id' => $exchangeId,
+                'authority' => 'companies_house',
                 'submission_company_id' => $companyId,
                 'submission_accounting_period_id' => $accountingPeriodId,
                 'preflight_company_id' => $companyId,
@@ -3613,15 +3524,17 @@ final class CompaniesHouseAccountsSubmissionService
         $row = \InterfaceDB::fetchOne(
             'SELECT COALESCE(s.accounting_period_id, p.accounting_period_id)
                     AS accounting_period_id
-             FROM companies_house_protocol_exchanges e
+             FROM govtalk_protocol_exchanges e
              LEFT JOIN ' . self::SUBMISSIONS_TABLE . ' s ON s.id = e.submission_id
              LEFT JOIN companies_house_company_auth_preflights p ON p.id = e.preflight_id
              WHERE e.id = :exchange_id
+               AND e.authority = :authority
                AND (s.company_id = :submission_company_id
                     OR p.company_id = :preflight_company_id)
              LIMIT 1',
             [
                 'exchange_id' => $exchangeId,
+                'authority' => 'companies_house',
                 'submission_company_id' => $companyId,
                 'preflight_company_id' => $companyId,
             ]
@@ -3653,10 +3566,12 @@ final class CompaniesHouseAccountsSubmissionService
         $row = \InterfaceDB::fetchOne(
             'SELECT e.submission_id, e.operation, e.transaction_id,
                     p.company_id, p.accounting_period_id
-             FROM companies_house_protocol_exchanges e
+             FROM govtalk_protocol_exchanges e
              LEFT JOIN companies_house_company_auth_preflights p ON p.id = e.preflight_id
-             WHERE e.id = :id LIMIT 1',
-            ['id' => $exchangeId]
+             WHERE e.id = :id
+               AND e.authority = :authority
+             LIMIT 1',
+            ['id' => $exchangeId, 'authority' => 'companies_house']
         );
         if (!is_array($row)) {
             return;
@@ -3713,10 +3628,20 @@ final class CompaniesHouseAccountsSubmissionService
     {
         $state = strtolower(trim((string)($row['exchange_state'] ?? '')));
         if ($state === 'prepared') {
-            return 'Prepared; not sent';
+            return 'Prepared';
         }
         if ($state === 'evidence_incomplete') {
-            return 'Evidence incomplete; reconciliation required';
+            return 'Evidence incomplete';
+        }
+        if ($state === 'transport_unknown') {
+            return 'Transport unknown';
+        }
+        if ((string)($row['operation'] ?? '') === 'company_data') {
+            foreach ((array)($row['govtalk_errors'] ?? []) as $error) {
+                if (is_array($error) && trim((string)($error['number'] ?? '')) === '502') {
+                    return 'Presenter authorisation failed';
+                }
+            }
         }
         if ((string)($row['operation'] ?? '') === 'company_data'
             && trim((string)($row['preflight_outcome'] ?? '')) !== '') {
@@ -3724,14 +3649,60 @@ final class CompaniesHouseAccountsSubmissionService
         }
         if ((string)($row['operation'] ?? '') === 'submission_status'
             && trim((string)($row['normalized_status'] ?? '')) !== '') {
-            $status = \HelperFramework::labelFromKey((string)$row['normalized_status'], '_');
-            if ((string)($row['acknowledgement_state'] ?? '') === 'required') {
-                return $status . '; acknowledgement required';
-            }
-            return $status;
+            return \HelperFramework::labelFromKey((string)$row['normalized_status'], '_');
+        }
+        if ($state === 'succeeded') {
+            return match ((string)($row['operation'] ?? '')) {
+                'company_data' => 'Verified',
+                'accounts' => 'Pending',
+                'status_ack' => 'Acknowledged',
+                default => 'Succeeded',
+            };
         }
 
         return \HelperFramework::labelFromKey($state !== '' ? $state : 'unknown', '_');
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function decodedProtocolErrors(mixed $json): array
+    {
+        $json = trim((string)$json);
+        if ($json === '') {
+            return [];
+        }
+        try {
+            $errors = json_decode($json, true, 64, JSON_THROW_ON_ERROR);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        return is_array($errors) && array_is_list($errors)
+            ? array_values(array_filter($errors, 'is_array'))
+            : [];
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function historicalGovTalkErrors(
+        int $companyId,
+        int $accountingPeriodId,
+        int $exchangeId,
+        GovTalkProtocolMetadataService $metadata
+    ): array {
+        if ($accountingPeriodId <= 0 || $exchangeId <= 0) {
+            return [];
+        }
+        try {
+            $evidence = $this->conversation()->evidenceFileForContext(
+                $companyId,
+                $accountingPeriodId,
+                $exchangeId,
+                'response'
+            );
+            $xml = file_get_contents((string)($evidence['path'] ?? ''));
+            return is_string($xml) ? $metadata->govTalkErrors($xml) : [];
+        } catch (\Throwable) {
+            return [];
+        }
     }
 
     private function failConsumedSubmission(
@@ -3971,42 +3942,13 @@ final class CompaniesHouseAccountsSubmissionService
             $companyAuthCode,
             $environment,
             $schemaInventory,
-            function (array $request) use (
+            $this->exchangeContext(
                 $authenticationContext,
                 $environment,
-                $preflight,
+                (string)$preflight['archive_reference'],
+                'company_data',
                 $preflightId
-            ): array {
-                $receipt = $this->conversation()->captureRequest(
-                    $authenticationContext,
-                    $environment,
-                    (string)$preflight['archive_reference'],
-                    'company_data',
-                    $request,
-                    $preflightId
-                );
-                $this->conversation()->markSendStarted(
-                    $environment,
-                    (string)$request['transaction_id']
-                );
-
-                return $receipt;
-            },
-            function (array $response) use (
-                $authenticationContext,
-                $environment,
-                $preflight,
-                $preflightId
-            ): array {
-                return $this->conversation()->captureResponse(
-                    $authenticationContext,
-                    $environment,
-                    (string)$preflight['archive_reference'],
-                    'company_data',
-                    $response,
-                    $preflightId
-                );
-            }
+            )
         );
         $this->conversation()->finishPreflight($preflightId, $result);
         $result['preflight_id'] = $preflightId;
@@ -4016,6 +3958,82 @@ final class CompaniesHouseAccountsSubmissionService
         }
 
         return $result;
+    }
+
+    private function exchangeContext(
+        array $submission,
+        string $environment,
+        string $archiveReference,
+        string $operation,
+        ?int $preflightId = null,
+        ?int $statusCycleId = null
+    ): GovTalkConversationContext {
+        return new GovTalkConversationContext(
+            'companies_house',
+            (int)($submission['company_id'] ?? 0),
+            (int)($submission['accounting_period_id'] ?? 0),
+            strtoupper(trim($environment)),
+            $archiveReference,
+            fn(array $request): array => $this->conversation()->captureRequest(
+                $submission,
+                $environment,
+                $archiveReference,
+                $operation,
+                $request,
+                $preflightId,
+                $statusCycleId
+            ),
+            fn(array $request) => $this->conversation()->markSendStarted(
+                $environment,
+                (string)($request['transaction_id'] ?? '')
+            ),
+            function (array $response) use (
+                $submission,
+                $environment,
+                $archiveReference,
+                $operation,
+                $preflightId,
+                $statusCycleId
+            ): array {
+                $receipt = $this->conversation()->captureResponse(
+                    $submission,
+                    $environment,
+                    $archiveReference,
+                    $operation,
+                    $response,
+                    $preflightId,
+                    $statusCycleId
+                );
+                if ($operation === 'accounts'
+                    && (string)($response['response_xml'] ?? '') !== '') {
+                    $this->archives()->store(
+                        (int)($submission['company_id'] ?? 0),
+                        (int)($submission['accounting_period_id'] ?? 0),
+                        'companies_house',
+                        $environment,
+                        $archiveReference,
+                        'submitting',
+                        'submission-response.xml',
+                        (string)$response['response_xml']
+                    );
+                }
+
+                return $receipt;
+            },
+            fn(string $state, string $error, array $result) =>
+                $this->conversation()->completeExchange(
+                    $environment,
+                    (string)($result['transaction_id'] ?? ''),
+                    $state,
+                    $error
+                ),
+            fn(string $transactionId, string $error) =>
+                $this->conversation()->markEvidenceIncomplete(
+                    $environment,
+                    $transactionId,
+                    $error
+                )
+        );
     }
 
     private function sequences(): CompaniesHouseSubmissionSequenceService
@@ -4223,6 +4241,7 @@ final class CompaniesHouseAccountsSubmissionService
                 'credentials_configured' => false,
                 'protocol_ready' => false,
                 'developer_binding_configured' => false,
+                'company_data_capability' => 'unknown',
                 'live_approved' => false,
                 'test_accepted' => false,
             ],

@@ -23,13 +23,17 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
                 $harness->assertSame(3, $prepare->getNumberOfParameters());
                 $harness->assertSame(\eel_accounts\Client\CompaniesHousePreparedAccountsRequest::class, (string)$prepare->getReturnType());
-                $harness->assertSame(3, $submit->getNumberOfParameters());
+                $harness->assertSame(2, $submit->getNumberOfParameters());
+                $harness->assertSame(
+                    \eel_accounts\Client\GovTalkConversationContext::class,
+                    (string)$submit->getParameters()[1]->getType()
+                );
                 $harness->assertSame('array', (string)$submit->getReturnType());
-                $harness->assertSame(5, $status->getNumberOfParameters());
+                $harness->assertSame(4, $status->getNumberOfParameters());
                 $harness->assertSame('array', (string)$status->getReturnType());
-                $harness->assertSame(6, $companyData->getNumberOfParameters());
-                $harness->assertSame(4, $statusAck->getNumberOfParameters());
-                $harness->assertSame(5, $document->getNumberOfParameters());
+                $harness->assertSame(5, $companyData->getNumberOfParameters());
+                $harness->assertSame(3, $statusAck->getNumberOfParameters());
+                $harness->assertSame(4, $document->getNumberOfParameters());
             }
         );
     }

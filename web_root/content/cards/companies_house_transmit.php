@@ -137,10 +137,9 @@ final class _companies_house_transmitCard extends CardBaseFramework
                 . $this->schemaMetric($schemaReady, $schemaState)
                 . $this->metric('Private archive', $archive !== [] ? 'Captured and hashed' : 'Created on send')
                 . $this->metric(
-                    'Company authentication check',
-                    $preflight === null
-                        ? 'Not run'
-                        : HelperFramework::labelFromKey((string)$preflight['outcome'], '_')
+                    'CompanyData capability',
+                    ucfirst((string)($feature['company_data_capability'] ?? 'unknown')),
+                    'Optional presenter diagnostic; not required for Accounts transmission.'
                 )
                 . $this->metric(
                     'Status acknowledgement',
@@ -290,7 +289,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
     ): string {
         $html = '<section class="panel-soft"><h3 class="card-title">Test Companies House Connection</h3>'
             . $this->sectionHelper(
-                'Check the company authentication code against Companies House before transmitting accounts.'
+                'Optionally check the presenter and company authentication values with Companies House CompanyData. This diagnostic is not required before transmitting Accounts.'
             );
         if (!$schemaReady) {
             $html .= $this->warningPanel([

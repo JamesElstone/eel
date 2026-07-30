@@ -58,11 +58,37 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 . $details . '</MessageDetails><SenderDetails/></Header>'
                 . $govTalkDetails . $responseBody . '</GovTalkMessage>';
         };
+        $recorders = static function (): array {
+            $before = static fn(array $request): array => [
+                'transaction_id' => (string)$request['transaction_id'],
+                'request_sha256' => (string)$request['request_sha256'],
+                'request_bytes' => (int)$request['request_bytes'],
+            ];
+            $after = static fn(array $response): array => [
+                'transaction_id' => (string)$response['transaction_id'],
+                'response_sha256' => $response['response_sha256'],
+                'response_bytes' => (int)$response['response_bytes'],
+                'response_headers_sha256' => (string)$response['response_headers_sha256'],
+            ];
+
+            return [$before, $after];
+        };
+        $conversation = static fn(
+            string $environment,
+            callable $before,
+            callable $after
+        ): \eel_accounts\Client\GovTalkConversationContext =>
+            \eel_accounts\Client\GovTalkConversationContext::fromCallbacks(
+                'hmrc',
+                $environment,
+                $before,
+                $after
+            );
 
         $h->check(
             \eel_accounts\Client\HmrcCtTransactionEngineClient::class,
             'uses the live endpoint and TIL class, persists before send, and redacts credentials',
-            static function () use ($h, $credentials, $transactionId, $body, $response): void {
+            static function () use ($h, $credentials, $transactionId, $body, $response, $recorders, $conversation): void {
                 $order = [];
                 $captured = [];
                 $transport = static function (array $request) use (&$order, &$captured, $response): array {
@@ -87,15 +113,24 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ['minimum_poll_interval' => 1]
                 );
                 $preSend = [];
+                [, $afterReceive] = $recorders();
                 $result = $client->submit(
                     $body,
                     '0123456789',
                     'TIL',
-                    null,
-                    static function (array $request) use (&$order, &$preSend): void {
-                        $order[] = 'persist';
-                        $preSend = $request;
-                    }
+                    $conversation(
+                        'TIL',
+                        static function (array $request) use (&$order, &$preSend): array {
+                            $order[] = 'persist';
+                            $preSend = $request;
+                            return [
+                                'transaction_id' => (string)$request['transaction_id'],
+                                'request_sha256' => (string)$request['request_sha256'],
+                                'request_bytes' => (int)$request['request_bytes'],
+                            ];
+                        },
+                        $afterReceive
+                    )
                 );
 
                 $h->assertSame(['persist', 'transport'], $order);
@@ -104,7 +139,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $h->assertTrue(str_contains((string)$captured['body'], '<GatewayTest>0</GatewayTest>'));
                 $h->assertTrue(str_contains((string)$captured['body'], '<SenderID>LIVE-SENDER</SenderID>'));
                 $h->assertTrue(str_contains((string)$captured['body'], '<Value>LIVE-PASSWORD</Value>'));
-                $h->assertFalse(str_contains((string)$preSend['request_xml'], 'LIVE-SENDER'));
+                // The private evidence boundary receives the exact bytes. Only
+                // application-facing result payloads are redacted.
+                $h->assertTrue(str_contains((string)$preSend['request_xml'], 'LIVE-SENDER'));
                 $h->assertFalse(str_contains((string)$result['request_xml'], 'LIVE-PASSWORD'));
                 $h->assertSame(hash('sha256', (string)$captured['body']), $preSend['request_sha256']);
                 $h->assertTrue((bool)$result['success']);
@@ -118,7 +155,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $h->check(
             \eel_accounts\Client\HmrcCtTransactionEngineClient::class,
             'parses final poll acceptance and protocol cleanup',
-            static function () use ($h, $credentials, $transactionId, $response): void {
+            static function () use ($h, $credentials, $transactionId, $response, $recorders, $conversation): void {
                 $responses = [
                     $response(
                         'HMRC-CT-CT600-TIL',
@@ -139,10 +176,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $credentials,
                     $transactionId
                 );
+                [$beforeSend, $afterReceive] = $recorders();
                 $poll = $client->poll(
                     'CAFE1234',
                     'https://transaction-engine.tax.service.gov.uk/poll',
-                    'TIL'
+                    'TIL',
+                    $conversation('TIL', $beforeSend, $afterReceive)
                 );
                 $h->assertTrue((bool)$poll['success']);
                 $h->assertSame('final_response', $poll['protocol_state']);
@@ -152,7 +191,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $delete = $client->delete(
                     'CAFE1234',
                     'https://transaction-engine.tax.service.gov.uk/poll',
-                    'TIL'
+                    'TIL',
+                    $conversation('TIL', $beforeSend, $afterReceive)
                 );
                 $h->assertTrue((bool)$delete['success']);
                 $h->assertSame('deleted', $delete['protocol_state']);
@@ -162,7 +202,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $h->check(
             \eel_accounts\Client\HmrcCtTransactionEngineClient::class,
             'records an unknown submit outcome and never leaks credentials in the error',
-            static function () use ($h, $credentials, $transactionId, $body): void {
+            static function () use ($h, $credentials, $transactionId, $body, $recorders, $conversation): void {
                 $client = new \eel_accounts\Client\HmrcCtTransactionEngineClient(
                     static function (array $request): array {
                         unset($request);
@@ -171,7 +211,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $credentials,
                     $transactionId
                 );
-                $result = $client->submit($body, '0123456789', 'LIVE');
+                [$beforeSend, $afterReceive] = $recorders();
+                $result = $client->submit(
+                    $body,
+                    '0123456789',
+                    'LIVE',
+                    $conversation('LIVE', $beforeSend, $afterReceive)
+                );
                 $h->assertFalse((bool)$result['success']);
                 $h->assertTrue((bool)$result['transport_unknown']);
                 $h->assertFalse(str_contains((string)$result['error'], 'LIVE-PASSWORD'));
@@ -181,7 +227,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $h->check(
             \eel_accounts\Client\HmrcCtTransactionEngineClient::class,
             'recursively redacts credentials echoed by a parsed GovTalk error',
-            static function () use ($h, $credentials, $transactionId, $body, $response): void {
+            static function () use ($h, $credentials, $transactionId, $body, $response, $recorders, $conversation): void {
                 $govTalkDetails = '<GovTalkDetails><Keys/><GovTalkErrors><Error>'
                     . '<RaisedBy>Gateway</RaisedBy><Number>5000</Number><Type>fatal</Type>'
                     . '<Text>Rejected LIVE-SENDER using LIVE-PASSWORD.</Text>'
@@ -203,7 +249,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $transactionId
                 );
 
-                $result = $client->submit($body, '0123456789', 'LIVE');
+                [$beforeSend, $afterReceive] = $recorders();
+                $result = $client->submit(
+                    $body,
+                    '0123456789',
+                    'LIVE',
+                    $conversation('LIVE', $beforeSend, $afterReceive)
+                );
                 $encodedErrors = json_encode((array)$result['errors'], JSON_THROW_ON_ERROR);
                 $h->assertFalse(str_contains((string)$result['error'], 'LIVE-SENDER'));
                 $h->assertFalse(str_contains((string)$result['error'], 'LIVE-PASSWORD'));
@@ -216,7 +268,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $h->check(
             \eel_accounts\Client\HmrcCtTransactionEngineClient::class,
             'distinguishes a gateway poll error from a final business rejection',
-            static function () use ($h, $credentials, $transactionId, $response): void {
+            static function () use ($h, $credentials, $transactionId, $response, $recorders, $conversation): void {
                 $gatewayError = '<GovTalkDetails><Keys/><GovTalkErrors><Error>'
                     . '<RaisedBy>Gateway</RaisedBy><Number>5000</Number><Type>fatal</Type>'
                     . '<Text>Temporary gateway failure.</Text></Error></GovTalkErrors></GovTalkDetails>';
@@ -236,10 +288,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $credentials,
                     $transactionId
                 );
+                [$beforeSend, $afterReceive] = $recorders();
                 $result = $client->poll(
                     'CAFE1234',
                     'https://transaction-engine.tax.service.gov.uk/poll',
-                    'TIL'
+                    'TIL',
+                    $conversation('TIL', $beforeSend, $afterReceive)
                 );
                 $h->assertFalse((bool)$result['success']);
                 $h->assertSame('submission_error', $result['protocol_state']);
@@ -251,7 +305,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $h->check(
             \eel_accounts\Client\HmrcCtTransactionEngineClient::class,
             'rejects a response from a different GovTalk conversation',
-            static function () use ($h, $credentials, $transactionId, $response): void {
+            static function () use ($h, $credentials, $transactionId, $response, $recorders, $conversation): void {
                 $client = new \eel_accounts\Client\HmrcCtTransactionEngineClient(
                     static fn(array $request): array => [
                         'status_code' => 200,
@@ -266,10 +320,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $credentials,
                     $transactionId
                 );
+                [$beforeSend, $afterReceive] = $recorders();
                 $result = $client->poll(
                     'CAFE1234',
                     'https://transaction-engine.tax.service.gov.uk/poll',
-                    'TIL'
+                    'TIL',
+                    $conversation('TIL', $beforeSend, $afterReceive)
                 );
                 $h->assertFalse((bool)$result['success']);
                 $h->assertSame('failed', $result['protocol_state']);
@@ -281,7 +337,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $h->check(
             \eel_accounts\Client\HmrcCtTransactionEngineClient::class,
             'rejects missing and mismatched GovTalk response transaction IDs',
-            static function () use ($h, $credentials, $transactionId, $response): void {
+            static function () use ($h, $credentials, $transactionId, $response, $recorders, $conversation): void {
+                [$beforeSend, $afterReceive] = $recorders();
                 foreach (['', 'DEADBEEF'] as $responseTransactionId) {
                     $client = new \eel_accounts\Client\HmrcCtTransactionEngineClient(
                         static fn(array $request): array => [
@@ -304,7 +361,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $result = $client->poll(
                         'CAFE1234',
                         'https://transaction-engine.tax.service.gov.uk/poll',
-                        'TIL'
+                        'TIL',
+                        $conversation('TIL', $beforeSend, $afterReceive)
                     );
                     $h->assertFalse((bool)$result['success']);
                     $h->assertSame('failed', $result['protocol_state']);
@@ -317,7 +375,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $h->check(
             \eel_accounts\Client\HmrcCtTransactionEngineClient::class,
             'rejects an HMRC-supplied poll endpoint outside the selected environment',
-            static function () use ($h, $credentials, $transactionId): void {
+            static function () use ($h, $credentials, $transactionId, $recorders, $conversation): void {
                 $called = false;
                 $client = new \eel_accounts\Client\HmrcCtTransactionEngineClient(
                     static function (array $request) use (&$called): array {
@@ -328,7 +386,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $credentials,
                     $transactionId
                 );
-                $result = $client->poll('CAFE1234', 'https://attacker.example/poll', 'LIVE');
+                [$beforeSend, $afterReceive] = $recorders();
+                $result = $client->poll(
+                    'CAFE1234',
+                    'https://attacker.example/poll',
+                    'LIVE',
+                    $conversation('LIVE', $beforeSend, $afterReceive)
+                );
                 $h->assertFalse((bool)$result['success']);
                 $h->assertTrue((bool)$result['pre_send_failure']);
                 $h->assertFalse($called);

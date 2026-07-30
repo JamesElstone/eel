@@ -16,7 +16,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame(true, $service->schemaReady());
                 foreach ([
                     'companies_house_company_auth_preflights',
-                    'companies_house_protocol_exchanges',
+                    'govtalk_protocol_exchanges',
                     'companies_house_accounts_status_cycles',
                 ] as $table) {
                     $harness->assertSame(true, InterfaceDB::tableExists($table));
@@ -120,12 +120,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         (int)$preflight['id']
                     );
                     $row = InterfaceDB::fetchOne(
-                        'SELECT exchange_state, sent_at
-                         FROM companies_house_protocol_exchanges
+                        'SELECT exchange_state, sent_at, request_message_class
+                         FROM govtalk_protocol_exchanges
                          WHERE transaction_id = :transaction_id',
                         ['transaction_id' => 'STATE1']
                     );
                     $harness->assertSame('prepared', (string)$row['exchange_state']);
+                    $harness->assertSame(
+                        'CompanyDataRequest',
+                        (string)$row['request_message_class']
+                    );
                     $harness->assertSame(null, $row['sent_at']);
                     $harness->assertSame(hash('sha256', $requestXml), $receipt['request_sha256']);
                     $harness->assertTrue(str_contains(
@@ -136,13 +140,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $conversation->markSendStarted('TEST', 'STATE1');
                     $row = InterfaceDB::fetchOne(
                         'SELECT exchange_state, sent_at
-                         FROM companies_house_protocol_exchanges
+                         FROM govtalk_protocol_exchanges
                          WHERE transaction_id = :transaction_id',
                         ['transaction_id' => 'STATE1']
                     );
                     $harness->assertSame('sent', (string)$row['exchange_state']);
                     $harness->assertTrue(trim((string)$row['sent_at']) !== '');
 
+                    $headers = ['Content-Type' => 'application/xml', 'Set-Cookie' => 'private'];
+                    $sanitizedHeadersJson = (new \eel_accounts\Service\CompaniesHouseProtocolMetadataService())
+                        ->responseHeadersJson(['content-type' => 'application/xml']);
                     $responseReceipt = $conversation->captureResponse(
                         $submission,
                         'TEST',
@@ -152,12 +159,19 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                             'transaction_id' => 'STATE1',
                             'response_xml' => '',
                             'status_code' => 204,
+                            'response_headers' => $headers,
+                            'response_headers_sha256' => hash(
+                                'sha256',
+                                $sanitizedHeadersJson
+                            ),
                         ],
                         (int)$preflight['id']
                     );
                     $row = InterfaceDB::fetchOne(
-                        'SELECT exchange_state, received_at, response_path, response_status_code
-                         FROM companies_house_protocol_exchanges
+                        'SELECT exchange_state, received_at, response_path,
+                                response_status_code, response_headers_json,
+                                response_headers_sha256, govtalk_errors_json
+                         FROM govtalk_protocol_exchanges
                          WHERE transaction_id = :transaction_id',
                         ['transaction_id' => 'STATE1']
                     );
@@ -165,8 +179,21 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $harness->assertTrue(trim((string)$row['received_at']) !== '');
                     $harness->assertSame(null, $row['response_path']);
                     $harness->assertSame(204, (int)$row['response_status_code']);
+                    $harness->assertSame(
+                        $sanitizedHeadersJson,
+                        (string)$row['response_headers_json']
+                    );
+                    $harness->assertSame(
+                        hash('sha256', $sanitizedHeadersJson),
+                        (string)$row['response_headers_sha256']
+                    );
+                    $harness->assertSame('[]', (string)$row['govtalk_errors_json']);
                     $harness->assertSame(0, (int)$responseReceipt['response_bytes']);
                     $harness->assertSame(null, $responseReceipt['response_sha256']);
+                    $harness->assertSame(
+                        hash('sha256', $sanitizedHeadersJson),
+                        $responseReceipt['response_headers_sha256']
+                    );
                     $harness->assertFalse(is_file(
                         dirname((string)$receipt['path'])
                             . DIRECTORY_SEPARATOR . 'company-data-state1-response.xml'
@@ -178,7 +205,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $recordedExchange = InterfaceDB::fetchOne(
                         'SELECT e.submission_id, e.preflight_id,
                                 p.company_id, p.accounting_period_id
-                         FROM companies_house_protocol_exchanges e
+                         FROM govtalk_protocol_exchanges e
                          LEFT JOIN companies_house_company_auth_preflights p
                            ON p.id = e.preflight_id
                          WHERE e.transaction_id = :transaction_id',
@@ -190,7 +217,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $harness->assertSame($periodId, (int)($recordedExchange['accounting_period_id'] ?? 0));
                     $directHistory = InterfaceDB::fetchAll(
                         'SELECT e.id
-                         FROM companies_house_protocol_exchanges e
+                         FROM govtalk_protocol_exchanges e
                          LEFT JOIN companies_house_accounts_submissions s ON s.id = e.submission_id
                          LEFT JOIN companies_house_company_auth_preflights p ON p.id = e.preflight_id
                          WHERE (
@@ -271,6 +298,134 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $harness->assertSame(null, $state1['submission_id']);
                     $harness->assertSame(true, (bool)$state1['request_available']);
                     $harness->assertSame(false, (bool)$state1['response_available']);
+                    $harness->assertSame('204 No Content', $state1['display_http_status']);
+
+                    $failedCheck = $conversation->beginAuthenticationCheck(
+                        $submission,
+                        'TEST',
+                        str_repeat('e', 64),
+                        'ABC123',
+                        'test',
+                        false
+                    );
+                    $failedReference = (string)$failedCheck['archive_reference'];
+                    $conversation->captureRequest(
+                        $submission,
+                        'TEST',
+                        $failedReference,
+                        'company_data',
+                        [
+                            'transaction_id' => 'STATE3',
+                            'request_xml' => '<CompanyDataRequest transaction="STATE3"/>',
+                        ],
+                        (int)$failedCheck['id']
+                    );
+                    $conversation->markSendStarted('TEST', 'STATE3');
+                    $errorXml = '<?xml version="1.0"?><GovTalkMessage '
+                        . 'xmlns="http://www.govtalk.gov.uk/CM/envelope">'
+                        . '<GovTalkDetails><GovTalkErrors><Error>'
+                        . '<RaisedBy>CompanyDataRequest</RaisedBy><Number>502</Number>'
+                        . '<Type>fatal</Type><Text>Authorisation Failure</Text>'
+                        . '<Location/></Error></GovTalkErrors></GovTalkDetails>'
+                        . '</GovTalkMessage>';
+                    $emptyHeadersJson = (new \eel_accounts\Service\CompaniesHouseProtocolMetadataService())
+                        ->responseHeadersJson([]);
+                    $conversation->captureResponse(
+                        $submission,
+                        'TEST',
+                        $failedReference,
+                        'company_data',
+                        [
+                            'transaction_id' => 'STATE3',
+                            'response_xml' => $errorXml,
+                            'status_code' => 200,
+                            'response_headers' => [],
+                            'response_headers_sha256' => hash('sha256', $emptyHeadersJson),
+                        ],
+                        (int)$failedCheck['id']
+                    );
+                    $conversation->finishPreflight((int)$failedCheck['id'], [
+                        'success' => false,
+                        'authenticated' => false,
+                        'environment' => 'TEST',
+                        'transaction_id' => 'STATE3',
+                        'gateway_errors' => [[
+                            'number' => '502',
+                            'type' => 'fatal',
+                            'texts' => ['Authorisation Failure'],
+                        ]],
+                        'error' => 'Authorisation Failure',
+                    ]);
+                    $failedRow = InterfaceDB::fetchOne(
+                        'SELECT p.outcome, e.exchange_state, e.govtalk_errors_json
+                         FROM companies_house_company_auth_preflights p
+                         JOIN govtalk_protocol_exchanges e ON e.preflight_id = p.id
+                         WHERE p.id = :id',
+                        ['id' => (int)$failedCheck['id']]
+                    );
+                    $harness->assertSame(
+                        'presenter_authorisation_failed',
+                        (string)$failedRow['outcome']
+                    );
+                    $harness->assertSame('failed', (string)$failedRow['exchange_state']);
+                    $harness->assertTrue(str_contains(
+                        (string)$failedRow['govtalk_errors_json'],
+                        'Authorisation Failure'
+                    ));
+                    InterfaceDB::prepareExecute(
+                        'UPDATE govtalk_protocol_exchanges
+                         SET govtalk_errors_json = NULL
+                         WHERE transaction_id = :transaction_id',
+                        ['transaction_id' => 'STATE3']
+                    );
+                    $legacyHistory = $historyService->protocolExchangeHistory($companyId);
+                    $legacyExchange = array_values(array_filter(
+                        $legacyHistory,
+                        static fn(array $exchange): bool =>
+                            (string)$exchange['transaction_id'] === 'STATE3'
+                    ))[0];
+                    $harness->assertSame(
+                        '502',
+                        (string)$legacyExchange['govtalk_errors'][0]['number']
+                    );
+                    $harness->assertSame(
+                        'Presenter authorisation failed',
+                        (string)$legacyExchange['display_outcome']
+                    );
+                    $harness->assertSame(
+                        null,
+                        InterfaceDB::fetchColumn(
+                            'SELECT govtalk_errors_json
+                             FROM govtalk_protocol_exchanges
+                             WHERE transaction_id = :transaction_id',
+                            ['transaction_id' => 'STATE3']
+                        )
+                    );
+                    $harness->assertSame(
+                        'unknown',
+                        $conversation->companyDataCapability('TEST', str_repeat('e', 64))
+                    );
+
+                    $successfulCheck = $conversation->beginAuthenticationCheck(
+                        $submission,
+                        'TEST',
+                        str_repeat('e', 64),
+                        'ABC123',
+                        'test',
+                        false
+                    );
+                    $conversation->finishPreflight((int)$successfulCheck['id'], [
+                        'success' => true,
+                        'authenticated' => true,
+                        'environment' => 'TEST',
+                        'transaction_id' => '',
+                        'company_number' => '09883100',
+                        'company_name' => 'Protocol Conversation Test Limited',
+                    ]);
+                    $harness->assertSame(
+                        'available',
+                        $conversation->companyDataCapability('TEST', str_repeat('e', 64))
+                    );
                 } finally {
                     InterfaceDB::prepareExecute('DELETE FROM companies WHERE id = :id', ['id' => $companyId]);
                 }

@@ -229,8 +229,11 @@ final class IxbrlAction implements ActionInterfaceFramework
                         ? [(int)$cleanup['skipped_count'] . ' missing-file run(s) retained because they are referenced by transmitted or in-flight Companies House filings.']
                         : [],
                 ];
-            } elseif (in_array($intent, ['generate_computation_ixbrl', 'validate_computation_ixbrl'], true)) {
-                if ($intent === 'generate_computation_ixbrl') {
+            } elseif (in_array($intent, ['generate_computation_ixbrl', 'validate_computation_ixbrl', 'generate_ct600_xml'], true)) {
+                if ($intent === 'generate_ct600_xml') {
+                    $result = $this->withFilingLock($companyId, $accountingPeriodId,
+                        fn(): array => (new \eel_accounts\Service\Ct600GenerationService())->generate($companyId, $accountingPeriodId, $ctPeriodId));
+                } elseif ($intent === 'generate_computation_ixbrl') {
                     $progress = $services->actionProgress();
                     @set_time_limit(0);
                     $progress->report('Generating the Corporation Tax period iXBRL…', 0);

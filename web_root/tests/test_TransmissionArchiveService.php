@@ -260,29 +260,52 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         ['submission_id' => $submissionId]
                     );
                     InterfaceDB::prepareExecute(
-                        'INSERT INTO companies_house_protocol_exchanges (
-                            submission_id, preflight_id, operation, environment,
+                        'INSERT INTO govtalk_protocol_exchanges (
+                            authority, transmission_archive_id,
+                            submission_id, preflight_id, operation,
+                            request_message_class, environment,
                             transaction_id, exchange_state, request_path, request_sha256,
+                            request_bytes,
                             response_path, response_sha256, response_status_code,
+                            response_bytes,
+                            response_headers_json, response_headers_sha256,
+                            govtalk_errors_json,
                             sent_at, received_at, created_at, updated_at
                          ) VALUES (
-                            :submission_id, :preflight_id, :operation, :environment,
+                            :authority, :archive_id,
+                            :submission_id, :preflight_id, :operation,
+                            :request_message_class, :environment,
                             :transaction_id, :state, :request_path, :request_sha256,
+                            :request_bytes,
                             :response_path, :response_sha256, :status_code,
+                            :response_bytes,
+                            :response_headers_json, :response_headers_sha256,
+                            :govtalk_errors_json,
                             :sent_at, :received_at, :created_at, :updated_at
                          )',
                         [
+                            'authority' => 'companies_house',
+                            'archive_id' => (int)$request['archive_id'],
                             'submission_id' => $submissionId,
                             'preflight_id' => (int)$preflight['id'],
                             'operation' => 'company_data',
+                            'request_message_class' => 'CompanyDataRequest',
                             'environment' => 'TEST',
                             'transaction_id' => 'PROMOTE1',
                             'state' => 'succeeded',
                             'request_path' => $request['path'],
                             'request_sha256' => $request['sha256'],
+                            'request_bytes' => $request['bytes'],
                             'response_path' => $response['path'],
                             'response_sha256' => $response['sha256'],
                             'status_code' => 200,
+                            'response_bytes' => $response['bytes'],
+                            'response_headers_json' => '{"content-type":"application/xml"}',
+                            'response_headers_sha256' => hash(
+                                'sha256',
+                                '{"content-type":"application/xml"}'
+                            ),
+                            'govtalk_errors_json' => '[]',
                             'sent_at' => '2026-07-30 10:00:01',
                             'received_at' => '2026-07-30 10:00:02',
                             'created_at' => '2026-07-30 10:00:00',
@@ -325,7 +348,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ));
                     $exchange = InterfaceDB::fetchOne(
                         'SELECT request_path, response_path
-                         FROM companies_house_protocol_exchanges
+                         FROM govtalk_protocol_exchanges
                          WHERE submission_id = :submission_id LIMIT 1',
                         ['submission_id' => $submissionId]
                     );
@@ -337,6 +360,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     );
                     $h->assertSame(1, count((array)$manifest['exchanges']));
                     $h->assertSame('PROMOTE1', (string)$manifest['exchanges'][0]['transaction_id']);
+                    $h->assertSame(
+                        'CompanyDataRequest',
+                        (string)$manifest['exchanges'][0]['message_class']
+                    );
+                    $h->assertSame(
+                        ['content-type' => 'application/xml'],
+                        (array)$manifest['exchanges'][0]['response_headers']
+                    );
+                    $h->assertSame([], (array)$manifest['exchanges'][0]['govtalk_errors']);
                 } finally {
                     InterfaceDB::prepareExecute('DELETE FROM companies WHERE id = :id', ['id' => $companyId]);
                 }

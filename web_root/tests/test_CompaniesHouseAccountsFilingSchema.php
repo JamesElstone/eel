@@ -60,6 +60,63 @@ $authenticationChecksMigration = (string)file_get_contents(
     $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
     . DIRECTORY_SEPARATOR . '2026_07_30_005_companies_house_authentication_checks.sql'
 );
+$protocolMetadataMigration = (string)file_get_contents(
+    $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
+    . DIRECTORY_SEPARATOR . '2026_07_30_007_companies_house_protocol_metadata.sql'
+);
+$historyCardRenameMigration = (string)file_get_contents(
+    $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
+    . DIRECTORY_SEPARATOR . '2026_07_30_008_rename_govtalk_transmission_history_card.sql'
+);
+$govTalkLedgerMigration = (string)file_get_contents(
+    $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
+    . DIRECTORY_SEPARATOR . '2026_07_30_009_shared_govtalk_exchange_ledger.sql'
+);
+$govTalkIdentityMigration = (string)file_get_contents(
+    $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
+    . DIRECTORY_SEPARATOR . '2026_07_30_010_govtalk_exchange_identity.sql'
+);
+
+$harness->check(
+    'Companies House accounts filing schema',
+    'shared GovTalk migration preserves Companies House rows before swapping ledgers',
+    static function () use (
+        $harness,
+        $govTalkLedgerMigration,
+        $govTalkIdentityMigration,
+        $masterSchema
+    ): void {
+        foreach ([
+            'govtalk_protocol_exchanges',
+            'transmission_archive_id',
+            'hmrc_submission_id',
+            'request_qualifier',
+            'request_function',
+            'response_headers_sha256',
+            'outcome_code',
+        ] as $token) {
+            $harness->assertTrue(str_contains($govTalkLedgerMigration, $token));
+            $harness->assertTrue(str_contains($masterSchema, $token));
+        }
+        $harness->assertTrue(str_contains(
+            $govTalkLedgerMigration,
+            'companies_house_protocol_exchanges TO companies_house_protocol_exchanges_legacy'
+        ));
+        $harness->assertTrue(str_contains($govTalkLedgerMigration, 'AUTO_INCREMENT'));
+        $harness->assertTrue(str_contains(
+            $govTalkIdentityMigration,
+            'MODIFY id bigint(20) NOT NULL AUTO_INCREMENT'
+        ));
+        $harness->assertTrue(str_contains(
+            $masterSchema,
+            '2026_07_30_010_govtalk_exchange_identity.sql'
+        ));
+        $harness->assertFalse(str_contains(
+            $govTalkLedgerMigration,
+            'DROP TABLE companies_house_protocol_exchanges_legacy'
+        ));
+    }
+);
 
 $harness->check(
     'Companies House accounts filing schema',
@@ -75,7 +132,7 @@ $harness->check(
             'companies_house_submission_sequences',
             'transmission_archives',
             'companies_house_company_auth_preflights',
-            'companies_house_protocol_exchanges',
+            'govtalk_protocol_exchanges',
             'companies_house_accounts_status_cycles',
         ] as $table) {
             $harness->assertTrue(InterfaceDB::tableExists($table));
@@ -104,6 +161,17 @@ $harness->check(
         ] as $column) {
             $harness->assertTrue(InterfaceDB::columnExists('companies_house_accounts_submissions', $column));
         }
+        foreach ([
+            'request_message_class',
+            'response_headers_json',
+            'response_headers_sha256',
+            'govtalk_errors_json',
+        ] as $column) {
+            $harness->assertTrue(InterfaceDB::columnExists(
+                'govtalk_protocol_exchanges',
+                $column
+            ));
+        }
         $harness->assertFalse(InterfaceDB::tableExists('companies_house_schema_snapshots'));
         $harness->assertFalse(
             InterfaceDB::columnExists('companies_house_accounts_submissions', 'schema_snapshot_id')
@@ -130,6 +198,28 @@ $harness->check(
         ] as $column) {
             $harness->assertTrue(InterfaceDB::columnExists('transmission_archives', $column));
         }
+    }
+);
+
+$harness->check(
+    'Companies House accounts filing schema',
+    'protocol metadata migration indexes message class, response headers and GovTalk errors',
+    static function () use ($harness, $protocolMetadataMigration, $masterSchema): void {
+        foreach ([$protocolMetadataMigration, $masterSchema] as $schema) {
+            foreach ([
+                'request_message_class',
+                'response_headers_json',
+                'response_headers_sha256',
+                'govtalk_errors_json',
+                'presenter_authorisation_failed',
+            ] as $token) {
+                $harness->assertTrue(str_contains($schema, $token));
+            }
+        }
+        $harness->assertTrue(str_contains(
+            $protocolMetadataMigration,
+            "WHEN 'company_data' THEN 'CompanyDataRequest'"
+        ));
     }
 );
 
@@ -189,20 +279,23 @@ $harness->check(
     'Companies House accounts filing schema',
     'protocol migration persists preflight, exchange and mandatory acknowledgement state',
     static function () use ($harness, $protocolMigration, $masterSchema): void {
-        foreach ([$protocolMigration, $masterSchema] as $schema) {
-            foreach ([
-                'companies_house_company_auth_preflights',
-                'companies_house_protocol_exchanges',
-                'companies_house_accounts_status_cycles',
-                'binding_hmac',
-                'status_in_flight_submission_id',
-                'status_in_flight_cycle_id',
-                'acknowledgement_state',
-                'document_request_key',
-            ] as $token) {
-                $harness->assertTrue(str_contains($schema, $token));
-            }
+        foreach ([
+            'companies_house_company_auth_preflights',
+            'companies_house_accounts_status_cycles',
+            'binding_hmac',
+            'status_in_flight_submission_id',
+            'status_in_flight_cycle_id',
+            'acknowledgement_state',
+            'document_request_key',
+        ] as $token) {
+            $harness->assertTrue(str_contains($protocolMigration, $token));
+            $harness->assertTrue(str_contains($masterSchema, $token));
         }
+        $harness->assertTrue(str_contains(
+            $protocolMigration,
+            'companies_house_protocol_exchanges'
+        ));
+        $harness->assertTrue(str_contains($masterSchema, 'govtalk_protocol_exchanges'));
         $normalized = strtolower($protocolMigration);
         $harness->assertFalse(str_contains($normalized, 'company_authentication_code'));
         $harness->assertFalse(str_contains($normalized, 'company_auth_code'));
@@ -212,18 +305,32 @@ $harness->check(
 $harness->check(
     'Companies House accounts filing schema',
     'transmission history migration supports shared pending bundles and evidence failures',
-    static function () use ($harness, $transmissionHistoryMigration, $masterSchema): void {
+    static function () use (
+        $harness,
+        $transmissionHistoryMigration,
+        $historyCardRenameMigration,
+        $masterSchema
+    ): void {
         foreach ([$transmissionHistoryMigration, $masterSchema] as $schema) {
             $harness->assertTrue(str_contains($schema, 'evidence_incomplete'));
             $harness->assertTrue(str_contains(
                 $schema,
                 'idx_ch_company_auth_preflight_archive_reference'
             ));
-            $harness->assertTrue(str_contains(
-                $schema,
-                'companies_house_transmission_history'
-            ));
         }
+        $harness->assertTrue(str_contains(
+            $transmissionHistoryMigration,
+            'companies_house_transmission_history'
+        ));
+        $harness->assertTrue(str_contains(
+            $historyCardRenameMigration,
+            'govtalk_transmission_history'
+        ));
+        $harness->assertTrue(str_contains($masterSchema, 'govtalk_transmission_history'));
+        $harness->assertFalse(str_contains(
+            $masterSchema,
+            "'companies_house_transmission_history'"
+        ));
         $harness->assertFalse(str_contains(
             $masterSchema,
             'UNIQUE KEY `uq_ch_company_auth_preflight_reference`'

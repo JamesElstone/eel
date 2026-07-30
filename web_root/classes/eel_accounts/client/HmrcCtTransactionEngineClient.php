@@ -97,9 +97,8 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         string $filingBodyXml,
         string $utr,
         string $environment,
-        ?string $transactionId = null,
-        ?callable $beforeSend = null,
-        ?callable $afterReceive = null
+        GovTalkConversationContext $conversation,
+        ?string $transactionId = null
     ): array {
         $profile = null;
         $credentials = [];
@@ -135,8 +134,7 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
             $transactionId,
             '',
             $this->secretValues($credentials),
-            $beforeSend,
-            $afterReceive
+            $conversation
         );
     }
 
@@ -144,9 +142,8 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         string $correlationId,
         string $responseEndpoint,
         string $environment,
-        ?string $transactionId = null,
-        ?callable $beforeSend = null,
-        ?callable $afterReceive = null
+        GovTalkConversationContext $conversation,
+        ?string $transactionId = null
     ): array {
         $profile = null;
         try {
@@ -183,8 +180,7 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
             $transactionId,
             $correlationId,
             [],
-            $beforeSend,
-            $afterReceive
+            $conversation
         );
     }
 
@@ -192,9 +188,8 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         string $correlationId,
         string $responseEndpoint,
         string $environment,
-        ?string $transactionId = null,
-        ?callable $beforeSend = null,
-        ?callable $afterReceive = null
+        GovTalkConversationContext $conversation,
+        ?string $transactionId = null
     ): array {
         $profile = null;
         try {
@@ -231,8 +226,7 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
             $transactionId,
             $correlationId,
             [],
-            $beforeSend,
-            $afterReceive
+            $conversation
         );
     }
 
@@ -470,23 +464,19 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         string $correlationId,
         bool $bodyNow
     ): array {
-        $document = new \DOMDocument('1.0', 'UTF-8');
-        $document->formatOutput = false;
-        $root = $document->createElementNS(self::ENVELOPE_NAMESPACE, 'GovTalkMessage');
-        $document->appendChild($root);
-        $this->text($document, $root, 'EnvelopeVersion', '2.0');
-        $header = $this->element($document, $root, 'Header');
-        $details = $this->element($document, $header, 'MessageDetails');
-        $this->text($document, $details, 'Class', (string)$profile['class']);
-        $this->text($document, $details, 'Qualifier', $qualifier);
-        $this->text($document, $details, 'Function', $function);
-        $this->text($document, $details, 'TransactionID', $transactionId);
-        $this->text($document, $details, 'CorrelationID', $correlationId);
-        $this->text($document, $details, 'Transformation', 'XML');
-
-        // SenderDetails and GovTalkDetails must be inserted before Body, so
-        // callers receive an unattached element and append it last.
-        $body = $document->createElementNS(self::ENVELOPE_NAMESPACE, 'Body');
+        $draft = (new GovTalkEnvelopeBuilder())->create(
+            '2.0',
+            (string)$profile['class'],
+            $qualifier,
+            $transactionId,
+            $function,
+            $correlationId,
+            null,
+            'XML'
+        );
+        $document = $draft->document;
+        $body = $draft->body;
+        $details = $draft->messageDetails;
 
         return [$document, $body, $details];
     }
@@ -521,37 +511,10 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         string $transactionId,
         string $correlationId,
         array $secrets,
-        ?callable $beforeSend,
-        ?callable $afterReceive
+        GovTalkConversationContext $conversation
     ): array {
         $safeRequest = $this->redactXml($requestXml, $secrets);
-        $requestMeta = [
-            'operation' => $operation,
-            'environment' => (string)$profile['environment'],
-            'endpoint' => $endpoint,
-            'transaction_id' => $transactionId,
-            'correlation_id' => $correlationId,
-            'request_xml' => $safeRequest,
-            'raw_request_xml' => $requestXml,
-            'request_sha256' => hash('sha256', $requestXml),
-            'request_bytes' => strlen($requestXml),
-        ];
-        try {
-            if ($beforeSend !== null) {
-                $beforeSend($requestMeta);
-            }
-        } catch (\Throwable $exception) {
-            $result = $this->baseResult($operation, $profile, $endpoint, $transactionId, $correlationId);
-            $result['pre_send_failure'] = true;
-            $result['request_xml'] = $safeRequest;
-            $result['request_sha256'] = $requestMeta['request_sha256'];
-            $result['request_bytes'] = $requestMeta['request_bytes'];
-            $result['error'] = $this->redactText($exception->getMessage(), $secrets);
-
-            return $result;
-        }
-
-        $request = [
+        $transportRequest = [
             'transport' => 'http',
             'method' => 'POST',
             'url' => $endpoint,
@@ -569,82 +532,79 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
             'ssl_verify_host' => 2,
             'fail_on_error' => false,
         ];
+        $prepared = new GovTalkPreparedRequest(
+            'hmrc',
+            $operation,
+            (string)$profile['environment'],
+            $endpoint,
+            $transactionId,
+            $correlationId,
+            $requestXml,
+            $transportRequest
+        );
+        $handler = new GovTalkExchangeHandler(
+            function (array $request): array {
+                $response = $this->httpTransport instanceof \Closure
+                    ? ($this->httpTransport)($request)
+                    : \ApiHelperOutbound::request($request);
+                if (!is_array($response)) {
+                    throw new \RuntimeException(
+                        'HMRC Transaction Engine transport returned an invalid response.'
+                    );
+                }
 
-        try {
-            $response = $this->httpTransport instanceof \Closure
-                ? ($this->httpTransport)($request)
-                : \ApiHelperOutbound::request($request);
-            if (!is_array($response)) {
-                throw new \RuntimeException('HMRC Transaction Engine transport returned an invalid response.');
-            }
-        } catch (\Throwable $exception) {
-            $result = $this->baseResult($operation, $profile, $endpoint, $transactionId, $correlationId);
-            $result['transport_unknown'] = $operation === 'submit';
-            $result['request_xml'] = $safeRequest;
-            $result['request_sha256'] = $requestMeta['request_sha256'];
-            $result['request_bytes'] = $requestMeta['request_bytes'];
-            $result['error'] = $this->redactText($exception->getMessage(), $secrets);
-
-            return $result;
-        }
-
-        $statusCode = (int)($response['status_code'] ?? 0);
-        $responseXml = (string)($response['body'] ?? '');
-        $evidenceError = '';
-        if ($afterReceive !== null && $responseXml !== '') {
-            try {
-                $afterReceive([
-                    'operation' => $operation,
-                    'environment' => (string)$profile['environment'],
-                    'endpoint' => $endpoint,
-                    'transaction_id' => $transactionId,
-                    'correlation_id' => $correlationId,
-                    'status_code' => $statusCode,
-                    'response_xml' => $responseXml,
-                    'response_sha256' => hash('sha256', $responseXml),
-                    'response_bytes' => strlen($responseXml),
-                ]);
-            } catch (\Throwable) {
-                $evidenceError = 'The exact HMRC response could not be added to the private transmission archive.';
-            }
-        }
-        try {
-            $parsed = $this->parseResponse(
-                $responseXml,
+                return $response;
+            },
+            null,
+            fn(string $message): string => $this->redactText($message, $secrets)
+        );
+        $exchange = $handler->execute(
+            $prepared,
+            $conversation,
+            fn(
+                GovTalkPreparedRequest $unusedRequest,
+                GovTalkRawResponse $response
+            ): array => $this->parseResponse(
+                $response->body,
                 $operation,
                 $profile,
                 $correlationId,
                 $transactionId
+            )
+        );
+        $result = array_replace(
+            $this->baseResult(
+                $operation,
+                $profile,
+                $endpoint,
+                $transactionId,
+                $correlationId
+            ),
+            $exchange->toArray()
+        );
+        $response = $exchange->response;
+        $statusCode = $response?->statusCode ?? (int)($result['status_code'] ?? 0);
+        $responseXml = $response?->body ?? '';
+        $result['status_code'] = $statusCode;
+        $result['headers'] = $response?->headers ?? [];
+        $result['request_xml'] = $safeRequest;
+        $result['request_sha256'] = $prepared->sha256;
+        $result['request_bytes'] = $prepared->bytes;
+        $result['response_xml'] = $this->redactText($responseXml, $secrets);
+        if (!empty($result['evidence_incomplete'])) {
+            $result['evidence_error'] = (string)$result['error'];
+        }
+        if ($response === null) {
+            $result['errors'] = $this->redactPayload(
+                (array)($result['errors'] ?? []),
+                $secrets
             );
-        } catch (\Throwable $exception) {
-            $result = $this->baseResult($operation, $profile, $endpoint, $transactionId, $correlationId);
-            $result['status_code'] = $statusCode;
-            $result['headers'] = $this->safeHeaders((array)($response['headers'] ?? []));
-            $result['transport_unknown'] = $operation === 'submit';
-            $result['request_xml'] = $safeRequest;
-            $result['request_sha256'] = $requestMeta['request_sha256'];
-            $result['request_bytes'] = $requestMeta['request_bytes'];
-            $result['response_xml'] = $this->redactText($responseXml, $secrets);
-            $result['error'] = $this->redactText($exception->getMessage(), $secrets);
-            if ($evidenceError !== '') {
-                $result['evidence_error'] = $evidenceError;
-            }
+            $result['error'] = $this->redactText(
+                (string)($result['error'] ?? ''),
+                $secrets
+            );
 
             return $result;
-        }
-
-        $result = array_replace(
-            $this->baseResult($operation, $profile, $endpoint, $transactionId, $correlationId),
-            $parsed
-        );
-        $result['status_code'] = $statusCode;
-        $result['headers'] = $this->safeHeaders((array)($response['headers'] ?? []));
-        $result['request_xml'] = $safeRequest;
-        $result['request_sha256'] = $requestMeta['request_sha256'];
-        $result['request_bytes'] = $requestMeta['request_bytes'];
-        $result['response_xml'] = $this->redactText($responseXml, $secrets);
-        if ($evidenceError !== '') {
-            $result['evidence_error'] = $evidenceError;
         }
         if (
             $operation === 'submit'

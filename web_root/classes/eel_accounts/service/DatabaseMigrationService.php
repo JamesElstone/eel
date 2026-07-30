@@ -42,6 +42,15 @@ final class DatabaseMigrationService
                 100
             );
         }
+        $verifiedGovTalkExchanges = (new GovTalkExchangeLedgerMigrationService())
+            ->verifyAndFinalize();
+        if ($verifiedGovTalkExchanges > 0) {
+            $progress?->__invoke(
+                'Verified ' . $verifiedGovTalkExchanges
+                    . ' migrated GovTalk exchange(s).',
+                100
+            );
+        }
         return ['success' => true, 'exit_code' => $exitCode, 'output' => $output];
     }
 }

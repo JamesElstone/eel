@@ -24,26 +24,23 @@ interface HmrcCtTransactionEngineTransportInterface
         string $filingBodyXml,
         string $utr,
         string $environment,
-        ?string $transactionId = null,
-        ?callable $beforeSend = null,
-        ?callable $afterReceive = null
+        GovTalkConversationContext $conversation,
+        ?string $transactionId = null
     ): array;
 
     public function poll(
         string $correlationId,
         string $responseEndpoint,
         string $environment,
-        ?string $transactionId = null,
-        ?callable $beforeSend = null,
-        ?callable $afterReceive = null
+        GovTalkConversationContext $conversation,
+        ?string $transactionId = null
     ): array;
 
     public function delete(
         string $correlationId,
         string $responseEndpoint,
         string $environment,
-        ?string $transactionId = null,
-        ?callable $beforeSend = null,
-        ?callable $afterReceive = null
+        GovTalkConversationContext $conversation,
+        ?string $transactionId = null
     ): array;
 }

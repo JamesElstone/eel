@@ -75,7 +75,6 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             'ack_accounts_status',
             'retrieve_accounts_document',
             'download_accounts_ixbrl',
-            'download_protocol_evidence',
             'reconcile_accounts_status',
         ];
         if (!in_array($intent, $allowedIntents, true)) {
@@ -97,7 +96,6 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         if (!in_array($intent, [
             'record_gateway_eligibility',
             'save_variance_explanation',
-            'download_protocol_evidence',
             'preflight_accounts',
         ], true)
             && !$this->isLocked($companyId, $accountingPeriodId)) {
@@ -113,9 +111,6 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         ], true);
         if ($developerIntent && !(bool)AppConfigurationStore::get('developer_options', false)) {
             return $this->error('Developer options must be enabled for step-by-step Companies House exchanges.');
-        }
-        if ($intent === 'download_protocol_evidence') {
-            $this->downloadProtocolEvidence($request, $companyId);
         }
         if ($intent === 'download_accounts_ixbrl') {
             $this->downloadRevisedAccountsIxbrl($companyId, $accountingPeriodId);
@@ -143,8 +138,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
                     $request,
                     $companyId,
                     $accountingPeriodId,
-                    $services->actionProgress(),
-                    true
+                    $services->actionProgress()
                 ),
                 'poll_accounts_status' => $this->protocolStatusAction(
                     $request,
@@ -362,8 +356,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         RequestFramework $request,
         int $companyId,
         int $accountingPeriodId,
-        ActionProgressFramework $progress,
-        bool $developerStep = false
+        ActionProgressFramework $progress
     ): array {
         @set_time_limit(0);
         $submissionId = (int)$request->input('submission_id', 0);
@@ -402,17 +395,11 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             }
         }
 
-        $preflightId = $developerStep ? (int)$request->input('preflight_id', 0) : null;
-        if ($developerStep && $preflightId <= 0) {
-            return ['success' => false, 'errors' => ['A successful developer CompanyData preflight is required.']];
-        }
-
         return $this->service()->submitAccounts(
             $submissionId,
             $companyAuthCode,
             $this->actor($request),
-            $progress,
-            $preflightId
+            $progress
         );
     }
 
@@ -473,40 +460,6 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             (string)$request->input('resolution', ''),
             $this->actor($request)
         );
-    }
-
-    private function downloadProtocolEvidence(
-        RequestFramework $request,
-        int $companyId
-    ): never {
-        $exchangeId = (int)$request->input('exchange_id', 0);
-        $direction = (string)$request->input('direction', '');
-        try {
-            $file = $this->service()->protocolEvidenceFileForCompany(
-                $companyId,
-                $exchangeId,
-                $direction
-            );
-            $this->service()->recordProtocolEvidenceDownload(
-                $exchangeId,
-                $direction,
-                $this->actor($request)
-            );
-        } catch (Throwable $exception) {
-            header('Content-Type: text/plain; charset=utf-8', true, 404);
-            echo $exception->getMessage();
-            exit;
-        }
-        header('Content-Type: application/xml; charset=utf-8');
-        header('Content-Disposition: attachment; filename="' . str_replace('"', '', (string)$file['filename']) . '"');
-        header('Cache-Control: no-store, private');
-        header('Pragma: no-cache');
-        $size = filesize((string)$file['path']);
-        if (is_int($size)) {
-            header('Content-Length: ' . $size);
-        }
-        readfile((string)$file['path']);
-        exit;
     }
 
     private function refreshStatus(RequestFramework $request, int $companyId, int $accountingPeriodId): array

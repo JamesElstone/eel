@@ -12,7 +12,7 @@ namespace eel_accounts\Service;
 final class CompaniesHouseProtocolConversationService
 {
     private const PREFLIGHTS = 'companies_house_company_auth_preflights';
-    private const EXCHANGES = 'companies_house_protocol_exchanges';
+    private const EXCHANGES = 'govtalk_protocol_exchanges';
     private const STATUS_CYCLES = 'companies_house_accounts_status_cycles';
     private const SUBMISSIONS = 'companies_house_accounts_submissions';
     private const BINDING_FACT_PREFIX = 'companies_house_preflight_binding_hmac_';
@@ -20,7 +20,8 @@ final class CompaniesHouseProtocolConversationService
 
     public function __construct(
         private readonly ?TransmissionArchiveService $archiveService = null,
-        private readonly ?string $bindingKey = null
+        private readonly ?string $bindingKey = null,
+        private readonly ?GovTalkProtocolConversationService $govTalkConversation = null
     ) {
     }
 
@@ -29,6 +30,11 @@ final class CompaniesHouseProtocolConversationService
         return \InterfaceDB::tableExists(self::PREFLIGHTS)
             && \InterfaceDB::tableExists(self::EXCHANGES)
             && \InterfaceDB::tableExists(self::STATUS_CYCLES)
+            && \InterfaceDB::columnExists(self::EXCHANGES, 'request_message_class')
+            && \InterfaceDB::columnExists(self::EXCHANGES, 'response_headers_json')
+            && \InterfaceDB::columnExists(self::EXCHANGES, 'response_headers_sha256')
+            && \InterfaceDB::columnExists(self::EXCHANGES, 'govtalk_errors_json')
+            && \InterfaceDB::columnExists(self::EXCHANGES, 'transmission_archive_id')
             && \InterfaceDB::columnExists(self::SUBMISSIONS, 'preflight_id')
             && \InterfaceDB::columnExists(self::SUBMISSIONS, 'pending_status_cycle_id');
     }
@@ -141,31 +147,19 @@ final class CompaniesHouseProtocolConversationService
         ?int $preflightId = null,
         ?int $statusCycleId = null
     ): array {
-        $transactionId = strtolower(trim((string)($request['transaction_id'] ?? '')));
-        $filename = $this->filename($operation, $transactionId, 'request');
-        $stored = $this->archives()->store(
-            (int)$submission['company_id'],
-            (int)$submission['accounting_period_id'],
-            'companies_house',
-            $environment,
-            $archiveReference,
-            'sending',
-            $filename,
-            (string)$request['request_xml']
-        );
         $submissionId = (int)($submission['id'] ?? 0);
-        $this->upsertExchange(
-            $submissionId > 0 ? $submissionId : null,
-            $preflightId,
-            $statusCycleId,
-            $operation,
-            $environment,
-            (string)$request['transaction_id'],
-            'prepared',
-            $stored ?? [],
-            null,
-            null,
-            ''
+        $stored = $this->govTalk()->captureRequest(
+            $this->govTalkIdentity(
+                $submission,
+                $environment,
+                $archiveReference,
+                $operation,
+                $submissionId > 0 ? $submissionId : null,
+                $preflightId,
+                $statusCycleId,
+                'sending'
+            ),
+            $request
         );
         if ($preflightId !== null) {
             \InterfaceDB::prepareExecute(
@@ -182,79 +176,12 @@ final class CompaniesHouseProtocolConversationService
             );
         }
 
-        $this->refreshExchangeManifest(
-            $submissionId > 0 ? $submissionId : null,
-            $preflightId,
-            $environment,
-            $archiveReference,
-            'prepared'
-        );
-
-        return $stored + [
-            'transaction_id' => (string)$request['transaction_id'],
-            'request_sha256' => $stored['sha256'],
-            'request_bytes' => $stored['bytes'],
-        ];
+        return $stored;
     }
 
     public function markSendStarted(string $environment, string $transactionId): void
     {
-        if (!$this->schemaReady() || trim($transactionId) === '') {
-            throw new \RuntimeException('The Companies House request evidence is unavailable.');
-        }
-        $now = gmdate('Y-m-d H:i:s');
-        \InterfaceDB::prepareExecute(
-            'UPDATE ' . self::EXCHANGES . '
-             SET exchange_state = :state,
-                 sent_at = COALESCE(sent_at, :sent_at),
-                 updated_at = :updated_at
-             WHERE environment = :environment
-               AND transaction_id = :transaction_id
-               AND request_path IS NOT NULL',
-            [
-                'state' => 'sent',
-                'sent_at' => $now,
-                'updated_at' => $now,
-                'environment' => strtoupper($environment),
-                'transaction_id' => strtoupper(trim($transactionId)),
-            ]
-        );
-        $row = \InterfaceDB::fetchOne(
-            'SELECT id FROM ' . self::EXCHANGES . '
-             WHERE environment = :environment
-               AND transaction_id = :transaction_id
-               AND exchange_state = :state
-             LIMIT 1',
-            [
-                'environment' => strtoupper($environment),
-                'transaction_id' => strtoupper(trim($transactionId)),
-                'state' => 'sent',
-            ]
-        );
-        if (!is_array($row)) {
-            throw new \RuntimeException('The Companies House request was not durably prepared before transport.');
-        }
-        try {
-            $this->refreshManifestForTransaction($environment, $transactionId, 'sending');
-        } catch (\Throwable $exception) {
-            \InterfaceDB::prepareExecute(
-                'UPDATE ' . self::EXCHANGES . '
-                 SET exchange_state = :state,
-                     sent_at = NULL,
-                     updated_at = :updated_at
-                 WHERE environment = :environment
-                   AND transaction_id = :transaction_id
-                   AND exchange_state = :sent_state',
-                [
-                    'state' => 'prepared',
-                    'updated_at' => gmdate('Y-m-d H:i:s'),
-                    'environment' => strtoupper($environment),
-                    'transaction_id' => strtoupper(trim($transactionId)),
-                    'sent_state' => 'sent',
-                ]
-            );
-            throw $exception;
-        }
+        $this->govTalk()->markSendStarted('companies_house', $environment, $transactionId);
     }
 
     public function captureResponse(
@@ -266,35 +193,19 @@ final class CompaniesHouseProtocolConversationService
         ?int $preflightId = null,
         ?int $statusCycleId = null
     ): array {
-        $transactionId = strtolower(trim((string)($response['transaction_id'] ?? '')));
-        $responseXml = (string)($response['response_xml'] ?? '');
-        $stored = null;
-        if ($responseXml !== '') {
-            $filename = $this->filename($operation, $transactionId, 'response');
-            $stored = $this->archives()->store(
-                (int)$submission['company_id'],
-                (int)$submission['accounting_period_id'],
-                'companies_house',
+        $submissionId = (int)($submission['id'] ?? 0);
+        $stored = $this->govTalk()->captureResponse(
+            $this->govTalkIdentity(
+                $submission,
                 $environment,
                 $archiveReference,
-                'received',
-                $filename,
-                $responseXml
-            );
-        }
-        $submissionId = (int)($submission['id'] ?? 0);
-        $this->upsertExchange(
-            $submissionId > 0 ? $submissionId : null,
-            $preflightId,
-            $statusCycleId,
-            $operation,
-            $environment,
-            (string)$response['transaction_id'],
-            'received',
-            null,
-            $stored ?? [],
-            (int)($response['status_code'] ?? 0),
-            ''
+                $operation,
+                $submissionId > 0 ? $submissionId : null,
+                $preflightId,
+                $statusCycleId,
+                'received'
+            ),
+            $response
         );
         if ($preflightId !== null) {
             \InterfaceDB::prepareExecute(
@@ -302,44 +213,30 @@ final class CompaniesHouseProtocolConversationService
                  SET response_path = :path, response_sha256 = :sha256,
                      updated_at = :updated_at WHERE id = :id',
                 [
-                    'path' => $stored['path'] ?? null,
-                    'sha256' => $stored['sha256'] ?? null,
+                    'path' => $stored['path'],
+                    'sha256' => $stored['sha256'],
                     'updated_at' => gmdate('Y-m-d H:i:s'),
                     'id' => $preflightId,
                 ]
             );
         }
 
-        $this->refreshExchangeManifest(
-            $submissionId > 0 ? $submissionId : null,
-            $preflightId,
-            $environment,
-            $archiveReference,
-            'received'
-        );
-
-        return ($stored ?? [
-            'path' => null,
-            'sha256' => null,
-            'bytes' => 0,
-            'archive_path' => null,
-            'manifest_path' => null,
-        ]) + [
-            'transaction_id' => (string)$response['transaction_id'],
-            'response_sha256' => $responseXml !== '' ? hash('sha256', $responseXml) : null,
-            'response_bytes' => strlen($responseXml),
-            'status_code' => (int)($response['status_code'] ?? 0),
-        ];
+        return $stored;
     }
 
     public function finishPreflight(int $preflightId, array $result): void
     {
         $success = !empty($result['success']) && !empty($result['authenticated']);
-        $outcome = $success
-            ? 'verified'
-            : (!empty($result['transport_unknown']) || !empty($result['evidence_incomplete'])
-                ? 'transport_unknown'
-                : 'rejected');
+        $presenterAuthorisationFailed = $this->hasGovTalkError($result, '502');
+        if ($success) {
+            $outcome = 'verified';
+        } elseif ($presenterAuthorisationFailed) {
+            $outcome = 'presenter_authorisation_failed';
+        } elseif (!empty($result['transport_unknown']) || !empty($result['evidence_incomplete'])) {
+            $outcome = 'transport_unknown';
+        } else {
+            $outcome = 'rejected';
+        }
         \InterfaceDB::prepareExecute(
             'UPDATE ' . self::PREFLIGHTS . '
              SET outcome = :outcome, matched_company_number = :company_number,
@@ -366,10 +263,42 @@ final class CompaniesHouseProtocolConversationService
             $this->completeExchange(
                 (string)($result['environment'] ?? ''),
                 (string)($result['transaction_id'] ?? ''),
-                $success ? 'succeeded' : ($outcome === 'transport_unknown' ? 'transport_unknown' : 'rejected'),
+                $success
+                    ? 'succeeded'
+                    : ($outcome === 'transport_unknown'
+                        ? 'transport_unknown'
+                        : ($presenterAuthorisationFailed ? 'failed' : 'rejected')),
                 (string)($result['error'] ?? '')
             );
         }
+    }
+
+    public function companyDataCapability(string $environment, string $presenterFingerprint): string
+    {
+        if (!$this->schemaReady()) {
+            return 'unknown';
+        }
+        $environment = strtoupper(trim($environment));
+        $presenterFingerprint = strtolower(trim($presenterFingerprint));
+        if (!in_array($environment, ['TEST', 'LIVE'], true)
+            || preg_match('/^[a-f0-9]{64}$/D', $presenterFingerprint) !== 1) {
+            return 'unknown';
+        }
+        $row = \InterfaceDB::fetchOne(
+            'SELECT id FROM ' . self::PREFLIGHTS . '
+             WHERE environment = :environment
+               AND output_presenter_fingerprint = :fingerprint
+               AND outcome = :outcome
+             ORDER BY checked_at DESC, id DESC
+             LIMIT 1',
+            [
+                'environment' => $environment,
+                'fingerprint' => $presenterFingerprint,
+                'outcome' => 'verified',
+            ]
+        );
+
+        return is_array($row) ? 'available' : 'unknown';
     }
 
     public function consumePreflight(
@@ -476,8 +405,9 @@ final class CompaniesHouseProtocolConversationService
         }
         return \InterfaceDB::fetchAll(
             'SELECT * FROM ' . self::EXCHANGES . '
-             WHERE submission_id = :submission_id ORDER BY id ASC',
-            ['submission_id' => $submissionId]
+             WHERE authority = :authority
+               AND submission_id = :submission_id ORDER BY id ASC',
+            ['authority' => 'companies_house', 'submission_id' => $submissionId]
         );
     }
 
@@ -491,10 +421,12 @@ final class CompaniesHouseProtocolConversationService
         return (int)\InterfaceDB::fetchColumn(
             'SELECT COUNT(*)
              FROM ' . self::EXCHANGES . '
-             WHERE submission_id = :submission_id
+             WHERE authority = :authority
+               AND submission_id = :submission_id
                AND operation = :operation
                AND exchange_state IN (:transport_unknown, :evidence_incomplete)',
             [
+                'authority' => 'companies_house',
                 'submission_id' => $submissionId,
                 'operation' => $operation,
                 'transport_unknown' => 'transport_unknown',
@@ -516,8 +448,14 @@ final class CompaniesHouseProtocolConversationService
             'SELECT operation, ' . $direction . '_path AS artifact_path,
                     ' . $direction . '_sha256 AS artifact_sha256
              FROM ' . self::EXCHANGES . '
-             WHERE id = :id AND submission_id = :submission_id LIMIT 1',
-            ['id' => $exchangeId, 'submission_id' => $submissionId]
+             WHERE id = :id
+               AND authority = :authority
+               AND submission_id = :submission_id LIMIT 1',
+            [
+                'id' => $exchangeId,
+                'authority' => 'companies_house',
+                'submission_id' => $submissionId,
+            ]
         );
         return $this->evidenceFromRow($row, $direction);
     }
@@ -546,6 +484,7 @@ final class CompaniesHouseProtocolConversationService
              LEFT JOIN ' . self::SUBMISSIONS . ' s ON s.id = e.submission_id
              LEFT JOIN ' . self::PREFLIGHTS . ' p ON p.id = e.preflight_id
              WHERE e.id = :exchange_id
+               AND e.authority = :authority
                AND (
                    (s.company_id = :submission_company_id
                     AND s.accounting_period_id = :submission_accounting_period_id)
@@ -556,6 +495,7 @@ final class CompaniesHouseProtocolConversationService
              LIMIT 1',
             [
                 'exchange_id' => $exchangeId,
+                'authority' => 'companies_house',
                 'submission_company_id' => $companyId,
                 'submission_accounting_period_id' => $accountingPeriodId,
                 'preflight_company_id' => $companyId,
@@ -677,22 +617,15 @@ final class CompaniesHouseProtocolConversationService
         string $state,
         string $error = ''
     ): void {
-        if (!$this->schemaReady() || trim($transactionId) === '') {
-            return;
-        }
-        \InterfaceDB::prepareExecute(
-            'UPDATE ' . self::EXCHANGES . '
-             SET exchange_state = :state, error_summary = :error, updated_at = :updated_at
-             WHERE environment = :environment AND transaction_id = :transaction_id',
-            [
-                'state' => $state,
-                'error' => trim($error) !== '' ? trim($error) : null,
-                'updated_at' => gmdate('Y-m-d H:i:s'),
-                'environment' => strtoupper($environment),
-                'transaction_id' => strtoupper($transactionId),
-            ]
+        $this->govTalk()->completeExchange(
+            'companies_house',
+            $environment,
+            $transactionId,
+            $state,
+            $state,
+            '',
+            $error
         );
-        $this->refreshManifestForTransaction($environment, $transactionId, $state);
     }
 
     public function markEvidenceIncomplete(
@@ -700,93 +633,25 @@ final class CompaniesHouseProtocolConversationService
         string $transactionId,
         string $error
     ): void {
-        $this->completeExchange(
+        $this->govTalk()->markEvidenceIncomplete(
+            'companies_house',
             $environment,
             $transactionId,
-            'evidence_incomplete',
             trim($error) !== ''
                 ? trim($error)
                 : 'The exact Companies House response could not be archived.'
         );
     }
 
-    private function upsertExchange(
-        ?int $submissionId,
-        ?int $preflightId,
-        ?int $statusCycleId,
-        string $operation,
-        string $environment,
-        string $transactionId,
-        string $state,
-        ?array $request,
-        ?array $response,
-        ?int $statusCode,
-        string $error
-    ): void {
-        $transactionId = strtoupper(trim($transactionId));
-        $operation = str_replace('-', '_', strtolower(trim($operation)));
-        $row = \InterfaceDB::fetchOne(
-            'SELECT id FROM ' . self::EXCHANGES . '
-             WHERE environment = :environment AND transaction_id = :transaction_id',
-            ['environment' => strtoupper($environment), 'transaction_id' => $transactionId]
-        );
-        $now = gmdate('Y-m-d H:i:s');
-        if (is_array($row)) {
-            \InterfaceDB::prepareExecute(
-                'UPDATE ' . self::EXCHANGES . '
-                 SET exchange_state = :state,
-                     response_path = COALESCE(:response_path, response_path),
-                     response_sha256 = COALESCE(:response_sha256, response_sha256),
-                     response_status_code = COALESCE(:status_code, response_status_code),
-                     received_at = COALESCE(:received_at, received_at),
-                     error_summary = COALESCE(:error, error_summary),
-                     updated_at = :updated_at
-                 WHERE id = :id',
-                [
-                    'state' => $state,
-                    'response_path' => $response['path'] ?? null,
-                    'response_sha256' => $response['sha256'] ?? null,
-                    'status_code' => $statusCode,
-                    'received_at' => $response !== null ? $now : null,
-                    'error' => trim($error) !== '' ? trim($error) : null,
-                    'updated_at' => $now,
-                    'id' => (int)$row['id'],
-                ]
-            );
-            return;
+    private function hasGovTalkError(array $result, string $number): bool
+    {
+        foreach ((array)($result['gateway_errors'] ?? []) as $error) {
+            if (is_array($error) && trim((string)($error['number'] ?? '')) === $number) {
+                return true;
+            }
         }
-        \InterfaceDB::prepareExecute(
-            'INSERT INTO ' . self::EXCHANGES . ' (
-                submission_id, preflight_id, status_cycle_id, operation, environment,
-                transaction_id, exchange_state, request_path, request_sha256,
-                response_path, response_sha256, response_status_code, error_summary,
-                sent_at, received_at, created_at, updated_at
-             ) VALUES (
-                :submission_id, :preflight_id, :status_cycle_id, :operation, :environment,
-                :transaction_id, :state, :request_path, :request_sha256,
-                :response_path, :response_sha256, :status_code, :error,
-                :sent_at, :received_at, :created_at, :updated_at
-             )',
-            [
-                'submission_id' => $submissionId,
-                'preflight_id' => $preflightId,
-                'status_cycle_id' => $statusCycleId,
-                'operation' => $operation,
-                'environment' => strtoupper($environment),
-                'transaction_id' => $transactionId,
-                'state' => $state,
-                'request_path' => $request['path'] ?? null,
-                'request_sha256' => $request['sha256'] ?? null,
-                'response_path' => $response['path'] ?? null,
-                'response_sha256' => $response['sha256'] ?? null,
-                'status_code' => $statusCode,
-                'error' => trim($error) !== '' ? trim($error) : null,
-                'sent_at' => null,
-                'received_at' => $response !== null ? $now : null,
-                'created_at' => $now,
-                'updated_at' => $now,
-            ]
-        );
+
+        return false;
     }
 
     private function bindingHmac(
@@ -826,108 +691,43 @@ final class CompaniesHouseProtocolConversationService
         return $key;
     }
 
-    private function refreshExchangeManifest(
-        ?int $submissionId,
-        ?int $preflightId,
-        string $environment,
-        string $archiveReference,
-        string $fallbackLifecycle
-    ): void {
-        $context = null;
-        if (($submissionId ?? 0) > 0) {
-            $context = \InterfaceDB::fetchOne(
-                'SELECT company_id, accounting_period_id, lifecycle
-                 FROM ' . self::SUBMISSIONS . '
-                 WHERE id = :id LIMIT 1',
-                ['id' => $submissionId]
-            );
-        } elseif (($preflightId ?? 0) > 0) {
-            $context = \InterfaceDB::fetchOne(
-                'SELECT company_id, accounting_period_id, outcome AS lifecycle
-                 FROM ' . self::PREFLIGHTS . '
-                 WHERE id = :id LIMIT 1',
-                ['id' => $preflightId]
-            );
-        }
-        if (!is_array($context)) {
-            return;
-        }
-        $this->archives()->refreshManifest(
-            (int)$context['company_id'],
-            (int)$context['accounting_period_id'],
-            'companies_house',
-            $environment,
-            $archiveReference,
-            trim((string)$context['lifecycle']) !== ''
-                ? (string)$context['lifecycle']
-                : $fallbackLifecycle
-        );
-    }
-
-    private function refreshManifestForTransaction(
-        string $environment,
-        string $transactionId,
-        string $fallbackLifecycle
-    ): void {
-        $row = \InterfaceDB::fetchOne(
-            'SELECT e.submission_id,
-                    e.preflight_id,
-                    COALESCE(s.company_id, p.company_id) AS company_id,
-                    COALESCE(s.accounting_period_id, p.accounting_period_id) AS accounting_period_id,
-                    COALESCE(s.lifecycle, p.outcome) AS lifecycle,
-                    s.submission_number,
-                    p.archive_reference
-             FROM ' . self::EXCHANGES . ' e
-             LEFT JOIN ' . self::SUBMISSIONS . ' s ON s.id = e.submission_id
-             LEFT JOIN ' . self::PREFLIGHTS . ' p ON p.id = e.preflight_id
-             WHERE e.environment = :environment
-               AND e.transaction_id = :transaction_id
-             LIMIT 1',
-            [
-                'environment' => strtoupper(trim($environment)),
-                'transaction_id' => strtoupper(trim($transactionId)),
-            ]
-        );
-        if (!is_array($row)) {
-            return;
-        }
-        $reference = trim((string)($row['submission_number'] ?? ''));
-        if ($reference === '') {
-            $reference = trim((string)($row['archive_reference'] ?? ''));
-        }
-        if ($reference === '') {
-            $submissionId = (int)($row['submission_id'] ?? 0);
-            if ($submissionId > 0) {
-                $reference = TransmissionArchiveService::companiesHousePendingReference(
-                    $submissionId
-                );
-            }
-        }
-        if ($reference === '') {
-            return;
-        }
-        $this->archives()->refreshManifest(
-            (int)$row['company_id'],
-            (int)$row['accounting_period_id'],
-            'companies_house',
-            $environment,
-            $reference,
-            trim((string)$row['lifecycle']) !== ''
-                ? (string)$row['lifecycle']
-                : $fallbackLifecycle
-        );
-    }
-
     private function archives(): TransmissionArchiveService
     {
         return $this->archiveService ?? new TransmissionArchiveService();
     }
 
-    private function filename(string $operation, string $transactionId, string $direction): string
+    private function govTalk(): GovTalkProtocolConversationService
     {
-        $operation = preg_replace('/[^a-z0-9-]+/', '-', strtolower($operation)) ?: 'exchange';
-        $transactionId = preg_replace('/[^a-z0-9]+/', '', strtolower($transactionId)) ?: 'unknown';
-        return $operation . '-' . $transactionId . '-' . $direction . '.xml';
+        return $this->govTalkConversation
+            ?? new GovTalkProtocolConversationService($this->archives());
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function govTalkIdentity(
+        array $submission,
+        string $environment,
+        string $archiveReference,
+        string $operation,
+        ?int $submissionId,
+        ?int $preflightId,
+        ?int $statusCycleId,
+        string $lifecycle
+    ): array {
+        return [
+            'authority' => 'companies_house',
+            'company_id' => (int)($submission['company_id'] ?? 0),
+            'accounting_period_id' => (int)($submission['accounting_period_id'] ?? 0),
+            'environment' => strtoupper(trim($environment)),
+            'archive_reference' => trim($archiveReference),
+            'lifecycle' => trim($lifecycle) ?: 'unknown',
+            'operation' => str_replace('-', '_', strtolower(trim($operation))),
+            'submission_id' => $submissionId,
+            'preflight_id' => $preflightId,
+            'status_cycle_id' => $statusCycleId,
+            'hmrc_submission_id' => null,
+        ];
     }
 
     private function pathWithin(string $path, string $parent): bool

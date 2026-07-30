@@ -16,8 +16,7 @@ interface CompaniesHouseAccountsGatewayTransportInterface
         string $companyAuthenticationCode,
         string $environment,
         array $schemaInventory,
-        callable $beforeSend,
-        callable $afterReceive
+        GovTalkConversationContext $conversation
     ): array;
 
     public function prepareAccounts(
@@ -28,30 +27,26 @@ interface CompaniesHouseAccountsGatewayTransportInterface
 
     public function sendPreparedAccounts(
         CompaniesHousePreparedAccountsRequest $request,
-        callable $beforeSend,
-        callable $afterReceive
+        GovTalkConversationContext $conversation
     ): array;
 
     public function getSubmissionStatus(
         string $submissionNumber,
         string $environment,
-        callable $beforeSend,
-        callable $afterReceive,
+        GovTalkConversationContext $conversation,
         array $schemaInventory = []
     ): array;
 
     public function acknowledgeSubmissionStatus(
         string $environment,
         array $schemaInventory,
-        callable $beforeSend,
-        callable $afterReceive
+        GovTalkConversationContext $conversation
     ): array;
 
     public function getDocument(
         string $documentRequestKey,
         string $environment,
         array $schemaInventory,
-        callable $beforeSend,
-        callable $afterReceive
+        GovTalkConversationContext $conversation
     ): array;
 }

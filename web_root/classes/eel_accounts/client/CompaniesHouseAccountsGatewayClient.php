@@ -77,8 +77,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         string $companyAuthenticationCode,
         string $environment,
         array $schemaInventory,
-        callable $beforeSend,
-        callable $afterReceive
+        GovTalkConversationContext $conversation
     ): array {
         try {
             $environment = $this->normaliseEnvironment($environment);
@@ -109,8 +108,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             $transactionId,
             $requestXml,
             $this->secretValues($credentials, $companyAuthenticationCode),
-            $beforeSend,
-            $afterReceive,
+            $conversation,
             $schemaInventory,
             fn(array $response, string $redactedRequest, array $secrets): array =>
                 $this->parseCompanyDataResponse(
@@ -159,99 +157,34 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
 
     public function sendPreparedAccounts(
         CompaniesHousePreparedAccountsRequest $request,
-        callable $beforeSend,
-        callable $afterReceive
+        GovTalkConversationContext $conversation
     ): array
     {
-        try {
-            $this->persistRequestEvidence(
-                $beforeSend,
-                'submit',
-                $request->environment(),
-                $request->transactionId(),
-                $request->requestXml()
-            );
-        } catch (\Throwable) {
-            return array_replace(
-                $this->failureResult(
-                    $request->environment(),
-                    'The Companies House submit request evidence could not be persisted; nothing was sent.',
-                    false,
-                    $request->submissionNumber()
-                ),
-                [
-                    'pre_send_failure' => true,
-                    'transaction_id' => $request->transactionId(),
-                    'request_xml' => $request->redactedRequestXml(),
-                ]
-            );
-        }
-        try {
-            $response = $this->send($request->requestXml());
-        } catch (\Throwable $exception) {
-            return array_replace(
-                $this->failureResult(
-                    $request->environment(),
-                    $this->redactText($exception->getMessage(), $request->secrets()),
-                    true,
-                    $request->submissionNumber()
-                ),
-                [
-                    'transaction_id' => $request->transactionId(),
-                    'request_xml' => $request->redactedRequestXml(),
-                ]
-            );
-        }
-
-        $captureError = $this->captureResponse(
-            $afterReceive,
+        return $this->executeSharedExchange(
             'submit',
             $request->environment(),
             $request->transactionId(),
-            (string)($response['body'] ?? ''),
-            (int)($response['status_code'] ?? 0)
-        );
-        if ($captureError !== '') {
-            return array_replace(
-                $this->failureResult(
+            $request->requestXml(),
+            $request->secrets(),
+            $conversation,
+            $request->schemaInventory(),
+            fn(array $response, string $redactedRequest, array $secrets): array =>
+                $this->parseSubmissionResponse(
+                    $response,
                     $request->environment(),
-                    $captureError,
-                    true,
-                    $request->submissionNumber()
+                    $request->submissionNumber(),
+                    $request->transactionId(),
+                    $redactedRequest,
+                    $secrets
                 ),
-                [
-                    'transaction_id' => $request->transactionId(),
-                    'request_xml' => $request->redactedRequestXml(),
-                    'evidence_error' => $captureError,
-                    'evidence_incomplete' => true,
-                ]
-            );
-        }
-        $result = $this->parseSubmissionResponse(
-            $response,
-            $request->environment(),
-            $request->submissionNumber(),
-            $request->transactionId(),
-            $request->redactedRequestXml(),
-            $request->secrets()
+            $request->submissionNumber()
         );
-        $responseValidationError = $this->responseValidationError(
-            (string)($response['body'] ?? ''),
-            $request->schemaInventory()
-        );
-        if ($responseValidationError !== '') {
-            $result['success'] = false;
-            $result['transport_unknown'] = true;
-            $result['error'] = $responseValidationError;
-        }
-        return $result;
     }
 
     public function getSubmissionStatus(
         string $submissionNumber,
         string $environment,
-        callable $beforeSend,
-        callable $afterReceive,
+        GovTalkConversationContext $conversation,
         array $schemaInventory = []
     ): array
     {
@@ -278,95 +211,31 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             return $this->failureResult($environment, $exception->getMessage(), false, $submissionNumber);
         }
 
-        $secrets = $this->secretValues($credentials);
-        $redactedRequest = $this->redactXml($requestXml, $secrets);
-        try {
-            $this->persistRequestEvidence(
-                $beforeSend,
-                'status',
-                $environment,
-                $transactionId,
-                $requestXml
-            );
-        } catch (\Throwable) {
-            return array_replace(
-                $this->failureResult(
-                    $environment,
-                    'The Companies House status request evidence could not be persisted; nothing was sent.',
-                    false,
-                    $submissionNumber
-                ),
-                [
-                    'pre_send_failure' => true,
-                    'transaction_id' => $transactionId,
-                    'request_xml' => $redactedRequest,
-                ]
-            );
-        }
-
-        try {
-            $response = $this->send($requestXml);
-        } catch (\Throwable $exception) {
-            return array_replace(
-                $this->failureResult(
-                    $environment,
-                    $this->redactText($exception->getMessage(), $secrets),
-                    false,
-                    $submissionNumber
-                ),
-                [
-                    'transaction_id' => $transactionId,
-                    'request_xml' => $redactedRequest,
-                ]
-            );
-        }
-
-        $captureError = $this->captureResponse(
-            $afterReceive,
-            'status',
+        return $this->executeSharedExchange(
+            'submission-status',
             $environment,
             $transactionId,
-            (string)($response['body'] ?? ''),
-            (int)($response['status_code'] ?? 0)
+            $requestXml,
+            $this->secretValues($credentials),
+            $conversation,
+            $schemaInventory,
+            fn(array $response, string $redactedRequest, array $secrets): array =>
+                $this->parseStatusResponse(
+                    $response,
+                    $environment,
+                    $submissionNumber,
+                    $transactionId,
+                    $redactedRequest,
+                    $secrets
+                ),
+            $submissionNumber
         );
-        if ($captureError !== '') {
-            return array_replace(
-                $this->failureResult($environment, $captureError, true, $submissionNumber),
-                [
-                    'transaction_id' => $transactionId,
-                    'request_xml' => $redactedRequest,
-                    'evidence_error' => $captureError,
-                    'evidence_incomplete' => true,
-                ]
-            );
-        }
-        $result = $this->parseStatusResponse(
-            $response,
-            $environment,
-            $submissionNumber,
-            $transactionId,
-            $redactedRequest,
-            $secrets
-        );
-        if ($schemaInventory !== []) {
-            $responseValidationError = $this->responseValidationError(
-                (string)($response['body'] ?? ''),
-                $schemaInventory
-            );
-            if ($responseValidationError !== '') {
-                $result['success'] = false;
-                $result['transport_unknown'] = true;
-                $result['error'] = $responseValidationError;
-            }
-        }
-        return $result;
     }
 
     public function acknowledgeSubmissionStatus(
         string $environment,
         array $schemaInventory,
-        callable $beforeSend,
-        callable $afterReceive
+        GovTalkConversationContext $conversation
     ): array {
         try {
             $environment = $this->normaliseEnvironment($environment);
@@ -389,8 +258,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             $transactionId,
             $requestXml,
             $this->secretValues($credentials),
-            $beforeSend,
-            $afterReceive,
+            $conversation,
             $schemaInventory,
             fn(array $response, string $redactedRequest, array $secrets): array =>
                 $this->parseAcknowledgementResponse(
@@ -407,8 +275,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         string $documentRequestKey,
         string $environment,
         array $schemaInventory,
-        callable $beforeSend,
-        callable $afterReceive
+        GovTalkConversationContext $conversation
     ): array {
         try {
             $environment = $this->normaliseEnvironment($environment);
@@ -440,8 +307,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             $transactionId,
             $requestXml,
             $this->secretValues($credentials),
-            $beforeSend,
-            $afterReceive,
+            $conversation,
             $schemaInventory,
             fn(array $response, string $redactedRequest, array $secrets): array =>
                 $this->parseDocumentResponse(
@@ -843,40 +709,20 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         array $credentials,
         ?string $function = null
     ): \DOMDocument {
-        $document = new \DOMDocument('1.0', 'UTF-8');
-        $document->formatOutput = false;
-        $root = $document->createElementNS(self::ENVELOPE_NAMESPACE, 'GovTalkMessage');
-        $root->setAttributeNS(
-            self::XSI_NAMESPACE,
-            'xsi:schemaLocation',
-            self::ENVELOPE_NAMESPACE . ' ' . self::ENVELOPE_SCHEMA
+        $draft = (new GovTalkEnvelopeBuilder())->create(
+            '1.0',
+            $class,
+            'request',
+            $transactionId,
+            $function,
+            null,
+            $environment === 'TEST' ? '1' : '0',
+            null,
+            self::ENVELOPE_SCHEMA
         );
-        $document->appendChild($root);
-
-        $this->appendText($document, $root, self::ENVELOPE_NAMESPACE, 'EnvelopeVersion', '1.0');
-        $header = $document->createElementNS(self::ENVELOPE_NAMESPACE, 'Header');
-        $root->appendChild($header);
-        $messageDetails = $document->createElementNS(self::ENVELOPE_NAMESPACE, 'MessageDetails');
-        $header->appendChild($messageDetails);
-        $this->appendText($document, $messageDetails, self::ENVELOPE_NAMESPACE, 'Class', $class);
-        $this->appendText($document, $messageDetails, self::ENVELOPE_NAMESPACE, 'Qualifier', 'request');
-        if ($function !== null) {
-            $this->appendText($document, $messageDetails, self::ENVELOPE_NAMESPACE, 'Function', $function);
-        }
-        $this->appendText(
-            $document,
-            $messageDetails,
-            self::ENVELOPE_NAMESPACE,
-            'TransactionID',
-            $transactionId
-        );
-        $this->appendText(
-            $document,
-            $messageDetails,
-            self::ENVELOPE_NAMESPACE,
-            'GatewayTest',
-            $environment === 'TEST' ? '1' : '0'
-        );
+        $document = $draft->document;
+        $root = $draft->root;
+        $header = $draft->header;
 
         $senderDetails = $document->createElementNS(self::ENVELOPE_NAMESPACE, 'SenderDetails');
         $header->appendChild($senderDetails);
@@ -911,7 +757,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             $keys->appendChild($key);
         }
 
-        $root->appendChild($document->createElementNS(self::ENVELOPE_NAMESPACE, 'Body'));
+        $draft->appendBody();
 
         return $document;
     }
@@ -1021,80 +867,129 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         string $transactionId,
         string $requestXml,
         array $secrets,
-        callable $beforeSend,
-        callable $afterReceive,
+        GovTalkConversationContext $conversation,
         array $schemaInventory,
         callable $parser
     ): array {
-        $redactedRequest = $this->redactXml($requestXml, $secrets);
-        try {
-            $this->persistRequestEvidence(
-                $beforeSend,
-                $operation,
-                $environment,
-                $transactionId,
-                $requestXml
-            );
-        } catch (\Throwable) {
-            return array_replace(
-                $this->failureResult(
-                    $environment,
-                    'The Companies House ' . $operation . ' request evidence could not be persisted; nothing was sent.',
-                    false,
-                    null
-                ),
-                [
-                    'pre_send_failure' => true,
-                    'transaction_id' => $transactionId,
-                    'request_xml' => $redactedRequest,
-                ]
-            );
-        }
-
-        try {
-            $response = $this->send($requestXml);
-        } catch (\Throwable $exception) {
-            return array_replace(
-                $this->failureResult(
-                    $environment,
-                    $this->redactText($exception->getMessage(), $secrets),
-                    true,
-                    null
-                ),
-                ['transaction_id' => $transactionId, 'request_xml' => $redactedRequest]
-            );
-        }
-
-        $captureError = $this->captureResponse(
-            $afterReceive,
+        return $this->executeSharedExchange(
             $operation,
             $environment,
             $transactionId,
-            (string)($response['body'] ?? ''),
-            (int)($response['status_code'] ?? 0)
+            $requestXml,
+            $secrets,
+            $conversation,
+            $schemaInventory,
+            $parser,
+            null
         );
-        if ($captureError !== '') {
+    }
+
+    private function executeSharedExchange(
+        string $operation,
+        string $environment,
+        string $transactionId,
+        string $requestXml,
+        array $secrets,
+        GovTalkConversationContext $conversation,
+        array $schemaInventory,
+        callable $parser,
+        ?string $submissionNumber
+    ): array {
+        $redactedRequest = $this->redactXml($requestXml, $secrets);
+        $prepared = new GovTalkPreparedRequest(
+            'companies_house',
+            $operation,
+            $environment,
+            self::ENDPOINT,
+            $transactionId,
+            '',
+            $requestXml,
+            ['body' => $requestXml]
+        );
+        $handler = new GovTalkExchangeHandler(
+            fn(array $transportRequest): array => $this->send(
+                (string)($transportRequest['body'] ?? '')
+            ),
+            null,
+            fn(string $message): string => $this->redactText($message, $secrets)
+        );
+        $exchange = $handler->execute(
+            $prepared,
+            $conversation,
+            function (
+                GovTalkPreparedRequest $unusedRequest,
+                GovTalkRawResponse $rawResponse
+            ) use (
+                $parser,
+                $redactedRequest,
+                $secrets,
+                $schemaInventory
+            ): array {
+                $response = [
+                    'status_code' => $rawResponse->statusCode,
+                    'headers' => $rawResponse->headers,
+                    'body' => $rawResponse->body,
+                ];
+                $result = $parser($response, $redactedRequest, $secrets);
+                if ($schemaInventory !== []) {
+                    $responseValidationError = $this->responseValidationError(
+                        $rawResponse->body,
+                        $schemaInventory
+                    );
+                    if ($responseValidationError !== '') {
+                        $result['success'] = false;
+                        $result['transport_unknown'] = true;
+                        $result['error'] = $responseValidationError;
+                    }
+                }
+
+                return $result;
+            }
+        );
+        $payload = $exchange->toArray();
+        $payload['request_xml'] = $redactedRequest;
+        $payload['environment'] ??= $environment;
+        $payload['submission_number'] ??= $submissionNumber;
+        if (!empty($payload['pre_send_failure'])) {
             return array_replace(
-                $this->failureResult($environment, $captureError, true, null),
-                [
-                    'transaction_id' => $transactionId,
-                    'request_xml' => $redactedRequest,
-                    'evidence_error' => $captureError,
-                    'evidence_incomplete' => true,
-                ]
+                $this->failureResult(
+                    $environment,
+                    'The Companies House ' . $operation
+                        . ' request evidence could not be persisted; nothing was sent.',
+                    false,
+                    $submissionNumber
+                ),
+                $payload
             );
         }
-        $result = $parser($response, $redactedRequest, $secrets);
-        $responseValidationError = $this->responseValidationError(
-            (string)($response['body'] ?? ''),
-            $schemaInventory
-        );
-        if ($responseValidationError !== '') {
-            $result['success'] = false;
-            $result['transport_unknown'] = true;
-            $result['error'] = $responseValidationError;
+        if (!empty($payload['evidence_incomplete'])) {
+            $message = 'The exact Companies House response and headers could not be added '
+                . 'to the private transmission archive.';
+            $payload['error'] = $message;
+            $payload['evidence_error'] = $message;
+
+            return array_replace(
+                $this->failureResult($environment, $message, true, $submissionNumber),
+                $payload
+            );
         }
-        return $result;
+        if (!empty($payload['transport_unknown']) && $exchange->response === null) {
+            $payload['error'] = $this->redactText(
+                (string)($payload['error'] ?? ''),
+                $secrets
+            );
+            return array_replace(
+                $this->failureResult(
+                    $environment,
+                    (string)$payload['error'],
+                    true,
+                    $submissionNumber
+                ),
+                $payload
+            );
+        }
+
+        return $payload;
     }
 
     private function responseValidationError(string $responseXml, array $schemaInventory): string
@@ -1113,80 +1008,6 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         } catch (\Throwable $exception) {
             return 'The Companies House response could not be validated against the pinned schema files: '
                 . $exception->getMessage();
-        }
-    }
-
-    private function persistRequestEvidence(
-        callable $beforeSend,
-        string $operation,
-        string $environment,
-        string $transactionId,
-        string $requestXml
-    ): void {
-        $receipt = $beforeSend([
-            'operation' => $operation,
-            'environment' => $environment,
-            'transaction_id' => $transactionId,
-            'request_xml' => $requestXml,
-            'request_sha256' => hash('sha256', $requestXml),
-            'request_bytes' => strlen($requestXml),
-        ]);
-        $this->assertEvidenceReceipt($receipt, $transactionId, $requestXml, 'request');
-    }
-
-    private function assertEvidenceReceipt(
-        mixed $receipt,
-        string $transactionId,
-        string $contents,
-        string $direction
-    ): void {
-        if (!is_array($receipt)) {
-            throw new \RuntimeException('The Companies House evidence archive did not return a receipt.');
-        }
-        $receiptTransactionId = strtoupper(trim((string)($receipt['transaction_id'] ?? '')));
-        $expectedTransactionId = strtoupper(trim($transactionId));
-        $shaKey = $direction . '_sha256';
-        $bytesKey = $direction . '_bytes';
-        $expectedSha256 = $contents !== '' ? hash('sha256', $contents) : null;
-        $receiptSha256 = $receipt[$shaKey] ?? null;
-        if ($receiptTransactionId === ''
-            || !hash_equals($expectedTransactionId, $receiptTransactionId)
-            || (int)($receipt[$bytesKey] ?? -1) !== strlen($contents)
-            || ($expectedSha256 !== null
-                && (!is_string($receiptSha256)
-                    || !hash_equals($expectedSha256, strtolower($receiptSha256))))
-            || ($expectedSha256 === null && $receiptSha256 !== null)) {
-            throw new \RuntimeException('The Companies House evidence receipt did not match the exact exchange bytes.');
-        }
-    }
-
-    private function captureResponse(
-        callable $afterReceive,
-        string $operation,
-        string $environment,
-        string $transactionId,
-        string $responseXml,
-        int $statusCode
-    ): string {
-        try {
-            $receipt = $afterReceive([
-                'operation' => $operation,
-                'environment' => $environment,
-                'transaction_id' => $transactionId,
-                'status_code' => $statusCode,
-                'response_xml' => $responseXml,
-                'response_sha256' => hash('sha256', $responseXml),
-                'response_bytes' => strlen($responseXml),
-            ]);
-            $this->assertEvidenceReceipt(
-                $receipt,
-                $transactionId,
-                $responseXml,
-                'response'
-            );
-            return '';
-        } catch (\Throwable) {
-            return 'The exact Companies House response could not be added to the private transmission archive.';
         }
     }
 

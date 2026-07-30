@@ -3,6 +3,19 @@ declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
+function companiesHouseGatewayTestConversation(
+    callable $beforeSend,
+    callable $afterReceive,
+    string $environment = 'TEST'
+): \eel_accounts\Client\GovTalkConversationContext {
+    return \eel_accounts\Client\GovTalkConversationContext::fromCallbacks(
+        'companies_house',
+        $environment,
+        $beforeSend,
+        $afterReceive
+    );
+}
+
 (new GeneratedServiceClassTestHarness())->run(
     \eel_accounts\Client\CompaniesHouseAccountsGatewayClient::class,
     static function (
@@ -79,12 +92,19 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $evidenceReceipt = static function (array $exchange): array {
             $direction = array_key_exists('request_xml', $exchange) ? 'request' : 'response';
             $xml = (string)($exchange[$direction . '_xml'] ?? '');
-
-            return [
+            $receipt = [
                 'transaction_id' => (string)($exchange['transaction_id'] ?? ''),
                 $direction . '_sha256' => $xml !== '' ? hash('sha256', $xml) : null,
                 $direction . '_bytes' => strlen($xml),
             ];
+            if ($direction === 'response') {
+                $headers = (array)($exchange['response_headers'] ?? []);
+                $headersJson = (new \eel_accounts\Service\CompaniesHouseProtocolMetadataService())
+                    ->responseHeadersJson($headers);
+                $receipt['response_headers_sha256'] = hash('sha256', $headersJson);
+            }
+
+            return $receipt;
         };
 
         $harness->check(
@@ -106,7 +126,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
                     return [
                         'status_code' => 200,
-                        'headers' => ['content-type' => 'text/xml'],
+                        'headers' => [
+                            'X-Request-ID' => ' gateway-123 ',
+                            'Content-Type' => 'text/xml',
+                            'Set-Cookie' => 'private',
+                            'Authorization' => 'private',
+                        ],
                         'body' => $acknowledgement(
                             'md5#' . md5('TEST-PRESENTER'),
                             'md5#' . md5('TEST-CODE')
@@ -128,11 +153,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $capturedResponse = [];
                 $result = $client->sendPreparedAccounts(
                     $prepared,
-                    $evidenceReceipt,
-                    static function (array $exchange) use (&$capturedResponse, $evidenceReceipt): array {
-                        $capturedResponse = $exchange;
-                        return $evidenceReceipt($exchange);
-                    }
+                    companiesHouseGatewayTestConversation(
+                        $evidenceReceipt,
+                        static function (array $exchange) use (&$capturedResponse, $evidenceReceipt): array {
+                            $capturedResponse = $exchange;
+                            return $evidenceReceipt($exchange);
+                        }
+                    )
                 );
                 $requestXml = (string)$captured['body'];
 
@@ -161,6 +188,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $acknowledgement('md5#' . md5('TEST-PRESENTER'), 'md5#' . md5('TEST-CODE')),
                     (string)($capturedResponse['response_xml'] ?? '')
                 );
+                $harness->assertSame([
+                    'content-type' => 'text/xml',
+                    'x-request-id' => 'gateway-123',
+                ], (array)($capturedResponse['response_headers'] ?? []));
+                $headersJson = (new \eel_accounts\Service\CompaniesHouseProtocolMetadataService())
+                    ->responseHeadersJson((array)$capturedResponse['response_headers']);
+                $harness->assertSame(
+                    hash('sha256', $headersJson),
+                    (string)($capturedResponse['response_headers_sha256'] ?? '')
+                );
                 $harness->assertTrue(str_contains($requestXml, 'FormSubmission-v2-11.xsd'));
                 $harness->assertFalse(str_contains($requestXml, 'COMPANY_LOOKUP'));
                 foreach (
@@ -180,7 +217,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             \eel_accounts\Client\CompaniesHouseAccountsGatewayClient::class,
-            'performs CompanyData before allocation using the shared presenter credentials',
+            'builds the optional CompanyData diagnostic using the shared presenter credentials',
             static function () use (
                 $harness,
                 $credentials,
@@ -214,8 +251,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'ABC123',
                     'TEST',
                     ['files' => []],
-                    $evidenceReceipt,
-                    $evidenceReceipt
+                    companiesHouseGatewayTestConversation($evidenceReceipt, $evidenceReceipt)
                 );
                 $requestXml = (string)$captured['body'];
 
@@ -226,6 +262,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame('ABC123', $xmlText($requestXml, 'CompanyAuthenticationCode'));
                 $harness->assertSame('md5#' . md5('TEST-PRESENTER'), $xmlText($requestXml, 'SenderID'));
                 $harness->assertTrue(str_contains($requestXml, '/schema/CompanyData-v3-6.xsd'));
+                $harness->assertFalse(str_contains($requestXml, '<PackageReference>'));
+                $harness->assertFalse(str_contains($requestXml, '0012'));
                 $harness->assertFalse(str_contains((string)$result['request_xml'], 'ABC123'));
                 $harness->assertFalse(str_contains((string)$result['request_xml'], 'TEST-CODE'));
             }
@@ -255,12 +293,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 );
                 $result = $client->sendPreparedAccounts(
                     $client->prepareAccounts($submissionPayload(), 'TEST', ['files' => []]),
-                    static fn(array $exchange): array => [
-                        'transaction_id' => (string)$exchange['transaction_id'],
-                        'request_sha256' => str_repeat('0', 64),
-                        'request_bytes' => (int)$exchange['request_bytes'],
-                    ],
-                    $evidenceReceipt
+                    companiesHouseGatewayTestConversation(
+                        static fn(array $exchange): array => [
+                            'transaction_id' => (string)$exchange['transaction_id'],
+                            'request_sha256' => str_repeat('0', 64),
+                            'request_bytes' => (int)$exchange['request_bytes'],
+                        ],
+                        $evidenceReceipt
+                    )
                 );
 
                 $harness->assertSame(false, $transportCalled);
@@ -298,16 +338,63 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 );
                 $result = $client->sendPreparedAccounts(
                     $client->prepareAccounts($submissionPayload(), 'TEST', ['files' => []]),
-                    $evidenceReceipt,
-                    static function (array $exchange): array {
-                        throw new RuntimeException('Archive unavailable.');
-                    }
+                    companiesHouseGatewayTestConversation(
+                        $evidenceReceipt,
+                        static function (array $exchange): array {
+                            throw new RuntimeException('Archive unavailable.');
+                        }
+                    )
                 );
 
                 $harness->assertSame(false, $result['success']);
                 $harness->assertSame(true, $result['transport_unknown']);
                 $harness->assertSame(true, $result['evidence_incomplete']);
                 $harness->assertTrue(str_contains($result['error'], 'private transmission archive'));
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Client\CompaniesHouseAccountsGatewayClient::class,
+            'treats invalid response-header evidence as an incomplete exchange',
+            static function () use (
+                $harness,
+                $credentials,
+                $transactionId,
+                $config,
+                $submissionPayload,
+                $acknowledgement,
+                $evidenceReceipt
+            ): void {
+                $responseCaptureCalled = false;
+                $client = new \eel_accounts\Client\CompaniesHouseAccountsGatewayClient(
+                    static fn(array $request): array => [
+                        'status_code' => 200,
+                        'headers' => ['x-invalid' => "value\ninjected"],
+                        'body' => $acknowledgement(
+                            'md5#' . md5('TEST-PRESENTER'),
+                            'md5#' . md5('TEST-CODE')
+                        ),
+                    ],
+                    $credentials,
+                    $transactionId,
+                    $config,
+                    static fn(string $xml, array $inventory): array => ['success' => true]
+                );
+                $result = $client->sendPreparedAccounts(
+                    $client->prepareAccounts($submissionPayload(), 'TEST', ['files' => []]),
+                    companiesHouseGatewayTestConversation(
+                        $evidenceReceipt,
+                        static function (array $exchange) use (&$responseCaptureCalled): array {
+                            $responseCaptureCalled = true;
+                            return [];
+                        }
+                    )
+                );
+
+                $harness->assertFalse($responseCaptureCalled);
+                $harness->assertFalse((bool)$result['success']);
+                $harness->assertTrue((bool)$result['transport_unknown']);
+                $harness->assertTrue((bool)$result['evidence_incomplete']);
             }
         );
 
@@ -357,15 +444,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $ack = $client->acknowledgeSubmissionStatus(
                     'TEST',
                     ['files' => []],
-                    $evidenceReceipt,
-                    $evidenceReceipt
+                    companiesHouseGatewayTestConversation($evidenceReceipt, $evidenceReceipt)
                 );
                 $document = $client->getDocument(
                     'DOC-KEY-1',
                     'TEST',
                     ['files' => []],
-                    $evidenceReceipt,
-                    $evidenceReceipt
+                    companiesHouseGatewayTestConversation($evidenceReceipt, $evidenceReceipt)
                 );
 
                 $harness->assertSame(true, $ack['success']);
@@ -411,14 +496,17 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $result = $client->getSubmissionStatus(
                     '000001',
                     'LIVE',
-                    static function (array $exchange) use (&$capturedRequest, $evidenceReceipt): array {
-                        $capturedRequest = $exchange;
-                        return $evidenceReceipt($exchange);
-                    },
-                    static function (array $exchange) use (&$capturedExchange, $evidenceReceipt): array {
-                        $capturedExchange = $exchange;
-                        return $evidenceReceipt($exchange);
-                    }
+                    companiesHouseGatewayTestConversation(
+                        static function (array $exchange) use (&$capturedRequest, $evidenceReceipt): array {
+                            $capturedRequest = $exchange;
+                            return $evidenceReceipt($exchange);
+                        },
+                        static function (array $exchange) use (&$capturedExchange, $evidenceReceipt): array {
+                            $capturedExchange = $exchange;
+                            return $evidenceReceipt($exchange);
+                        },
+                        'LIVE'
+                    )
                 );
                 $requestXml = (string)$captured['body'];
 
@@ -475,8 +563,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $result = $client->getSubmissionStatus(
                         '000001',
                         'TEST',
-                        $evidenceReceipt,
-                        $evidenceReceipt
+                        companiesHouseGatewayTestConversation($evidenceReceipt, $evidenceReceipt)
                     );
 
                     $harness->assertSame(true, $result['success']);
@@ -524,8 +611,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $result = $client->getSubmissionStatus(
                     '000001',
                     'TEST',
-                    $evidenceReceipt,
-                    $evidenceReceipt
+                    companiesHouseGatewayTestConversation($evidenceReceipt, $evidenceReceipt)
                 );
 
                 $harness->assertSame(true, $result['success']);
@@ -576,8 +662,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 );
                 $result = $client->sendPreparedAccounts(
                     $client->prepareAccounts($submissionPayload(), 'TEST', ['files' => []]),
-                    $evidenceReceipt,
-                    $evidenceReceipt
+                    companiesHouseGatewayTestConversation($evidenceReceipt, $evidenceReceipt)
                 );
 
                 $harness->assertSame(false, $result['success']);
@@ -688,8 +773,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 );
                 $result = $client->sendPreparedAccounts(
                     $client->prepareAccounts($submissionPayload(), 'TEST', ['files' => []]),
-                    $evidenceReceipt,
-                    $evidenceReceipt
+                    companiesHouseGatewayTestConversation($evidenceReceipt, $evidenceReceipt)
                 );
 
                 $harness->assertSame(false, $result['success']);
@@ -734,8 +818,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $result = $client->getSubmissionStatus(
                         '000001',
                         'TEST',
-                        $evidenceReceipt,
-                        $evidenceReceipt
+                        companiesHouseGatewayTestConversation($evidenceReceipt, $evidenceReceipt)
                     );
 
                     $harness->assertSame(false, $result['success']);

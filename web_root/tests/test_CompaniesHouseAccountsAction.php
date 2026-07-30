@@ -268,6 +268,42 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
             }
         }
     );
+
+    $harness->check(
+        CompaniesHouseAccountsAction::class,
+        'does not require a CompanyData record for the legacy step-by-step submit intent',
+        static function () use ($harness): void {
+            $service = new CompaniesHouseAccountsActionFakeService();
+            $service->context['feature'] = [
+                'mode' => 'TEST',
+                'enabled' => true,
+                'live_approved' => false,
+            ];
+            $service->context['submission'] = ['id' => 77, 'filing_kind' => 'original'];
+            $action = companiesHouseAccountsTestAction($service);
+            $previous = AppConfigurationStore::get('developer_options', false);
+            try {
+                AppConfigurationStore::set('developer_options', true);
+                $result = $action->handle(companiesHouseAccountsActionRequest([
+                    'intent' => 'submit_preflighted_revised_accounts',
+                    'submission_id' => '77',
+                    'company_auth_code' => 'ABC123',
+                ]), createTestPageServiceFramework());
+                $harness->assertTrue($result->isSuccess());
+                $submitCalls = array_values(array_filter(
+                    $service->calls,
+                    static fn(array $call): bool => ($call['method'] ?? '') === 'submitAccounts'
+                ));
+                $harness->assertCount(1, $submitCalls);
+                $harness->assertSame(
+                    null,
+                    $submitCalls[0]['verifiedPreflightId'] ?? null
+                );
+            } finally {
+                AppConfigurationStore::set('developer_options', (bool)$previous);
+            }
+        }
+    );
 });
 
 final class CompaniesHouseAccountsActionFakeService

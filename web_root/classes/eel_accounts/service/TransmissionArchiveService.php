@@ -44,7 +44,7 @@ final class TransmissionArchiveService
     }
 
     /**
-     * @return array{path:string,sha256:string,bytes:int,archive_path:string,manifest_path:string}
+     * @return array{path:string,sha256:string,bytes:int,archive_id:int,archive_path:string,manifest_path:string}
      */
     public function store(
         int $companyId,
@@ -73,7 +73,7 @@ final class TransmissionArchiveService
         $sha256 = hash('sha256', $contents);
         $this->writeImmutable($path, $contents, $sha256);
         $this->verifyStoredFile($path, $sha256, strlen($contents));
-        $this->upsertArchive(
+        $archiveId = $this->upsertArchive(
             $companyId,
             $accountingPeriodId,
             $identity,
@@ -86,6 +86,7 @@ final class TransmissionArchiveService
             'path' => $path,
             'sha256' => $sha256,
             'bytes' => strlen($contents),
+            'archive_id' => $archiveId,
             'archive_path' => $directory,
             'manifest_path' => $manifest['path'],
         ];
@@ -469,7 +470,7 @@ final class TransmissionArchiveService
         int $accountingPeriodId,
         array $identity,
         string $lifecycle
-    ): void {
+    ): int {
         $existing = \InterfaceDB::fetchOne(
             'SELECT id FROM ' . self::TABLE . '
              WHERE company_id = :company_id
@@ -502,7 +503,7 @@ final class TransmissionArchiveService
                     'id' => (int)$existing['id'],
                 ]
             );
-            return;
+            return (int)$existing['id'];
         }
         \InterfaceDB::prepareExecute(
             'INSERT INTO ' . self::TABLE . ' (
@@ -525,6 +526,26 @@ final class TransmissionArchiveService
                 'updated_at' => $now,
             ]
         );
+        $created = \InterfaceDB::fetchOne(
+            'SELECT id FROM ' . self::TABLE . '
+             WHERE company_id = :company_id
+               AND authority = :authority
+               AND environment = :environment
+               AND submission_reference = :reference
+             LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'authority' => $identity['authority'],
+                'environment' => $identity['environment'],
+                'reference' => $identity['submission_reference'],
+            ]
+        );
+        $archiveId = (int)($created['id'] ?? 0);
+        if ($archiveId <= 0) {
+            throw new \RuntimeException('The transmission archive record could not be resolved.');
+        }
+
+        return $archiveId;
     }
 
     private function writeManifest(
@@ -552,9 +573,7 @@ final class TransmissionArchiveService
             'submission_reference' => $identity['submission_reference'],
             'lifecycle' => trim($lifecycle) !== '' ? trim($lifecycle) : 'unknown',
             'files' => $files,
-            'exchanges' => $identity['authority'] === 'companies_house'
-                ? $this->protocolExchanges($companyId, $identity)
-                : [],
+            'exchanges' => $this->protocolExchanges($companyId, $identity),
         ];
         $json = \eel_accounts\Support\Utf8::json(
             $payload,
@@ -696,6 +715,23 @@ final class TransmissionArchiveService
         string $sourceDirectory,
         string $targetDirectory
     ): void {
+        $targetArchive = \InterfaceDB::fetchOne(
+            'SELECT id
+             FROM ' . self::TABLE . '
+             WHERE authority = :authority
+               AND archive_path = :archive_path
+             LIMIT 1',
+            [
+                'authority' => 'companies_house',
+                'archive_path' => $targetDirectory,
+            ]
+        );
+        $targetArchiveId = (int)($targetArchive['id'] ?? 0);
+        if ($targetArchiveId <= 0) {
+            throw new \RuntimeException(
+                'The promoted Companies House transmission archive could not be resolved.'
+            );
+        }
         $replace = static function (mixed $value) use ($sourceDirectory, $targetDirectory): ?string {
             $path = trim((string)$value);
             if ($path === '') {
@@ -711,19 +747,22 @@ final class TransmissionArchiveService
 
         foreach (\InterfaceDB::fetchAll(
             'SELECT id, request_path, response_path
-             FROM companies_house_protocol_exchanges
-             WHERE submission_id = :submission_id',
-            ['submission_id' => $submissionId]
+             FROM govtalk_protocol_exchanges
+             WHERE authority = :authority
+               AND submission_id = :submission_id',
+            ['authority' => 'companies_house', 'submission_id' => $submissionId]
         ) as $row) {
             \InterfaceDB::prepareExecute(
-                'UPDATE companies_house_protocol_exchanges
+                'UPDATE govtalk_protocol_exchanges
                  SET request_path = :request_path,
                      response_path = :response_path,
+                     transmission_archive_id = :archive_id,
                      updated_at = :updated_at
                  WHERE id = :id',
                 [
                     'request_path' => $replace($row['request_path'] ?? null),
                     'response_path' => $replace($row['response_path'] ?? null),
+                    'archive_id' => $targetArchiveId,
                     'updated_at' => gmdate('Y-m-d H:i:s'),
                     'id' => (int)$row['id'],
                 ]
@@ -778,75 +817,79 @@ final class TransmissionArchiveService
     /** @return list<array<string,mixed>> */
     private function protocolExchanges(int $companyId, array $identity): array
     {
-        if (!\InterfaceDB::tableExists('companies_house_protocol_exchanges')
-            || !\InterfaceDB::tableExists('companies_house_accounts_submissions')) {
+        if (!\InterfaceDB::tableExists('govtalk_protocol_exchanges')) {
             return [];
         }
-        $reference = (string)$identity['submission_reference'];
-        $submissionId = 0;
-        $preflightId = 0;
-        if (preg_match('/^' . self::PENDING_REFERENCE_PREFIX . '([1-9][0-9]*)$/D', $reference, $matches) === 1) {
-            $submissionId = (int)$matches[1];
-        } elseif (preg_match(
-            '/^' . self::AUTHENTICATION_REFERENCE_PREFIX . '[a-f0-9]{24}$/D',
-            $reference
-        ) === 1) {
-            $preflight = \InterfaceDB::fetchOne(
-                'SELECT id
-                 FROM companies_house_company_auth_preflights
-                 WHERE company_id = :company_id
-                   AND environment = :environment
-                   AND archive_reference = :reference
-                 LIMIT 1',
-                [
-                    'company_id' => $companyId,
-                    'environment' => (string)$identity['environment'],
-                    'reference' => $reference,
-                ]
-            );
-            $preflightId = (int)($preflight['id'] ?? 0);
-        } elseif (preg_match('/^[0-9]{6}$/D', $reference) === 1) {
-            $submission = \InterfaceDB::fetchOne(
-                'SELECT id
-                 FROM companies_house_accounts_submissions
-                 WHERE company_id = :company_id
-                   AND environment = :environment
-                   AND submission_number = :submission_number
-                 LIMIT 1',
-                [
-                    'company_id' => $companyId,
-                    'environment' => (string)$identity['environment'],
-                    'submission_number' => $reference,
-                ]
-            );
-            $submissionId = (int)($submission['id'] ?? 0);
-        }
-        if ($submissionId <= 0 && $preflightId <= 0) {
+        $archive = \InterfaceDB::fetchOne(
+            'SELECT id
+             FROM ' . self::TABLE . '
+             WHERE authority = :authority
+               AND environment = :environment
+               AND company_id = :company_id
+               AND submission_reference = :reference
+             LIMIT 1',
+            [
+                'authority' => (string)$identity['authority'],
+                'environment' => (string)$identity['environment'],
+                'company_id' => $companyId,
+                'reference' => (string)$identity['submission_reference'],
+            ]
+        );
+        $archiveId = (int)($archive['id'] ?? 0);
+        if ($archiveId <= 0) {
             return [];
         }
 
-        $where = $submissionId > 0
-            ? 'submission_id = :conversation_id'
-            : 'preflight_id = :conversation_id';
         $result = [];
         foreach (\InterfaceDB::fetchAll(
-            'SELECT operation, transaction_id, exchange_state,
-                    request_path, request_sha256, response_path, response_sha256,
-                    response_status_code, error_summary, sent_at, received_at
-             FROM companies_house_protocol_exchanges
-             WHERE ' . $where . '
+            'SELECT operation, request_message_class, request_qualifier,
+                    request_function, endpoint, transaction_id, correlation_id,
+                    exchange_state, outcome_code, outcome_summary,
+                    request_path, request_sha256, request_bytes,
+                    response_path, response_sha256, response_bytes,
+                    response_status_code, response_headers_json,
+                    response_headers_sha256, govtalk_errors_json,
+                    error_summary, sent_at, received_at
+             FROM govtalk_protocol_exchanges
+             WHERE transmission_archive_id = :archive_id
              ORDER BY id ASC',
-            ['conversation_id' => $submissionId > 0 ? $submissionId : $preflightId]
+            ['archive_id' => $archiveId]
         ) as $row) {
             $result[] = [
                 'operation' => (string)$row['operation'],
+                'message_class' => (string)($row['request_message_class'] ?? ''),
+                'qualifier' => (string)($row['request_qualifier'] ?? ''),
+                'function' => (string)($row['request_function'] ?? ''),
+                'endpoint' => (string)($row['endpoint'] ?? ''),
                 'transaction_id' => (string)$row['transaction_id'],
+                'correlation_id' => (string)($row['correlation_id'] ?? ''),
                 'state' => (string)$row['exchange_state'],
-                'request' => $this->manifestArtifact($identity['directory'], $row['request_path'] ?? null, $row['request_sha256'] ?? null),
-                'response' => $this->manifestArtifact($identity['directory'], $row['response_path'] ?? null, $row['response_sha256'] ?? null),
+                'outcome' => (string)($row['outcome_code'] ?? ''),
+                'outcome_summary' => (string)($row['outcome_summary'] ?? ''),
+                'request' => $this->manifestArtifact(
+                    $identity['directory'],
+                    $row['request_path'] ?? null,
+                    $row['request_sha256'] ?? null,
+                    $row['request_bytes'] ?? null
+                ),
+                'response' => $this->manifestArtifact(
+                    $identity['directory'],
+                    $row['response_path'] ?? null,
+                    $row['response_sha256'] ?? null,
+                    $row['response_bytes'] ?? null
+                ),
                 'http_status' => $row['response_status_code'] !== null
                     ? (int)$row['response_status_code']
                     : null,
+                'response_headers' => $this->decodedJsonArray(
+                    $row['response_headers_json'] ?? null
+                ),
+                'response_headers_sha256' => trim((string)(
+                    $row['response_headers_sha256'] ?? ''
+                )) ?: null,
+                'govtalk_errors' => $this->decodedJsonArray(
+                    $row['govtalk_errors_json'] ?? null
+                ),
                 'sent_at' => $row['sent_at'],
                 'received_at' => $row['received_at'],
                 'error' => $row['error_summary'],
@@ -856,7 +899,28 @@ final class TransmissionArchiveService
         return $result;
     }
 
-    private function manifestArtifact(string $directory, mixed $pathValue, mixed $shaValue): ?array
+    /** @return array<mixed> */
+    private function decodedJsonArray(mixed $json): array
+    {
+        $json = trim((string)$json);
+        if ($json === '') {
+            return [];
+        }
+        try {
+            $decoded = json_decode($json, true, 64, JSON_THROW_ON_ERROR);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    private function manifestArtifact(
+        string $directory,
+        mixed $pathValue,
+        mixed $shaValue,
+        mixed $bytesValue = null
+    ): ?array
     {
         $path = trim((string)$pathValue);
         $sha256 = strtolower(trim((string)$shaValue));
@@ -868,6 +932,7 @@ final class TransmissionArchiveService
         return [
             'path' => substr($path, strlen($prefix)),
             'sha256' => $sha256 !== '' ? $sha256 : null,
+            'bytes' => $bytesValue !== null ? (int)$bytesValue : null,
         ];
     }
 
@@ -904,7 +969,7 @@ final class TransmissionArchiveService
             if ($replace && is_file($path) && !@unlink($path)) {
                 throw new \RuntimeException('Unable to replace the transmission archive manifest.');
             }
-            if (!@rename($temporary, $path)) {
+            if (!$this->renameWithRetry($temporary, $path)) {
                 throw new \RuntimeException('Unable to publish the transmission archive artifact atomically.');
             }
             $temporary = '';
@@ -914,6 +979,23 @@ final class TransmissionArchiveService
                 @unlink($temporary);
             }
         }
+    }
+
+    private function renameWithRetry(string $source, string $target): bool
+    {
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            if (@rename($source, $target)) {
+                return true;
+            }
+
+            if ($attempt < 4) {
+                clearstatcache(true, $source);
+                clearstatcache(true, $target);
+                usleep(10_000 * ($attempt + 1));
+            }
+        }
+
+        return false;
     }
 
     private function ensureDirectory(string $directory): void

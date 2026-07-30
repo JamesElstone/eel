@@ -691,7 +691,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(450.0, $netCurrent);
         });
 
-        $harness->check(\eel_accounts\Service\IxbrlAccountingService::class, 'renders director-loan and employee comparative facts in their notes', static function () use ($harness, $service): void {
+        $harness->check(\eel_accounts\Service\IxbrlAccountingService::class, 'renders principal activity and renumbers the existing disclosure notes', static function () use ($harness, $service): void {
             $facts = ixbrlRenderFixtureFacts();
             $comparativeKeys = [];
             foreach ((new \eel_accounts\Service\IxbrlTaxonomyProfileService())->mappings() as $mapping) {
@@ -730,6 +730,25 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $method = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'renderXhtml');
             $method->setAccessible(true);
             $xhtml = (string)$method->invoke($service, $facts);
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                '<span class="note-number">1.</span> Principal activity'
+            ));
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                'name="bus:DescriptionPrincipalActivities" contextRef="current_period_duration"'
+                . '>The principal activity of the company during the period was Electrical installation.</ix:nonNumeric>'
+            ));
+            $harness->assertSame(1, substr_count($xhtml, 'name="bus:DescriptionPrincipalActivities"'));
+            foreach ([
+                '<span class="note-number">2.</span> Employees',
+                '<span class="note-number">3.</span> Advances and credits to directors',
+                '<span class="note-number">4.</span> Off-balance-sheet arrangements',
+                '<span class="note-number">5.</span> Financial commitments',
+                '<span class="note-number">6.</span> Contingent liabilities',
+            ] as $noteHeading) {
+                $harness->assertTrue(str_contains($xhtml, $noteHeading));
+            }
             $harness->assertTrue(str_contains($xhtml, 'name="core:AverageNumberEmployeesDuringPeriod" contextRef="comparative_period_duration"'));
             $harness->assertTrue(str_contains($xhtml, '(comparative period:'));
             $harness->assertTrue(str_contains(
@@ -930,6 +949,7 @@ function ixbrlRenderFixtureFacts(): array
         ixbrlRenderFact('net_assets_liabilities', 'core:NetAssetsLiabilities', 'numeric', 1050.0, null, null, 'GBP', '2', 'current_period_end'),
         ixbrlRenderFact('equity', 'core:Equity', 'numeric', 1050.0, null, null, 'GBP', '2', 'current_period_end'),
         ixbrlRenderFact('average_number_employees', 'core:AverageNumberEmployeesDuringPeriod', 'numeric', 1.0, null, null, 'pure', '0', 'current_period_duration'),
+        ixbrlRenderFact('principal_activity_description', 'bus:DescriptionPrincipalActivities', 'text', null, 'The principal activity of the company during the period was Electrical installation.', null, null, null, 'current_period_duration'),
         ixbrlRenderFact('entity_dormant', 'bus:EntityDormantTruefalse', 'boolean', null, 'false', null, null, null, 'current_period_duration'),
         ixbrlRenderFact('small_companies_regime_statement', 'direp:StatementThatAccountsHaveBeenPreparedInAccordanceWithProvisionsSmallCompaniesRegime', 'text', null, 'Prepared under the small companies regime.', null, null, null, 'current_period_duration'),
         ixbrlRenderFact('audit_exemption_statement', 'direp:StatementThatCompanyEntitledToExemptionFromAuditUnderSection477CompaniesAct2006RelatingToSmallCompanies', 'text', null, 'The company is entitled to audit exemption.', null, null, null, 'current_period_duration'),

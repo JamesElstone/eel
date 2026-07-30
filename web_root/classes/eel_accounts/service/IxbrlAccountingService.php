@@ -611,10 +611,16 @@ final class IxbrlAccountingService
     private function notes(array $indexed, string $periodEnd): string
     {
         $notes = '';
+        $principalActivity = $this->currentFact($indexed, 'principal_activity_description');
+        if ($principalActivity !== []) {
+            $notes .= '<div class="note keepTogether"><h3><span class="note-number">1.</span> Principal activity</h3>'
+                . '<p>' . $this->inlineFact($principalActivity) . '</p></div>' . "\n";
+        }
+
         $employees = $this->currentFact($indexed, 'average_number_employees');
         if ($employees !== []) {
             $comparative = $this->comparativeFact($indexed, 'average_number_employees');
-            $notes .= '<div class="note keepTogether"><h3><span class="note-number">1.</span> Employees</h3>'
+            $notes .= '<div class="note keepTogether"><h3><span class="note-number">2.</span> Employees</h3>'
                 . '<p>The average monthly number of employees during the period was '
                 . $this->inlineFact($employees)
                 . ($comparative !== [] ? ' (comparative period: ' . $this->inlineFact($comparative) . ')' : '')
@@ -623,7 +629,7 @@ final class IxbrlAccountingService
 
         $directorNarrative = $this->currentFact($indexed, 'no_director_advances_or_credits');
         if ($directorNarrative !== []) {
-            $notes .= '<div class="note keepTogether director-loan-note"><h3><span class="note-number">2.</span> '
+            $notes .= '<div class="note keepTogether director-loan-note"><h3><span class="note-number">3.</span> '
                 . 'Advances and credits to directors</h3>'
                 . '<p>' . $this->inlineFact($directorNarrative) . '</p>'
                 . $this->directorLoanTable($indexed)
@@ -631,14 +637,14 @@ final class IxbrlAccountingService
         }
 
         $noteDefinitions = [
-            ['number' => 3, 'title' => 'Off-balance-sheet arrangements', 'keys' => [
+            ['number' => 4, 'title' => 'Off-balance-sheet arrangements', 'keys' => [
                 'no_material_off_balance_sheet_arrangements',
             ]],
-            ['number' => 4, 'title' => 'Financial commitments', 'keys' => [
+            ['number' => 5, 'title' => 'Financial commitments', 'keys' => [
                 'no_capital_commitments',
                 'no_financial_commitments',
             ]],
-            ['number' => 5, 'title' => 'Contingent liabilities', 'keys' => [
+            ['number' => 6, 'title' => 'Contingent liabilities', 'keys' => [
                 'no_contingent_liabilities',
                 'no_director_guarantees',
             ]],
@@ -1384,6 +1390,7 @@ CSS;
             'bus:StartDateForPeriodCoveredByReport',
             'bus:EndDateForPeriodCoveredByReport',
             'bus:BalanceSheetDate',
+            'bus:DescriptionPrincipalActivities',
             'bus:EntityDormantTruefalse',
             'bus:NameEntityOfficer',
             'bus:EntityTradingStatus',

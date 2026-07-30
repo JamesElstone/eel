@@ -64,7 +64,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         });
 
         $h->check($service::class, 'versions the filing contracts that freeze the selected approving director', static function () use ($h, $service): void {
-            $h->assertSame('accounts-filing-approval-v6', $service::BASIS_VERSION);
+            $h->assertSame('accounts-filing-approval-v7', $service::BASIS_VERSION);
             $h->assertSame('ct-period-filing-model-v10', $service::CT_BASIS_VERSION);
         });
 

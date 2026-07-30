@@ -125,6 +125,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('core:PrepaymentsAccruedIncomeNotExpressedWithinCurrentAssetSubtotal', (string)$mappings['prepayments_accrued_income']['taxonomy_concept']);
             $harness->assertSame('pure', (string)$mappings['average_number_employees']['unit_ref']);
             $harness->assertSame('0', (string)$mappings['average_number_employees']['decimals_value']);
+            $harness->assertSame(
+                'bus:DescriptionPrincipalActivities',
+                (string)$mappings['principal_activity_description']['taxonomy_concept']
+            );
+            $harness->assertSame(false, (bool)$mappings['principal_activity_description']['comparative_enabled']);
             $harness->assertTrue(str_contains((string)$mappings['creditors_within_one_year']['dimensions_json'], 'WithinOneYear'));
             $harness->assertSame('core:DirectorSigningFinancialStatements', (string)$mappings['director_signing_financial_statements']['taxonomy_concept']);
             $harness->assertSame('fixed_marker', (string)$mappings['entity_trading_status']['calculation_type']);
@@ -133,6 +138,35 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(str_contains((string)$mappings['accounts_status']['dimensions_json'], 'AuditExempt-NoAccountantsReport'));
             $harness->assertTrue(str_contains((string)$mappings['country_formation_or_incorporation']['dimensions_json'], 'countries:EnglandWales'));
             $harness->assertSame('bus:VersionProductionSoftware', (string)$mappings['production_software_version']['taxonomy_concept']);
+        });
+
+        $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'builds the principal activity statement as a current duration fact only', static function () use ($harness, $service): void {
+            $mapping = null;
+            foreach ((new \eel_accounts\Service\IxbrlTaxonomyProfileService())->mappings() as $candidate) {
+                if ((string)$candidate['fact_key'] === 'principal_activity_description') {
+                    $mapping = $candidate;
+                    break;
+                }
+            }
+            $harness->assertTrue(is_array($mapping));
+            $method = new ReflectionMethod(\eel_accounts\Service\IxbrlFactBuilderService::class, 'factFromMapping');
+            $method->setAccessible(true);
+            $fact = $method->invoke($service, $mapping, [
+                'company' => [],
+                'accounting_period' => ['period_start' => '2025-01-01', 'period_end' => '2025-12-31'],
+                'disclosures' => [
+                    'principal_activity_statement' => 'The principal activity of the company during the period was Electrical installation.',
+                    'revision' => 3,
+                ],
+                'current' => ['buckets' => [], 'sources' => []],
+            ], false);
+
+            $harness->assertSame('bus:DescriptionPrincipalActivities', (string)($fact['taxonomy_concept'] ?? ''));
+            $harness->assertSame('current_period_duration', (string)($fact['context_ref'] ?? ''));
+            $harness->assertSame(
+                'The principal activity of the company during the period was Electrical installation.',
+                (string)($fact['text_value'] ?? '')
+            );
         });
 
         $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'maps each explicit trading disclosure to the correct taxonomy context', static function () use ($harness, $service): void {
@@ -465,6 +499,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $companyId,
                     '2026-01-31'
                 );
+                $principalActivitySicCode = ixbrl_test_assign_principal_activity($companyId);
 
                 $savedDisclosures = (new \eel_accounts\Service\IxbrlAccountsDisclosureService())->save(
                     $companyId,
@@ -472,6 +507,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     [
                         'accounting_standard' => 'FRS_105',
                         'average_number_employees' => 1,
+                        'principal_activity_sic_code' => $principalActivitySicCode,
                         'entity_dormant' => 0,
                         'is_still_trading' => 1,
                         'accounts_approval_date' => '2026-01-31',

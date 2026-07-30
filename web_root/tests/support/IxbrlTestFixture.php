@@ -57,6 +57,59 @@ function ixbrl_test_ensure_frs105_thresholds(): void
     }
 }
 
+function ixbrl_test_assign_principal_activity(int $companyId): string
+{
+    $sicCode = '43210';
+    $sectionId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM sic_section WHERE section_letter = :section_letter LIMIT 1',
+        ['section_letter' => 'F']
+    );
+    if ($sectionId <= 0) {
+        InterfaceDB::prepareExecute(
+            'INSERT INTO sic_section (section_letter, description) VALUES (:section_letter, :description)',
+            ['section_letter' => 'F', 'description' => 'Construction']
+        );
+        $sectionId = (int)InterfaceDB::fetchColumn(
+            'SELECT id FROM sic_section WHERE section_letter = :section_letter LIMIT 1',
+            ['section_letter' => 'F']
+        );
+    }
+    if ((int)InterfaceDB::fetchColumn(
+        'SELECT COUNT(*) FROM sic_codes WHERE sic_code = :sic_code',
+        ['sic_code' => $sicCode]
+    ) === 0) {
+        InterfaceDB::prepareExecute(
+            'INSERT INTO sic_codes (section_id, sic_code, description)
+             VALUES (:section_id, :sic_code, :description)',
+            [
+                'section_id' => $sectionId,
+                'sic_code' => $sicCode,
+                'description' => 'Electrical installation',
+            ]
+        );
+    }
+
+    $profileJson = (string)(InterfaceDB::fetchColumn(
+        'SELECT companies_house_profile_json FROM companies WHERE id = :company_id LIMIT 1',
+        ['company_id' => $companyId]
+    ) ?: '');
+    $profile = json_decode($profileJson, true);
+    $profile = is_array($profile) ? $profile : [];
+    $profile['sic_codes'] = array_values(array_unique(array_merge(
+        is_array($profile['sic_codes'] ?? null) ? $profile['sic_codes'] : [],
+        [$sicCode]
+    )));
+    InterfaceDB::prepareExecute(
+        'UPDATE companies SET companies_house_profile_json = :profile_json WHERE id = :company_id',
+        [
+            'profile_json' => \eel_accounts\Support\Utf8::json($profile, JSON_UNESCAPED_SLASHES),
+            'company_id' => $companyId,
+        ]
+    );
+
+    return $sicCode;
+}
+
 function ixbrl_test_assign_sales_nominal(int $companyId): int
 {
     $nominalId = (int)InterfaceDB::fetchColumn(
@@ -191,6 +244,7 @@ function ixbrl_test_complete_disclosures(int $companyId, int $accountingPeriodId
         $companyId,
         (string)$period['period_end']
     );
+    $principalActivitySicCode = ixbrl_test_assign_principal_activity($companyId);
     InterfaceDB::prepareExecute(
         'UPDATE companies SET
             company_status = COALESCE(NULLIF(company_status, \'\'), :company_status),
@@ -218,6 +272,7 @@ function ixbrl_test_complete_disclosures(int $companyId, int $accountingPeriodId
         [
             'accounting_standard' => 'FRS_105',
             'average_number_employees' => 1,
+            'principal_activity_sic_code' => $principalActivitySicCode,
             'entity_dormant' => 0,
             'is_still_trading' => 1,
             'micro_entity_eligibility_confirmed' => 1,

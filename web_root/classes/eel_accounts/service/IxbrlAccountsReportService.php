@@ -13,7 +13,7 @@ namespace eel_accounts\Service;
 final class IxbrlAccountsReportService
 {
     /** Increment whenever the deterministic report-basis construction changes. */
-    public const BASIS_VERSION = 'ixbrl-accounts-report-v7';
+    public const BASIS_VERSION = 'ixbrl-accounts-report-v8';
 
     public function build(int $companyId, int $accountingPeriodId): array
     {
@@ -348,6 +348,7 @@ final class IxbrlAccountsReportService
     {
         $keys = [
             'accounting_standard', 'average_number_employees', 'entity_dormant', 'entity_trading_status',
+            'principal_activity_sic_code', 'principal_activity_statement',
             'accounts_approval_date', 'approving_director_id', 'approving_director_name',
             'prepared_under_small_companies_regime', 'audit_exempt_section_477',
             'directors_acknowledge_responsibilities', 'members_have_not_required_audit',

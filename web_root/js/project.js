@@ -1138,6 +1138,52 @@
         });
     }
 
+    function initialiseIxbrlCoreDetailsForms(root = document) {
+        const forms = root.querySelectorAll ? root.querySelectorAll('[data-ixbrl-core-details-form="true"]') : [];
+
+        forms.forEach((form) => {
+            if (!(form instanceof HTMLFormElement) || form.dataset.ixbrlCoreDetailsBound === '1') {
+                return;
+            }
+            const stateSection = form.querySelector('[data-state-target="save_ixbrl_core_details"][data-state-fields]');
+            const activity = form.querySelector('[data-principal-activity-select="true"]');
+            const button = form.querySelector('#save_ixbrl_core_details');
+            if (!(stateSection instanceof HTMLElement)
+                || !(activity instanceof HTMLSelectElement)
+                || !(button instanceof HTMLButtonElement)) {
+                return;
+            }
+
+            const fieldIds = String(stateSection.dataset.stateFields || '')
+                .split(',')
+                .map((value) => value.trim())
+                .filter((value) => value !== '');
+            const fields = fieldIds
+                .map((fieldId) => form.querySelector(`#${CSS.escape(fieldId)}`))
+                .filter((field) => field instanceof HTMLInputElement || field instanceof HTMLSelectElement);
+            if (fields.length !== fieldIds.length) {
+                return;
+            }
+
+            const defaults = new Map();
+            fields.forEach((field) => {
+                defaults.set(field, String(field.dataset.stateDefault ?? field.value));
+            });
+            const sync = () => {
+                const changed = fields.some((field) => String(field.value) !== defaults.get(field));
+                const activitySelected = String(activity.value || '').trim() !== '' && activity.checkValidity();
+                button.disabled = activity.disabled || !activitySelected || !changed;
+            };
+
+            fields.forEach((field) => {
+                field.addEventListener('input', sync);
+                field.addEventListener('change', sync);
+            });
+            window.setTimeout(sync, 0);
+            form.dataset.ixbrlCoreDetailsBound = '1';
+        });
+    }
+
     function initialiseIxbrlTradingForms(root = document) {
         const forms = root.querySelectorAll ? root.querySelectorAll('[data-ixbrl-trading-form="true"]') : [];
 
@@ -1389,6 +1435,7 @@
     initialiseTransactionCategorisationAutosave(document);
     initialiseTransactionAutoApprovalControls(document);
     initialiseYearEndStateForms(document);
+    initialiseIxbrlCoreDetailsForms(document);
     initialiseIxbrlTradingForms(document);
     initialiseParticipatorLoanTermsForms(document);
     restoreStoredCardMaximizedStates(document);
@@ -1412,6 +1459,7 @@
                     initialiseTransactionCategorisationAutosave(node);
                     initialiseTransactionAutoApprovalControls(node);
                     initialiseYearEndStateForms(node);
+                    initialiseIxbrlCoreDetailsForms(node);
                     initialiseIxbrlTradingForms(node);
                     initialiseParticipatorLoanTermsForms(node);
                     restoreStoredCardMaximizedStates(node);

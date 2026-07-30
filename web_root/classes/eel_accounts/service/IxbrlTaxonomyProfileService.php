@@ -18,7 +18,7 @@ namespace eel_accounts\Service;
 final class IxbrlTaxonomyProfileService
 {
     public const PROFILE = 'frc-2026-frs-105';
-    public const BASIS_VERSION = 'ixbrl-accounts-v8';
+    public const BASIS_VERSION = 'ixbrl-accounts-v9';
     public const SCHEMA_REF = 'https://xbrl.frc.org.uk/FRS-102/2026-01-01/FRS-102-2026-01-01.xsd';
 
     public const NAMESPACES = [
@@ -108,6 +108,7 @@ final class IxbrlTaxonomyProfileService
             $this->mapping('equity', 'core', 'Equity', 'Equity', 'numeric', 'derived', 'equity_capital_reserves', 'instant_end', 'GBP', '2', null, true, 270),
 
             $this->mapping('average_number_employees', 'core', 'AverageNumberEmployeesDuringPeriod', 'Average number of employees', 'numeric', 'disclosure_field', 'average_number_employees', 'duration', 'pure', '0', null, true, 300),
+            $this->mapping('principal_activity_description', 'bus', 'DescriptionPrincipalActivities', 'Principal activity', 'text', 'disclosure_field', 'principal_activity_statement', 'duration', null, null, null, false, 305),
             $this->mapping('entity_dormant', 'bus', 'EntityDormantTruefalse', 'Entity dormant', 'boolean', 'disclosure_field', 'entity_dormant', 'duration', null, null, null, false, 310),
             $this->mapping('small_companies_regime_statement', 'direp', 'StatementThatAccountsHaveBeenPreparedInAccordanceWithProvisionsSmallCompaniesRegime', 'Small companies regime statement', 'text', 'disclosure_statement', 'prepared_under_small_companies_regime', 'duration', null, null, null, false, 320),
             $this->mapping('audit_exemption_statement', 'direp', 'StatementThatCompanyEntitledToExemptionFromAuditUnderSection477CompaniesAct2006RelatingToSmallCompanies', 'Audit exemption statement', 'text', 'disclosure_statement', 'audit_exempt_section_477', 'duration', null, null, null, false, 330),

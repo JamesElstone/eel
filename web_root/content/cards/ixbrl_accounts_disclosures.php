@@ -146,6 +146,21 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                 . ($selectedDirectorId === $directorId ? ' selected' : '')
                 . '>' . \eel_accounts\Support\Utf8::html($directorName) . '</option>';
         }
+        $selectedPrincipalActivityCode = trim((string)($display['principal_activity_sic_code'] ?? ''));
+        $principalActivityOptions = '<option value="" disabled'
+            . ($selectedPrincipalActivityCode === '' ? ' selected' : '')
+            . '>Please select activity...</option>';
+        foreach ((array)($result['principal_activity_suggestions'] ?? []) as $activity) {
+            $activity = (array)$activity;
+            $sicCode = trim((string)($activity['sic_code'] ?? ''));
+            $description = trim((string)($activity['description'] ?? ''));
+            if ($sicCode === '' || $description === '') {
+                continue;
+            }
+            $principalActivityOptions .= '<option value="' . \eel_accounts\Support\Utf8::html($sicCode) . '"'
+                . ($selectedPrincipalActivityCode === $sicCode ? ' selected' : '')
+                . '>' . \eel_accounts\Support\Utf8::html($sicCode . ' — ' . $description) . '</option>';
+        }
         $sourceSummary = $this->sourceSummary($suggestionSources, !empty($result['stored']));
         $profileErrors = '';
         foreach ((array)($result['profile_errors'] ?? []) as $profileError) {
@@ -220,7 +235,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                 : '');
         return '<div class="settings-stack">'
             . $approvalBlockerNotice . '
-            <form method="post" action="?page=disclosures" data-ajax="true" data-ixbrl-trading-form="true">
+            <form method="post" action="?page=disclosures" data-ajax="true" data-ixbrl-trading-form="true" data-ixbrl-core-details-form="true">
             <input type="hidden" name="card_action" value="Ixbrl">
             ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="intent" value="save_ixbrl_core_details">
@@ -238,11 +253,20 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                     : '') . '
                 ' . $profileErrors . '
             ' . $disclosureLockNotice . '
-                    <div class="form-grid" data-state-fields="ixbrl_average_number_employees,ixbrl_accounts_approval_date,ixbrl_approving_director_id" data-state-target="save_ixbrl_core_details">
+                    <div class="form-grid" data-state-fields="ixbrl_average_number_employees,ixbrl_principal_activity_sic_code,ixbrl_accounts_approval_date,ixbrl_approving_director_id" data-state-target="save_ixbrl_core_details">
                     <div class="form-row full table-scroll">
                         <table><tbody>
                             <tr><th scope="row"><label>Accounting standard</label></th><td><input class="input" value="FRS 105" readonly' . $disabledAttribute . '></td></tr>
                             <tr><th scope="row"><label for="ixbrl_average_number_employees">Average number of employees</label></th><td><input class="input" id="ixbrl_average_number_employees" name="average_number_employees" type="number" min="0" step="1" required value="' . \eel_accounts\Support\Utf8::html($this->nullableValue($display['average_number_employees'] ?? null)) . '" data-state-default="' . \eel_accounts\Support\Utf8::html($this->nullableValue($display['average_number_employees'] ?? null)) . '"' . $disabledAttribute . '></td></tr>
+                            <tr>
+                                <th scope="row"><label for="ixbrl_principal_activity_sic_code">Principal activity</label></th>
+                                <td>
+                                    <select class="select" id="ixbrl_principal_activity_sic_code" name="principal_activity_sic_code" required data-no-submit-on-change="true" data-principal-activity-select="true" data-state-default="' . \eel_accounts\Support\Utf8::html($selectedPrincipalActivityCode) . '"' . $disabledAttribute . '>
+                                        ' . $principalActivityOptions . '
+                                    </select>
+                                    <div class="helper">Select the Companies House SIC activity used in the principal activity note.</div>
+                                </td>
+                            </tr>
                             <tr><th scope="row"><label for="ixbrl_accounts_approval_date">Accounts approval date</label></th><td><div class="actions-row actions-row-nowrap"><input class="input" id="ixbrl_accounts_approval_date" name="accounts_approval_date" type="date" required value="' . \eel_accounts\Support\Utf8::html((string)($display['accounts_approval_date'] ?? '')) . '" data-state-default="' . \eel_accounts\Support\Utf8::html((string)($display['accounts_approval_date'] ?? '')) . '"' . $disabledAttribute . '><button class="button primary" type="button" data-set-today-for="ixbrl_accounts_approval_date"' . $disabledAttribute . '>Today</button></div></td></tr>
                             <tr>
                                 <th scope="row"><label for="ixbrl_approving_director_id">Director signing and approving the accounts</label></th>

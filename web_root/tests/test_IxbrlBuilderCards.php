@@ -205,6 +205,10 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
                     'appointed_on' => '2020-01-01',
                     'resigned_on' => null,
                 ]],
+                'principal_activity_suggestions' => [[
+                    'sic_code' => '43210',
+                    'description' => 'Electrical installation',
+                ]],
                 'dormancy' => [
                     'calculated' => true,
                     'entity_dormant' => 0,
@@ -247,13 +251,25 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertFalse(str_contains($html, 'name="entity_trading_status"'));
         $harness->assertTrue(str_contains($html, '<select class="select" id="ixbrl_approving_director_id" name="approving_director_id" required data-state-default="17">'));
         $harness->assertTrue(str_contains($html, '<option value="17" selected>James Elstone</option>'));
+        $harness->assertTrue(str_contains(
+            $html,
+            'id="ixbrl_principal_activity_sic_code" name="principal_activity_sic_code" required data-no-submit-on-change="true"'
+        ));
+        $harness->assertTrue(str_contains($html, '<option value="" disabled selected>Please select activity...</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="43210">43210 — Electrical installation</option>'));
+        $averageEmployeesPosition = strpos($html, 'id="ixbrl_average_number_employees"');
+        $principalActivityPosition = strpos($html, 'id="ixbrl_principal_activity_sic_code"');
         $approvalDatePosition = strpos($html, 'id="ixbrl_accounts_approval_date"');
         $approvingDirectorPosition = strpos($html, 'id="ixbrl_approving_director_id"');
         $lastUpdatedPosition = strpos($html, '<th scope="row">Last updated on</th>');
         $harness->assertTrue(
-            $approvalDatePosition !== false
+            $averageEmployeesPosition !== false
+            && $principalActivityPosition !== false
+            && $approvalDatePosition !== false
             && $approvingDirectorPosition !== false
             && $lastUpdatedPosition !== false
+            && $averageEmployeesPosition < $principalActivityPosition
+            && $principalActivityPosition < $approvalDatePosition
             && $approvalDatePosition < $approvingDirectorPosition
             && $approvingDirectorPosition < $lastUpdatedPosition
         );
@@ -274,7 +290,8 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertFalse(str_contains($html, 'value="James Elstone"'));
         $harness->assertTrue(str_contains($html, 'Required'));
         $harness->assertTrue(str_contains($html, 'Approve Company Accounts'));
-        $harness->assertTrue(str_contains($html, 'data-state-fields="ixbrl_average_number_employees,ixbrl_accounts_approval_date,ixbrl_approving_director_id"'));
+        $harness->assertTrue(str_contains($html, 'data-state-fields="ixbrl_average_number_employees,ixbrl_principal_activity_sic_code,ixbrl_accounts_approval_date,ixbrl_approving_director_id"'));
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-core-details-form="true"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_ixbrl_core_details"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_ixbrl_disclosure_field"'));
         $harness->assertTrue(str_contains($html, 'data-submit-on-change="true"'));
@@ -472,6 +489,10 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($projectJs, 'initialiseIxbrlTradingForms'));
         $harness->assertTrue(str_contains($projectJs, '[data-ixbrl-ever-traded-panel="true"]'));
         $harness->assertTrue(substr_count($projectJs, 'initialiseIxbrlTradingForms(') >= 3);
+        $harness->assertTrue(str_contains($projectJs, 'initialiseIxbrlCoreDetailsForms'));
+        $harness->assertTrue(str_contains($projectJs, '[data-principal-activity-select="true"]'));
+        $harness->assertTrue(str_contains($projectJs, 'activitySelected'));
+        $harness->assertTrue(substr_count($projectJs, 'initialiseIxbrlCoreDetailsForms(') >= 3);
     });
 });
 
@@ -1352,6 +1373,15 @@ $harness->run(_ixbrl_historyCard::class, static function (GeneratedServiceClassT
 });
 
 $harness->run(IxbrlAction::class, static function (GeneratedServiceClassTestHarness $harness, IxbrlAction $action): void {
+    $harness->check(IxbrlAction::class, 'passes the principal activity SIC code through both disclosure save paths', static function () use ($harness): void {
+        $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content'
+            . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'IxbrlAction.php');
+        $harness->assertTrue(substr_count(
+            $source,
+            "'principal_activity_sic_code' =>"
+        ) >= 2);
+    });
+
     $harness->check(IxbrlAction::class, 'delegates combined filing generation to the resumable filing-set service', static function () use ($harness): void {
         $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content'
             . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'IxbrlAction.php');

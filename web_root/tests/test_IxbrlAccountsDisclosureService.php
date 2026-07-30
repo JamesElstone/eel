@@ -53,6 +53,21 @@ $harness->run(\eel_accounts\Service\IxbrlAccountsDisclosureService::class, stati
                 'REFERENCES company_directors (id)'
             ));
             $harness->assertTrue(str_contains($directorMigration, 'HAVING COUNT(*) = 1'));
+
+            $principalActivityMigration = (string)file_get_contents(
+                dirname(__DIR__, 2)
+                . DIRECTORY_SEPARATOR . 'db_schema'
+                . DIRECTORY_SEPARATOR . 'migrations'
+                . DIRECTORY_SEPARATOR . '2026_07_31_001_ixbrl_principal_activity.sql'
+            );
+            $harness->assertTrue(str_contains(
+                $principalActivityMigration,
+                'ADD COLUMN IF NOT EXISTS principal_activity_sic_code VARCHAR(10) NULL'
+            ));
+            $harness->assertTrue(str_contains(
+                $principalActivityMigration,
+                "'bus:DescriptionPrincipalActivities'"
+            ));
         }
     );
 
@@ -140,9 +155,49 @@ $harness->run(\eel_accounts\Service\IxbrlAccountsDisclosureService::class, stati
 
     $harness->check(
         \eel_accounts\Service\IxbrlAccountsDisclosureService::class,
+        'resolves only a company SIC code and composes the principal activity statement server-side',
+        static function () use ($harness, $service): void {
+            InterfaceDB::beginTransaction();
+            try {
+                $fixture = ixbrlDisclosureFixture(false);
+                $resolve = new ReflectionMethod($service, 'resolvePrincipalActivity');
+                $resolve->setAccessible(true);
+
+                [$activity, $errors] = $resolve->invoke(
+                    $service,
+                    (int)$fixture['company_id'],
+                    '43210'
+                );
+                $harness->assertSame([], $errors);
+                $harness->assertSame('Electrical installation', (string)($activity['description'] ?? ''));
+                $harness->assertSame(
+                    'The principal activity of the company during the period was Electrical installation.',
+                    (string)($activity['statement'] ?? '')
+                );
+
+                [, $tamperedErrors] = $resolve->invoke(
+                    $service,
+                    (int)$fixture['company_id'],
+                    '99999'
+                );
+                $harness->assertTrue(str_contains(
+                    implode(' ', $tamperedErrors),
+                    'currently recorded in the company SIC codes'
+                ));
+            } finally {
+                if (InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
+                }
+            }
+        }
+    );
+
+    $harness->check(
+        \eel_accounts\Service\IxbrlAccountsDisclosureService::class,
         'saves explicit locked-period facts, audits changes, and accepts false confirmations',
         static function () use ($harness, $service): void {
-            if (!InterfaceDB::tableExists('ixbrl_accounts_disclosures')) {
+            if (!InterfaceDB::tableExists('ixbrl_accounts_disclosures')
+                || !InterfaceDB::columnExists('ixbrl_accounts_disclosures', 'principal_activity_sic_code')) {
                 $harness->skip('The iXBRL accounts disclosures migration has not been applied.');
             }
 
@@ -160,6 +215,21 @@ $harness->run(\eel_accounts\Service\IxbrlAccountsDisclosureService::class, stati
 
                 $input = ixbrlDisclosureInput($directorId);
                 $input['approving_director_name'] = 'Browser-tampered name';
+
+                $tamperedActivity = $input;
+                $tamperedActivity['principal_activity_sic_code'] = '99999';
+                $rejectedActivity = $service->save(
+                    $companyId,
+                    $periodId,
+                    $tamperedActivity,
+                    'test:tampered-activity'
+                );
+                $harness->assertSame(false, (bool)($rejectedActivity['success'] ?? true));
+                $harness->assertTrue(str_contains(
+                    implode(' ', (array)($rejectedActivity['errors'] ?? [])),
+                    'currently recorded in the company SIC codes'
+                ));
+
                 $saved = $service->save($companyId, $periodId, $input, 'test:disclosures');
                 $harness->assertSame(true, (bool)($saved['success'] ?? false));
                 $harness->assertSame(true, (bool)($saved['changed'] ?? false));
@@ -170,6 +240,12 @@ $harness->run(\eel_accounts\Service\IxbrlAccountsDisclosureService::class, stati
                 $harness->assertSame($directorId, (int)($saved['director_suggestions'][0]['id'] ?? 0));
                 $harness->assertSame('Test Director', (string)($saved['director_suggestions'][0]['full_name'] ?? ''));
                 $harness->assertSame('2020-01-01', (string)($saved['director_suggestions'][0]['appointed_on'] ?? ''));
+                $harness->assertSame('43210', (string)($saved['disclosures']['principal_activity_sic_code'] ?? ''));
+                $harness->assertSame(
+                    'The principal activity of the company during the period was Electrical installation.',
+                    (string)($saved['disclosures']['principal_activity_statement'] ?? '')
+                );
+                $harness->assertSame('43210', (string)($saved['principal_activity_suggestions'][0]['sic_code'] ?? ''));
                 $harness->assertSame(1, (int)($saved['disclosures']['entity_dormant'] ?? -1));
                 $harness->assertSame(0.0, (float)($saved['dormancy']['gross_sales'] ?? -1));
 
@@ -588,6 +664,8 @@ function ixbrlDisclosureInput(int $directorId): array
     return [
         'accounting_standard' => 'FRS_105',
         'average_number_employees' => 1,
+        'principal_activity_sic_code' => '43210',
+        'principal_activity_statement' => 'The principal activity of the company during the period was Electrical installation.',
         'entity_dormant' => 0,
         'is_still_trading' => 1,
         'micro_entity_eligibility_confirmed' => 1,
@@ -618,6 +696,7 @@ function ixbrlDisclosureFixture(bool $withFiledSuggestions): array
         'SELECT id FROM companies WHERE company_number = :company_number',
         ['company_number' => $companyNumber]
     );
+    ixbrl_test_assign_principal_activity($companyId);
     InterfaceDB::prepareExecute(
         'INSERT INTO company_directors (
             company_id, source, external_key, full_name, officer_role,

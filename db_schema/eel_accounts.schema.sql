@@ -1793,6 +1793,8 @@ CREATE TABLE `ixbrl_accounts_disclosures` (
   `accounting_period_id` int(11) NOT NULL,
   `accounting_standard` varchar(20) NOT NULL DEFAULT 'FRS_105',
   `average_number_employees` int(10) unsigned DEFAULT NULL,
+  `principal_activity_sic_code` varchar(10) DEFAULT NULL,
+  `principal_activity_statement` varchar(512) DEFAULT NULL,
   `entity_dormant` tinyint(1) DEFAULT NULL,
   `entity_trading_status` varchar(30) DEFAULT NULL,
   `micro_entity_eligibility_confirmed` tinyint(1) DEFAULT NULL,
@@ -1878,6 +1880,7 @@ INSERT INTO `ixbrl_fact_mappings` (`fact_key`,`taxonomy_concept`,`namespace_uri`
 ('net_assets_liabilities','core:NetAssetsLiabilities','http://xbrl.frc.org.uk/fr/2026-01-01/core','NetAssetsLiabilities','Net assets / liabilities','numeric','derived','net_assets_liabilities',1,'instant','GBP','2','instant_end',NULL,1,1,260,1),
 ('equity','core:Equity','http://xbrl.frc.org.uk/fr/2026-01-01/core','Equity','Equity','numeric','derived','equity_capital_reserves',1,'instant','GBP','2','instant_end',NULL,1,1,270,1),
 ('average_number_employees','core:AverageNumberEmployeesDuringPeriod','http://xbrl.frc.org.uk/fr/2026-01-01/core','AverageNumberEmployeesDuringPeriod','Average number of employees','numeric','disclosure_field','average_number_employees',1,'duration','pure','0','duration',NULL,1,1,300,1),
+('principal_activity_description','bus:DescriptionPrincipalActivities','http://xbrl.frc.org.uk/cd/2026-01-01/business','DescriptionPrincipalActivities','Principal activity','text','disclosure_field','principal_activity_statement',1,'duration',NULL,NULL,'duration',NULL,0,1,305,1),
 ('entity_dormant','bus:EntityDormantTruefalse','http://xbrl.frc.org.uk/cd/2026-01-01/business','EntityDormantTruefalse','Entity dormant','boolean','disclosure_field','entity_dormant',1,'duration',NULL,NULL,'duration',NULL,0,1,310,1),
 ('small_companies_regime_statement','direp:StatementThatAccountsHaveBeenPreparedInAccordanceWithProvisionsSmallCompaniesRegime','http://xbrl.frc.org.uk/reports/2026-01-01/direp','StatementThatAccountsHaveBeenPreparedInAccordanceWithProvisionsSmallCompaniesRegime','Small companies regime statement','text','disclosure_statement','prepared_under_small_companies_regime',1,'duration',NULL,NULL,'duration',NULL,0,1,320,1),
 ('audit_exemption_statement','direp:StatementThatCompanyEntitledToExemptionFromAuditUnderSection477CompaniesAct2006RelatingToSmallCompanies','http://xbrl.frc.org.uk/reports/2026-01-01/direp','StatementThatCompanyEntitledToExemptionFromAuditUnderSection477CompaniesAct2006RelatingToSmallCompanies','Audit exemption statement','text','disclosure_statement','audit_exempt_section_477',1,'duration',NULL,NULL,'duration',NULL,0,1,330,1),
@@ -4431,6 +4434,8 @@ INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_30_009_shared_govtalk_exchange_ledger.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_30_010_govtalk_exchange_identity.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_31_001_ixbrl_principal_activity.sql');
 
 DROP TRIGGER IF EXISTS `trg_journals_append_only_update`;
 CREATE TRIGGER `trg_journals_append_only_update`

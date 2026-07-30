@@ -17,6 +17,8 @@ final class IxbrlAccountsDisclosureService
     private const DISCLOSURE_FIELDS = [
         'accounting_standard',
         'average_number_employees',
+        'principal_activity_sic_code',
+        'principal_activity_statement',
         'entity_dormant',
         'entity_trading_status',
         'micro_entity_eligibility_confirmed',
@@ -36,6 +38,7 @@ final class IxbrlAccountsDisclosureService
     private const FIELD_LABELS = [
         'accounting_standard' => 'accounting standard',
         'average_number_employees' => 'average number of employees',
+        'principal_activity_sic_code' => 'principal activity',
         'entity_dormant' => 'dormant-company status',
         'entity_trading_status' => 'entity trading status',
         'micro_entity_eligibility_confirmed' => 'micro-entity eligibility',
@@ -91,6 +94,7 @@ final class IxbrlAccountsDisclosureService
                 'trading_status_evidence' => ['has_previous_trading_evidence' => false, 'sources' => []],
                 'trading_status_answers' => ['is_still_trading' => null, 'has_ever_traded' => null],
                 'director_suggestions' => [],
+                'principal_activity_suggestions' => [],
                 'errors' => ['The selected accounting period could not be found for this company.'],
             ];
         }
@@ -110,8 +114,9 @@ final class IxbrlAccountsDisclosureService
                 'suggested_disclosures' => [],
                 'suggestion_sources' => [],
                 'director_suggestions' => $this->directorSuggestions($companyId),
+                'principal_activity_suggestions' => $this->principalActivitySuggestions($companyId),
                 'accounting_period' => $period,
-                'errors' => ['The latest iXBRL approving-director migration has not been applied.'],
+                'errors' => ['The latest iXBRL principal-activity migration has not been applied.'],
             ];
         }
 
@@ -145,7 +150,24 @@ final class IxbrlAccountsDisclosureService
         $unsupported = $this->unsupportedProfileFields($disclosures, $companiesHouseRevisionRequired);
         $profileErrors = $this->unsupportedProfileErrors($disclosures, $companiesHouseRevisionRequired);
         $directorValidationErrors = [];
+        $principalActivityValidationErrors = [];
         if ($row !== null) {
+            [$principalActivity, $principalActivityValidationErrors] = $this->resolvePrincipalActivity(
+                $companyId,
+                $row['principal_activity_sic_code'] ?? null
+            );
+            if ($principalActivityValidationErrors === []
+                && (string)($row['principal_activity_statement'] ?? '') !== (string)($principalActivity['statement'] ?? '')) {
+                $principalActivityValidationErrors[] = 'The saved principal activity no longer matches the current SIC description. Select it again.';
+            }
+            if ($principalActivityValidationErrors !== []) {
+                $missing[] = 'principal_activity_sic_code';
+                $missing = array_values(array_unique($missing));
+                $profileErrors = array_values(array_unique(array_merge(
+                    $profileErrors,
+                    $principalActivityValidationErrors
+                )));
+            }
             [, $directorValidationErrors] = $this->resolveApprovingDirector(
                 $companyId,
                 $row['approving_director_id'] ?? null,
@@ -182,11 +204,13 @@ final class IxbrlAccountsDisclosureService
             'suggested_disclosures' => (array)($suggestions['values'] ?? []),
             'suggestion_sources' => (array)($suggestions['sources'] ?? []),
             'director_suggestions' => $this->directorSuggestions($companyId, $directorApprovalDate),
+            'principal_activity_suggestions' => $this->principalActivitySuggestions($companyId),
             'accounting_period' => $period,
             'dormancy' => $dormancy,
             'small_companies_regime' => $smallCompanies,
             'companies_house_revision_required' => $companiesHouseRevisionRequired,
             'director_validation_errors' => $directorValidationErrors,
+            'principal_activity_validation_errors' => $principalActivityValidationErrors,
             'errors' => [],
         ];
     }
@@ -199,7 +223,7 @@ final class IxbrlAccountsDisclosureService
         bool $allowPartial = false
     ): array {
         if (!$this->schemaReady()) {
-            return $this->error('The latest iXBRL approving-director migration has not been applied.');
+            return $this->error('The latest iXBRL principal-activity migration has not been applied.');
         }
 
         $period = $this->accountingPeriod($companyId, $accountingPeriodId);
@@ -233,6 +257,12 @@ final class IxbrlAccountsDisclosureService
         $tradingEvidence = $this->calculateTradingEvidence($companyId, $period, $dormancy);
         [$tradingStatus, $tradingErrors] = $this->deriveTradingStatus($input, $tradingEvidence);
         $input['entity_trading_status'] = $tradingStatus;
+        [$principalActivity, $principalActivityErrors] = $this->resolvePrincipalActivity(
+            $companyId,
+            $input['principal_activity_sic_code'] ?? null
+        );
+        $input['principal_activity_sic_code'] = $principalActivity['sic_code'] ?? null;
+        $input['principal_activity_statement'] = $principalActivity['statement'] ?? '';
         [$approvingDirector, $directorErrors] = $this->resolveApprovingDirector(
             $companyId,
             $input['approving_director_id'] ?? null,
@@ -242,7 +272,12 @@ final class IxbrlAccountsDisclosureService
         $input['approving_director_name'] = $approvingDirector['full_name'] ?? '';
         $companiesHouseRevisionRequired = $this->companiesHouseRevisionRequired($companyId, $accountingPeriodId);
         [$values, $errors] = $this->validate($input, $period, $allowPartial, $companiesHouseRevisionRequired);
-        $errors = array_values(array_unique(array_merge($tradingErrors, $directorErrors, $errors)));
+        $errors = array_values(array_unique(array_merge(
+            $tradingErrors,
+            $principalActivityErrors,
+            $directorErrors,
+            $errors
+        )));
         if ($errors !== []) {
             return ['success' => false, 'changed' => false, 'errors' => $errors];
         }
@@ -289,6 +324,8 @@ final class IxbrlAccountsDisclosureService
                         'UPDATE ' . self::TABLE . '
                          SET accounting_standard = :accounting_standard,
                              average_number_employees = :average_number_employees,
+                             principal_activity_sic_code = :principal_activity_sic_code,
+                             principal_activity_statement = :principal_activity_statement,
                              entity_dormant = :entity_dormant,
                              entity_trading_status = :entity_trading_status,
                              micro_entity_eligibility_confirmed = :micro_entity_eligibility_confirmed,
@@ -314,7 +351,9 @@ final class IxbrlAccountsDisclosureService
                     \InterfaceDB::prepareExecute(
                         'INSERT INTO ' . self::TABLE . ' (
                             company_id, accounting_period_id, accounting_standard,
-                            average_number_employees, entity_dormant, entity_trading_status,
+                            average_number_employees,
+                            principal_activity_sic_code, principal_activity_statement,
+                            entity_dormant, entity_trading_status,
                             micro_entity_eligibility_confirmed,
                             going_concern_basis_appropriate,
                             has_material_off_balance_sheet_arrangements,
@@ -330,7 +369,9 @@ final class IxbrlAccountsDisclosureService
                             created_at, updated_at
                          ) VALUES (
                             :company_id, :accounting_period_id, :accounting_standard,
-                            :average_number_employees, :entity_dormant, :entity_trading_status,
+                            :average_number_employees,
+                            :principal_activity_sic_code, :principal_activity_statement,
+                            :entity_dormant, :entity_trading_status,
                             :micro_entity_eligibility_confirmed,
                             :going_concern_basis_appropriate,
                             :has_material_off_balance_sheet_arrangements,
@@ -401,7 +442,7 @@ final class IxbrlAccountsDisclosureService
             return $this->error('Choose Yes or No before saving this disclosure.');
         }
         if (!$this->schemaReady()) {
-            return $this->error('The latest iXBRL approving-director migration has not been applied.');
+            return $this->error('The latest iXBRL principal-activity migration has not been applied.');
         }
 
         $existing = $this->get($companyId, $accountingPeriodId);
@@ -755,6 +796,14 @@ final class IxbrlAccountsDisclosureService
             $errors[] = 'Enter the average number of employees as a whole number from 0 to 1,000,000.';
         }
 
+        $principalActivitySicCode = trim((string)($input['principal_activity_sic_code'] ?? ''));
+        $principalActivityStatement = trim((string)($input['principal_activity_statement'] ?? ''));
+        if ($principalActivitySicCode === '' || $principalActivityStatement === '') {
+            $errors[] = 'Choose the principal activity from the company SIC codes.';
+        } elseif (mb_strlen($principalActivityStatement) > 512) {
+            $errors[] = 'The principal activity statement must be 512 characters or fewer.';
+        }
+
         $approvalDate = trim((string)($input['accounts_approval_date'] ?? ''));
         $date = $approvalDate !== '' ? \DateTimeImmutable::createFromFormat('!Y-m-d', $approvalDate) : false;
         $dateErrors = \DateTimeImmutable::getLastErrors();
@@ -827,6 +876,8 @@ final class IxbrlAccountsDisclosureService
         return [[
             'accounting_standard' => $standard,
             'average_number_employees' => $employees,
+            'principal_activity_sic_code' => $principalActivitySicCode !== '' ? $principalActivitySicCode : null,
+            'principal_activity_statement' => $principalActivityStatement,
             'entity_dormant' => $booleans['entity_dormant'],
             'entity_trading_status' => $tradingStatus,
             'micro_entity_eligibility_confirmed' => $booleans['micro_entity_eligibility_confirmed'],
@@ -853,6 +904,9 @@ final class IxbrlAccountsDisclosureService
                 && !$companiesHouseRevisionRequired) {
                 continue;
             }
+            if ($field === 'principal_activity_statement') {
+                continue;
+            }
             $value = $disclosures[$field] ?? null;
             if ($field === 'accounting_standard') {
                 if ((string)$value !== self::ACCOUNTING_STANDARD_FRS_105) {
@@ -876,6 +930,11 @@ final class IxbrlAccountsDisclosureService
                 }
             } elseif ($field === 'average_number_employees') {
                 if ($value === null || (int)$value < 0) {
+                    $missing[] = $field;
+                }
+            } elseif ($field === 'principal_activity_sic_code') {
+                if (trim((string)$value) === ''
+                    || trim((string)($disclosures['principal_activity_statement'] ?? '')) === '') {
                     $missing[] = $field;
                 }
             } elseif (trim((string)$value) === '') {
@@ -984,6 +1043,8 @@ final class IxbrlAccountsDisclosureService
         return [
             'accounting_standard' => self::ACCOUNTING_STANDARD_FRS_105,
             'average_number_employees' => null,
+            'principal_activity_sic_code' => null,
+            'principal_activity_statement' => null,
             'entity_dormant' => null,
             'entity_trading_status' => null,
             'micro_entity_eligibility_confirmed' => null,
@@ -1101,7 +1162,70 @@ final class IxbrlAccountsDisclosureService
     {
         return \InterfaceDB::tableExists(self::TABLE)
             && \InterfaceDB::tableExists('company_directors')
-            && \InterfaceDB::columnExists(self::TABLE, 'approving_director_id');
+            && \InterfaceDB::tableExists('sic_codes')
+            && \InterfaceDB::tableExists('sic_section')
+            && \InterfaceDB::columnExists(self::TABLE, 'approving_director_id')
+            && \InterfaceDB::columnExists(self::TABLE, 'principal_activity_sic_code')
+            && \InterfaceDB::columnExists(self::TABLE, 'principal_activity_statement');
+    }
+
+    private function principalActivitySuggestions(int $companyId): array
+    {
+        if ($companyId <= 0
+            || !\InterfaceDB::tableExists('companies')
+            || !\InterfaceDB::tableExists('sic_codes')
+            || !\InterfaceDB::tableExists('sic_section')) {
+            return [];
+        }
+
+        $profileJson = (string)(\InterfaceDB::fetchColumn(
+            'SELECT companies_house_profile_json FROM companies WHERE id = :id LIMIT 1',
+            ['id' => $companyId]
+        ) ?: '');
+        $service = new CompaniesHouseSICService();
+        $codes = $service->extractSicCodesFromProfileJson($profileJson);
+        if ($codes === []) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            $service->fetchResolvedCodes($codes),
+            static fn(array $row): bool => trim((string)($row['sic_code'] ?? '')) !== ''
+                && trim((string)($row['description'] ?? '')) !== ''
+        ));
+    }
+
+    private function resolvePrincipalActivity(int $companyId, mixed $sicCodeRaw): array
+    {
+        $sicCode = trim((string)$sicCodeRaw);
+        if ($sicCode === '') {
+            return [[], ['Choose the principal activity from the company SIC codes.']];
+        }
+
+        foreach ($this->principalActivitySuggestions($companyId) as $suggestion) {
+            $suggestion = (array)$suggestion;
+            if (trim((string)($suggestion['sic_code'] ?? '')) !== $sicCode) {
+                continue;
+            }
+            $description = trim((string)($suggestion['description'] ?? ''));
+            if ($description === '') {
+                break;
+            }
+            $description = rtrim($description, " \t\n\r\0\x0B.");
+            $statement = 'The principal activity of the company during the period was '
+                . $description . '.';
+            if (mb_strlen($statement) > 512) {
+                return [[], ['The selected principal activity description is too long for the statutory accounts.']];
+            }
+
+            return [[
+                'sic_code' => $sicCode,
+                'description' => $description,
+                'statement' => $statement,
+            ], []];
+        }
+
+        return [[], ['Choose a principal activity that is currently recorded in the company SIC codes.']];
     }
 
     private function directorSuggestions(int $companyId, string $approvalDate = ''): array

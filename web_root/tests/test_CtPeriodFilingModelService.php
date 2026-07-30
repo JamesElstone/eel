@@ -914,11 +914,13 @@ function ctPeriodFilingModelFixture(
             $companyId,
             '2024-01-31'
         );
+        $principalActivitySicCode = ixbrl_test_assign_principal_activity($companyId);
         $savedDisclosures = (new \eel_accounts\Service\IxbrlAccountsDisclosureService())->save(
             $companyId,
             $accountingPeriodId,
             [
                 'accounting_standard' => 'FRS_105', 'average_number_employees' => 1,
+                'principal_activity_sic_code' => $principalActivitySicCode,
                 'is_still_trading' => 1, 'accounts_approval_date' => '2024-01-31',
                 'approving_director_id' => (int)$approvingDirector['id'],
                 'prepared_under_small_companies_regime' => 1, 'audit_exempt_section_477' => 1,

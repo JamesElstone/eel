@@ -187,12 +187,14 @@ function ixbrlExternalValidationFixture(): array
         $companyId,
         '2025-10-31'
     );
+    $principalActivitySicCode = ixbrl_test_assign_principal_activity($companyId);
     $savedDisclosures = (new \eel_accounts\Service\IxbrlAccountsDisclosureService())->save(
         $companyId,
         $periodId,
         [
             'accounting_standard' => 'FRS_105',
             'average_number_employees' => 1,
+            'principal_activity_sic_code' => $principalActivitySicCode,
             'entity_dormant' => 0,
             'is_still_trading' => 1,
             'micro_entity_eligibility_confirmed' => 1,

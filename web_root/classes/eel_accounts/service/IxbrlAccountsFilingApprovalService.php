@@ -7,7 +7,7 @@ namespace eel_accounts\Service;
 /** Freezes the complete post-Year-End filing basis and builds its accounts facts atomically. */
 final class IxbrlAccountsFilingApprovalService
 {
-    public const BASIS_VERSION = 'accounts-filing-approval-v6';
+    public const BASIS_VERSION = 'accounts-filing-approval-v7';
     public const CT_BASIS_VERSION = 'ct-period-filing-model-v10';
     private const REQUIRED_AUDIT_AREAS = [
         'accounting_profit', 'expense_treatments', 'depreciation_capital',

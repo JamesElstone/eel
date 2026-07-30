@@ -66,6 +66,7 @@ final class IxbrlAction implements ActionInterfaceFramework
                     [
                         'accounting_standard' => $request->input('accounting_standard', 'FRS_105'),
                         'average_number_employees' => $request->input('average_number_employees', null),
+                        'principal_activity_sic_code' => $request->input('principal_activity_sic_code', null),
                         'is_still_trading' => $request->input('is_still_trading', null),
                         'has_ever_traded' => $request->input('has_ever_traded', null),
                         'accounts_approval_date' => $request->input('accounts_approval_date', null),
@@ -372,6 +373,7 @@ final class IxbrlAction implements ActionInterfaceFramework
             [
                 'accounting_standard' => $request->input('accounting_standard', 'FRS_105'),
                 'average_number_employees' => $request->input('average_number_employees', null),
+                'principal_activity_sic_code' => $request->input('principal_activity_sic_code', null),
                 'is_still_trading' => $request->input('is_still_trading', null),
                 'has_ever_traded' => $request->input('has_ever_traded', null),
                 'micro_entity_eligibility_confirmed' => $request->input('micro_entity_eligibility_confirmed', null),

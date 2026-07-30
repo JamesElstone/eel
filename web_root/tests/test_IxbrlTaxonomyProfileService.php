@@ -28,6 +28,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertFalse(array_key_exists('companies_house_revision_explanation', $mappings));
             $harness->assertSame('duration_accounts_type', (string)$mappings['accounts_type']['context_profile']);
             $harness->assertSame(
+                'bus:DescriptionPrincipalActivities',
+                (string)$mappings['principal_activity_description']['taxonomy_concept']
+            );
+            $harness->assertSame(
+                'principal_activity_statement',
+                (string)$mappings['principal_activity_description']['source_key']
+            );
+            $harness->assertSame(0, (int)$mappings['principal_activity_description']['comparative_enabled']);
+            $harness->assertSame(1, (int)$mappings['principal_activity_description']['is_required']);
+            $harness->assertSame(
                 'core:CalledUpShareCapitalNotPaidNotExpressedAsCurrentAsset',
                 (string)$mappings['called_up_share_capital_not_paid']['taxonomy_concept']
             );

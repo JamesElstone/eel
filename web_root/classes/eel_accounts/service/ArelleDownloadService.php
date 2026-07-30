@@ -32,11 +32,14 @@ final class ArelleDownloadService
         $root = rtrim(PROJECT_ROOT, '\\/') . DIRECTORY_SEPARATOR . 'third_party' . DIRECTORY_SEPARATOR . 'arelle';
         $runtime = $root . DIRECTORY_SEPARATOR . 'runtime';
         $venv = $runtime . DIRECTORY_SEPARATOR . 'venv';
+        $cache = $runtime . DIRECTORY_SEPARATOR . 'cache';
+        $this->removeDirectoryIfPresent($venv);
+        $this->removeDirectoryIfPresent($cache);
         if (!is_dir($runtime) && !mkdir($runtime, 0775, true) && !is_dir($runtime)) { throw new \RuntimeException('The Arelle runtime directory could not be created.'); }
         $this->mustRun([$python, '-m', 'venv', $venv], 'Python could not create the Arelle virtual environment.', $progress);
         $venvPython = $this->venvPython($venv);
         $this->mustRun([$venvPython, '-m', 'pip', 'install', '--upgrade', 'pip'], 'pip could not be upgraded in the Arelle environment.', $progress);
-        $this->mustRun([$venvPython, '-m', 'pip', 'install', '--upgrade', 'arelle-release==' . $version], 'Arelle could not be installed.', $progress);
+        $this->mustRun([$venvPython, '-m', 'pip', 'install', '--upgrade', 'arelle-release[esef]==' . $version], 'Arelle could not be installed.', $progress);
         $command = $this->arelleCommand($venv);
         if (!is_file($command)) { throw new \RuntimeException('Arelle installed but its command-line executable was not created.'); }
         $this->mustRun([$command, '--version'], 'The installed Arelle command did not start.', $progress);
@@ -66,6 +69,24 @@ final class ArelleDownloadService
     private function availablePythonCommand(): ?string { foreach (PHP_OS_FAMILY === 'Windows' ? ['python'] : ['python3', 'python'] as $python) { $result = $this->run([$python, '-c', 'import sys; print(sys.version_info[:2] >= (3, 10))'], 15); if ($result['exit_code'] === 0 && trim($result['stdout']) === 'True') { return $python; } } return null; }
     private function venvPython(string $venv): string { return $venv . DIRECTORY_SEPARATOR . (PHP_OS_FAMILY === 'Windows' ? 'Scripts\\python.exe' : 'bin/python'); }
     private function arelleCommand(string $venv): string { return $venv . DIRECTORY_SEPARATOR . (PHP_OS_FAMILY === 'Windows' ? 'Scripts\\arelleCmdLine.exe' : 'bin/arelleCmdLine'); }
+    private function removeDirectoryIfPresent(string $directory): void
+    {
+        if (is_link($directory)) {
+            if (!unlink($directory)) { throw new \RuntimeException('The existing Arelle runtime link could not be removed.'); }
+            return;
+        }
+        if (!is_dir($directory)) { return; }
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST
+        );
+        foreach ($iterator as $entry) {
+            $path = $entry->getPathname();
+            $removed = $entry->isLink() || $entry->isFile() ? unlink($path) : rmdir($path);
+            if (!$removed) { throw new \RuntimeException('An existing Arelle runtime directory could not be removed.'); }
+        }
+        if (!rmdir($directory)) { throw new \RuntimeException('An existing Arelle runtime directory could not be removed.'); }
+    }
     private function mustRun(array $arguments, string $message, ?callable $progress = null): void { $result = $this->run($arguments, 600, $progress); if ($result['exit_code'] !== 0) { throw new \RuntimeException($message . ' ' . trim($result['stderr'])); } }
     /** @return array{exit_code:int,stdout:string,stderr:string} */
     private function run(array $arguments, int $timeout, ?callable $progress = null): array

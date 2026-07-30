@@ -16,7 +16,7 @@ final class _tax_artifacts extends PageContextFramework
 
     public function title(): string
     {
-        return 'Rates / Thresholds / Artifacts';
+        return 'Rates / Thresholds / Artefacts';
     }
 
     public function subtitle(): string

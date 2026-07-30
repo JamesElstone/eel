@@ -12,6 +12,12 @@ final class IxbrlAction implements ActionInterfaceFramework
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
         $intent = trim((string)$request->input('intent', $request->input('global_action', '')));
+        // CT600 construction performs external-schema validation and may take
+        // longer than PHP's normal request limit.  This must be set before the
+        // first database or filesystem check for the generation action.
+        if (in_array($intent, ['generate_all_filing_ixbrl', 'generate_ct600_xml'], true)) {
+            $this->allowUnlimitedGenerationRuntime();
+        }
         $companyId = (int)$request->input('company_id', 0);
         $accountingPeriodId = (int)$request->input('accounting_period_id', 0);
         $ctPeriodId = (int)$request->input('ct_period_id', 0);
@@ -235,12 +241,21 @@ final class IxbrlAction implements ActionInterfaceFramework
             } elseif (in_array($intent, ['generate_computation_ixbrl', 'validate_computation_ixbrl', 'generate_ct600_xml'], true)) {
                 if ($intent === 'generate_ct600_xml') {
                     $progress = $services->actionProgress();
-                    $progress->report('Generating and validating the Corporation Tax CT600 XML…', 0);
+                    $progress->report('Unlimited generation timeout enabled; preparing Corporation Tax CT600 XML generation…', 0);
+                    $progress->report('Waiting for the exclusive filing-generation lock…', 1);
                     $result = $this->withFilingLock($companyId, $accountingPeriodId,
-                        fn(): array => (new \eel_accounts\Service\Ct600GenerationService())->generate($companyId, $accountingPeriodId, $ctPeriodId));
-                    if (!empty($result['success'])) {
-                        $progress->report('Corporation Tax CT600 XML generated and validated.', 100);
-                    }
+                        function () use ($companyId, $accountingPeriodId, $ctPeriodId, $progress): array {
+                            $progress->report('Exclusive filing-generation lock acquired.', 2);
+                            return (new \eel_accounts\Service\Ct600GenerationService())->generate(
+                                $companyId,
+                                $accountingPeriodId,
+                                $ctPeriodId,
+                                static function (string $message, int $percent) use ($progress): void {
+                                    $progress->report($message, $percent);
+                                }
+                            );
+                        }
+                    );
                 } elseif ($intent === 'generate_computation_ixbrl') {
                     $progress = $services->actionProgress();
                     @set_time_limit(0);
@@ -472,6 +487,16 @@ final class IxbrlAction implements ActionInterfaceFramework
             $result['messages'] = ['Computations iXBRL external validation passed for CT period #' . $ctPeriodId . '.'];
         }
         return $result;
+    }
+
+    private function allowUnlimitedGenerationRuntime(): void
+    {
+        // set_time_limit() resets the per-script timer on SAPIs that support
+        // it; ini_set covers CGI/FastCGI configurations which read the value
+        // directly.  Both are deliberately best-effort for compatibility.
+        @ini_set('max_execution_time', '0');
+        @set_time_limit(0);
+        @ignore_user_abort(true);
     }
 
     private function downloadComputation(int $companyId, int $accountingPeriodId, int $ctPeriodId): never

@@ -21,13 +21,19 @@ final class IxbrlAccountsFilingApprovalService
         $this->factBuilder = $factBuilder !== null ? \Closure::fromCallable($factBuilder) : null;
     }
 
-    public function status(int $companyId, int $accountingPeriodId): array
+    public function status(int $companyId, int $accountingPeriodId, ?callable $progress = null): array
     {
         $cacheKey = \eel_accounts\Support\RequestCache::key($companyId, $accountingPeriodId);
         return (array)\eel_accounts\Support\RequestCache::remember(
             'ixbrl.filing-approval.status',
             $cacheKey,
-            function () use ($companyId, $accountingPeriodId): array {
+            function () use ($companyId, $accountingPeriodId, $progress): array {
+        $report = static function (string $message) use ($progress): void {
+            if ($progress !== null) {
+                $progress($message);
+            }
+        };
+        $report('Checking the accounts filing-approval schema and latest approval…');
         if (!$this->schemaReady()) {
             return $this->statusResult('absent', false, null, null, [
                 'Apply the accounts filing approval migration before approving disclosures.',
@@ -36,7 +42,12 @@ final class IxbrlAccountsFilingApprovalService
 
         $latest = $this->latestApproval($companyId, $accountingPeriodId);
         try {
-            $candidate = $this->candidate($companyId, $accountingPeriodId, false);
+            $candidate = $this->candidate(
+                $companyId,
+                $accountingPeriodId,
+                false,
+                $report
+            );
         } catch (\Throwable $exception) {
             return $this->statusResult(
                 $latest === null ? 'absent' : 'stale',
@@ -47,6 +58,7 @@ final class IxbrlAccountsFilingApprovalService
             );
         }
 
+        $report('Comparing the rebuilt filing basis with the immutable approval…');
         $matching = $this->matchingApprovalForCandidate($companyId, $accountingPeriodId, $candidate);
         $current = $matching !== null;
         $errors = $current
@@ -60,6 +72,120 @@ final class IxbrlAccountsFilingApprovalService
             $errors,
             $latest
         );
+            }
+        );
+    }
+
+    /**
+     * Lightweight status for render-time consumers.
+     *
+     * A locked Year End owns the immutable calculation evidence. Rendering
+     * therefore only needs to verify the persisted approval hash and the
+     * mutable records that can explicitly invalidate it: the Year End lock,
+     * disclosure revision and Corporation Tax authorisation. Generation and
+     * transmission continue to use status(), which rebuilds the full candidate.
+     */
+    public function statusForReadModel(int $companyId, int $accountingPeriodId): array
+    {
+        $cacheKey = \eel_accounts\Support\RequestCache::key($companyId, $accountingPeriodId);
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'ixbrl.filing-approval.status-read-model',
+            $cacheKey,
+            function () use ($companyId, $accountingPeriodId): array {
+                if (!$this->schemaReady()) {
+                    return $this->statusResult('absent', false, null, null, [
+                        'Apply the accounts filing approval migration before approving disclosures.',
+                    ]);
+                }
+                $approval = $this->latestApproval($companyId, $accountingPeriodId);
+                if (!is_array($approval)) {
+                    return $this->statusResult('absent', true, null, null, [
+                        'Approve the current disclosures and filing basis before preparing CT filing output.',
+                    ]);
+                }
+
+                $errors = [];
+                $basisJson = (string)($approval['basis_json'] ?? '');
+                $basisHash = strtolower(trim((string)($approval['basis_hash'] ?? '')));
+                $basis = $basisJson !== '' ? json_decode($basisJson, true) : null;
+                if ((string)($approval['basis_version'] ?? '') !== self::BASIS_VERSION
+                    || !is_array($basis)
+                    || preg_match('/^[a-f0-9]{64}$/D', $basisHash) !== 1
+                    || !hash_equals($basisHash, hash('sha256', $basisJson))) {
+                    $errors[] = 'The approved accounts filing basis failed its integrity check.';
+                    $basis = [];
+                }
+
+                $yearEnd = \InterfaceDB::fetchOne(
+                    'SELECT id, is_locked, locked_at
+                     FROM year_end_reviews
+                     WHERE company_id = :company_id AND accounting_period_id = :period_id
+                     LIMIT 1',
+                    ['company_id' => $companyId, 'period_id' => $accountingPeriodId]
+                );
+                $frozenLock = (array)($basis['year_end_lock'] ?? []);
+                if (!is_array($yearEnd)
+                    || empty($yearEnd['is_locked'])
+                    || (int)($yearEnd['id'] ?? 0) !== (int)($frozenLock['id'] ?? 0)
+                    || !hash_equals(
+                        trim((string)($yearEnd['locked_at'] ?? '')),
+                        trim((string)($frozenLock['locked_at'] ?? ''))
+                    )
+                    || !hash_equals(
+                        trim((string)($yearEnd['locked_at'] ?? '')),
+                        trim((string)($approval['year_end_locked_at'] ?? ''))
+                    )) {
+                    $errors[] = 'The Year End lock has changed since the accounts filing approval.';
+                }
+
+                $disclosure = \InterfaceDB::fetchOne(
+                    'SELECT id, revision
+                     FROM ixbrl_accounts_disclosures
+                     WHERE company_id = :company_id AND accounting_period_id = :period_id
+                     LIMIT 1',
+                    ['company_id' => $companyId, 'period_id' => $accountingPeriodId]
+                );
+                $frozenDisclosure = (array)($basis['disclosures'] ?? []);
+                if (!is_array($disclosure)
+                    || (int)($disclosure['id'] ?? 0) !== (int)($frozenDisclosure['id'] ?? 0)
+                    || (int)($disclosure['revision'] ?? 0) !== (int)($frozenDisclosure['revision'] ?? 0)
+                    || (int)($disclosure['id'] ?? 0) !== (int)($approval['disclosure_id'] ?? 0)
+                    || (int)($disclosure['revision'] ?? 0) !== (int)($approval['disclosure_revision'] ?? 0)) {
+                    $errors[] = 'The accounts disclosures have changed since the filing approval.';
+                }
+
+                $authorisation = (new Ct600ReturnAuthorisationService())->current(
+                    $companyId,
+                    $accountingPeriodId
+                );
+                $frozenAuthorisation = (array)(
+                    $basis['corporation_tax_return_authorisation'] ?? []
+                );
+                if ($authorisation === []
+                    || $frozenAuthorisation === []
+                    || !hash_equals(
+                        $this->canonicalJson($this->authorisationBasis($authorisation)),
+                        $this->canonicalJson($frozenAuthorisation)
+                    )
+                    || !hash_equals(
+                        trim((string)($approval['declarant_name'] ?? '')),
+                        trim((string)($frozenAuthorisation['declarant_name'] ?? ''))
+                    )
+                    || !hash_equals(
+                        trim((string)($approval['declarant_status'] ?? '')),
+                        trim((string)($frozenAuthorisation['declarant_status'] ?? ''))
+                    )) {
+                    $errors[] = 'The Corporation Tax return authorisation has changed since the filing approval.';
+                }
+
+                return $this->statusResult(
+                    $errors === [] ? 'current' : 'stale',
+                    true,
+                    $approval,
+                    null,
+                    $errors,
+                    $approval
+                );
             }
         );
     }
@@ -238,12 +364,23 @@ final class IxbrlAccountsFilingApprovalService
         ));
     }
 
-    private function candidate(int $companyId, int $accountingPeriodId, bool $lock): array
+    private function candidate(
+        int $companyId,
+        int $accountingPeriodId,
+        bool $lock,
+        ?callable $progress = null
+    ): array
     {
+        $progressReport = static function (string $message) use ($progress): void {
+            if ($progress !== null) {
+                $progress($message);
+            }
+        };
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             throw new \RuntimeException('Select a company and accounting period.');
         }
         $suffix = $lock && \InterfaceDB::driverName() !== 'sqlite' ? ' FOR UPDATE' : '';
+        $progressReport('Loading the locked Year End and saved accounts disclosures…');
         $yearEnd = \InterfaceDB::fetchOne(
             'SELECT * FROM year_end_reviews WHERE company_id = :company_id AND accounting_period_id = :period_id LIMIT 1' . $suffix,
             ['company_id' => $companyId, 'period_id' => $accountingPeriodId]
@@ -258,22 +395,26 @@ final class IxbrlAccountsFilingApprovalService
         if (!is_array($disclosure)) {
             throw new \RuntimeException('Complete the accounts disclosures before approving the filing basis.');
         }
+        $progressReport('Checking the saved Corporation Tax return authorisation…');
         $authorisation = (new Ct600ReturnAuthorisationService())->current($companyId, $accountingPeriodId);
         if ($authorisation === []) {
             throw new \RuntimeException('Complete and save the Corporation Tax return authorisation before approving the filing basis.');
         }
 
+        $progressReport('Checking accounts disclosure completeness and filing profile…');
         $disclosureStatus = (new IxbrlAccountsDisclosureService())->fetch($companyId, $accountingPeriodId);
         if (empty($disclosureStatus['complete']) || empty($disclosureStatus['profile_supported'])) {
             $errors = (array)($disclosureStatus['profile_errors'] ?? $disclosureStatus['missing_labels'] ?? []);
             throw new \RuntimeException((string)($errors[0] ?? 'Complete all supported accounts disclosures before approval.'));
         }
+        $progressReport('Checking Companies House revised-accounts readiness…');
         $revisedAccounts = (new CompaniesHouseRevisedAccountsReadinessService())
             ->assess($companyId, $accountingPeriodId);
         if (!empty($revisedAccounts['applicable']) && empty($revisedAccounts['ready'])) {
             throw new \RuntimeException((string)(($revisedAccounts['errors'] ?? [])[0]
                 ?? 'Resolve the Companies House revised-accounts approval date before approval.'));
         }
+        $progressReport('Checking the supported FRS 105 return profile and CT filing scope…');
         $profile = (new Frs105YearEndProfileService())->fetch($companyId, $accountingPeriodId);
         if (empty($profile['available']) || empty($profile['pass'])) {
             throw new \RuntimeException((string)(($profile['errors'] ?? [])[0] ?? 'The FRS 105 filing profile is not supported.'));
@@ -282,6 +423,7 @@ final class IxbrlAccountsFilingApprovalService
         if (empty($filingScope['available']) || empty($filingScope['complete'])) {
             throw new \RuntimeException((string)(($filingScope['errors'] ?? [])[0] ?? 'Complete the Corporation Tax supplementary-page scope review.'));
         }
+        $progressReport('Rebuilding the approved accounts-report evidence…');
         $report = (new IxbrlAccountsReportService())->build($companyId, $accountingPeriodId);
         $companySettings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
         $utr = preg_replace('/\s+/', '', trim((string)($companySettings['utr'] ?? ''))) ?? '';
@@ -289,6 +431,7 @@ final class IxbrlAccountsFilingApprovalService
         if (!is_int($turnover) && !is_float($turnover)) {
             throw new \RuntimeException('The accounts filing basis has no numeric turnover fact to freeze.');
         }
+        $progressReport('Loading the immutable Corporation Tax period calculation evidence…');
         $periods = $this->calculationPeriods($companyId, $accountingPeriodId, $lock);
         if ($periods === []) {
             throw new \RuntimeException('No active Corporation Tax periods are available for filing approval.');

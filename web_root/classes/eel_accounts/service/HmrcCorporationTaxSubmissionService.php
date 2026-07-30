@@ -146,7 +146,11 @@ final class HmrcCorporationTaxSubmissionService
             $pending = $this->firstPending($submissions);
             $filingSnapshot = $this->filingSnapshot($companyId, $accountingPeriodId, $ctPeriodId);
             $filingDependencies = (array)($filingSnapshot['dependencies'] ?? []);
-            $manifest = $this->safeCurrentManifest($companyId, $ctPeriodId, $filingSnapshot);
+            $manifest = $this->safeCurrentManifestForStatus(
+                $companyId,
+                $ctPeriodId,
+                $filingSnapshot
+            );
             $manifestHash = (string)($manifest['source_manifest_sha256'] ?? '');
             $bodyHash = (string)($manifest['body_sha256'] ?? '');
             $latestTestAttempt = $bodyHash === ''
@@ -253,7 +257,8 @@ final class HmrcCorporationTaxSubmissionService
     public function submitTest(
         int $companyId,
         int $ctPeriodId,
-        int|string|null $actor = null
+        int|string|null $actor = null,
+        ?callable $progress = null
     ): array {
         $xmlEnvironment = $this->xmlEnvironment();
         if ($xmlEnvironment === 'DISABLED') {
@@ -264,20 +269,32 @@ final class HmrcCorporationTaxSubmissionService
             $companyId,
             $ctPeriodId,
             $xmlEnvironment === 'TEST' ? 'TEST' : 'TIL',
-            $actor
+            $actor,
+            $progress
         );
     }
 
     public function submitLive(
         int $companyId,
         int $ctPeriodId,
-        int|string|null $actor = null
+        int|string|null $actor = null,
+        ?callable $progress = null
     ): array {
-        return $this->submitMode($companyId, $ctPeriodId, 'LIVE', $actor);
+        return $this->submitMode($companyId, $ctPeriodId, 'LIVE', $actor, $progress);
     }
 
-    public function poll(int $submissionId, int|string|null $actor = null): array
+    public function poll(
+        int $submissionId,
+        int|string|null $actor = null,
+        ?callable $progress = null
+    ): array
     {
+        $report = static function (string $message, int $percent) use ($progress): void {
+            if ($progress !== null) {
+                $progress($message, $percent);
+            }
+        };
+        $report('Verifying the pending HMRC conversation…', 15);
         $xmlEnvironment = $this->xmlEnvironment();
         if ($xmlEnvironment === 'DISABLED') {
             return $this->failure('HMRC XML transmission is disabled in Application API Credentials.');
@@ -306,6 +323,7 @@ final class HmrcCorporationTaxSubmissionService
             );
         }
         if ($state === 'delete_pending') {
+            $report('Completing HMRC conversation cleanup…', 55);
             return $this->cleanup($submission, $actor);
         }
         if ($state !== 'awaiting_poll') {
@@ -332,6 +350,8 @@ final class HmrcCorporationTaxSubmissionService
         $previousAttempt = (int)$submission['poll_attempts'];
         $attempt = $previousAttempt + 1;
         $capturedResponse = null;
+        $report('Building the HMRC GovTalk poll request…', 45);
+        $report('Sending the HMRC GovTalk poll request…', 60);
         $result = $this->transport->poll(
             (string)$submission['hmrc_correlation_id'],
             (string)$submission['response_endpoint'],
@@ -339,7 +359,14 @@ final class HmrcCorporationTaxSubmissionService
             GovTalkConversationContext::fromCallbacks(
                 'hmrc',
                 (string)$submission['environment'],
-                function (array $request) use ($submissionId, $previousAttempt, $attempt, $actor): array {
+                function (array $request) use (
+                    $submissionId,
+                    $previousAttempt,
+                    $attempt,
+                    $actor,
+                    $report
+                ): array {
+                $report('Archiving the exact GovTalk poll request before sending…', 68);
                 $statement = \InterfaceDB::prepareExecute(
                     'UPDATE ' . self::SUBMISSIONS . '
                      SET poll_attempts = :attempt,
@@ -386,7 +413,13 @@ final class HmrcCorporationTaxSubmissionService
                 ]);
                 return $artifact;
                 },
-                function (array $response) use ($submissionId, $attempt, &$capturedResponse): array {
+                function (array $response) use (
+                    $submissionId,
+                    $attempt,
+                    &$capturedResponse,
+                    $report
+                ): array {
+                    $report('Capturing and verifying the HMRC poll response…', 85);
                     $capturedResponse = $this->govTalk->captureResponse(
                         $this->hmrcGovTalkIdentity(
                             $submissionId,
@@ -400,6 +433,7 @@ final class HmrcCorporationTaxSubmissionService
                 }
             )
         );
+        $report('Recording the latest HMRC conversation state and evidence…', 94);
         $this->completeHmrcGovTalkResult((string)$submission['environment'], $result);
         $result['archived_response'] = $capturedResponse;
 
@@ -410,8 +444,15 @@ final class HmrcCorporationTaxSubmissionService
         int $companyId,
         int $ctPeriodId,
         string $mode,
-        int|string|null $actor
+        int|string|null $actor,
+        ?callable $progress = null
     ): array {
+        $report = static function (string $message, int $percent) use ($progress): void {
+            if ($progress !== null) {
+                $progress($message, $percent);
+            }
+        };
+        $report('Verifying the HMRC environment, credentials and schema…', 12);
         $xmlEnvironment = $this->xmlEnvironment();
         if (!$this->environmentPermitted($mode, $xmlEnvironment)) {
             return $this->failure($xmlEnvironment === 'DISABLED'
@@ -442,6 +483,7 @@ final class HmrcCorporationTaxSubmissionService
                 ?? 'HMRC Transaction Engine credentials are not configured.'));
         }
 
+        $report('Checking the CT Period transport lock and submission history…', 20);
         $pending = $this->firstPendingSubmissionForPeriod($companyId, $ctPeriodId);
         if (is_array($pending)) {
             $message = (string)$pending['protocol_state'] === 'transport_uncertain'
@@ -460,6 +502,7 @@ final class HmrcCorporationTaxSubmissionService
             }
         }
 
+        $report('Loading and deeply verifying the prepared CT600 XML artifact…', 30);
         try {
             $package = $this->packagePreparer instanceof \Closure
                 ? ($this->packagePreparer)($companyId, $ctPeriodId, $mode)
@@ -490,6 +533,7 @@ final class HmrcCorporationTaxSubmissionService
                 $declarationErrors
             ));
         }
+        $report('Verifying the frozen approval and filing-evidence bundle…', 44);
         try {
             $evidenceBundle = (new FilingEvidenceService())->ensureCurrentBundle(
                 $companyId,
@@ -533,6 +577,7 @@ final class HmrcCorporationTaxSubmissionService
         $bodyHash = (string)$package['body_sha256'];
         $testSubmission = null;
         if ($mode === 'LIVE') {
+            $report('Verifying Test in Live acceptance for this exact CT600 body…', 52);
             $testSubmission = $this->successfulTestForHashes(
                 $companyId,
                 $ctPeriodId,
@@ -562,6 +607,7 @@ final class HmrcCorporationTaxSubmissionService
             return $this->existingResult($this->normaliseSubmission($existing));
         }
 
+        $report('Reserving the immutable HMRC submission and transport lock…', 60);
         try {
             $submissionId = $this->createPreparedSubmission(
                 $package,
@@ -613,6 +659,7 @@ final class HmrcCorporationTaxSubmissionService
             ['submission_id' => $submissionId]
         );
         $capturedResponse = null;
+        $report('Building and sending the environment-specific GovTalk wrapper…', 70);
         $result = $this->transport->submit(
             (string)$package['filing_body_xml'],
             (string)$package['utr'],
@@ -628,8 +675,10 @@ final class HmrcCorporationTaxSubmissionService
                     $bodyHash,
                     $package,
                     $actor,
-                    $govtalkEvidence
+                    $govtalkEvidence,
+                    $report
                 ): array {
+                $report('Rechecking the prepared CT600 body at the pre-send boundary…', 74);
                 // Close the small prepare/send race: the approved source basis
                 // must still be byte-identical at the pre-send boundary.
                 $current = $this->safeCurrentManifest($companyId, $ctPeriodId, [
@@ -644,6 +693,7 @@ final class HmrcCorporationTaxSubmissionService
                         'The filing source changed after preparation; no HMRC request was sent.'
                     );
                 }
+                $report('Archiving the exact GovTalk submission request before sending…', 78);
                 $artifact = $this->govTalk->captureRequest(
                     $this->hmrcGovTalkIdentity(
                         $submissionId,
@@ -711,7 +761,8 @@ final class HmrcCorporationTaxSubmissionService
                 ]);
                 return $artifact;
                 },
-                function (array $response) use ($submissionId, &$capturedResponse): array {
+                function (array $response) use ($submissionId, &$capturedResponse, $report): array {
+                    $report('Capturing and verifying the HMRC submission response…', 88);
                     $capturedResponse = $this->govTalk->captureResponse(
                         $this->hmrcGovTalkIdentity(
                             $submissionId,
@@ -726,6 +777,7 @@ final class HmrcCorporationTaxSubmissionService
             ),
             (string)$govtalkEvidence['transaction_hex']
         );
+        $report('Recording the HMRC outcome and submission evidence…', 95);
         $this->completeHmrcGovTalkResult($mode, $result);
         $result['archived_response'] = $capturedResponse;
 
@@ -1295,13 +1347,33 @@ final class HmrcCorporationTaxSubmissionService
 
     private function safeCurrentManifest(int $companyId, int $ctPeriodId, array $filingSnapshot = []): array
     {
+        return $this->resolveCurrentManifest($companyId, $ctPeriodId, $filingSnapshot, true);
+    }
+
+    private function safeCurrentManifestForStatus(
+        int $companyId,
+        int $ctPeriodId,
+        array $filingSnapshot = []
+    ): array {
+        return $this->resolveCurrentManifest($companyId, $ctPeriodId, $filingSnapshot, false);
+    }
+
+    private function resolveCurrentManifest(
+        int $companyId,
+        int $ctPeriodId,
+        array $filingSnapshot,
+        bool $deep
+    ): array
+    {
         try {
-            $current = $this->manifestResolver instanceof \Closure
-                ? ($this->manifestResolver)($companyId, $ctPeriodId)
-                : (new Ct600GenerationService($this->packages))->currentManifest(
-                    $companyId,
-                    $ctPeriodId
-                );
+            if ($this->manifestResolver instanceof \Closure) {
+                $current = ($this->manifestResolver)($companyId, $ctPeriodId);
+            } else {
+                $artifacts = new Ct600GenerationService($this->packages);
+                $current = $deep
+                    ? $artifacts->currentManifest($companyId, $ctPeriodId)
+                    : $artifacts->currentManifestForStatus($companyId, $ctPeriodId);
+            }
         } catch (\Throwable $exception) {
             return ['ok' => false, 'errors' => [$exception->getMessage()]];
         }
@@ -1504,15 +1576,26 @@ final class HmrcCorporationTaxSubmissionService
         }
 
         $approval = $this->safeReadinessCheck(
-            fn(): array => (new IxbrlAccountsFilingApprovalService())->status($companyId, $accountingPeriodId),
+            fn(): array => (new IxbrlAccountsFilingApprovalService())->statusForReadModel(
+                $companyId,
+                $accountingPeriodId
+            ),
             'The current disclosures and filing basis could not be verified.'
         );
         $basis = $this->safeReadinessCheck(
-            fn(): array => (new CtPeriodFilingModelService())->build($companyId, $accountingPeriodId, $ctPeriodId),
+            fn(): array => (new CtPeriodFilingModelService())->buildForStatus(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId
+            ),
             'The current CT-period filing basis could not be verified.'
         );
         $return = $this->safeReadinessCheck(
-            fn(): array => (new Ct600ReturnModelService())->build($companyId, $accountingPeriodId, $ctPeriodId),
+            fn(): array => (new Ct600ReturnModelService())->buildForStatus(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId
+            ),
             'The current CT600 source model could not be verified.'
         );
         $accounts = $this->safeReadinessCheck(

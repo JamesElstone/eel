@@ -278,6 +278,19 @@ final class CompaniesHouseAccountsSubmissionService
         ];
     }
 
+    /**
+     * Lightweight filing-kind lookup for services that only need to choose the
+     * statutory accounts artifact. It deliberately avoids building the full
+     * Companies House transmission context.
+     */
+    public function filingKindForArtifact(int $companyId, int $accountingPeriodId): string
+    {
+        return (string)($this->filingClassification(
+            $companyId,
+            $accountingPeriodId
+        )['filing_kind'] ?? '');
+    }
+
     public function fetchEligibility(int $companyId, int $accountingPeriodId): array
     {
         $selection = $this->selection($companyId, $accountingPeriodId);

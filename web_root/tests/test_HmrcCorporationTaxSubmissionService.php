@@ -699,5 +699,35 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                 }
             }
         );
+
+        $h->check(
+            \eel_accounts\Service\HmrcCorporationTaxSubmissionService::class,
+            'uses shallow manifest verification for card status and retains deep pre-send verification',
+            static function () use ($h): void {
+                $source = (string)file_get_contents(
+                    dirname(__DIR__) . DIRECTORY_SEPARATOR . 'classes'
+                    . DIRECTORY_SEPARATOR . 'eel_accounts' . DIRECTORY_SEPARATOR . 'service'
+                    . DIRECTORY_SEPARATOR . 'HmrcCorporationTaxSubmissionService.php'
+                );
+                $status = strstr($source, 'public function status(');
+                $status = strstr((string)$status, 'public function submitTest(', true);
+                $h->assertTrue(is_string($status));
+                $h->assertTrue(str_contains(
+                    (string)$status,
+                    'safeCurrentManifestForStatus('
+                ));
+
+                $submit = strstr($source, 'private function submitMode(');
+                $h->assertTrue(is_string($submit));
+                $h->assertTrue(str_contains((string)$submit, 'safeCurrentManifest('));
+                foreach ([
+                    'Loading and deeply verifying the prepared CT600 XML artifact',
+                    'Archiving the exact GovTalk submission request before sending',
+                    'Recording the HMRC outcome and submission evidence',
+                ] as $message) {
+                    $h->assertTrue(str_contains((string)$submit, $message));
+                }
+            }
+        );
     }
 );

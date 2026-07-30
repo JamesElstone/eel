@@ -34,16 +34,28 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
         try {
             /** @var \eel_accounts\Service\HmrcCorporationTaxSubmissionService $service */
             $service = $services->get(\eel_accounts\Service\HmrcCorporationTaxSubmissionService::class);
+            $progress = $services->actionProgress();
+            @set_time_limit(0);
+            $progress->report('Checking the selected HMRC transmission and CT Period…', 0);
             $periodStatus = $this->ctPeriodStatus($service, $companyId, $accountingPeriodId, $ctPeriodId);
             if (isset($periodStatus['error'])) {
                 return $this->result(false, [(string)$periodStatus['error']], [], $changedFacts);
             }
 
             $actor = (int)$security['user_id'];
+            $report = static function (string $message, int $percent) use ($progress): void {
+                $progress->report($message, $percent);
+            };
             if (in_array($intent, ['hmrc_submit_test', 'hmrc_submit_live'], true)) {
+                $progress->report(
+                    $intent === 'hmrc_submit_live'
+                        ? 'Preparing the approved return for LIVE HMRC transmission…'
+                        : 'Preparing the approved return for HMRC test transmission…',
+                    8
+                );
                 $command = $intent === 'hmrc_submit_test'
-                    ? $service->submitTest($companyId, $ctPeriodId, $actor)
-                    : $service->submitLive($companyId, $ctPeriodId, $actor);
+                    ? $service->submitTest($companyId, $ctPeriodId, $actor, $report)
+                    : $service->submitLive($companyId, $ctPeriodId, $actor, $report);
             } else {
                 if ($submissionId <= 0) {
                     return $this->result(false, ['Select a pending HMRC submission to check.'], [], $changedFacts);
@@ -58,7 +70,11 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
                         $changedFacts
                     );
                 }
-                $command = $service->poll($submissionId, $actor);
+                $progress->report('Preparing to check the pending HMRC conversation…', 10);
+                $command = $service->poll($submissionId, $actor, $report);
+            }
+            if (!empty($command['success'])) {
+                $progress->report('HMRC transmission processing is complete.', 100);
             }
         } catch (Throwable $exception) {
             $command = ['success' => false, 'errors' => [$exception->getMessage()], 'warnings' => []];

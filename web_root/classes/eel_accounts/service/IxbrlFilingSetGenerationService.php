@@ -159,6 +159,7 @@ final class IxbrlFilingSetGenerationService
         string $actor,
         mixed $progress = null
     ): array {
+        @ini_set('max_execution_time', '0');
         @set_time_limit(0);
         try {
             return (array)($this->lockService ?? new IxbrlFilingOperationLockService())->execute(
@@ -268,10 +269,25 @@ final class IxbrlFilingSetGenerationService
                     . ($index + 1) . ' of ' . $periodCount . '…',
                 $ct600Percent
             );
+            $ct600EndPercent = min(
+                72,
+                $ct600Percent + max(1, (int)floor($periodShare * 0.4))
+            );
             $ct600 = $this->generateCt600(
                 $companyId,
                 $accountingPeriodId,
-                $ctPeriodId
+                $ctPeriodId,
+                function (string $message, int $artifactPercent) use (
+                    $progress,
+                    $ct600Percent,
+                    $ct600EndPercent
+                ): void {
+                    $span = max(1, $ct600EndPercent - $ct600Percent);
+                    $mapped = $ct600Percent + (int)floor(
+                        max(0, min(100, $artifactPercent)) * $span / 100
+                    );
+                    $this->report($progress, $message, min(72, $mapped));
+                }
             );
             if (empty($ct600['success'])) {
                 return $this->failure(array_map(
@@ -503,18 +519,21 @@ final class IxbrlFilingSetGenerationService
     private function generateCt600(
         int $companyId,
         int $accountingPeriodId,
-        int $ctPeriodId
+        int $ctPeriodId,
+        mixed $progress = null
     ): array {
         return $this->ct600Generator !== null
             ? (array)($this->ct600Generator)(
                 $companyId,
                 $accountingPeriodId,
-                $ctPeriodId
+                $ctPeriodId,
+                $progress
             )
             : (new Ct600GenerationService())->generate(
                 $companyId,
                 $accountingPeriodId,
-                $ctPeriodId
+                $ctPeriodId,
+                is_callable($progress) ? $progress : null
             );
     }
 

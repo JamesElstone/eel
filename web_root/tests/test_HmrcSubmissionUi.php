@@ -371,7 +371,17 @@ $harness->run(HmrcSubmissionAction::class, static function (
                   'original_unfiled_confirmed'] as $field) {
             $harness->assertFalse(str_contains($source, "'" . $field . "'"));
         }
-        $harness->assertTrue(str_contains($source, 'submitTest($companyId, $ctPeriodId, $actor)'));
+        $harness->assertTrue(str_contains(
+            $source,
+            'submitTest($companyId, $ctPeriodId, $actor, $report)'
+        ));
+        foreach ([
+            'Checking the selected HMRC transmission and CT Period',
+            'Preparing the approved return for LIVE HMRC transmission',
+            'HMRC transmission processing is complete',
+        ] as $progressMessage) {
+            $harness->assertTrue(str_contains($source, $progressMessage));
+        }
         $harness->assertTrue(str_contains($source, '$submissionId !== $authorisedSubmissionId'));
         foreach (['$request->isPost()', 'isValidCsrfToken($csrfToken)', 'RoleAssignmentService::ADMIN_ROLE_ID'] as $securityGate) {
             $harness->assertTrue(str_contains($source, $securityGate));

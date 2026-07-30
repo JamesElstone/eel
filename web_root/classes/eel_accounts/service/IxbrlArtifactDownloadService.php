@@ -91,6 +91,55 @@ final class IxbrlArtifactDownloadService
         );
     }
 
+    /**
+     * Render-time revised-accounts lookup. Persisted generation and validation
+     * hashes are checked here; the full on-disk hash is rechecked before
+     * generation, download or transmission.
+     */
+    public function revisedAccountsForStatus(
+        int $companyId,
+        int $accountingPeriodId,
+        int $accountsRunId
+    ): array {
+        if ($accountsRunId <= 0) {
+            return $this->failure('missing', 'No current Accounting iXBRL artifact is available.');
+        }
+        $row = \InterfaceDB::fetchOne(
+            'SELECT id, lifecycle, ixbrl_generation_run_id, filing_type,
+                    artifact_path, artifact_sha256,
+                    revised_artifact_path, revised_artifact_sha256
+             FROM companies_house_accounts_submissions
+             WHERE company_id = :company_id
+               AND accounting_period_id = :period_id
+               AND filing_type = :filing_type
+             ORDER BY id DESC LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'period_id' => $accountingPeriodId,
+                'filing_type' => 'revised',
+            ]
+        );
+        if (!is_array($row)) {
+            return $this->failure(
+                'missing',
+                'Prepare the current shared revised accounts artifact before filing with HMRC.'
+            );
+        }
+        $error = $this->companiesHouseRowError($row, $accountsRunId);
+        if ($error !== null) {
+            return $this->failure('stale', $error);
+        }
+        return $this->verifiedFile(
+            $row,
+            !empty($row['artifact_path']) ? 'artifact_path' : 'revised_artifact_path',
+            '',
+            !empty($row['artifact_sha256']) ? 'artifact_sha256' : 'revised_artifact_sha256',
+            !empty($row['artifact_sha256']) ? 'artifact_sha256' : 'revised_artifact_sha256',
+            $accountsRunId,
+            false
+        );
+    }
+
     public function computation(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
     {
         $row = \InterfaceDB::fetchOne(
@@ -233,7 +282,8 @@ final class IxbrlArtifactDownloadService
         string $filenameKey,
         string $outputHashKey,
         string $validatedHashKey,
-        int $runId = 0
+        int $runId = 0,
+        bool $verifyFileHash = true
     ): array {
         $path = trim((string)($row[$pathKey] ?? ''));
         $outputHash = strtolower(trim((string)($row[$outputHashKey] ?? '')));
@@ -244,9 +294,11 @@ final class IxbrlArtifactDownloadService
         if ($outputHash === '' || $validatedHash === '' || !hash_equals($outputHash, $validatedHash)) {
             return $this->failure('unvalidated', 'The iXBRL artifact validation fingerprints are incomplete or mismatched.');
         }
-        $fileHash = hash_file('sha256', $path);
-        if (!is_string($fileHash) || !hash_equals($outputHash, strtolower($fileHash))) {
-            return $this->failure('tampered', 'The iXBRL artifact has changed since validation.');
+        if ($verifyFileHash) {
+            $fileHash = hash_file('sha256', $path);
+            if (!is_string($fileHash) || !hash_equals($outputHash, strtolower($fileHash))) {
+                return $this->failure('tampered', 'The iXBRL artifact has changed since validation.');
+            }
         }
         return [
             'ok' => true,

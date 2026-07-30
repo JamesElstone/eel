@@ -45,14 +45,35 @@ final class Ct600GenerationService
     }
 
     /** @return array<string,mixed> */
-    public function generate(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
+    public function generate(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        ?callable $progress = null
+    ): array
     {
+        // Retain the action-level setting when this service is invoked by a
+        // command or test harness rather than through IxbrlAction.
+        @ini_set('max_execution_time', '0');
+        @set_time_limit(0);
+        $report = static function (string $message, int $percent) use ($progress): void {
+            if ($progress !== null) {
+                $progress($message, $percent);
+            }
+        };
+        $report('Checking the prepared CT600 artifact registry…', 0);
         $schemaError = $this->schemaError();
         if ($schemaError !== null) {
             return $this->failure($schemaError);
         }
 
-        $context = $this->sourceContext($companyId, $accountingPeriodId, $ctPeriodId, true);
+        $context = $this->sourceContext(
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId,
+            true,
+            $progress
+        );
         if (empty($context['ready'])) {
             return $this->failure(
                 'The CT600 XML is not ready to generate.',
@@ -64,6 +85,7 @@ final class Ct600GenerationService
         $return = (array)$context['return'];
         $accounts = (array)$context['accounts'];
         $computation = (array)$context['computation'];
+        $report('Building the final CT600 body and attachments…', 60);
         $assembled = $this->packageTools()->assembleForGeneration(
             $companyId,
             $ctPeriodId,
@@ -77,7 +99,10 @@ final class Ct600GenerationService
             ],
             $return,
             $accounts,
-            $computation
+            $computation,
+            static function (string $message, int $percent) use ($report): void {
+                $report($message, 60 + (int)floor(max(0, min(100, $percent)) * 0.24));
+            }
         );
         if (empty($assembled['ok'])) {
             return $this->failure(
@@ -109,6 +134,7 @@ final class Ct600GenerationService
             return $this->failure('The frozen CT Period dates are invalid.');
         }
 
+        $report('Writing the checksum-named CT600 XML artifact…', 86);
         $filename = implode('_', [
             'ct600',
             $companyNumber,
@@ -137,6 +163,7 @@ final class Ct600GenerationService
         $manifestHash = hash('sha256', $manifestJson);
         $source = (array)($return['source_manifest'] ?? []);
         $validation = (array)($assembled['validation'] ?? []);
+        $report('Registering CT600 provenance and validation evidence…', 91);
         $values = [
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
@@ -188,6 +215,7 @@ final class Ct600GenerationService
         }
 
         \eel_accounts\Support\RequestCache::clear();
+        $report('Rechecking the stored CT600 file, attachments and IRmark…', 96);
         $status = $this->status($companyId, $accountingPeriodId, $ctPeriodId, true);
         if (empty($status['current'])) {
             return $this->failure(
@@ -195,6 +223,7 @@ final class Ct600GenerationService
                 (array)($status['errors'] ?? [])
             );
         }
+        $report('Corporation Tax CT600 XML generated and validated.', 100);
 
         return [
             'success' => true,
@@ -216,6 +245,34 @@ final class Ct600GenerationService
         int $accountingPeriodId,
         int $ctPeriodId,
         bool $deep = false
+    ): array {
+        if ($this->packages !== null) {
+            return $this->statusUncached($companyId, $accountingPeriodId, $ctPeriodId, $deep);
+        }
+        $cacheKey = \eel_accounts\Support\RequestCache::key(
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId,
+            $deep ? 'deep' : 'read-model'
+        );
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'ct600.generated-artifact.status',
+            $cacheKey,
+            fn(): array => $this->statusUncached(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId,
+                $deep
+            )
+        );
+    }
+
+    /** @return array<string,mixed> */
+    private function statusUncached(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        bool $deep
     ): array {
         $schemaError = $this->schemaError();
         if ($schemaError !== null) {
@@ -401,6 +458,50 @@ final class Ct600GenerationService
     }
 
     /**
+     * Render-time manifest lookup. It verifies current immutable provenance,
+     * registry integrity, the on-disk hash and basic XML identity without
+     * rerunning attachment, IRmark and RIM schema validation.
+     *
+     * @return array<string,mixed>
+     */
+    public function currentManifestForStatus(int $companyId, int $ctPeriodId): array
+    {
+        $period = $this->period($companyId, 0, $ctPeriodId);
+        if (!is_array($period)) {
+            return $this->packageFailure('The selected CT period is unavailable.');
+        }
+        $status = $this->status(
+            $companyId,
+            (int)$period['accounting_period_id'],
+            $ctPeriodId,
+            false
+        );
+        if (empty($status['current'])) {
+            return $this->packageFailure(
+                'The current CT600 XML artifact is not ready.',
+                (array)($status['errors'] ?? [])
+            );
+        }
+        $artifact = (array)$status['artifact'];
+        $manifest = json_decode((string)($artifact['source_manifest_json'] ?? ''), true);
+        if (!is_array($manifest)) {
+            return $this->packageFailure('The current CT600 source manifest is unreadable.');
+        }
+        return [
+            'ok' => true,
+            'errors' => [],
+            'warnings' => [],
+            'source_manifest' => $manifest,
+            'source_manifest_sha256' => (string)$artifact['source_manifest_sha256'],
+            'body_sha256' => (string)$artifact['sha256'],
+            'package_hash' => hash(
+                'sha256',
+                (string)$artifact['source_manifest_sha256'] . '|' . (string)$artifact['sha256']
+            ),
+        ];
+    }
+
+    /**
      * Return the current registered file after the same checks used for
      * transmission. The action owns HTTP streaming.
      *
@@ -431,18 +532,36 @@ final class Ct600GenerationService
         int $companyId,
         int $accountingPeriodId,
         int $ctPeriodId,
-        bool $deep
+        bool $deep,
+        ?callable $progress = null
     ): array {
+        $report = static function (string $message, int $percent) use ($progress): void {
+            if ($progress !== null) {
+                $progress($message, $percent);
+            }
+        };
+        $report('Verifying the selected Corporation Tax period…', 5);
         $period = $this->period($companyId, $accountingPeriodId, $ctPeriodId);
         if (!is_array($period)) {
             return ['ready' => false, 'errors' => [
                 'The selected CT period does not belong to this company and accounting period.',
             ]];
         }
-        $approvalResult = (new IxbrlAccountsFilingApprovalService())->status(
-            $companyId,
-            $accountingPeriodId
-        );
+        $approvalService = new IxbrlAccountsFilingApprovalService();
+        $report('Verifying the frozen accounts approval and return authorisation…', 12);
+        if ($deep) {
+            $approvalProgress = 12;
+            $approvalResult = $approvalService->status(
+                $companyId,
+                $accountingPeriodId,
+                static function (string $message) use (&$approvalProgress, $report): void {
+                    $approvalProgress = min(24, $approvalProgress + 2);
+                    $report($message, $approvalProgress);
+                }
+            );
+        } else {
+            $approvalResult = $approvalService->statusForReadModel($companyId, $accountingPeriodId);
+        }
         $approval = (array)($approvalResult['approval'] ?? []);
         if ((string)($approvalResult['state'] ?? '') !== 'current' || $approval === []) {
             return ['ready' => false, 'errors' => [
@@ -454,17 +573,29 @@ final class Ct600GenerationService
         if (empty($declarationResult['ok'])) {
             return ['ready' => false, 'errors' => (array)$declarationResult['errors']];
         }
-        $return = (new Ct600ReturnModelService())->build(
-            $companyId,
-            $accountingPeriodId,
-            $ctPeriodId
-        );
+        $returnService = new Ct600ReturnModelService();
+        $report('Loading and validating the supported CT600 return model…', 26);
+        if ($deep) {
+            $modelProgress = 26;
+            $return = $returnService->build(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId,
+                static function (string $message) use (&$modelProgress, $report): void {
+                    $modelProgress = min(37, $modelProgress + 2);
+                    $report($message, $modelProgress);
+                }
+            );
+        } else {
+            $return = $returnService->buildForStatus($companyId, $accountingPeriodId, $ctPeriodId);
+        }
         if (empty($return['ok'])) {
             return ['ready' => false, 'errors' => array_values(array_unique(array_merge(
                 ['The current CT600 source model is not ready.'],
                 array_map('strval', (array)($return['errors'] ?? []))
             )))];
         }
+        $report('Resolving the immutable filing-evidence bundle…', 38);
         $filingEvidence = $this->filingEvidence($approval, $companyId, $accountingPeriodId);
         if (!is_array($filingEvidence)) {
             return ['ready' => false, 'errors' => [
@@ -472,9 +603,11 @@ final class Ct600GenerationService
             ]];
         }
         $packages = $this->packageTools();
+        $report('Checking the HMRC Accounting iXBRL artifact…', 46);
         $accounts = $deep
             ? $packages->locateAccountsIxbrl($companyId, $accountingPeriodId)
             : $packages->locateAccountsIxbrlForStatus($companyId, $accountingPeriodId);
+        $report('Checking the matching Computation iXBRL artifact…', 53);
         $computation = $deep
             ? $packages->locateComputationsIxbrlForCtPeriod($companyId, $ctPeriodId)
             : $packages->locateComputationsIxbrlForStatus($companyId, $ctPeriodId);
@@ -492,6 +625,7 @@ final class Ct600GenerationService
         if ($errors !== []) {
             return ['ready' => false, 'errors' => array_values(array_unique(array_map('strval', $errors)))];
         }
+        $report('All CT600 source artifacts are current and filing-ready.', 58);
 
         return [
             'ready' => true,

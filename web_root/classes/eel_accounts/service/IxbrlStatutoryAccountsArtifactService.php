@@ -31,14 +31,26 @@ final class IxbrlStatutoryAccountsArtifactService
         }
         $filingKind = $this->filingKindLocator !== null
             ? (string)($this->filingKindLocator)($companyId, $accountingPeriodId)
-            : (string)((new CompaniesHouseAccountsSubmissionService())
-                ->fetchContext($companyId, $accountingPeriodId)['filing_kind'] ?? 'original');
+            : (new CompaniesHouseAccountsSubmissionService())
+                ->filingKindForArtifact($companyId, $accountingPeriodId);
+        if (!in_array($filingKind, ['original', 'revised'], true)) {
+            $filingKind = 'original';
+        }
         if ($filingKind !== 'revised') {
             return $ordinary;
         }
         $revised = $this->revisedLocator !== null
             ? (array)($this->revisedLocator)($companyId, $accountingPeriodId)
-            : (new IxbrlArtifactDownloadService())->revisedAccounts($companyId, $accountingPeriodId);
+            : ($approvalPinnedOnly
+                ? (new IxbrlArtifactDownloadService())->revisedAccountsForStatus(
+                    $companyId,
+                    $accountingPeriodId,
+                    (int)($ordinary['run_id'] ?? 0)
+                )
+                : (new IxbrlArtifactDownloadService())->revisedAccounts(
+                    $companyId,
+                    $accountingPeriodId
+                ));
         if (empty($revised['ok'])) {
             return $revised;
         }

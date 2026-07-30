@@ -15,12 +15,28 @@ final class CtPeriodFilingModelService
         return (array)\eel_accounts\Support\RequestCache::remember(
             'ct-period.filing-model',
             $cacheKey,
-            fn(): array => $this->buildUncached($companyId, $accountingPeriodId, $ctPeriodId)
+            fn(): array => $this->buildUncached($companyId, $accountingPeriodId, $ctPeriodId, false)
+        );
+    }
+
+    /** Lightweight immutable-basis verification for status cards. */
+    public function buildForStatus(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
+    {
+        $cacheKey = \eel_accounts\Support\RequestCache::key($companyId, $accountingPeriodId, $ctPeriodId);
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'ct-period.filing-model.status',
+            $cacheKey,
+            fn(): array => $this->buildUncached($companyId, $accountingPeriodId, $ctPeriodId, true)
         );
     }
 
     /** @return array<string,mixed> */
-    private function buildUncached(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
+    private function buildUncached(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        bool $readModel
+    ): array
     {
         if ($companyId <= 0 || $accountingPeriodId <= 0 || $ctPeriodId <= 0) {
             return $this->failure('Select a company, accounting period and CT period.');
@@ -30,7 +46,10 @@ final class CtPeriodFilingModelService
             return $this->failure('Apply the accounts filing approval migration before preparing CT filing output.');
         }
 
-        $approvalStatus = (new IxbrlAccountsFilingApprovalService())->status($companyId, $accountingPeriodId);
+        $approvalService = new IxbrlAccountsFilingApprovalService();
+        $approvalStatus = $readModel
+            ? $approvalService->statusForReadModel($companyId, $accountingPeriodId)
+            : $approvalService->status($companyId, $accountingPeriodId);
         if (($approvalStatus['state'] ?? '') !== 'current' || !is_array($approvalStatus['approval'] ?? null)) {
             return $this->failure('Approve the current disclosures and filing basis before preparing CT filing output.');
         }

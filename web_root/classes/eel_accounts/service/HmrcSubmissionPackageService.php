@@ -45,9 +45,19 @@ final class HmrcSubmissionPackageService
      */
     public function locateAccountsIxbrlForStatus(int $companyId, int $accountingPeriodId): array
     {
-        return $this->accountsLocator !== null
-            ? (array)($this->accountsLocator)($companyId, $accountingPeriodId)
-            : (new IxbrlStatutoryAccountsArtifactService())->locate($companyId, $accountingPeriodId, true);
+        if ($this->accountsLocator !== null) {
+            return (array)($this->accountsLocator)($companyId, $accountingPeriodId);
+        }
+        $cacheKey = \eel_accounts\Support\RequestCache::key($companyId, $accountingPeriodId);
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'ixbrl.statutory-accounts-artifact.status',
+            $cacheKey,
+            fn(): array => (new IxbrlStatutoryAccountsArtifactService())->locate(
+                $companyId,
+                $accountingPeriodId,
+                true
+            )
+        );
     }
 
     public function locateComputationsIxbrl(int $companyId, int $accountingPeriodId): array
@@ -144,6 +154,22 @@ final class HmrcSubmissionPackageService
         if ($this->computationLocator !== null) {
             return (array)($this->computationLocator)($companyId, $ctPeriodId);
         }
+        $cacheKey = \eel_accounts\Support\RequestCache::key($companyId, $ctPeriodId);
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'ixbrl.computation-artifact.status',
+            $cacheKey,
+            fn(): array => $this->locateComputationsIxbrlForStatusUncached(
+                $companyId,
+                $ctPeriodId
+            )
+        );
+    }
+
+    /** @return array<string,mixed> */
+    private function locateComputationsIxbrlForStatusUncached(
+        int $companyId,
+        int $ctPeriodId
+    ): array {
         $run = \InterfaceDB::fetchOne(
             'SELECT r.*, ctp.accounting_period_id
              FROM corporation_tax_periods ctp
@@ -224,8 +250,15 @@ final class HmrcSubmissionPackageService
         array $declaration,
         ?array $returnOverride = null,
         ?array $accountsOverride = null,
-        ?array $computationOverride = null
+        ?array $computationOverride = null,
+        ?callable $progress = null
     ): array {
+        $report = static function (string $message, int $percent) use ($progress): void {
+            if ($progress !== null) {
+                $progress($message, $percent);
+            }
+        };
+        $report('Resolving the CT600 return and frozen declaration…', 0);
         $period = $this->period($companyId, $ctPeriodId);
         if (!is_array($period)) {
             return $this->failure('The selected CT period does not belong to this company or is superseded.');
@@ -244,6 +277,7 @@ final class HmrcSubmissionPackageService
         if (empty($builder['ok'])) {
             return $this->failure('The CT600 filing body is not ready.', (array)($builder['errors'] ?? []));
         }
+        $report('Locating the validated Accounting and Computation iXBRLs…', 18);
         $return = (array)$builder['return_model'];
         $filingModel = (array)($return['filing_model']['model'] ?? []);
         $accounts = $accountsOverride ?? $this->locateAccountsIxbrl($companyId, $accountingPeriodId);
@@ -259,6 +293,7 @@ final class HmrcSubmissionPackageService
             return $this->failure('The filing iXBRL artifacts are not ready.', $artifactErrors);
         }
 
+        $report('Checking CT600 values against both iXBRL artifacts…', 32);
         $crossDocument = $this->crossDocumentChecks(
             $filingModel,
             $accounts,
@@ -269,6 +304,7 @@ final class HmrcSubmissionPackageService
             return $this->failure('The CT600 and iXBRL artifacts are inconsistent.', (array)$crossDocument['errors']);
         }
 
+        $report('Validating the CT600 body against the pinned RIM…', 45);
         $baseValidation = (new HmrcCt600ValidationService())->validateIrEnvelope(
             (string)$builder['filing_body_xml'],
             (array)$return['rim']
@@ -278,16 +314,20 @@ final class HmrcSubmissionPackageService
         }
 
         try {
+            $report('Embedding the Accounting and Computation iXBRLs…', 58);
             $attachedBody = $this->attachIxbrl((string)$builder['filing_body_xml'], $accounts, $computation);
+            $report('Building the temporary GovTalk validation envelope…', 68);
             $validationEnvelope = $this->validationEnvelope(
                 $attachedBody,
                 (string)$filingModel['filing_identity']['utr']
             );
+            $report('Applying and verifying the HMRC IRmark…', 78);
             $marked = (new HmrcIrmarkService())->apply($validationEnvelope);
             if (empty($marked['ok'])) {
                 return $this->failure('The generic HMRC IRmark could not be applied.', (array)($marked['errors'] ?? []));
             }
             $finalEnvelope = (string)$marked['xml'];
+            $report('Validating the final IRmarked CT600 package…', 88);
             $finalValidation = (new HmrcCt600ValidationService())->validateGovTalkEnvelope(
                 $finalEnvelope,
                 (array)$return['rim']
@@ -302,6 +342,7 @@ final class HmrcSubmissionPackageService
             return $this->failure('The immutable CT600 package could not be assembled.', [$exception->getMessage()]);
         }
 
+        $report('Recording the immutable CT600 source manifest…', 96);
         $validationArtifacts = (array)($baseValidation['artifacts']['artifacts'] ?? []);
         $artifactHashes = [];
         foreach ($validationArtifacts as $role => $artifact) {
@@ -343,6 +384,7 @@ final class HmrcSubmissionPackageService
         $manifestJson = $this->canonicalJson($sourceManifest);
         $manifestHash = hash('sha256', $manifestJson);
         $packageHash = hash('sha256', self::PACKAGE_VERSION . '|PREPARED|' . $manifestHash . '|' . $bodyHash);
+        $report('The final CT600 package is assembled and validated.', 100);
 
         return [
             'ok' => true,

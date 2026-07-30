@@ -36,7 +36,12 @@ final class Ct600ReturnModelService
     }
 
     /** @return array<string,mixed> */
-    public function build(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
+    public function build(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        ?callable $progress = null
+    ): array
     {
         // Injected collaborators are used by focused tests; cache only the
         // production path, whose result is immutable for the request.
@@ -44,25 +49,57 @@ final class Ct600ReturnModelService
             || $this->rimResolver !== null
             || $this->profileResolver !== null
             || $this->factMapper !== null) {
-            return $this->buildUncached($companyId, $accountingPeriodId, $ctPeriodId);
+            return $this->buildUncached($companyId, $accountingPeriodId, $ctPeriodId, $progress);
         }
 
         $cacheKey = \eel_accounts\Support\RequestCache::key($companyId, $accountingPeriodId, $ctPeriodId);
         return (array)\eel_accounts\Support\RequestCache::remember(
             'ct600.return-model',
             $cacheKey,
-            fn(): array => $this->buildUncached($companyId, $accountingPeriodId, $ctPeriodId)
+            fn(): array => $this->buildUncached($companyId, $accountingPeriodId, $ctPeriodId, $progress)
+        );
+    }
+
+    /** Build from the lightweight immutable filing-basis read model. */
+    public function buildForStatus(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
+    {
+        $cacheKey = \eel_accounts\Support\RequestCache::key($companyId, $accountingPeriodId, $ctPeriodId);
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'ct600.return-model.status',
+            $cacheKey,
+            function () use ($companyId, $accountingPeriodId, $ctPeriodId): array {
+                $service = new self(
+                    static fn(int $resolvedCompanyId, int $resolvedAccountingPeriodId, int $resolvedCtPeriodId): array =>
+                        (new CtPeriodFilingModelService())->buildForStatus(
+                            $resolvedCompanyId,
+                            $resolvedAccountingPeriodId,
+                            $resolvedCtPeriodId
+                        )
+                );
+                return $service->buildUncached($companyId, $accountingPeriodId, $ctPeriodId);
+            }
         );
     }
 
     /** @return array<string,mixed> */
-    private function buildUncached(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
+    private function buildUncached(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        ?callable $progress = null
+    ): array
     {
+        $report = static function (string $message) use ($progress): void {
+            if ($progress !== null) {
+                $progress($message);
+            }
+        };
         if ($companyId <= 0 || $accountingPeriodId <= 0 || $ctPeriodId <= 0) {
             return $this->failure('Select a company, accounting period and CT period.');
         }
 
         try {
+            $report('Loading the immutable CT-period filing basis…');
             $filing = $this->loadFilingModel($companyId, $accountingPeriodId, $ctPeriodId);
         } catch (\Throwable $exception) {
             return $this->failure('The approved CT-period filing basis could not be loaded.', [$exception->getMessage()]);
@@ -74,6 +111,7 @@ final class Ct600ReturnModelService
             );
         }
 
+        $report('Checking the supported CT600 return profile…');
         $model = (array)($filing['model'] ?? []);
         $errors = $this->validateFrozenModel($model, $filing, $companyId, $accountingPeriodId, $ctPeriodId);
         $supplementary = $this->supplementaryPageReasons($model);
@@ -86,6 +124,7 @@ final class Ct600ReturnModelService
             return $this->failure('The frozen return is outside the supported CT600 MVP profile.', $errors);
         }
 
+        $report('Resolving the pinned CT600 RIM package…');
         $ctPeriod = (array)$model['ct_period'];
         $rim = $this->resolveRim((string)$ctPeriod['start_date'], (string)$ctPeriod['end_date']);
         if (empty($rim['ok'])) {
@@ -103,6 +142,7 @@ final class Ct600ReturnModelService
         // Ensure a newly shipped correction is activated before resolving the
         // profile, rather than allowing a stale profile to serialize an older
         // box interpretation. Injected resolvers keep focused tests read-only.
+        $report('Resolving the approved CT600 mapping profile…');
         if ($this->profileResolver === null) {
             $mappingService = new CtFilingMappingService();
             $template = $mappingService->reviewedTemplate(
@@ -129,6 +169,7 @@ final class Ct600ReturnModelService
             return $this->failure('Activate a compatible CT600 mapping profile for the selected RIM package.');
         }
 
+        $report('Mapping frozen Corporation Tax facts to CT600 boxes…');
         $returnModel = $this->returnModel($model);
         $mappingInput = $filing;
         $mappingInput['facts'] = array_replace(
@@ -153,6 +194,7 @@ final class Ct600ReturnModelService
             return $this->failure('The active CT600 mapping profile is not deterministic.', $mappingErrors);
         }
 
+        $report('Finalising the immutable CT600 source manifest…');
         $sourceManifest = [
             'manifest_version' => 'ct600-source-manifest-v2',
             'return_model_version' => self::MODEL_VERSION,

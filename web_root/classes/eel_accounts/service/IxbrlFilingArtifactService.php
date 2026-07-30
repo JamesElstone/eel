@@ -105,13 +105,15 @@ final class IxbrlFilingArtifactService
             );
         }
 
-        $fileHash = (new IxbrlArtifactFingerprintService())->sha256($path);
-        if (!is_string($fileHash) || !hash_equals($outputHash, $fileHash)) {
-            return $this->failure(
-                'tampered',
-                'The generated accounts iXBRL file has changed since it was generated and validated.',
-                $runId
-            );
+        if (!$approvalPinnedOnly) {
+            $fileHash = (new IxbrlArtifactFingerprintService())->sha256($path);
+            if (!is_string($fileHash) || !hash_equals($outputHash, $fileHash)) {
+                return $this->failure(
+                    'tampered',
+                    'The generated accounts iXBRL file has changed since it was generated and validated.',
+                    $runId
+                );
+            }
         }
 
         return [
@@ -159,7 +161,7 @@ final class IxbrlFilingArtifactService
      */
     private function approvalPinnedFreshness(array $run): array
     {
-        $approval = (new IxbrlAccountsFilingApprovalService())->status(
+        $approval = (new IxbrlAccountsFilingApprovalService())->statusForReadModel(
             (int)($run['company_id'] ?? 0),
             (int)($run['accounting_period_id'] ?? 0)
         );

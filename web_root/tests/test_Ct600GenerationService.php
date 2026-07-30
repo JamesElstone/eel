@@ -137,5 +137,40 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 }
             }
         );
+
+        $harness->check(
+            \eel_accounts\Service\Ct600GenerationService::class,
+            'keeps render-time manifest checks shallow and reports detailed generation progress',
+            static function () use ($harness): void {
+                $source = (string)file_get_contents(
+                    dirname(__DIR__) . DIRECTORY_SEPARATOR . 'classes'
+                    . DIRECTORY_SEPARATOR . 'eel_accounts' . DIRECTORY_SEPARATOR . 'service'
+                    . DIRECTORY_SEPARATOR . 'Ct600GenerationService.php'
+                );
+                $progressSource = $source . (string)file_get_contents(
+                    dirname(__DIR__) . DIRECTORY_SEPARATOR . 'classes'
+                    . DIRECTORY_SEPARATOR . 'eel_accounts' . DIRECTORY_SEPARATOR . 'service'
+                    . DIRECTORY_SEPARATOR . 'HmrcSubmissionPackageService.php'
+                );
+                $statusManifest = strstr($source, 'public function currentManifestForStatus(');
+                $statusManifest = strstr(
+                    (string)$statusManifest,
+                    'public function downloadArtifact(',
+                    true
+                );
+                $harness->assertTrue(is_string($statusManifest));
+                $harness->assertTrue(str_contains((string)$statusManifest, 'false'));
+                $harness->assertFalse(str_contains((string)$statusManifest, 'loadForSubmission('));
+
+                foreach ([
+                    'Verifying the frozen accounts approval and return authorisation',
+                    'Checking the HMRC Accounting iXBRL artifact',
+                    'Applying and verifying the HMRC IRmark',
+                    'Rechecking the stored CT600 file, attachments and IRmark',
+                ] as $message) {
+                    $harness->assertTrue(str_contains($progressSource, $message));
+                }
+            }
+        );
     }
 );

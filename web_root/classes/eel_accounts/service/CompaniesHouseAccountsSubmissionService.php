@@ -18,6 +18,7 @@ final class CompaniesHouseAccountsSubmissionService
     private const ELIGIBILITY_TABLE = 'companies_house_accounts_eligibility';
     private const SUBMISSIONS_TABLE = 'companies_house_accounts_submissions';
     private const EVENTS_TABLE = 'companies_house_accounts_submission_events';
+    private const SCHEMA_VALIDATION_PROFILE = 'libxml-v1';
 
     public function __construct(
         private readonly ?IxbrlReadinessService $readinessService = null,
@@ -1362,12 +1363,17 @@ final class CompaniesHouseAccountsSubmissionService
                     'archive_manifest_path' => $requestArchive['manifest_path'],
                     'redacted_sha256' => hash('sha256', $preparedRequest->redactedRequestXml()),
                     'schema_files' => (array)($schema['files'] ?? []),
+                    'schema_validation_profile' => (string)(
+                        $schema['validation_profile'] ?? ''
+                    ),
                 ],
             ]);
             $this->appendSchemaValidation(
                 $submissionId,
                 'accounts',
-                (array)($schema['files'] ?? [])
+                (array)($schema['files'] ?? []),
+                null,
+                (string)($schema['validation_profile'] ?? '')
             );
         } catch (\Throwable $exception) {
             $message = 'Companies House pre-submission validation failed; nothing was sent. ' . $exception->getMessage();
@@ -3807,12 +3813,21 @@ final class CompaniesHouseAccountsSubmissionService
         int $submissionId,
         string $operation,
         array $files,
-        ?int $preflightId = null
+        ?int $preflightId = null,
+        string $validationProfile = ''
     ): void {
-        if ($submissionId <= 0 || $files === []) {
+        if ($submissionId <= 0
+            || $files === []
+            || $validationProfile !== self::SCHEMA_VALIDATION_PROFILE) {
             throw new \RuntimeException('Complete Companies House schema validation evidence is required.');
         }
-        \InterfaceDB::transaction(function () use ($submissionId, $operation, $files, $preflightId): void {
+        \InterfaceDB::transaction(function () use (
+            $submissionId,
+            $operation,
+            $files,
+            $preflightId,
+            $validationProfile
+        ): void {
             $lock = \InterfaceDB::driverName() === 'sqlite' ? '' : ' FOR UPDATE';
             $row = \InterfaceDB::fetchOne(
                 'SELECT filing_metadata_json FROM ' . self::SUBMISSIONS_TABLE
@@ -3846,6 +3861,7 @@ final class CompaniesHouseAccountsSubmissionService
                     'source_url' => (string)$file['source_url'],
                     'relative_path' => (string)$file['relative_path'],
                     'sha256' => (string)$file['sha256'],
+                    'validation_profile' => $validationProfile,
                 ];
             }
             $metadata['schema_validations'] = $validations;
@@ -3875,6 +3891,7 @@ final class CompaniesHouseAccountsSubmissionService
                 : [];
         $batch = null;
         $files = [];
+        $validationProfile = '';
         for ($index = count($validations) - 1; $index >= 0; $index--) {
             $validation = $validations[$index] ?? null;
             if (!is_array($validation)
@@ -3882,12 +3899,21 @@ final class CompaniesHouseAccountsSubmissionService
                 continue;
             }
             if (is_array($validation['files'] ?? null) && $validation['files'] !== []) {
-                return ['files' => array_values($validation['files'])];
+                return [
+                    'files' => array_values($validation['files']),
+                    'validation_profile' => (string)(
+                        $validation['validation_profile']
+                            ?? self::SCHEMA_VALIDATION_PROFILE
+                    ),
+                ];
             }
             $validationBatch = (string)($validation['validated_at'] ?? '')
                 . '|' . (string)($validation['preflight_id'] ?? '');
             if ($batch === null) {
                 $batch = $validationBatch;
+                $validationProfile = (string)(
+                    $validation['validation_profile'] ?? ''
+                );
             } elseif ($validationBatch !== $batch) {
                 break;
             }
@@ -3902,7 +3928,12 @@ final class CompaniesHouseAccountsSubmissionService
             }
         }
         if ($files !== []) {
-            return ['files' => $files];
+            return [
+                'files' => $files,
+                'validation_profile' => $validationProfile !== ''
+                    ? $validationProfile
+                    : self::SCHEMA_VALIDATION_PROFILE,
+            ];
         }
         throw new \RuntimeException(
             'The Companies House submission has no recorded schema validation evidence.'

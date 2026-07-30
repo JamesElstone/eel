@@ -25,8 +25,8 @@ final class CompaniesHouseSchemaArtifactsAction implements ActionInterfaceFramew
                 : (new \eel_accounts\Service\CompaniesHouseAccountsSchemaService())
                     ->refreshInstalledSchemas($services->actionProgress());
             $message = !empty($result['changed'])
-                ? 'The Companies House filing schemas were downloaded, verified and installed.'
-                : 'The Companies House filing schemas are current and verified.';
+                ? 'The Companies House filing schemas and validation assets were downloaded, compiled and installed.'
+                : 'The Companies House filing schemas and validation assets are current and compiled.';
             return $this->result(true, $message);
         } catch (Throwable $exception) {
             return $this->result(false, 'Companies House schema refresh failed: ' . $exception->getMessage());

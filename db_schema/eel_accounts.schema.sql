@@ -343,6 +343,10 @@ CREATE TABLE `companies_house_schema_files` (
   `target_namespace` varchar(1000) DEFAULT NULL,
   `file_size` bigint(20) NOT NULL,
   `sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `validation_profile` varchar(64) DEFAULT NULL,
+  `validation_relative_path` varchar(500) DEFAULT NULL,
+  `validation_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `validation_verified_at` datetime DEFAULT NULL,
   `etag` varchar(255) DEFAULT NULL,
   `last_modified` varchar(255) DEFAULT NULL,
   `checked_at` datetime NOT NULL,
@@ -352,7 +356,8 @@ CREATE TABLE `companies_house_schema_files` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_ch_schema_file_url` (`source_url`),
   UNIQUE KEY `uq_ch_schema_file_path` (`relative_path`),
-  KEY `idx_ch_schema_file_role_status` (`file_role`,`catalogue_status`)
+  KEY `idx_ch_schema_file_role_status` (`file_role`,`catalogue_status`),
+  KEY `idx_ch_schema_validation_profile` (`validation_profile`,`validation_verified_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE `companies_house_schema_dependencies` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
@@ -4368,6 +4373,8 @@ INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_30_004_filing_authority_roles.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_30_005_companies_house_authentication_checks.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_30_006_companies_house_schema_validation_assets.sql');
 
 DROP TRIGGER IF EXISTS `trg_journals_append_only_update`;
 CREATE TRIGGER `trg_journals_append_only_update`

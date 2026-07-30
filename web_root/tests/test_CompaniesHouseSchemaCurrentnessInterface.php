@@ -34,6 +34,22 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 (string)$source,
                 "->installedSchemasForOperation('company_data')"
             ));
+            $harness->assertFalse(str_contains(
+                (string)$source,
+                'CompaniesHouseSchemaCompatibilityService'
+            ));
+            $harness->assertFalse(str_contains((string)$source, 'prepareAndCompile('));
+            $validatorPath = (new ReflectionClass(
+                \eel_accounts\Service\CompaniesHouseAccountsSchemaValidator::class
+            ))->getFileName();
+            $validatorSource = is_string($validatorPath)
+                ? file_get_contents($validatorPath)
+                : false;
+            $harness->assertTrue(is_string($validatorSource));
+            $harness->assertFalse(str_contains(
+                (string)$validatorSource,
+                'CompaniesHouseSchemaCompatibilityService'
+            ));
         });
     }
 );

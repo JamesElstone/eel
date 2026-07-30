@@ -278,7 +278,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             static function () use ($harness): void {
                 $method = new ReflectionMethod(
                     \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
-                    'submitAccounts'
+                    'submitRevision'
                 );
                 $path = $method->getFileName();
                 $source = is_string($path) ? file($path) : false;

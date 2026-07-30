@@ -22,7 +22,7 @@ final class _tax_companies_house_accounts_schemasCard extends CardBaseFramework
 
     public function helper(array $context): string
     {
-        return 'Download, verify and install the pinned XML Gateway schemas used for Companies House accounts filing. Preflight and submission use only the installed files and never download schemas themselves.';
+        return 'Download the official XML Gateway schemas and compile the durable libxml validation assets used for Companies House filing. Authentication and submission only read the installed files and never download or repair schemas.';
     }
 
     public function render(array $context): string
@@ -39,17 +39,26 @@ final class _tax_companies_house_accounts_schemasCard extends CardBaseFramework
                 )
                 . '</div>';
         } else {
-            $html .= '<div class="summary-grid three">'
+            $html .= '<div class="summary-grid">'
                 . $this->metric('State', 'Verified')
                 . $this->metric('Files', (string)($state['file_count'] ?? 0))
-                . $this->metric('Last checked', (string)($state['checked_at'] ?? ''))
+                . $this->metric(
+                    'Validation profile',
+                    (string)($state['validation_profile'] ?? '')
+                )
+                . $this->metric(
+                    'Last compilation',
+                    (string)($state['validation_verified_at'] ?? '')
+                )
                 . '</div>';
         }
         $html .= '<div class="table-scroll"><table><thead><tr>'
-            . '<th>Schema</th><th>Role</th><th>Relative path</th><th>Lifecycle</th><th>SHA-256</th><th>Last verification</th>'
+            . '<th>Schema</th><th>Role</th><th>Official path</th><th>Lifecycle</th>'
+            . '<th>Official SHA-256</th><th>Validation profile</th>'
+            . '<th>Validation SHA-256</th><th>Last compilation</th>'
             . '</tr></thead><tbody>';
         if ($files === []) {
-            $html .= '<tr><td colspan="6">No installed Companies House schema files.</td></tr>';
+            $html .= '<tr><td colspan="8">No installed Companies House schema files.</td></tr>';
         }
         foreach ($files as $file) {
             $statusLabel = trim((string)($file['catalogue_status'] ?? ''));
@@ -66,7 +75,17 @@ final class _tax_companies_house_accounts_schemasCard extends CardBaseFramework
                 . '</td><td><code>'
                 . \eel_accounts\Support\Utf8::html((string)($file['sha256'] ?? ''))
                 . '</code></td><td>'
-                . \eel_accounts\Support\Utf8::html((string)($file['verified_at'] ?? ''))
+                . \eel_accounts\Support\Utf8::html(
+                    (string)($file['validation_profile'] ?? '')
+                )
+                . '</td><td><code>'
+                . \eel_accounts\Support\Utf8::html(
+                    (string)($file['validation_sha256'] ?? '')
+                )
+                . '</code></td><td>'
+                . \eel_accounts\Support\Utf8::html(
+                    (string)($file['validation_verified_at'] ?? '')
+                )
                 . '</td></tr>';
         }
         return $html . '</tbody></table></div></div>';

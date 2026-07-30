@@ -24,11 +24,15 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
     private ?\Closure $fetcher;
     private string $cacheDirectory;
     private string $stagingDirectory;
+    private string $validationDirectory;
+    private CompaniesHouseSchemaCompatibilityService $compatibilityService;
 
     public function __construct(
         ?callable $fetcher = null,
         ?string $cacheDirectory = null,
-        ?string $stagingDirectory = null
+        ?string $stagingDirectory = null,
+        ?string $validationDirectory = null,
+        ?CompaniesHouseSchemaCompatibilityService $compatibilityService = null
     )
     {
         $this->fetcher = $fetcher === null ? null : \Closure::fromCallable($fetcher);
@@ -40,6 +44,14 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
             $stagingDirectory ?? $this->configuredStagingDirectory(),
             '/\\'
         );
+        $this->validationDirectory = rtrim(
+            $validationDirectory
+                ?? dirname($this->cacheDirectory) . '/validation/'
+                    . CompaniesHouseSchemaCompatibilityService::PROFILE,
+            '/\\'
+        );
+        $this->compatibilityService = $compatibilityService
+            ?? new CompaniesHouseSchemaCompatibilityService();
     }
 
     public function fetchStatus(): array
@@ -54,6 +66,10 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
                 'file_count' => count((array)$installed['files']),
                 'checked_at' => (string)($installed['checked_at'] ?? ''),
                 'verified_at' => (string)($installed['verified_at'] ?? ''),
+                'validation_profile' => (string)($installed['validation_profile'] ?? ''),
+                'validation_verified_at' => (string)(
+                    $installed['validation_verified_at'] ?? ''
+                ),
                 'error' => '',
             ];
             $files = (array)$installed['files'];
@@ -69,6 +85,8 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
                 'file_count' => count($files),
                 'checked_at' => $files === [] ? '' : max(array_column($files, 'checked_at')),
                 'verified_at' => $files === [] ? '' : max(array_column($files, 'verified_at')),
+                'validation_profile' => '',
+                'validation_verified_at' => '',
                 'error' => $exception->getMessage(),
             ];
         }
@@ -110,6 +128,12 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
                     'file_count' => count((array)$installed['files']),
                     'checked_at' => (string)($installed['checked_at'] ?? ''),
                     'verified_at' => (string)($installed['verified_at'] ?? ''),
+                    'validation_profile' => (string)(
+                        $installed['validation_profile'] ?? ''
+                    ),
+                    'validation_verified_at' => (string)(
+                        $installed['validation_verified_at'] ?? ''
+                    ),
                     'error' => '',
                 ],
                 'files' => (array)$installed['files'],
@@ -121,6 +145,8 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
                     'file_count' => 0,
                     'checked_at' => '',
                     'verified_at' => '',
+                    'validation_profile' => '',
+                    'validation_verified_at' => '',
                     'error' => $exception->getMessage(),
                 ],
                 'files' => [],
@@ -188,6 +214,35 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
                 );
             }
             $document = $this->loadXml($xml, $url);
+            $validationProfile = trim((string)($file['validation_profile'] ?? ''));
+            $validationRelativePath = ltrim(str_replace(
+                '\\',
+                '/',
+                trim((string)($file['validation_relative_path'] ?? ''))
+            ), '/');
+            $validationHash = strtolower(trim((string)(
+                $file['validation_sha256'] ?? ''
+            )));
+            if ($validationProfile !== CompaniesHouseSchemaCompatibilityService::PROFILE
+                || $validationRelativePath === ''
+                || preg_match('/^[a-f0-9]{64}$/D', $validationHash) !== 1
+                || trim((string)($file['validation_verified_at'] ?? '')) === '') {
+                throw new \RuntimeException(
+                    'The installed Companies House schema validation assets are incomplete. '
+                    . 'Refresh them from Artefacts before filing.'
+                );
+            }
+            $validationPath = $this->validationDirectory . '/' . $validationRelativePath;
+            $actualValidationHash = is_file($validationPath)
+                ? hash_file('sha256', $validationPath)
+                : false;
+            if (!is_string($actualValidationHash)
+                || !hash_equals($validationHash, strtolower($actualValidationHash))) {
+                throw new \RuntimeException(
+                    'An installed Companies House schema validation asset is missing or has changed. '
+                    . 'Refresh it from Artefacts before filing.'
+                );
+            }
             $xpath = new \DOMXPath($document);
             $xpath->registerNamespace('xs', 'http://www.w3.org/2001/XMLSchema');
             $recordedChildren = array_fill_keys($children[$url] ?? [], true);
@@ -232,9 +287,15 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
             'success' => true,
             'changed' => false,
             'root_path' => $this->cacheDirectory,
+            'validation_root_path' => $this->validationDirectory,
+            'validation_profile' => CompaniesHouseSchemaCompatibilityService::PROFILE,
             'files' => $files,
             'checked_at' => max(array_column($selected, 'checked_at')),
             'verified_at' => max(array_column($selected, 'verified_at')),
+            'validation_verified_at' => max(array_column(
+                $selected,
+                'validation_verified_at'
+            )),
         ];
     }
 
@@ -259,7 +320,6 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
     {
         $statusResponse = $this->fetch(self::SOURCE_URL);
         $catalogue = $this->parseCatalogue($statusResponse['body']);
-        $this->persistCatalogue($catalogue);
         foreach (self::ROOTS as $key => $url) {
             if ($key === 'envelope') {
                 continue; // The envelope schema is not consistently listed on SchemaStatus.
@@ -274,17 +334,31 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
         $this->ensureDirectory($staging);
         try {
             [$files, $edges] = $this->downloadClosure($staging, $catalogue, $progress);
+            $this->progress(
+                $progress,
+                'Preparing the Companies House libxml validation assets.',
+                66
+            );
+            $validationStaging = $staging . '/.validation';
+            $files = $this->compatibilityService->prepareAndCompile(
+                $staging,
+                $validationStaging,
+                $files,
+                self::ROOTS
+            );
             $changed = $this->inventoryChanged($files, $edges);
             $this->publishFiles($staging, $files);
+            $this->publishValidationFiles($validationStaging, $files);
             $this->removeTree($staging);
+            $this->persistCatalogue($catalogue);
             $this->persistInventory($files, $edges);
             $installed = $this->installedSchemas();
             $installed['changed'] = $changed;
             $this->progress(
                 $progress,
                 $changed
-                    ? 'Companies House XML schemas verified and installed.'
-                    : 'Companies House XML schemas are current.',
+                    ? 'Companies House XML schemas and validation assets verified and installed.'
+                    : 'Companies House XML schemas and validation assets are current.',
                 70
             );
             return $installed;
@@ -305,8 +379,18 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
             'file_role' => (string)$file['file_role'],
             'catalogue_status' => $file['catalogue_status'] ?? null,
             'sha256' => strtolower((string)$file['sha256']),
+            'validation_profile' => (string)($file['validation_profile'] ?? ''),
+            'validation_relative_path' => (string)(
+                $file['validation_relative_path'] ?? ''
+            ),
+            'validation_sha256' => strtolower((string)(
+                $file['validation_sha256'] ?? ''
+            )),
             'checked_at' => (string)($file['checked_at'] ?? ''),
             'verified_at' => (string)($file['verified_at'] ?? ''),
+            'validation_verified_at' => (string)(
+                $file['validation_verified_at'] ?? ''
+            ),
         ];
     }
 
@@ -320,9 +404,43 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
         }
     }
 
+    /** @param array<string,array<string,mixed>> $files */
+    private function publishValidationFiles(string $staging, array $files): void
+    {
+        foreach ($files as $file) {
+            $relativePath = ltrim(str_replace(
+                '\\',
+                '/',
+                (string)$file['validation_relative_path']
+            ), '/');
+            $source = $staging . '/' . $relativePath;
+            $this->publishFileToRoot(
+                $this->validationDirectory,
+                $source,
+                $relativePath,
+                strtolower((string)$file['validation_sha256'])
+            );
+        }
+    }
+
     private function publishFile(string $source, string $relativePath, string $expectedHash): void
     {
-        $target = $this->cacheDirectory . '/' . ltrim(str_replace('\\', '/', $relativePath), '/');
+        $this->publishFileToRoot(
+            $this->cacheDirectory,
+            $source,
+            $relativePath,
+            $expectedHash
+        );
+    }
+
+    private function publishFileToRoot(
+        string $root,
+        string $source,
+        string $relativePath,
+        string $expectedHash
+    ): void {
+        $target = rtrim($root, '/\\') . '/'
+            . ltrim(str_replace('\\', '/', $relativePath), '/');
         if (is_file($target)) {
             $actual = hash_file('sha256', $target);
             if (!is_string($actual) || !hash_equals($expectedHash, strtolower($actual))) {
@@ -483,7 +601,8 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
     private function inventoryChanged(array $files, array $edges): bool
     {
         $storedFiles = \InterfaceDB::fetchAll(
-            'SELECT source_url, relative_path, file_role, catalogue_status, sha256
+            'SELECT source_url, relative_path, file_role, catalogue_status, sha256,
+                    validation_profile, validation_relative_path, validation_sha256
              FROM companies_house_schema_files ORDER BY source_url'
         );
         $expectedFiles = array_map(
@@ -493,6 +612,9 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
                 'file_role' => (string)$file['file_role'],
                 'catalogue_status' => $file['catalogue_status'],
                 'sha256' => (string)$file['sha256'],
+                'validation_profile' => (string)$file['validation_profile'],
+                'validation_relative_path' => (string)$file['validation_relative_path'],
+                'validation_sha256' => (string)$file['validation_sha256'],
             ],
             array_values($files)
         );
@@ -506,7 +628,13 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
                 || (string)$stored['relative_path'] !== $file['relative_path']
                 || (string)$stored['file_role'] !== $file['file_role']
                 || (string)($stored['catalogue_status'] ?? '') !== (string)($file['catalogue_status'] ?? '')
-                || !hash_equals(strtolower((string)$stored['sha256']), strtolower($file['sha256']))) {
+                || !hash_equals(strtolower((string)$stored['sha256']), strtolower($file['sha256']))
+                || (string)($stored['validation_profile'] ?? '') !== $file['validation_profile']
+                || (string)($stored['validation_relative_path'] ?? '') !== $file['validation_relative_path']
+                || !hash_equals(
+                    strtolower((string)($stored['validation_sha256'] ?? '')),
+                    strtolower($file['validation_sha256'])
+                )) {
                 return true;
             }
         }
@@ -562,6 +690,10 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
                     'namespace'=>$file['target_namespace'], 'size'=>$file['file_size'],
                     'sha'=>$file['sha256'], 'etag'=>$file['etag'],
                     'modified'=>$file['last_modified'], 'checked'=>$now, 'verified'=>$now,
+                    'validation_profile'=>$file['validation_profile'],
+                    'validation_path'=>$file['validation_relative_path'],
+                    'validation_sha'=>$file['validation_sha256'],
+                    'validation_verified'=>$file['validation_verified_at'],
                 ];
                 if (is_array($existing)) {
                     $params['id'] = (int)$existing['id'];
@@ -570,7 +702,11 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
                          SET relative_path=:path, schema_name=:name, file_role=:role,
                              catalogue_status=:status, target_namespace=:namespace,
                              file_size=:size, sha256=:sha, etag=:etag,
-                             last_modified=:modified, checked_at=:checked, verified_at=:verified
+                             last_modified=:modified, checked_at=:checked, verified_at=:verified,
+                             validation_profile=:validation_profile,
+                             validation_relative_path=:validation_path,
+                             validation_sha256=:validation_sha,
+                             validation_verified_at=:validation_verified
                          WHERE id=:id',
                         $params
                     );
@@ -579,9 +715,12 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
                     \InterfaceDB::prepareExecute(
                         'INSERT INTO companies_house_schema_files
                          (source_url,relative_path,schema_name,file_role,catalogue_status,
-                          target_namespace,file_size,sha256,etag,last_modified,checked_at,verified_at)
+                          target_namespace,file_size,sha256,etag,last_modified,checked_at,verified_at,
+                          validation_profile,validation_relative_path,validation_sha256,
+                          validation_verified_at)
                          VALUES (:url,:path,:name,:role,:status,:namespace,:size,:sha,:etag,
-                                 :modified,:checked,:verified)',
+                                 :modified,:checked,:verified,:validation_profile,:validation_path,
+                                 :validation_sha,:validation_verified)',
                         $params
                     );
                     $ids[$url] = $this->lastInsertId();

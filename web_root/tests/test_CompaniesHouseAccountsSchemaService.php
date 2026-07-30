@@ -61,24 +61,49 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     . DIRECTORY_SEPARATOR . 'assets';
                 $staging = test_tmp_directory() . DIRECTORY_SEPARATOR
                     . 'companies-house-schema-staging-' . bin2hex(random_bytes(5));
+                $validation = $testRoot . DIRECTORY_SEPARATOR . 'companies_house'
+                    . DIRECTORY_SEPARATOR . 'validation'
+                    . DIRECTORY_SEPARATOR . 'libxml-v1';
                 $service = new \eel_accounts\Service\CompaniesHouseAccountsSchemaService(
                     $fetcher,
                     $cache,
-                    $staging
+                    $staging,
+                    $validation
                 );
                 $first = $service->refreshInstalledSchemas();
                 $second = $service->refreshInstalledSchemas();
                 $harness->assertSame(true, $first['success']);
                 $harness->assertSame(true, $first['changed']);
                 $harness->assertSame(false, $second['changed']);
-                $harness->assertSame($first['files'], $second['files']);
+                $fileIdentities = static function (array $files): array {
+                    foreach ($files as &$file) {
+                        unset(
+                            $file['checked_at'],
+                            $file['verified_at'],
+                            $file['validation_verified_at']
+                        );
+                    }
+                    unset($file);
+                    return $files;
+                };
+                $harness->assertSame(
+                    $fileIdentities($first['files']),
+                    $fileIdentities($second['files'])
+                );
                 $harness->assertSame($cache, $first['root_path']);
+                $harness->assertSame($validation, $first['validation_root_path']);
+                $harness->assertSame('libxml-v1', $first['validation_profile']);
                 $harness->assertTrue(
                     is_file($cache . DIRECTORY_SEPARATOR . 'v1-0'
                         . DIRECTORY_SEPARATOR . 'schema' . DIRECTORY_SEPARATOR
                         . 'CompanyData-v3-6.xsd')
                 );
                 $harness->assertFalse(is_dir($cache . DIRECTORY_SEPARATOR . 'snapshots'));
+                $harness->assertTrue(is_file(
+                    $validation . DIRECTORY_SEPARATOR . 'v1-0'
+                        . DIRECTORY_SEPARATOR . 'schema' . DIRECTORY_SEPARATOR
+                        . 'CompanyData-v3-6.xsd'
+                ));
                 $harness->assertTrue(in_array("$host/v1-0/schema/forms/FormCommon-v1-0.xsd", $calls, true));
                 $harness->assertSame(7, (int)\InterfaceDB::fetchColumn('SELECT COUNT(*) FROM companies_house_schema_files'));
                 $harness->assertSame(
@@ -97,7 +122,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
                 $callsBeforeInstalledCheck = count($calls);
                 $installed = $service->installedSchemas();
-                $harness->assertSame($first['files'], $installed['files']);
+                $harness->assertSame($second['files'], $installed['files']);
                 $harness->assertSame($callsBeforeInstalledCheck, count($calls));
                 $companyData = $service->installedSchemasForOperation('company_data');
                 $harness->assertSame(
@@ -111,6 +136,24 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame(true, (bool)$companyDataStatus['state']['ready']);
                 $harness->assertSame(2, (int)$companyDataStatus['state']['file_count']);
                 $harness->assertSame($callsBeforeInstalledCheck, count($calls));
+                $companyDataValidationPath = $validation . DIRECTORY_SEPARATOR . 'v1-0'
+                    . DIRECTORY_SEPARATOR . 'schema' . DIRECTORY_SEPARATOR
+                    . 'CompanyData-v3-6.xsd';
+                unlink($companyDataValidationPath);
+                try {
+                    $service->installedSchemasForOperation('company_data');
+                    $harness->assertTrue(
+                        false,
+                        'A missing validation asset must block filing.'
+                    );
+                } catch (RuntimeException $exception) {
+                    $harness->assertTrue(str_contains(
+                        $exception->getMessage(),
+                        'validation asset is missing or has changed'
+                    ));
+                }
+                $service->refreshInstalledSchemas();
+                $harness->assertTrue(is_file($companyDataValidationPath));
 
                 $legacyRoot = $testRoot . DIRECTORY_SEPARATOR . 'companies_house'
                     . DIRECTORY_SEPARATOR . 'schema'

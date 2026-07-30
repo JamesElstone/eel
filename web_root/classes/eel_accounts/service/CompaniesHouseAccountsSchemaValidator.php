@@ -5,6 +5,8 @@ namespace eel_accounts\Service;
 
 final class CompaniesHouseAccountsSchemaValidator
 {
+    private const VALIDATION_PROFILE = 'libxml-v1';
+
     public function validateAccountsRequest(string $xml, array $schemaInventory): array
     {
         return $this->validateOperationRequest(
@@ -23,14 +25,15 @@ final class CompaniesHouseAccountsSchemaValidator
         string $elementName,
         string $namespace
     ): array {
-        [$root, $files] = $this->verifiedFiles($schemaInventory);
+        [, $validationRoot, $files] = $this->verifiedFiles($schemaInventory);
         $envelope = null;
         $operationSchema = null;
         foreach ($files as $file) {
-            $path = $root . '/' . ltrim(str_replace('\\', '/', (string)$file['relative_path']), '/');
-            if (!is_file($path) || !hash_equals(strtolower((string)$file['sha256']), strtolower((string)hash_file('sha256', $path)))) {
-                throw new \RuntimeException('A verified Companies House schema file is missing or has changed.');
-            }
+            $path = $validationRoot . '/' . ltrim(str_replace(
+                '\\',
+                '/',
+                (string)$file['validation_relative_path']
+            ), '/');
             if ((string)$file['file_role'] === 'envelope') { $envelope = $path; }
             if ((string)$file['schema_name'] === $schemaName) { $operationSchema = $path; }
         }
@@ -56,19 +59,14 @@ final class CompaniesHouseAccountsSchemaValidator
 
     public function validateEnvelopeResponse(string $xml, array $schemaInventory): array
     {
-        [$root, $files] = $this->verifiedFiles($schemaInventory);
+        [, $validationRoot, $files] = $this->verifiedFiles($schemaInventory);
         $envelope = null;
         foreach ($files as $file) {
-            $path = $root . '/' . ltrim(str_replace('\\', '/', (string)$file['relative_path']), '/');
-            if (!is_file($path)
-                || !hash_equals(
-                    strtolower((string)$file['sha256']),
-                    strtolower((string)hash_file('sha256', $path))
-                )) {
-                throw new \RuntimeException(
-                    'A verified Companies House schema file is missing or has changed.'
-                );
-            }
+            $path = $validationRoot . '/' . ltrim(str_replace(
+                '\\',
+                '/',
+                (string)$file['validation_relative_path']
+            ), '/');
             if ((string)$file['file_role'] === 'envelope') {
                 $envelope = $path;
             }
@@ -96,6 +94,19 @@ final class CompaniesHouseAccountsSchemaValidator
                 ?? dirname(__DIR__, 4) . '/third_party/companies_house/assets'),
             '/\\'
         );
+        $validationProfile = trim((string)($schemaInventory['validation_profile']
+            ?? self::VALIDATION_PROFILE));
+        if ($validationProfile !== self::VALIDATION_PROFILE) {
+            throw new \RuntimeException(
+                'The Companies House schema validation profile is not supported.'
+            );
+        }
+        $validationRoot = rtrim(
+            (string)($schemaInventory['validation_root_path']
+                ?? dirname(__DIR__, 4) . '/third_party/companies_house/validation/'
+                    . $validationProfile),
+            '/\\'
+        );
         $files = [];
         foreach ($evidenceFiles as $evidence) {
             $url = trim((string)($evidence['source_url'] ?? ''));
@@ -112,9 +123,48 @@ final class CompaniesHouseAccountsSchemaValidator
             if (!is_array($stored)) {
                 throw new \RuntimeException('A recorded Companies House schema file is no longer installed.');
             }
+            $officialPath = $root . '/' . ltrim(str_replace(
+                '\\',
+                '/',
+                (string)$stored['relative_path']
+            ), '/');
+            if (!is_file($officialPath)
+                || !hash_equals(
+                    strtolower((string)$stored['sha256']),
+                    strtolower((string)hash_file('sha256', $officialPath))
+                )) {
+                throw new \RuntimeException(
+                    'A verified Companies House schema file is missing or has changed.'
+                );
+            }
+            $storedValidationProfile = trim((string)(
+                $stored['validation_profile'] ?? ''
+            ));
+            $validationRelativePath = ltrim(str_replace(
+                '\\',
+                '/',
+                trim((string)($stored['validation_relative_path'] ?? ''))
+            ), '/');
+            $validationHash = strtolower(trim((string)(
+                $stored['validation_sha256'] ?? ''
+            )));
+            $validationPath = $validationRoot . '/' . $validationRelativePath;
+            if ($storedValidationProfile !== $validationProfile
+                || $validationRelativePath === ''
+                || preg_match('/^[a-f0-9]{64}$/D', $validationHash) !== 1
+                || !is_file($validationPath)
+                || !hash_equals(
+                    $validationHash,
+                    strtolower((string)hash_file('sha256', $validationPath))
+                )) {
+                throw new \RuntimeException(
+                    'A verified Companies House validation schema is missing or has changed. '
+                    . 'Refresh it from Artefacts before filing.'
+                );
+            }
             $files[] = $stored;
         }
-        return [$root, $files];
+        return [$root, $validationRoot, $files];
     }
 
     private function loadXml(string $xml): \DOMDocument
@@ -132,10 +182,8 @@ final class CompaniesHouseAccountsSchemaValidator
 
     private function schemaValidate(\DOMDocument $document, string $schema, string $label): void
     {
-        $previous = libxml_use_internal_errors(true);
-        try { $ok = $document->schemaValidate($schema, LIBXML_NONET); $errors = libxml_get_errors(); }
-        finally { libxml_clear_errors(); libxml_use_internal_errors($previous); }
-        if (!$ok) { throw new \RuntimeException('Companies House ' . $label . ' schema validation failed: ' . $this->errorText($errors ?? [])); }
+        (new CompaniesHouseXmlSchemaValidationService())
+            ->validateDocument($document, $schema, $label);
     }
 
     private function errorText(array $errors): string

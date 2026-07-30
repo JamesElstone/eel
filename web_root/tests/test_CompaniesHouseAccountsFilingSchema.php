@@ -28,6 +28,10 @@ $schemaInventoryMigration = (string)file_get_contents(
     $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
     . DIRECTORY_SEPARATOR . '2026_07_30_001_companies_house_schema_inventory.sql'
 );
+$schemaValidationAssetsMigration = (string)file_get_contents(
+    $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
+    . DIRECTORY_SEPARATOR . '2026_07_30_006_companies_house_schema_validation_assets.sql'
+);
 $transmissionHistoryMigration = (string)file_get_contents(
     $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
     . DIRECTORY_SEPARATOR . '2026_07_30_002_companies_house_transmission_archive_history.sql'
@@ -274,7 +278,13 @@ $harness->check(
 $harness->check(
     'Companies House accounts filing schema',
     'schema inventory migration and master schema retain file-level provenance',
-    static function () use ($harness, $schemaMigration, $schemaInventoryMigration, $masterSchema): void {
+    static function () use (
+        $harness,
+        $schemaMigration,
+        $schemaInventoryMigration,
+        $schemaValidationAssetsMigration,
+        $masterSchema
+    ): void {
         foreach ([$schemaInventoryMigration, $masterSchema] as $schema) {
             foreach ([
                 'companies_house_schema_files',
@@ -298,6 +308,16 @@ $harness->check(
         ));
         $harness->assertFalse(str_contains($masterSchema, 'CREATE TABLE `companies_house_schema_snapshots`'));
         $harness->assertFalse(str_contains($masterSchema, '`schema_snapshot_id`'));
+        foreach ([$schemaValidationAssetsMigration, $masterSchema] as $schema) {
+            foreach ([
+                'validation_profile',
+                'validation_relative_path',
+                'validation_sha256',
+                'validation_verified_at',
+            ] as $token) {
+                $harness->assertTrue(str_contains($schema, $token));
+            }
+        }
     }
 );
 

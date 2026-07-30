@@ -52,6 +52,10 @@ $originalAccountsMigration = (string)file_get_contents(
     $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
     . DIRECTORY_SEPARATOR . '2026_07_27_002_companies_house_original_accounts.sql'
 );
+$authenticationChecksMigration = (string)file_get_contents(
+    $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
+    . DIRECTORY_SEPARATOR . '2026_07_30_005_companies_house_authentication_checks.sql'
+);
 
 $harness->check(
     'Companies House accounts filing schema',
@@ -103,6 +107,15 @@ $harness->check(
         $harness->assertFalse(
             InterfaceDB::columnExists('companies_house_accounts_submissions', 'schema_manifest_sha256')
         );
+        $preflightColumns = InterfaceDB::fetchAll(
+            'PRAGMA table_info(companies_house_company_auth_preflights)'
+        );
+        $submissionColumn = array_values(array_filter(
+            $preflightColumns,
+            static fn (array $column): bool => (string)($column['name'] ?? '') === 'submission_id'
+        ));
+        $harness->assertCount(1, $submissionColumn);
+        $harness->assertSame(0, (int)$submissionColumn[0]['notnull']);
         foreach ([
             'request_path',
             'request_sha256',
@@ -113,6 +126,33 @@ $harness->check(
         ] as $column) {
             $harness->assertTrue(InterfaceDB::columnExists('transmission_archives', $column));
         }
+    }
+);
+
+$harness->check(
+    'Companies House accounts filing schema',
+    'authentication checks are company-context records rather than submission prerequisites',
+    static function () use ($harness, $authenticationChecksMigration, $masterSchema): void {
+        $harness->assertTrue(str_contains(
+            $authenticationChecksMigration,
+            'MODIFY COLUMN submission_id BIGINT NULL'
+        ));
+        $harness->assertTrue(str_contains(
+            $authenticationChecksMigration,
+            'DROP FOREIGN KEY IF EXISTS fk_ch_company_auth_preflight_submission'
+        ));
+        $harness->assertTrue(str_contains(
+            $authenticationChecksMigration,
+            'idx_ch_company_auth_preflight_company'
+        ));
+        $harness->assertTrue(str_contains(
+            $masterSchema,
+            '`submission_id` bigint(20) DEFAULT NULL'
+        ));
+        $harness->assertFalse(str_contains(
+            $masterSchema,
+            'CONSTRAINT `fk_ch_company_auth_preflight_submission`'
+        ));
     }
 );
 

@@ -99,6 +99,18 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $installed = $service->installedSchemas();
                 $harness->assertSame($first['files'], $installed['files']);
                 $harness->assertSame($callsBeforeInstalledCheck, count($calls));
+                $companyData = $service->installedSchemasForOperation('company_data');
+                $harness->assertSame(
+                    ['CompanyData-v3-6.xsd', 'Egov_ch-v2-0.xsd'],
+                    array_values(array_map(
+                        static fn (array $file): string => basename((string)$file['relative_path']),
+                        (array)$companyData['files']
+                    ))
+                );
+                $companyDataStatus = $service->fetchOperationStatus('company_data');
+                $harness->assertSame(true, (bool)$companyDataStatus['state']['ready']);
+                $harness->assertSame(2, (int)$companyDataStatus['state']['file_count']);
+                $harness->assertSame($callsBeforeInstalledCheck, count($calls));
 
                 $legacyRoot = $testRoot . DIRECTORY_SEPARATOR . 'companies_house'
                     . DIRECTORY_SEPARATOR . 'schema'

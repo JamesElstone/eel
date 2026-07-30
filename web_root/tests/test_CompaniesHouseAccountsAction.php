@@ -234,14 +234,12 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
         'gates granular CompanyData exchange controls behind developer options',
         static function () use ($harness): void {
             $service = new CompaniesHouseAccountsActionFakeService();
-            $service->context['submission'] = ['id' => 77];
-            $action = companiesHouseAccountsTestAction($service);
+            $action = companiesHouseAccountsTestAction($service, locked: false);
             $previous = AppConfigurationStore::get('developer_options', false);
             try {
                 AppConfigurationStore::set('developer_options', false);
                 $blocked = $action->handle(companiesHouseAccountsActionRequest([
                     'intent' => 'preflight_revised_accounts',
-                    'submission_id' => '77',
                     'company_auth_code' => 'ABC123',
                 ]), createTestPageServiceFramework());
                 $harness->assertSame(false, $blocked->isSuccess());
@@ -250,15 +248,17 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
                 AppConfigurationStore::set('developer_options', true);
                 $allowed = $action->handle(companiesHouseAccountsActionRequest([
                     'intent' => 'preflight_revised_accounts',
-                    'submission_id' => '77',
                     'company_auth_code' => 'ABC123',
                 ]), createTestPageServiceFramework());
                 $harness->assertSame(true, $allowed->isSuccess());
                 $calls = array_values(array_filter(
                     $service->calls,
-                    static fn(array $call): bool => ($call['method'] ?? '') === 'preflightRevision'
+                    static fn(array $call): bool =>
+                        ($call['method'] ?? '') === 'checkCompanyAuthentication'
                 ));
                 $harness->assertCount(1, $calls);
+                $harness->assertSame(12, (int)$calls[0]['companyId']);
+                $harness->assertSame(34, (int)$calls[0]['accountingPeriodId']);
                 $harness->assertSame([], array_values(array_filter(
                     $service->calls,
                     static fn(array $call): bool => ($call['method'] ?? '') === 'fetchContext'
@@ -374,6 +374,22 @@ final class CompaniesHouseAccountsActionFakeService
             'method' => 'preflightRevision',
         ];
         return ['success' => true, 'messages' => ['Preflight verified.']];
+    }
+
+    public function checkCompanyAuthentication(
+        int $companyId,
+        int $accountingPeriodId,
+        string $companyAuthCode,
+        string $actor,
+        mixed $progress = null
+    ): array {
+        $this->calls[] = compact(
+            'companyId',
+            'accountingPeriodId',
+            'companyAuthCode',
+            'actor'
+        ) + ['method' => 'checkCompanyAuthentication'];
+        return ['success' => true, 'messages' => ['Authentication code verified.']];
     }
 }
 

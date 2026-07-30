@@ -101,7 +101,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                         <input type="hidden" name="intent" value="generate_all_filing_ixbrl">
                         <input type="hidden" name="company_id" value="' . $companyId . '">
                         <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                        <button class="button primary" type="submit"' . ($canGenerateAll ? '' : ' disabled') . '>Generate All Filing iXBRLs</button>
+                        <button class="button primary" type="submit"' . ($canGenerateAll ? '' : ' disabled') . '>Generate All Filing Artifacts</button>
                     </form>
                     ' . ($developerOptions ? '<form method="post" action="?page=disclosures" data-ajax="true" class="ixbrl-developer-cleanup-action">'
                         . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
@@ -448,7 +448,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     . '<input type="hidden" name="intent" value="download_computation_ixbrl">'
                     . '<button class="button compact primary" type="submit"' . ($fileable && $artifactExists ? '' : ' disabled') . '>Download ' . \eel_accounts\Support\Utf8::html($ctPeriodLabel) . ' iXBRL</button></form>'
                 : 'Not generated';
-            $html .= '<section class="panel-soft"><div class="status-head"><h3>' . \eel_accounts\Support\Utf8::html($ctPeriodLabel) . ' iXBRL</h3><span class="badge '
+            $html .= '<section class="panel-soft"><div class="status-head"><h3>' . \eel_accounts\Support\Utf8::html($ctPeriodLabel) . ' Computation iXBRL</h3><span class="badge '
                 . ($fileable ? 'success' : ($fresh ? 'warning' : 'muted')) . '">'
                 . ($fileable ? 'Filing ready' : ($fresh ? 'Generated, not fileable' : 'Not generated')) . '</span></div>'
                 . '<div class="helper ixbrl-complete-filing-set-helper">Generate a separate Corporation Tax computation iXBRL for this filing period and review its validation status.</div>'

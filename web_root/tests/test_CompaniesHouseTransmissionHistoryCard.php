@@ -16,7 +16,23 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $services = $card->services();
                 $harness->assertCount(2, $services);
                 $harness->assertSame('submissionHistory', (string)$services[0]['method']);
+                $harness->assertSame(
+                    ':company.accounting_period_id',
+                    (string)$services[0]['params']['accountingPeriodId']
+                );
                 $harness->assertSame('protocolExchangeHistory', (string)$services[1]['method']);
+                $harness->assertFalse(array_key_exists(
+                    'accountingPeriodId',
+                    (array)$services[1]['params']
+                ));
+                $harness->assertTrue(str_contains(
+                    $card->helper([]),
+                    'Submission History covers the current accounting period'
+                ));
+                $harness->assertTrue(str_contains(
+                    $card->helper([]),
+                    'XML Exchange History covers every accounting year'
+                ));
             }
         );
 
@@ -71,6 +87,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $harness->assertTrue(str_contains($html, 'XML Exchange History'));
                     $harness->assertTrue(str_contains($html, '000012'));
                     $harness->assertTrue(str_contains($html, 'Not allocated'));
+                    $harness->assertTrue(str_contains($html, 'Company authentication check'));
                     $harness->assertTrue(str_contains($html, 'value="download_protocol_evidence"'));
                     $harness->assertSame(3, substr_count($html, '>Download</button>'));
                     $harness->assertTrue(str_contains($html, 'HTTP 200'));

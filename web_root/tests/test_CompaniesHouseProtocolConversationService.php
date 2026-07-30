@@ -59,7 +59,6 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             static function () use ($harness): void {
                 $companyId = 98831;
                 $periodId = 98832;
-                $submissionId = 98833;
                 $root = test_register_cleanup_path(
                     test_tmp_directory() . DIRECTORY_SEPARATOR . 'protocol-conversation-' . bin2hex(random_bytes(4))
                 );
@@ -86,39 +85,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                             'created_at' => '2026-07-30 10:00:00',
                         ]
                     );
-                    InterfaceDB::prepareExecute(
-                        'INSERT INTO companies_house_accounts_submissions (
-                            id, company_id, accounting_period_id, environment, filing_type,
-                            lifecycle, basis_hash, idempotency_key, prepared_by,
-                            prepared_at, status_updated_at, created_at, updated_at
-                         ) VALUES (
-                            :id, :company_id, :period_id, :environment, :filing_type,
-                            :lifecycle, :basis_hash, :idempotency_key, :prepared_by,
-                            :prepared_at, :status_updated_at, :created_at, :updated_at
-                         )',
-                        [
-                            'id' => $submissionId,
-                            'company_id' => $companyId,
-                            'period_id' => $periodId,
-                            'environment' => 'TEST',
-                            'filing_type' => 'original',
-                            'lifecycle' => 'prepared',
-                            'basis_hash' => str_repeat('d', 64),
-                            'idempotency_key' => str_repeat('e', 64),
-                            'prepared_by' => 'test',
-                            'prepared_at' => '2026-07-30 10:00:00',
-                            'status_updated_at' => '2026-07-30 10:00:00',
-                            'created_at' => '2026-07-30 10:00:00',
-                            'updated_at' => '2026-07-30 10:00:00',
-                        ]
-                    );
                     $archive = new \eel_accounts\Service\TransmissionArchiveService($root);
                     $conversation = new \eel_accounts\Service\CompaniesHouseProtocolConversationService(
                         $archive,
                         str_repeat('k', 64)
                     );
                     $submission = [
-                        'id' => $submissionId,
+                        'id' => 0,
                         'company_id' => $companyId,
                         'accounting_period_id' => $periodId,
                         'company_number' => '09883100',
@@ -132,6 +105,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         false
                     );
                     $reference = (string)$preflight['archive_reference'];
+                    $harness->assertSame(null, $preflight['submission_id']);
+                    $harness->assertTrue(str_starts_with(
+                        $reference,
+                        'authentication-check-'
+                    ));
                     $requestXml = '<CompanyDataRequest transaction="STATE1"/>';
                     $receipt = $conversation->captureRequest(
                         $submission,
@@ -150,6 +128,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $harness->assertSame('prepared', (string)$row['exchange_state']);
                     $harness->assertSame(null, $row['sent_at']);
                     $harness->assertSame(hash('sha256', $requestXml), $receipt['request_sha256']);
+                    $harness->assertTrue(str_contains(
+                        str_replace('\\', '/', (string)$receipt['path']),
+                        '/companies_house/test/_authentication_checks/check-'
+                    ));
 
                     $conversation->markSendStarted('TEST', 'STATE1');
                     $row = InterfaceDB::fetchOne(
@@ -193,18 +175,102 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         archiveService: $archive,
                         conversationService: $conversation
                     );
+                    $recordedExchange = InterfaceDB::fetchOne(
+                        'SELECT e.submission_id, e.preflight_id,
+                                p.company_id, p.accounting_period_id
+                         FROM companies_house_protocol_exchanges e
+                         LEFT JOIN companies_house_company_auth_preflights p
+                           ON p.id = e.preflight_id
+                         WHERE e.transaction_id = :transaction_id',
+                        ['transaction_id' => 'STATE1']
+                    );
+                    $harness->assertSame(null, $recordedExchange['submission_id'] ?? null);
+                    $harness->assertSame((int)$preflight['id'], (int)($recordedExchange['preflight_id'] ?? 0));
+                    $harness->assertSame($companyId, (int)($recordedExchange['company_id'] ?? 0));
+                    $harness->assertSame($periodId, (int)($recordedExchange['accounting_period_id'] ?? 0));
+                    $directHistory = InterfaceDB::fetchAll(
+                        'SELECT e.id
+                         FROM companies_house_protocol_exchanges e
+                         LEFT JOIN companies_house_accounts_submissions s ON s.id = e.submission_id
+                         LEFT JOIN companies_house_company_auth_preflights p ON p.id = e.preflight_id
+                         WHERE (
+                             (s.company_id = :submission_company_id
+                              AND s.accounting_period_id = :submission_accounting_period_id)
+                             OR
+                             (p.company_id = :preflight_company_id
+                              AND p.accounting_period_id = :preflight_accounting_period_id)
+                         )',
+                        [
+                            'submission_company_id' => $companyId,
+                            'submission_accounting_period_id' => $periodId,
+                            'preflight_company_id' => $companyId,
+                            'preflight_accounting_period_id' => $periodId,
+                        ]
+                    );
+                    $harness->assertCount(1, $directHistory);
+
+                    $otherPeriodId = 98834;
+                    InterfaceDB::prepareExecute(
+                        'INSERT INTO accounting_periods (
+                            id, company_id, label, period_start, period_end, created_at
+                         ) VALUES (
+                            :id, :company_id, :label, :start, :end, :created_at
+                         )',
+                        [
+                            'id' => $otherPeriodId,
+                            'company_id' => $companyId,
+                            'label' => 'PROTOCOL-98834',
+                            'start' => '2024-10-01',
+                            'end' => '2025-09-30',
+                            'created_at' => '2026-07-30 10:01:00',
+                        ]
+                    );
+                    $otherContext = [
+                        'id' => 0,
+                        'company_id' => $companyId,
+                        'accounting_period_id' => $otherPeriodId,
+                        'company_number' => '09883100',
+                    ];
+                    $otherPreflight = $conversation->beginAuthenticationCheck(
+                        $otherContext,
+                        'TEST',
+                        str_repeat('f', 64),
+                        'ABC123',
+                        'test',
+                        false
+                    );
+                    $conversation->captureRequest(
+                        $otherContext,
+                        'TEST',
+                        (string)$otherPreflight['archive_reference'],
+                        'company_data',
+                        [
+                            'transaction_id' => 'STATE2',
+                            'request_xml' => '<CompanyDataRequest transaction="STATE2"/>',
+                        ],
+                        (int)$otherPreflight['id']
+                    );
+                    $conversation->markSendStarted('TEST', 'STATE2');
+
                     $harness->assertSame(
                         [],
                         $historyService->submissionHistory($companyId, $periodId)
                     );
                     $exchangeHistory = $historyService->protocolExchangeHistory(
-                        $companyId,
-                        $periodId
+                        $companyId
                     );
-                    $harness->assertCount(1, $exchangeHistory);
-                    $harness->assertSame('STATE1', (string)$exchangeHistory[0]['transaction_id']);
-                    $harness->assertSame(true, (bool)$exchangeHistory[0]['request_available']);
-                    $harness->assertSame(false, (bool)$exchangeHistory[0]['response_available']);
+                    $harness->assertCount(2, $exchangeHistory);
+                    $transactions = array_column($exchangeHistory, 'transaction_id');
+                    sort($transactions);
+                    $harness->assertSame(['STATE1', 'STATE2'], $transactions);
+                    $state1 = array_values(array_filter(
+                        $exchangeHistory,
+                        static fn (array $exchange): bool =>
+                            (string)$exchange['transaction_id'] === 'STATE1'
+                    ))[0];
+                    $harness->assertSame(null, $state1['submission_id']);
+                    $harness->assertSame(true, (bool)$state1['request_available']);
+                    $harness->assertSame(false, (bool)$state1['response_available']);
                 } finally {
                     InterfaceDB::prepareExecute('DELETE FROM companies WHERE id = :id', ['id' => $companyId]);
                 }

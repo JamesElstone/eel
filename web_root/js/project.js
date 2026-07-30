@@ -289,7 +289,12 @@
                 const confirmationChanged = radioNames.some(
                     (name) => currentRadioValue(name) !== defaultValues[name]
                 );
-                saveButton.disabled = !declarantChanged && !confirmationChanged;
+                const everyStatementConfirmed = radioNames.every(
+                    (name) => currentRadioValue(name) === '1'
+                );
+                saveButton.disabled = declarant.value === ''
+                    || !everyStatementConfirmed
+                    || (!declarantChanged && !confirmationChanged);
             };
 
             form.querySelectorAll('[data-ct600-authorisation-field="true"]').forEach((field) => {

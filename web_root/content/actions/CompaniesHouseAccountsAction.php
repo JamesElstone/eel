@@ -98,6 +98,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             'record_gateway_eligibility',
             'save_variance_explanation',
             'download_protocol_evidence',
+            'preflight_accounts',
         ], true)
             && !$this->isLocked($companyId, $accountingPeriodId)) {
             return $this->error('Complete and lock Year End before using Companies House accounts filing.');
@@ -114,7 +115,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             return $this->error('Developer options must be enabled for step-by-step Companies House exchanges.');
         }
         if ($intent === 'download_protocol_evidence') {
-            $this->downloadProtocolEvidence($request, $companyId, $accountingPeriodId);
+            $this->downloadProtocolEvidence($request, $companyId);
         }
         if ($intent === 'download_accounts_ixbrl') {
             $this->downloadRevisedAccountsIxbrl($companyId, $accountingPeriodId);
@@ -422,20 +423,13 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         ActionProgressFramework $progress
     ): array {
         $progress->report('Checking the Companies House company authentication code…', 0);
-        $submissionId = (int)$request->input('submission_id', 0);
         $companyAuthCode = trim((string)$request->input('company_auth_code', ''));
         if (preg_match('/^[A-Za-z0-9]{6}$/D', $companyAuthCode) !== 1) {
             return ['success' => false, 'errors' => ['The company authentication code must contain exactly 6 letters or numbers.']];
         }
-        if (!$this->service()->submissionBelongsToContext(
-            $submissionId,
+        return $this->service()->checkCompanyAuthentication(
             $companyId,
-            $accountingPeriodId
-        )) {
-            return ['success' => false, 'errors' => ['The prepared submission does not belong to this period.']];
-        }
-        return $this->service()->preflightRevision(
-            $submissionId,
+            $accountingPeriodId,
             $companyAuthCode,
             $this->actor($request),
             $progress
@@ -483,15 +477,13 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
 
     private function downloadProtocolEvidence(
         RequestFramework $request,
-        int $companyId,
-        int $accountingPeriodId
+        int $companyId
     ): never {
         $exchangeId = (int)$request->input('exchange_id', 0);
         $direction = (string)$request->input('direction', '');
         try {
-            $file = $this->service()->protocolEvidenceFileForContext(
+            $file = $this->service()->protocolEvidenceFileForCompany(
                 $companyId,
-                $accountingPeriodId,
                 $exchangeId,
                 $direction
             );

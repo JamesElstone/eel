@@ -40,37 +40,50 @@ final class CompaniesHouseProtocolConversationService
     }
 
     public function beginPreflight(
-        array $submission,
+        array $context,
         string $environment,
         string $outputPresenterFingerprint,
         string $companyAuthenticationCode,
         string $actor,
         bool $developerStep
     ): array {
+        return $this->beginAuthenticationCheck(
+            $context,
+            $environment,
+            $outputPresenterFingerprint,
+            $companyAuthenticationCode,
+            $actor,
+            $developerStep
+        );
+    }
+
+    public function beginAuthenticationCheck(
+        array $context,
+        string $environment,
+        string $outputPresenterFingerprint,
+        string $companyAuthenticationCode,
+        string $actor,
+        bool $reusable
+    ): array {
         if (!$this->schemaReady()) {
             throw new \RuntimeException(
                 'Run the Companies House protocol-conversation migration before filing.'
             );
         }
-        $submissionId = (int)($submission['id'] ?? 0);
-        $companyId = (int)($submission['company_id'] ?? 0);
-        $accountingPeriodId = (int)($submission['accounting_period_id'] ?? 0);
-        $companyNumber = strtoupper(trim((string)($submission['company_number'] ?? '')));
-        if ($submissionId <= 0 || $companyId <= 0 || $accountingPeriodId <= 0 || $companyNumber === '') {
-            throw new \InvalidArgumentException('A complete Companies House submission is required for preflight.');
+        $companyId = (int)($context['company_id'] ?? 0);
+        $accountingPeriodId = (int)($context['accounting_period_id'] ?? 0);
+        $companyNumber = strtoupper(trim((string)($context['company_number'] ?? '')));
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || $companyNumber === '') {
+            throw new \InvalidArgumentException(
+                'A company context is required for the authentication check.'
+            );
         }
-        $this->archives()->consolidateCompaniesHousePendingBundle(
-            $companyId,
-            $accountingPeriodId,
-            $environment,
-            $submissionId
-        );
-        $archiveReference = TransmissionArchiveService::companiesHousePendingReference($submissionId);
+        $archiveReference = TransmissionArchiveService::companiesHouseAuthenticationCheckReference();
         $now = gmdate('Y-m-d H:i:s');
-        $expiresAt = $developerStep ? gmdate('Y-m-d H:i:s', time() + self::BINDING_SECONDS) : null;
-        $bindingHmac = $developerStep
+        $expiresAt = $reusable ? gmdate('Y-m-d H:i:s', time() + self::BINDING_SECONDS) : null;
+        $bindingHmac = $reusable
             ? $this->bindingHmac(
-                $submissionId,
+                $companyId,
                 $environment,
                 $companyNumber,
                 $companyAuthenticationCode,
@@ -90,14 +103,14 @@ final class CompaniesHouseProtocolConversationService
                 :archive_reference, :created_at, :updated_at
              )',
             [
-                'submission_id' => $submissionId,
+                'submission_id' => null,
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
                 'environment' => strtoupper($environment),
                 'fingerprint' => strtolower($outputPresenterFingerprint),
                 'outcome' => 'sending',
                 'binding_hmac' => $bindingHmac,
-                'binding_actor' => $developerStep ? $actor : null,
+                'binding_actor' => $reusable ? $actor : null,
                 'binding_expires_at' => $expiresAt,
                 'archive_reference' => $archiveReference,
                 'created_at' => $now,
@@ -106,12 +119,14 @@ final class CompaniesHouseProtocolConversationService
         );
         $row = \InterfaceDB::fetchOne(
             'SELECT * FROM ' . self::PREFLIGHTS . '
-             WHERE submission_id = :submission_id
+             WHERE archive_reference = :archive_reference
              ORDER BY id DESC LIMIT 1',
-            ['submission_id' => $submissionId]
+            ['archive_reference' => $archiveReference]
         );
         if (!is_array($row)) {
-            throw new \RuntimeException('The Companies House preflight record could not be created.');
+            throw new \RuntimeException(
+                'The Companies House authentication-check record could not be created.'
+            );
         }
 
         return $row;
@@ -138,8 +153,9 @@ final class CompaniesHouseProtocolConversationService
             $filename,
             (string)$request['request_xml']
         );
+        $submissionId = (int)($submission['id'] ?? 0);
         $this->upsertExchange(
-            (int)$submission['id'],
+            $submissionId > 0 ? $submissionId : null,
             $preflightId,
             $statusCycleId,
             $operation,
@@ -167,7 +183,8 @@ final class CompaniesHouseProtocolConversationService
         }
 
         $this->refreshExchangeManifest(
-            (int)$submission['id'],
+            $submissionId > 0 ? $submissionId : null,
+            $preflightId,
             $environment,
             $archiveReference,
             'prepared'
@@ -265,8 +282,9 @@ final class CompaniesHouseProtocolConversationService
                 $responseXml
             );
         }
+        $submissionId = (int)($submission['id'] ?? 0);
         $this->upsertExchange(
-            (int)$submission['id'],
+            $submissionId > 0 ? $submissionId : null,
             $preflightId,
             $statusCycleId,
             $operation,
@@ -293,7 +311,8 @@ final class CompaniesHouseProtocolConversationService
         }
 
         $this->refreshExchangeManifest(
-            (int)$submission['id'],
+            $submissionId > 0 ? $submissionId : null,
+            $preflightId,
             $environment,
             $archiveReference,
             'received'
@@ -373,7 +392,9 @@ final class CompaniesHouseProtocolConversationService
                 ['id' => $preflightId]
             );
             if (!is_array($row)
-                || (int)$row['submission_id'] !== (int)$submission['id']
+                || (int)$row['company_id'] !== (int)$submission['company_id']
+                || (int)$row['accounting_period_id'] !== (int)$submission['accounting_period_id']
+                || strtoupper((string)$row['environment']) !== strtoupper((string)$submission['environment'])
                 || (string)$row['outcome'] !== 'verified'
                 || $row['consumed_at'] !== null) {
                 throw new \RuntimeException('A current successful CompanyData preflight is required.');
@@ -384,7 +405,7 @@ final class CompaniesHouseProtocolConversationService
                     throw new \RuntimeException('The developer CompanyData preflight has expired.');
                 }
                 $expected = $this->bindingHmac(
-                    (int)$submission['id'],
+                    (int)$submission['company_id'],
                     (string)$submission['environment'],
                     (string)$submission['company_number'],
                     $companyAuthenticationCode,
@@ -420,6 +441,30 @@ final class CompaniesHouseProtocolConversationService
              WHERE submission_id = :submission_id ORDER BY id DESC LIMIT 1',
             ['submission_id' => $submissionId]
         );
+        return is_array($row) ? $row : null;
+    }
+
+    public function latestAuthenticationCheck(
+        int $companyId,
+        int $accountingPeriodId,
+        string $environment
+    ): ?array {
+        if (!$this->schemaReady() || $companyId <= 0 || $accountingPeriodId <= 0) {
+            return null;
+        }
+        $row = \InterfaceDB::fetchOne(
+            'SELECT * FROM ' . self::PREFLIGHTS . '
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND environment = :environment
+             ORDER BY id DESC LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'environment' => strtoupper(trim($environment)),
+            ]
+        );
+
         return is_array($row) ? $row : null;
     }
 
@@ -474,6 +519,55 @@ final class CompaniesHouseProtocolConversationService
              WHERE id = :id AND submission_id = :submission_id LIMIT 1',
             ['id' => $exchangeId, 'submission_id' => $submissionId]
         );
+        return $this->evidenceFromRow($row, $direction);
+    }
+
+    public function evidenceFileForContext(
+        int $companyId,
+        int $accountingPeriodId,
+        int $exchangeId,
+        string $direction
+    ): array {
+        if (!$this->schemaReady()
+            || $companyId <= 0
+            || $accountingPeriodId <= 0
+            || $exchangeId <= 0) {
+            throw new \RuntimeException('The Companies House protocol evidence is unavailable.');
+        }
+        $direction = strtolower(trim($direction));
+        if (!in_array($direction, ['request', 'response'], true)) {
+            throw new \InvalidArgumentException('Choose request or response evidence.');
+        }
+        $row = \InterfaceDB::fetchOne(
+            'SELECT e.operation,
+                    e.' . $direction . '_path AS artifact_path,
+                    e.' . $direction . '_sha256 AS artifact_sha256
+             FROM ' . self::EXCHANGES . ' e
+             LEFT JOIN ' . self::SUBMISSIONS . ' s ON s.id = e.submission_id
+             LEFT JOIN ' . self::PREFLIGHTS . ' p ON p.id = e.preflight_id
+             WHERE e.id = :exchange_id
+               AND (
+                   (s.company_id = :submission_company_id
+                    AND s.accounting_period_id = :submission_accounting_period_id)
+                   OR
+                   (p.company_id = :preflight_company_id
+                    AND p.accounting_period_id = :preflight_accounting_period_id)
+               )
+             LIMIT 1',
+            [
+                'exchange_id' => $exchangeId,
+                'submission_company_id' => $companyId,
+                'submission_accounting_period_id' => $accountingPeriodId,
+                'preflight_company_id' => $companyId,
+                'preflight_accounting_period_id' => $accountingPeriodId,
+            ]
+        );
+
+        return $this->evidenceFromRow($row, $direction);
+    }
+
+    private function evidenceFromRow(mixed $row, string $direction): array
+    {
         $path = is_array($row) ? (string)($row['artifact_path'] ?? '') : '';
         $sha256 = is_array($row) ? strtolower((string)($row['artifact_sha256'] ?? '')) : '';
         if ($path === '' || !is_file($path) || !preg_match('/^[a-f0-9]{64}$/', $sha256)) {
@@ -617,7 +711,7 @@ final class CompaniesHouseProtocolConversationService
     }
 
     private function upsertExchange(
-        int $submissionId,
+        ?int $submissionId,
         ?int $preflightId,
         ?int $statusCycleId,
         string $operation,
@@ -696,7 +790,7 @@ final class CompaniesHouseProtocolConversationService
     }
 
     private function bindingHmac(
-        int $submissionId,
+        int $companyId,
         string $environment,
         string $companyNumber,
         string $code,
@@ -705,7 +799,7 @@ final class CompaniesHouseProtocolConversationService
         return hash_hmac(
             'sha256',
             implode('|', [
-                $submissionId,
+                $companyId,
                 strtoupper($environment),
                 strtoupper(trim($companyNumber)),
                 $code,
@@ -733,28 +827,39 @@ final class CompaniesHouseProtocolConversationService
     }
 
     private function refreshExchangeManifest(
-        int $submissionId,
+        ?int $submissionId,
+        ?int $preflightId,
         string $environment,
         string $archiveReference,
         string $fallbackLifecycle
     ): void {
-        $submission = \InterfaceDB::fetchOne(
-            'SELECT company_id, accounting_period_id, lifecycle
-             FROM ' . self::SUBMISSIONS . '
-             WHERE id = :id LIMIT 1',
-            ['id' => $submissionId]
-        );
-        if (!is_array($submission)) {
+        $context = null;
+        if (($submissionId ?? 0) > 0) {
+            $context = \InterfaceDB::fetchOne(
+                'SELECT company_id, accounting_period_id, lifecycle
+                 FROM ' . self::SUBMISSIONS . '
+                 WHERE id = :id LIMIT 1',
+                ['id' => $submissionId]
+            );
+        } elseif (($preflightId ?? 0) > 0) {
+            $context = \InterfaceDB::fetchOne(
+                'SELECT company_id, accounting_period_id, outcome AS lifecycle
+                 FROM ' . self::PREFLIGHTS . '
+                 WHERE id = :id LIMIT 1',
+                ['id' => $preflightId]
+            );
+        }
+        if (!is_array($context)) {
             return;
         }
         $this->archives()->refreshManifest(
-            (int)$submission['company_id'],
-            (int)$submission['accounting_period_id'],
+            (int)$context['company_id'],
+            (int)$context['accounting_period_id'],
             'companies_house',
             $environment,
             $archiveReference,
-            trim((string)$submission['lifecycle']) !== ''
-                ? (string)$submission['lifecycle']
+            trim((string)$context['lifecycle']) !== ''
+                ? (string)$context['lifecycle']
                 : $fallbackLifecycle
         );
     }
@@ -766,13 +871,14 @@ final class CompaniesHouseProtocolConversationService
     ): void {
         $row = \InterfaceDB::fetchOne(
             'SELECT e.submission_id,
-                    s.company_id,
-                    s.accounting_period_id,
-                    s.lifecycle,
+                    e.preflight_id,
+                    COALESCE(s.company_id, p.company_id) AS company_id,
+                    COALESCE(s.accounting_period_id, p.accounting_period_id) AS accounting_period_id,
+                    COALESCE(s.lifecycle, p.outcome) AS lifecycle,
                     s.submission_number,
                     p.archive_reference
              FROM ' . self::EXCHANGES . ' e
-             INNER JOIN ' . self::SUBMISSIONS . ' s ON s.id = e.submission_id
+             LEFT JOIN ' . self::SUBMISSIONS . ' s ON s.id = e.submission_id
              LEFT JOIN ' . self::PREFLIGHTS . ' p ON p.id = e.preflight_id
              WHERE e.environment = :environment
                AND e.transaction_id = :transaction_id
@@ -790,9 +896,15 @@ final class CompaniesHouseProtocolConversationService
             $reference = trim((string)($row['archive_reference'] ?? ''));
         }
         if ($reference === '') {
-            $reference = TransmissionArchiveService::companiesHousePendingReference(
-                (int)$row['submission_id']
-            );
+            $submissionId = (int)($row['submission_id'] ?? 0);
+            if ($submissionId > 0) {
+                $reference = TransmissionArchiveService::companiesHousePendingReference(
+                    $submissionId
+                );
+            }
+        }
+        if ($reference === '') {
+            return;
         }
         $this->archives()->refreshManifest(
             (int)$row['company_id'],

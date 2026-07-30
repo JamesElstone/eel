@@ -207,11 +207,6 @@ final class CompaniesHouseAccountsSubmissionService
             && (string)($submission['environment'] ?? '') !== $mode) {
             $submissionBlockers[] = 'The prepared artifact belongs to ' . (string)$submission['environment'] . '; prepare a new artifact for ' . $mode . '.';
         }
-        $submissionBlockers = array_merge($preparationBlockersForSubmit = array_values(array_filter(
-            $preparationBlockers,
-            static fn(string $blocker): bool => !str_contains($blocker, 'already prepared')
-        )), $submissionBlockers);
-
         $preparedArtifact = $submission === null
             ? null
             : $this->preparedArtifactState($submission);
@@ -251,9 +246,11 @@ final class CompaniesHouseAccountsSubmissionService
             'preparation_checks' => $preparationChecks,
             'readiness' => $readiness,
             'submission' => $submission,
-            'preflight' => $submission === null
-                ? null
-                : $this->conversation()->latestPreflight((int)$submission['id']),
+            'preflight' => $this->conversation()->latestAuthenticationCheck(
+                $companyId,
+                $accountingPeriodId,
+                $mode
+            ),
             'status_cycle' => $submission === null
                 ? null
                 : $this->conversation()->latestStatusCycle((int)$submission['id']),
@@ -563,39 +560,71 @@ final class CompaniesHouseAccountsSubmissionService
         mixed $progress = null
     ): array {
         $submission = $this->submission($submissionId);
-        if ($submission === null || (string)$submission['lifecycle'] !== 'prepared') {
-            return $this->failure('Only a prepared revised-accounts artifact can be preflighted.');
+        if ($submission === null) {
+            return $this->failure('The company context for the authentication check is unavailable.');
         }
-        $artifactState = $this->preparedArtifactState($submission);
-        if (empty($artifactState['current'])) {
-            return $this->failure((string)(($artifactState['errors'] ?? [])[0]
-                ?? 'The prepared revised-accounts artifact is not current.'));
-        }
+
+        return $this->checkCompanyAuthentication(
+            (int)$submission['company_id'],
+            (int)$submission['accounting_period_id'],
+            $companyAuthCode,
+            $actor,
+            $progress
+        );
+    }
+
+    public function checkCompanyAuthentication(
+        int $companyId,
+        int $accountingPeriodId,
+        string $companyAuthCode,
+        string $actor,
+        mixed $progress = null
+    ): array {
         if (preg_match('/^[A-Za-z0-9]{6}$/D', $companyAuthCode) !== 1) {
             return $this->failure(
                 'The company authentication code must contain exactly 6 letters or numbers.'
             );
         }
+        $selection = $this->selection($companyId, $accountingPeriodId);
+        if ($selection === null) {
+            return $this->failure('Select a valid company context for the authentication check.');
+        }
         $mode = AccountingConfigurationStore::companiesHouseAccountsFilingMode();
-        if (!in_array($mode, ['TEST', 'LIVE'], true)
-            || $mode !== (string)$submission['environment']) {
-            return $this->failure('The Companies House filing environment is unavailable or mismatched.');
+        if (!in_array($mode, ['TEST', 'LIVE'], true)) {
+            return $this->failure('The Companies House XML environment is unavailable.');
+        }
+        if (!$this->credentialsConfigured($mode)) {
+            return $this->failure(
+                'Companies House presenter credentials are not configured for ' . $mode . '.'
+            );
         }
         $actor = $this->actor($actor);
         try {
+            $this->reportProgress(
+                $progress,
+                'Checking the installed CompanyData XML schemas.',
+                5
+            );
             $schema = ($this->schemaService ?? new CompaniesHouseAccountsSchemaService())
-                ->installedSchemas();
+                ->installedSchemasForOperation('company_data');
+            $company = (array)$selection['company'];
             $result = $this->performCompanyDataPreflight(
-                $submission,
+                [
+                    'id' => 0,
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'company_number' => (string)($company['company_number'] ?? ''),
+                    'environment' => $mode,
+                ],
                 $companyAuthCode,
                 $actor,
                 $mode,
                 $schema,
-                true
+                false
             );
         } catch (\Throwable $exception) {
             return $this->failure(
-                'Companies House CompanyData preflight failed; no submission number was consumed. '
+                'The Companies House company authentication check failed. '
                 . $exception->getMessage()
             );
         }
@@ -605,10 +634,10 @@ final class CompaniesHouseAccountsSubmissionService
             'success' => $success,
             'errors' => $success ? [] : [(string)$result['error']],
             'warnings' => !empty($result['transport_unknown'])
-                ? ['The preflight transport outcome is uncertain. Accounts submission remains blocked.']
+                ? ['The authentication-check transport outcome is uncertain. Check the exchange history before retrying.']
                 : [],
             'messages' => $success
-                ? ['CompanyData verified the company authentication code. The preflight is valid for 30 minutes.']
+                ? ['Companies House returned matching company data for this authentication code.']
                 : [],
             'preflight_id' => (int)($result['preflight_id'] ?? 0),
             'changed' => true,
@@ -1153,9 +1182,10 @@ final class CompaniesHouseAccountsSubmissionService
             );
         }
 
-        $readiness = $this->readiness((int)$submission['company_id'], (int)$submission['accounting_period_id']);
-        if (empty($readiness['ready_for_filing'])) {
-            return $this->failure((string)(($readiness['filing_errors'] ?? [])[0] ?? 'The iXBRL filing basis is no longer current.'));
+        $artifactState = $this->preparedArtifactState($submission);
+        if (empty($artifactState['current'])) {
+            return $this->failure((string)(($artifactState['errors'] ?? [])[0]
+                ?? 'The Companies House iXBRL is not current.'));
         }
         $artifactPath = (string)($submission['artifact_path'] ?? $submission['revised_artifact_path'] ?? '');
         $expectedArtifactHash = (string)($submission['artifact_sha256']
@@ -3142,8 +3172,8 @@ final class CompaniesHouseAccountsSubmissionService
         return is_array($row) ? $this->normaliseSubmission($row) : null;
     }
 
-    /** @param array<string,mixed>|null $baseArtifact */
-    private function preparedArtifactState(array $submission, ?array $baseArtifact = null): array
+    /** @param array<string,mixed>|null $currentProvenance */
+    private function preparedArtifactState(array $submission, ?array $currentProvenance = null): array
     {
         $path = trim((string)($submission['artifact_path'] ?? $submission['revised_artifact_path'] ?? ''));
         $expectedHash = strtolower(trim((string)(
@@ -3205,25 +3235,120 @@ final class CompaniesHouseAccountsSubmissionService
         }
         $result['fact_count'] = $this->inlineFactCount($path);
 
-        $baseArtifact ??= (new IxbrlFilingArtifactService())->locate(
-            (int)($submission['company_id'] ?? 0),
-            (int)($submission['accounting_period_id'] ?? 0)
-        );
-        if (empty($baseArtifact['ok'])) {
+        $currentProvenance ??= $this->companiesHouseArtifactProvenance($submission);
+        if (empty($currentProvenance['ok'])) {
+            $result['errors'] = array_values((array)($currentProvenance['errors'] ?? [
+                'Generate and validate the Companies House iXBRL for the current Disclosure Approval.',
+            ]));
+            return $result;
+        }
+        if ($baseRunId <= 0 || $baseRunId !== (int)($currentProvenance['run_id'] ?? 0)) {
             $result['errors'] = [
-                'Generate and validate the current HMRC Accounting iXBRL before preparing Companies House accounts.',
+                'This Companies House iXBRL does not belong to the current Disclosure Approval and must be regenerated.',
             ];
             return $result;
         }
-        if ($baseRunId <= 0 || $baseRunId !== (int)($baseArtifact['run_id'] ?? 0)) {
+        $submissionId = (int)($submission['id'] ?? 0);
+        $latestSubmissionId = (int)($currentProvenance['latest_submission_id'] ?? $submissionId);
+        if ($submissionId > 0
+            && $latestSubmissionId > 0
+            && $submissionId !== $latestSubmissionId) {
             $result['errors'] = [
-                'This Companies House iXBRL belongs to an earlier Accounting iXBRL run and must be regenerated.',
+                'A newer Companies House iXBRL has been generated for this filing. '
+                    . 'Use the latest prepared file.',
             ];
             return $result;
         }
         $result['state'] = 'current';
         $result['current'] = true;
         return $result;
+    }
+
+    /** @return array<string,mixed> */
+    private function companiesHouseArtifactProvenance(array $submission): array
+    {
+        $companyId = (int)($submission['company_id'] ?? 0);
+        $accountingPeriodId = (int)($submission['accounting_period_id'] ?? 0);
+        $runId = (int)($submission['ixbrl_generation_run_id'] ?? 0);
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || $runId <= 0) {
+            return [
+                'ok' => false,
+                'errors' => [
+                    'Generate and validate the Companies House iXBRL for the current Disclosure Approval.',
+                ],
+            ];
+        }
+
+        $approvalStatus = (new IxbrlAccountsFilingApprovalService())
+            ->status($companyId, $accountingPeriodId);
+        $approval = (array)($approvalStatus['approval'] ?? []);
+        $approvalId = (int)($approval['id'] ?? 0);
+        $approvalHash = strtolower(trim((string)($approval['basis_hash'] ?? '')));
+        if ((string)($approvalStatus['state'] ?? '') !== 'current'
+            || $approvalId <= 0
+            || $approvalHash === '') {
+            return [
+                'ok' => false,
+                'errors' => [
+                    'Approve the current disclosure basis, then generate and validate the Companies House iXBRL.',
+                ],
+            ];
+        }
+
+        $run = \InterfaceDB::fetchOne(
+            'SELECT id, filing_approval_id, filing_approval_hash
+             FROM ixbrl_generation_runs
+             WHERE id = :run_id
+               AND company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+             LIMIT 1',
+            [
+                'run_id' => $runId,
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+            ]
+        );
+        if (!is_array($run)
+            || (int)($run['filing_approval_id'] ?? 0) !== $approvalId
+            || !hash_equals(
+                $approvalHash,
+                strtolower(trim((string)($run['filing_approval_hash'] ?? '')))
+            )) {
+            return [
+                'ok' => false,
+                'errors' => [
+                    'Generate and validate a new Companies House iXBRL for the current Disclosure Approval.',
+                ],
+            ];
+        }
+
+        $latest = \InterfaceDB::fetchOne(
+            'SELECT id
+             FROM ' . self::SUBMISSIONS_TABLE . '
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND filing_type = :filing_type
+               AND environment = :environment
+               AND artifact_path IS NOT NULL
+               AND artifact_path <> :empty_path
+             ORDER BY id DESC
+             LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'filing_type' => (string)($submission['filing_type'] ?? 'revised'),
+                'environment' => (string)($submission['environment'] ?? 'TEST'),
+                'empty_path' => '',
+            ]
+        );
+
+        return [
+            'ok' => true,
+            'run_id' => $runId,
+            'filing_approval_id' => $approvalId,
+            'latest_submission_id' => (int)($latest['id'] ?? 0),
+            'errors' => [],
+        ];
     }
 
     private function inlineFactCount(string $path): int
@@ -3336,7 +3461,9 @@ final class CompaniesHouseAccountsSubmissionService
     /** @return list<array<string,mixed>> */
     public function submissionHistory(int $companyId, int $accountingPeriodId): array
     {
-        if ($companyId <= 0 || $accountingPeriodId <= 0 || !\InterfaceDB::tableExists(self::SUBMISSIONS_TABLE)) {
+        if ($companyId <= 0
+            || $accountingPeriodId <= 0
+            || !\InterfaceDB::tableExists(self::SUBMISSIONS_TABLE)) {
             return [];
         }
         $rows = \InterfaceDB::fetchAll(
@@ -3372,18 +3499,16 @@ final class CompaniesHouseAccountsSubmissionService
     /** @return list<array<string,mixed>> */
     public function protocolExchangeHistory(
         int $companyId,
-        int $accountingPeriodId,
         int $submissionId = 0
     ): array {
         if ($companyId <= 0
-            || $accountingPeriodId <= 0
             || !\InterfaceDB::tableExists('companies_house_protocol_exchanges')) {
             return [];
         }
         $submissionFilter = $submissionId > 0 ? ' AND s.id = :submission_id' : '';
         $params = [
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
+            'submission_company_id' => $companyId,
+            'preflight_company_id' => $companyId,
         ];
         if ($submissionId > 0) {
             $params['submission_id'] = $submissionId;
@@ -3397,13 +3522,16 @@ final class CompaniesHouseAccountsSubmissionService
                     cycle.normalized_status,
                     cycle.acknowledgement_state
              FROM companies_house_protocol_exchanges e
-             INNER JOIN ' . self::SUBMISSIONS_TABLE . ' s ON s.id = e.submission_id
+             LEFT JOIN ' . self::SUBMISSIONS_TABLE . ' s ON s.id = e.submission_id
              LEFT JOIN companies_house_company_auth_preflights p ON p.id = e.preflight_id
              LEFT JOIN companies_house_accounts_status_cycles cycle ON cycle.id = e.status_cycle_id
-             WHERE s.company_id = :company_id
-               AND s.accounting_period_id = :accounting_period_id'
+             WHERE (
+                 s.company_id = :submission_company_id
+                 OR
+                 p.company_id = :preflight_company_id
+             )'
                 . $submissionFilter . '
-             ORDER BY s.id DESC, e.id ASC
+             ORDER BY COALESCE(s.created_at, p.created_at) DESC, e.id ASC
              LIMIT 500',
             $params
         );
@@ -3436,27 +3564,75 @@ final class CompaniesHouseAccountsSubmissionService
         string $direction
     ): array {
         $row = \InterfaceDB::fetchOne(
-            'SELECT e.submission_id
+            'SELECT e.id
              FROM companies_house_protocol_exchanges e
-             INNER JOIN ' . self::SUBMISSIONS_TABLE . ' s ON s.id = e.submission_id
+             LEFT JOIN ' . self::SUBMISSIONS_TABLE . ' s ON s.id = e.submission_id
+             LEFT JOIN companies_house_company_auth_preflights p ON p.id = e.preflight_id
              WHERE e.id = :exchange_id
-               AND s.company_id = :company_id
-               AND s.accounting_period_id = :accounting_period_id
+               AND (
+                   (s.company_id = :submission_company_id
+                    AND s.accounting_period_id = :submission_accounting_period_id)
+                   OR
+                   (p.company_id = :preflight_company_id
+                    AND p.accounting_period_id = :preflight_accounting_period_id)
+               )
              LIMIT 1',
             [
                 'exchange_id' => $exchangeId,
-                'company_id' => $companyId,
-                'accounting_period_id' => $accountingPeriodId,
+                'submission_company_id' => $companyId,
+                'submission_accounting_period_id' => $accountingPeriodId,
+                'preflight_company_id' => $companyId,
+                'preflight_accounting_period_id' => $accountingPeriodId,
             ]
         );
-        $submissionId = (int)($row['submission_id'] ?? 0);
-        if ($submissionId <= 0) {
+        if (!is_array($row)) {
             throw new \RuntimeException(
                 'The Companies House evidence is not available in this accounting context.'
             );
         }
 
-        return $this->conversation()->evidenceFile($submissionId, $exchangeId, $direction);
+        return $this->conversation()->evidenceFileForContext(
+            $companyId,
+            $accountingPeriodId,
+            $exchangeId,
+            $direction
+        );
+    }
+
+    public function protocolEvidenceFileForCompany(
+        int $companyId,
+        int $exchangeId,
+        string $direction
+    ): array {
+        $row = \InterfaceDB::fetchOne(
+            'SELECT COALESCE(s.accounting_period_id, p.accounting_period_id)
+                    AS accounting_period_id
+             FROM companies_house_protocol_exchanges e
+             LEFT JOIN ' . self::SUBMISSIONS_TABLE . ' s ON s.id = e.submission_id
+             LEFT JOIN companies_house_company_auth_preflights p ON p.id = e.preflight_id
+             WHERE e.id = :exchange_id
+               AND (s.company_id = :submission_company_id
+                    OR p.company_id = :preflight_company_id)
+             LIMIT 1',
+            [
+                'exchange_id' => $exchangeId,
+                'submission_company_id' => $companyId,
+                'preflight_company_id' => $companyId,
+            ]
+        );
+        $accountingPeriodId = (int)($row['accounting_period_id'] ?? 0);
+        if ($accountingPeriodId <= 0) {
+            throw new \RuntimeException(
+                'The Companies House evidence is not available for this company.'
+            );
+        }
+
+        return $this->conversation()->evidenceFileForContext(
+            $companyId,
+            $accountingPeriodId,
+            $exchangeId,
+            $direction
+        );
     }
 
     public function recordProtocolEvidenceDownload(
@@ -3469,30 +3645,62 @@ final class CompaniesHouseAccountsSubmissionService
             return;
         }
         $row = \InterfaceDB::fetchOne(
-            'SELECT submission_id, operation, transaction_id
-             FROM companies_house_protocol_exchanges
-             WHERE id = :id LIMIT 1',
+            'SELECT e.submission_id, e.operation, e.transaction_id,
+                    p.company_id, p.accounting_period_id
+             FROM companies_house_protocol_exchanges e
+             LEFT JOIN companies_house_company_auth_preflights p ON p.id = e.preflight_id
+             WHERE e.id = :id LIMIT 1',
             ['id' => $exchangeId]
         );
         if (!is_array($row)) {
             return;
         }
-        $this->recordEvent(
-            (int)$row['submission_id'],
-            'protocol_evidence_downloaded',
-            'info',
-            (string)($this->submission((int)$row['submission_id'])['lifecycle'] ?? 'unknown'),
-            null,
-            'An administrator downloaded exact Companies House '
-                . $direction . ' XML evidence.',
-            $this->actor($actor),
-            [
-                'exchange_id' => $exchangeId,
-                'operation' => (string)$row['operation'],
-                'transaction_id' => (string)$row['transaction_id'],
-                'direction' => $direction,
-            ]
-        );
+        $submissionId = (int)($row['submission_id'] ?? 0);
+        if ($submissionId > 0) {
+            $this->recordEvent(
+                $submissionId,
+                'protocol_evidence_downloaded',
+                'info',
+                (string)($this->submission($submissionId)['lifecycle'] ?? 'unknown'),
+                null,
+                'An administrator downloaded exact Companies House '
+                    . $direction . ' XML evidence.',
+                $this->actor($actor),
+                [
+                    'exchange_id' => $exchangeId,
+                    'operation' => (string)$row['operation'],
+                    'transaction_id' => (string)$row['transaction_id'],
+                    'direction' => $direction,
+                ]
+            );
+            return;
+        }
+        if (\InterfaceDB::tableExists('year_end_audit_log')) {
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO year_end_audit_log (
+                    company_id, accounting_period_id, action, action_by,
+                    action_at, new_value_json, notes
+                 ) VALUES (
+                    :company_id, :accounting_period_id, :action, :actor,
+                    :action_at, :details, :notes
+                 )',
+                [
+                    'company_id' => (int)$row['company_id'],
+                    'accounting_period_id' => (int)$row['accounting_period_id'],
+                    'action' => 'companies_house_protocol_evidence_downloaded',
+                    'actor' => $this->actor($actor),
+                    'action_at' => gmdate('Y-m-d H:i:s'),
+                    'details' => \eel_accounts\Support\Utf8::json([
+                        'exchange_id' => $exchangeId,
+                        'operation' => (string)$row['operation'],
+                        'transaction_id' => (string)$row['transaction_id'],
+                        'direction' => $direction,
+                    ], JSON_THROW_ON_ERROR),
+                    'notes' => 'An administrator downloaded exact Companies House '
+                        . $direction . ' XML evidence.',
+                ]
+            );
+        }
     }
 
     private function exchangeOutcome(array $row): string
@@ -3710,8 +3918,15 @@ final class CompaniesHouseAccountsSubmissionService
         bool $developerStep
     ): array {
         $presenterCredentials = $this->credentials()->load($environment);
-        $preflight = $this->conversation()->beginPreflight(
-            $submission,
+        $authenticationContext = [
+            'id' => 0,
+            'company_id' => (int)$submission['company_id'],
+            'accounting_period_id' => (int)$submission['accounting_period_id'],
+            'company_number' => (string)$submission['company_number'],
+            'environment' => $environment,
+        ];
+        $preflight = $this->conversation()->beginAuthenticationCheck(
+            $authenticationContext,
             $environment,
             hash('sha256', strtoupper((string)$presenterCredentials['presenter_id'])),
             $companyAuthCode,
@@ -3726,20 +3941,13 @@ final class CompaniesHouseAccountsSubmissionService
             $environment,
             $schemaInventory,
             function (array $request) use (
-                $submission,
+                $authenticationContext,
                 $environment,
                 $preflight,
-                $preflightId,
-                $schemaInventory
+                $preflightId
             ): array {
-                $this->appendSchemaValidation(
-                    (int)$submission['id'],
-                    'company_data',
-                    (array)($schemaInventory['files'] ?? []),
-                    $preflightId
-                );
                 $receipt = $this->conversation()->captureRequest(
-                    $submission,
+                    $authenticationContext,
                     $environment,
                     (string)$preflight['archive_reference'],
                     'company_data',
@@ -3753,9 +3961,14 @@ final class CompaniesHouseAccountsSubmissionService
 
                 return $receipt;
             },
-            function (array $response) use ($submission, $environment, $preflight, $preflightId): array {
+            function (array $response) use (
+                $authenticationContext,
+                $environment,
+                $preflight,
+                $preflightId
+            ): array {
                 return $this->conversation()->captureResponse(
-                    $submission,
+                    $authenticationContext,
                     $environment,
                     (string)$preflight['archive_reference'],
                     'company_data',

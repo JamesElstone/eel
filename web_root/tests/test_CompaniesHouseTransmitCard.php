@@ -31,7 +31,8 @@ $harness->run(_companies_house_transmitCard::class, static function (
                 \eel_accounts\Service\CompaniesHouseAccountsSchemaService::class,
                 (string)$services[1]['service']
             );
-            $harness->assertSame('fetchStatus', (string)$services[1]['method']);
+            $harness->assertSame('fetchOperationStatus', (string)$services[1]['method']);
+            $harness->assertSame('company_data', (string)$services[1]['params']['operation']);
         }
     );
 
@@ -176,7 +177,7 @@ $harness->run(_companies_house_transmitCard::class, static function (
 
     $harness->check(
         _companies_house_transmitCard::class,
-        'renders a missing prepared iXBRL artifact as a spaced helper',
+        'keeps the transmit form visible and groups blockers in a warning panel',
         static function () use ($harness, $card): void {
             $message = 'The prepared Companies House iXBRL artifact is missing.';
             $html = $card->render([
@@ -204,9 +205,31 @@ $harness->run(_companies_house_transmitCard::class, static function (
 
             $harness->assertTrue(str_contains(
                 $html,
-                '<div class="helper companies-house-artifact-missing-helper">' . $message . '</div>'
+                '<section class="panel-soft warn full settings-stack companies-house-warning-panel">'
             ));
-            $harness->assertFalse(str_contains($html, '<div class="notice warning">' . $message));
+            $harness->assertTrue(str_contains(
+                $html,
+                '<span class="badge warning">Action required</span>'
+            ));
+            $harness->assertTrue(str_contains($html, '<ul class="helper">'));
+            $harness->assertTrue(str_contains($html, '<li>' . $message . '</li>'));
+            $harness->assertFalse(str_contains($html, '<div class="notice warning">'));
+            $harness->assertTrue(str_contains($html, 'value="submit_accounts"'));
+            $formPosition = strpos($html, 'class="settings-stack companies-house-transmit-form"');
+            $warningPosition = strpos(
+                $html,
+                '<section class="panel-soft warn full settings-stack companies-house-warning-panel">',
+                is_int($formPosition) ? $formPosition : 0
+            );
+            $buttonPosition = strpos($html, '>Transmit Company Accounts</button>');
+            $harness->assertTrue(is_int($formPosition));
+            $harness->assertTrue(is_int($warningPosition) && $warningPosition > $formPosition);
+            $harness->assertTrue(is_int($buttonPosition) && $buttonPosition > $warningPosition);
+            $harness->assertTrue(preg_match(
+                '/<button class="button danger"[^>]*disabled aria-disabled="true"[^>]*>'
+                    . 'Transmit Company Accounts<\/button>/',
+                $html
+            ) === 1);
         }
     );
 
@@ -262,6 +285,8 @@ $harness->run(_companies_house_transmitCard::class, static function (
                 $html = $card->render($renderContext);
                 $harness->assertTrue(str_contains($html, 'Transmit Company Accounts'));
                 $harness->assertTrue(str_contains($html, 'Check Company Authentication Code'));
+                $harness->assertTrue(str_contains($html, 'Company authentication check'));
+                $harness->assertFalse(str_contains($html, 'CompanyData preflight'));
                 $harness->assertTrue(str_contains(
                     $html,
                     '<section class="panel-soft"><h3 class="card-title">Test Companies House Connection</h3>'
@@ -291,15 +316,24 @@ $harness->run(_companies_house_transmitCard::class, static function (
                 ));
                 $harness->assertTrue(str_contains(
                     $blocked,
-                    'The company authentication-code check is blocked.'
+                    'The company authentication-code check is blocked because'
                 ));
                 $harness->assertTrue(str_contains($blocked, $schemaError));
-                $harness->assertTrue(str_contains($blocked, '>Open Tax Artifacts</a>'));
-                $harness->assertFalse(str_contains(
+                $harness->assertTrue(str_contains($blocked, 'href="?page=tax_artifacts"'));
+                $harness->assertTrue(str_contains(
                     $blocked,
-                    '<button class="button" type="submit">Check Company Authentication Code</button>'
+                    '<button class="button" type="submit" disabled aria-disabled="true">'
+                        . 'Check Company Authentication Code</button>'
                 ));
-                $harness->assertFalse(str_contains($blocked, '>Transmit Company Accounts</button>'));
+                $harness->assertTrue(preg_match(
+                    '/<button class="button danger"[^>]*disabled aria-disabled="true"[^>]*>'
+                        . 'Transmit Company Accounts<\/button>/',
+                    $blocked
+                ) === 1);
+                $harness->assertTrue(str_contains(
+                    $blocked,
+                    '<section class="panel-soft warn full settings-stack companies-house-warning-panel">'
+                ));
             } finally {
                 AppConfigurationStore::set('developer_options', (bool)$previous);
             }

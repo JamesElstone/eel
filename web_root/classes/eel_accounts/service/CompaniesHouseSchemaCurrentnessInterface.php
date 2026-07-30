@@ -16,4 +16,7 @@ interface CompaniesHouseSchemaCurrentnessInterface
 
     /** @return array<string, mixed> */
     public function installedSchemas(): array;
+
+    /** @return array<string, mixed> */
+    public function installedSchemasForOperation(string $operation): array;
 }

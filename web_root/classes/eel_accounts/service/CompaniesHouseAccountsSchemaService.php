@@ -82,6 +82,55 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
 
     public function installedSchemas(): array
     {
+        return $this->installedSchemaSet(self::ROOTS);
+    }
+
+    public function installedSchemasForOperation(string $operation): array
+    {
+        $operation = str_replace('-', '_', strtolower(trim($operation)));
+        if (!array_key_exists($operation, self::ROOTS) || $operation === 'envelope') {
+            throw new \InvalidArgumentException(
+                'Choose a supported Companies House XML schema operation.'
+            );
+        }
+
+        return $this->installedSchemaSet([
+            'envelope' => self::ROOTS['envelope'],
+            $operation => self::ROOTS[$operation],
+        ]);
+    }
+
+    public function fetchOperationStatus(string $operation): array
+    {
+        try {
+            $installed = $this->installedSchemasForOperation($operation);
+            return [
+                'state' => [
+                    'ready' => true,
+                    'file_count' => count((array)$installed['files']),
+                    'checked_at' => (string)($installed['checked_at'] ?? ''),
+                    'verified_at' => (string)($installed['verified_at'] ?? ''),
+                    'error' => '',
+                ],
+                'files' => (array)$installed['files'],
+            ];
+        } catch (\Throwable $exception) {
+            return [
+                'state' => [
+                    'ready' => false,
+                    'file_count' => 0,
+                    'checked_at' => '',
+                    'verified_at' => '',
+                    'error' => $exception->getMessage(),
+                ],
+                'files' => [],
+            ];
+        }
+    }
+
+    /** @param array<string,string> $roots */
+    private function installedSchemaSet(array $roots): array
+    {
         $rows = \InterfaceDB::fetchAll(
             'SELECT * FROM companies_house_schema_files ORDER BY source_url'
         );
@@ -105,7 +154,7 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
             $children[$this->canonicalUrl((string)$dependency['parent_url'])][] =
                 $this->canonicalUrl((string)$dependency['child_url']);
         }
-        $queue = array_values(array_map(fn(string $url): string => $this->canonicalUrl($url), self::ROOTS));
+        $queue = array_values(array_map(fn(string $url): string => $this->canonicalUrl($url), $roots));
         $selected = [];
         while ($queue !== []) {
             $url = array_shift($queue);
@@ -168,7 +217,7 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
                 $queue[] = $childUrl;
             }
         }
-        foreach (self::ROOTS as $role => $url) {
+        foreach ($roots as $role => $url) {
             if ($role !== 'envelope'
                 && strtolower((string)($selected[$this->canonicalUrl($url)]['catalogue_status'] ?? '')) !== 'live') {
                 throw new \RuntimeException(

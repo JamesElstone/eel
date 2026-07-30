@@ -15,7 +15,7 @@ final class _companies_house_transmission_historyCard extends CardBaseFramework
 
     public function helper(array $context): string
     {
-        return 'Review attempted filings and download the exact private XML sent to or received from Companies House.';
+        return 'Submission History covers the current accounting period. XML Exchange History covers every accounting year for the selected company and provides the exact private XML sent or received.';
     }
 
     public function handle(
@@ -50,7 +50,6 @@ final class _companies_house_transmission_historyCard extends CardBaseFramework
                 'method' => 'protocolExchangeHistory',
                 'params' => [
                     'companyId' => ':company.id',
-                    'accountingPeriodId' => ':company.accounting_period_id',
                     'submissionId' => ':companies_house_history.submission_id',
                 ],
             ],
@@ -156,7 +155,7 @@ final class _companies_house_transmission_historyCard extends CardBaseFramework
             }
             $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html($number !== '' ? $number : 'Not allocated')
                 . '</td><td>' . \eel_accounts\Support\Utf8::html(
-                    HelperFramework::labelFromKey((string)($exchange['operation'] ?? ''), '_')
+                    $this->operationLabel((string)($exchange['operation'] ?? ''))
                 )
                 . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($exchange['transaction_id'] ?? ''))
                 . '</td><td>' . \eel_accounts\Support\Utf8::html(
@@ -232,6 +231,13 @@ final class _companies_house_transmission_historyCard extends CardBaseFramework
         }
 
         return HelperFramework::labelFromKey((string)($submission['lifecycle'] ?? 'unknown'), '_');
+    }
+
+    private function operationLabel(string $operation): string
+    {
+        return strtolower(trim($operation)) === 'company_data'
+            ? 'Company authentication check'
+            : HelperFramework::labelFromKey($operation, '_');
     }
 
     private function timestamp(string $value): string

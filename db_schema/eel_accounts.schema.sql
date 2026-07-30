@@ -464,7 +464,7 @@ CREATE TABLE `companies_house_submission_sequences` (
 
 CREATE TABLE `companies_house_company_auth_preflights` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `submission_id` bigint(20) NOT NULL,
+  `submission_id` bigint(20) DEFAULT NULL,
   `company_id` int(11) NOT NULL,
   `accounting_period_id` int(11) NOT NULL,
   `environment` enum('TEST','LIVE') NOT NULL,
@@ -489,7 +489,7 @@ CREATE TABLE `companies_house_company_auth_preflights` (
   PRIMARY KEY (`id`),
   KEY `idx_ch_company_auth_preflight_archive_reference` (`archive_reference`),
   KEY `idx_ch_company_auth_preflight_submission` (`submission_id`,`outcome`,`created_at`),
-  CONSTRAINT `fk_ch_company_auth_preflight_submission` FOREIGN KEY (`submission_id`) REFERENCES `companies_house_accounts_submissions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  KEY `idx_ch_company_auth_preflight_company` (`company_id`,`accounting_period_id`,`environment`,`outcome`,`created_at`),
   CONSTRAINT `fk_ch_company_auth_preflight_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_ch_company_auth_preflight_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -4366,6 +4366,8 @@ INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_30_003_ct600_generated_artifacts.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_30_004_filing_authority_roles.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_30_005_companies_house_authentication_checks.sql');
 
 DROP TRIGGER IF EXISTS `trg_journals_append_only_update`;
 CREATE TRIGGER `trg_journals_append_only_update`

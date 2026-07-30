@@ -13,6 +13,7 @@ final class TransmissionArchiveService
 {
     private const TABLE = 'transmission_archives';
     private const PENDING_REFERENCE_PREFIX = 'pending-submission-';
+    private const AUTHENTICATION_REFERENCE_PREFIX = 'authentication-check-';
 
     private string $baseRoot;
 
@@ -28,6 +29,18 @@ final class TransmissionArchiveService
         }
 
         return self::PENDING_REFERENCE_PREFIX . $submissionId;
+    }
+
+    public static function companiesHouseAuthenticationCheckReference(?string $identifier = null): string
+    {
+        $identifier = strtolower(trim($identifier ?? bin2hex(random_bytes(12))));
+        if (preg_match('/^[a-f0-9]{24}$/D', $identifier) !== 1) {
+            throw new \InvalidArgumentException(
+                'A Companies House authentication-check archive identifier is required.'
+            );
+        }
+
+        return self::AUTHENTICATION_REFERENCE_PREFIX . $identifier;
     }
 
     /**
@@ -430,6 +443,14 @@ final class TransmissionArchiveService
             && preg_match('/^' . self::PENDING_REFERENCE_PREFIX . '([1-9][0-9]*)$/D', $reference, $matches) === 1) {
             $directory .= DIRECTORY_SEPARATOR . '_pending'
                 . DIRECTORY_SEPARATOR . 'submission-' . $matches[1];
+        } elseif ($authority === 'companies_house'
+            && preg_match(
+                '/^' . self::AUTHENTICATION_REFERENCE_PREFIX . '([a-f0-9]{24})$/D',
+                $reference,
+                $matches
+            ) === 1) {
+            $directory .= DIRECTORY_SEPARATOR . '_authentication_checks'
+                . DIRECTORY_SEPARATOR . 'check-' . $matches[1];
         } else {
             $directory .= DIRECTORY_SEPARATOR . $reference;
         }
@@ -763,8 +784,27 @@ final class TransmissionArchiveService
         }
         $reference = (string)$identity['submission_reference'];
         $submissionId = 0;
+        $preflightId = 0;
         if (preg_match('/^' . self::PENDING_REFERENCE_PREFIX . '([1-9][0-9]*)$/D', $reference, $matches) === 1) {
             $submissionId = (int)$matches[1];
+        } elseif (preg_match(
+            '/^' . self::AUTHENTICATION_REFERENCE_PREFIX . '[a-f0-9]{24}$/D',
+            $reference
+        ) === 1) {
+            $preflight = \InterfaceDB::fetchOne(
+                'SELECT id
+                 FROM companies_house_company_auth_preflights
+                 WHERE company_id = :company_id
+                   AND environment = :environment
+                   AND archive_reference = :reference
+                 LIMIT 1',
+                [
+                    'company_id' => $companyId,
+                    'environment' => (string)$identity['environment'],
+                    'reference' => $reference,
+                ]
+            );
+            $preflightId = (int)($preflight['id'] ?? 0);
         } elseif (preg_match('/^[0-9]{6}$/D', $reference) === 1) {
             $submission = \InterfaceDB::fetchOne(
                 'SELECT id
@@ -781,19 +821,22 @@ final class TransmissionArchiveService
             );
             $submissionId = (int)($submission['id'] ?? 0);
         }
-        if ($submissionId <= 0) {
+        if ($submissionId <= 0 && $preflightId <= 0) {
             return [];
         }
 
+        $where = $submissionId > 0
+            ? 'submission_id = :conversation_id'
+            : 'preflight_id = :conversation_id';
         $result = [];
         foreach (\InterfaceDB::fetchAll(
             'SELECT operation, transaction_id, exchange_state,
                     request_path, request_sha256, response_path, response_sha256,
                     response_status_code, error_summary, sent_at, received_at
              FROM companies_house_protocol_exchanges
-             WHERE submission_id = :submission_id
+             WHERE ' . $where . '
              ORDER BY id ASC',
-            ['submission_id' => $submissionId]
+            ['conversation_id' => $submissionId > 0 ? $submissionId : $preflightId]
         ) as $row) {
             $result[] = [
                 'operation' => (string)$row['operation'],

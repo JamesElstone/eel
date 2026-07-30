@@ -49,18 +49,36 @@ $harness->run(\eel_accounts\Service\Ct600ReturnAuthorisationService::class, stat
         $card = new _ixbrl_accounts_disclosuresCard();
         $method = new ReflectionMethod($card, 'ct600AuthorisationPanel');
         $method->setAccessible(true);
-        $html = (string)$method->invoke($card, 0, 0, []);
+        $html = (string)$method->invoke($card, 0, 0, [
+            'company' => ['settings' => ['date_format' => 'd/m/Y']],
+            'services' => ['ct_period_projection' => ['periods' => [[
+                'sequence_no' => 1,
+                'display_sequence_no' => 3,
+                'period_start' => '2024-10-01',
+                'period_end' => '2025-09-30',
+            ], [
+                'sequence_no' => 2,
+                'display_sequence_no' => 4,
+                'period_start' => '2025-10-01',
+                'period_end' => '2025-12-31',
+            ]]]],
+        ]);
 
         $harness->assertTrue(str_contains($html, 'name="declarant_authority" required'));
+        $harness->assertFalse(str_contains($html, 'data-ajax="true"'));
         $harness->assertFalse(str_contains($html, 'name="declarant_status"'));
         $harness->assertFalse(str_contains($html, 'name="declarant_name"'));
         $harness->assertTrue(str_contains($html, 'data-state-fields="ct600_declarant_authority"'));
         $harness->assertTrue(str_contains($html, 'data-state-target="save_ct600_return_authorisation_button"'));
         $harness->assertTrue(str_contains($html, 'id="save_ct600_return_authorisation_button" type="submit" disabled'));
-        $harness->assertTrue(str_contains($html, 'covers every CT600 for that the Accounting Period.'));
+        $harness->assertTrue(str_contains($html, 'covers every CT600 for the Accounting Period.'));
+        $harness->assertTrue(str_contains($html, '<th scope="row">CT Period 3</th><td>01/10/2024 to 30/09/2025</td>'));
+        $harness->assertTrue(str_contains($html, '<th scope="row">CT Period 4</th><td>01/10/2025 to 31/12/2025</td>'));
+        $harness->assertTrue(str_contains($html, 'for the CT periods listed above?'));
         $projectScript = file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'js' . DIRECTORY_SEPARATOR . 'project.js');
         $harness->assertTrue(is_string($projectScript) && str_contains($projectScript, 'initialiseCt600AuthorisationForms'));
         $harness->assertTrue(str_contains((string)$projectScript, 'confirmationChanged'));
+        $harness->assertTrue(str_contains((string)$projectScript, 'everyStatementConfirmed'));
         $harness->assertTrue(str_contains((string)$projectScript, 'initialiseCt600AuthorisationForms(node)'));
     });
 

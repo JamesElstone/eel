@@ -25,6 +25,38 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             $service::class,
+            'keeps the authentication check independent of filing readiness and generated accounts',
+            static function () use ($harness): void {
+                $method = new ReflectionMethod(
+                    \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
+                    'checkCompanyAuthentication'
+                );
+                $path = $method->getFileName();
+                $source = is_string($path) ? file($path) : false;
+                $harness->assertTrue(is_array($source));
+                $body = implode('', array_slice(
+                    $source,
+                    $method->getStartLine() - 1,
+                    $method->getEndLine() - $method->getStartLine() + 1
+                ));
+                $harness->assertTrue(str_contains(
+                    $body,
+                    "->installedSchemasForOperation('company_data')"
+                ));
+                foreach ([
+                    'fetchContext(',
+                    'preparedArtifactState(',
+                    'readiness(',
+                    'isLocked(',
+                    'revisionReadiness(',
+                ] as $filingPrerequisite) {
+                    $harness->assertFalse(str_contains($body, $filingPrerequisite));
+                }
+            }
+        );
+
+        $harness->check(
+            $service::class,
             'reloads the latest immutable schema file inventory for each filing operation',
             static function () use ($harness, $service, $invokePrivate): void {
                 $file = static fn(string $suffix, string $hash): array => [
@@ -135,7 +167,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             $service::class,
-            'marks a prepared artifact current only for the matching filing-ready Accounting run and intact file',
+            'marks only the latest intact Companies House artifact for the current approval as current',
             static function () use ($harness, $service, $invokePrivate): void {
                 $path = tempnam(test_tmp_directory(), 'ch-current-artifact-');
                 if ($path === false) {
@@ -150,10 +182,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 );
                 try {
                     $submission = [
+                        'id' => 712,
                         'company_id' => 49,
                         'accounting_period_id' => 79,
                         'ixbrl_generation_run_id' => 18,
                         'filing_type' => 'revised',
+                        'environment' => 'TEST',
                         'revision_declarations' => [
                             'original_approval_date' => '2025-05-29',
                             'revision_approval_date' => '2026-07-21',
@@ -169,6 +203,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $current = $invokePrivate($service, 'preparedArtifactState', $submission, [
                         'ok' => true,
                         'run_id' => 18,
+                        'latest_submission_id' => 712,
                     ]);
                     $harness->assertSame('current', (string)$current['state']);
                     $harness->assertSame(true, (bool)$current['current']);
@@ -184,6 +219,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $legacy = $invokePrivate($service, 'preparedArtifactState', $legacyPresentation, [
                         'ok' => true,
                         'run_id' => 18,
+                        'latest_submission_id' => 712,
                     ]);
                     $harness->assertSame('stale', (string)$legacy['state']);
                     $harness->assertSame(false, (bool)$legacy['current']);
@@ -196,6 +232,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $missing = $invokePrivate($service, 'preparedArtifactState', $missingPresentation, [
                         'ok' => true,
                         'run_id' => 18,
+                        'latest_submission_id' => 712,
                     ]);
                     $harness->assertSame('stale', (string)$missing['state']);
                     $harness->assertSame(false, (bool)$missing['current']);
@@ -203,23 +240,57 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $stale = $invokePrivate($service, 'preparedArtifactState', $submission, [
                         'ok' => true,
                         'run_id' => 19,
+                        'latest_submission_id' => 712,
                     ]);
                     $harness->assertSame('stale', (string)$stale['state']);
                     $harness->assertTrue(str_contains(
                         implode(' ', (array)$stale['errors']),
-                        'earlier Accounting iXBRL run'
+                        'current Disclosure Approval'
+                    ));
+                    $newer = $invokePrivate($service, 'preparedArtifactState', $submission, [
+                        'ok' => true,
+                        'run_id' => 18,
+                        'latest_submission_id' => 713,
+                    ]);
+                    $harness->assertSame('stale', (string)$newer['state']);
+                    $harness->assertTrue(str_contains(
+                        implode(' ', (array)$newer['errors']),
+                        'newer Companies House iXBRL'
                     ));
 
                     file_put_contents($path, '<html>changed</html>');
                     $tampered = $invokePrivate($service, 'preparedArtifactState', $submission, [
                         'ok' => true,
                         'run_id' => 18,
+                        'latest_submission_id' => 712,
                     ]);
                     $harness->assertSame('tampered', (string)$tampered['state']);
                     $harness->assertSame(false, (bool)$tampered['current']);
                 } finally {
                     @unlink($path);
                 }
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'does not reopen HMRC artifacts when deciding whether prepared Companies House XML can be sent',
+            static function () use ($harness): void {
+                $method = new ReflectionMethod(
+                    \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
+                    'submitAccounts'
+                );
+                $path = $method->getFileName();
+                $source = is_string($path) ? file($path) : false;
+                $harness->assertTrue(is_array($source));
+                $body = implode('', array_slice(
+                    $source,
+                    $method->getStartLine() - 1,
+                    $method->getEndLine() - $method->getStartLine() + 1
+                ));
+                $harness->assertTrue(str_contains($body, 'preparedArtifactState('));
+                $harness->assertFalse(str_contains($body, '$this->readiness('));
+                $harness->assertFalse(str_contains($body, 'IxbrlFilingArtifactService'));
             }
         );
 

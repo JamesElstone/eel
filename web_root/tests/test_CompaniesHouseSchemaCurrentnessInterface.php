@@ -17,6 +17,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(0, $installed->getNumberOfParameters());
             $harness->assertSame('array', (string)$installed->getReturnType());
         });
+        $operation = $reflection->getMethod('installedSchemasForOperation');
+        $harness->check(\eel_accounts\Service\CompaniesHouseSchemaCurrentnessInterface::class, 'declares the operation-specific installed inventory gate', static function () use ($harness, $operation): void {
+            $harness->assertSame(1, $operation->getNumberOfParameters());
+            $harness->assertSame('array', (string)$operation->getReturnType());
+        });
         $harness->check(\eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class, 'keeps schema downloads out of preflight and submission', static function () use ($harness): void {
             $path = (new ReflectionClass(
                 \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class
@@ -24,7 +29,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $source = is_string($path) ? file_get_contents($path) : false;
             $harness->assertTrue(is_string($source));
             $harness->assertFalse(str_contains((string)$source, '->refreshInstalledSchemas('));
-            $harness->assertTrue(substr_count((string)$source, '->installedSchemas()') >= 2);
+            $harness->assertTrue(substr_count((string)$source, '->installedSchemas()') >= 1);
+            $harness->assertTrue(str_contains(
+                (string)$source,
+                "->installedSchemasForOperation('company_data')"
+            ));
         });
     }
 );

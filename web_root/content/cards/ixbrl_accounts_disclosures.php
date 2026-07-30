@@ -52,6 +52,14 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                 'companyId' => ':company.id',
                 'accountingPeriodId' => ':company.accounting_period_id',
             ],
+        ], [
+            'key' => 'ct_period_projection',
+            'service' => \eel_accounts\Service\CorporationTaxPeriodService::class,
+            'method' => 'projectForAccountingPeriod',
+            'params' => [
+                'companyId' => ':company.id',
+                'accountingPeriodId' => ':company.accounting_period_id',
+            ],
         ]];
     }
 
@@ -427,6 +435,30 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
             ? '<div class="standout helper">No individual has an eligible authority effective today. Add a current director or filing-authority relationship before saving a new declaration.</div>'
             : '';
         $disabledAttribute = $approvalCurrent ? ' disabled aria-disabled="true"' : '';
+        $dateFormat = (string)($context['company']['settings']['date_format'] ?? 'd/m/Y');
+        if (!in_array($dateFormat, ['Y-m-d', 'd/m/Y', 'd-m-Y', 'd/m/y', 'd-m-y'], true)) {
+            $dateFormat = 'd/m/Y';
+        }
+        $formatDate = static function (string $date) use ($dateFormat): string {
+            $parsed = \DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+            return $parsed instanceof \DateTimeImmutable && $parsed->format('Y-m-d') === $date
+                ? $parsed->format($dateFormat)
+                : $date;
+        };
+        $ctPeriodRows = '';
+        foreach ((array)($context['services']['ct_period_projection']['periods'] ?? []) as $period) {
+            $displaySequenceNo = (int)($period['display_sequence_no'] ?? $period['sequence_no'] ?? 0);
+            $periodStart = $formatDate((string)($period['period_start'] ?? ''));
+            $periodEnd = $formatDate((string)($period['period_end'] ?? ''));
+            if ($displaySequenceNo <= 0 || $periodStart === '' || $periodEnd === '') {
+                continue;
+            }
+            $ctPeriodRows .= '<tr><th scope="row">CT Period '
+                . $displaySequenceNo
+                . '</th><td>'
+                . \eel_accounts\Support\Utf8::html($periodStart . ' to ' . $periodEnd)
+                . '</td></tr>';
+        }
         $question = static function (string $key, string $label, bool $value) use ($disabledAttribute): string {
             return '<fieldset class="panel-soft"><legend>' . \eel_accounts\Support\Utf8::html($label) . '</legend><div class="actions-row">'
                 . '<label><input type="radio" name="' . $key . '" value="1" required data-ct600-authorisation-field="true"' . ($value ? ' checked' : '') . $disabledAttribute . '> Yes</label>'
@@ -434,9 +466,9 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                 . '</div></fieldset>';
         };
         return '<section class="panel-soft ixbrl-approval-panel"><div class="status-head"><h3 class="card-title">Corporation Tax Return Authorisation</h3></div>'
-            . '<div class="helper">This authorisation is frozen into the next Disclosure Approval and covers every CT600 for that the Accounting Period.</div>'
+            . '<div class="helper">This authorisation is frozen into the next Disclosure Approval and covers every CT600 for the Accounting Period.</div>'
             . $legacyNotice . $eligibilityNotice
-            . '<form method="post" action="?page=disclosures" data-ajax="true" data-ct600-authorisation-form="true"'
+            . '<form method="post" action="?page=disclosures" data-ct600-authorisation-form="true"'
             . ' data-state-fields="ct600_declarant_authority" data-state-target="save_ct600_return_authorisation_button"'
             . ' data-original-unfiled-default="' . (!empty($saved['original_unfiled_confirmed']) ? '1' : '0') . '"'
             . ' data-authority-default="' . (!empty($saved['authority_confirmed']) ? '1' : '0') . '"'
@@ -445,14 +477,15 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
             . '<input type="hidden" name="intent" value="save_ct600_return_authorisation"><input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
             . '<div class="form-row full table-scroll"><table><tbody>'
             . '<tr><th scope="row"><label for="ct600_declarant_authority">Authoriser and capacity</label></th><td><select class="select" id="ct600_declarant_authority" name="declarant_authority" required data-state-default="' . \eel_accounts\Support\Utf8::html($renderedSelectedReference) . '"' . $disabledAttribute . '>' . $options . '</select></td></tr>'
+            . $ctPeriodRows
             . '<tr><th scope="row">Saved declarant</th><td>' . \eel_accounts\Support\Utf8::html($savedName !== '' ? $savedName : 'Not recorded in the legacy authorisation') . '</td></tr>'
             . '<tr><th scope="row">Saved capacity</th><td>' . \eel_accounts\Support\Utf8::html($savedStatus !== '' ? $savedStatus : 'Not saved') . '</td></tr>'
             . '<tr><th scope="row">Last updated on</th><td>' . \eel_accounts\Support\Utf8::html((string)($saved['saved_at'] ?? 'Not saved')) . '</td></tr>'
             . '<tr><th scope="row">Last updated by</th><td>' . \eel_accounts\Support\Utf8::html((string)($saved['saved_by_display_name'] ?? 'Not saved')) . '</td></tr>'
             . '</tbody></table></div>'
-            . $question('original_unfiled_confirmed', 'Is this an original return that has not already been filed for this CT period?', !empty($saved['original_unfiled_confirmed']))
-            . $question('authority_confirmed', 'Are you authorised to file this Corporation Tax return for the company?', !empty($saved['authority_confirmed']))
-            . $question('declaration_confirmed', 'Do you declare that the information in this return is correct and complete to the best of your knowledge and belief?', !empty($saved['declaration_confirmed']))
+            . $question('original_unfiled_confirmed', 'Are these original returns that have not already been filed for the CT periods listed above?', !empty($saved['original_unfiled_confirmed']))
+            . $question('authority_confirmed', 'Are you authorised to file these Corporation Tax returns for the company?', !empty($saved['authority_confirmed']))
+            . $question('declaration_confirmed', 'Do you declare that the information in these returns is correct and complete to the best of your knowledge and belief?', !empty($saved['declaration_confirmed']))
             . '<div class="actions-row"><button class="button primary" id="save_ct600_return_authorisation_button" type="submit" disabled' . ($approvalCurrent ? ' aria-disabled="true"' : '') . '>Approve Corporation Tax Return</button></div></form></section>';
     }
 

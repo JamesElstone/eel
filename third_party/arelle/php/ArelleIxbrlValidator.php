@@ -393,6 +393,9 @@ final class ArelleIxbrlValidator
 
     private function diagnosticSeverity(string $code, string $explicitSeverity, string $message = ''): string
     {
+        if ($explicitSeverity === '' && preg_match('/^(?:info(?:[.:].*)?|debug)\b/i', trim($code)) === 1) {
+            return 'information';
+        }
         $value = strtolower($explicitSeverity !== '' ? $explicitSeverity : $code . ' ' . $message);
         if ($explicitSeverity === '' && preg_match('/^(fatal|critical|error|exception|traceback|warning|warn|information|info)\b/i', $message, $matches) === 1) {
             $value = strtolower((string)$matches[1]);
@@ -410,7 +413,11 @@ final class ArelleIxbrlValidator
             return 'information';
         }
 
-        return 'unknown';
+        // Jurisdictional Arelle plug-ins commonly emit rule codes without an
+        // explicit severity (for example, HMRC.5.3 or JFCVC.3312). Informational
+        // and debug records are handled above; retain the other findings as
+        // visible validation errors rather than hiding them as "unknown".
+        return 'error';
     }
 
     /** @return array{source_document: ?string, line: ?int, column: ?int, fact_reference: ?string} */

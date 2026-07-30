@@ -15,7 +15,7 @@ final class IxbrlAction implements ActionInterfaceFramework
         // CT600 construction performs external-schema validation and may take
         // longer than PHP's normal request limit.  This must be set before the
         // first database or filesystem check for the generation action.
-        if (in_array($intent, ['generate_all_filing_ixbrl', 'generate_ct600_xml'], true)) {
+        if (in_array($intent, ['generate_all_filing_ixbrl', 'generate_ct600_xml', 'revalidate_arelle'], true)) {
             $this->allowUnlimitedGenerationRuntime();
         }
         $companyId = (int)$request->input('company_id', 0);
@@ -238,6 +238,40 @@ final class IxbrlAction implements ActionInterfaceFramework
                         ? [(int)$cleanup['skipped_count'] . ' missing-file run(s) retained because they are referenced by transmitted or in-flight Companies House filings.']
                         : [],
                 ];
+            } elseif ($intent === 'revalidate_arelle') {
+                if (!(bool)AppConfigurationStore::get('developer_options', false)) {
+                    return $this->result(false, ['Developer options must be enabled to revalidate iXBRL with Arelle.'], $changedFacts);
+                }
+                $progress = $services->actionProgress();
+                $scope = trim((string)$request->input('arelle_scope', ''));
+                $progress->report('Preparing the selected iXBRL artifact for Arelle revalidation…', 0);
+                $result = $this->withFilingLock(
+                    $companyId,
+                    $accountingPeriodId,
+                    function () use ($scope, $companyId, $accountingPeriodId, $ctPeriodId, $runId, $request, $progress): array {
+                        $progress->report('Exclusive filing-validation lock acquired.', 5);
+                        $progress->report('Running Arelle validation for the selected iXBRL artifact…', 15);
+                        $result = match ($scope) {
+                            'accounts' => $this->validateExternalRun($runId),
+                            'computation' => $this->validateComputation($companyId, $accountingPeriodId, $ctPeriodId),
+                            'companies_house' => (new \eel_accounts\Service\CompaniesHouseAccountsSubmissionService())
+                                ->revalidatePreparedArtifact(
+                                    $companyId,
+                                    $accountingPeriodId,
+                                    (int)$request->input('submission_id', 0),
+                                    $progress
+                                ),
+                            default => ['success' => false, 'errors' => ['Select a valid Arelle validation result to revalidate.']],
+                        };
+                        $progress->report(
+                            !empty($result['success'])
+                                ? 'Arelle revalidation completed successfully.'
+                                : 'Arelle revalidation completed with errors.',
+                            100
+                        );
+                        return $result;
+                    }
+                );
             } elseif (in_array($intent, ['generate_computation_ixbrl', 'validate_computation_ixbrl', 'generate_ct600_xml'], true)) {
                 if ($intent === 'generate_ct600_xml') {
                     $progress = $services->actionProgress();
@@ -427,6 +461,18 @@ final class IxbrlAction implements ActionInterfaceFramework
             return ['success' => false, 'errors' => (array)($result['errors'] ?? ['Arelle is not configured.'])];
         }
 
+        return ['success' => false, 'errors' => (array)($result['errors'] ?? ['Arelle external validation failed.'])];
+    }
+
+    private function validateExternalRun(int $runId): array
+    {
+        if ($runId <= 0) {
+            return ['success' => false, 'errors' => ['The selected iXBRL generation run is unavailable.']];
+        }
+        $result = (new \eel_accounts\Service\IxbrlExternalValidationService())->validateRun($runId);
+        if ((string)($result['status'] ?? '') === 'passed') {
+            return ['success' => true, 'errors' => [], 'messages' => ['Arelle external validation passed.']];
+        }
         return ['success' => false, 'errors' => (array)($result['errors'] ?? ['Arelle external validation failed.'])];
     }
 

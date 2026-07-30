@@ -278,6 +278,71 @@ final class CompaniesHouseAccountsSubmissionService
         ];
     }
 
+    /** Re-runs Arelle against the already-prepared Companies House artifact. */
+    public function revalidatePreparedArtifact(
+        int $companyId,
+        int $accountingPeriodId,
+        int $submissionId,
+        mixed $progress = null
+    ): array {
+        $this->reportProgress($progress, 'Checking the prepared Companies House iXBRL artifact…', 20);
+        if ($submissionId <= 0 || !\InterfaceDB::tableExists(self::SUBMISSIONS_TABLE)) {
+            return $this->failure('The selected Companies House iXBRL submission is unavailable.');
+        }
+        $submission = \InterfaceDB::fetchOne(
+            'SELECT * FROM ' . self::SUBMISSIONS_TABLE . ' WHERE id = :id AND company_id = :company_id AND accounting_period_id = :period_id LIMIT 1',
+            ['id' => $submissionId, 'company_id' => $companyId, 'period_id' => $accountingPeriodId]
+        );
+        if (!is_array($submission)) {
+            return $this->failure('The selected Companies House iXBRL submission is unavailable.');
+        }
+        $path = trim((string)($submission['revised_artifact_path'] ?? $submission['artifact_path'] ?? ''));
+        $expectedHash = strtolower(trim((string)($submission['revised_artifact_sha256'] ?? $submission['artifact_sha256'] ?? '')));
+        if ($path === '' || !is_file($path) || $expectedHash === '') {
+            return $this->failure('The prepared Companies House iXBRL artifact is unavailable.');
+        }
+        $actualHash = hash_file('sha256', $path);
+        if (!is_string($actualHash) || !hash_equals($expectedHash, strtolower($actualHash))) {
+            return $this->failure('The prepared Companies House iXBRL artifact has changed and must be regenerated.');
+        }
+        $role = strtolower(trim((string)($submission['filing_type'] ?? ''))) === 'original'
+            ? 'companies_house_original_accounts_ixbrl'
+            : 'companies_house_revised_accounts_ixbrl';
+        $evidence = \InterfaceDB::fetchOne(
+            'SELECT * FROM filing_evidence_artifacts WHERE bundle_id = :bundle_id AND artifact_role = :role ORDER BY id DESC LIMIT 1',
+            ['bundle_id' => (int)($submission['evidence_bundle_id'] ?? 0), 'role' => $role]
+        );
+        if (!is_array($evidence)) {
+            return $this->failure('The prepared Companies House iXBRL evidence record is unavailable.');
+        }
+        $this->reportProgress($progress, 'Running Arelle validation for the prepared Companies House iXBRL…', 45);
+        $validation = (new IxbrlExternalValidationService())->validateArtifact($path);
+        $metadata = json_decode((string)($evidence['metadata_json'] ?? ''), true);
+        $metadata = is_array($metadata) ? $metadata : [];
+        $metadata['arelle_validation'] = $validation;
+        $passed = (string)($validation['status'] ?? '') === 'passed';
+        \InterfaceDB::prepareExecute(
+            'UPDATE filing_evidence_artifacts SET artifact_status = :artifact_status, validator_name = :validator,
+             validator_version = :validator_version, validation_status = :validation_status, metadata_json = :metadata,
+             completed_at = CURRENT_TIMESTAMP WHERE id = :id',
+            [
+                'artifact_status' => $passed ? 'validated' : 'generated',
+                'validator' => 'arelle',
+                'validator_version' => (string)($validation['version'] ?? ''),
+                'validation_status' => (string)($validation['status'] ?? 'error'),
+                'metadata' => \eel_accounts\Support\PersistentJson::encode($metadata, JSON_UNESCAPED_SLASHES),
+                'id' => (int)$evidence['id'],
+            ]
+        );
+        $this->reportProgress($progress, 'Updated the Companies House Arelle validation result.', 90);
+        return [
+            'success' => $passed,
+            'errors' => $passed ? [] : (array)($validation['errors'] ?? ['Arelle validation failed.']),
+            'warnings' => (array)($validation['warnings'] ?? []),
+            'messages' => $passed ? ['Companies House iXBRL Arelle validation passed.'] : [],
+        ];
+    }
+
     /**
      * Lightweight filing-kind lookup for services that only need to choose the
      * statutory accounts artifact. It deliberately avoids building the full

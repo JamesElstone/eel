@@ -749,6 +749,29 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     . '</form>';
             }
         }
+        if ((bool)AppConfigurationStore::get('developer_options', false)) {
+            $companyId = (int)($download['company_id'] ?? 0);
+            $accountingPeriodId = (int)($download['accounting_period_id'] ?? 0);
+            $scope = trim((string)($download['scope'] ?? ''));
+            $runId = (int)($download['run_id'] ?? 0);
+            $ctPeriodId = (int)($download['ct_period_id'] ?? 0);
+            $submissionId = (int)($download['submission_id'] ?? 0);
+            $identityReady = $scope === 'companies_house' ? $submissionId > 0 : $runId > 0;
+            if ($companyId > 0 && $accountingPeriodId > 0 && $scope !== '' && $identityReady) {
+                $html .= '<form method="post" action="?page=disclosures" data-ajax="true" class="actions-row ixbrl-arelle-revalidate">'
+                    . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+                    . '<input type="hidden" name="card_action" value="Ixbrl">'
+                    . '<input type="hidden" name="intent" value="revalidate_arelle">'
+                    . '<input type="hidden" name="company_id" value="' . $companyId . '">'
+                    . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
+                    . '<input type="hidden" name="arelle_scope" value="' . \eel_accounts\Support\Utf8::html($scope) . '">'
+                    . '<input type="hidden" name="run_id" value="' . $runId . '">'
+                    . '<input type="hidden" name="ct_period_id" value="' . $ctPeriodId . '">'
+                    . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
+                    . '<button class="button compact danger" type="submit">Revalidate</button>'
+                    . '</form>';
+            }
+        }
         return $html . '</section>';
     }
 

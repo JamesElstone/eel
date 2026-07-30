@@ -29,7 +29,7 @@ final class _tax_artifacts_refreshCard extends CardBaseFramework
     public function render(array $context): string
     {
         return '<div class="settings-stack"><div class="panel-soft settings-stack">'
-            . '<p>Use this when preparing the application with the latest official filing artefacts and VAT reference data.</p>'
+            . '<p>Use this when preparing the application with the latest official tax filing artefacts, Companies House filing schemas and VAT reference data.</p>'
             . '<form method="post" action="?page=tax_artifacts" data-ajax="true">'
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="TaxArtifactsRefresh">'

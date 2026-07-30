@@ -81,7 +81,7 @@ final class _incorporation_relationshipsCard extends CardBaseFramework
             $rows = '<tr><td colspan="5" class="helper">No business relationships have been recorded.</td></tr>';
         }
 
-        return '<div class="panel-soft"><table class="table"><thead><tr><th>Party</th><th>Role</th><th>Effective from</th><th>Effective to</th><th>Manage</th></tr></thead><tbody>'
+        return '<div class="panel-soft"><table class="table"><thead><tr><th>Party</th><th>Relationship</th><th>Effective from</th><th>Effective to</th><th>Manage</th></tr></thead><tbody>'
             . $rows . '</tbody></table></div>';
     }
 
@@ -95,9 +95,9 @@ final class _incorporation_relationshipsCard extends CardBaseFramework
         return '<form method="post" data-ajax="true" class="panel-soft settings-stack">'
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="Incorporation"><input type="hidden" name="intent" value="save_ownership_role">'
-            . '<input type="hidden" name="company_id" value="' . $companyId . '"><h4 class="card-title">Add effective role</h4>'
+            . '<input type="hidden" name="company_id" value="' . $companyId . '"><h4 class="card-title">Add new Relationship</h4>'
             . '<div class="form-grid"><div class="form-row"><label>Party</label><select class="select" name="party_id" required><option value="">Select</option>' . $partyOptions . '</select></div>'
-            . '<div class="form-row"><label>Role</label><select class="select" name="role_type">' . $roleOptions . '</select></div>'
+            . '<div class="form-row"><label>Relationship</label><select class="select" name="role_type">' . $roleOptions . '</select></div>'
             . '<div class="form-row"><label>Effective from</label><input class="input" type="date" name="effective_from" required></div></div>'
             . '<div class="actions-row"><button class="button primary" type="submit">Add role</button></div></form>';
     }

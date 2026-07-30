@@ -52,6 +52,12 @@ $harness->run(_incorporation_relationshipsCard::class, static function (
         $harness->assertTrue(str_contains($html, 'aria-label="Last effective date"'));
         $harness->assertTrue(str_contains($html, '>End role</button>'));
         $harness->assertFalse(str_contains($html, 'End an ownership role'));
+        $harness->assertTrue(str_contains($html, '<th>Relationship</th>'));
+        $harness->assertTrue(str_contains($html, '<label>Relationship</label><select'));
+        $harness->assertTrue(str_contains($html, '>Add new Relationship</h4>'));
+        $harness->assertFalse(str_contains($html, '<th>Role</th>'));
+        $harness->assertFalse(str_contains($html, '<label>Role</label>'));
+        $harness->assertFalse(str_contains($html, '>Add effective role</h4>'));
         $harness->assertTrue(str_contains($html, '<option value="12">Example Owner</option>'));
         $harness->assertTrue(str_contains($html, '<option value="13">Unrelated Party</option>'));
     });

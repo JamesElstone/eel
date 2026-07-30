@@ -131,16 +131,6 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
                     . 'Refresh it from Tax Artifacts before filing.'
                 );
             }
-            if (in_array(
-                strtolower((string)($file['catalogue_status'] ?? '')),
-                ['deprecated', 'retired'],
-                true
-            )) {
-                throw new \RuntimeException(
-                    'An installed Companies House schema is no longer accepted for filing. '
-                    . 'Refresh Tax Artifacts or update the filing profile.'
-                );
-            }
             $xml = file_get_contents($path);
             if (!is_string($xml)) {
                 throw new \RuntimeException(

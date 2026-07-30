@@ -23,6 +23,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 foreach (array_slice($urls, 1) as $url) {
                     $rows .= '<tr><td><a href="' . $url . '">' . basename($url) . '</a></td><td>Live</td><td>01/01/2026</td><td>02/01/2026</td></tr>';
                 }
+                $rows .= '<tr><td><a href="/v1-0/schema/forms/FormCommon-v1-0.xsd">'
+                    . 'FormCommon-v1-0.xsd</a></td><td>Deprecated</td></tr>';
                 $schemas = [
                     $urls[0] => '<?xml version="1.0"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="http://www.govtalk.gov.uk/CM/envelope" elementFormDefault="qualified"><xs:element name="GovTalkMessage"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="skip"/></xs:sequence></xs:complexType></xs:element></xs:schema>',
                     $urls[1] => '<?xml version="1.0"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="http://xmlgw.companieshouse.gov.uk/Header" elementFormDefault="qualified"><xs:include schemaLocation="FormCommon-v1-0.xsd"/><xs:element name="FormSubmission"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="skip"/></xs:sequence></xs:complexType></xs:element></xs:schema>',
@@ -79,6 +81,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertFalse(is_dir($cache . DIRECTORY_SEPARATOR . 'snapshots'));
                 $harness->assertTrue(in_array("$host/v1-0/schema/forms/FormCommon-v1-0.xsd", $calls, true));
                 $harness->assertSame(7, (int)\InterfaceDB::fetchColumn('SELECT COUNT(*) FROM companies_house_schema_files'));
+                $harness->assertSame(
+                    'deprecated',
+                    (string)\InterfaceDB::fetchColumn(
+                        'SELECT catalogue_status
+                         FROM companies_house_schema_files
+                         WHERE schema_name = :schema_name',
+                        ['schema_name' => 'FormCommon-v1-0.xsd']
+                    )
+                );
 
                 $xml = '<?xml version="1.0"?><GovTalkMessage xmlns="http://www.govtalk.gov.uk/CM/envelope"><Body><FormSubmission xmlns="http://xmlgw.companieshouse.gov.uk/Header"/></Body></GovTalkMessage>';
                 $validated = (new \eel_accounts\Service\CompaniesHouseAccountsSchemaValidator())->validateAccountsRequest($xml, $first);

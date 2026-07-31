@@ -33,6 +33,21 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
         $harness->assertTrue(str_contains($body, 'nothing has been sent yet.'));
     });
 
+    $harness->check(CompaniesHouseAccountsAction::class, 'uses the namespaced accounting configuration store in production', static function () use ($harness): void {
+        $source = file_get_contents(__DIR__ . DIRECTORY_SEPARATOR . '..'
+            . DIRECTORY_SEPARATOR . 'content' . DIRECTORY_SEPARATOR . 'actions'
+            . DIRECTORY_SEPARATOR . 'CompaniesHouseAccountsAction.php');
+        $harness->assertTrue(is_string($source));
+        $harness->assertTrue(str_contains(
+            (string)$source,
+            '\\eel_accounts\\Store\\AccountingConfigurationStore::companiesHouseAccountsFilingMode()'
+        ));
+        $harness->assertTrue(str_contains(
+            (string)$source,
+            '\\eel_accounts\\Store\\AccountingConfigurationStore::companiesHouseAccountsLiveApproved()'
+        ));
+    });
+
     $harness->check(CompaniesHouseAccountsAction::class, 'requires an explicitly supplied CSRF token', static function () use ($harness): void {
         $service = new CompaniesHouseAccountsActionFakeService();
         $action = new CompaniesHouseAccountsAction($service);
@@ -253,8 +268,13 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
         ]), createTestPageServiceFramework());
 
         $harness->assertSame(true, $result->isSuccess());
+        $harness->assertSame('submissionBelongsToContext', (string)($service->calls[0]['method'] ?? ''));
         $harness->assertSame('refreshStatus', (string)($service->calls[1]['method'] ?? ''));
         $harness->assertSame(91, (int)($service->calls[1]['submission_id'] ?? 0));
+        $harness->assertSame([], array_values(array_filter(
+            $service->calls,
+            static fn(array $call): bool => (string)($call['method'] ?? '') === 'fetchContext'
+        )));
         $harness->assertSame(true, in_array('companies.house.accounts.submission', $result->changedFacts(), true));
     });
 

@@ -447,9 +447,12 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         string $method
     ): array {
         $submissionId = (int)$request->input('submission_id', 0);
-        $context = (array)$this->service()->fetchContext($companyId, $accountingPeriodId);
         if ($submissionId <= 0
-            || (int)(($context['submission'] ?? [])['id'] ?? 0) !== $submissionId) {
+            || !$this->service()->submissionBelongsToContext(
+                $submissionId,
+                $companyId,
+                $accountingPeriodId
+            )) {
             return ['success' => false, 'errors' => ['The Companies House submission could not be identified.']];
         }
         return $this->service()->{$method}($submissionId, $this->actor($request));
@@ -467,9 +470,12 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             ]];
         }
         $submissionId = (int)$request->input('submission_id', 0);
-        $context = (array)$this->service()->fetchContext($companyId, $accountingPeriodId);
         if ($submissionId <= 0
-            || (int)(($context['submission'] ?? [])['id'] ?? 0) !== $submissionId) {
+            || !$this->service()->submissionBelongsToContext(
+                $submissionId,
+                $companyId,
+                $accountingPeriodId
+            )) {
             return ['success' => false, 'errors' => ['The Companies House submission could not be identified.']];
         }
         return $this->service()->reconcileStatusExchange(
@@ -494,8 +500,11 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         if ($submissionId <= 0) {
             return ['success' => false, 'errors' => ['The Companies House submission could not be identified.']];
         }
-        $context = (array)$this->service()->fetchContext($companyId, $accountingPeriodId);
-        if ((int)(($context['submission'] ?? [])['id'] ?? 0) !== $submissionId) {
+        if (!$this->service()->submissionBelongsToContext(
+            $submissionId,
+            $companyId,
+            $accountingPeriodId
+        )) {
             return ['success' => false, 'errors' => ['The submission does not belong to the selected company and accounting period.']];
         }
 
@@ -641,7 +650,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
     {
         $mode = $this->filingModeResolver !== null
             ? (string)($this->filingModeResolver)()
-            : AccountingConfigurationStore::companiesHouseAccountsFilingMode();
+            : \eel_accounts\Store\AccountingConfigurationStore::companiesHouseAccountsFilingMode();
 
         return strtoupper(trim($mode));
     }
@@ -650,7 +659,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
     {
         return $this->liveApprovalResolver !== null
             ? (bool)($this->liveApprovalResolver)()
-            : AccountingConfigurationStore::companiesHouseAccountsLiveApproved();
+            : \eel_accounts\Store\AccountingConfigurationStore::companiesHouseAccountsLiveApproved();
     }
 
     private function isIsoDate(string $value): bool

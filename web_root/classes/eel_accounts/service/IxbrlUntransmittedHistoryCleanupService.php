@@ -139,7 +139,7 @@ final class IxbrlUntransmittedHistoryCleanupService
             }
 
             $clearedCt600Outputs = \InterfaceDB::execute(
-                "UPDATE corporation_tax_computation_runs run
+                "UPDATE corporation_tax_computation_runs AS run
                  SET ixbrl_status = 'not_generated',
                      computation_taxonomy_package_id = NULL,
                      computation_taxonomy_package_hash = NULL,

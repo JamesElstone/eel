@@ -10,7 +10,7 @@ namespace eel_accounts\Service;
  */
 final class Ct600ReturnModelService
 {
-    public const MODEL_VERSION = 'ct600-return-model-v4';
+    public const MODEL_VERSION = 'ct600-return-model-v5';
 
     private ?\Closure $filingModelLoader;
     private ?\Closure $rimResolver;
@@ -321,7 +321,7 @@ final class Ct600ReturnModelService
                 'qualifying_expenditure_other_machinery_plant' => (float)$decisions['qualifying_expenditure_other_machinery_plant'],
             ],
             'amounts' => [
-                'turnover' => (float)$model['accounts_facts']['turnover'],
+                'turnover' => (float)$model['ct_period_facts']['ct600_box_145_turnover'],
                 'accounting_profit' => $this->number($summary, 'accounting_profit'),
                 'capital_allowances' => $this->number($summary, 'capital_allowances'),
                 'taxable_before_losses' => $this->number($summary, 'taxable_before_losses'),
@@ -448,6 +448,17 @@ final class Ct600ReturnModelService
             || !is_int($model['accounts_facts']['turnover'] ?? null) && !is_float($model['accounts_facts']['turnover'] ?? null)
             || (float)($model['accounts_facts']['turnover'] ?? -1) < 0) {
             $errors[] = 'The frozen accounts turnover must be a non-negative GBP amount.';
+        }
+        if ((string)($model['ct_period_facts']['turnover_basis_version'] ?? '') !== CtPeriodTurnoverService::BASIS_VERSION
+            || !is_int($model['ct_period_facts']['actual_trading_turnover'] ?? null)
+                && !is_float($model['ct_period_facts']['actual_trading_turnover'] ?? null)
+            || !is_int($model['ct_period_facts']['ct600_box_145_turnover'] ?? null)
+                && !is_float($model['ct_period_facts']['ct600_box_145_turnover'] ?? null)
+            || (float)($model['ct_period_facts']['actual_trading_turnover'] ?? -1) < 0
+            || (float)($model['ct_period_facts']['ct600_box_145_turnover'] ?? -1) < 0
+            || abs((float)($model['ct_period_facts']['ct600_box_145_turnover'] ?? 0)
+                - round((float)($model['ct_period_facts']['ct600_box_145_turnover'] ?? 0))) > 0.0001) {
+            $errors[] = 'The frozen CT-period turnover facts are missing or invalid for CT600 box 145.';
         }
         if (trim((string)($model['accounts_report']['basis_version'] ?? '')) === ''
             || preg_match('/^[a-f0-9]{64}$/i', (string)($model['accounts_report']['basis_hash'] ?? '')) !== 1) {

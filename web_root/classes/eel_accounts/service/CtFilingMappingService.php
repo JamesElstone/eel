@@ -61,7 +61,7 @@ final class CtFilingMappingService
         if ($targetType === self::TARGET_RIM
             && $version === 'V3' && $artifactVersion === 'V1.994') {
             return [
-                'profile_name' => 'reviewed_ct600_v3_v1_994_return_v3',
+                'profile_name' => 'reviewed_ct600_v3_v1_994_return_v4',
                 'natural_identity' => ['form_version' => 'V3', 'artifact_version' => 'V1.994'],
                 'mappings' => [
                     ['canonical_key' => 'identity.company_name', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyInformation/CompanyName'],
@@ -69,7 +69,7 @@ final class CtFilingMappingService
                     ['canonical_key' => 'filing_identity.utr', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyInformation/Reference'],
                     ['canonical_key' => 'ct_period.start_date', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyInformation/PeriodCovered/From'],
                     ['canonical_key' => 'ct_period.end_date', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyInformation/PeriodCovered/To'],
-                    ['canonical_key' => 'accounts_facts.turnover', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/Turnover/Total'],
+                    ['canonical_key' => 'ct_period_facts.ct600_box_145_turnover', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/Turnover/Total'],
                     ['canonical_key' => 'ct600.calculation.trading_profit_before_losses', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/Income/Trading/Profits'],
                     ['canonical_key' => 'ct600.calculation.trading_losses_brought_forward_used', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/Income/Trading/LossesBroughtForward'],
                     ['canonical_key' => 'ct600.calculation.net_trading_profits', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/Income/Trading/NetProfits'],

@@ -645,6 +645,7 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         $harness->assertTrue((new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $periodId));
         $initialFreezeHashes[$periodId] = goldenYearEndPersistedFreezeHashes($companyId, $periodId);
         ixbrl_test_complete_disclosures($companyId, $periodId, 'golden_year_end_test');
+        goldenYearEndSaveReturnAuthorisation($companyId, $periodId);
         $filingApproval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
             ->approveAndBuildFacts($companyId, $periodId, 'golden_year_end_test', 'Golden lifecycle filing approval.');
         $harness->assertTrue((int)($filingApproval['approval_id'] ?? 0) > 0);
@@ -728,6 +729,7 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
             goldenYearEndPersistedFreezeHashes($companyId, $periodId)
         );
         ixbrl_test_complete_disclosures($companyId, $periodId, 'golden_year_end_test');
+        goldenYearEndSaveReturnAuthorisation($companyId, $periodId);
         $renewedApproval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
             ->approveAndBuildFacts($companyId, $periodId, 'golden_year_end_test', 'Golden lifecycle re-lock filing approval.');
         $harness->assertTrue((int)($renewedApproval['approval_id'] ?? 0) > 0);
@@ -969,6 +971,31 @@ function goldenYearEndPersistedFreezeHashes(int $companyId, int $accountingPerio
             : '';
     }
     return $hashes;
+}
+
+function goldenYearEndSaveReturnAuthorisation(int $companyId, int $accountingPeriodId): void
+{
+    $service = new \eel_accounts\Service\Ct600ReturnAuthorisationService();
+    $authorisers = $service->eligibleAuthorisers($companyId, (new \DateTimeImmutable('now'))->format('Y-m-d'));
+    $reference = (string)($authorisers[0]['reference'] ?? '');
+    if ($reference === '') {
+        throw new RuntimeException('The golden Year End fixture has no eligible Corporation Tax return authoriser.');
+    }
+    $result = $service->save(
+        $companyId,
+        $accountingPeriodId,
+        [
+            'declarant_authority' => $reference,
+            'original_unfiled_confirmed' => '1',
+            'authority_confirmed' => '1',
+            'declaration_confirmed' => '1',
+        ],
+        'golden_year_end_test'
+    );
+    if (empty($result['success'])) {
+        throw new RuntimeException((string)(($result['errors'] ?? [])[0]
+            ?? 'The golden Corporation Tax return authorisation could not be saved.'));
+    }
 }
 
 function goldenYearEndSavePartyLoanTerms(int $companyId): void

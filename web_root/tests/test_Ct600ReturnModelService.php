@@ -43,6 +43,12 @@ function ct600_return_model_test_filing(): array
                 'presentation_currency' => 'GBP',
                 'turnover' => 250000.25,
             ],
+            'ct_period_facts' => [
+                'actual_trading_turnover' => 250000.25,
+                'ct600_box_145_turnover' => 250000.0,
+                'ct600_turnover_rounding_adjustment' => 0,
+                'turnover_basis_version' => \eel_accounts\Service\CtPeriodTurnoverService::BASIS_VERSION,
+            ],
             'accounts_report' => [
                 'basis_version' => 'accounts-report-test-v1',
                 'basis_hash' => str_repeat('b', 64),
@@ -170,7 +176,7 @@ function ct600_return_model_test_service(array $filing): \eel_accounts\Service\C
                 $h->assertSame($first['model_sha256'], $second['model_sha256']);
                 $h->assertSame($first['source_manifest_sha256'], $second['source_manifest_sha256']);
                 $h->assertSame('0123456789', $first['model']['identity']['utr']);
-                $h->assertSame(250000.25, $first['model']['amounts']['turnover']);
+                $h->assertSame(250000.0, $first['model']['amounts']['turnover']);
                 $h->assertSame(21, $first['source_manifest']['rim_package_id']);
                 $h->assertSame(31, $first['source_manifest']['mapping_profile_id']);
             }

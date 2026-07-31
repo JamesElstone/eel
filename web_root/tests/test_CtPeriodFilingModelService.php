@@ -687,7 +687,7 @@ function ctPeriodFilingModelFixture(
     }
     $ctPeriodIds = [];
     $manifestPeriods = [];
-    foreach ($periodDefinitions as $period) {
+    foreach ($periodDefinitions as $periodIndex => $period) {
         if ($deriveLongPeriod) {
             $ctPeriodId = (int)\InterfaceDB::fetchColumn('SELECT id FROM corporation_tax_periods WHERE accounting_period_id = :period_id AND sequence_no = :sequence_no', ['period_id' => $accountingPeriodId, 'sequence_no' => $period['sequence_no']]);
             \InterfaceDB::prepareExecute('UPDATE corporation_tax_periods SET status = :status WHERE id = :id', ['status' => 'computed', 'id' => $ctPeriodId]);
@@ -704,6 +704,11 @@ function ctPeriodFilingModelFixture(
             'ct_period_id' => $ctPeriodId,
             'period_start' => $period['period_start'],
             'period_end' => $period['period_end'],
+            'actual_trading_turnover' => $periodIndex === 0 ? '100.00' : '0.00',
+            'ct600_box_145_turnover' => $periodIndex === 0 ? '100.00' : '0.00',
+            'ct600_turnover_rounding_adjustment' => 0,
+            'handles_ct600_turnover_rounding_residual' => $periodIndex === count($periodDefinitions) - 1,
+            'turnover_basis_version' => \eel_accounts\Service\CtPeriodTurnoverService::BASIS_VERSION,
             'accounting_profit' => '100.00',
             'taxable_profit' => '100.00',
             'corporation_tax_liability' => '19.00',
@@ -765,6 +770,15 @@ function ctPeriodFilingModelFixture(
             'ct_period_id' => $ctPeriodId,
             'period_start' => $period['period_start'],
             'period_end' => $period['period_end'],
+            'actual_trading_turnover' => $index === 0 ? 100.00 : 0.00,
+            'ct600_box_145_turnover' => $index === 0 ? 100.00 : 0.00,
+            'ct600_turnover_rounding_adjustment' => 0,
+            'handles_ct600_turnover_rounding_residual' => $index === count($periodDefinitions) - 1,
+            'turnover_basis_version' => \eel_accounts\Service\CtPeriodTurnoverService::BASIS_VERSION,
+            'accounting_period_turnover' => 100.00,
+            'accounting_period_box_145_turnover' => 100.00,
+            'turnover_reconciliation_difference' => 0.00,
+            'box_145_reconciliation_difference' => 0,
             'accounting_profit' => 100.00,
             'disallowable_add_backs' => 0.00,
             'capital_add_backs' => 0.00,

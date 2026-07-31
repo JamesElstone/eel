@@ -678,6 +678,45 @@ final class CorporationTaxComputationService
             $accountingPeriodId,
             $summaries
         );
+        if ($preparedSummaries === null) {
+            $turnover = (new CtPeriodTurnoverService())->fetch(
+                $companyId,
+                $accountingPeriodId,
+                $periods
+            );
+            if (empty($turnover['available'])) {
+                foreach ((array)($turnover['errors'] ?? ['CT-period turnover could not be reconciled.']) as $error) {
+                    $errors[] = (string)$error;
+                }
+            } else {
+                $turnoverByPeriod = [];
+                foreach ((array)($turnover['periods'] ?? []) as $periodTurnover) {
+                    if (is_array($periodTurnover)) {
+                        $turnoverByPeriod[(int)($periodTurnover['ct_period_id'] ?? 0)] = $periodTurnover;
+                    }
+                }
+                foreach ($summaries as &$summary) {
+                    $periodTurnover = (array)($turnoverByPeriod[(int)($summary['ct_period_id'] ?? 0)] ?? []);
+                    if ($periodTurnover === []) {
+                        $errors[] = 'CT period ' . (int)($summary['ct_period_id'] ?? 0)
+                            . ': Trading turnover is missing from the reconciliation.';
+                        continue;
+                    }
+                    $summary = array_merge($summary, [
+                        'actual_trading_turnover' => (float)$periodTurnover['actual_turnover'],
+                        'ct600_box_145_turnover' => (float)$periodTurnover['ct600_box_145_whole_pounds'],
+                        'ct600_turnover_rounding_adjustment' => (int)$periodTurnover['ct600_rounding_adjustment_whole_pounds'],
+                        'handles_ct600_turnover_rounding_residual' => !empty($periodTurnover['handles_ct600_rounding_residual']),
+                        'turnover_basis_version' => (string)$turnover['basis_version'],
+                        'accounting_period_turnover' => (float)$turnover['accounting_period_turnover'],
+                        'accounting_period_box_145_turnover' => (float)$turnover['accounting_period_box_145_whole_pounds'],
+                        'turnover_reconciliation_difference' => (float)$turnover['reconciliation_difference'],
+                        'box_145_reconciliation_difference' => (int)$turnover['box_145_reconciliation_difference_whole_pounds'],
+                    ]);
+                }
+                unset($summary);
+            }
+        }
         $freeze = $approvedFreeze !== null && $errors === []
             ? $approvedFreeze
             : (new YearEndTaxFreezeService())->build(

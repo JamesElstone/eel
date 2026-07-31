@@ -150,6 +150,8 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
                     'ct_period_id' => 501,
                     'ct_period_display_sequence_no' => 1,
                     'period_label' => '05/09/2022 to 04/09/2023',
+                    'actual_trading_turnover' => 9393.64,
+                    'ct600_box_145_turnover' => 9394,
                     'accounting_profit' => 9000,
                     'disallowable_add_backs' => 400,
                     'depreciation_add_back' => 700,
@@ -184,6 +186,10 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
                     'ct_period_id' => 502,
                     'ct_period_display_sequence_no' => 2,
                     'period_label' => '05/09/2023 to 30/09/2023',
+                    'actual_trading_turnover' => 631.80,
+                    'ct600_box_145_turnover' => 631,
+                    'ct600_turnover_rounding_adjustment' => -1,
+                    'handles_ct600_turnover_rounding_residual' => true,
                     'accounting_profit' => 2600,
                     'disallowable_add_backs' => 50,
                     'depreciation_add_back' => 0,
@@ -236,6 +242,10 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(true, str_contains($html, 'CT Period 1: 05/09/2022 to 04/09/2023'));
         $harness->assertSame(true, str_contains($html, 'CT Period 2: 05/09/2023 to 30/09/2023'));
         $harness->assertSame(true, str_contains($html, 'Net S455 tax'));
+        $harness->assertSame(2, substr_count($html, 'Actual trading turnover'));
+        $harness->assertSame(2, substr_count($html, 'CT600 box 145'));
+        $harness->assertSame(true, str_contains($html, 'shortest CT period'));
+        $harness->assertSame(true, str_contains($html, 'whole-pound rounding residual'));
         $harness->assertSame(true, str_contains($html, 'CT600A net tax payable [A80]'));
         $harness->assertSame(true, str_contains($html, 'Taxable Profit Bridge'));
         $harness->assertSame(true, str_contains($html, 'Accounting profit or loss'));

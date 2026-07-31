@@ -219,6 +219,8 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             <h3 class="card-title">Overall Tax Position</h3>
             ' . $this->summaryGrid([
                 ['CT periods', (string)$periodCount],
+                ['Accounting-period turnover', $this->money($companySettings, $taxReadiness['actual_trading_turnover'] ?? 0)],
+                ['Combined CT600 box 145', $this->money($companySettings, $taxReadiness['ct600_box_145_turnover'] ?? 0)],
                 ['Taxable profit', $this->money($companySettings, $taxReadiness['taxable_profit'] ?? 0)],
                 ['CT600 profit-tax liability', $this->money($companySettings, $taxReadiness['ordinary_corporation_tax'] ?? 0)],
                 ['CT600A loan-tax liability', $this->money($companySettings, $taxReadiness['ct600a_tax'] ?? 0)],
@@ -324,6 +326,8 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         return '<section class="panel-soft stack">
             <h3 class="card-title">' . \eel_accounts\Support\Utf8::html($this->periodTitle($period)) . '</h3>
             ' . $this->summaryGrid([
+                ['Actual trading turnover', $this->money($companySettings, $period['actual_trading_turnover'] ?? 0)],
+                ['CT600 box 145', $this->money($companySettings, $period['ct600_box_145_turnover'] ?? 0)],
                 ['Taxable profit', $this->money($companySettings, $period['taxable_profit'] ?? 0)],
                 ['CT600 profit-tax liability', $this->money($companySettings, $period['ordinary_corporation_tax'] ?? 0)],
                 ['Net S455 tax', $this->money($companySettings, $period['s455_tax'] ?? 0)],
@@ -331,7 +335,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
                 ['Total Corporation Tax Due to HMRC', $this->money($companySettings, $period['estimated_corporation_tax'] ?? 0)],
                 ['Effective rate', $this->percent($period['estimated_rate'] ?? null)],
                 ['Tax basis status', $basisStatus, true],
-            ]) . '
+            ]) . $this->turnoverRoundingHtml($companySettings, $period) . '
             <h3 class="card-title">Taxable Profit Bridge</h3>
             ' . $this->table(['Step', 'Amount'], $this->bridgeRows($companySettings, $period), 'No taxable profit bridge is available for this CT period.') . '
             <h3 class="card-title">Loss Movement</h3>
@@ -345,6 +349,21 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             ' . $this->rateBandsHtml($companySettings, $period) . '
             ' . $this->diagnosticsHtml($diagnostics, 'Adjustments required for this CT period', 'No amount-affecting issues remain for this CT period.') . '
         </section>';
+    }
+
+    private function turnoverRoundingHtml(array $companySettings, array $period): string
+    {
+        if (empty($period['handles_ct600_turnover_rounding_residual'])) {
+            return '';
+        }
+        $adjustment = (float)($period['ct600_turnover_rounding_adjustment'] ?? 0);
+        if (abs($adjustment) < 0.005) {
+            return '';
+        }
+
+        return '<div class="helper">This is the shortest CT period, so it absorbs the '
+            . \eel_accounts\Support\Utf8::html($this->money($companySettings, $adjustment))
+            . ' whole-pound rounding residual. The CT-period box 145 values therefore equal accounting-period turnover.</div>';
     }
 
     private function bridgeRows(array $companySettings, array $period): array

@@ -96,7 +96,7 @@ function hmrcPackageTestIxbrl(string $startDate, string $endDate, bool $includeU
                         ],
                         'rim' => ['form_version' => 'V3', 'artifact_version' => 'V1.994'],
                         'mapping_profile' => [
-                            'id' => 6, 'profile_name' => 'reviewed_ct600_v3_v1_994_return_v3',
+                            'id' => 6, 'profile_name' => 'reviewed_ct600_v3_v1_994_return_v4',
                             'revision_no' => 1, 'content_hash' => str_repeat('a', 64),
                         ],
                     ],
@@ -125,7 +125,7 @@ function hmrcPackageTestIxbrl(string $startDate, string $endDate, bool $includeU
                 );
                 $harness->assertSame('V3/V1.994', (string)$byRole['ct600_return_xml']['schema_version']);
                 $harness->assertSame(6, (int)$byRole['ct600_return_xml']['mapping_profile_id']);
-                $harness->assertSame('reviewed_ct600_v3_v1_994_return_v3', (string)$byRole['ct600_return_xml']['mapping_profile_name']);
+                $harness->assertSame('reviewed_ct600_v3_v1_994_return_v4', (string)$byRole['ct600_return_xml']['mapping_profile_name']);
                 $harness->assertSame([], (array)$byRole['ct600_return_xml']['supplementary_pages']);
                 $harness->assertSame('FRS-102/2025', (string)$byRole['statutory_accounts_ixbrl']['schema_version']);
                 $harness->assertSame('2025/V1.0.0', (string)$byRole['ct_computation_ixbrl']['schema_version']);

@@ -7,8 +7,8 @@ namespace eel_accounts\Service;
 /** Freezes the complete post-Year-End filing basis and builds its accounts facts atomically. */
 final class IxbrlAccountsFilingApprovalService
 {
-    public const BASIS_VERSION = 'accounts-filing-approval-v7';
-    public const CT_BASIS_VERSION = 'ct-period-filing-model-v10';
+    public const BASIS_VERSION = 'accounts-filing-approval-v8';
+    public const CT_BASIS_VERSION = 'ct-period-filing-model-v11';
     private const REQUIRED_AUDIT_AREAS = [
         'accounting_profit', 'expense_treatments', 'depreciation_capital',
         'capital_allowances', 'losses', 'tax_liability',
@@ -444,6 +444,7 @@ final class IxbrlAccountsFilingApprovalService
         if ($periods === []) {
             throw new \RuntimeException('No active Corporation Tax periods are available for filing approval.');
         }
+        $this->assertTurnoverReconciles((float)$turnover, $periods);
 
         $authorisationBasis = $this->authorisationBasis($authorisation);
 
@@ -498,6 +499,9 @@ final class IxbrlAccountsFilingApprovalService
                 'tax_audit_snapshot_id' => (int)$period['snapshot_id'],
                 'tax_audit_basis_version' => (string)$period['snapshot_basis_version'],
                 'tax_audit_basis_hash' => (string)$period['snapshot_basis_hash'],
+                'actual_trading_turnover' => (float)($period['summary']['actual_trading_turnover'] ?? 0),
+                'ct600_box_145_turnover' => (float)($period['summary']['ct600_box_145_turnover'] ?? 0),
+                'ct600_turnover_rounding_adjustment' => (int)($period['summary']['ct600_turnover_rounding_adjustment'] ?? 0),
                 'ct600a_required' => !empty($period['ct600a']['required']),
                 'ct600a_basis_hash' => (string)$period['ct600a']['basis_hash'],
                 'ct600a_review_hash' => (string)($period['ct600a']['review']['basis_hash'] ?? ''),
@@ -630,6 +634,12 @@ final class IxbrlAccountsFilingApprovalService
             ],
             'filing_identity' => (array)$basis['filing_identity'],
             'accounts_facts' => (array)$basis['accounts_facts'],
+            'ct_period_facts' => [
+                'actual_trading_turnover' => (float)($summary['actual_trading_turnover'] ?? 0),
+                'ct600_box_145_turnover' => (float)($summary['ct600_box_145_turnover'] ?? 0),
+                'ct600_turnover_rounding_adjustment' => (int)($summary['ct600_turnover_rounding_adjustment'] ?? 0),
+                'turnover_basis_version' => (string)($summary['turnover_basis_version'] ?? ''),
+            ],
             'accounts_report' => (array)$basis['accounts_report'],
             'corporation_tax_filing_scope' => (array)$basis['corporation_tax_filing_scope'],
             'filing_decisions' => $this->filingDecisions(
@@ -663,6 +673,42 @@ final class IxbrlAccountsFilingApprovalService
         ];
         $json = $this->canonicalJson($model);
         return ['basis_json' => $json, 'basis_hash' => hash('sha256', self::CT_BASIS_VERSION . '|' . (string)$candidate['basis_hash'] . '|' . (string)$period['calculation_basis_hash'] . '|' . $json)];
+    }
+
+    /** @param list<array<string,mixed>> $periods */
+    private function assertTurnoverReconciles(float $accountsTurnover, array $periods): void
+    {
+        $accountsPence = (int)round($accountsTurnover * 100, 0, PHP_ROUND_HALF_UP);
+        $periodPence = 0;
+        $periodWholePounds = 0;
+        foreach ($periods as $period) {
+            $summary = (array)($period['summary'] ?? []);
+            if ((string)($summary['turnover_basis_version'] ?? '') !== CtPeriodTurnoverService::BASIS_VERSION
+                || !is_numeric($summary['actual_trading_turnover'] ?? null)
+                || !is_numeric($summary['ct600_box_145_turnover'] ?? null)) {
+                throw new \RuntimeException(
+                    'CT period ' . (int)($period['sequence_no'] ?? 0)
+                    . ' has no approved trading-turnover evidence. Unlock and relock the accounting period.'
+                );
+            }
+            $periodPence += (int)round(
+                (float)$summary['actual_trading_turnover'] * 100,
+                0,
+                PHP_ROUND_HALF_UP
+            );
+            $boxValue = (float)$summary['ct600_box_145_turnover'];
+            if ($boxValue < 0 || abs($boxValue - round($boxValue)) > 0.0001) {
+                throw new \RuntimeException('A frozen CT600 box 145 turnover value is not a non-negative whole-pound amount.');
+            }
+            $periodWholePounds += (int)round($boxValue);
+        }
+        if ($periodPence !== $accountsPence) {
+            throw new \RuntimeException('The frozen CT-period trading turnover does not equal statutory accounts turnover.');
+        }
+        $accountsWholePounds = intdiv($accountsPence + 50, 100);
+        if ($periodWholePounds !== $accountsWholePounds) {
+            throw new \RuntimeException('The frozen CT600 box 145 values do not equal rounded statutory accounts turnover.');
+        }
     }
 
     /**

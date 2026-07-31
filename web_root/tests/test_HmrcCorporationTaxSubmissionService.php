@@ -326,7 +326,7 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     ];
                     $transport = new HmrcCtTestTransport();
                     $transport->credentialsPlaceholder = true;
-                    $before = (int)InterfaceDB::fetchValue(
+                    $before = (int)InterfaceDB::fetchColumn(
                         'SELECT COUNT(*) FROM hmrc_ct600_submissions WHERE company_id = :company_id',
                         ['company_id' => $companyId]
                     );
@@ -337,7 +337,7 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         xmlEnvironmentResolver: static fn(): string => 'TEST'
                     );
                     $generated = $service->generateRequestFile($companyId, $ctPeriodId, 42);
-                    $after = (int)InterfaceDB::fetchValue(
+                    $after = (int)InterfaceDB::fetchColumn(
                         'SELECT COUNT(*) FROM hmrc_ct600_submissions WHERE company_id = :company_id',
                         ['company_id' => $companyId]
                     );

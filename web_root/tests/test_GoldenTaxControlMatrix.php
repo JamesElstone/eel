@@ -355,8 +355,7 @@ $harness->check('GoldenTaxControlMatrix', 'rejects CT600 packaging for an unpers
         $submissions = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService();
         $disabled = $submissions->validatePackage($companyId, $ctPeriodId, 'TEST');
         $harness->assertFalse((bool)($disabled['success'] ?? true));
-        $harness->assertSame('The CT600 filing body is not ready.', (string)($disabled['errors'][0] ?? ''));
-        $harness->assertTrue(goldenTaxControlErrorsContain($disabled, 'current approved CT-period filing basis'));
+        $harness->assertSame('The current CT600 XML artifact is not ready.', (string)($disabled['errors'][0] ?? ''));
     } finally {
         if (InterfaceDB::inTransaction()) {
             InterfaceDB::rollBack();
@@ -444,8 +443,7 @@ $harness->check('GoldenTaxControlMatrix', 'rejects an incomplete CT600 package b
         $result = (new \eel_accounts\Service\HmrcCorporationTaxSubmissionService())
             ->validatePackage($companyId, $ctPeriodId, 'TEST');
         $harness->assertFalse((bool)($result['success'] ?? true));
-        $harness->assertSame('The CT600 filing body is not ready.', (string)($result['errors'][0] ?? ''));
-        $harness->assertTrue(goldenTaxControlErrorsContain($result, 'current approved CT-period filing basis'));
+        $harness->assertSame('The current CT600 XML artifact is not ready.', (string)($result['errors'][0] ?? ''));
     } finally {
         if (InterfaceDB::inTransaction()) {
             InterfaceDB::rollBack();

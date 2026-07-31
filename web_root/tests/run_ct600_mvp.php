@@ -12,6 +12,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 $patterns = [
     'test_Ct600*.php',
     'test_CtFilingMappingService.php',
+    'test_CtPeriodTurnoverService.php',
     'test_CtPeriodFilingModelService.php',
     'test_CsrfFormCoverage.php',
     'test_HmrcCorporationTaxSubmissionService.php',

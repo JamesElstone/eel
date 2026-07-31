@@ -332,11 +332,33 @@ function goldenCt600aFreezeAndApprove(GeneratedServiceClassTestHarness $harness,
     }
 
     ixbrl_test_complete_disclosures($companyId, $accountingPeriodId, 'golden_ct600a');
+    goldenCt600aSaveReturnAuthorisation($companyId, $accountingPeriodId);
     $approval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
         ->approveAndBuildFacts($companyId, $accountingPeriodId, 'golden_ct600a', 'Golden CT600A filing approval.');
     if ((int)($approval['approval_id'] ?? 0) <= 0) {
         throw new RuntimeException('The golden CT600A filing basis could not be approved.');
     }
+}
+
+function goldenCt600aSaveReturnAuthorisation(int $companyId, int $accountingPeriodId): void
+{
+    $service = new \eel_accounts\Service\Ct600ReturnAuthorisationService();
+    $authorisers = $service->eligibleAuthorisers($companyId, (new \DateTimeImmutable('now'))->format('Y-m-d'));
+    $reference = (string)($authorisers[0]['reference'] ?? '');
+    if ($reference === '') {
+        throw new RuntimeException('The golden CT600A fixture has no eligible Corporation Tax return authoriser.');
+    }
+    goldenCt600aRequireSuccess($service->save(
+        $companyId,
+        $accountingPeriodId,
+        [
+            'declarant_authority' => $reference,
+            'original_unfiled_confirmed' => '1',
+            'authority_confirmed' => '1',
+            'declaration_confirmed' => '1',
+        ],
+        'golden_ct600a'
+    ));
 }
 
 function goldenCt600aSavePartyLoanTerms(int $companyId): void

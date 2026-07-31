@@ -395,23 +395,8 @@ final class IxbrlAccountsMappingService
 
     private function isOtherIncomeRow(array $row): bool
     {
-        $subtype = $this->rowSubtype($row);
-        if (in_array($subtype, [
-            'other_income',
-            'interest_income',
-            'finance_income',
-            'grant_income',
-            'rental_income',
-            'asset_disposal_gain',
-        ], true)) {
-            return true;
-        }
-
-        $name = strtolower(trim((string)($row['name'] ?? '')));
-        return preg_match(
-            '/\b(other income|interest (?:income|received)|grant income|rental income|profit on (?:asset )?disposal)\b/',
-            $name
-        ) === 1;
+        return (new IncomeStatementClassificationService())->incomeBucket($row)
+            === IncomeStatementClassificationService::INCOME_OTHER;
     }
 
     private function isRawMaterialsConsumablesRow(array $row): bool

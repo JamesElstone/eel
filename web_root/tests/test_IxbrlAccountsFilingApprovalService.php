@@ -64,8 +64,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         });
 
         $h->check($service::class, 'versions the filing contracts that freeze the selected approving director', static function () use ($h, $service): void {
-            $h->assertSame('accounts-filing-approval-v7', $service::BASIS_VERSION);
-            $h->assertSame('ct-period-filing-model-v10', $service::CT_BASIS_VERSION);
+            $h->assertSame('accounts-filing-approval-v8', $service::BASIS_VERSION);
+            $h->assertSame('ct-period-filing-model-v11', $service::CT_BASIS_VERSION);
         });
 
         $h->check($service::class, 'preserves the legacy CT600 authorisation basis shape', static function () use ($h, $service): void {

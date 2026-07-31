@@ -12,7 +12,7 @@ namespace eel_accounts\Service;
 /** Builds the stable, calculation-only Corporation Tax basis approved at Year End. */
 final class YearEndTaxFreezeService
 {
-    public const BASIS_VERSION = 'year_end_ct_freeze_v3';
+    public const BASIS_VERSION = 'year_end_ct_freeze_v4';
 
     /**
      * @param list<array<string, mixed>> $periods
@@ -55,6 +55,12 @@ final class YearEndTaxFreezeService
             'accounting_period_id' => $accountingPeriodId,
             'periods' => $manifestPeriods,
             'totals' => [
+                'accounting_period_turnover' => $this->money($periods[0]['accounting_period_turnover'] ?? 0),
+                'actual_trading_turnover' => $this->money(array_sum(array_map(static fn(array $period): float => (float)($period['actual_trading_turnover'] ?? 0), $periods))),
+                'turnover_reconciliation_difference' => $this->money($periods[0]['turnover_reconciliation_difference'] ?? 0),
+                'accounting_period_box_145_turnover' => $this->money($periods[0]['accounting_period_box_145_turnover'] ?? 0),
+                'ct600_box_145_turnover' => $this->money(array_sum(array_map(static fn(array $period): float => (float)($period['ct600_box_145_turnover'] ?? 0), $periods))),
+                'box_145_reconciliation_difference' => $this->money($periods[0]['box_145_reconciliation_difference'] ?? 0),
                 'taxable_profit' => $this->money(array_sum(array_map(static fn(array $period): float => (float)($period['taxable_profit'] ?? 0), $periods))),
                 'ordinary_corporation_tax' => $this->money(array_sum(array_map(static fn(array $period): float => (float)($period['ordinary_corporation_tax'] ?? 0), $periods))),
                 's455_tax' => $this->money(array_sum(array_map(static fn(array $period): float => (float)($period['s455_tax'] ?? 0), $periods))),
@@ -172,6 +178,11 @@ final class YearEndTaxFreezeService
             'sequence_no' => (int)($period['ct_period_sequence_no'] ?? 0),
             'period_start' => (string)($period['period_start'] ?? ''),
             'period_end' => (string)($period['period_end'] ?? ''),
+            'actual_trading_turnover' => $this->money($period['actual_trading_turnover'] ?? 0),
+            'ct600_box_145_turnover' => $this->money($period['ct600_box_145_turnover'] ?? 0),
+            'ct600_turnover_rounding_adjustment' => (int)($period['ct600_turnover_rounding_adjustment'] ?? 0),
+            'handles_ct600_turnover_rounding_residual' => !empty($period['handles_ct600_turnover_rounding_residual']),
+            'turnover_basis_version' => (string)($period['turnover_basis_version'] ?? ''),
             'accounting_profit' => $this->money($period['accounting_profit'] ?? 0),
             'disallowable_add_backs' => $this->money($period['disallowable_add_backs'] ?? 0),
             'capital_add_backs' => $this->money($period['capital_add_backs'] ?? 0),
@@ -225,6 +236,14 @@ final class YearEndTaxFreezeService
     {
         $diagnostics = [];
         foreach ($periods as $period) {
+            if ((string)($period['turnover_basis_version'] ?? '') !== CtPeriodTurnoverService::BASIS_VERSION
+                || !is_numeric($period['actual_trading_turnover'] ?? null)
+                || !is_numeric($period['ct600_box_145_turnover'] ?? null)) {
+                $diagnostics[] = $this->structuralDiagnostic(
+                    'ct_period_turnover_missing_' . (int)($period['ct_period_id'] ?? 0),
+                    'Actual trading turnover and CT600 box 145 must be reconciled for every CT period.'
+                );
+            }
             foreach ((array)($period['hard_gate_diagnostics'] ?? []) as $diagnostic) {
                 if (!is_array($diagnostic) || empty($diagnostic['amount_affecting'])) {
                     continue;
@@ -240,6 +259,31 @@ final class YearEndTaxFreezeService
                     'ct_return_position_' . substr(hash('sha256', $message), 0, 12),
                     $message,
                     (int)($period['ct_period_id'] ?? 0)
+                );
+            }
+        }
+        if ($periods !== []) {
+            $first = (array)$periods[0];
+            $actual = round(array_sum(array_map(
+                static fn(array $period): float => (float)($period['actual_trading_turnover'] ?? 0),
+                $periods
+            )), 2);
+            $box145 = (int)round(array_sum(array_map(
+                static fn(array $period): float => (float)($period['ct600_box_145_turnover'] ?? 0),
+                $periods
+            )));
+            if (abs($actual - (float)($first['accounting_period_turnover'] ?? 0)) >= 0.005
+                || abs((float)($first['turnover_reconciliation_difference'] ?? 0)) >= 0.005) {
+                $diagnostics[] = $this->structuralDiagnostic(
+                    'ct_period_turnover_unreconciled',
+                    'CT-period trading turnover does not equal accounting-period turnover.'
+                );
+            }
+            if ($box145 !== (int)round((float)($first['accounting_period_box_145_turnover'] ?? 0))
+                || (int)($first['box_145_reconciliation_difference'] ?? 0) !== 0) {
+                $diagnostics[] = $this->structuralDiagnostic(
+                    'ct600_box_145_unreconciled',
+                    'The CT-period box 145 values do not equal rounded accounting-period turnover.'
                 );
             }
         }

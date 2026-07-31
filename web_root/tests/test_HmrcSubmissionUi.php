@@ -152,7 +152,9 @@ $harness->run(_hmrc_transmitCard::class, static function (
         $harness->assertTrue(str_contains($html, '>Transmit Submission</button>'));
         $harness->assertFalse(str_contains($html, '>Test</button>'));
         $harness->assertTrue(str_contains($html, 'data-chicken-check="true"'));
-        $harness->assertTrue(str_contains($html, 'data-chicken-confirm-text="Submit Tax Return"'));
+        $harness->assertTrue(str_contains($html, 'data-chicken-confirm-text="Transmit Tax Return"'));
+        $harness->assertTrue(str_contains($html, 'data-chicken-button-class="button danger"'));
+        $harness->assertTrue(str_contains($html, 'sends tax return information outside EEL Accounts'));
         foreach (['declaration_name', 'declaration_status', 'original_unfiled_confirmed',
                   'authority_confirmed', 'declaration_confirmed'] as $field) {
             $harness->assertFalse(str_contains($html, 'name="' . $field . '"'));
@@ -211,12 +213,12 @@ $harness->run(_hmrc_transmitCard::class, static function (
             ));
             $harness->assertTrue(str_contains(
                 $developer,
-                'without contacting HMRC'
+                'class="button danger" type="submit" name="intent" value="hmrc_submit_test"'
             ));
-            $harness->assertTrue(str_contains(
-                $developer,
-                'otherwise clearly labelled non-transmittable placeholders'
-            ));
+            $harness->assertTrue(str_contains($developer, 'data-chicken-check="true"'));
+            $harness->assertTrue(str_contains($developer, 'to HMRC TEST?'));
+            $harness->assertTrue(str_contains($developer, 'sends tax return information outside EEL Accounts'));
+            $harness->assertTrue(str_contains($developer, 'data-chicken-button-class="button danger"'));
 
             $context['services']['hmrc_ct600_status']['environments']['TEST'] = [
                 'ready' => false,
@@ -230,7 +232,7 @@ $harness->run(_hmrc_transmitCard::class, static function (
             ));
             $harness->assertTrue(str_contains(
                 $withoutCredentials,
-                'name="intent" value="hmrc_submit_test" disabled>Transmit Submission</button>'
+                'name="intent" value="hmrc_submit_test" disabled data-chicken-check="true"'
             ));
         } finally {
             AppConfigurationStore::set('developer_options', (bool)$previous);
@@ -253,6 +255,66 @@ $harness->run(_hmrc_transmitCard::class, static function (
         $harness->assertTrue(str_contains($html, '<div class="actions-row actions-row-right hmrc-credential-summary-actions">'));
         $harness->assertTrue(str_contains($html, '<a class="button" href="?page=settings&amp;show_card=api_keys_editor">Configure HMRC XML credentials</a>'));
         $harness->assertFalse(str_contains($html, 'HMRC TEST does not file the return.'));
+    });
+
+    $harness->check(_hmrc_transmitCard::class, 'shows actionable Gateway authentication errors and developer-only retry', static function () use ($harness, $card): void {
+        $context = [
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'services' => ['hmrc_ct600_status' => [
+                'success' => true,
+                'xml_environment' => 'TEST',
+                'test_environment' => 'TEST',
+                'live_environment' => 'DISABLED',
+                'environments' => ['TEST' => [
+                    'ready' => true,
+                    'credentials_configured' => true,
+                    'blockers' => [],
+                ]],
+                'periods' => [[
+                    'ct_period_id' => 6,
+                    'xml_environment' => 'TEST',
+                    'period_start' => '2025-01-01',
+                    'period_end' => '2025-12-31',
+                    'test_ready' => false,
+                    'live_ready' => false,
+                    'test_gateway_retry_ready' => true,
+                    'test_gateway_rejection' => [
+                        'id' => 17,
+                        'protocol_state' => 'gateway_rejected',
+                        'hmrc_response_summary' => '1046: Authentication Failure. The supplied user credentials failed validation for the requested service.',
+                    ],
+                    'filing_dependencies' => [
+                        ['label' => 'Disclosures and filing basis', 'ready' => true],
+                        ['label' => 'CT-period filing basis', 'ready' => true],
+                        ['label' => 'CT600 source model', 'ready' => true],
+                        ['label' => 'Filing iXBRL artifacts', 'ready' => true],
+                    ],
+                    'blockers' => ['HMRC definitively rejected this exact filing body before opening a conversation. Ordinary resubmission is blocked.'],
+                ]],
+            ]],
+        ];
+        $previous = AppConfigurationStore::get('developer_options', false);
+        try {
+            AppConfigurationStore::set('developer_options', false);
+            $standard = $card->render($context);
+            $harness->assertTrue(str_contains($standard, 'HMRC Gateway rejection'));
+            $harness->assertTrue(str_contains($standard, '1046: Authentication Failure'));
+            $harness->assertTrue(str_contains($standard, 'HMRC / XML / CT600_XML / TEST'));
+            $harness->assertTrue(str_contains($standard, 'Configure HMRC XML credentials'));
+            $harness->assertFalse(str_contains($standard, 'name="intent" value="hmrc_retry_test"'));
+
+            AppConfigurationStore::set('developer_options', true);
+            $developer = $card->render($context);
+            $harness->assertTrue(str_contains(
+                $developer,
+                'class="button danger" type="submit" name="intent" value="hmrc_retry_test"'
+            ));
+            $harness->assertTrue(str_contains($developer, 'data-chicken-title="Retry HMRC transmission"'));
+            $harness->assertTrue(str_contains($developer, 'data-chicken-confirm-text="Retry Transmission"'));
+            $harness->assertTrue(str_contains($developer, 'Create a new audited HMRC submission'));
+        } finally {
+            AppConfigurationStore::set('developer_options', (bool)$previous);
+        }
     });
 
     $harness->check(_hmrc_transmitCard::class, 'blocks transmission until the current prepared CT600 artifact exists', static function () use ($harness, $card): void {
@@ -311,7 +373,7 @@ $harness->run(_hmrc_transmitCard::class, static function (
         ));
         $harness->assertTrue(str_contains(
             $html,
-            'name="intent" value="hmrc_submit_test" disabled>Transmit Submission</button>'
+            'name="intent" value="hmrc_submit_test" disabled data-chicken-check="true"'
         ));
     });
 
@@ -344,7 +406,7 @@ $harness->run(_hmrc_transmitCard::class, static function (
         $harness->assertFalse(str_contains($html, 'name="declaration_name"'));
         $harness->assertFalse(str_contains($html, 'name="original_unfiled_confirmed"'));
         $harness->assertTrue(str_contains($html, '<h3>Transmit Submission</h3>'));
-        $harness->assertTrue(str_contains($html, 'name="intent" value="hmrc_submit_test" disabled>Transmit Submission</button>'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="hmrc_submit_test" disabled data-chicken-check="true"'));
         $harness->assertFalse(str_contains($html, 'name="intent" value="hmrc_submit_live"'));
         $harness->assertFalse(str_contains($html, 'name="intent" value="hmrc_poll"'));
     });
@@ -454,7 +516,11 @@ $harness->run(HmrcSubmissionAction::class, static function (
     $harness->check(HmrcSubmissionAction::class, 'exposes only the Test LIVE request-file and Poll command intents', static function () use ($harness): void {
         $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content'
             . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'HmrcSubmissionAction.php');
-        foreach (['hmrc_submit_test', 'hmrc_submit_live', 'hmrc_generate_request', 'hmrc_poll'] as $intent) {
+        foreach ([
+            'hmrc_submit_test', 'hmrc_submit_live',
+            'hmrc_retry_test', 'hmrc_retry_live',
+            'hmrc_generate_request', 'hmrc_poll',
+        ] as $intent) {
             $harness->assertTrue(str_contains($source, "'" . $intent . "'"));
         }
         foreach (['->submitTest(', '->submitLive(', '->generateRequestFile(', '->poll(', '->status('] as $call) {
@@ -466,7 +532,7 @@ $harness->run(HmrcSubmissionAction::class, static function (
         }
         $harness->assertTrue(str_contains(
             $source,
-            'submitTest($companyId, $ctPeriodId, $actor, $report)'
+            'submitTest($companyId, $ctPeriodId, $actor, $report, $retry)'
         ));
         foreach ([
             'Checking the selected HMRC transmission and CT Period',

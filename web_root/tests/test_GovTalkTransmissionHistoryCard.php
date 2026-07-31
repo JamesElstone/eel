@@ -44,7 +44,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $previous = AppConfigurationStore::get('developer_options', false);
                 AppConfigurationStore::set('developer_options', false);
                 try {
-                    $html = $card->render([
+                    $context = [
                         'company' => ['id' => 49, 'accounting_period_id' => 79],
                         'govtalk_history' => [
                             'authority' => '',
@@ -106,7 +106,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                                 'display_outcome' => 'Presenter authorisation failed',
                             ]],
                         ],
-                    ]);
+                    ];
+                    $exchangeCard = new _govtalk_exchangesCard();
+                    $html = $card->title() . $card->render($context)
+                        . $exchangeCard->title() . $exchangeCard->render($context);
 
                     $harness->assertTrue(str_contains($html, 'Submission History'));
                     $harness->assertTrue(str_contains($html, '<th>Transaction ID</th>'));

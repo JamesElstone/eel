@@ -643,14 +643,38 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         . DIRECTORY_SEPARATOR . 'hmrc'
                         . DIRECTORY_SEPARATOR . 'til'
                         . DIRECTORY_SEPARATOR . 'submission-' . sprintf('%06d', $submissionId);
-                    $h->assertTrue(is_file(
-                        $archiveDirectory . DIRECTORY_SEPARATOR . 'delete-0001-request.xml'
-                    ));
-                    $h->assertTrue(is_file(
-                        $archiveDirectory . DIRECTORY_SEPARATOR . 'delete-0002-request.xml'
-                    ));
-                    $h->assertTrue(is_file($archiveDirectory . DIRECTORY_SEPARATOR . 'submission-request.xml'));
-                    $h->assertTrue(is_file($archiveDirectory . DIRECTORY_SEPARATOR . 'submission-response.xml'));
+                    $exchangeRows = InterfaceDB::fetchAll(
+                        'SELECT operation, transaction_id, request_path, response_path
+                         FROM govtalk_protocol_exchanges
+                         WHERE hmrc_submission_id = :submission_id
+                         ORDER BY id',
+                        ['submission_id' => $submissionId]
+                    );
+                    $h->assertSame(5, count($exchangeRows));
+                    $exchangePaths = [];
+                    foreach ($exchangeRows as $exchangeRow) {
+                        $operation = strtolower((string)$exchangeRow['operation']);
+                        $transaction = preg_replace(
+                            '/[^a-z0-9]+/',
+                            '',
+                            strtolower((string)$exchangeRow['transaction_id'])
+                        );
+                        foreach (['request', 'response'] as $direction) {
+                            $path = (string)$exchangeRow[$direction . '_path'];
+                            if ($path === '') {
+                                $h->assertSame('response', $direction);
+                                continue;
+                            }
+                            $h->assertSame(
+                                $operation . '-' . $transaction . '-' . $direction . '.xml',
+                                basename($path)
+                            );
+                            $h->assertSame(true, is_file($path));
+                            $exchangePaths[] = $path;
+                        }
+                    }
+                    $h->assertSame(8, count($exchangePaths));
+                    $h->assertSame(count($exchangePaths), count(array_unique($exchangePaths)));
                     $h->assertTrue(is_file($archiveDirectory . DIRECTORY_SEPARATOR . 'manifest.json'));
 
                     $status = $service->status($companyId, $accountingPeriodId);
@@ -854,6 +878,336 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     $h->assertFalse((bool)$second['success']);
                     $h->assertTrue(str_contains(implode(' ', $second['errors']), 'uncertain'));
                     $h->assertSame(1, $transport->submitCalls);
+                } finally {
+                    InterfaceDB::prepareExecute('DELETE FROM companies WHERE id = :id', ['id' => $companyId]);
+                }
+            }
+        );
+
+        $h->check(
+            \eel_accounts\Service\HmrcCorporationTaxSubmissionService::class,
+            'persists a definitive Gateway rejection and releases only its idempotency reservation',
+            static function () use ($h): void {
+                $companyId = 98631;
+                $accountingPeriodId = 98632;
+                $ctPeriodId = 98633;
+                $now = '2026-07-31 22:20:00';
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO companies (id, company_name, company_number, is_active, created_at)
+                     VALUES (:id, :name, :number, 1, :created_at)',
+                    ['id' => $companyId, 'name' => 'HMRC Gateway Test Limited', 'number' => '09863100', 'created_at' => $now]
+                );
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end, created_at)
+                     VALUES (:id, :company_id, :label, :period_start, :period_end, :created_at)',
+                    [
+                        'id' => $accountingPeriodId,
+                        'company_id' => $companyId,
+                        'label' => 'HMRC-GATEWAY-98632',
+                        'period_start' => '2025-01-01',
+                        'period_end' => '2025-12-31',
+                        'created_at' => $now,
+                    ]
+                );
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO corporation_tax_periods (
+                        id, company_id, accounting_period_id, sequence_no,
+                        period_start, period_end, status, created_at, updated_at
+                     ) VALUES (
+                        :id, :company_id, :accounting_period_id, 1,
+                        :period_start, :period_end, :status, :created_at, :updated_at
+                     )',
+                    [
+                        'id' => $ctPeriodId,
+                        'company_id' => $companyId,
+                        'accounting_period_id' => $accountingPeriodId,
+                        'period_start' => '2025-01-01',
+                        'period_end' => '2025-12-31',
+                        'status' => 'ready',
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]
+                );
+                try {
+                    InterfaceDB::prepareExecute(
+                        'INSERT INTO year_end_reviews
+                            (company_id, accounting_period_id, is_locked, locked_at, locked_by)
+                         VALUES (:company_id, :period_id, 1, :locked_at, :locked_by)',
+                        [
+                            'company_id' => $companyId,
+                            'period_id' => $accountingPeriodId,
+                            'locked_at' => $now,
+                            'locked_by' => 'test',
+                        ]
+                    );
+                    $evidenceId = 'EEL-FE-00000000000000000000000000098631';
+                    $bundleHash = hash('sha256', 'hmrc-gateway-evidence');
+                    InterfaceDB::prepareExecute(
+                        'INSERT INTO filing_evidence_bundles
+                            (evidence_id, company_id, accounting_period_id, evidence_version, application_name,
+                             application_version, calculation_build, locked_at, locked_by, bundle_hash)
+                         VALUES (:evidence_id, :company_id, :period_id, :version, :name,
+                                 :app_version, :build, :locked_at, :locked_by, :bundle_hash)',
+                        [
+                            'evidence_id' => $evidenceId,
+                            'company_id' => $companyId,
+                            'period_id' => $accountingPeriodId,
+                            'version' => 'filing-evidence-v1',
+                            'name' => 'EEL Accounts tests',
+                            'app_version' => 'test',
+                            'build' => 'test',
+                            'locked_at' => $now,
+                            'locked_by' => 'test',
+                            'bundle_hash' => $bundleHash,
+                        ]
+                    );
+                    $manifest = [
+                        'accounting_period_id' => $accountingPeriodId,
+                        'basis' => 'gateway-retry-fixture',
+                        'company_id' => $companyId,
+                        'ct_period_id' => $ctPeriodId,
+                        'filing_evidence_id' => $evidenceId,
+                        'filing_evidence_bundle_hash' => $bundleHash,
+                    ];
+                    $body = '<IRenvelope xmlns="http://www.govtalk.gov.uk/taxation/CT/5">'
+                        . '<IRheader><Keys><Key Type="UTR">0123456789</Key></Keys>'
+                        . '<IRmark Type="generic">GATEWAY</IRmark></IRheader>'
+                        . '<CompanyTaxReturn/></IRenvelope>';
+                    $bodyHash = hash('sha256', $body);
+                    $package = static fn(int $requestedCompanyId, int $requestedCtPeriodId, string $mode): array => [
+                        'ok' => true,
+                        'errors' => [],
+                        'warnings' => [],
+                        'company_id' => $requestedCompanyId,
+                        'accounting_period_id' => $accountingPeriodId,
+                        'ct_period_id' => $requestedCtPeriodId,
+                        'utr' => '0123456789',
+                        'filing_body_xml' => $body,
+                        'source_manifest' => $manifest,
+                        'body_sha256' => $bodyHash,
+                        'accounts_ixbrl_path' => 'fixture/accounts.html',
+                        'accounts_run_id' => 1,
+                        'accounts_sha256' => str_repeat('a', 64),
+                        'computations_ixbrl_path' => 'fixture/computations.html',
+                        'computation_run_id' => 2,
+                        'computations_sha256' => str_repeat('b', 64),
+                        'year_end_locked_at' => $now,
+                        'irmark' => 'GATEWAY',
+                        'schema_version' => 'V3/V1.994',
+                        'validation' => ['status' => 'passed', 'mode' => $mode],
+                        'approval_declaration' => [
+                            'declarant_name' => 'Jane Director',
+                            'declarant_status' => 'Director',
+                            'declaration_at' => $now,
+                            'approved_at' => $now,
+                            'approved_by' => 'user:42',
+                            'declaration_confirmed' => true,
+                            'authority_confirmed' => true,
+                            'original_unfiled_confirmed' => true,
+                        ],
+                    ];
+                    $currentManifest = static fn(int $requestedCompanyId, int $requestedCtPeriodId): array => [
+                        'ok' => $requestedCompanyId === $companyId && $requestedCtPeriodId === $ctPeriodId,
+                        'errors' => [],
+                        'warnings' => [],
+                        'source_manifest' => $manifest,
+                        'body_sha256' => $bodyHash,
+                    ];
+                    $transport = new HmrcCtTestTransport();
+                    $service = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService(
+                        $transport,
+                        null,
+                        static fn(): string => $now,
+                        test_register_cleanup_path(
+                            test_tmp_directory() . DIRECTORY_SEPARATOR . 'hmrc-gateway-' . bin2hex(random_bytes(4))
+                        ),
+                        $package,
+                        $currentManifest,
+                        xmlEnvironmentResolver: static fn(): string => 'TEST'
+                    );
+                    $idempotencyKey = hash('sha256', 'gateway-rejection-fixture');
+                    $canonical = (new ReflectionClass($service))->getMethod('canonicalJson');
+                    $canonical->setAccessible(true);
+                    $manifestHash = hash('sha256', (string)$canonical->invoke($service, $manifest));
+                    InterfaceDB::prepareExecute(
+                        'INSERT INTO hmrc_ct600_submissions (
+                            company_id, accounting_period_id, ct_period_id, mode, environment,
+                            status, protocol_state, business_outcome, idempotency_key,
+                            transaction_id, source_manifest_sha256, body_sha256, created_at, updated_at
+                         ) VALUES (
+                            :company_id, :accounting_period_id, :ct_period_id, :mode, :environment,
+                            :status, :protocol_state, :business_outcome, :idempotency_key,
+                            :transaction_id, :manifest_hash, :body_hash, :created_at, :updated_at
+                         )',
+                        [
+                            'company_id' => $companyId,
+                            'accounting_period_id' => $accountingPeriodId,
+                            'ct_period_id' => $ctPeriodId,
+                            'mode' => 'TEST',
+                            'environment' => 'TEST',
+                            'status' => 'submitting',
+                            'protocol_state' => 'submitting',
+                            'business_outcome' => 'none',
+                            'idempotency_key' => $idempotencyKey,
+                            'transaction_id' => 'FACE000000000001',
+                            'manifest_hash' => $manifestHash,
+                            'body_hash' => $bodyHash,
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ]
+                    );
+                    $submissionId = (int)InterfaceDB::fetchColumn(
+                        'SELECT MAX(id) FROM hmrc_ct600_submissions WHERE company_id = :company_id',
+                        ['company_id' => $companyId]
+                    );
+                    $method = (new ReflectionClass($service))->getMethod('applyConversationResult');
+                    $method->setAccessible(true);
+                    $command = $method->invoke($service, $submissionId, [
+                        'success' => false,
+                        'pre_send_failure' => false,
+                        'transport_unknown' => false,
+                        'protocol_state' => 'gateway_rejected',
+                        'business_outcome' => null,
+                        'transaction_id' => 'FACE000000000001',
+                        'correlation_id' => '',
+                        'cleanup_required' => false,
+                        'status_code' => 200,
+                        'headers' => ['content-type' => 'text/xml'],
+                        'response_xml' => '',
+                        'errors' => [[
+                            'raised_by' => 'Gateway',
+                            'number' => '1046',
+                            'type' => 'fatal',
+                            'texts' => ['Authentication Failure. The supplied user credentials failed validation for the requested service.'],
+                            'locations' => [],
+                        ]],
+                        'error' => '1046: Authentication Failure. The supplied user credentials failed validation for the requested service.',
+                    ], 42, false);
+
+                    $persisted = InterfaceDB::fetchOne(
+                        'SELECT * FROM hmrc_ct600_submissions WHERE id = :id',
+                        ['id' => $submissionId]
+                    );
+                    $h->assertFalse((bool)$command['success']);
+                    $h->assertSame('failed', $persisted['status']);
+                    $h->assertSame('gateway_rejected', $persisted['protocol_state']);
+                    $h->assertSame('error', $persisted['business_outcome']);
+                    $h->assertSame(null, $persisted['idempotency_key']);
+                    $h->assertSame(null, $persisted['hmrc_correlation_id']);
+                    $h->assertSame(null, $persisted['next_poll_at']);
+                    $h->assertSame($now, $persisted['final_response_at']);
+                    $h->assertSame(0, (int)$persisted['poll_attempts']);
+                    $h->assertSame(0, (int)$persisted['cleanup_attempts']);
+                    $messages = implode(' ', (array)$command['errors']);
+                    $h->assertTrue(str_contains($messages, '1046: Authentication Failure'));
+                    $h->assertTrue(str_contains($messages, 'HMRC / XML / CT600_XML / TEST|LIVE'));
+
+                    $ordinary = $service->submitTest($companyId, $ctPeriodId, 42);
+                    $h->assertFalse((bool)$ordinary['success']);
+                    $h->assertTrue(str_contains(
+                        implode(' ', (array)$ordinary['errors']),
+                        'Ordinary resubmission is blocked'
+                    ));
+                    $h->assertSame(0, $transport->submitCalls);
+
+                    $previousDeveloperOptions = AppConfigurationStore::get('developer_options', false);
+                    try {
+                        AppConfigurationStore::set('developer_options', false);
+                        $developerBlocked = $service->submitTest(
+                            $companyId,
+                            $ctPeriodId,
+                            42,
+                            null,
+                            true
+                        );
+                        $h->assertFalse((bool)$developerBlocked['success']);
+                        $h->assertTrue(str_contains(
+                            implode(' ', (array)$developerBlocked['errors']),
+                            'Developer Options must be enabled'
+                        ));
+                        $h->assertSame(0, $transport->submitCalls);
+
+                        AppConfigurationStore::set('developer_options', true);
+                        $transport->submitResponses[] = [
+                            'success' => false,
+                            'pre_send_failure' => false,
+                            'transport_unknown' => false,
+                            'protocol_state' => 'gateway_rejected',
+                            'business_outcome' => null,
+                            'correlation_id' => '',
+                            'response_endpoint' => '',
+                            'poll_interval' => null,
+                            'cleanup_required' => false,
+                            'status_code' => 200,
+                            'headers' => ['content-type' => 'text/xml'],
+                            'response_xml' => '<GovTalkMessage xmlns="http://www.govtalk.gov.uk/CM/envelope">'
+                                . '<Header><MessageDetails><Class>UndefinedClass</Class><Qualifier>error</Qualifier>'
+                                . '<Function>submit</Function><TransactionID/><CorrelationID/></MessageDetails></Header>'
+                                . '<GovTalkDetails><GovTalkErrors><Error><RaisedBy>Gateway</RaisedBy>'
+                                . '<Number>1046</Number><Type>fatal</Type><Text>Authentication Failure.</Text>'
+                                . '<Text>Credentials failed validation.</Text><Location>/Header/SenderDetails</Location>'
+                                . '</Error></GovTalkErrors></GovTalkDetails><Body/></GovTalkMessage>',
+                            'errors' => [[
+                                'raised_by' => 'Gateway',
+                                'number' => '1046',
+                                'type' => 'fatal',
+                                'texts' => ['Authentication Failure.'],
+                                'locations' => [],
+                            ]],
+                            'error' => '1046: Authentication Failure.',
+                        ];
+                        $retry = $service->submitTest(
+                            $companyId,
+                            $ctPeriodId,
+                            42,
+                            null,
+                            true
+                        );
+                        $retryId = (int)$retry['submission_id'];
+                        $h->assertFalse((bool)$retry['success']);
+                        $h->assertSame('gateway_rejected', $retry['protocol_state']);
+                        $h->assertTrue($retryId > $submissionId);
+                        $retryRow = InterfaceDB::fetchOne(
+                            'SELECT transaction_id, idempotency_key FROM hmrc_ct600_submissions WHERE id = :id',
+                            ['id' => $retryId]
+                        );
+                        $h->assertFalse(hash_equals(
+                            (string)$persisted['transaction_id'],
+                            (string)$retryRow['transaction_id']
+                        ));
+                        $h->assertSame(null, $retryRow['idempotency_key']);
+                        $h->assertSame(1, $transport->submitCalls);
+                        $exchange = InterfaceDB::fetchOne(
+                            'SELECT exchange_state, outcome_code, govtalk_errors_json
+                             FROM govtalk_protocol_exchanges
+                             WHERE hmrc_submission_id = :submission_id',
+                            ['submission_id' => $retryId]
+                        );
+                        $h->assertSame('failed', $exchange['exchange_state']);
+                        $h->assertSame('gateway_rejected', $exchange['outcome_code']);
+                        $ledgerErrors = json_decode(
+                            (string)$exchange['govtalk_errors_json'],
+                            true,
+                            512,
+                            JSON_THROW_ON_ERROR
+                        );
+                        $h->assertSame('Gateway', $ledgerErrors[0]['raised_by']);
+                        $h->assertSame('1046', $ledgerErrors[0]['number']);
+                        $h->assertSame('fatal', $ledgerErrors[0]['type']);
+                        $h->assertSame(
+                            ['Authentication Failure.', 'Credentials failed validation.'],
+                            $ledgerErrors[0]['texts']
+                        );
+                        $h->assertSame(
+                            ['/Header/SenderDetails'],
+                            $ledgerErrors[0]['locations']
+                        );
+                    } finally {
+                        AppConfigurationStore::set(
+                            'developer_options',
+                            (bool)$previousDeveloperOptions
+                        );
+                    }
                 } finally {
                     InterfaceDB::prepareExecute('DELETE FROM companies WHERE id = :id', ['id' => $companyId]);
                 }

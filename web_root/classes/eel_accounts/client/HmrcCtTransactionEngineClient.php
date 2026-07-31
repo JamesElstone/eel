@@ -795,6 +795,41 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         if ($correlationId !== '' && !preg_match('/^[0-9A-F]{1,32}$/D', $correlationId)) {
             throw new \RuntimeException('HMRC returned an invalid correlation ID.');
         }
+
+        $errors = $this->errors($xpath);
+        if (
+            $operation === 'submit'
+            && $expectedCorrelationId === ''
+            && $class === 'UndefinedClass'
+            && $qualifier === 'error'
+            && $function === 'submit'
+            && $transactionId === ''
+            && $correlationId === ''
+            && parse_url($responseEndpoint, PHP_URL_PATH) === '/submission'
+            && $this->hasFatalGatewayGovTalkError($xpath)
+        ) {
+            // Authentication and other fatal Gateway rejections happen before
+            // HMRC opens a filing conversation. In that response class HMRC
+            // deliberately returns UndefinedClass, blank protocol IDs and the
+            // generic /submission endpoint, so those values are not evidence
+            // of an uncertain transport outcome.
+            return [
+                'success' => false,
+                'protocol_state' => 'gateway_rejected',
+                'business_outcome' => null,
+                'transaction_id' => $expectedTransactionId,
+                'correlation_id' => '',
+                'response_endpoint' => '',
+                'poll_interval' => null,
+                'cleanup_required' => false,
+                'delete_not_found' => false,
+                'qualifier' => $qualifier,
+                'function' => $function,
+                'errors' => $errors,
+                'body_xml' => $this->bodyXml($document, $xpath),
+                'error' => $this->errorMessage($errors),
+            ];
+        }
         if ($responseEndpoint !== '') {
             $responseEndpoint = HmrcCtTransactionEngineEnvironment::responseEndpoint(
                 $responseEndpoint,
@@ -804,7 +839,6 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
             $responseEndpoint = (string)$profile['poll_url'];
         }
 
-        $errors = $this->errors($xpath);
         if ($transactionId === '') {
             $errors[] = $this->clientError(
                 'MISSING_TRANSACTION_ID',
@@ -1079,6 +1113,30 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
             if (
                 strcasecmp(trim((string)($error['raised_by'] ?? '')), 'Gateway') === 0
                 && strtolower(trim((string)($error['type'] ?? ''))) === 'fatal'
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function hasFatalGatewayGovTalkError(\DOMXPath $xpath): bool
+    {
+        $nodes = $xpath->query(
+            '/*[local-name()="GovTalkMessage"]/*[local-name()="GovTalkDetails"]'
+            . '/*[local-name()="GovTalkErrors"]/*[local-name()="Error"]'
+        );
+        if ($nodes === false) {
+            return false;
+        }
+        foreach ($nodes as $node) {
+            if (!$node instanceof \DOMElement) {
+                continue;
+            }
+            if (
+                strcasecmp($this->childText($xpath, $node, 'RaisedBy'), 'Gateway') === 0
+                && strtolower($this->childText($xpath, $node, 'Type')) === 'fatal'
             ) {
                 return true;
             }

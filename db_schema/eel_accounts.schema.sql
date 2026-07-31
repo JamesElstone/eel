@@ -1545,7 +1545,7 @@ CREATE TABLE `hmrc_ct600_submissions` (
   `mode` enum('TEST','TIL','LIVE') NOT NULL,
   `environment` enum('TEST','TIL','LIVE') NOT NULL DEFAULT 'TEST',
   `status` enum('draft','validating','validation_failed','ready','submitting','accepted','rejected','failed') NOT NULL,
-  `protocol_state` enum('prepared','validation_failed','ready','submitting','awaiting_poll','final_received','delete_pending','closed','transport_uncertain','invalidated') NOT NULL DEFAULT 'prepared',
+  `protocol_state` enum('prepared','validation_failed','ready','submitting','awaiting_poll','final_received','delete_pending','closed','gateway_rejected','transport_uncertain','invalidated') NOT NULL DEFAULT 'prepared',
   `business_outcome` enum('none','sandbox_passed','til_validated','live_accepted','rejected','error') NOT NULL DEFAULT 'none',
   `submission_type` enum('original','amendment') NOT NULL DEFAULT 'original',
   `ct600_xml_path` varchar(1000) DEFAULT NULL,
@@ -4449,6 +4449,8 @@ WHERE target_scope = 'ct600_rim'
   AND canonical_key = 'accounts_facts.turnover';
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_31_003_ct600_legacy_turnover_source.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_31_004_hmrc_gateway_rejected_state.sql');
 
 DROP TRIGGER IF EXISTS `trg_journals_append_only_update`;
 CREATE TRIGGER `trg_journals_append_only_update`

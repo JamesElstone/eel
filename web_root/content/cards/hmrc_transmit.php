@@ -193,6 +193,13 @@ final class _hmrc_transmitCard extends CardBaseFramework
             $html .= '</div>';
         }
 
+        $gatewayRejection = $xmlEnvironment === 'LIVE'
+            ? (array)($period['live_gateway_rejection'] ?? [])
+            : (array)($period['test_gateway_rejection'] ?? []);
+        if ($gatewayRejection !== []) {
+            $html .= $this->gatewayRejectionPanel($gatewayRejection, $xmlEnvironment);
+        }
+
         $html .= $this->submissionForm(
             $companyId,
             $accountingPeriodId,
@@ -252,30 +259,75 @@ final class _hmrc_transmitCard extends CardBaseFramework
         $submissionDisabled = ($isLive ? $liveEnabled : $testEnabled) && !$controlsDisabled
             && $credentialsConfigured && $dependenciesReady ? '' : ' disabled';
         $developerOptions = (bool)AppConfigurationStore::get('developer_options', false);
+        $gatewayRejection = $isLive
+            ? (array)($period['live_gateway_rejection'] ?? [])
+            : (array)($period['test_gateway_rejection'] ?? []);
+        $retryReady = $isLive
+            ? !empty($period['live_gateway_retry_ready'])
+            : !empty($period['test_gateway_retry_ready']);
+        $retryIntent = $isLive ? 'hmrc_retry_live' : 'hmrc_retry_test';
+        $retryDisabled = $retryReady && !$controlsDisabled
+            && $credentialsConfigured && $dependenciesReady ? '' : ' disabled';
         $requestDisabled = !$controlsDisabled && $dependenciesReady
             ? ''
             : ' disabled';
-        $submissionClass = $xmlEnvironment === 'DISABLED' ? '' : ($isLive ? ' danger' : ' success');
+        $submissionClass = ' danger';
         $periodLabel = trim($start . ' to ' . $end);
+        $submissionEnvironment = $isLive ? 'HMRC LIVE' : 'HMRC TEST';
+        $submissionWarning = $isLive
+            ? 'This is a statutory filing. It sends tax return information outside EEL Accounts and cannot be undone in this application.'
+            : 'This sends tax return information outside EEL Accounts to the HMRC test environment and cannot be undone in this application.';
 
         return '<section class="panel-soft"><form method="post" action="?page=transmit" data-ajax="true" class="settings-stack">'
             . $this->hiddenFields($companyId, $accountingPeriodId, $ctPeriodId)
             . '<h3>Transmit Submission</h3>'
             . '<div class="actions-row">'
             . '<button class="button' . $submissionClass . '" type="submit" name="intent" value="' . $submissionIntent . '"' . $submissionDisabled
-            . ($isLive
-                ? ' data-chicken-check="true" data-chicken-title="Submit Corporation Tax return"'
-                    . ' data-chicken-message="Submit the CT600 for ' . \eel_accounts\Support\Utf8::html($periodLabel)
-                    . ' to HMRC LIVE?&lt;br&gt;&lt;br&gt;This is a statutory filing and cannot be undone in this application."'
-                    . ' data-chicken-confirm-text="Submit Tax Return"'
-                : '')
+            . ' data-chicken-check="true" data-chicken-title="Transmit Corporation Tax return"'
+            . ' data-chicken-message="Transmit the CT600 for ' . \eel_accounts\Support\Utf8::html($periodLabel)
+            . ' to ' . $submissionEnvironment . '?&lt;br&gt;&lt;br&gt;' . $submissionWarning . '"'
+            . ' data-chicken-confirm-text="Transmit Tax Return" data-chicken-button-class="button danger"'
             . '>Transmit Submission</button>'
+            . ($developerOptions && $gatewayRejection !== []
+                ? '<button class="button danger" type="submit" name="intent" value="' . $retryIntent . '"'
+                    . $retryDisabled
+                    . ' data-chicken-check="true" data-chicken-title="Retry HMRC transmission"'
+                    . ' data-chicken-message="Create a new audited HMRC submission for the same CT600 body and transmit it to '
+                    . $submissionEnvironment . '?&lt;br&gt;&lt;br&gt;This sends tax return information outside EEL Accounts and cannot be undone in this application."'
+                    . ' data-chicken-confirm-text="Retry Transmission" data-chicken-button-class="button danger"'
+                    . '>Retry Transmission</button>'
+                : '')
             . ($developerOptions
                 ? '<button class="button" type="submit" name="intent" value="hmrc_generate_request"'
                     . $requestDisabled . '>Generate Request File</button>'
                 : '')
             . '</div>'
             . '</form></section>';
+    }
+
+    private function gatewayRejectionPanel(array $submission, string $xmlEnvironment): string
+    {
+        $summary = trim((string)($submission['hmrc_response_summary'] ?? ''));
+        if ($summary === '') {
+            $summary = 'HMRC Gateway rejected the submission before opening a filing conversation.';
+        }
+        $developerOptions = (bool)AppConfigurationStore::get('developer_options', false);
+        $credentialEnvironment = $xmlEnvironment === 'TEST' ? 'TEST' : 'LIVE';
+        $html = '<section class="panel-soft summary-card danger hmrc-gateway-rejection">'
+            . '<div class="status-head"><h3 class="card-title">HMRC Gateway rejection</h3>'
+            . '<span class="badge danger">Not transmitted</span></div>'
+            . '<div class="helper">' . \eel_accounts\Support\Utf8::html($summary) . '</div>';
+        if (str_contains($summary, '1046')) {
+            $html .= '<div class="helper">Check the Sender ID and password for HMRC / XML / CT600_XML / '
+                . \eel_accounts\Support\Utf8::html($credentialEnvironment) . '.</div>'
+                . '<div class="actions-row actions-row-right"><a class="button" href="?page=settings&amp;show_card=api_keys_editor">'
+                . 'Configure HMRC XML credentials</a></div>';
+        }
+        if (!$developerOptions) {
+            $html .= '<div class="helper">Ordinary resubmission is blocked. Enable Developer Options to expose the audited Retry Transmission action.</div>';
+        }
+
+        return $html . '</section>';
     }
 
     private function hiddenFields(int $companyId, int $accountingPeriodId, int $ctPeriodId): string

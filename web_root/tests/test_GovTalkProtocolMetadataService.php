@@ -23,6 +23,7 @@ $harness->run(
                     . '<CorrelationID>CORR1</CorrelationID></MessageDetails></Header>'
                     . '<GovTalkDetails><GovTalkErrors><Error><RaisedBy>Gateway</RaisedBy>'
                     . '<Number>5000</Number><Type>fatal</Type><Text>Unavailable</Text>'
+                    . '<Text>Try later</Text><Location>/GovTalkMessage/Header</Location><Location/>'
                     . '</Error></GovTalkErrors></GovTalkDetails><Body/></GovTalkMessage>';
                 $details = $metadata->requestMessageDetails($xml);
                 $errors = $metadata->govTalkErrors($xml);
@@ -32,7 +33,11 @@ $harness->run(
                 $harness->assertSame('submit', $details['function']);
                 $harness->assertSame('TX1', $details['transaction_id']);
                 $harness->assertSame('CORR1', $details['correlation_id']);
+                $harness->assertSame('Gateway', $errors[0]['raised_by']);
                 $harness->assertSame('5000', $errors[0]['number']);
+                $harness->assertSame('fatal', $errors[0]['type']);
+                $harness->assertSame(['Unavailable', 'Try later'], $errors[0]['texts']);
+                $harness->assertSame(['/GovTalkMessage/Header'], $errors[0]['locations']);
             }
         );
     }

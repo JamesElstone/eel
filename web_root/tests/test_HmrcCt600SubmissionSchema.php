@@ -13,6 +13,10 @@ $securityMigration = (string)file_get_contents(
     $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
     . DIRECTORY_SEPARATOR . '2026_07_19_009_hmrc_ct600_submission_security.sql'
 );
+$gatewayMigration = (string)file_get_contents(
+    $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations'
+    . DIRECTORY_SEPARATOR . '2026_07_31_004_hmrc_gateway_rejected_state.sql'
+);
 $master = (string)file_get_contents(
     $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'eel_accounts.schema.sql'
 );
@@ -31,6 +35,19 @@ $harness->check(
             $harness->assertTrue(str_contains($securityMigration, $column));
             $harness->assertTrue(str_contains($master, $column));
         }
+    }
+);
+
+$harness->check(
+    'HMRC CT600 submission schema',
+    'defines the definitive pre-conversation Gateway rejection state',
+    static function () use ($harness, $gatewayMigration, $master): void {
+        $harness->assertTrue(str_contains($gatewayMigration, 'gateway_rejected'));
+        $harness->assertTrue(str_contains($master, "'gateway_rejected'"));
+        $harness->assertTrue(str_contains(
+            $master,
+            '2026_07_31_004_hmrc_gateway_rejected_state.sql'
+        ));
     }
 );
 

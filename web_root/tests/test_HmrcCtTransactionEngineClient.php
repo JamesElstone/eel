@@ -323,6 +323,56 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $h->check(
             \eel_accounts\Client\HmrcCtTransactionEngineClient::class,
+            'treats the HMRC 1046 pre-conversation response as a definitive Gateway rejection',
+            static function () use ($h, $credentials, $transactionId, $body, $recorders, $conversation): void {
+                $fixture = '<?xml version="1.0" encoding="UTF-8"?>'
+                    . '<GovTalkMessage xmlns="http://www.govtalk.gov.uk/CM/envelope">'
+                    . '<EnvelopeVersion>2.0</EnvelopeVersion><Header><MessageDetails>'
+                    . '<Class>UndefinedClass</Class><Qualifier>error</Qualifier><Function>submit</Function>'
+                    . '<TransactionID></TransactionID><CorrelationID></CorrelationID>'
+                    . '<ResponseEndPoint PollInterval="10">https://test-transaction-engine.tax.service.gov.uk/submission</ResponseEndPoint>'
+                    . '<GatewayTimestamp>2026-07-31T22:18:53.498</GatewayTimestamp>'
+                    . '</MessageDetails><SenderDetails/></Header><GovTalkDetails><Keys/><GovTalkErrors><Error>'
+                    . '<RaisedBy>Gateway</RaisedBy><Number>1046</Number><Type>fatal</Type>'
+                    . '<Text>Authentication Failure. The supplied user credentials failed validation for the requested service.</Text>'
+                    . '<Location/></Error></GovTalkErrors></GovTalkDetails><Body/></GovTalkMessage>';
+                $client = new \eel_accounts\Client\HmrcCtTransactionEngineClient(
+                    static fn(array $request): array => [
+                        'status_code' => 200,
+                        'headers' => ['Content-Type' => 'text/xml'],
+                        'body' => $fixture,
+                    ],
+                    $credentials,
+                    $transactionId
+                );
+                [$beforeSend, $afterReceive] = $recorders();
+                $result = $client->submit(
+                    $body,
+                    '0123456789',
+                    'TEST',
+                    $conversation('TEST', $beforeSend, $afterReceive)
+                );
+
+                $h->assertFalse((bool)$result['success']);
+                $h->assertSame('gateway_rejected', $result['protocol_state']);
+                $h->assertFalse((bool)$result['transport_unknown']);
+                $h->assertSame('ABCDEF1234567890', $result['transaction_id']);
+                $h->assertSame('', $result['correlation_id']);
+                $h->assertFalse((bool)$result['cleanup_required']);
+                $error = (array)($result['errors'][0] ?? []);
+                $h->assertSame('Gateway', $error['raised_by']);
+                $h->assertSame('1046', $error['number']);
+                $h->assertSame('fatal', $error['type']);
+                $h->assertSame(
+                    ['Authentication Failure. The supplied user credentials failed validation for the requested service.'],
+                    $error['texts']
+                );
+                $h->assertSame([], $error['locations']);
+            }
+        );
+
+        $h->check(
+            \eel_accounts\Client\HmrcCtTransactionEngineClient::class,
             'recursively redacts credentials echoed by a parsed GovTalk error',
             static function () use ($h, $credentials, $transactionId, $body, $response, $recorders, $conversation): void {
                 $govTalkDetails = '<GovTalkDetails><Keys/><GovTalkErrors><Error>'
@@ -334,12 +384,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         'status_code' => 200,
                         'headers' => [],
                         'body' => $response(
-                            'HMRC-CT-CT600',
+                            'UndefinedClass',
                             'error',
                             'submit',
                             '',
-                            '',
-                            $govTalkDetails
+                            '<ResponseEndPoint>https://transaction-engine.tax.service.gov.uk/submission</ResponseEndPoint>',
+                            $govTalkDetails,
+                            '<Body/>',
+                            ''
                         ),
                     ],
                     $credentials,
@@ -353,6 +405,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'LIVE',
                     $conversation('LIVE', $beforeSend, $afterReceive)
                 );
+                $h->assertSame('gateway_rejected', $result['protocol_state']);
+                $h->assertFalse((bool)$result['transport_unknown']);
                 $encodedErrors = json_encode((array)$result['errors'], JSON_THROW_ON_ERROR);
                 $h->assertFalse(str_contains((string)$result['error'], 'LIVE-SENDER'));
                 $h->assertFalse(str_contains((string)$result['error'], 'LIVE-PASSWORD'));

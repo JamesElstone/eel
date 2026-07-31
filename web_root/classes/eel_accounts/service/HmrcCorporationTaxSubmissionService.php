@@ -216,6 +216,33 @@ final class HmrcCorporationTaxSubmissionService
                 $liveBlockers[] = 'HMRC has already accepted a LIVE return for this CT period.';
             }
 
+            $testGatewayRejection = $testEnvironment === 'DISABLED' || $manifestHash === '' || $bodyHash === ''
+                ? null
+                : $this->gatewayRejectionForHashes(
+                    $companyId,
+                    $ctPeriodId,
+                    $testEnvironment,
+                    $manifestHash,
+                    $bodyHash
+                );
+            $liveGatewayRejection = $liveEnvironment === 'DISABLED' || $manifestHash === '' || $bodyHash === ''
+                ? null
+                : $this->gatewayRejectionForHashes(
+                    $companyId,
+                    $ctPeriodId,
+                    $liveEnvironment,
+                    $manifestHash,
+                    $bodyHash
+                );
+            $testGatewayRetryReady = is_array($testGatewayRejection) && $testBlockers === [];
+            $liveGatewayRetryReady = is_array($liveGatewayRejection) && $liveBlockers === [];
+            if (is_array($testGatewayRejection)) {
+                $testBlockers[] = 'HMRC definitively rejected this exact filing body before opening a conversation. Ordinary resubmission is blocked.';
+            }
+            if (is_array($liveGatewayRejection)) {
+                $liveBlockers[] = 'HMRC definitively rejected this exact filing body before opening a conversation. Ordinary resubmission is blocked.';
+            }
+
             $row = [
                 'ct_period_id' => $ctPeriodId,
                 'sequence_no' => (int)$period['sequence_no'],
@@ -237,6 +264,10 @@ final class HmrcCorporationTaxSubmissionService
                 'latest_test_attempt' => $latestTestAttempt,
                 'latest_til_attempt' => $latestTilAttempt,
                 'latest_live_attempt' => $latestLiveAttempt,
+                'test_gateway_rejection' => $testGatewayRejection,
+                'live_gateway_rejection' => $liveGatewayRejection,
+                'test_gateway_retry_ready' => $testGatewayRetryReady,
+                'live_gateway_retry_ready' => $liveGatewayRetryReady,
                 'filing_dependencies' => $filingDependencies,
                 'latest_submission' => $submissions[0] ?? null,
                 'pending_submission' => $pending,
@@ -258,7 +289,8 @@ final class HmrcCorporationTaxSubmissionService
         int $companyId,
         int $ctPeriodId,
         int|string|null $actor = null,
-        ?callable $progress = null
+        ?callable $progress = null,
+        bool $retryGatewayRejection = false
     ): array {
         $xmlEnvironment = $this->xmlEnvironment();
         if ($xmlEnvironment === 'DISABLED') {
@@ -270,7 +302,8 @@ final class HmrcCorporationTaxSubmissionService
             $ctPeriodId,
             $xmlEnvironment === 'TEST' ? 'TEST' : 'TIL',
             $actor,
-            $progress
+            $progress,
+            $retryGatewayRejection
         );
     }
 
@@ -278,9 +311,17 @@ final class HmrcCorporationTaxSubmissionService
         int $companyId,
         int $ctPeriodId,
         int|string|null $actor = null,
-        ?callable $progress = null
+        ?callable $progress = null,
+        bool $retryGatewayRejection = false
     ): array {
-        return $this->submitMode($companyId, $ctPeriodId, 'LIVE', $actor, $progress);
+        return $this->submitMode(
+            $companyId,
+            $ctPeriodId,
+            'LIVE',
+            $actor,
+            $progress,
+            $retryGatewayRejection
+        );
     }
 
     /**
@@ -504,9 +545,7 @@ final class HmrcCorporationTaxSubmissionService
                 $artifact = $this->govTalk->captureRequest(
                     $this->hmrcGovTalkIdentity(
                         $submissionId,
-                        'poll',
-                        sprintf('poll-%04d-request.xml', $attempt),
-                        sprintf('poll-%04d-response.xml', $attempt)
+                        'poll'
                     ),
                     $request
                 );
@@ -533,9 +572,7 @@ final class HmrcCorporationTaxSubmissionService
                     $capturedResponse = $this->govTalk->captureResponse(
                         $this->hmrcGovTalkIdentity(
                             $submissionId,
-                            'poll',
-                            sprintf('poll-%04d-request.xml', $attempt),
-                            sprintf('poll-%04d-response.xml', $attempt)
+                            'poll'
                         ),
                         $response
                     );
@@ -555,7 +592,8 @@ final class HmrcCorporationTaxSubmissionService
         int $ctPeriodId,
         string $mode,
         int|string|null $actor,
-        ?callable $progress = null
+        ?callable $progress = null,
+        bool $retryGatewayRejection = false
     ): array {
         $report = static function (string $message, int $percent) use ($progress): void {
             if ($progress !== null) {
@@ -685,6 +723,34 @@ final class HmrcCorporationTaxSubmissionService
 
         $manifestHash = (string)$package['source_manifest_sha256'];
         $bodyHash = (string)$package['body_sha256'];
+        $gatewayRejection = $this->gatewayRejectionForHashes(
+            $companyId,
+            $ctPeriodId,
+            $mode,
+            $manifestHash,
+            $bodyHash
+        );
+        if (is_array($gatewayRejection)) {
+            if (!$retryGatewayRejection) {
+                return $this->failure(
+                    'HMRC definitively rejected this exact filing body before opening a conversation. '
+                    . 'Ordinary resubmission is blocked.',
+                    (int)$gatewayRejection['id'],
+                    $gatewayRejection
+                );
+            }
+            if (!(bool)\AppConfigurationStore::get('developer_options', false)) {
+                return $this->failure(
+                    'Developer Options must be enabled to retry a definitive HMRC Gateway rejection.',
+                    (int)$gatewayRejection['id'],
+                    $gatewayRejection
+                );
+            }
+        } elseif ($retryGatewayRejection) {
+            return $this->failure(
+                'There is no definitive HMRC Gateway rejection for this exact filing body to retry.'
+            );
+        }
         $testSubmission = null;
         if ($mode === 'LIVE') {
             $report('Verifying Test in Live acceptance for this exact CT600 body…', 52);
@@ -807,9 +873,7 @@ final class HmrcCorporationTaxSubmissionService
                 $artifact = $this->govTalk->captureRequest(
                     $this->hmrcGovTalkIdentity(
                         $submissionId,
-                        'submit',
-                        'submission-request.xml',
-                        'submission-response.xml'
+                        'submit'
                     ),
                     $request
                 );
@@ -861,7 +925,7 @@ final class HmrcCorporationTaxSubmissionService
                 ]);
                 (new FilingEvidenceService())->completeArtifact((int)$govtalkEvidence['id'], [
                     'status' => 'generated',
-                    'filename' => 'submission-request.xml',
+                    'filename' => basename((string)$artifact['path']),
                     'path' => $artifact['path'],
                     'sha256' => (string)$request['request_sha256'],
                     'schema_identity' => 'GovTalk Document Submission Protocol 2.0 / CT/5',
@@ -876,9 +940,7 @@ final class HmrcCorporationTaxSubmissionService
                     $capturedResponse = $this->govTalk->captureResponse(
                         $this->hmrcGovTalkIdentity(
                             $submissionId,
-                            'submit',
-                            'submission-request.xml',
-                            'submission-response.xml'
+                            'submit'
                         ),
                         $response
                     );
@@ -1086,9 +1148,11 @@ final class HmrcCorporationTaxSubmissionService
             : null;
         if ($responseArtifact === null && trim((string)($result['response_xml'] ?? '')) !== '') {
             $current = $this->fetchById($submissionId);
-            $name = $wasPoll
-                ? sprintf('poll-%04d-response-redacted.xml', max(1, (int)($current['poll_attempts'] ?? 1)))
-                : 'submission-response-redacted.xml';
+            $name = $this->transactionEvidenceFilename(
+                $wasPoll ? 'poll' : 'submit',
+                (string)($result['transaction_id'] ?? $current['transaction_id'] ?? ''),
+                'response'
+            );
             $responseArtifact = $this->storeArtifact($submissionId, $name, (string)$result['response_xml']);
         }
 
@@ -1146,6 +1210,41 @@ final class HmrcCorporationTaxSubmissionService
         }
 
         $protocol = (string)($result['protocol_state'] ?? 'failed');
+        if ($protocol === 'gateway_rejected') {
+            $messages = $this->gatewayRejectionMessages((array)($result['errors'] ?? []));
+            $summary = $messages !== []
+                ? implode(' ', $messages)
+                : (string)($result['error'] ?? 'HMRC Gateway rejected the submission.');
+            $this->updateSubmission($submissionId, [
+                'status' => 'failed',
+                'protocol_state' => 'gateway_rejected',
+                'business_outcome' => 'error',
+                'hmrc_correlation_id' => null,
+                'response_endpoint' => null,
+                'next_poll_at' => null,
+                'hmrc_response_code' => (int)($result['status_code'] ?? 0) ?: null,
+                'hmrc_response_summary' => $summary,
+                'response_headers_json' => $this->json((array)($result['headers'] ?? [])),
+                'response_body_path' => $responseArtifact['path'] ?? null,
+                'response_sha256' => $responseArtifact['sha256'] ?? null,
+                'final_response_at' => $this->sqlNow(),
+                'idempotency_key' => null,
+            ]);
+            $this->event(
+                $submissionId,
+                'error',
+                'HMRC Gateway rejected the submission before opening a filing conversation.',
+                ['errors' => (array)($result['errors'] ?? []), 'remediation' => $messages]
+            );
+            $this->recordEvidenceOutcome(
+                $submissionId,
+                'hmrc_gateway_rejected',
+                'error',
+                $actor,
+                ['errors' => (array)($result['errors'] ?? []), 'remediation' => $messages]
+            );
+            return $this->commandResult($submissionId, false, $messages);
+        }
         if ($protocol === 'acknowledged') {
             $interval = max(1, (int)($result['poll_interval'] ?? 10));
             $nextPoll = $this->now()->modify('+' . $interval . ' seconds')->format('Y-m-d H:i:s');
@@ -1310,9 +1409,7 @@ final class HmrcCorporationTaxSubmissionService
                 $artifact = $this->govTalk->captureRequest(
                     $this->hmrcGovTalkIdentity(
                         $submissionId,
-                        'delete',
-                        sprintf('delete-%04d-request.xml', $attempt),
-                        sprintf('delete-%04d-response.xml', $attempt)
+                        'delete'
                     ),
                     $request
                 );
@@ -1332,9 +1429,7 @@ final class HmrcCorporationTaxSubmissionService
                     $capturedResponse = $this->govTalk->captureResponse(
                         $this->hmrcGovTalkIdentity(
                             $submissionId,
-                            'delete',
-                            sprintf('delete-%04d-request.xml', $attempt),
-                            sprintf('delete-%04d-response.xml', $attempt)
+                            'delete'
                         ),
                         $response
                     );
@@ -1359,9 +1454,14 @@ final class HmrcCorporationTaxSubmissionService
 
         $responseArtifact = $capturedResponse;
         if ($responseArtifact === null && trim((string)($result['response_xml'] ?? '')) !== '') {
+            $current = $this->fetchById($submissionId);
             $responseArtifact = $this->storeArtifact(
                 $submissionId,
-                sprintf('delete-%04d-response-redacted.xml', $attempt),
+                $this->transactionEvidenceFilename(
+                    'delete',
+                    (string)($result['transaction_id'] ?? $current['transaction_id'] ?? ''),
+                    'response'
+                ),
                 (string)$result['response_xml']
             );
         }
@@ -1678,6 +1778,36 @@ final class HmrcCorporationTaxSubmissionService
         return null;
     }
 
+    private function gatewayRejectionForHashes(
+        int $companyId,
+        int $ctPeriodId,
+        string $mode,
+        string $manifestHash,
+        string $bodyHash
+    ): ?array {
+        $row = \InterfaceDB::fetchOne(
+            'SELECT * FROM ' . self::SUBMISSIONS . '
+             WHERE company_id = :company_id
+               AND ct_period_id = :ct_period_id
+               AND environment = :environment
+               AND source_manifest_sha256 = :manifest_hash
+               AND body_sha256 = :body_hash
+               AND protocol_state = :protocol_state
+             ORDER BY id DESC
+             LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'ct_period_id' => $ctPeriodId,
+                'environment' => strtoupper(trim($mode)),
+                'manifest_hash' => $manifestHash,
+                'body_hash' => $bodyHash,
+                'protocol_state' => 'gateway_rejected',
+            ]
+        );
+
+        return is_array($row) ? $this->normaliseSubmission($row) : null;
+    }
+
     /** @return array{dependencies:list<array{label:string,ready:bool,message:string,detail?:string}>,return?:array<string,mixed>,accounts?:array<string,mixed>,computations?:array<string,mixed>} */
     private function filingSnapshot(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
     {
@@ -1859,6 +1989,7 @@ final class HmrcCorporationTaxSubmissionService
     {
         $allowed = [
             'status', 'protocol_state', 'business_outcome', 'transaction_id',
+            'idempotency_key',
             'hmrc_submission_reference', 'hmrc_correlation_id', 'response_endpoint',
             'poll_interval_seconds', 'next_poll_at', 'poll_attempts',
             'hmrc_response_code', 'hmrc_response_summary', 'response_headers_json',
@@ -2065,6 +2196,41 @@ final class HmrcCorporationTaxSubmissionService
         return [$message !== '' ? $message : 'HMRC rejected the CT600 filing body.'];
     }
 
+    /** @return list<string> */
+    private function gatewayRejectionMessages(array $errors): array
+    {
+        $messages = [];
+        $authenticationFailure = false;
+        foreach ($errors as $error) {
+            if (!is_array($error)) {
+                continue;
+            }
+            $number = trim((string)($error['number'] ?? ''));
+            $raisedBy = trim((string)($error['raised_by'] ?? ''));
+            $texts = array_values(array_filter(array_map(
+                static fn(mixed $text): string => trim((string)$text),
+                (array)($error['texts'] ?? [])
+            )));
+            if ($texts === []) {
+                $fallback = trim(implode(' ', array_filter([$raisedBy, $number])));
+                if ($fallback !== '') {
+                    $messages[] = $fallback;
+                }
+            } else {
+                foreach ($texts as $text) {
+                    $messages[] = ($number === '' ? '' : $number . ': ') . $text;
+                }
+            }
+            $authenticationFailure = $authenticationFailure || $number === '1046';
+        }
+        if ($authenticationFailure) {
+            $messages[] = 'Check the Sender ID and password stored under '
+                . 'HMRC / XML / CT600_XML / TEST|LIVE for the selected environment.';
+        }
+
+        return array_values(array_unique($messages));
+    }
+
     private function submissionReference(string $bodyXml): ?string
     {
         if ($bodyXml === '') {
@@ -2115,14 +2281,24 @@ final class HmrcCorporationTaxSubmissionService
         );
     }
 
+    private function transactionEvidenceFilename(
+        string $operation,
+        string $transactionId,
+        string $direction
+    ): string {
+        $operation = preg_replace('/[^a-z0-9-]+/', '-', strtolower($operation)) ?: 'exchange';
+        $transactionId = preg_replace('/[^a-z0-9]+/', '', strtolower($transactionId)) ?: 'unknown';
+        $direction = $direction === 'request' ? 'request' : 'response';
+
+        return $operation . '-' . $transactionId . '-' . $direction . '.xml';
+    }
+
     /**
      * @return array<string,mixed>
      */
     private function hmrcGovTalkIdentity(
         int $submissionId,
-        string $operation,
-        string $requestFilename,
-        string $responseFilename
+        string $operation
     ): array {
         $submission = $this->fetchById($submissionId);
         if (!is_array($submission)) {
@@ -2139,8 +2315,6 @@ final class HmrcCorporationTaxSubmissionService
             'archive_reference' => $this->archiveReference($submissionId),
             'lifecycle' => (string)$submission['protocol_state'],
             'operation' => strtolower(trim($operation)),
-            'request_filename' => $requestFilename,
-            'response_filename' => $responseFilename,
             'submission_id' => null,
             'preflight_id' => null,
             'status_cycle_id' => null,
@@ -2389,6 +2563,7 @@ final class HmrcCorporationTaxSubmissionService
             match ($eventType) {
                 'hmrc_accepted' => 'HMRC accepted the frozen filing package.',
                 'hmrc_rejected' => 'HMRC rejected the frozen filing package.',
+                'hmrc_gateway_rejected' => 'HMRC Gateway rejected the request before opening a filing conversation.',
                 'hmrc_acknowledged' => 'HMRC acknowledged the frozen filing package.',
                 default => 'The HMRC transmission outcome is uncertain.',
             },

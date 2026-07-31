@@ -30,6 +30,8 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
         if (!in_array($intent, [
             'hmrc_submit_test',
             'hmrc_submit_live',
+            'hmrc_retry_test',
+            'hmrc_retry_live',
             'hmrc_generate_request',
             'hmrc_poll',
         ], true)) {
@@ -40,6 +42,15 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
             return $this->result(
                 false,
                 ['Developer options must be enabled to generate an unsent HMRC GovTalk request file.'],
+                [],
+                $changedFacts
+            );
+        }
+        if (in_array($intent, ['hmrc_retry_test', 'hmrc_retry_live'], true)
+            && !(bool)AppConfigurationStore::get('developer_options', false)) {
+            return $this->result(
+                false,
+                ['Developer Options must be enabled to retry a definitive HMRC Gateway rejection.'],
                 [],
                 $changedFacts
             );
@@ -71,16 +82,21 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
                     $actor,
                     $report
                 );
-            } elseif (in_array($intent, ['hmrc_submit_test', 'hmrc_submit_live'], true)) {
+            } elseif (in_array($intent, [
+                'hmrc_submit_test', 'hmrc_submit_live',
+                'hmrc_retry_test', 'hmrc_retry_live',
+            ], true)) {
+                $live = in_array($intent, ['hmrc_submit_live', 'hmrc_retry_live'], true);
+                $retry = in_array($intent, ['hmrc_retry_test', 'hmrc_retry_live'], true);
                 $progress->report(
-                    $intent === 'hmrc_submit_live'
+                    $live
                         ? 'Preparing the approved return for LIVE HMRC transmission…'
                         : 'Preparing the approved return for HMRC test transmission…',
                     8
                 );
-                $command = $intent === 'hmrc_submit_test'
-                    ? $service->submitTest($companyId, $ctPeriodId, $actor, $report)
-                    : $service->submitLive($companyId, $ctPeriodId, $actor, $report);
+                $command = !$live
+                    ? $service->submitTest($companyId, $ctPeriodId, $actor, $report, $retry)
+                    : $service->submitLive($companyId, $ctPeriodId, $actor, $report, $retry);
             } else {
                 if ($submissionId <= 0) {
                     return $this->result(false, ['Select a pending HMRC submission to check.'], [], $changedFacts);
@@ -212,13 +228,15 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
         if ($outcome === 'accepted') {
             $mode = strtoupper(trim((string)($command['mode']
                 ?? ($command['submission']['environment'] ?? ''))));
-            return $intent === 'hmrc_submit_test' || $mode === 'TIL'
+            return in_array($intent, ['hmrc_submit_test', 'hmrc_retry_test'], true) || $mode === 'TIL'
                 ? 'HMRC Test in Live accepted this filing body.'
                 : 'HMRC accepted the Corporation Tax return.';
         }
         return match ($intent) {
             'hmrc_submit_test' => 'The Test in Live submission was processed.',
             'hmrc_submit_live' => 'The LIVE Corporation Tax submission was processed.',
+            'hmrc_retry_test' => 'The Test in Live retry was processed.',
+            'hmrc_retry_live' => 'The LIVE Corporation Tax retry was processed.',
             default => 'The latest HMRC submission status was retrieved.',
         };
     }

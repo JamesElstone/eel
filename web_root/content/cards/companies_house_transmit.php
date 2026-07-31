@@ -24,7 +24,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
             [
                 'key' => 'companies_house_transmit_context',
                 'service' => \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
-                'method' => 'fetchContext',
+                'method' => 'fetchTransmissionContext',
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
@@ -348,35 +348,39 @@ final class _companies_house_transmitCard extends CardBaseFramework
             default => 'Disabled',
         };
 
-        return '<div class="summary-card ' . $class . ' hmrc-connection-summary-card">'
-            . '<div class="summary-label">Environment</div>'
-            . '<div class="summary-value">' . $label . '</div>'
+        $badgeClass = $environment === 'TEST' ? 'success' : ($environment === 'LIVE' ? 'warning' : 'info');
+
+        return '<section class="panel-soft summary-card ' . $class
+            . ' hmrc-connection-summary-card companies-house-status-board">'
+            . '<div class="status-head"><h3 class="card-title">Environment</h3>'
+            . '<span class="badge ' . $badgeClass . '">' . $label . '</span></div>'
             . '<div class="actions-row actions-row-right hmrc-connection-summary-actions">'
             . '<a class="button" href="?page=settings&amp;show_card=api_mode">'
-            . 'Configure Companies House XML environment</a></div></div>';
+            . 'Configure Companies House XML environment</a></div></section>';
     }
 
     private function credentialMetric(string $environment, bool $configured): string
     {
         if ($configured) {
-            return '<div class="summary-card success hmrc-credential-summary-card">'
-                . '<div class="summary-label">Credentials</div>'
-                . '<div class="summary-value">Configured</div>'
+            return '<section class="panel-soft summary-card success hmrc-credential-summary-card companies-house-status-board">'
+                . '<div class="status-head"><h3 class="card-title">Credentials</h3>'
+                . '<span class="badge success">Configured</span></div>'
                 . '<div class="actions-row actions-row-right hmrc-credential-summary-actions">'
                 . '<a class="button" href="?page=settings&amp;show_card=api_keys_editor">'
-                . 'Configure Companies House XML credentials</a></div></div>';
+                . 'Configure Companies House XML credentials</a></div></section>';
         }
 
         $environment = strtoupper(trim($environment));
         $environment = in_array($environment, ['TEST', 'LIVE'], true) ? $environment : 'selected';
 
-        return '<div class="summary-card danger hmrc-credential-summary-card">'
-            . '<div class="summary-label">Credentials</div>'
+        return '<section class="panel-soft summary-card danger hmrc-credential-summary-card companies-house-status-board">'
+            . '<div class="status-head"><h3 class="card-title">Credentials</h3>'
+            . '<span class="badge danger">Action required</span></div>'
             . '<div class="helper">Companies House XML accounts filing credentials are missing for the '
             . \eel_accounts\Support\Utf8::html($environment) . ' environment.</div>'
             . '<div class="actions-row actions-row-right hmrc-credential-summary-actions">'
             . '<a class="button" href="?page=settings&amp;show_card=api_keys_editor">'
-            . 'Configure Companies House XML credentials</a></div></div>';
+            . 'Configure Companies House XML credentials</a></div></section>';
     }
 
     /** @param list<string> $messages */
@@ -439,12 +443,14 @@ final class _companies_house_transmitCard extends CardBaseFramework
             ? $fileCount . ' verified schema file' . ($fileCount === 1 ? '' : 's') . ' installed.'
             : 'Refresh the installed schemas before checking credentials or transmitting accounts.';
 
-        return '<div class="summary-card companies-house-summary-action-card ' . ($ready ? 'success' : 'danger') . '">'
-            . '<div class="summary-label">Companies House XML schemas</div>'
-            . '<div class="summary-value">' . ($ready ? 'Verified' : 'Refresh required') . '</div>'
+        return '<section class="panel-soft summary-card companies-house-summary-action-card companies-house-status-board '
+            . ($ready ? 'success' : 'danger') . '">'
+            . '<div class="status-head"><h3 class="card-title">Companies House XML schemas</h3>'
+            . '<span class="badge ' . ($ready ? 'success' : 'danger') . '">'
+            . ($ready ? 'Verified' : 'Refresh required') . '</span></div>'
             . '<div class="helper">' . \eel_accounts\Support\Utf8::html($detail) . '</div>'
             . '<div class="actions-row companies-house-summary-card-actions">'
-            . '<a class="button" href="?page=artefacts">Manage Filing Schemas</a></div></div>';
+            . '<a class="button" href="?page=artefacts">Manage Filing Schemas</a></div></section>';
     }
 
     private function artifactDownloadMetric(
@@ -452,14 +458,16 @@ final class _companies_house_transmitCard extends CardBaseFramework
         int $accountingPeriodId,
         bool $available
     ): string {
-        return '<div class="summary-card companies-house-summary-action-card ' . ($available ? 'success' : 'danger') . '">'
-            . '<div class="summary-label">Artifact</div>'
-            . '<div class="summary-value">' . ($available ? 'Available' : 'Unavailable') . '</div>'
+        return '<section class="panel-soft summary-card companies-house-summary-action-card companies-house-status-board '
+            . ($available ? 'success' : 'danger') . '">'
+            . '<div class="status-head"><h3 class="card-title">Artifact</h3>'
+            . '<span class="badge ' . ($available ? 'success' : 'danger') . '">'
+            . ($available ? 'Available' : 'Unavailable') . '</span></div>'
             . '<form method="post" action="?page=transmit" class="actions-row companies-house-summary-card-actions">'
             . $this->hidden($companyId, $accountingPeriodId, 'download_accounts_ixbrl')
             . '<button class="button compact primary" type="submit"'
             . ($available ? '' : ' disabled')
-            . '>Companies House iXBRL</button></form></div>';
+            . '>Companies House iXBRL</button></form></section>';
     }
 
     private function metric(string $label, string $value, string $explanation = ''): string

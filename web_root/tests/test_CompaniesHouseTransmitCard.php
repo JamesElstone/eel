@@ -25,7 +25,7 @@ $harness->run(_companies_house_transmitCard::class, static function (
                 \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
                 (string)$services[0]['service']
             );
-            $harness->assertSame('fetchContext', (string)$services[0]['method']);
+            $harness->assertSame('fetchTransmissionContext', (string)$services[0]['method']);
             $harness->assertSame('companies_house_schema_status', (string)$services[1]['key']);
             $harness->assertSame(
                 \eel_accounts\Service\CompaniesHouseAccountsSchemaService::class,
@@ -134,8 +134,12 @@ $harness->run(_companies_house_transmitCard::class, static function (
             $harness->assertFalse(str_contains($html, 'Review the prepared Companies House iXBRL artifact and its filing readiness before transmission.'));
             $harness->assertTrue(str_contains($html, '>Test<'));
             $harness->assertTrue(str_contains($html, 'Configure Companies House XML environment'));
-            $harness->assertTrue(str_contains($html, '<div class="summary-label">Credentials</div>'));
-            $harness->assertTrue(str_contains($html, 'summary-card success hmrc-credential-summary-card'));
+            $harness->assertTrue(str_contains(
+                $html,
+                '<div class="status-head"><h3 class="card-title">Credentials</h3>'
+                . '<span class="badge success">Configured</span></div>'
+            ));
+            $harness->assertTrue(str_contains($html, 'panel-soft summary-card success hmrc-credential-summary-card'));
             $harness->assertTrue(str_contains($html, 'Configure Companies House XML credentials'));
             $harness->assertTrue(str_contains($html, 'show_card=api_keys_editor'));
             $harness->assertFalse(str_contains($html, 'XML Input'));
@@ -149,7 +153,8 @@ $harness->run(_companies_house_transmitCard::class, static function (
             $harness->assertTrue(str_contains($html, '>Companies House iXBRL</button>'));
             $harness->assertTrue(str_contains(
                 $html,
-                '<div class="summary-label">Artifact</div><div class="summary-value">Available</div>'
+                '<div class="status-head"><h3 class="card-title">Artifact</h3>'
+                . '<span class="badge success">Available</span></div>'
             ));
             $harness->assertFalse(str_contains($html, 'Download Companies House iXBRL'));
             $harness->assertTrue(str_contains($html, 'value="download_accounts_ixbrl"'));
@@ -159,8 +164,8 @@ $harness->run(_companies_house_transmitCard::class, static function (
             $harness->assertTrue(str_contains($html, 'value="submit_accounts"'));
             $harness->assertTrue(str_contains(
                 $html,
-                '<div class="summary-label">Companies House XML schemas</div>'
-                . '<div class="summary-value">Verified</div>'
+                '<div class="status-head"><h3 class="card-title">Companies House XML schemas</h3>'
+                . '<span class="badge success">Verified</span></div>'
             ));
             $harness->assertTrue(str_contains($html, '17 verified schema files installed.'));
             $harness->assertTrue(str_contains($html, 'href="?page=artefacts"'));
@@ -220,7 +225,7 @@ $harness->run(_companies_house_transmitCard::class, static function (
                 ],
             ]);
 
-            $harness->assertTrue(str_contains($html, 'summary-card danger hmrc-credential-summary-card'));
+            $harness->assertTrue(str_contains($html, 'panel-soft summary-card danger hmrc-credential-summary-card'));
             $harness->assertTrue(str_contains(
                 $html,
                 'Companies House XML accounts filing credentials are missing for the TEST environment.'
@@ -229,7 +234,8 @@ $harness->run(_companies_house_transmitCard::class, static function (
             $harness->assertTrue(str_contains($html, 'show_card=api_keys_editor'));
             $harness->assertTrue(str_contains(
                 $html,
-                '<div class="summary-label">Artifact</div><div class="summary-value">Unavailable</div>'
+                '<div class="status-head"><h3 class="card-title">Artifact</h3>'
+                . '<span class="badge danger">Unavailable</span></div>'
             ));
             $harness->assertTrue(preg_match(
                 '/<button class="button compact primary" type="submit" disabled>Companies House iXBRL<\/button>/',

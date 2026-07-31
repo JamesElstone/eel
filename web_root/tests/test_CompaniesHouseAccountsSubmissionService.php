@@ -66,6 +66,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 ));
                 foreach ([
                     'fetchContext(',
+                    'fetchTransmissionContext(',
                     'preparedArtifactState(',
                     'readiness(',
                     'isLocked(',

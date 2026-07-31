@@ -281,6 +281,103 @@ final class CompaniesHouseAccountsSubmissionService
         ];
     }
 
+    /**
+     * Lightweight read model for the transmission card.
+     *
+     * The full context above also evaluates every iXBRL preparation
+     * prerequisite. Those checks are needed by the preparation workflow, but
+     * rebuilding them on the transmission page makes a simple status view
+     * unnecessarily slow. Submission still performs its complete server-side
+     * validation immediately before any external request is sent.
+     */
+    public function fetchTransmissionContext(int $companyId, int $accountingPeriodId): array
+    {
+        $selection = $this->selection($companyId, $accountingPeriodId);
+        if ($selection === null) {
+            return $this->emptyContext('Select a valid company and accounting period.');
+        }
+
+        $mode = AccountingConfigurationStore::companiesHouseAccountsFilingMode();
+        $featureEnabled = in_array($mode, ['TEST', 'LIVE'], true);
+        $credentialsConfigured = $featureEnabled && $this->credentialsConfigured($mode);
+        $sequence = [
+            'configured' => false,
+            'next_number' => '',
+            'last_issued_number' => null,
+            'in_flight_submission_id' => null,
+            'presenter_fingerprint' => '',
+        ];
+        if ($credentialsConfigured) {
+            try {
+                $credentials = $this->credentials()->load($mode);
+                $sequence = $this->sequences()->status($mode, $credentials['presenter_id']);
+            } catch (\Throwable) {
+                $sequence['configured'] = false;
+            }
+        }
+
+        $submission = $this->latestSubmission($companyId, $accountingPeriodId);
+        $filingKind = strtolower(trim((string)($submission['filing_type'] ?? '')));
+        $preparedArtifact = $submission === null
+            ? []
+            : $this->preparedArtifactDisplayState($submission);
+        $lifecycle = strtolower(trim((string)($submission['lifecycle'] ?? '')));
+        $submissionBlockers = [];
+        if ($lifecycle !== 'prepared') {
+            $submissionBlockers[] = 'Prepare and validate the Companies House accounts artifact before submission.';
+        }
+        if (!$featureEnabled) {
+            $submissionBlockers[] = 'Companies House accounts filing is disabled until TEST credentials are issued.';
+        } elseif (!$credentialsConfigured) {
+            $submissionBlockers[] = 'Companies House accounts filing credentials are not configured for ' . $mode . '.';
+        }
+        if (!$this->conversation()->schemaReady()) {
+            $submissionBlockers[] = 'Run the Companies House protocol-conversation migration before filing.';
+        }
+        if ($mode === 'LIVE' && !AccountingConfigurationStore::companiesHouseAccountsLiveApproved()) {
+            $submissionBlockers[] = 'LIVE Companies House accounts filing has not been explicitly approved in server configuration.';
+        }
+        if ($mode === 'LIVE' && !$this->testAccepted($companyId, $accountingPeriodId, $filingKind)) {
+            $submissionBlockers[] = 'A Companies House TEST accounts submission must be accepted before LIVE filing.';
+        }
+        $inFlightSubmissionId = (int)($sequence['in_flight_submission_id'] ?? 0);
+        if ($inFlightSubmissionId > 0 && $inFlightSubmissionId !== (int)($submission['id'] ?? 0)) {
+            $submissionBlockers[] = 'Another request for this Companies House presenter has an unresolved transport state.';
+        }
+        if ($featureEnabled && $credentialsConfigured && empty($sequence['configured'])) {
+            $submissionBlockers[] = 'Run the Companies House submission-sequence migration before filing.';
+        }
+        if ($submission !== null && (string)($submission['environment'] ?? '') !== $mode) {
+            $submissionBlockers[] = 'The prepared artifact belongs to ' . (string)$submission['environment'] . '; prepare a new artifact for ' . $mode . '.';
+        }
+        if ($submission !== null && $lifecycle === 'prepared' && empty($preparedArtifact['current'])) {
+            $submissionBlockers[] = (string)(($preparedArtifact['errors'] ?? [])[0]
+                ?? 'The prepared Companies House artifact is not current.');
+        }
+
+        return [
+            'company' => $selection['company'],
+            'accounting_period' => $selection['accounting_period'],
+            'feature' => [
+                'mode' => $mode,
+                'enabled' => $featureEnabled,
+                'credentials_configured' => $credentialsConfigured,
+                'protocol_ready' => $this->conversation()->schemaReady(),
+                'company_data_capability' => $credentialsConfigured
+                    ? $this->conversation()->companyDataCapability($mode, (string)($sequence['presenter_fingerprint'] ?? ''))
+                    : 'unknown',
+            ],
+            'filing_kind' => $filingKind,
+            'submission' => $submission,
+            'prepared_artifact' => $preparedArtifact,
+            'preflight' => $this->conversation()->latestAuthenticationCheck($companyId, $accountingPeriodId, $mode),
+            'sequence' => $sequence,
+            'can_submit' => $submissionBlockers === [],
+            'submission_blockers' => array_values(array_unique($submissionBlockers)),
+            'blockers' => array_values(array_unique($submissionBlockers)),
+        ];
+    }
+
     /** Re-runs Arelle against the already-prepared Companies House artifact. */
     public function revalidatePreparedArtifact(
         int $companyId,
@@ -3372,6 +3469,40 @@ final class CompaniesHouseAccountsSubmissionService
         $result['state'] = 'current';
         $result['current'] = true;
         return $result;
+    }
+
+    /**
+     * Reports whether the prepared file is available for the transmission UI.
+     *
+     * Avoid hashing and reconstructing filing provenance during every page
+     * render. The submit workflow always calls preparedArtifactState() and
+     * performs that complete integrity check before it can send anything.
+     */
+    private function preparedArtifactDisplayState(array $submission): array
+    {
+        $path = trim((string)($submission['artifact_path'] ?? $submission['revised_artifact_path'] ?? ''));
+        $expectedHash = strtolower(trim((string)(
+            $submission['artifact_sha256'] ?? $submission['revised_artifact_sha256'] ?? ''
+        )));
+        if ($path === '' || !is_file($path)) {
+            return [
+                'path' => $path,
+                'filename' => $path !== '' ? basename($path) : '',
+                'sha256' => $expectedHash,
+                'state' => 'missing',
+                'current' => false,
+                'errors' => ['The prepared Companies House iXBRL artifact is missing.'],
+            ];
+        }
+
+        return [
+            'path' => $path,
+            'filename' => basename($path),
+            'sha256' => $expectedHash,
+            'state' => 'available',
+            'current' => true,
+            'errors' => [],
+        ];
     }
 
     /** @return array<string,mixed> */

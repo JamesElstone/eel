@@ -109,7 +109,7 @@ final class IxbrlAccountingService
                 'sha256' => $hash,
                 'schema_identity' => IxbrlTaxonomyProfileService::SCHEMA_REF,
                 'validation_status' => 'passed',
-                'identifier_embedded' => false,
+                'identifier_embedded' => true,
                 'metadata' => [
                     'ixbrl_generation_run_id' => (int)$run['id'],
                     'generation_warnings' => $generationWarnings,
@@ -441,7 +441,9 @@ final class IxbrlAccountingService
                 $this->currentFact($indexed, 'period_end'),
                 ['natural_date' => true]
             ) . '</p>'
-            . $notes . '</div>' . "\n"
+            . $notes
+            . $this->evidenceFooter($evidenceArtifactId)
+            . '</div>' . "\n"
             . '</body></html>' . "\n";
 
         return (new CompaniesHouseIxbrlDocumentPolicyService())
@@ -828,6 +830,16 @@ h2 { margin: 0; font-size: 13.5pt; text-align: center; }
 .note p { margin: 0 0 2mm; }
 .note-table { margin-top: 3mm; }
 .loan-term { margin-top: 2mm !important; }
+.evidence-footer {
+    margin: 12mm auto 0;
+    padding-top: 3mm;
+    width: 92%;
+    border-top: .25mm solid #777;
+    color: #444;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 8pt;
+    text-align: right;
+}
 .revision-page h2 { margin-bottom: 9mm; }
 .revision-statement { width: 92%; margin: 0 auto 7mm; }
 .revision-statement h3 { margin: 0 0 2mm; font-size: 10.5pt; }
@@ -871,6 +883,16 @@ h2 { margin: 0; font-size: 13.5pt; text-align: center; }
     }
 }
 CSS;
+    }
+
+    private function evidenceFooter(string $evidenceArtifactId): string
+    {
+        $evidenceArtifactId = trim($evidenceArtifactId);
+        if ($evidenceArtifactId === '') {
+            return '';
+        }
+        return '<div class="evidence-footer">Evidence ID: '
+            . $this->e($evidenceArtifactId) . '</div>';
     }
 
     private function contexts(

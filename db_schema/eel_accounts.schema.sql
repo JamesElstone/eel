@@ -4436,6 +4436,19 @@ INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_30_010_govtalk_exchange_identity.sql');
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_31_001_ixbrl_principal_activity.sql');
+INSERT IGNORE INTO ct_filing_canonical_sources
+  (target_scope, canonical_key, source_label, value_type, source_section, is_required)
+VALUES
+  ('ct600_rim', 'ct_period_facts.ct600_box_145_turnover', 'CT600 box 145 trading turnover', 'numeric', 'identity', 1);
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_31_002_ct600_box_145_turnover_source.sql');
+UPDATE ct_filing_canonical_sources
+SET is_required = 0,
+    source_label = 'Legacy accounting-period turnover (historic profiles only)'
+WHERE target_scope = 'ct600_rim'
+  AND canonical_key = 'accounts_facts.turnover';
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_07_31_003_ct600_legacy_turnover_source.sql');
 
 DROP TRIGGER IF EXISTS `trg_journals_append_only_update`;
 CREATE TRIGGER `trg_journals_append_only_update`

@@ -297,10 +297,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         $ctCurrent[$ctPeriodId] = true;
                         return ['success' => true, 'warnings' => []];
                     },
-                    ct600Generator: static fn(): array => [
-                        'success' => true,
-                        'warnings' => [],
-                    ],
+                    ct600Generator: static function () use (&$companiesHouseCurrent): array {
+                        return $companiesHouseCurrent
+                            ? ['success' => true, 'warnings' => []]
+                            : ['success' => false, 'errors' => ['Revised accounts were prepared too late.']];
+                    },
                     companiesHousePreparer: static function (
                         int $companyId,
                         int $accountingPeriodId,
@@ -338,21 +339,21 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ['Checking the complete filing-set prerequisites…', 0],
                     ['Generating the Accounting iXBRL…', 12],
                     ['Running Arelle validation for the Accounting iXBRL…', 15],
+                    ['Preparing the Companies House revised-accounts iXBRL…', 20],
+                    ['Checking Companies House iXBRL preparation requirements…', 20],
+                    ['Preparing the filing-evidence bundle…', 24],
+                    ['Reserving the Companies House iXBRL evidence record…', 28],
+                    ['Generating the Companies House revised-accounts iXBRL…', 30],
+                    ['Running Arelle validation for the Companies House revised-accounts iXBRL…', 32],
+                    ['Recording the validated Companies House iXBRL…', 44],
+                    ['Creating the Companies House filing record…', 45],
+                    ['Companies House iXBRL prepared and validated.', 47],
                     ['Generating iXBRL for Corporation Tax period 1 of 2…', 49],
                     ['Running Arelle validation for Corporation Tax period 1 of 2…', 51],
                     ['Generating CT600 XML for Corporation Tax period 1 of 2…', 55],
                     ['Generating iXBRL for Corporation Tax period 2 of 2…', 61],
                     ['Running Arelle validation for Corporation Tax period 2 of 2…', 63],
                     ['Generating CT600 XML for Corporation Tax period 2 of 2…', 67],
-                    ['Preparing the Companies House revised-accounts iXBRL…', 73],
-                    ['Checking Companies House iXBRL preparation requirements…', 73],
-                    ['Preparing the filing-evidence bundle…', 76],
-                    ['Reserving the Companies House iXBRL evidence record…', 80],
-                    ['Generating the Companies House revised-accounts iXBRL…', 83],
-                    ['Running Arelle validation for the Companies House revised-accounts iXBRL…', 84],
-                    ['Recording the validated Companies House iXBRL…', 96],
-                    ['Creating the Companies House filing record…', 97],
-                    ['Companies House iXBRL prepared and validated.', 99],
                     ['The filing iXBRL set is complete.', 100],
                 ], $progress);
             }

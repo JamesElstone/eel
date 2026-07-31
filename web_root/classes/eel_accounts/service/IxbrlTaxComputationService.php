@@ -215,7 +215,8 @@ final class IxbrlTaxComputationService
             $beforeExternalValidation?->__invoke();
             $external = (new IxbrlExternalValidationService())->validateArtifact(
                 (string)$artifact['path'],
-                [(string)$validationResources['package_archive']]
+                [(string)$validationResources['package_archive']],
+                ['HMRC.TBD']
             );
             $externalStatus = (string)($external['status'] ?? 'error');
             $validatorVersion = trim((string)($external['version'] ?? ''));
@@ -377,7 +378,8 @@ final class IxbrlTaxComputationService
         }
         $external = (new IxbrlExternalValidationService())->validateArtifact(
             $path,
-            [(string)$validationResources['package_archive']]
+            [(string)$validationResources['package_archive']],
+            ['HMRC.TBD']
         );
         $validatorVersion = trim((string)($external['version'] ?? ''));
         $validatedHash = strtolower(trim((string)($external['validated_sha256'] ?? '')));

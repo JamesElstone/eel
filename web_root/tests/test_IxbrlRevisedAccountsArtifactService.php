@@ -112,7 +112,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $result = $service->transform(
                 $source,
                 $oldDeclarations,
-                'EEL-AR-NOT-VISIBLE',
+                'EEL-AR-0123-4567-89AB-CDEF-0123-4567-89AB-CDEF',
                 $superseded
             );
 
@@ -137,7 +137,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(str_contains($xhtml, 'name="core:FixedAssets" contextRef="current_period_end_superseded"'));
             $harness->assertFalse(str_contains($xhtml, 'name="core:Equity" contextRef="current_period_end_superseded"'));
             $harness->assertTrue(str_contains($xhtml, 'format="ixt:datedaymonthyearen">21 July 2026'));
-            $harness->assertFalse(str_contains($xhtml, 'EEL-AR-NOT-VISIBLE'));
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                '<div class="evidence-footer">Evidence ID: EEL-AR-0123-4567-89AB-CDEF-0123-4567-89AB-CDEF</div>'
+            ));
             $harness->assertSame(3, (int)($result['superseded_fact_count'] ?? 0));
             $factDocument = new DOMDocument();
             $harness->assertTrue($factDocument->loadXML($xhtml, LIBXML_NONET));

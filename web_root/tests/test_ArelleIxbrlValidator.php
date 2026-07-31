@@ -87,6 +87,19 @@ require_once PROJECT_ROOT . 'third_party' . DIRECTORY_SEPARATOR . 'arelle' . DIR
             $harness->assertTrue(str_contains(implode(' ', (array)($result['errors'] ?? [])), '[HMRC.5.3]'));
         });
 
+        $harness->check(ArelleIxbrlValidator::class, 'can ignore HMRC.TBD without suppressing other validation contexts', static function () use ($harness): void {
+            $fixture = arelleValidatorFixture('hmrc_tbd');
+            $validator = new ArelleIxbrlValidator($fixture['config'], $fixture['root']);
+            $unignored = $validator->validate($fixture['ixbrl']);
+            $ignored = $validator->validate($fixture['ixbrl'], [], ['HMRC.TBD']);
+
+            $harness->assertFalse($unignored['ok'] ?? true);
+            $harness->assertTrue(str_contains(implode(' ', (array)($unignored['errors'] ?? [])), '[HMRC.TBD]'));
+            $harness->assertTrue($ignored['ok'] ?? false);
+            $harness->assertSame([], $ignored['errors'] ?? []);
+            $harness->assertSame([], $ignored['error_diagnostics'] ?? []);
+        });
+
         $harness->check(ArelleIxbrlValidator::class, 'parses detailed diagnostics from both streams and deduplicates exact repeats', static function () use ($harness): void {
             $fixture = arelleValidatorFixture('success');
             $validator = new ArelleIxbrlValidator($fixture['config'], $fixture['root']);
@@ -224,6 +237,7 @@ function arelleValidatorFixture(string $mode = 'success'): array
         'traceback' => "echo Traceback:\r\nexit /b 0\r\n",
         'bracketed_warning' => "echo [ix11.8.1.2:headerDisplayNone] Warning, ix:header display recommendation\r\nexit /b 0\r\n",
         'jurisdictional_rule' => "echo [HMRC.5.3] Numeric fact has a negative value without bracketed presentation\r\nexit /b 3\r\n",
+        'hmrc_tbd' => "echo [HMRC.TBD] No recognized standard taxonomy (UK GAAP, UK IFRS, Charity, or FRS).\r\nexit /b 3\r\n",
         'dimensional_error' => "echo [xbrldie:PrimaryItemDimensionallyInvalidError] Fact tax:TradingLossesOfThisOrLaterAP context Ctx1 has invalid dimensional context\r\nexit /b 3\r\n",
         'warning_only' => "echo [SomeNamespace:SomeWarning] Warning, additional review suggested\r\nexit /b 0\r\n",
         'detailed_error_zero' => "echo [xmlSchema:SomeError] validation failed\r\nexit /b 0\r\n",

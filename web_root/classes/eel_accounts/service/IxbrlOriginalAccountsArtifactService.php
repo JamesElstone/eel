@@ -46,6 +46,7 @@ final class IxbrlOriginalAccountsArtifactService
         if (!is_string($source) || $source === '') {
             return $this->failure('The approved Accounting iXBRL artifact could not be read.');
         }
+        $source = (new IxbrlEvidenceFooterService())->withFooter($source, $evidenceArtifactId);
         $sourceValidation = $this->validateSource($source);
         if (empty($sourceValidation['success'])) {
             return $sourceValidation;

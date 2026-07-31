@@ -32,7 +32,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $service,
                 $facts,
                 false,
-                'EEL-AR-NOT-VISIBLE'
+                'EEL-AR-0123-4567-89AB-CDEF-0123-4567-89AB-CDEF'
             );
 
             $harness->assertTrue(str_starts_with(
@@ -89,7 +89,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 'presented in pounds sterling (GBP) to the nearest penny.'
             ));
             $harness->assertTrue(substr_count($xhtml, 'class="accountspage') >= 4);
-            $harness->assertFalse(str_contains($xhtml, 'EEL-AR-NOT-VISIBLE'));
+            $harness->assertTrue(str_contains(
+                $xhtml,
+                '<div class="evidence-footer">Evidence ID: EEL-AR-0123-4567-89AB-CDEF-0123-4567-89AB-CDEF</div>'
+            ));
             $harness->assertFalse(str_contains($xhtml, '<section'));
             $harness->assertFalse(str_contains($xhtml, ' lang="en"'));
             $harness->assertTrue(str_contains($xhtml, ' xml:lang="en"'));
@@ -517,13 +520,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue($thrown);
         });
 
-        $harness->check(\eel_accounts\Service\IxbrlAccountingService::class, 'renders deterministically without embedding evidence identifiers', static function () use ($harness, $service): void {
+        $harness->check(\eel_accounts\Service\IxbrlAccountingService::class, 'renders the evidence identifier in the final accounts page footer', static function () use ($harness, $service): void {
             $method = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'renderXhtml');
             $method->setAccessible(true);
             $left = (string)$method->invoke($service, ixbrlRenderFixtureFacts(), false, 'EEL-AR-FIRST');
             $right = (string)$method->invoke($service, ixbrlRenderFixtureFacts(), false, 'EEL-AR-SECOND');
-            $harness->assertSame($left, $right);
-            $harness->assertFalse(str_contains($left, 'EEL-AR-'));
+            $harness->assertFalse($left === $right);
+            $harness->assertTrue(str_contains($left, 'Evidence ID: EEL-AR-FIRST'));
+            $harness->assertTrue(str_contains($right, 'Evidence ID: EEL-AR-SECOND'));
         });
 
         $harness->check(\eel_accounts\Service\IxbrlAccountingService::class, 'binds the selected director name to the zero-length signing marker and Director1 context', static function () use ($harness, $service): void {

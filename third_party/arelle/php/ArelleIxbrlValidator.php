@@ -17,7 +17,11 @@ final class ArelleIxbrlValidator
     ) {
     }
 
-    public function validate(string $ixbrlPath, array $additionalPackages = []): array
+    public function validate(
+        string $ixbrlPath,
+        array $additionalPackages = [],
+        array $ignoredDiagnosticCodes = []
+    ): array
     {
         $started = microtime(true);
         $ixbrlPath = trim($ixbrlPath);
@@ -82,12 +86,20 @@ final class ArelleIxbrlValidator
             (string)($execution['stderr'] ?? '')
         );
         $diagnostics = $parsed['diagnostics'];
-        $errorDiagnostics = array_values(array_filter(
+        $ignoredCodes = array_fill_keys(array_map(
+            static fn(mixed $code): string => strtoupper(trim((string)$code)),
+            $ignoredDiagnosticCodes
+        ), true);
+        $unignoredDiagnostics = array_values(array_filter(
             $diagnostics,
+            static fn(array $diagnostic): bool => !isset($ignoredCodes[strtoupper(trim((string)($diagnostic['code'] ?? '')))])
+        ));
+        $errorDiagnostics = array_values(array_filter(
+            $unignoredDiagnostics,
             static fn(array $diagnostic): bool => in_array((string)$diagnostic['severity'], ['fatal', 'error'], true)
         ));
         $warningDiagnostics = array_values(array_filter(
-            $diagnostics,
+            $unignoredDiagnostics,
             static fn(array $diagnostic): bool => (string)$diagnostic['severity'] === 'warning'
         ));
         $errors = array_map([$this, 'diagnosticMessage'], $errorDiagnostics);
@@ -109,7 +121,11 @@ final class ArelleIxbrlValidator
         }
 
         $exitCode = (int)($execution['exit_code'] ?? 1);
-        if ($exitCode !== 0 || $errors !== []) {
+        $hasIgnoredError = count($errorDiagnostics) < count(array_filter(
+            $diagnostics,
+            static fn(array $diagnostic): bool => in_array((string)$diagnostic['severity'], ['fatal', 'error'], true)
+        ));
+        if ($errors !== [] || ($exitCode !== 0 && !$hasIgnoredError)) {
             if ($errors === []) {
                 $errors[] = 'Arelle exited with code ' . $exitCode . '.';
             }

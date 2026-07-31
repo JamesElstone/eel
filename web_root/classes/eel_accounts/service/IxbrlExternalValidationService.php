@@ -96,7 +96,11 @@ final class IxbrlExternalValidationService
     }
 
     /** Validate an immutable derived artifact without changing an ordinary generation run. */
-    public function validateArtifact(string $path, array $taxonomyPackages = []): array
+    public function validateArtifact(
+        string $path,
+        array $taxonomyPackages = [],
+        array $ignoredDiagnosticCodes = []
+    ): array
     {
         $path = trim($path);
         if ($path === '' || !is_file($path)) {
@@ -149,7 +153,7 @@ final class IxbrlExternalValidationService
             $managedPackage = $activePackage;
         }
         $validator = new \ArelleIxbrlValidator($this->configuration(), $this->validatorRootPath);
-        $result = $validator->validate($path, $packages);
+        $result = $validator->validate($path, $packages, $ignoredDiagnosticCodes);
         if (is_array($managedPackage)) {
             $result['taxonomy_package_id'] = (int)$managedPackage['id'];
             $result['taxonomy_sha256'] = (string)$managedPackage['sha256'];

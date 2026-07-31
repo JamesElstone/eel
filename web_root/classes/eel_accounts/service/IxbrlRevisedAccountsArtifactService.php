@@ -398,12 +398,11 @@ final class IxbrlRevisedAccountsArtifactService
             return ['success' => false, 'errors' => ['The revised XHTML could not be serialised.'], 'warnings' => []];
         }
         try {
-            $xhtml = (new CompaniesHouseIxbrlDocumentPolicyService())
-                ->canonicaliseGeneratedDocument($xhtml);
+            $xhtml = (new IxbrlEvidenceFooterService())->withFooter($xhtml, $evidenceArtifactId);
         } catch (\Throwable $exception) {
             return [
                 'success' => false,
-                'errors' => ['The revised XHTML XML declaration is not Companies House compliant: ' . $exception->getMessage()],
+                'errors' => ['The revised XHTML evidence footer could not be applied: ' . $exception->getMessage()],
                 'warnings' => [],
             ];
         }

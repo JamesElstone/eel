@@ -812,7 +812,7 @@ final class CompaniesHouseAccountsSubmissionService
             'validator_name' => 'arelle',
             'validator_version' => (string)($validation['version'] ?? ''),
             'validation_status' => (string)($validation['status'] ?? 'passed'),
-            'identifier_embedded' => false,
+            'identifier_embedded' => true,
             'metadata' => $this->revisedArtifactEvidenceMetadata(
                 (int)($artifact['base_run_id'] ?? 0),
                 $validation,
@@ -1048,7 +1048,7 @@ final class CompaniesHouseAccountsSubmissionService
             'validator_name' => 'arelle',
             'validator_version' => (string)($validation['version'] ?? ''),
             'validation_status' => (string)($validation['status'] ?? 'passed'),
-            'identifier_embedded' => false,
+            'identifier_embedded' => true,
             'metadata' => [
                 'filing_kind' => 'original',
                 'base_run_id' => (int)($artifact['base_run_id'] ?? 0),

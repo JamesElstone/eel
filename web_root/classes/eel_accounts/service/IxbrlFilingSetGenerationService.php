@@ -215,6 +215,40 @@ final class IxbrlFilingSetGenerationService
         $messages[] = 'Accounting iXBRL generated and validated.';
         $warnings = array_merge($warnings, (array)($generated['warnings'] ?? []));
 
+        // HMRC must attach the same revised statutory accounts artifact used
+        // for Companies House. Prepare it before CT600 generation so the
+        // package builder can resolve the current shared artifact.
+        $preparedRevisedAccounts = false;
+        $companiesHouseContext = $this->companiesHouseContext($companyId, $accountingPeriodId);
+        $companiesHouseStage = $this->companiesHouseStage($companiesHouseContext, 'current');
+        if ((string)$companiesHouseStage['state'] === 'blocked') {
+            return $this->failure((array)$companiesHouseStage['errors'], $warnings, $messages, $plan);
+        }
+        if ((string)$companiesHouseStage['state'] !== 'not_required'
+            && (string)($companiesHouseContext['filing_kind'] ?? '') === 'revised') {
+            $this->report($progress, 'Preparing the Companies House revised-accounts iXBRL…', 20);
+            $prepared = $this->prepareCompaniesHouse(
+                $companyId,
+                $accountingPeriodId,
+                $actor,
+                function (string $message, int $percent) use ($progress): void {
+                    $this->report($progress, $message, min(47, 20 + (int)floor($percent * 0.27)));
+                }
+            );
+            if (empty($prepared['success'])) {
+                return $this->failure(
+                    (array)($prepared['errors'] ?? ['Companies House revised accounts iXBRL preparation failed.']),
+                    array_merge($warnings, (array)($prepared['warnings'] ?? [])),
+                    $messages,
+                    $plan
+                );
+            }
+            $messages[] = 'Companies House Revised accounts iXBRL prepared.';
+            $warnings = array_merge($warnings, (array)($prepared['warnings'] ?? []));
+            $preparedRevisedAccounts = true;
+            \eel_accounts\Support\RequestCache::clear();
+        }
+
         $periodCount = count((array)$plan['computations']);
         foreach ((array)$plan['computations'] as $index => $computationStage) {
             $ctPeriodId = (int)$computationStage['ct_period_id'];
@@ -312,7 +346,9 @@ final class IxbrlFilingSetGenerationService
                 $plan
             );
         }
-        if ((string)$companiesHouseStage['state'] === 'not_required') {
+        if ($preparedRevisedAccounts) {
+            // Already prepared before CT600 generation because HMRC shares it.
+        } elseif ((string)$companiesHouseStage['state'] === 'not_required') {
             $messages[] = 'No Companies House filing artifact is required for this accounting period.';
         } else {
             $kind = (string)($companiesHouseContext['filing_kind'] ?? '');

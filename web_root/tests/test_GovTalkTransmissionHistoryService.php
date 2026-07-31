@@ -26,5 +26,18 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame('1234567', $method->invoke($service, 1234567));
             }
         );
+        $harness->check(
+            \eel_accounts\Service\GovTalkTransmissionHistoryService::class,
+            'formats accounting period date ranges',
+            static function () use ($harness, $service): void {
+                $method = new ReflectionMethod($service, 'periodRange');
+                $method->setAccessible(true);
+
+                $harness->assertSame('2024-10-01 to 2025-09-30', $method->invoke(
+                    $service,
+                    ['period_start' => '2024-10-01', 'period_end' => '2025-09-30']
+                ));
+            }
+        );
     }
 );

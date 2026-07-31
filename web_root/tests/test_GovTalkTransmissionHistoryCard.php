@@ -58,7 +58,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                                 'authority_label' => 'Companies House',
                                 'conversation_id' => 34,
                                 'submission_reference' => '000012',
-                                'filing_context' => 'Company accounts',
+                                'filing_context' => 'Company accounts - 2024-10-01 to 2025-09-30',
                                 'filing_type' => 'Original',
                                 'environment' => 'TEST',
                                 'transaction_id' => 'ABC123',
@@ -110,6 +110,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
                     $harness->assertTrue(str_contains($html, 'Submission History'));
                     $harness->assertTrue(str_contains($html, '<th>Transaction ID</th>'));
+                    $harness->assertTrue(str_contains($html, '<th>Filing / Period</th>'));
+                    $harness->assertTrue(str_contains(
+                        $html,
+                        'Company accounts - 2024-10-01 to 2025-09-30'
+                    ));
                     $harness->assertTrue(str_contains($html, 'XML Exchange History'));
                     $harness->assertTrue(str_contains(
                         $html,

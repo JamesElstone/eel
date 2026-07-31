@@ -31,10 +31,25 @@ final class GovTalkTransmissionHistoryService
             return [];
         }
         $rows = [];
-        foreach ($this->companiesHouse()->submissionHistory(
+        $companiesHouseSubmissions = $this->companiesHouse()->submissionHistory(
             $companyId,
             $accountingPeriodId
-        ) as $submission) {
+        );
+        $accountingPeriod = $companiesHouseSubmissions !== []
+            ? \InterfaceDB::fetchOne(
+                'SELECT period_start, period_end
+                 FROM accounting_periods
+                 WHERE id = :accounting_period_id
+                   AND company_id = :company_id
+                 LIMIT 1',
+                [
+                    'accounting_period_id' => $accountingPeriodId,
+                    'company_id' => $companyId,
+                ]
+            )
+            : null;
+        $accountsPeriod = $this->periodRange((array)$accountingPeriod);
+        foreach ($companiesHouseSubmissions as $submission) {
             $submissionId = (int)($submission['id'] ?? 0);
             $rows[] = [
                 'authority' => 'companies_house',
@@ -43,7 +58,8 @@ final class GovTalkTransmissionHistoryService
                 'submission_reference' => trim((string)(
                     $submission['submission_number'] ?? ''
                 )) ?: 'Not sent',
-                'filing_context' => 'Company accounts',
+                'filing_context' => 'Company accounts'
+                    . ($accountsPeriod !== '' ? ' - ' . $accountsPeriod : ''),
                 'filing_type' => ucfirst((string)($submission['filing_kind'] ?? 'accounts')),
                 'environment' => (string)($submission['environment'] ?? ''),
                 'transaction_id' => (string)($submission['transaction_id'] ?? ''),
@@ -376,6 +392,14 @@ final class GovTalkTransmissionHistoryService
     private function submissionCounter(int $submissionId): string
     {
         return sprintf('%06d', max(0, $submissionId));
+    }
+
+    private function periodRange(array $period): string
+    {
+        return implode(' to ', array_filter([
+            trim((string)($period['period_start'] ?? '')),
+            trim((string)($period['period_end'] ?? '')),
+        ], static fn(string $value): bool => $value !== ''));
     }
 
     private function exchangeOutcome(array $row): string

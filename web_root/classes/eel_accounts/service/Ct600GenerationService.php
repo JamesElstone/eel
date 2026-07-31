@@ -521,8 +521,11 @@ final class Ct600GenerationService
     }
 
     /**
-     * Return the current registered file after the same checks used for
-     * transmission. The action owns HTTP streaming.
+     * Return the current registered file after the read-model integrity
+     * checks. Generation has already performed the expensive schema and
+     * IRmark validation, and transmission repeats those deep checks before
+     * filing. A download still verifies the current source identities,
+     * manifest, file hash, XML root and registered IRmark before streaming.
      *
      * @return array<string,mixed>
      */
@@ -531,7 +534,7 @@ final class Ct600GenerationService
         int $accountingPeriodId,
         int $ctPeriodId
     ): array {
-        $status = $this->status($companyId, $accountingPeriodId, $ctPeriodId, true);
+        $status = $this->status($companyId, $accountingPeriodId, $ctPeriodId, false);
         if (empty($status['current'])) {
             return $this->failure(
                 'Only the current validated CT600 XML artifact can be downloaded.',

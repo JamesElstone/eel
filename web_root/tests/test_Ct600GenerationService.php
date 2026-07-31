@@ -162,6 +162,18 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertTrue(str_contains((string)$statusManifest, 'false'));
                 $harness->assertFalse(str_contains((string)$statusManifest, 'loadForSubmission('));
 
+                $download = strstr($source, 'public function downloadArtifact(');
+                $download = strstr((string)$download, 'private function sourceContext(', true);
+                $harness->assertTrue(is_string($download));
+                $harness->assertTrue(str_contains(
+                    (string)$download,
+                    'status($companyId, $accountingPeriodId, $ctPeriodId, false)'
+                ));
+                $harness->assertFalse(str_contains(
+                    (string)$download,
+                    'status($companyId, $accountingPeriodId, $ctPeriodId, true)'
+                ));
+
                 foreach ([
                     'Verifying the frozen accounts approval and return authorisation',
                     'Checking the HMRC Accounting iXBRL artifact',

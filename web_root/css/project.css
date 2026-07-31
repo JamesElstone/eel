@@ -300,8 +300,24 @@
 
 .govtalk-xml-exchange-filter-controls {
   align-items: flex-end;
+  flex-wrap: nowrap;
   margin-bottom: 0;
   margin-right: auto;
+}
+
+.govtalk-xml-exchange-filter-controls > form {
+  align-items: flex-end;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 12px;
+}
+
+.govtalk-xml-exchange-filter-controls > form:first-child {
+  flex: 1 1 auto;
+}
+
+.govtalk-xml-exchange-filter-controls .button {
+  white-space: nowrap;
 }
 
 .amount-zero {

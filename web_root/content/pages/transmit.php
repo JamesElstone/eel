@@ -26,6 +26,7 @@ final class _transmit extends PageContextFramework
             'hmrc_transmit',
             'companies_house_transmit',
             'govtalk_transmission_history',
+            'govtalk_exchanges',
         ];
     }
 
@@ -34,7 +35,7 @@ final class _transmit extends PageContextFramework
         return [
             ['tab' => 'HMRC', 'cards' => ['hmrc_transmit']],
             ['tab' => 'Companies House', 'cards' => ['companies_house_transmit']],
-            ['tab' => 'History', 'cards' => ['govtalk_transmission_history']],
+            ['tab' => 'History', 'cards' => ['govtalk_transmission_history', 'govtalk_exchanges']],
         ];
     }
 }

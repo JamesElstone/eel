@@ -11,12 +11,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
     ): void {
         $harness->check(
             _govtalk_transmission_historyCard::class,
-            'declares submission and paired exchange history services',
+            'declares submission history service',
             static function () use ($harness, $card): void {
                 $harness->assertSame('govtalk_transmission_history', $card->key());
-                $harness->assertSame('Transmission History', $card->title());
+                $harness->assertSame('Submission History', $card->title());
                 $services = $card->services();
-                $harness->assertCount(2, $services);
+                $harness->assertCount(1, $services);
                 $harness->assertSame('submissionHistory', (string)$services[0]['method']);
                 $harness->assertSame(
                     ':company.accounting_period_id',
@@ -30,18 +30,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ':govtalk_history.environment',
                     (string)$services[0]['params']['environment']
                 );
-                $harness->assertSame('exchangeHistory', (string)$services[1]['method']);
-                $harness->assertFalse(array_key_exists(
-                    'accountingPeriodId',
-                    (array)$services[1]['params']
-                ));
                 $harness->assertTrue(str_contains(
                     $card->helper([]),
-                    'Submission History combines HMRC and Companies House'
-                ));
-                $harness->assertTrue(str_contains(
-                    $card->helper([]),
-                    'XML Exchange History combines every GovTalk exchange'
+                    'Submission History shows HMRC and Companies House filings'
                 ));
             }
         );
@@ -159,8 +150,18 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $harness->assertTrue(str_contains($html, 'Raised by CompanyDataRequest'));
                     $harness->assertFalse(str_contains($html, 'Rejected · HTTP'));
                     $harness->assertTrue(str_contains($html, 'View conversation'));
+                    $harness->assertTrue(str_contains($html, 'name="_card_refresh" value="1"'));
+                    $harness->assertTrue(str_contains(
+                        $html,
+                        'name="_invalidate_fact" value="govtalk.exchanges.selection"'
+                    ));
+                    $harness->assertTrue(str_contains($html, 'name="cards[]" value="govtalk_exchanges"'));
+                    $harness->assertFalse(str_contains($html, 'name="cards[]" value="govtalk_transmission_history"'));
                     $harness->assertTrue(str_contains($html, 'Get Submission Status'));
-                    $harness->assertTrue(str_contains($html, '<a class="button primary" href="?page=transmit&amp;show_card='));
+                    $harness->assertTrue(str_contains(
+                        $html,
+                        '<form method="post" action="?page=transmit" data-ajax="true">'
+                    ));
                     $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit">Get Submission Status</button>'));
                     $harness->assertTrue(str_contains(
                         $html,

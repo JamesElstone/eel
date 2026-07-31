@@ -7,17 +7,17 @@
  */
 declare(strict_types=1);
 
-final class _govtalk_transmission_historyCard extends CardBaseFramework
+class _govtalk_transmission_historyCard extends CardBaseFramework
 {
     private const EXCHANGE_PAGE_SIZE = 10;
 
     public function key(): string { return 'govtalk_transmission_history'; }
 
-    public function title(): string { return 'Transmission History'; }
+    public function title(): string { return 'Submission History'; }
 
     public function helper(array $context): string
     {
-        return 'Submission History combines HMRC and Companies House filings for the current accounting period. XML Exchange History combines every GovTalk exchange across all accounting years for the selected company; use the Authority and Environment filters to narrow it.';
+        return 'Submission History shows HMRC and Companies House filings for the current accounting period.';
     }
 
     public function handle(
@@ -68,18 +68,6 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
                     'environment' => ':govtalk_history.environment',
                 ],
             ],
-            [
-                'key' => 'govtalk_exchange_history',
-                'service' => \eel_accounts\Service\GovTalkTransmissionHistoryService::class,
-                'method' => 'exchangeHistory',
-                'params' => [
-                    'companyId' => ':company.id',
-                    'authority' => ':govtalk_history.authority',
-                    'environment' => ':govtalk_history.environment',
-                    'conversationAuthority' => ':govtalk_history.conversation_authority',
-                    'conversationId' => ':govtalk_history.conversation_id',
-                ],
-            ],
         ];
     }
 
@@ -108,24 +96,17 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
 
         $services = (array)($context['services'] ?? []);
         $submissions = (array)($services['govtalk_submission_history'] ?? []);
-        $exchanges = (array)($services['govtalk_exchange_history'] ?? []);
-        $history = (array)($context['govtalk_history'] ?? []);
+
 
         return '<div class="settings-stack">'
             . $this->submissionTable($submissions, $companyId, $accountingPeriodId)
-            . $this->exchangeTable(
-                $context,
-                $companyId,
-                $exchanges,
-                $history
-            )
             . '</div>';
     }
 
     private function submissionTable(array $submissions, int $companyId, int $accountingPeriodId): string
     {
         if ($submissions === []) {
-            return '<section class="panel-soft"><h3 class="card-title">Submission History</h3>'
+            return '<section class="panel-soft">'
                 . '<div class="helper">No HMRC or Companies House submission attempts are recorded for the current accounting period.</div></section>';
         }
         $rows = '';
@@ -167,6 +148,9 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
                 . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
                 . '<input type="hidden" name="page" value="transmit">'
                 . '<input type="hidden" name="show_card" value="govtalk_transmission_history">'
+                . '<input type="hidden" name="_card_refresh" value="1">'
+                . '<input type="hidden" name="_invalidate_fact" value="govtalk.exchanges.selection">'
+                . '<input type="hidden" name="cards[]" value="govtalk_exchanges">'
                 . '<input type="hidden" name="history_conversation_authority" value="'
                 . \eel_accounts\Support\Utf8::html($authority) . '">'
                 . '<input type="hidden" name="history_conversation_id" value="' . $submissionId . '">'
@@ -174,7 +158,7 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
                 . $statusAction . '</td></tr>';
         }
 
-        return '<section class="panel-soft"><h3 class="card-title">Submission History</h3>'
+        return '<section class="panel-soft">'
             . '<div class="table-scroll"><table><thead><tr><th>Authority</th><th>Submission</th>'
             . '<th>Filing / CT period</th><th>Environment</th><th>Transaction ID</th><th>Prepared</th>'
             . '<th>Submitted</th><th>Latest status</th>'
@@ -200,21 +184,20 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
             . '<button class="button primary" type="submit">Get Submission Status</button></form>';
     }
 
-    private function exchangeTable(
+    protected function exchangeTable(
         array $context,
         int $companyId,
         array $exchanges,
         array $history
     ): string {
         $selectedConversationId = (int)($history['conversation_id'] ?? 0);
-        $heading = '<div class="status-head"><h3 class="card-title">XML Exchange History</h3>'
+        $heading = '<div class="status-head">'
             . ($selectedConversationId > 0
                 ? '<a class="button button-inline" href="?page=transmit&amp;show_card='
-                    . 'govtalk_transmission_history#govtalk-xml-exchanges">Show all conversations</a>'
+                . $this->key() . '#govtalk-xml-exchanges">Show all conversations</a>'
                 : '')
             . '</div>';
-        $warning = '<div class="helper">Exact outbound XML can contain presenter, company and HMRC authentication values. '
-            . 'Downloads are private, integrity-checked and not cached.</div>';
+        $warning = '';
         $table = $this->exchangeHistoryTable($companyId, $exchanges, $history);
         $pagination = HelperFramework::paginateArray(
             $table->sortedRows(),
@@ -240,7 +223,7 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
             . '</section>';
     }
 
-    private function exchangeHistoryTable(int $companyId, array $exchanges, array $history): TableFramework
+    protected function exchangeHistoryTable(int $companyId, array $exchanges, array $history): TableFramework
     {
         $empty = 'No GovTalk XML exchanges are recorded'
             . ((int)($history['conversation_id'] ?? 0) > 0 ? ' for this submission.' : '.');
@@ -313,7 +296,7 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
             );
     }
 
-    private function downloadButton(
+    protected function downloadButton(
         int $companyId,
         int $exchangeId,
         string $direction,
@@ -338,7 +321,7 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
             . 'data-chicken-confirm-text="Download XML">Download</button></form>';
     }
 
-    private function exchangeFilters(array $history): string
+    protected function exchangeFilters(array $history): string
     {
         $authority = (string)($history['authority'] ?? '');
         $environment = (string)($history['environment'] ?? '');
@@ -352,9 +335,10 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
                 . \eel_accounts\Support\Utf8::html($label) . '</option>';
         };
 
-        return '<form method="get" action="" class="toolbar govtalk-xml-exchange-filter-controls">'
+        return '<div class="toolbar govtalk-xml-exchange-filter-controls">'
+            . '<form method="get" action="">'
             . '<input type="hidden" name="page" value="transmit">'
-            . '<input type="hidden" name="show_card" value="govtalk_transmission_history">'
+            . '<input type="hidden" name="show_card" value="' . $this->key() . '">'
             . '<div class="form-row table-filter-row"><label for="table-filter-govtalk_xml_exchange_history-authority">Authority</label>'
             . '<select class="selector-input" id="table-filter-govtalk_xml_exchange_history-authority" name="history_authority">'
             . $option('', 'All authorities', $authority)
@@ -367,13 +351,18 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
             . $option('TIL', 'TIL', $environment)
             . $option('LIVE', 'LIVE', $environment)
             . '</select></div>'
-            . '<button class="button primary" type="submit">Apply Filters</button>'
-            . '<a class="button primary" href="?page=transmit&amp;show_card='
-            . 'govtalk_transmission_history#govtalk-xml-exchanges">Clear filters</a>'
-            . '</form>';
+            . '<button class="button primary" type="submit">Apply Filters</button></form>'
+            . '<form method="post" action="?page=transmit" data-ajax="true">'
+            . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+            . '<input type="hidden" name="page" value="transmit">'
+            . '<input type="hidden" name="show_card" value="' . $this->key() . '">'
+            . '<input type="hidden" name="_card_refresh" value="1">'
+            . '<input type="hidden" name="_invalidate_fact" value="govtalk.exchanges.selection">'
+            . '<input type="hidden" name="cards[]" value="' . $this->key() . '">'
+            . '<button class="button primary" type="submit">Clear filters</button></form></div>';
     }
 
-    private function govTalkErrors(array $errors): string
+    protected function govTalkErrors(array $errors): string
     {
         if ($errors === []) {
             return '—';
@@ -423,7 +412,7 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
         return $items !== '' ? '<ul class="helper">' . $items . '</ul>' : '—';
     }
 
-    private function timestamp(string $value): string
+    protected function timestamp(string $value): string
     {
         $value = trim($value);
         if ($value === '') {
@@ -438,7 +427,7 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
         }
     }
 
-    private function badge(string $state): string
+    protected function badge(string $state): string
     {
         return match (strtolower(trim($state))) {
             'accepted', 'succeeded', 'verified', 'acknowledged' => 'success',

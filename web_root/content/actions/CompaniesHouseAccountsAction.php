@@ -26,6 +26,8 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
     private ?Closure $actorResolver;
     private ?Closure $accountingPrerequisite;
     private ?Closure $revisionPrerequisite;
+    private ?Closure $filingModeResolver;
+    private ?Closure $liveApprovalResolver;
 
     public function __construct(
         private ?object $submissionService = null,
@@ -35,6 +37,8 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         ?callable $actorResolver = null,
         ?callable $accountingPrerequisite = null,
         ?callable $revisionPrerequisite = null,
+        ?callable $filingModeResolver = null,
+        ?callable $liveApprovalResolver = null,
     ) {
         $this->securityCheck = $securityCheck !== null ? Closure::fromCallable($securityCheck) : null;
         $this->contextResolver = $contextResolver !== null ? Closure::fromCallable($contextResolver) : null;
@@ -45,6 +49,12 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             : null;
         $this->revisionPrerequisite = $revisionPrerequisite !== null
             ? Closure::fromCallable($revisionPrerequisite)
+            : null;
+        $this->filingModeResolver = $filingModeResolver !== null
+            ? Closure::fromCallable($filingModeResolver)
+            : null;
+        $this->liveApprovalResolver = $liveApprovalResolver !== null
+            ? Closure::fromCallable($liveApprovalResolver)
             : null;
     }
 
@@ -377,22 +387,20 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             return ['success' => false, 'errors' => ['The company authentication code must contain exactly 6 letters or numbers.']];
         }
 
-        $context = (array)$this->service()->fetchContext($companyId, $accountingPeriodId);
-        if ((int)(($context['submission'] ?? [])['id'] ?? 0) !== $submissionId) {
+        $filingKind = $this->service()->submissionFilingKindForContext(
+            $submissionId,
+            $companyId,
+            $accountingPeriodId
+        );
+        if ($filingKind === null) {
             return ['success' => false, 'errors' => ['The prepared submission does not belong to the selected company and accounting period.']];
         }
-        $feature = (array)($context['feature'] ?? []);
-        $filingKind = strtolower(trim((string)(
-            ($context['submission'] ?? [])['filing_kind']
-            ?? ($context['submission'] ?? [])['filing_type']
-            ?? 'revised'
-        )));
-        $mode = strtoupper(trim((string)($feature['mode'] ?? 'DISABLED')));
-        if (empty($feature['enabled']) || !in_array($mode, ['TEST', 'LIVE'], true)) {
+        $mode = $this->filingMode();
+        if (!in_array($mode, ['TEST', 'LIVE'], true)) {
             return ['success' => false, 'errors' => ['Companies House accounts filing is disabled.']];
         }
         if ($mode === 'LIVE') {
-            if (empty($feature['live_approved'])) {
+            if (!$this->liveFilingApproved()) {
                 return ['success' => false, 'errors' => ['Companies House LIVE accounts filing has not been approved.']];
             }
             if ((string)$request->input('authority_confirmed', '') !== '1') {
@@ -627,6 +635,22 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         }
 
         return $this->submissionService;
+    }
+
+    private function filingMode(): string
+    {
+        $mode = $this->filingModeResolver !== null
+            ? (string)($this->filingModeResolver)()
+            : AccountingConfigurationStore::companiesHouseAccountsFilingMode();
+
+        return strtoupper(trim($mode));
+    }
+
+    private function liveFilingApproved(): bool
+    {
+        return $this->liveApprovalResolver !== null
+            ? (bool)($this->liveApprovalResolver)()
+            : AccountingConfigurationStore::companiesHouseAccountsLiveApproved();
     }
 
     private function isIsoDate(string $value): bool

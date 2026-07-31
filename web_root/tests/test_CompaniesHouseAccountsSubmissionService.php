@@ -23,6 +23,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(str_contains(implode(' ', (array)($context['blockers'] ?? [])), 'valid company'));
         });
 
+        $harness->check($service::class, 'rejects a submission filing-kind lookup without a valid context', static function () use ($harness, $service): void {
+            $harness->assertSame(null, $service->submissionFilingKindForContext(0, 0, 0));
+        });
+
         $harness->check(
             $service::class,
             'keeps the authentication check independent of filing readiness and generated accounts',
@@ -96,6 +100,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 foreach ([
                     'Starting the Companies House ',
                     'Checking the locked Year End, filing declarations and taxonomy compatibility.',
+                    'Verifying the prepared iXBRL against the current approved filing basis.',
                     'Verified prepared ',
                     'Allocated Companies House submission number ',
                     'Validated GovTalk transaction ',
@@ -107,6 +112,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 ] as $message) {
                     $harness->assertTrue(str_contains($body, $message));
                 }
+                $harness->assertSame(1, substr_count($body, 'preparedArtifactState('));
+                $harness->assertTrue(
+                    strpos($body, 'Starting the Companies House ') < strpos($body, 'preparedArtifactState(')
+                );
+                $harness->assertTrue(
+                    strpos($body, 'Verifying the prepared iXBRL against the current approved filing basis.')
+                    < strpos($body, 'preparedArtifactState(')
+                );
                 $harness->assertTrue(str_contains($body, "'Companies House acknowledged the ' . \$filingLabel"));
                 $harness->assertFalse(str_contains(
                     $body,

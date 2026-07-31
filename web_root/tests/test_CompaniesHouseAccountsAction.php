@@ -15,7 +15,7 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
     GeneratedServiceClassTestHarness $harness,
     CompaniesHouseAccountsAction $unused
 ): void {
-    $harness->check(CompaniesHouseAccountsAction::class, 'starts Action Progress before loading the submission context', static function () use ($harness): void {
+    $harness->check(CompaniesHouseAccountsAction::class, 'starts Action Progress before the narrow submission lookup', static function () use ($harness): void {
         $method = new ReflectionMethod(CompaniesHouseAccountsAction::class, 'submitRevision');
         $path = $method->getFileName();
         $source = is_string($path) ? file($path) : false;
@@ -26,9 +26,10 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
             $method->getEndLine() - $method->getStartLine() + 1
         ));
         $progressPosition = strpos($body, 'Submission request received. Starting Companies House transmission checks');
-        $contextPosition = strpos($body, 'fetchContext(');
+        $lookupPosition = strpos($body, 'submissionFilingKindForContext(');
         $harness->assertTrue($progressPosition !== false);
-        $harness->assertTrue($contextPosition !== false && $progressPosition < $contextPosition);
+        $harness->assertTrue($lookupPosition !== false && $progressPosition < $lookupPosition);
+        $harness->assertFalse(str_contains($body, 'fetchContext('));
         $harness->assertTrue(str_contains($body, 'nothing has been sent yet.'));
     });
 
@@ -198,6 +199,10 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
         $harness->assertCount(1, $submitCalls);
         $harness->assertSame('ABC123', (string)($submitCalls[0]['company_auth_code'] ?? ''));
         $harness->assertSame(false, str_contains(companiesHouseAccountsActionFlash($result), 'ABC123'));
+        $harness->assertSame([], array_values(array_filter(
+            $service->calls,
+            static fn(array $call): bool => ($call['method'] ?? '') === 'fetchContext'
+        )));
     });
 
     $harness->check(CompaniesHouseAccountsAction::class, 'requires authority and the exact phrase for LIVE submission', static function () use ($harness): void {
@@ -221,6 +226,13 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
         ])), createTestPageServiceFramework());
         $harness->assertSame(false, $wrongPhrase->isSuccess());
         $harness->assertSame(true, str_contains(companiesHouseAccountsActionFlash($wrongPhrase), 'exact LIVE'));
+
+        $wrongFilingKind = $action->handle(companiesHouseAccountsActionRequest(array_merge($base, [
+            'authority_confirmed' => '1',
+            'live_confirmation_phrase' => 'SUBMIT LIVE ORIGINAL ACCOUNTS',
+        ])), createTestPageServiceFramework());
+        $harness->assertSame(false, $wrongFilingKind->isSuccess());
+        $harness->assertSame(true, str_contains(companiesHouseAccountsActionFlash($wrongFilingKind), 'exact LIVE'));
 
         $submitted = $action->handle(companiesHouseAccountsActionRequest(array_merge($base, [
             'authority_confirmed' => '1',
@@ -390,6 +402,25 @@ final class CompaniesHouseAccountsActionFakeService
         return (int)($this->context['submission']['id'] ?? 0) === $submissionId;
     }
 
+    public function submissionFilingKindForContext(
+        int $submissionId,
+        int $companyId,
+        int $accountingPeriodId
+    ): ?string {
+        $this->calls[] = compact('submissionId', 'companyId', 'accountingPeriodId')
+            + ['method' => 'submissionFilingKindForContext'];
+        if ((int)($this->context['submission']['id'] ?? 0) !== $submissionId) {
+            return null;
+        }
+
+        $filingKind = strtolower(trim((string)(
+            $this->context['submission']['filing_kind']
+            ?? $this->context['submission']['filing_type']
+            ?? ''
+        )));
+        return in_array($filingKind, ['original', 'revised'], true) ? $filingKind : null;
+    }
+
     public function submitAccounts(
         int $submissionId,
         string $companyAuthCode,
@@ -469,6 +500,8 @@ function companiesHouseAccountsTestAction(
                 'ready' => true,
                 'errors' => [],
             ],
+        static fn(): string => (string)($service->context['feature']['mode'] ?? 'DISABLED'),
+        static fn(): bool => !empty($service->context['feature']['live_approved']),
     );
 }
 

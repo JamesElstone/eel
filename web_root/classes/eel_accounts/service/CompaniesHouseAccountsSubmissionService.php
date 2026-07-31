@@ -1195,11 +1195,6 @@ final class CompaniesHouseAccountsSubmissionService
         if ((string)$submission['lifecycle'] !== 'prepared') {
             return $this->failure('Only a prepared Companies House accounts artifact can be submitted.');
         }
-        $artifactState = $this->preparedArtifactState($submission);
-        if (empty($artifactState['current'])) {
-            return $this->failure((string)(($artifactState['errors'] ?? [])[0]
-                ?? 'The prepared Companies House accounts artifact is not current.'));
-        }
         if (preg_match('/^[A-Za-z0-9]{6}$/D', $companyAuthCode) !== 1) {
             return $this->failure(
                 'The company authentication code must contain exactly 6 letters or numbers.'
@@ -1280,6 +1275,11 @@ final class CompaniesHouseAccountsSubmissionService
             );
         }
 
+        $this->reportProgress(
+            $progress,
+            'Verifying the prepared iXBRL against the current approved filing basis.',
+            10
+        );
         $artifactState = $this->preparedArtifactState($submission);
         if (empty($artifactState['current'])) {
             return $this->failure((string)(($artifactState['errors'] ?? [])[0]
@@ -3558,6 +3558,31 @@ final class CompaniesHouseAccountsSubmissionService
         return is_array($submission)
             && (int)($submission['company_id'] ?? 0) === $companyId
             && (int)($submission['accounting_period_id'] ?? 0) === $accountingPeriodId;
+    }
+
+    /**
+     * Returns the stored filing kind only when the submission belongs to the selected context.
+     * This is intentionally a narrow action-time lookup; fetchContext() rebuilds the full
+     * render model and must not be used to begin a transmission.
+     */
+    public function submissionFilingKindForContext(
+        int $submissionId,
+        int $companyId,
+        int $accountingPeriodId
+    ): ?string {
+        if ($submissionId <= 0 || $companyId <= 0 || $accountingPeriodId <= 0) {
+            return null;
+        }
+
+        $submission = $this->submission($submissionId);
+        if (!is_array($submission)
+            || (int)($submission['company_id'] ?? 0) !== $companyId
+            || (int)($submission['accounting_period_id'] ?? 0) !== $accountingPeriodId) {
+            return null;
+        }
+
+        $filingKind = strtolower(trim((string)($submission['filing_type'] ?? '')));
+        return in_array($filingKind, ['original', 'revised'], true) ? $filingKind : null;
     }
 
     private function credentialsConfigured(string $environment): bool

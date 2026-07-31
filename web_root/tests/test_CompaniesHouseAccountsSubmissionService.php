@@ -23,6 +23,23 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(str_contains(implode(' ', (array)($context['blockers'] ?? [])), 'valid company'));
         });
 
+        $harness->check(
+            $service::class,
+            'explains how to create a replacement after a numbered submission',
+            static function () use ($harness): void {
+                $source = file_get_contents(__DIR__ . DIRECTORY_SEPARATOR . '..'
+                    . DIRECTORY_SEPARATOR . 'classes' . DIRECTORY_SEPARATOR . 'eel_accounts'
+                    . DIRECTORY_SEPARATOR . 'service' . DIRECTORY_SEPARATOR
+                    . 'CompaniesHouseAccountsSubmissionService.php');
+                $harness->assertTrue(is_string($source));
+                $harness->assertTrue(str_contains(
+                    (string)$source,
+                    'The currently generated Companies House iXBRL has already been submitted. '
+                    . 'To send a new submission regenerate the iXBRL on the Disclosure page.'
+                ));
+            }
+        );
+
         $harness->check($service::class, 'rejects a submission filing-kind lookup without a valid context', static function () use ($harness, $service): void {
             $harness->assertSame(null, $service->submissionFilingKindForContext(0, 0, 0));
         });

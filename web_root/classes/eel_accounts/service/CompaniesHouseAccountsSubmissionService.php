@@ -186,7 +186,10 @@ final class CompaniesHouseAccountsSubmissionService
 
         $submissionBlockers = [];
         if ($lifecycle !== 'prepared') {
-            $submissionBlockers[] = 'Prepare and validate the Companies House accounts artifact before submission.';
+            $submissionBlockers[] = trim((string)($submission['submission_number'] ?? '')) !== ''
+                ? 'The currently generated Companies House iXBRL has already been submitted. '
+                    . 'To send a new submission regenerate the iXBRL on the Disclosure page.'
+                : 'Prepare and validate the Companies House accounts artifact before submission.';
         }
         if (!$featureEnabled) {
             $submissionBlockers[] = 'Companies House accounts filing is disabled until TEST credentials are issued.';

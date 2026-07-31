@@ -46,9 +46,17 @@ $harness->run(_companies_house_transmitCard::class, static function (
                     'companies_house_transmit_context' => [
                         'feature' => ['mode' => 'TEST', 'credentials_configured' => true],
                         'sequence' => [],
-                        'submission' => ['id' => 712, 'lifecycle' => 'pending', 'filing_kind' => 'revised'],
+                        'submission' => [
+                            'id' => 712,
+                            'lifecycle' => 'pending',
+                            'filing_kind' => 'revised',
+                            'submission_number' => '000002',
+                        ],
                         'prepared_artifact' => ['state' => 'current'],
-                        'submission_blockers' => ['The submission is awaiting a Companies House status update.'],
+                        'submission_blockers' => [
+                            'The currently generated Companies House iXBRL has already been submitted. '
+                            . 'To send a new submission regenerate the iXBRL on the Disclosure page.',
+                        ],
                     ],
                     'companies_house_schema_status' => ['state' => ['ready' => true]],
                 ],
@@ -60,7 +68,11 @@ $harness->run(_companies_house_transmitCard::class, static function (
             );
             $warnings = strpos($html, 'Transmission warnings');
             $harness->assertTrue($transmitPanel !== false && $warnings !== false && $transmitPanel < $warnings);
-            $harness->assertTrue(str_contains($html, 'The submission is awaiting a Companies House status update.'));
+            $harness->assertTrue(str_contains(
+                $html,
+                'The currently generated Companies House iXBRL has already been submitted. '
+                . 'To send a new submission regenerate the iXBRL on the Disclosure page.'
+            ));
             $harness->assertFalse(str_contains(
                 $html,
                 'Enter the six-character company authentication code to transmit the prepared statutory accounts.'

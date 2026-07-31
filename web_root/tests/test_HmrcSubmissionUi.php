@@ -123,7 +123,12 @@ $harness->run(_hmrc_transmitCard::class, static function (
         $harness->assertTrue(str_contains($html, 'CT Period 3 (2023-09-05 to 2023-09-30):'));
         $harness->assertSame(0, substr_count($html, 'name="intent" value="hmrc_submit_test"'));
         $harness->assertSame(2, substr_count($html, 'name="intent" value="hmrc_submit_live"'));
-        $harness->assertTrue(str_contains($html, '<div class="summary-card warn hmrc-connection-summary-card"><div class="summary-label">Environment</div><div class="summary-value">Live</div>'));
+        $harness->assertTrue(str_contains(
+            $html,
+            '<section class="panel-soft summary-card warn hmrc-connection-summary-card hmrc-transmit-status-board">'
+            . '<div class="status-head"><h3 class="card-title">Environment</h3>'
+            . '<span class="badge warning">Live</span></div>'
+        ));
         $harness->assertTrue(str_contains($html, '<a class="button" href="?page=settings&amp;show_card=api_mode">Configure HMRC XML environment</a>'));
         $harness->assertTrue(str_contains($html, '<div class="summary-card success"><div class="summary-label">Credentials</div><div class="summary-value">Configured</div>'));
         $harness->assertFalse(str_contains($html, 'Test path'));
@@ -138,10 +143,10 @@ $harness->run(_hmrc_transmitCard::class, static function (
         $harness->assertTrue(str_contains($html, 'This shows the current Status for this Corporation Tax Return'));
         $harness->assertTrue(str_contains($html, 'HMRC Submission Evidence'));
         $harness->assertTrue(str_contains($html, '<div class="summary-grid four">'));
-        $harness->assertSame(2, substr_count($html, '<div class="summary-label">Disclosures and filing basis</div><div class="summary-value">Present</div>'));
-        $harness->assertSame(2, substr_count($html, '<div class="summary-label">CT-period filing basis</div><div class="summary-value">Present</div>'));
-        $harness->assertSame(2, substr_count($html, '<div class="summary-label">CT600 source model</div><div class="summary-value">Present</div>'));
-        $harness->assertTrue(str_contains($html, '<div class="summary-card danger"><div class="summary-label">Filing iXBRL artifacts</div><div class="summary-value">Not ready</div><div class="helper">The current filing iXBRL artifacts are not ready.</div><div class="helper">The computation artifact filing basis is stale.</div>'));
+        $harness->assertSame(2, substr_count($html, '<h3 class="card-title">Disclosures and filing basis</h3><span class="badge success">Present</span>'));
+        $harness->assertSame(2, substr_count($html, '<h3 class="card-title">CT-period filing basis</h3><span class="badge success">Present</span>'));
+        $harness->assertSame(2, substr_count($html, '<h3 class="card-title">CT600 source model</h3><span class="badge success">Present</span>'));
+        $harness->assertTrue(str_contains($html, '<section class="panel-soft summary-card danger hmrc-transmit-status-board"><div class="status-head"><h3 class="card-title">Filing iXBRL artifacts</h3><span class="badge danger">Not ready</span></div><div class="helper">The current filing iXBRL artifacts are not ready.</div><div class="helper">The computation artifact filing basis is stale.</div></section>'));
         $harness->assertTrue(str_contains($html, 'Run HMRC Test in Live for the current filing body.'));
         $harness->assertTrue(str_contains($html, 'IRMARK-7'));
         $harness->assertTrue(str_contains($html, '>Transmit Submission</button>'));
@@ -243,7 +248,7 @@ $harness->run(_hmrc_transmitCard::class, static function (
                 'periods' => [],
             ]],
         ]);
-        $harness->assertTrue(str_contains($html, '<div class="summary-card success hmrc-connection-summary-card"><div class="summary-label">Environment</div><div class="summary-value">Test</div>'));
+        $harness->assertTrue(str_contains($html, '<section class="panel-soft summary-card success hmrc-connection-summary-card hmrc-transmit-status-board"><div class="status-head"><h3 class="card-title">Environment</h3><span class="badge success">Test</span></div>'));
         $harness->assertTrue(str_contains($html, '<div class="summary-card danger hmrc-credential-summary-card"><div class="summary-label">Credentials</div><div class="helper">HMRC / XML / CT600_XML / TEST Credentials Missing</div>'));
         $harness->assertTrue(str_contains($html, '<div class="actions-row actions-row-right hmrc-credential-summary-actions">'));
         $harness->assertTrue(str_contains($html, '<a class="button" href="?page=settings&amp;show_card=api_keys_editor">Configure HMRC XML credentials</a>'));

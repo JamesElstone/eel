@@ -416,9 +416,18 @@ final class _hmrc_transmitCard extends CardBaseFramework
 
     private function environmentMetric(string $environment, string $class): string
     {
-        return '<div class="summary-card ' . \eel_accounts\Support\Utf8::html($class) . ' hmrc-connection-summary-card"><div class="summary-label">Environment</div>'
-            . '<div class="summary-value">' . \eel_accounts\Support\Utf8::html($environment) . '</div>'
-            . '<div class="actions-row actions-row-right hmrc-connection-summary-actions"><a class="button" href="?page=settings&amp;show_card=api_mode">Configure HMRC XML environment</a></div></div>';
+        $badgeClass = match ($class) {
+            'success' => 'success',
+            'warn' => 'warning',
+            'danger' => 'danger',
+            default => 'info',
+        };
+
+        return '<section class="panel-soft summary-card ' . \eel_accounts\Support\Utf8::html($class)
+            . ' hmrc-connection-summary-card hmrc-transmit-status-board">'
+            . '<div class="status-head"><h3 class="card-title">Environment</h3>'
+            . '<span class="badge ' . $badgeClass . '">' . \eel_accounts\Support\Utf8::html($environment) . '</span></div>'
+            . '<div class="actions-row actions-row-right hmrc-connection-summary-actions"><a class="button" href="?page=settings&amp;show_card=api_mode">Configure HMRC XML environment</a></div></section>';
     }
 
     private function metric(string $label, string $value, string $class = '', bool $helper = false): string
@@ -433,11 +442,16 @@ final class _hmrc_transmitCard extends CardBaseFramework
     private function dependencyMetric(string $label, bool $ready, string $message, string $detail): string
     {
         if ($ready) {
-            return $this->metric($label, 'Present', 'success');
+            return '<section class="panel-soft summary-card success hmrc-transmit-status-board">'
+                . '<div class="status-head"><h3 class="card-title">'
+                . \eel_accounts\Support\Utf8::html($label) . '</h3>'
+                . '<span class="badge success">Present</span></div></section>';
         }
 
-        $html = '<div class="summary-card danger"><div class="summary-label">'
-            . \eel_accounts\Support\Utf8::html($label) . '</div><div class="summary-value">Not ready</div>';
+        $html = '<section class="panel-soft summary-card danger hmrc-transmit-status-board">'
+            . '<div class="status-head"><h3 class="card-title">'
+            . \eel_accounts\Support\Utf8::html($label) . '</h3>'
+            . '<span class="badge danger">Not ready</span></div>';
         if ($message !== '') {
             $html .= '<div class="helper">' . \eel_accounts\Support\Utf8::html($message) . '</div>';
         }
@@ -445,7 +459,7 @@ final class _hmrc_transmitCard extends CardBaseFramework
             $html .= '<div class="helper">' . \eel_accounts\Support\Utf8::html($detail) . '</div>';
         }
 
-        return $html . '</div>';
+        return $html . '</section>';
     }
 
     private function blockerMetric(string $message): string

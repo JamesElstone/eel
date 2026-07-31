@@ -261,11 +261,6 @@ final class _hmrc_transmitCard extends CardBaseFramework
         return '<section class="panel-soft"><form method="post" action="?page=transmit" data-ajax="true" class="settings-stack">'
             . $this->hiddenFields($companyId, $accountingPeriodId, $ctPeriodId)
             . '<h3>Transmit Submission</h3>'
-            . ($developerOptions
-                ? '<div class="helper">Developer option: build the exact environment-specific GovTalk submit envelope '
-                    . 'beside the prepared CT600 XML without contacting HMRC. It uses configured sender credentials when available, '
-                    . 'otherwise clearly labelled non-transmittable placeholders.</div>'
-                : '')
             . '<div class="actions-row">'
             . '<button class="button' . $submissionClass . '" type="submit" name="intent" value="' . $submissionIntent . '"' . $submissionDisabled
             . ($isLive

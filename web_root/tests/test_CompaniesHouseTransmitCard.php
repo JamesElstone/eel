@@ -318,7 +318,6 @@ $harness->run(_companies_house_transmitCard::class, static function (
                                 'credentials_configured' => true,
                                 'protocol_ready' => true,
                                 'developer_binding_configured' => true,
-                                'company_data_capability' => 'available',
                             ],
                             'sequence' => ['next_number' => '000001'],
                             'submission' => [
@@ -355,8 +354,8 @@ $harness->run(_companies_house_transmitCard::class, static function (
                 $html = $card->render($renderContext);
                 $harness->assertTrue(str_contains($html, 'Transmit Company Accounts'));
                 $harness->assertTrue(str_contains($html, 'Check Company Authentication Code'));
-                $harness->assertTrue(str_contains($html, 'CompanyData capability'));
-                $harness->assertTrue(str_contains($html, 'Optional presenter diagnostic'));
+                $harness->assertFalse(str_contains($html, 'CompanyData capability'));
+                $harness->assertFalse(str_contains($html, 'Optional presenter diagnostic'));
                 $harness->assertFalse(str_contains($html, 'CompanyData preflight'));
                 $harness->assertTrue(str_contains(
                     $html,

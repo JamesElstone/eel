@@ -128,11 +128,6 @@ final class _companies_house_transmitCard extends CardBaseFramework
                     $artifactCurrent
                 )
                 . $this->schemaMetric($schemaReady, $schemaState)
-                . $this->metric(
-                    'CompanyData capability',
-                    ucfirst((string)($feature['company_data_capability'] ?? 'unknown')),
-                    'Optional presenter diagnostic; not required for Accounts transmission.'
-                )
                 . '</div>';
             if ($lifecycle === 'prepared') {
                 $transmitForm = [

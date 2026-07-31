@@ -807,7 +807,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                 'missing-run synchronisation button' => str_contains($readyHtml, '>Synchronise missing iXBRL files</button>'),
                 'complete-filing action order' => preg_match(
                     '/<div class="actions-row ixbrl-complete-filing-actions">.*'
-                        . 'Generate All Filing Artifacts.*Synchronise missing iXBRL files.*<\/div>/s',
+                        . 'Generate All Filing Artefacts.*Synchronise missing iXBRL files.*<\/div>/s',
                     $readyHtml
                 ) === 1,
                 'retention explanation' => str_contains($readyHtml, 'Filing approvals, evidence bundles, and runs used by transmitted or in-flight Companies House filings are retained.'),
@@ -832,7 +832,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $harness->assertFalse(str_contains($readyHtml, 'Synchronise missing iXBRL runs'));
             $harness->assertTrue(preg_match(
                 '/<div class="actions-row ixbrl-complete-filing-actions">.*'
-                    . 'Generate All Filing Artifacts.*Synchronise missing iXBRL files.*<\/div>/s',
+                    . 'Generate All Filing Artefacts.*Synchronise missing iXBRL files.*<\/div>/s',
                 $readyHtml
             ) === 1);
             $harness->assertTrue(str_contains($readyHtml, 'Filing approvals, evidence bundles, and runs used by transmitted or in-flight Companies House filings are retained.'));
@@ -893,7 +893,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         };
 
         $blocked = $card->render($context);
-        $harness->assertTrue($buttonDisabled($blocked, 'Generate All Filing Artifacts'));
+        $harness->assertTrue($buttonDisabled($blocked, 'Generate All Filing Artefacts'));
         $harness->assertTrue($buttonDisabled($blocked, 'Generate Accounting iXBRL'));
         $harness->assertTrue($buttonDisabled($blocked, 'Generate Companies House iXBRL'));
         $harness->assertTrue($buttonDisabled($blocked, 'Generate Corporation Tax Period 6 iXBRL'));
@@ -910,7 +910,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         ];
         $ready = $card->render($context);
         foreach ([
-            'Generate All Filing Artifacts',
+            'Generate All Filing Artefacts',
             'Generate Accounting iXBRL',
             'Generate Companies House iXBRL',
             'Generate Corporation Tax Period 6 iXBRL',
@@ -929,7 +929,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             'Generate the HMRC Accounting iXBRL; internal and Arelle validation run automatically.',
         ];
         $prerequisiteGeneratedByAction = $card->render($context);
-        if ($buttonDisabled($prerequisiteGeneratedByAction, 'Generate All Filing Artifacts')) {
+        if ($buttonDisabled($prerequisiteGeneratedByAction, 'Generate All Filing Artefacts')) {
             throw new RuntimeException('The combined action should resolve the Accounting iXBRL prerequisite.');
         }
         $harness->assertTrue($buttonDisabled($prerequisiteGeneratedByAction, 'Generate Companies House iXBRL'));
@@ -942,14 +942,14 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             'Latest export failed Arelle external validation.',
         ];
         $failedExportCanBeRebuilt = $card->render($context);
-        if ($buttonDisabled($failedExportCanBeRebuilt, 'Generate All Filing Artifacts')) {
+        if ($buttonDisabled($failedExportCanBeRebuilt, 'Generate All Filing Artefacts')) {
             throw new RuntimeException('The combined action should rebuild a failed HMRC Accounting iXBRL export.');
         }
 
         $context['services']['companies_house_ixbrl']['preparation_blockers'][] = 'Record Companies House written confirmation.';
         $context['services']['companies_house_ixbrl']['can_prepare_after_accounts_generation'] = false;
         $genuineBlocker = $card->render($context);
-        $harness->assertTrue($buttonDisabled($genuineBlocker, 'Generate All Filing Artifacts'));
+        $harness->assertTrue($buttonDisabled($genuineBlocker, 'Generate All Filing Artefacts'));
         $harness->assertTrue($buttonDisabled($genuineBlocker, 'Generate Companies House iXBRL'));
     });
     $harness->check(_ixbrl_generationCard::class, 'summarises only current iXBRL generation blockers above the filing actions', static function () use ($harness, $card): void {
@@ -1252,7 +1252,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         $sorted = $positions;
         sort($sorted);
         $harness->assertSame($sorted, $positions);
-        $harness->assertTrue(str_contains($ready, '>Generate All Filing Artifacts</button>'));
+        $harness->assertTrue(str_contains($ready, '>Generate All Filing Artefacts</button>'));
         return;
         $harness->assertTrue(str_contains($ready, 'name="intent" value="generate_all_filing_ixbrl"'));
         $harness->assertTrue(str_contains($ready, '>Generate all filing iXBRLs</button>'));

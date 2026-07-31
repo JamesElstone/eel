@@ -109,7 +109,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                         <input type="hidden" name="intent" value="generate_all_filing_ixbrl">
                         <input type="hidden" name="company_id" value="' . $companyId . '">
                         <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                        <button class="button primary" type="submit"' . ($canGenerateAll ? '' : ' disabled') . '>Generate All Filing Artifacts</button>
+                        <button class="button primary" type="submit"' . ($canGenerateAll ? '' : ' disabled') . '>Generate All Filing Artefacts</button>
                     </form>
                     ' . ($developerOptions ? '<form method="post" action="?page=disclosures" data-ajax="true" class="ixbrl-developer-cleanup-action">'
                         . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())

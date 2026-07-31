@@ -180,8 +180,17 @@ final class _hmrc_transmitCard extends CardBaseFramework
             $this->messages((array)($period['test_blockers'] ?? [])),
             $this->messages((array)($period['live_blockers'] ?? []))
         )));
-        foreach (array_filter($blockers, fn(string $blocker): bool => !$this->isCardDependency($blocker) && !$this->isXmlCredentialBlocker($blocker)) as $blocker) {
-            $html .= '<div class="notice warning">' . \eel_accounts\Support\Utf8::html($blocker) . '</div>';
+        $submissionBlockers = array_values(array_filter(
+            $blockers,
+            fn(string $blocker): bool => !$this->isCardDependency($blocker)
+                && !$this->isXmlCredentialBlocker($blocker)
+        ));
+        if ($submissionBlockers !== []) {
+            $html .= '<div class="summary-grid">';
+            foreach ($submissionBlockers as $blocker) {
+                $html .= $this->blockerMetric($blocker);
+            }
+            $html .= '</div>';
         }
 
         $html .= $this->submissionForm(
@@ -437,6 +446,12 @@ final class _hmrc_transmitCard extends CardBaseFramework
         }
 
         return $html . '</div>';
+    }
+
+    private function blockerMetric(string $message): string
+    {
+        return '<div class="summary-card danger"><div class="summary-label">Submission blocker</div>'
+            . '<div class="helper">' . \eel_accounts\Support\Utf8::html($message) . '</div></div>';
     }
 
     private function filingDependenciesReady(array $dependencies): bool

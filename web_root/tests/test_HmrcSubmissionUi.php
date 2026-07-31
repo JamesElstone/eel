@@ -280,6 +280,7 @@ $harness->run(_hmrc_transmitCard::class, static function (
                     ],
                     'blockers' => [
                         'The current CT600 XML artifact is not ready. Generate it from iXBRL Generation.',
+                        'The prepared CT600 XML has a stale or mismatched accounts iXBRL hash.',
                     ],
                 ]],
             ]],
@@ -288,6 +289,20 @@ $harness->run(_hmrc_transmitCard::class, static function (
         $harness->assertTrue(str_contains(
             $html,
             'The current CT600 XML artifact is not ready. Generate it from iXBRL Generation.'
+        ));
+        $harness->assertTrue(str_contains(
+            $html,
+            '<div class="summary-card danger"><div class="summary-label">Submission blocker</div>'
+            . '<div class="helper">The current CT600 XML artifact is not ready. Generate it from iXBRL Generation.</div></div>'
+        ));
+        $harness->assertTrue(str_contains(
+            $html,
+            '<div class="summary-card danger"><div class="summary-label">Submission blocker</div>'
+            . '<div class="helper">The prepared CT600 XML has a stale or mismatched accounts iXBRL hash.</div></div>'
+        ));
+        $harness->assertFalse(str_contains(
+            $html,
+            '<div class="notice warning">The current CT600 XML artifact is not ready.'
         ));
         $harness->assertTrue(str_contains(
             $html,

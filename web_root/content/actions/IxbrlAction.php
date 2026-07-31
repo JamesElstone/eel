@@ -241,6 +241,23 @@ final class IxbrlAction implements ActionInterfaceFramework
                         ? [(int)$cleanup['skipped_count'] . ' missing-file run(s) retained because they are referenced by transmitted or in-flight Companies House filings.']
                         : [],
                 ];
+            } elseif ($intent === 'sync_missing_ct600_xml_artifacts') {
+                if (!(bool)AppConfigurationStore::get('developer_options', false)) {
+                    return $this->result(false, ['Developer options must be enabled to synchronise CT600 XML artifact records.'], $changedFacts);
+                }
+                $cleanup = (new \eel_accounts\Service\Ct600GenerationArtifactCleanupService())
+                    ->removeMissingArtifacts($companyId, $accountingPeriodId);
+                $result = [
+                    'success' => !empty($cleanup['success']),
+                    'errors' => (array)($cleanup['errors'] ?? []),
+                    'messages' => [
+                        (int)($cleanup['deleted_count'] ?? 0) . ' missing-file CT600 XML artifact record(s) removed; '
+                        . (int)($cleanup['present_count'] ?? 0) . ' artifact-backed record(s) retained.',
+                    ],
+                    'warnings' => !empty($cleanup['skipped_count'])
+                        ? [(int)$cleanup['skipped_count'] . ' missing-file CT600 XML artifact record(s) retained because they are referenced by an in-flight or completed HMRC submission.']
+                        : [],
+                ];
             } elseif ($intent === 'revalidate_arelle') {
                 if (!(bool)AppConfigurationStore::get('developer_options', false)) {
                     return $this->result(false, ['Developer options must be enabled to revalidate iXBRL with Arelle.'], $changedFacts);

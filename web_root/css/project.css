@@ -3511,8 +3511,15 @@
   margin-top: 0.75rem;
 }
 
-.ixbrl-developer-cleanup-action {
+.ixbrl-developer-cleanup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   margin-left: auto;
+}
+
+.ixbrl-developer-cleanup-action {
+  margin: 0;
 }
 
 .director-loan-per-party-position {

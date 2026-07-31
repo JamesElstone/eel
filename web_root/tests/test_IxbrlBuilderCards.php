@@ -805,6 +805,9 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                 'missing-run synchronisation intent' => str_contains($readyHtml, 'name="intent" value="sync_missing_ixbrl_runs"'),
                 'missing-run synchronisation title' => str_contains($readyHtml, 'data-chicken-title="Synchronise missing iXBRL files"'),
                 'missing-run synchronisation button' => str_contains($readyHtml, '>Synchronise missing iXBRL files</button>'),
+                'missing-XML synchronisation intent' => str_contains($readyHtml, 'name="intent" value="sync_missing_ct600_xml_artifacts"'),
+                'missing-XML synchronisation title' => str_contains($readyHtml, 'data-chicken-title="Synchronise missing XML files"'),
+                'missing-XML synchronisation button' => str_contains($readyHtml, '>Synchronise missing XML files</button>'),
                 'complete-filing action order' => preg_match(
                     '/<div class="actions-row ixbrl-complete-filing-actions">.*'
                         . 'Generate All Filing Artefacts.*Synchronise missing iXBRL files.*<\/div>/s',
@@ -829,6 +832,9 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $harness->assertTrue(str_contains($readyHtml, 'name="intent" value="sync_missing_ixbrl_runs"'));
             $harness->assertTrue(str_contains($readyHtml, 'data-chicken-title="Synchronise missing iXBRL files"'));
             $harness->assertTrue(str_contains($readyHtml, '>Synchronise missing iXBRL files</button>'));
+            $harness->assertTrue(str_contains($readyHtml, 'name="intent" value="sync_missing_ct600_xml_artifacts"'));
+            $harness->assertTrue(str_contains($readyHtml, 'data-chicken-title="Synchronise missing XML files"'));
+            $harness->assertTrue(str_contains($readyHtml, '>Synchronise missing XML files</button>'));
             $harness->assertFalse(str_contains($readyHtml, 'Synchronise missing iXBRL runs'));
             $harness->assertTrue(preg_match(
                 '/<div class="actions-row ixbrl-complete-filing-actions">.*'
@@ -840,6 +846,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             try {
                 AppConfigurationStore::set('developer_options', false);
                 $harness->assertFalse(str_contains($card->render($context), 'name="intent" value="sync_missing_ixbrl_runs"'));
+                $harness->assertFalse(str_contains($card->render($context), 'name="intent" value="sync_missing_ct600_xml_artifacts"'));
             } finally {
                 AppConfigurationStore::set('developer_options', $developerOptions);
             }
@@ -1398,6 +1405,8 @@ $harness->run(IxbrlAction::class, static function (GeneratedServiceClassTestHarn
         $harness->assertTrue(str_contains($source, '$intent === \'sync_missing_ixbrl_runs\''));
         $harness->assertTrue(str_contains($source, 'developer_options'));
         $harness->assertTrue(str_contains($source, 'IxbrlGenerationRunCleanupService'));
+        $harness->assertTrue(str_contains($source, '$intent === \'sync_missing_ct600_xml_artifacts\''));
+        $harness->assertTrue(str_contains($source, 'Ct600GenerationArtifactCleanupService'));
     });
     $harness->check(IxbrlAction::class, 'guards approved-fact recovery behind developer options', static function () use ($harness): void {
         $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content'

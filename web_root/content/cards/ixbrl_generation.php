@@ -111,14 +111,22 @@ final class _ixbrl_generationCard extends CardBaseFramework
                         <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                         <button class="button primary" type="submit"' . ($canGenerateAll ? '' : ' disabled') . '>Generate All Filing Artefacts</button>
                     </form>
-                    ' . ($developerOptions ? '<form method="post" action="?page=disclosures" data-ajax="true" class="ixbrl-developer-cleanup-action">'
+                    ' . ($developerOptions ? '<div class="ixbrl-developer-cleanup-actions"><form method="post" action="?page=disclosures" data-ajax="true" class="ixbrl-developer-cleanup-action">'
                         . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
                         . '<input type="hidden" name="card_action" value="Ixbrl">'
                         . '<input type="hidden" name="intent" value="sync_missing_ixbrl_runs">'
                         . '<input type="hidden" name="company_id" value="' . $companyId . '">'
                         . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
                         . '<button class="button danger" type="submit" title="Developer only" data-chicken-check="true" data-chicken-title="Synchronise missing iXBRL files" data-chicken-message="Synchronise accounts iXBRL artifacts that no longer exist on disk?<br><br>Approved fact snapshots are retained and returned to generation-ready state. Empty run records and unsent Companies House drafts are removed. Filing approvals, evidence bundles, and runs used by transmitted or in-flight Companies House filings are retained. No files are deleted." data-chicken-confirm-text="Synchronise" data-chicken-button-class="button danger">Synchronise missing iXBRL files</button>'
-                        . '</form>' : '') . '
+                        . '</form>'
+                        . '<form method="post" action="?page=disclosures" data-ajax="true" class="ixbrl-developer-cleanup-action">'
+                        . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+                        . '<input type="hidden" name="card_action" value="Ixbrl">'
+                        . '<input type="hidden" name="intent" value="sync_missing_ct600_xml_artifacts">'
+                        . '<input type="hidden" name="company_id" value="' . $companyId . '">'
+                        . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
+                        . '<button class="button danger" type="submit" title="Developer only" data-chicken-check="true" data-chicken-title="Synchronise missing XML files" data-chicken-message="Synchronise CT600 XML artifacts that no longer exist on disk?<br><br>Empty missing-file artifact records are removed so they can be regenerated. Records used by in-flight or completed HMRC submissions are retained. No files are deleted." data-chicken-confirm-text="Synchronise" data-chicken-button-class="button danger">Synchronise missing XML files</button>'
+                        . '</form></div>' : '') . '
                 </div>
                 ' . ($canGenerateAll ? '' : '<div class="helper">Approve a generation-ready accounts basis, resolve every CT-period computation blocker, and complete the Companies House filing prerequisites when required.</div>') . '
             </section>

@@ -3545,6 +3545,11 @@
   flex-direction: column;
 }
 
+.card-body .companies-house-status-board {
+  margin: 0;
+  width: auto;
+}
+
 .card-body .companies-house-summary-action-card .companies-house-summary-card-actions {
   justify-content: flex-end;
   margin-top: auto;

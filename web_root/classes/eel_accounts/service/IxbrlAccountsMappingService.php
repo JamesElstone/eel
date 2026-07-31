@@ -418,7 +418,8 @@ final class IxbrlAccountsMappingService
         }
 
         $name = strtolower(trim((string)($row['name'] ?? '')));
-        if (preg_match('/\b(subcontract(?:or|ors|ing)?|labou?r|services?)\b/', $name) === 1) {
+        if ((new IncomeStatementClassificationService())->isSubcontractorCost($row)
+            || preg_match('/\b(labou?r|services?)\b/', $name) === 1) {
             return false;
         }
 

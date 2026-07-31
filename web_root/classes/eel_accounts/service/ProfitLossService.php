@@ -34,10 +34,17 @@ final class ProfitLossService
         }
         $incomeTotal = round((float)$totals['income_total'], 2);
         $costOfSalesTotal = round((float)$totals['cost_of_sales_total'], 2);
+        $subcontractorCostTotal = round((float)($totals['subcontractor_cost_total'] ?? 0), 2);
+        $costOfSalesExcludingSubcontractors = round((float)(
+            $totals['cost_of_sales_excluding_subcontractors'] ?? ($costOfSalesTotal - $subcontractorCostTotal)
+        ), 2);
         $operatingExpenseTotal = round((float)$totals['operating_expense_total'], 2);
         $postedCorporationTaxCharge = round((float)$totals['posted_corporation_tax_charge'], 2);
         $expenseTotal = round($operatingExpenseTotal + $postedCorporationTaxCharge, 2);
         $grossProfit = round((float)$totals['gross_profit'], 2);
+        $grossProfitBeforeSubcontractors = round((float)(
+            $totals['gross_profit_before_subcontractors'] ?? ($grossProfit + $subcontractorCostTotal)
+        ), 2);
         $profitBeforeTax = round((float)$totals['profit_before_tax'], 2);
         $netProfit = round($profitBeforeTax - $postedCorporationTaxCharge, 2);
         $scope = $totals['scope'] ?? null;
@@ -77,7 +84,10 @@ final class ProfitLossService
             'transaction_count' => $transactionCount,
             'income_total' => $incomeTotal,
             'cost_of_sales_total' => $costOfSalesTotal,
+            'subcontractor_cost_total' => $subcontractorCostTotal,
+            'cost_of_sales_excluding_subcontractors' => $costOfSalesExcludingSubcontractors,
             'gross_profit' => $grossProfit,
+            'gross_profit_before_subcontractors' => $grossProfitBeforeSubcontractors,
             'operating_expense_total' => $operatingExpenseTotal,
             'posted_operating_expense_total' => round((float)($totals['posted_operating_expense_total'] ?? $operatingExpenseTotal), 2),
             'depreciation_expense' => round((float)($totals['depreciation_expense'] ?? 0), 2),
@@ -814,7 +824,10 @@ final class ProfitLossService
             'period_label' => '',
             'income_total' => 0.0,
             'cost_of_sales_total' => 0.0,
+            'subcontractor_cost_total' => 0.0,
+            'cost_of_sales_excluding_subcontractors' => 0.0,
             'gross_profit' => 0.0,
+            'gross_profit_before_subcontractors' => 0.0,
             'operating_expense_total' => 0.0,
             'expense_total' => 0.0,
             'profit_before_tax' => 0.0,

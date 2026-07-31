@@ -71,6 +71,9 @@ $harness->run(\eel_accounts\Service\ProfitLossService::class, static function (G
 
             $summary = $service->getProfitLossSummary($companyId, $periodId);
             $harness->assertSame(true, (bool)($summary['available'] ?? false));
+            $harness->assertSame('0.00', number_format((float)($summary['subcontractor_cost_total'] ?? 0), 2, '.', ''));
+            $harness->assertSame('0.00', number_format((float)($summary['cost_of_sales_excluding_subcontractors'] ?? 0), 2, '.', ''));
+            $harness->assertSame('1000.00', number_format((float)($summary['gross_profit_before_subcontractors'] ?? 0), 2, '.', ''));
             $harness->assertSame('200.00', number_format((float)($summary['operating_expense_total'] ?? 0), 2, '.', ''));
             $harness->assertSame('190.00', number_format((float)($summary['posted_corporation_tax_charge'] ?? 0), 2, '.', ''));
             $harness->assertSame('800.00', number_format((float)($summary['profit_before_tax'] ?? 0), 2, '.', ''));

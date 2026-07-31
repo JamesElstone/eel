@@ -39,6 +39,7 @@ final class PreTaxProfitLossService
         $rules = new CorporationTaxTreatmentRuleService();
         $income = 0.0;
         $costOfSales = 0.0;
+        $subcontractorCosts = 0.0;
         $operatingExpenses = 0.0;
         $postedCt = 0.0;
         $disallowable = 0.0;
@@ -49,6 +50,7 @@ final class PreTaxProfitLossService
         $unknownCount = 0;
         $otherAmount = 0.0;
         $unknownAmount = 0.0;
+        $incomeStatementClassification = new IncomeStatementClassificationService();
 
         foreach ($dataset->rows as $row) {
             $type = (string)($row['account_type'] ?? '');
@@ -65,6 +67,9 @@ final class PreTaxProfitLossService
             }
             if ($type === 'cost_of_sales') {
                 $costOfSales += $amount;
+                if ($incomeStatementClassification->isSubcontractorCost($row)) {
+                    $subcontractorCosts += $amount;
+                }
             } else {
                 $operatingExpenses += $amount;
             }
@@ -138,6 +143,9 @@ final class PreTaxProfitLossService
             $prepaymentExpenseAdjustment += $amount;
             if ((string)($row['account_type'] ?? '') === 'cost_of_sales') {
                 $costOfSales += $amount;
+                if ($incomeStatementClassification->isSubcontractorCost($row)) {
+                    $subcontractorCosts += $amount;
+                }
             } else {
                 $operatingExpenses += $amount;
             }
@@ -184,7 +192,10 @@ final class PreTaxProfitLossService
         $operatingExpenses = round($operatingExpenses + $depreciation, 2);
         $income = round($income, 2);
         $costOfSales = round($costOfSales, 2);
+        $subcontractorCosts = round($subcontractorCosts, 2);
+        $costOfSalesExcludingSubcontractors = round($costOfSales - $subcontractorCosts, 2);
         $grossProfit = round($income - $costOfSales, 2);
+        $grossProfitBeforeSubcontractors = round($grossProfit + $subcontractorCosts, 2);
         $profitBeforeTax = round($grossProfit - $operatingExpenses, 2);
 
         $result = [
@@ -192,7 +203,10 @@ final class PreTaxProfitLossService
             'dataset' => $dataset,
             'income_total' => $income,
             'cost_of_sales_total' => $costOfSales,
+            'subcontractor_cost_total' => $subcontractorCosts,
+            'cost_of_sales_excluding_subcontractors' => $costOfSalesExcludingSubcontractors,
             'gross_profit' => $grossProfit,
+            'gross_profit_before_subcontractors' => $grossProfitBeforeSubcontractors,
             'posted_operating_expense_total' => round($postedOperatingExpenses, 2),
             'prepayment_expense_adjustment' => round($prepaymentExpenseAdjustment, 2),
             'prepayment_expense_rows' => $prepaymentExpenseRows,

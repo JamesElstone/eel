@@ -82,6 +82,23 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             ]));
         });
 
+        $h->check($service::class, 'classifies subcontractor costs by subtype or nominal name', static function () use ($h): void {
+            $classifier = new \eel_accounts\Service\IncomeStatementClassificationService();
+            $h->assertSame(true, $classifier->isSubcontractorCost([
+                'account_subtype_code' => 'subcontractor_labour',
+                'name' => 'Direct labour',
+            ]));
+            $h->assertSame(true, $classifier->isSubcontractorCost([
+                'name' => 'Electrical subcontracting',
+            ]));
+            $h->assertSame(true, $classifier->isSubcontractorCost([
+                'name' => 'Sub-contractor labour',
+            ]));
+            $h->assertSame(false, $classifier->isSubcontractorCost([
+                'name' => 'Materials and consumables',
+            ]));
+        });
+
         $h->check($service::class, 'derives the reconciled AP79 turnover from the posted ledger', static function () use ($h, $service): void {
             if (!\InterfaceDB::tableExists('corporation_tax_periods')) {
                 $h->skip('Corporation Tax periods are unavailable on the default connection.');

@@ -23,7 +23,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
             $harness->assertSame('1000.00', number_format((float)($result['income_total'] ?? 0), 2, '.', ''));
             $harness->assertSame('200.00', number_format((float)($result['cost_of_sales_total'] ?? 0), 2, '.', ''));
+            $harness->assertSame('0.00', number_format((float)($result['subcontractor_cost_total'] ?? 0), 2, '.', ''));
+            $harness->assertSame('200.00', number_format((float)($result['cost_of_sales_excluding_subcontractors'] ?? 0), 2, '.', ''));
             $harness->assertSame('800.00', number_format((float)($result['gross_profit'] ?? 0), 2, '.', ''));
+            $harness->assertSame('800.00', number_format((float)($result['gross_profit_before_subcontractors'] ?? 0), 2, '.', ''));
             $harness->assertSame('150.00', number_format((float)($result['operating_expense_total'] ?? 0), 2, '.', ''));
             $harness->assertSame('650.00', number_format((float)($result['profit_before_tax'] ?? 0), 2, '.', ''));
             $harness->assertSame('50.00', number_format((float)($result['disallowable_add_backs'] ?? 0), 2, '.', ''));
@@ -37,6 +40,68 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $service->clearRuntimeCache();
             $recalculated = $service->calculate((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], '2025-06-30');
             $harness->assertSame('650.00', number_format((float)($recalculated['profit_before_tax'] ?? 0), 2, '.', ''));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
+    $harness->check(\eel_accounts\Service\PreTaxProfitLossService::class, 'separates signed subcontractor costs including pending prepayments', static function () use ($harness): void {
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = periodLedgerTestCreateFixture();
+            $companyId = (int)$fixture['company_id'];
+            $periodId = (int)$fixture['accounting_period_id'];
+            $subcontractorNominalId = periodLedgerTestInsertNominal(
+                'SC' . substr(hash('sha256', (string)$periodId), 0, 10),
+                'Electrical Subcontractor Labour ' . $periodId,
+                'cost_of_sales',
+                'allowable'
+            );
+            periodLedgerTestInsertJournal(
+                $companyId,
+                $periodId,
+                '2025-04-15',
+                'period-ledger-subcontractor-cost-' . $periodId,
+                [
+                    [$subcontractorNominalId, 70.0, 0.0],
+                    [(int)$fixture['asset_nominal_id'], 0.0, 70.0],
+                ]
+            );
+            periodLedgerTestInsertJournal(
+                $companyId,
+                $periodId,
+                '2025-05-15',
+                'period-ledger-subcontractor-refund-' . $periodId,
+                [
+                    [(int)$fixture['asset_nominal_id'], 20.0, 0.0],
+                    [$subcontractorNominalId, 0.0, 20.0],
+                ]
+            );
+
+            $result = (new \eel_accounts\Service\PreTaxProfitLossService())->calculate(
+                $companyId,
+                $periodId,
+                '2025-06-30',
+                null,
+                ['success' => true, 'rows' => []],
+                [[
+                    'debit_nominal_id' => $subcontractorNominalId,
+                    'credit_nominal_id' => (int)$fixture['asset_nominal_id'],
+                    'amount_pence' => 1500,
+                    'journal_date' => '2025-06-30',
+                    'review_id' => 31,
+                    'schedule_id' => 41,
+                ]]
+            );
+
+            $harness->assertSame('265.00', number_format((float)($result['cost_of_sales_total'] ?? 0), 2, '.', ''));
+            $harness->assertSame('65.00', number_format((float)($result['subcontractor_cost_total'] ?? 0), 2, '.', ''));
+            $harness->assertSame('200.00', number_format((float)($result['cost_of_sales_excluding_subcontractors'] ?? 0), 2, '.', ''));
+            $harness->assertSame('735.00', number_format((float)($result['gross_profit'] ?? 0), 2, '.', ''));
+            $harness->assertSame('800.00', number_format((float)($result['gross_profit_before_subcontractors'] ?? 0), 2, '.', ''));
+            $harness->assertSame('585.00', number_format((float)($result['profit_before_tax'] ?? 0), 2, '.', ''));
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();

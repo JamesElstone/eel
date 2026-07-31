@@ -52,7 +52,10 @@ $harness->run(_pl_summaryCard::class, static function (GeneratedServiceClassTest
                 'has_transactions' => true,
                 'income_total' => 1200,
                 'cost_of_sales_total' => 300,
+                'subcontractor_cost_total' => 50,
+                'cost_of_sales_excluding_subcontractors' => 250,
                 'gross_profit' => 900,
+                'gross_profit_before_subcontractors' => 950,
                 'expense_total' => 200,
                 'profit_before_tax' => 700,
                 'ordinary_corporation_tax' => 100,
@@ -289,6 +292,17 @@ $harness->run(_pl_summaryCard::class, static function (GeneratedServiceClassTest
         $harness->assertTrue($profitMarginPosition !== false && $profitBeforeTaxPosition < $profitMarginPosition);
         $harness->assertTrue($incomePosition !== false && $profitMarginPosition < $incomePosition);
         $harness->assertTrue(str_contains($html, '<div class="summary-label">Income</div><div class="summary-value">$ 1,200.00</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Cost of sales excluding subcontractors</div><div class="summary-value">$ 250.00</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Gross profit before subcontractors</div><div class="summary-value">$ 950.00</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Subcontractor costs</div><div class="summary-value">$ 50.00</div>'));
+        $costOfSalesPosition = strpos($html, '<div class="summary-label">Cost of sales excluding subcontractors</div>');
+        $grossProfitPosition = strpos($html, '<div class="summary-label">Gross profit before subcontractors</div>');
+        $subcontractorPosition = strpos($html, '<div class="summary-label">Subcontractor costs</div>');
+        $operatingExpensesPosition = strpos($html, '<div class="summary-label">Operating expenses</div>');
+        $harness->assertTrue($costOfSalesPosition !== false && $incomePosition < $costOfSalesPosition);
+        $harness->assertTrue($grossProfitPosition !== false && $costOfSalesPosition < $grossProfitPosition);
+        $harness->assertTrue($subcontractorPosition !== false && $grossProfitPosition < $subcontractorPosition);
+        $harness->assertTrue($operatingExpensesPosition !== false && $subcontractorPosition < $operatingExpensesPosition);
         $harness->assertTrue(str_contains($html, 'Net Corporation Tax liability [CT600 box 475]'));
         $harness->assertTrue(str_contains($html, 'CT600A net tax payable [A80]'));
         $harness->assertTrue(str_contains($html, 'Total Corporation Tax payable'));

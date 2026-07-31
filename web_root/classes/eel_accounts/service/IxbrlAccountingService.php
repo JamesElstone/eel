@@ -527,7 +527,7 @@ final class IxbrlAccountingService
         $subcontractorLabour = 0.0;
         foreach ((array)($source['source_rows'] ?? []) as $row) {
             if (!is_array($row)
-                || preg_match('/\bsubcontract(?:or|ors|ing|ed)?\b/i', (string)($row['label'] ?? '')) !== 1) {
+                || !(new IncomeStatementClassificationService())->isSubcontractorCost($row)) {
                 continue;
             }
             $subcontractorLabour += (float)($row['amount'] ?? 0);

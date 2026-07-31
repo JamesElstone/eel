@@ -41,4 +41,26 @@ final class IncomeStatementClassificationService
             ? self::INCOME_OTHER
             : self::INCOME_TURNOVER;
     }
+
+    public function isSubcontractorCost(array $row): bool
+    {
+        $subtype = strtolower(trim((string)(
+            $row['account_subtype_code']
+                ?? $row['subtype_code']
+                ?? ''
+        )));
+        if (in_array($subtype, [
+            'subcontract',
+            'subcontractor',
+            'subcontractors',
+            'subcontracting',
+            'subcontract_labour',
+            'subcontractor_labour',
+        ], true)) {
+            return true;
+        }
+
+        $name = strtolower(trim((string)($row['name'] ?? $row['label'] ?? '')));
+        return preg_match('/\bsub[\s-]?contract(?:or|ors|ing|ed)?\b/', $name) === 1;
+    }
 }

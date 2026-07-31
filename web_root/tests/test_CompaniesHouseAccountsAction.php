@@ -390,7 +390,7 @@ final class CompaniesHouseAccountsActionFakeService
         return ['success' => true, 'messages' => ['Submission sent.']];
     }
 
-    public function refreshStatus(int $submissionId, string $actor): array
+    public function refreshStatus(int $submissionId, string $actor, mixed $progress = null): array
     {
         $this->calls[] = compact('submissionId', 'actor') + [
             'method' => 'refreshStatus',

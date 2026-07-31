@@ -79,6 +79,74 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             $service::class,
+            'reports detailed and correctly named transmission progress',
+            static function () use ($harness): void {
+                $method = new ReflectionMethod(
+                    \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
+                    'submitRevision'
+                );
+                $path = $method->getFileName();
+                $source = is_string($path) ? file($path) : false;
+                $harness->assertTrue(is_array($source));
+                $body = implode('', array_slice(
+                    $source,
+                    $method->getStartLine() - 1,
+                    $method->getEndLine() - $method->getStartLine() + 1
+                ));
+                foreach ([
+                    'Starting the Companies House ',
+                    'Checking the locked Year End, filing declarations and taxonomy compatibility.',
+                    'Verified prepared ',
+                    'Allocated Companies House submission number ',
+                    'Validated GovTalk transaction ',
+                    'Archived the exact accounts iXBRL and validated GovTalk request',
+                    'Recorded immutable request evidence ',
+                    'Waiting for the Companies House gateway acknowledgement',
+                    'Gateway response received; recording the transmission outcome.',
+                    'status is pending, not yet accepted.',
+                ] as $message) {
+                    $harness->assertTrue(str_contains($body, $message));
+                }
+                $harness->assertTrue(str_contains($body, "'Companies House acknowledged the ' . \$filingLabel"));
+                $harness->assertFalse(str_contains(
+                    $body,
+                    'Companies House acknowledged the revised-accounts submission.'
+                ));
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'reports polling StatusAck and accepted-document progress',
+            static function () use ($harness): void {
+                $method = new ReflectionMethod(
+                    \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
+                    'refreshStatus'
+                );
+                $harness->assertSame(3, $method->getNumberOfParameters());
+                $path = $method->getFileName();
+                $source = is_string($path) ? file($path) : false;
+                $harness->assertTrue(is_array($source));
+                $body = implode('', array_slice(
+                    $source,
+                    $method->getStartLine() - 1,
+                    $method->getEndLine() - $method->getStartLine() + 1
+                ));
+                foreach ([
+                    'Starting Companies House status continuation',
+                    'Requesting the latest submission status from Companies House.',
+                    'Received Companies House status: ',
+                    'Sending the mandatory StatusAck',
+                    'Companies House acknowledged the StatusAck.',
+                    'Checking whether an accepted filed document is available.',
+                ] as $message) {
+                    $harness->assertTrue(str_contains($body, $message));
+                }
+            }
+        );
+
+        $harness->check(
+            $service::class,
             'reloads the latest immutable schema file inventory for each filing operation',
             static function () use ($harness, $service, $invokePrivate): void {
                 $file = static fn(string $suffix, string $hash): array => [

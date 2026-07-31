@@ -127,7 +127,12 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
                     $services->actionProgress()
                 ),
                 'submit_accounts' => $this->submitRevision($request, $companyId, $accountingPeriodId, $services->actionProgress()),
-                'refresh_accounts_status' => $this->refreshStatus($request, $companyId, $accountingPeriodId),
+                'refresh_accounts_status' => $this->refreshStatus(
+                    $request,
+                    $companyId,
+                    $accountingPeriodId,
+                    $services->actionProgress()
+                ),
                 'preflight_accounts' => $this->preflightRevision(
                     $request,
                     $companyId,
@@ -462,7 +467,12 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         );
     }
 
-    private function refreshStatus(RequestFramework $request, int $companyId, int $accountingPeriodId): array
+    private function refreshStatus(
+        RequestFramework $request,
+        int $companyId,
+        int $accountingPeriodId,
+        ActionProgressFramework $progress
+    ): array
     {
         $submissionId = (int)$request->input('submission_id', 0);
         if ($submissionId <= 0) {
@@ -473,7 +483,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             return ['success' => false, 'errors' => ['The submission does not belong to the selected company and accounting period.']];
         }
 
-        return $this->service()->refreshStatus($submissionId, $this->actor($request));
+        return $this->service()->refreshStatus($submissionId, $this->actor($request), $progress);
     }
 
     private function result(string $intent, array $result): ActionResultFramework

@@ -1214,6 +1214,18 @@ final class CompaniesHouseAccountsSubmissionService
             return $this->failure('LIVE Companies House accounts filing has not been explicitly approved.');
         }
         $filingKind = (string)($submission['filing_type'] ?? 'revised');
+        $filingKind = in_array($filingKind, ['original', 'revised'], true) ? $filingKind : 'accounts';
+        $filingLabel = $filingKind . '-accounts';
+        $this->reportProgress(
+            $progress,
+            'Starting the Companies House ' . $mode . ' ' . $filingLabel . ' transmission.',
+            0
+        );
+        $this->reportProgress(
+            $progress,
+            'Checking the locked Year End, filing declarations and taxonomy compatibility.',
+            5
+        );
         if ($filingKind === 'revised') {
             $declarations = json_decode((string)($submission['revision_declarations_json'] ?? ''), true);
             $declarationValidation = is_array($declarations)
@@ -1284,6 +1296,12 @@ final class CompaniesHouseAccountsSubmissionService
         if (!is_string($accountsXml) || $accountsXml === '') {
             return $this->failure('The Companies House accounts artifact could not be read.');
         }
+        $this->reportProgress(
+            $progress,
+            'Verified prepared ' . $filingLabel . ' iXBRL "' . basename($artifactPath)
+                . '" with SHA-256 ' . strtolower($artifactHash) . '.',
+            15
+        );
 
         $actor = $this->actor($actor);
         $allocated = false;
@@ -1291,7 +1309,7 @@ final class CompaniesHouseAccountsSubmissionService
         $schema = [];
         try {
             $credentials = $this->credentials()->load($mode);
-            $this->reportProgress($progress, 'Checking the installed Companies House filing schemas.', 5);
+            $this->reportProgress($progress, 'Checking the installed Companies House filing schemas.', 20);
             $schema = ($this->schemaService ?? new CompaniesHouseAccountsSchemaService())
                 ->installedSchemas();
             if (!$this->conversation()->schemaReady()) {
@@ -1299,6 +1317,7 @@ final class CompaniesHouseAccountsSubmissionService
                     'Run the Companies House protocol-conversation migration before filing.'
                 );
             }
+            $this->reportProgress($progress, 'Installed Companies House filing schemas are ready.', 25);
             $allocation = $this->sequences()->allocate(
                 $submissionId,
                 $mode,
@@ -1313,12 +1332,23 @@ final class CompaniesHouseAccountsSubmissionService
                 )) {
                 throw new \RuntimeException('The allocated Companies House submission could not be reloaded.');
             }
+            $this->reportProgress(
+                $progress,
+                'Allocated Companies House submission number ' . (string)$submission['submission_number'] . '.',
+                30
+            );
             $this->archives()->promoteCompaniesHousePendingBundle(
                 (int)$submission['company_id'],
                 (int)$submission['accounting_period_id'],
                 $mode,
                 (int)$submission['id'],
                 (string)$submission['submission_number']
+            );
+            $this->reportProgress(
+                $progress,
+                'Promoted the private filing archive for submission '
+                    . (string)$submission['submission_number'] . '.',
+                35
             );
         } catch (\Throwable $exception) {
             $message = 'Companies House pre-submission preparation failed; nothing was sent. ' . $exception->getMessage();
@@ -1354,9 +1384,15 @@ final class CompaniesHouseAccountsSubmissionService
             'company_type' => 'EW',
         ];
         try {
-            $this->reportProgress($progress, 'Building and validating the exact Companies House request.', 75);
+            $this->reportProgress($progress, 'Building the exact Companies House GovTalk request.', 40);
             $gateway = $this->gatewayClient ?? new CompaniesHouseAccountsGatewayClient();
             $preparedRequest = $gateway->prepareAccounts($payload, $mode, $schema);
+            $this->reportProgress(
+                $progress,
+                'Validated GovTalk transaction ' . $preparedRequest->transactionId()
+                    . ' against the installed Companies House schemas.',
+                50
+            );
             $archive = $this->archives();
             $accountsArchive = $archive->store(
                 (int)$submission['company_id'],
@@ -1377,6 +1413,11 @@ final class CompaniesHouseAccountsSubmissionService
                 'prepared',
                 'submission-request.xml',
                 $preparedRequest->requestXml()
+            );
+            $this->reportProgress(
+                $progress,
+                'Archived the exact accounts iXBRL and validated GovTalk request in the private filing archive.',
+                60
             );
             $this->conversation()->captureRequest(
                 $submission,
@@ -1416,6 +1457,11 @@ final class CompaniesHouseAccountsSubmissionService
                     ),
                 ],
             ]);
+            $this->reportProgress(
+                $progress,
+                'Recorded immutable request evidence ' . (string)$requestEvidence['display_id'] . '.',
+                70
+            );
             $this->appendSchemaValidation(
                 $submissionId,
                 'accounts',
@@ -1436,6 +1482,12 @@ final class CompaniesHouseAccountsSubmissionService
         }
 
         $now = gmdate('Y-m-d H:i:s');
+        $this->reportProgress(
+            $progress,
+            'Marking submission ' . (string)$submission['submission_number']
+                . ' as submitting before network transmission.',
+            75
+        );
         \InterfaceDB::prepareExecute(
             'UPDATE ' . self::SUBMISSIONS_TABLE . '
              SET lifecycle = :lifecycle, submitted_by = :actor, submitted_at = :submitted_at,
@@ -1465,7 +1517,17 @@ final class CompaniesHouseAccountsSubmissionService
             return $this->failure('The submission state changed before it could be sent.');
         }
 
-        $this->reportProgress($progress, 'Sending the already validated Companies House request.', 90);
+        $this->reportProgress(
+            $progress,
+            'Sending ' . $filingLabel . ' submission ' . (string)$submission['submission_number']
+                . ' to Companies House using transaction ' . $preparedRequest->transactionId() . '.',
+            85
+        );
+        $this->reportProgress(
+            $progress,
+            'Waiting for the Companies House gateway acknowledgement; the network timeout is 30 seconds.',
+            90
+        );
         $result = $gateway->sendPreparedAccounts(
             $preparedRequest,
             $this->exchangeContext(
@@ -1480,6 +1542,7 @@ final class CompaniesHouseAccountsSubmissionService
         $transportUnknown = !empty($result['transport_unknown']);
         $evidenceIncomplete = !empty($result['evidence_incomplete']);
         $preSendFailure = !empty($result['pre_send_failure']);
+        $this->reportProgress($progress, 'Gateway response received; recording the transmission outcome.', 95);
         $lifecycle = $success
             ? 'pending'
             : ($transportUnknown
@@ -1488,7 +1551,7 @@ final class CompaniesHouseAccountsSubmissionService
         $gatewayErrors = (array)($result['gateway_errors'] ?? []);
         $firstError = is_array($gatewayErrors[0] ?? null) ? $gatewayErrors[0] : [];
         $summary = $success
-            ? 'Companies House acknowledged the revised-accounts submission.'
+            ? 'Companies House acknowledged the ' . $filingLabel . ' submission.'
             : trim((string)($result['error'] ?? 'Companies House did not acknowledge the submission.'));
         if ($evidenceIncomplete) {
             $this->conversation()->markEvidenceIncomplete(
@@ -1567,6 +1630,16 @@ final class CompaniesHouseAccountsSubmissionService
             ['gateway_reference' => (string)($result['response_transaction_id'] ?? $result['transaction_id'] ?? '')]
         );
 
+        $progressMessage = $success
+            ? 'Companies House acknowledged ' . $filingLabel . ' submission '
+                . (string)$submission['submission_number'] . '; its status is pending, not yet accepted.'
+            : ($transportUnknown
+                ? 'The transport outcome for submission ' . (string)$submission['submission_number']
+                    . ' is uncertain. Do not resubmit; continue the same submission to reconcile its status.'
+                : 'Companies House did not acknowledge submission ' . (string)$submission['submission_number']
+                    . ': ' . $summary);
+        $this->reportProgress($progress, $progressMessage, 100);
+
         return [
             'success' => $success,
             'errors' => $success ? [] : [$summary],
@@ -1580,41 +1653,107 @@ final class CompaniesHouseAccountsSubmissionService
         ];
     }
 
-    public function refreshStatus(int $submissionId, string $actor): array
+    public function refreshStatus(int $submissionId, string $actor, mixed $progress = null): array
     {
         $current = $this->submission($submissionId);
+        if (!is_array($current)) {
+            return $this->failure('The Companies House accounts submission was not found.');
+        }
+        $filingKind = (string)($current['filing_type'] ?? 'accounts');
+        $filingKind = in_array($filingKind, ['original', 'revised'], true) ? $filingKind : 'accounts';
+        $submissionNumber = trim((string)($current['submission_number'] ?? ''));
+        $this->reportProgress(
+            $progress,
+            'Starting Companies House status continuation for ' . $filingKind . '-accounts submission '
+                . ($submissionNumber !== '' ? $submissionNumber : '#' . $submissionId) . '.',
+            0
+        );
         if (is_array($current)
             && (string)$current['lifecycle'] === 'accepted'
             && trim((string)($current['document_request_key'] ?? '')) !== ''
             && trim((string)($current['returned_document_sha256'] ?? '')) === '') {
-            return $this->retrieveDocument($submissionId, $actor);
+            $this->reportProgress(
+                $progress,
+                'The filing is accepted; requesting the filed document from Companies House.',
+                40
+            );
+            return $this->completeStatusProgress(
+                $progress,
+                $submissionId,
+                $this->retrieveDocument($submissionId, $actor)
+            );
         }
         $cycle = $this->conversation()->latestStatusCycle($submissionId);
         if (is_array($cycle)
             && ((string)$cycle['acknowledgement_state'] === 'required'
                 || ((string)$cycle['acknowledgement_state'] === 'failed'
                     && trim((string)($cycle['result_json'] ?? '')) !== ''))) {
+            $this->reportProgress(
+                $progress,
+                'The previous status response requires a mandatory Companies House StatusAck.',
+                25
+            );
+            $this->reportProgress($progress, 'Sending StatusAck to Companies House.', 45);
             $acknowledgement = $this->acknowledgeStatus($submissionId, $actor);
             if (empty($acknowledgement['success'])) {
-                return $acknowledgement;
+                return $this->completeStatusProgress($progress, $submissionId, $acknowledgement);
             }
-            return $this->retrieveAcceptedDocumentIfAvailable($submissionId, $actor, $acknowledgement);
-        }
-        if (is_array($cycle) && (string)$cycle['acknowledgement_state'] === 'transport_unknown') {
-            return $this->failure(
-                'The previous status or StatusAck transport outcome is uncertain. Reconcile it before polling again.'
+            $this->reportProgress($progress, 'Companies House acknowledged the StatusAck.', 70);
+            $this->reportProgress($progress, 'Checking whether an accepted filed document is available.', 85);
+            return $this->completeStatusProgress(
+                $progress,
+                $submissionId,
+                $this->retrieveAcceptedDocumentIfAvailable($submissionId, $actor, $acknowledgement)
             );
         }
+        if (is_array($cycle) && (string)$cycle['acknowledgement_state'] === 'transport_unknown') {
+            $result = $this->failure(
+                'The previous status or StatusAck transport outcome is uncertain. Reconcile it before polling again.'
+            );
+            return $this->completeStatusProgress($progress, $submissionId, $result);
+        }
 
+        $this->reportProgress(
+            $progress,
+            'Requesting the latest submission status from Companies House.',
+            20
+        );
         $poll = $this->pollStatus($submissionId, $actor);
         if (empty($poll['success'])) {
-            return $poll;
+            return $this->completeStatusProgress($progress, $submissionId, $poll);
         }
+        $polled = $this->submission($submissionId);
+        $this->reportProgress(
+            $progress,
+            'Received Companies House status: '
+                . \HelperFramework::labelFromKey((string)($polled['lifecycle'] ?? 'unknown'), '_') . '.',
+            55
+        );
+        $this->reportProgress($progress, 'Sending the mandatory StatusAck for the received status.', 65);
         $acknowledgement = $this->acknowledgeStatus($submissionId, $actor);
         if (empty($acknowledgement['success'])) {
-            return $acknowledgement;
+            return $this->completeStatusProgress($progress, $submissionId, $acknowledgement);
         }
-        return $this->retrieveAcceptedDocumentIfAvailable($submissionId, $actor, $acknowledgement);
+        $this->reportProgress($progress, 'Companies House acknowledged the StatusAck.', 80);
+        $this->reportProgress($progress, 'Checking whether an accepted filed document is available.', 90);
+        return $this->completeStatusProgress(
+            $progress,
+            $submissionId,
+            $this->retrieveAcceptedDocumentIfAvailable($submissionId, $actor, $acknowledgement)
+        );
+    }
+
+    private function completeStatusProgress(mixed $progress, int $submissionId, array $result): array
+    {
+        $submission = $this->submission($submissionId);
+        $lifecycle = \HelperFramework::labelFromKey((string)($submission['lifecycle'] ?? 'unknown'), '_');
+        $message = !empty($result['success'])
+            ? 'Companies House status continuation completed. Current filing status: ' . $lifecycle . '.'
+            : 'Companies House status continuation stopped: '
+                . (string)(($result['errors'] ?? [])[0] ?? 'The status operation failed.');
+        $this->reportProgress($progress, $message, 100);
+
+        return $result;
     }
 
     public function pollStatus(int $submissionId, string $actor): array

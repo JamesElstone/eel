@@ -80,7 +80,6 @@ final class _companies_house_transmitCard extends CardBaseFramework
         $filingKind = strtolower(trim((string)($submission['filing_kind'] ?? $model['filing_kind'] ?? '')));
         $artifact = (array)($model['prepared_artifact'] ?? []);
         $preflight = is_array($model['preflight'] ?? null) ? (array)$model['preflight'] : null;
-        $statusCycle = is_array($model['status_cycle'] ?? null) ? (array)$model['status_cycle'] : null;
         $developerOptions = (bool)AppConfigurationStore::get('developer_options', false);
         $lifecycle = strtolower(trim((string)($submission['lifecycle'] ?? 'not_prepared')));
         $warningMessages = [];
@@ -105,13 +104,15 @@ final class _companies_house_transmitCard extends CardBaseFramework
         if ($submission === null) {
             $warningMessages[] = 'No Companies House accounts artifact is prepared. '
                 . 'Generate and validate the Companies House iXBRL for the current Disclosure Approval.';
+            $html .= '<div class="summary-grid companies-house-prepared-transmission-summary-grid">'
+                . $this->artifactDownloadMetric($companyId, $accountingPeriodId, false)
+                . '</div>';
             $transmitForm = [
                 'submission_id' => 0,
                 'mode' => strtoupper((string)($feature['mode'] ?? 'TEST')),
                 'disabled' => true,
             ];
         } else {
-            $archive = (array)($submission['transmission_archive'] ?? []);
             $artifactCurrent = !array_key_exists('state', $artifact)
                 ? !empty($artifact['filename'])
                 : (!empty($artifact['current']) || (string)$artifact['state'] === 'current');
@@ -127,20 +128,10 @@ final class _companies_house_transmitCard extends CardBaseFramework
                     $artifactCurrent
                 )
                 . $this->schemaMetric($schemaReady, $schemaState)
-                . $this->metric('Private archive', $archive !== [] ? 'Captured and hashed' : 'Created on send')
                 . $this->metric(
                     'CompanyData capability',
                     ucfirst((string)($feature['company_data_capability'] ?? 'unknown')),
                     'Optional presenter diagnostic; not required for Accounts transmission.'
-                )
-                . $this->metric(
-                    'Status acknowledgement',
-                    $statusCycle === null
-                        ? 'Not required'
-                        : HelperFramework::labelFromKey(
-                            (string)$statusCycle['acknowledgement_state'],
-                            '_'
-                        )
                 )
                 . '</div>';
             if ($lifecycle === 'prepared') {
@@ -435,7 +426,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
     private function companyAuthenticationCodeField(): string
     {
         return '<label><span>Company authentication code</span>'
-            . '<input class="input" type="password" name="company_auth_code" minlength="6" maxlength="6" '
+            . '<input class="input companies-house-authentication-code-input" type="password" name="company_auth_code" minlength="6" maxlength="6" '
             . 'pattern="[A-Za-z0-9]{6}" title="Enter exactly six letters or numbers." '
             . 'required autocomplete="off" autocapitalize="none" spellcheck="false">'
             . '<span class="helper">Enter exactly six letters or numbers.</span></label>';
@@ -448,12 +439,12 @@ final class _companies_house_transmitCard extends CardBaseFramework
             ? $fileCount . ' verified schema file' . ($fileCount === 1 ? '' : 's') . ' installed.'
             : 'Refresh the installed schemas before checking credentials or transmitting accounts.';
 
-        return '<div class="summary-card ' . ($ready ? 'success' : 'danger') . '">'
+        return '<div class="summary-card companies-house-summary-action-card ' . ($ready ? 'success' : 'danger') . '">'
             . '<div class="summary-label">Companies House XML schemas</div>'
             . '<div class="summary-value">' . ($ready ? 'Verified' : 'Refresh required') . '</div>'
             . '<div class="helper">' . \eel_accounts\Support\Utf8::html($detail) . '</div>'
-            . '<div class="actions-row actions-row-right">'
-            . '<a class="button" href="?page=artefacts">Manage filing schemas</a></div></div>';
+            . '<div class="actions-row companies-house-summary-card-actions">'
+            . '<a class="button" href="?page=artefacts">Manage Filing Schemas</a></div></div>';
     }
 
     private function artifactDownloadMetric(
@@ -461,8 +452,10 @@ final class _companies_house_transmitCard extends CardBaseFramework
         int $accountingPeriodId,
         bool $available
     ): string {
-        return '<div class="summary-card"><div class="summary-label">Artifact</div>'
-            . '<form method="post" action="?page=transmit" class="actions-row">'
+        return '<div class="summary-card companies-house-summary-action-card ' . ($available ? 'success' : 'danger') . '">'
+            . '<div class="summary-label">Artifact</div>'
+            . '<div class="summary-value">' . ($available ? 'Available' : 'Unavailable') . '</div>'
+            . '<form method="post" action="?page=transmit" class="actions-row companies-house-summary-card-actions">'
             . $this->hidden($companyId, $accountingPeriodId, 'download_accounts_ixbrl')
             . '<button class="button compact primary" type="submit"'
             . ($available ? '' : ' disabled')

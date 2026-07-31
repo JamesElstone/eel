@@ -132,7 +132,13 @@ $harness->run(_companies_house_transmitCard::class, static function (
             $harness->assertFalse(str_contains($html, 'Status / StatusAck lock'));
             $harness->assertFalse(str_contains($html, 'Protocol migration'));
             $harness->assertFalse(str_contains($html, 'Allocated on send'));
+            $harness->assertFalse(str_contains($html, '<div class="summary-label">Private archive</div>'));
+            $harness->assertFalse(str_contains($html, '<div class="summary-label">Status acknowledgement</div>'));
             $harness->assertTrue(str_contains($html, '>Companies House iXBRL</button>'));
+            $harness->assertTrue(str_contains(
+                $html,
+                '<div class="summary-label">Artifact</div><div class="summary-value">Available</div>'
+            ));
             $harness->assertFalse(str_contains($html, 'Download Companies House iXBRL'));
             $harness->assertTrue(str_contains($html, 'value="download_accounts_ixbrl"'));
             $harness->assertFalse(str_contains($html, '<div class="summary-label">Artifact SHA-256</div>'));
@@ -146,6 +152,7 @@ $harness->run(_companies_house_transmitCard::class, static function (
             ));
             $harness->assertTrue(str_contains($html, '17 verified schema files installed.'));
             $harness->assertTrue(str_contains($html, 'href="?page=artefacts"'));
+            $harness->assertTrue(str_contains($html, '>Manage Filing Schemas</a>'));
             $harness->assertTrue(str_contains(
                 $html,
                 '<section class="panel-soft"><h3 class="card-title">'
@@ -160,7 +167,7 @@ $harness->run(_companies_house_transmitCard::class, static function (
                 $harness->assertFalse(str_contains($html, 'Send / continue Companies House filing'));
             $harness->assertTrue(str_contains(
                 $html,
-                '<label><span>Company authentication code</span><input class="input" type="password"'
+                '<label><span>Company authentication code</span><input class="input companies-house-authentication-code-input" type="password"'
             ));
             $harness->assertTrue(str_contains($html, 'pattern="[A-Za-z0-9]{6}"'));
             $harness->assertTrue(str_contains($html, 'minlength="6" maxlength="6"'));
@@ -208,6 +215,14 @@ $harness->run(_companies_house_transmitCard::class, static function (
             ));
             $harness->assertTrue(str_contains($html, 'Configure Companies House XML credentials'));
             $harness->assertTrue(str_contains($html, 'show_card=api_keys_editor'));
+            $harness->assertTrue(str_contains(
+                $html,
+                '<div class="summary-label">Artifact</div><div class="summary-value">Unavailable</div>'
+            ));
+            $harness->assertTrue(preg_match(
+                '/<button class="button compact primary" type="submit" disabled>Companies House iXBRL<\/button>/',
+                $html
+            ) === 1);
         }
     );
 

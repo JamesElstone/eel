@@ -3532,7 +3532,22 @@
 }
 
 .card-body .companies-house-prepared-transmission-summary-grid {
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+}
+
+.card-body .companies-house-authentication-code-input {
+  max-width: 100%;
+  width: calc((6ch + 26px) * 1.1);
+}
+
+.card-body .companies-house-summary-action-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.card-body .companies-house-summary-action-card .companies-house-summary-card-actions {
+  justify-content: flex-end;
+  margin-top: auto;
 }
 
 .card-body .companies-house-transmit-form > label:not(.checkbox-row) {

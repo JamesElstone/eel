@@ -46,6 +46,7 @@ final class GovTalkTransmissionHistoryService
                 'filing_context' => 'Company accounts',
                 'filing_type' => ucfirst((string)($submission['filing_kind'] ?? 'accounts')),
                 'environment' => (string)($submission['environment'] ?? ''),
+                'transaction_id' => (string)($submission['transaction_id'] ?? ''),
                 'prepared_at' => $submission['prepared_at'] ?? null,
                 'submitted_at' => $submission['submitted_at'] ?? null,
                 'latest_status' => $this->companiesHouseStatus($submission),
@@ -106,6 +107,7 @@ final class GovTalkTransmissionHistoryService
                         $submission['submission_type'] ?? 'original'
                     )),
                     'environment' => (string)($submission['environment'] ?? ''),
+                    'transaction_id' => (string)($submission['transaction_id'] ?? ''),
                     'prepared_at' => $submission['created_at'] ?? null,
                     'submitted_at' => $submission['submitted_at'] ?? null,
                     'latest_status' => $this->hmrcStatus($submission),

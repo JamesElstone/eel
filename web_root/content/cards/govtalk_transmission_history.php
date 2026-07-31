@@ -147,6 +147,9 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
                 . '</div></td><td>' . \eel_accounts\Support\Utf8::html(
                     (string)($submission['environment'] ?? '')
                 )
+                . '</td><td>' . \eel_accounts\Support\Utf8::html(
+                    trim((string)($submission['transaction_id'] ?? '')) ?: '—'
+                )
                 . '</td><td>' . \eel_accounts\Support\Utf8::html($this->timestamp((string)($submission['prepared_at'] ?? '')))
                 . '</td><td>' . \eel_accounts\Support\Utf8::html($this->timestamp((string)($submission['submitted_at'] ?? '')))
                 . '</td><td><span class="badge ' . $this->badge((string)($submission['status_key'] ?? '')) . '">'
@@ -162,7 +165,7 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
 
         return '<section class="panel-soft"><h3 class="card-title">Submission History</h3>'
             . '<div class="table-scroll"><table><thead><tr><th>Authority</th><th>Submission</th>'
-            . '<th>Filing / CT period</th><th>Environment</th><th>Prepared</th>'
+            . '<th>Filing / CT period</th><th>Environment</th><th>Transaction ID</th><th>Prepared</th>'
             . '<th>Submitted</th><th>Latest status</th>'
             . '<th>Actions</th></tr></thead><tbody>' . $rows . '</tbody></table></div></section>';
     }

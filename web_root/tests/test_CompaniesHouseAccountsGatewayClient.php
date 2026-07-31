@@ -277,6 +277,59 @@ function companiesHouseGatewayTestConversation(
 
         $harness->check(
             \eel_accounts\Client\CompaniesHouseAccountsGatewayClient::class,
+            'accepts the CompanyData fixture only in TEST mode',
+            static function () use (
+                $harness,
+                $credentials,
+                $transactionId,
+                $config,
+                $validator,
+                $evidenceReceipt
+            ): void {
+                $fixtureResponse = '<?xml version="1.0"?><GovTalkMessage xmlns="http://www.govtalk.gov.uk/CM/envelope">'
+                    . '<EnvelopeVersion>1.0</EnvelopeVersion><Header><MessageDetails>'
+                    . '<Class>CompanyDataRequest</Class><Qualifier>response</Qualifier>'
+                    . '<TransactionID>ABCDEF123456</TransactionID></MessageDetails></Header>'
+                    . '<GovTalkDetails><Keys/></GovTalkDetails><Body><CompanyData>'
+                    . '<CompanyNumber>03176906</CompanyNumber>'
+                    . '<CompanyName>MILLENNIUM STADIUM PLC</CompanyName>'
+                    . '</CompanyData></Body></GovTalkMessage>';
+                $client = new \eel_accounts\Client\CompaniesHouseAccountsGatewayClient(
+                    static fn(array $request): array => ['status_code' => 200, 'headers' => [], 'body' => $fixtureResponse],
+                    $credentials,
+                    $transactionId,
+                    $config,
+                    $validator
+                );
+                $testResult = $client->checkCompanyAuthentication(
+                    '14337285',
+                    'ABC123',
+                    'TEST',
+                    ['files' => []],
+                    companiesHouseGatewayTestConversation($evidenceReceipt, $evidenceReceipt)
+                );
+                $harness->assertTrue(!empty($testResult['success']));
+                $harness->assertTrue(!empty($testResult['authenticated']));
+                $harness->assertTrue(!empty($testResult['test_fixture']));
+
+                $liveResult = $client->checkCompanyAuthentication(
+                    '14337285',
+                    'ABC123',
+                    'LIVE',
+                    ['files' => []],
+                    companiesHouseGatewayTestConversation($evidenceReceipt, $evidenceReceipt)
+                );
+                $harness->assertFalse(!empty($liveResult['success']));
+                $harness->assertFalse(!empty($liveResult['authenticated']));
+                $harness->assertSame(
+                    'Companies House CompanyData did not return the requested company identity.',
+                    (string)$liveResult['error']
+                );
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Client\CompaniesHouseAccountsGatewayClient::class,
             'refuses transport without a matching durable request receipt',
             static function () use (
                 $harness,

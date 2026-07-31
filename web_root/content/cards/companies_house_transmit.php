@@ -301,18 +301,23 @@ final class _companies_house_transmitCard extends CardBaseFramework
             && trim((string)($preflight['matched_company_number'] ?? '')) !== '';
         if ($verified) {
             $companyName = trim((string)($preflight['matched_company_name'] ?? ''));
-            $html .= '<div class="notice success">Companies House returned matching data'
-                . ($companyName !== ''
-                    ? ' for <strong>' . \eel_accounts\Support\Utf8::html($companyName) . '</strong>'
-                    : '')
-                . '.</div>';
+            $html .= $this->authenticationCheckPanel(
+                $companyName !== ''
+                    ? 'Companies House returned matching data for <strong>'
+                        . \eel_accounts\Support\Utf8::html($companyName) . '</strong>.'
+                    : 'Companies House returned matching company data.',
+                true,
+                (string)($preflight['created_at'] ?? '')
+            );
         } elseif (is_array($preflight) && trim((string)($preflight['outcome'] ?? '')) !== '') {
             $outcome = HelperFramework::labelFromKey((string)$preflight['outcome'], '_');
             $error = trim((string)($preflight['error_summary'] ?? ''));
-            $html .= $this->warningPanel([
+            $html .= $this->authenticationCheckPanel(
                 'Latest authentication check: ' . $outcome
                     . ($error !== '' ? '. ' . $error : ''),
-            ]);
+                false,
+                (string)($preflight['created_at'] ?? '')
+            );
         }
         $html .= '<form method="post" action="?page=transmit" data-ajax="true" '
             . 'class="settings-stack companies-house-transmit-form">'
@@ -449,6 +454,22 @@ final class _companies_house_transmitCard extends CardBaseFramework
             . '<div class="actions-row actions-row-right hmrc-credential-summary-actions">'
             . '<a class="button" href="?page=settings&amp;show_card=api_keys_editor">'
             . 'Configure Companies House XML credentials</a></div></div>';
+    }
+
+    /** @param list<string> $messages */
+    private function authenticationCheckPanel(string $message, bool $success, string $testedAt): string
+    {
+        $testedAt = trim($testedAt);
+        return '<section class="panel-soft ' . ($success ? 'success' : 'warn')
+            . ' full settings-stack companies-house-authentication-panel">'
+            . '<div class="status-head"><h3 class="card-title">Company authentication check</h3>'
+            . '<span class="badge ' . ($success ? 'success' : 'warning') . '">'
+            . ($success ? 'Verified' : 'Action required') . '</span></div>'
+            . '<div class="helper">' . $message . '</div>'
+            . ($testedAt !== ''
+                ? '<div class="stat-foot">Last tested: ' . \eel_accounts\Support\Utf8::html($testedAt) . '</div>'
+                : '')
+            . '</section>';
     }
 
     /** @param list<string> $messages */

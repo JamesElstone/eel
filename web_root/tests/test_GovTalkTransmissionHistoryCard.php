@@ -70,6 +70,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                                 'filing_context' => 'Company accounts',
                                 'filing_type' => 'Original',
                                 'environment' => 'TEST',
+                                'transaction_id' => 'ABC123',
                                 'status_key' => 'rejected',
                                 'latest_status' => 'Rejected',
                                 'prepared_at' => '2026-07-30 00:15:00',
@@ -117,6 +118,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ]);
 
                     $harness->assertTrue(str_contains($html, 'Submission History'));
+                    $harness->assertTrue(str_contains($html, '<th>Transaction ID</th>'));
                     $harness->assertTrue(str_contains($html, 'XML Exchange History'));
                     $harness->assertTrue(str_contains($html, '000012'));
                     $harness->assertTrue(str_contains($html, 'Not allocated'));

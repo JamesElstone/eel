@@ -23,6 +23,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
     private const GET_DOCUMENT_SCHEMA = 'http://xmlgw.companieshouse.gov.uk/v1-0/schema/forms/GetDocument-v1-1.xsd';
     private const XSI_NAMESPACE = 'http://www.w3.org/2001/XMLSchema-instance';
     private const MAX_DOCUMENT_BYTES = 30000000;
+    private const TEST_COMPANY_DATA_FIXTURE_COMPANY_NUMBER = '03176906';
 
     /** @var array<string, string> */
     private const NORMALIZED_STATUSES = [
@@ -1210,7 +1211,11 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         try {
             $document = $this->parseXml((string)($response['body'] ?? ''));
             $returnedCompanyNumber = strtoupper($this->firstText($document, 'CompanyNumber'));
-            if ($returnedCompanyNumber === '' || $returnedCompanyNumber !== strtoupper($companyNumber)) {
+            $requestedCompanyNumber = strtoupper($companyNumber);
+            $testFixture = $environment === 'TEST'
+                && $returnedCompanyNumber === self::TEST_COMPANY_DATA_FIXTURE_COMPANY_NUMBER;
+            if ($returnedCompanyNumber === ''
+                || ($returnedCompanyNumber !== $requestedCompanyNumber && !$testFixture)) {
                 throw new \RuntimeException(
                     'Companies House CompanyData did not return the requested company identity.'
                 );
@@ -1224,6 +1229,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             $parsed['company_number'] = $returnedCompanyNumber;
             $parsed['company_name'] = $companyName;
             $parsed['authenticated'] = true;
+            $parsed['test_fixture'] = $testFixture;
 
             return $parsed;
         } catch (\Throwable $exception) {

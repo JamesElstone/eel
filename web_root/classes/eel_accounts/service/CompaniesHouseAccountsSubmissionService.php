@@ -724,7 +724,9 @@ final class CompaniesHouseAccountsSubmissionService
                 ? ['The authentication-check transport outcome is uncertain. Check the exchange history before retrying.']
                 : [],
             'messages' => $success
-                ? ['Companies House returned matching company data for this authentication code.']
+                ? [!empty($result['test_fixture'])
+                    ? 'Companies House accepted the presenter credentials; the TEST CompanyData fixture was returned.'
+                    : 'Companies House returned matching company data for this authentication code.']
                 : [],
             'preflight_id' => (int)($result['preflight_id'] ?? 0),
             'changed' => true,
@@ -3573,6 +3575,17 @@ final class CompaniesHouseAccountsSubmissionService
         }
         $rows = \InterfaceDB::fetchAll(
             'SELECT s.*,
+                    (
+                        SELECT attempted.transaction_id
+                        FROM govtalk_protocol_exchanges attempted
+                        WHERE attempted.submission_id = s.id
+                          AND attempted.authority = :authority
+                          AND attempted.operation = :accounts_operation
+                          AND attempted.transaction_id IS NOT NULL
+                          AND attempted.transaction_id <> \'\'
+                        ORDER BY attempted.id DESC
+                        LIMIT 1
+                    ) AS transaction_id,
                     cycle.acknowledgement_state AS pending_acknowledgement_state,
                     cycle.normalized_status AS pending_normalized_status
              FROM ' . self::SUBMISSIONS_TABLE . ' s

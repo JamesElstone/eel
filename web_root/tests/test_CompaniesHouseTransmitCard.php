@@ -306,6 +306,40 @@ $harness->run(_companies_house_transmitCard::class, static function (
                 $harness->assertTrue(str_contains($html, 'maxlength="6"'));
                 $harness->assertFalse(str_contains($html, 'maxlength="8"'));
 
+                $renderContext['services']['companies_house_transmit_context']['preflight'] = [
+                    'outcome' => 'verified',
+                    'matched_company_number' => '03176906',
+                    'matched_company_name' => 'MILLENNIUM STADIUM PLC',
+                    'created_at' => '2026-07-31 16:45:00',
+                ];
+                $fixture = $card->render($renderContext);
+                $harness->assertTrue(str_contains(
+                    $fixture,
+                    '<section class="panel-soft success full settings-stack companies-house-authentication-panel">'
+                ));
+                $harness->assertTrue(str_contains(
+                    $fixture,
+                    'Companies House returned matching data for <strong>MILLENNIUM STADIUM PLC</strong>.'
+                ));
+                $harness->assertTrue(str_contains($fixture, 'Last tested: 2026-07-31 16:45:00'));
+                $harness->assertFalse(str_contains($fixture, 'Latest authentication check: Rejected.'));
+
+                $renderContext['services']['companies_house_transmit_context']['preflight'] = [
+                    'outcome' => 'rejected',
+                    'error_summary' => 'Companies House CompanyData did not return the requested company identity.',
+                    'created_at' => '2026-07-31 16:46:00',
+                ];
+                $rejected = $card->render($renderContext);
+                $harness->assertTrue(str_contains(
+                    $rejected,
+                    '<section class="panel-soft warn full settings-stack companies-house-authentication-panel">'
+                ));
+                $harness->assertTrue(str_contains(
+                    $rejected,
+                    'Latest authentication check: Rejected. Companies House CompanyData did not return the requested company identity.'
+                ));
+                $harness->assertTrue(str_contains($rejected, 'Last tested: 2026-07-31 16:46:00'));
+
                 $schemaError = 'An installed Companies House schema is missing or has changed.';
                 $renderContext['services']['companies_house_schema_status']['state'] = [
                     'ready' => false,

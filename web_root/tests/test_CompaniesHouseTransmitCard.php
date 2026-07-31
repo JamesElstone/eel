@@ -38,6 +38,36 @@ $harness->run(_companies_house_transmitCard::class, static function (
 
     $harness->check(
         _companies_house_transmitCard::class,
+        'keeps the transmit panel visible and nests warnings for an active submission',
+        static function () use ($harness, $card): void {
+            $html = $card->render([
+                'company' => ['id' => 49, 'accounting_period_id' => 80],
+                'services' => [
+                    'companies_house_transmit_context' => [
+                        'feature' => ['mode' => 'TEST', 'credentials_configured' => true],
+                        'sequence' => [],
+                        'submission' => ['id' => 712, 'lifecycle' => 'pending', 'filing_kind' => 'revised'],
+                        'prepared_artifact' => ['state' => 'current'],
+                        'submission_blockers' => ['The submission is awaiting a Companies House status update.'],
+                    ],
+                    'companies_house_schema_status' => ['state' => ['ready' => true]],
+                ],
+            ]);
+
+            $transmitPanel = strpos(
+                $html,
+                'Transmit Company accounts to Companies House Public Register.'
+            );
+            $warnings = strpos($html, 'Transmission warnings');
+            $harness->assertTrue($transmitPanel !== false && $warnings !== false && $transmitPanel < $warnings);
+            $harness->assertTrue(str_contains($html, 'The submission is awaiting a Companies House status update.'));
+            $harness->assertFalse(str_contains($html, 'Send / continue Companies House filing'));
+            $harness->assertFalse(str_contains($html, '>Transmit Company Accounts</button>'));
+        }
+    );
+
+    $harness->check(
+        _companies_house_transmitCard::class,
         'shows the next presenter-wide number and allocates only on send',
         static function () use ($harness, $card): void {
             $secret = 'DO-NOT-RENDER-THIS-AUTHENTICATION-VALUE';
@@ -121,7 +151,8 @@ $harness->run(_companies_house_transmitCard::class, static function (
                 . '<form method="post" action="?page=transmit" data-ajax="true" '
                 . 'class="settings-stack companies-house-transmit-form">'
             ));
-            $harness->assertTrue(str_contains($html, '>Transmit Company Accounts</button>'));
+                $harness->assertTrue(str_contains($html, '>Transmit Company Accounts</button>'));
+                $harness->assertFalse(str_contains($html, 'Send / continue Companies House filing'));
             $harness->assertTrue(str_contains(
                 $html,
                 '<label><span>Company authentication code</span><input type="password"'
@@ -302,6 +333,10 @@ $harness->run(_companies_house_transmitCard::class, static function (
                     'Each button performs one XML send/receive pair and then pauses.'
                 ));
                 $harness->assertFalse(str_contains($html, 'Developer XML exchange timeline'));
+                $harness->assertFalse(str_contains(
+                    $html,
+                    'Continue the Companies House XML conversation by checking status, acknowledging the result or reconciling uncertainty.'
+                ));
                 $harness->assertFalse(str_contains($html, 'value="download_protocol_evidence"'));
                 $harness->assertTrue(str_contains($html, 'maxlength="6"'));
                 $harness->assertFalse(str_contains($html, 'maxlength="8"'));

@@ -157,21 +157,6 @@ final class _companies_house_transmitCard extends CardBaseFramework
                     'mode' => strtoupper((string)($feature['mode'] ?? 'TEST')),
                     'disabled' => empty($model['can_submit']) || !$schemaReady,
                 ];
-            } elseif (in_array($lifecycle, ['submitting', 'transport_unknown', 'pending', 'parked'], true)) {
-                $html .= $this->refreshForm(
-                    $companyId,
-                    $accountingPeriodId,
-                    (int)$submission['id'],
-                    'Send / continue Companies House filing'
-                );
-                if ($developerOptions) {
-                    $html .= $this->developerStatusControls(
-                        $companyId,
-                        $accountingPeriodId,
-                        (int)$submission['id'],
-                        $statusCycle
-                    );
-                }
             } elseif ($lifecycle === 'accepted'
                 && trim((string)($submission['document_request_key'] ?? '')) !== ''
                 && trim((string)($submission['returned_document_sha256'] ?? '')) === '') {
@@ -199,19 +184,13 @@ final class _companies_house_transmitCard extends CardBaseFramework
             $warningMessages[] = 'Accounts transmission is blocked because ' . $schemaError;
         }
         $html .= '</section>';
-        if (is_array($transmitForm)) {
-            $html .= $this->submitForm(
-                $companyId,
-                $accountingPeriodId,
-                (int)$transmitForm['submission_id'],
-                (string)$transmitForm['mode'],
-                $filingKind,
-                (bool)$transmitForm['disabled'],
-                $warningMessages
-            );
-        } else {
-            $html .= $this->warningPanel($warningMessages);
-        }
+        $html .= $this->submitForm(
+            $companyId,
+            $accountingPeriodId,
+            $filingKind,
+            is_array($transmitForm) ? $transmitForm : null,
+            $warningMessages
+        );
         if ($developerOptions) {
             $html .= $this->developerConnectionControls(
                 $companyId,
@@ -229,14 +208,27 @@ final class _companies_house_transmitCard extends CardBaseFramework
     private function submitForm(
         int $companyId,
         int $accountingPeriodId,
-        int $submissionId,
-        string $mode,
         string $filingKind,
-        bool $disabled = false,
+        ?array $transmitForm,
         array $warnings = []
     ): string
     {
         $filingKind = in_array($filingKind, ['original', 'revised'], true) ? $filingKind : 'accounts';
+        $html = '<section class="panel-soft"><h3 class="card-title">'
+            . 'Transmit Company accounts to Companies House Public Register.</h3>'
+            . $this->sectionHelper(
+                'Enter the six-character company authentication code to transmit the prepared statutory accounts.'
+            )
+            . $this->warningPanel($warnings);
+        if ($transmitForm === null) {
+            return $html
+                . '<div class="helper">A new transmission is not available for the current submission state.</div>'
+                . '</section>';
+        }
+
+        $submissionId = (int)($transmitForm['submission_id'] ?? 0);
+        $mode = strtoupper((string)($transmitForm['mode'] ?? 'TEST'));
+        $disabled = !empty($transmitForm['disabled']);
         $filingLabel = ucfirst($filingKind);
         $confirmationPhrase = 'SUBMIT LIVE ' . strtoupper($filingKind) . ' ACCOUNTS';
         $live = $mode === 'LIVE'
@@ -247,18 +239,13 @@ final class _companies_house_transmitCard extends CardBaseFramework
                 . '<input type="text" name="live_confirmation_phrase" required autocomplete="off"></label>'
             : '';
 
-        return '<section class="panel-soft"><h3 class="card-title">'
-            . 'Transmit Company accounts to Companies House Public Register.</h3>'
-            . $this->sectionHelper(
-                'Enter the six-character company authentication code to transmit the prepared statutory accounts.'
-            )
+        return $html
             . '<form method="post" action="?page=transmit" data-ajax="true" '
             . 'class="settings-stack companies-house-transmit-form">'
             . $this->hidden($companyId, $accountingPeriodId, 'submit_accounts')
             . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
             . $this->companyAuthenticationCodeField()
             . $live
-            . $this->warningPanel($warnings)
             . '<button class="button danger" type="submit" data-chicken-check="true" '
             . 'data-chicken-title="Send ' . \eel_accounts\Support\Utf8::html($filingLabel) . ' accounts" '
             . 'data-chicken-message="Send this immutable ' . \eel_accounts\Support\Utf8::html($filingKind) . '-accounts package to Companies House '
@@ -326,55 +313,6 @@ final class _companies_house_transmitCard extends CardBaseFramework
             . '<button class="button" type="submit"'
             . (!$schemaReady ? ' disabled aria-disabled="true"' : '')
             . '>Check Company Authentication Code</button></form>';
-        return $html . '</section>';
-    }
-
-    private function developerStatusControls(
-        int $companyId,
-        int $accountingPeriodId,
-        int $submissionId,
-        ?array $statusCycle
-    ): string {
-        $state = strtolower((string)($statusCycle['acknowledgement_state'] ?? 'acknowledged'));
-        $html = '<section class="panel-soft"><h3 class="card-title">Test Companies House Connection</h3>'
-            . $this->sectionHelper(
-                'Continue the Companies House XML conversation by checking status, acknowledging the result or reconciling uncertainty.'
-            );
-        if ($state === 'required'
-            || ($state === 'failed' && trim((string)($statusCycle['result_json'] ?? '')) !== '')) {
-            $html .= $this->simpleProtocolForm(
-                $companyId,
-                $accountingPeriodId,
-                $submissionId,
-                'ack_accounts_status',
-                $state === 'failed' ? 'Retry StatusAck' : 'Send StatusAck'
-            );
-        } elseif ($state === 'transport_unknown') {
-            $html .= '<div class="notice danger">The status or StatusAck exchange has an uncertain transport result. '
-                . 'Further polling is blocked pending confirmation from Companies House.</div>'
-                . '<form method="post" action="?page=transmit" data-ajax="true" '
-                . 'class="settings-stack companies-house-transmit-form">'
-                . $this->hidden($companyId, $accountingPeriodId, 'reconcile_accounts_status')
-                . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
-                . '<input type="hidden" name="resolution" value="'
-                . (trim((string)($statusCycle['result_json'] ?? '')) !== ''
-                    ? 'ack_confirmed'
-                    : 'poll_not_received') . '">'
-                . '<label><span>After obtaining confirmation, type '
-                . '<strong>RECONCILE COMPANIES HOUSE</strong></span>'
-                . '<input type="text" name="reconciliation_phrase" required autocomplete="off"></label>'
-                . '<button class="button danger" type="submit" data-chicken-check="true" '
-                . 'data-chicken-message="Only reconcile after Companies House has confirmed the remote state." '
-                . 'data-chicken-confirm-text="Reconcile state">Reconcile confirmed state</button></form>';
-        } else {
-            $html .= $this->simpleProtocolForm(
-                $companyId,
-                $accountingPeriodId,
-                $submissionId,
-                'poll_accounts_status',
-                'Get submission status'
-            );
-        }
         return $html . '</section>';
     }
 

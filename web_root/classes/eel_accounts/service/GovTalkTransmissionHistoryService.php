@@ -101,7 +101,7 @@ final class GovTalkTransmissionHistoryService
                     'conversation_id' => $submissionId,
                     'submission_reference' => $remoteReference !== ''
                         ? $remoteReference
-                        : 'Internal #' . $submissionId,
+                        : $this->submissionCounter($submissionId),
                     'filing_context' => 'CT600' . ($period !== '' ? ' — ' . $period : ''),
                     'filing_type' => ucfirst((string)(
                         $submission['submission_type'] ?? 'original'
@@ -366,11 +366,16 @@ final class GovTalkTransmissionHistoryService
             $remote = trim((string)($row['hmrc_submission_reference'] ?? ''));
             return $remote !== ''
                 ? $remote
-                : 'Internal #' . (int)($row['hmrc_submission_id'] ?? 0);
+                : $this->submissionCounter((int)($row['hmrc_submission_id'] ?? 0));
         }
         $number = trim((string)($row['companies_house_submission_number'] ?? ''));
 
         return $number !== '' ? $number : 'Not allocated';
+    }
+
+    private function submissionCounter(int $submissionId): string
+    {
+        return sprintf('%06d', max(0, $submissionId));
     }
 
     private function exchangeOutcome(array $row): string

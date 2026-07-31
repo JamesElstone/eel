@@ -364,6 +364,10 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         ActionProgressFramework $progress
     ): array {
         @set_time_limit(0);
+        $progress->report(
+            'Submission request received. Starting Companies House transmission checks; nothing has been sent yet.',
+            0
+        );
         $submissionId = (int)$request->input('submission_id', 0);
         $companyAuthCode = trim((string)$request->input('company_auth_code', ''));
         if ($submissionId <= 0) {

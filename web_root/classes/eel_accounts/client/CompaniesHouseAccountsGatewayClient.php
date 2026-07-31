@@ -802,7 +802,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
 
     private function softwareFilingHash(string $value): string
     {
-        return 'md5#' . md5($value);
+        return md5($value);
     }
 
     private function send(string $requestXml): array

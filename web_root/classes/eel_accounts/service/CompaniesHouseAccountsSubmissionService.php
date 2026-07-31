@@ -1219,7 +1219,7 @@ final class CompaniesHouseAccountsSubmissionService
         $this->reportProgress(
             $progress,
             'Starting the Companies House ' . $mode . ' ' . $filingLabel . ' transmission.',
-            0
+            1
         );
         $this->reportProgress(
             $progress,

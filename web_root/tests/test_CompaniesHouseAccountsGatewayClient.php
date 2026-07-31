@@ -133,8 +133,8 @@ function companiesHouseGatewayTestConversation(
                             'Authorization' => 'private',
                         ],
                         'body' => $acknowledgement(
-                            'md5#' . md5('TEST-PRESENTER'),
-                            'md5#' . md5('TEST-CODE')
+                            md5('TEST-PRESENTER'),
+                            md5('TEST-CODE')
                         ),
                     ];
                 };
@@ -175,8 +175,14 @@ function companiesHouseGatewayTestConversation(
                 $harness->assertSame('Accounts', $xmlText($requestXml, 'Class'));
                 $harness->assertSame('submit', $xmlText($requestXml, 'Function'));
                 $harness->assertSame('1', $xmlText($requestXml, 'GatewayTest'));
-                $harness->assertSame('md5#' . md5('TEST-PRESENTER'), $xmlText($requestXml, 'SenderID'));
-                $harness->assertSame('md5#' . md5('TEST-CODE'), $xmlText($requestXml, 'Value'));
+                $harness->assertSame(md5('TEST-PRESENTER'), $xmlText($requestXml, 'SenderID'));
+                $harness->assertSame(md5('TEST-CODE'), $xmlText($requestXml, 'Value'));
+                $harness->assertFalse(
+                    $xmlText($requestXml, 'SenderID') === md5('TEST-PRESENTER' . 'ABCDEF123456')
+                );
+                $harness->assertFalse(
+                    $xmlText($requestXml, 'Value') === md5('TEST-CODE' . 'ABCDEF123456')
+                );
                 $harness->assertSame('Accounts', $xmlText($requestXml, 'FormIdentifier'));
                 $harness->assertSame('000001', $xmlText($requestXml, 'SubmissionNumber'));
                 $harness->assertSame('0012', $xmlText($requestXml, 'PackageReference'));
@@ -185,7 +191,7 @@ function companiesHouseGatewayTestConversation(
                 $harness->assertSame('ACCOUNTS', $xmlText($requestXml, 'Category'));
                 $harness->assertSame(base64_encode($payload['accounts_xml']), $xmlText($requestXml, 'Data'));
                 $harness->assertSame(
-                    $acknowledgement('md5#' . md5('TEST-PRESENTER'), 'md5#' . md5('TEST-CODE')),
+                    $acknowledgement(md5('TEST-PRESENTER'), md5('TEST-CODE')),
                     (string)($capturedResponse['response_xml'] ?? '')
                 );
                 $harness->assertSame([
@@ -260,7 +266,7 @@ function companiesHouseGatewayTestConversation(
                 $harness->assertSame('CompanyDataRequest', $xmlText($requestXml, 'Class'));
                 $harness->assertSame('14337285', $xmlText($requestXml, 'CompanyNumber'));
                 $harness->assertSame('ABC123', $xmlText($requestXml, 'CompanyAuthenticationCode'));
-                $harness->assertSame('md5#' . md5('TEST-PRESENTER'), $xmlText($requestXml, 'SenderID'));
+                $harness->assertSame(md5('TEST-PRESENTER'), $xmlText($requestXml, 'SenderID'));
                 $harness->assertTrue(str_contains($requestXml, '/schema/CompanyData-v3-6.xsd'));
                 $harness->assertFalse(str_contains($requestXml, '<PackageReference>'));
                 $harness->assertFalse(str_contains($requestXml, '0012'));
@@ -327,8 +333,8 @@ function companiesHouseGatewayTestConversation(
                         'status_code' => 200,
                         'headers' => [],
                         'body' => $acknowledgement(
-                            'md5#' . md5('TEST-PRESENTER'),
-                            'md5#' . md5('TEST-CODE')
+                            md5('TEST-PRESENTER'),
+                            md5('TEST-CODE')
                         ),
                     ],
                     $credentials,
@@ -371,8 +377,8 @@ function companiesHouseGatewayTestConversation(
                         'status_code' => 200,
                         'headers' => ['x-invalid' => "value\ninjected"],
                         'body' => $acknowledgement(
-                            'md5#' . md5('TEST-PRESENTER'),
-                            'md5#' . md5('TEST-CODE')
+                            md5('TEST-PRESENTER'),
+                            md5('TEST-CODE')
                         ),
                     ],
                     $credentials,

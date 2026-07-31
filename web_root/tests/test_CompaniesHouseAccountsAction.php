@@ -15,6 +15,23 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
     GeneratedServiceClassTestHarness $harness,
     CompaniesHouseAccountsAction $unused
 ): void {
+    $harness->check(CompaniesHouseAccountsAction::class, 'starts Action Progress before loading the submission context', static function () use ($harness): void {
+        $method = new ReflectionMethod(CompaniesHouseAccountsAction::class, 'submitRevision');
+        $path = $method->getFileName();
+        $source = is_string($path) ? file($path) : false;
+        $harness->assertTrue(is_array($source));
+        $body = implode('', array_slice(
+            $source,
+            $method->getStartLine() - 1,
+            $method->getEndLine() - $method->getStartLine() + 1
+        ));
+        $progressPosition = strpos($body, 'Submission request received. Starting Companies House transmission checks');
+        $contextPosition = strpos($body, 'fetchContext(');
+        $harness->assertTrue($progressPosition !== false);
+        $harness->assertTrue($contextPosition !== false && $progressPosition < $contextPosition);
+        $harness->assertTrue(str_contains($body, 'nothing has been sent yet.'));
+    });
+
     $harness->check(CompaniesHouseAccountsAction::class, 'requires an explicitly supplied CSRF token', static function () use ($harness): void {
         $service = new CompaniesHouseAccountsActionFakeService();
         $action = new CompaniesHouseAccountsAction($service);

@@ -71,8 +71,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                                 'filing_type' => 'Original',
                                 'environment' => 'TEST',
                                 'transaction_id' => 'ABC123',
-                                'status_key' => 'rejected',
-                                'latest_status' => 'Rejected',
+                                'status_key' => 'pending',
+                                'latest_status' => 'Pending',
                                 'prepared_at' => '2026-07-30 00:15:00',
                                 'submitted_at' => '2026-07-30 00:18:00',
                             ]],
@@ -126,6 +126,21 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ));
                     $harness->assertTrue(str_contains($html, 'Apply Filters'));
                     $harness->assertTrue(str_contains($html, 'Clear filters'));
+                    $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit">Apply Filters</button>'));
+                    $harness->assertTrue(str_contains($html, '<form method="post" action="?page=transmit" data-ajax="true">'));
+                    $harness->assertTrue(str_contains($html, 'name="history_conversation_authority" value="companies_house"'));
+                    $harness->assertTrue(str_contains(
+                        $html,
+                        'class="toolbar govtalk-xml-exchange-filter-controls"'
+                    ));
+                    $harness->assertTrue(str_contains(
+                        $html,
+                        'class="form-row table-filter-row"><label for="table-filter-govtalk_xml_exchange_history-authority">Authority</label><select class="selector-input"'
+                    ));
+                    $harness->assertTrue(str_contains(
+                        $html,
+                        'id="table-filter-govtalk_xml_exchange_history-environment" name="history_environment"'
+                    ));
                     $harness->assertTrue(str_contains($html, '>CSV</button>'));
                     $harness->assertTrue(str_contains($html, 'XML exchanges'));
                     $harness->assertTrue(str_contains($html, '000012'));
@@ -144,6 +159,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $harness->assertTrue(str_contains($html, 'Raised by CompanyDataRequest'));
                     $harness->assertFalse(str_contains($html, 'Rejected · HTTP'));
                     $harness->assertTrue(str_contains($html, 'View conversation'));
+                    $harness->assertTrue(str_contains($html, 'Get Submission Status'));
+                    $harness->assertTrue(str_contains($html, '<a class="button primary" href="?page=transmit&amp;show_card='));
+                    $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit">Get Submission Status</button>'));
+                    $harness->assertTrue(str_contains(
+                        $html,
+                        'name="intent" value="refresh_accounts_status"'
+                    ));
+                    $harness->assertFalse(str_contains($html, 'name="company_auth_code"'));
                 } finally {
                     AppConfigurationStore::set('developer_options', (bool)$previous);
                 }

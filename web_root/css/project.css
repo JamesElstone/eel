@@ -293,6 +293,17 @@
   justify-content: flex-end;
 }
 
+#govtalk-xml-exchanges .card-toolbar > .actions-row:last-child {
+  align-items: flex-end;
+  flex: 1;
+}
+
+.govtalk-xml-exchange-filter-controls {
+  align-items: flex-end;
+  margin-bottom: 0;
+  margin-right: auto;
+}
+
 .amount-zero {
   color: var(--text);
   font-weight: 700;

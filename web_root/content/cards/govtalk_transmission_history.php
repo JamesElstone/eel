@@ -112,7 +112,7 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
         $history = (array)($context['govtalk_history'] ?? []);
 
         return '<div class="settings-stack">'
-            . $this->submissionTable($submissions)
+            . $this->submissionTable($submissions, $companyId, $accountingPeriodId)
             . $this->exchangeTable(
                 $context,
                 $companyId,
@@ -122,7 +122,7 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
             . '</div>';
     }
 
-    private function submissionTable(array $submissions): string
+    private function submissionTable(array $submissions, int $companyId, int $accountingPeriodId): string
     {
         if ($submissions === []) {
             return '<section class="panel-soft"><h3 class="card-title">Submission History</h3>'
@@ -135,6 +135,10 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
             }
             $submissionId = (int)($submission['conversation_id'] ?? 0);
             $authority = (string)($submission['authority'] ?? '');
+            $statusAction = $authority === 'companies_house'
+                && strtolower(trim((string)($submission['status_key'] ?? ''))) === 'pending'
+                ? $this->getSubmissionStatusButton($companyId, $accountingPeriodId, $submissionId)
+                : '';
             $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html(
                     (string)($submission['authority_label'] ?? '')
                 )
@@ -159,11 +163,15 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
                 . \eel_accounts\Support\Utf8::html(
                     (string)($submission['latest_status'] ?? 'Unknown')
                 )
-                . '</span></td><td><a class="button button-inline" href="?page=transmit&amp;show_card='
-                . 'govtalk_transmission_history&amp;history_conversation_authority='
-                . rawurlencode($authority)
-                . '&amp;history_conversation_id=' . $submissionId
-                . '#govtalk-xml-exchanges">View conversation</a></td></tr>';
+                . '</span></td><td><form method="post" action="?page=transmit" data-ajax="true">'
+                . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+                . '<input type="hidden" name="page" value="transmit">'
+                . '<input type="hidden" name="show_card" value="govtalk_transmission_history">'
+                . '<input type="hidden" name="history_conversation_authority" value="'
+                . \eel_accounts\Support\Utf8::html($authority) . '">'
+                . '<input type="hidden" name="history_conversation_id" value="' . $submissionId . '">'
+                . '<button class="button primary" type="submit">View conversation</button></form>'
+                . $statusAction . '</td></tr>';
         }
 
         return '<section class="panel-soft"><h3 class="card-title">Submission History</h3>'
@@ -171,6 +179,25 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
             . '<th>Filing / CT period</th><th>Environment</th><th>Transaction ID</th><th>Prepared</th>'
             . '<th>Submitted</th><th>Latest status</th>'
             . '<th>Actions</th></tr></thead><tbody>' . $rows . '</tbody></table></div></section>';
+    }
+
+    private function getSubmissionStatusButton(
+        int $companyId,
+        int $accountingPeriodId,
+        int $submissionId
+    ): string {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || $submissionId <= 0) {
+            return '';
+        }
+
+        return '<form method="post" action="?page=transmit" data-ajax="true" class="actions-row">'
+            . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+            . '<input type="hidden" name="card_action" value="CompaniesHouseAccounts">'
+            . '<input type="hidden" name="intent" value="refresh_accounts_status">'
+            . '<input type="hidden" name="company_id" value="' . $companyId . '">'
+            . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
+            . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
+            . '<button class="button primary" type="submit">Get Submission Status</button></form>';
     }
 
     private function exchangeTable(
@@ -186,7 +213,7 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
                     . 'govtalk_transmission_history#govtalk-xml-exchanges">Show all conversations</a>'
                 : '')
             . '</div>';
-        $warning = '<div class="notice warning">Exact outbound XML can contain presenter, company and HMRC authentication values. '
+        $warning = '<div class="helper">Exact outbound XML can contain presenter, company and HMRC authentication values. '
             . 'Downloads are private, integrity-checked and not cached.</div>';
         $table = $this->exchangeHistoryTable($companyId, $exchanges, $history);
         $pagination = HelperFramework::paginateArray(
@@ -325,21 +352,23 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
                 . \eel_accounts\Support\Utf8::html($label) . '</option>';
         };
 
-        return '<form method="get" action="" class="actions-row">'
+        return '<form method="get" action="" class="toolbar govtalk-xml-exchange-filter-controls">'
             . '<input type="hidden" name="page" value="transmit">'
             . '<input type="hidden" name="show_card" value="govtalk_transmission_history">'
-            . '<label>Authority<select name="history_authority">'
+            . '<div class="form-row table-filter-row"><label for="table-filter-govtalk_xml_exchange_history-authority">Authority</label>'
+            . '<select class="selector-input" id="table-filter-govtalk_xml_exchange_history-authority" name="history_authority">'
             . $option('', 'All authorities', $authority)
             . $option('companies_house', 'Companies House', $authority)
             . $option('hmrc', 'HMRC', $authority)
-            . '</select></label><label>Environment<select name="history_environment">'
+            . '</select></div><div class="form-row table-filter-row"><label for="table-filter-govtalk_xml_exchange_history-environment">Environment</label>'
+            . '<select class="selector-input" id="table-filter-govtalk_xml_exchange_history-environment" name="history_environment">'
             . $option('', 'All environments', $environment)
             . $option('TEST', 'TEST', $environment)
             . $option('TIL', 'TIL', $environment)
             . $option('LIVE', 'LIVE', $environment)
-            . '</select></label>'
-            . '<button class="button button-inline" type="submit">Apply Filters</button>'
-            . '<a class="button button-inline" href="?page=transmit&amp;show_card='
+            . '</select></div>'
+            . '<button class="button primary" type="submit">Apply Filters</button>'
+            . '<a class="button primary" href="?page=transmit&amp;show_card='
             . 'govtalk_transmission_history#govtalk-xml-exchanges">Clear filters</a>'
             . '</form>';
     }

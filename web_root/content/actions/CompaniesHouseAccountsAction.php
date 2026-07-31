@@ -478,6 +478,10 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         ActionProgressFramework $progress
     ): array
     {
+        $progress->report(
+            'Status request received. Preparing to query the Companies House submission; nothing has been sent yet.',
+            0
+        );
         $submissionId = (int)$request->input('submission_id', 0);
         if ($submissionId <= 0) {
             return ['success' => false, 'errors' => ['The Companies House submission could not be identified.']];

@@ -99,5 +99,89 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(2, count((array)$summary['ixbrl']['computations']));
             $harness->assertTrue(str_contains((string)$summary['ixbrl']['detail'], 'External validation hash mismatch'));
         });
+
+        $harness->check(\eel_accounts\Service\Ct600FilingReadinessService::class, 'checks the configured LIVE XML transport environment', static function () use ($harness): void {
+            $checkedEnvironment = '';
+            $service = new \eel_accounts\Service\Ct600FilingReadinessService(
+                static fn(string $start, string $end): array => ['ok' => true, 'errors' => []],
+                static fn(int $companyId, int $accountingPeriodId): array => ['ok' => true, 'errors' => []],
+                static function (string $mode) use (&$checkedEnvironment): array {
+                    $checkedEnvironment = $mode;
+                    return ['ok' => true, 'errors' => []];
+                },
+                static fn(int $companyId, int $ctPeriodId): array => ['ok' => true, 'errors' => []],
+                static fn(): string => 'LIVE'
+            );
+
+            $summary = $service->fetch(
+                49,
+                79,
+                [['id' => 6, 'period_start' => '2023-01-01', 'period_end' => '2023-12-31']],
+                ['company_number' => '12345678'],
+                ['utr' => '1234567890']
+            );
+
+            $harness->assertSame('LIVE', $checkedEnvironment);
+            $harness->assertSame('LIVE', (string)$summary['approval_transport']['credentials']['environment']);
+            $harness->assertTrue(str_contains((string)$summary['approval_transport']['detail'], 'LIVE filing credentials'));
+        });
+
+        $harness->check(\eel_accounts\Service\Ct600FilingReadinessService::class, 'fails closed without checking TEST credentials when XML filing is disabled', static function () use ($harness): void {
+            $credentialCheckCalled = false;
+            $service = new \eel_accounts\Service\Ct600FilingReadinessService(
+                static fn(string $start, string $end): array => ['ok' => true, 'errors' => []],
+                static fn(int $companyId, int $accountingPeriodId): array => ['ok' => true, 'errors' => []],
+                static function (string $mode) use (&$credentialCheckCalled): array {
+                    $credentialCheckCalled = true;
+                    return ['ok' => true, 'errors' => []];
+                },
+                static fn(int $companyId, int $ctPeriodId): array => ['ok' => true, 'errors' => []],
+                static fn(): string => 'DISABLED'
+            );
+
+            $summary = $service->fetch(
+                49,
+                79,
+                [['id' => 6, 'period_start' => '2023-01-01', 'period_end' => '2023-12-31']],
+                ['company_number' => '12345678'],
+                ['utr' => '1234567890']
+            );
+
+            $harness->assertFalse($credentialCheckCalled);
+            $harness->assertSame(false, (bool)$summary['approval_transport']['credentials_ready']);
+            $harness->assertSame('DISABLED', (string)$summary['approval_transport']['credentials']['environment']);
+            $harness->assertTrue(str_contains((string)$summary['approval_transport']['detail'], 'HMRC XML filing is disabled'));
+        });
+
+        $harness->check(\eel_accounts\Service\Ct600FilingReadinessService::class, 'surfaces XML transport configuration blockers', static function () use ($harness): void {
+            $service = new \eel_accounts\Service\Ct600FilingReadinessService(
+                static fn(string $start, string $end): array => ['ok' => true, 'errors' => []],
+                static fn(int $companyId, int $accountingPeriodId): array => ['ok' => true, 'errors' => []],
+                static fn(string $mode): array => [
+                    'ok' => false,
+                    'errors' => ['HMRC XML Vendor ID must contain exactly four digits.'],
+                ],
+                static fn(int $companyId, int $ctPeriodId): array => ['ok' => true, 'errors' => []],
+                static fn(): string => 'TEST'
+            );
+
+            $summary = $service->fetch(
+                49,
+                79,
+                [['id' => 6, 'period_start' => '2023-01-01', 'period_end' => '2023-12-31']],
+                ['company_number' => '12345678'],
+                ['utr' => '1234567890']
+            );
+
+            $harness->assertSame(false, (bool)$summary['approval_transport']['credentials_ready']);
+            $harness->assertSame(
+                ['HMRC XML Vendor ID must contain exactly four digits.'],
+                (array)$summary['approval_transport']['credentials']['errors']
+            );
+            $harness->assertTrue(str_contains(
+                (string)$summary['approval_transport']['detail'],
+                'HMRC XML Vendor ID must contain exactly four digits.'
+            ));
+        });
     }
 );

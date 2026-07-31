@@ -121,7 +121,9 @@ final class HmrcApiClient
     private function ct600Config(string $mode): array
     {
         $appConfig = \AppConfigurationStore::config();
-        $config = is_array($appConfig['hmrc']['ct600'] ?? null) ? $appConfig['hmrc']['ct600'] : [];
+        $config = is_array($appConfig['hmrc']['ct600_rest'] ?? null)
+            ? $appConfig['hmrc']['ct600_rest']
+            : [];
 
         return array_replace([
             'accept_header' => 'application/xml',

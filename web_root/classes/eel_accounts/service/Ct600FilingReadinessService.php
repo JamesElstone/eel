@@ -9,6 +9,9 @@ declare(strict_types=1);
 
 namespace eel_accounts\Service;
 
+use eel_accounts\Client\HmrcCtTransactionEngineClient;
+use eel_accounts\Store\AccountingConfigurationStore;
+
 /** Read-only CT600 filing-stage readiness signals. */
 final class Ct600FilingReadinessService
 {
@@ -17,12 +20,14 @@ final class Ct600FilingReadinessService
      * @param null|\Closure(int, int): array<string, mixed> $accountsLocator
      * @param null|\Closure(string): array<string, mixed> $credentialChecker
      * @param null|\Closure(int, int): array<string, mixed> $computationLocator
+     * @param null|\Closure(): string $xmlEnvironmentResolver
      */
     public function __construct(
         private readonly ?\Closure $rimResolver = null,
         private readonly ?\Closure $accountsLocator = null,
         private readonly ?\Closure $credentialChecker = null,
         private readonly ?\Closure $computationLocator = null,
+        private readonly ?\Closure $xmlEnvironmentResolver = null,
     ) {
     }
 
@@ -80,7 +85,14 @@ final class Ct600FilingReadinessService
             ];
         }
         $computationsReady = $computations !== [] && !in_array(false, array_column($computations, 'ok'), true);
-        $credentials = $this->checkCredentials('TEST');
+        $xmlEnvironment = $this->xmlEnvironment();
+        $credentials = $xmlEnvironment === AccountingConfigurationStore::HMRC_XML_DISABLED
+            ? [
+                'ok' => false,
+                'errors' => ['HMRC XML filing is disabled.'],
+                'environment' => AccountingConfigurationStore::HMRC_XML_DISABLED,
+            ]
+            : $this->checkCredentials($xmlEnvironment);
 
         return [
             'rim' => [
@@ -118,10 +130,7 @@ final class Ct600FilingReadinessService
                 'ready' => false,
                 'credentials_ready' => !empty($credentials['ok']),
                 'credentials' => $credentials,
-                'detail' => (!empty($credentials['ok'])
-                    ? 'TEST filing credentials are available. '
-                    : 'TEST filing credentials are not available. ')
-                    . 'Declaration and repayment instructions are not yet configured.',
+                'detail' => $this->approvalTransportDetail($xmlEnvironment, $credentials),
             ],
         ];
     }
@@ -145,9 +154,55 @@ final class Ct600FilingReadinessService
     private function checkCredentials(string $mode): array
     {
         if ($this->credentialChecker !== null) {
-            return ($this->credentialChecker)($mode);
+            $result = ($this->credentialChecker)($mode);
+        } else {
+            $status = (new HmrcCtTransactionEngineClient())->configurationStatus($mode);
+            $result = [
+                'ok' => !empty($status['ready']),
+                'errors' => array_values(array_map('strval', (array)($status['blockers'] ?? []))),
+                'environment' => (string)($status['environment'] ?? $mode),
+                'endpoint' => (string)($status['endpoint'] ?? ''),
+                'poll_endpoint' => (string)($status['poll_endpoint'] ?? ''),
+            ];
         }
-        return (new \eel_accounts\Client\HmrcApiClient())->credentialsConfigured($mode);
+
+        return [
+            ...$result,
+            'ok' => !empty($result['ok']),
+            'errors' => array_values(array_map('strval', (array)($result['errors'] ?? []))),
+            'environment' => (string)($result['environment'] ?? $mode),
+        ];
+    }
+
+    private function xmlEnvironment(): string
+    {
+        $environment = $this->xmlEnvironmentResolver !== null
+            ? ($this->xmlEnvironmentResolver)()
+            : AccountingConfigurationStore::hmrcXmlMode();
+        $environment = strtoupper(trim((string)$environment));
+
+        return in_array($environment, [
+            AccountingConfigurationStore::HMRC_XML_TEST,
+            AccountingConfigurationStore::HMRC_XML_LIVE,
+        ], true) ? $environment : AccountingConfigurationStore::HMRC_XML_DISABLED;
+    }
+
+    private function approvalTransportDetail(string $environment, array $credentials): string
+    {
+        if ($environment === AccountingConfigurationStore::HMRC_XML_DISABLED) {
+            return 'HMRC XML filing is disabled. Declaration and repayment instructions are not yet configured.';
+        }
+
+        if (!empty($credentials['ok'])) {
+            return $environment . ' filing credentials and XML transport configuration are available. '
+                . 'Declaration and repayment instructions are not yet configured.';
+        }
+
+        $error = trim((string)(($credentials['errors'] ?? [])[0] ?? ''));
+
+        return $environment . ' filing credentials or XML transport configuration are not available.'
+            . ($error !== '' ? ' ' . $error : '')
+            . ' Declaration and repayment instructions are not yet configured.';
     }
 
     private function locateComputation(int $companyId, int $ctPeriodId): array

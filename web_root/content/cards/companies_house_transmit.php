@@ -15,7 +15,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
 
     public function helper(array $context): string
     {
-        return 'Send only the immutable original or revised accounts artifact prepared from the locked Year End workflow. Submission numbers are allocated when Send is pressed, never during preparation.';
+        return 'This card sends data externally to the Companies House public register. Only generated companies-house iXBRL files can be sent.';
     }
 
     public function services(): array
@@ -89,27 +89,19 @@ final class _companies_house_transmitCard extends CardBaseFramework
             . '<section class="panel-soft"><div class="status-head"><h3 class="card-title">Companies House Connection</h3>'
             . '<span class="badge ' . (!empty($feature['credentials_configured']) ? 'success' : 'warning') . '">'
             . (!empty($feature['credentials_configured']) ? 'Configured' : 'Unavailable') . '</span></div>'
-            . $this->sectionHelper(
-                'Review the active XML environment, presenter credentials and submission-number sequence before filing.'
-            )
-            . '<div class="summary-grid">'
+            . '<div class="summary-grid companies-house-connection-summary-grid">'
             . $this->environmentMetric((string)($feature['mode'] ?? 'DISABLED'))
             . $this->credentialMetric(
                 (string)($feature['mode'] ?? 'DISABLED'),
                 !empty($feature['credentials_configured'])
             )
-            . '</div>'
-            . '<div class="summary-grid">'
             . $this->metric('Next submission number', (string)($sequence['next_number'] ?? 'Unavailable'))
-            . $this->metric('Last issued number', (string)($sequence['last_issued_number'] ?? 'None'))
+            . $this->metric('Last issued submission number', (string)($sequence['last_issued_number'] ?? 'None'))
             . '</div></section>';
 
         $html .= '<section class="panel-soft"><div class="status-head"><h3 class="card-title">Prepared transmission</h3>'
             . '<span class="badge ' . $this->badge($lifecycle) . '">'
-            . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($lifecycle, '_')) . '</span></div>'
-            . $this->sectionHelper(
-                'Review the prepared Companies House iXBRL artifact and its filing readiness before transmission.'
-            );
+            . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($lifecycle, '_')) . '</span></div>';
         if ($submission === null) {
             $warningMessages[] = 'No Companies House accounts artifact is prepared. '
                 . 'Generate and validate the Companies House iXBRL for the current Disclosure Approval.';
@@ -127,7 +119,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
                 $warningMessages[] = (string)(($artifact['errors'] ?? [])[0]
                     ?? 'This prepared artifact is historical and cannot be submitted for the current filing basis.');
             }
-            $html .= '<div class="summary-grid">'
+            $html .= '<div class="summary-grid companies-house-prepared-transmission-summary-grid">'
                 . $this->metric('Filing classification', ucfirst($filingKind))
                 . $this->artifactDownloadMetric(
                     $companyId,
@@ -214,16 +206,18 @@ final class _companies_house_transmitCard extends CardBaseFramework
     ): string
     {
         $filingKind = in_array($filingKind, ['original', 'revised'], true) ? $filingKind : 'accounts';
+        $hasWarnings = array_filter(array_map(
+            static fn(mixed $warning): string => trim((string)$warning),
+            $warnings
+        )) !== [];
         $html = '<section class="panel-soft"><h3 class="card-title">'
             . 'Transmit Company accounts to Companies House Public Register.</h3>'
-            . $this->sectionHelper(
+            . (!$hasWarnings ? $this->sectionHelper(
                 'Enter the six-character company authentication code to transmit the prepared statutory accounts.'
-            )
+            ) : '')
             . $this->warningPanel($warnings);
         if ($transmitForm === null) {
-            return $html
-                . '<div class="helper">A new transmission is not available for the current submission state.</div>'
-                . '</section>';
+            return $html . '</section>';
         }
 
         $submissionId = (int)($transmitForm['submission_id'] ?? 0);
@@ -236,7 +230,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
                 . '<span>I am authorised to file these statutory accounts.</span></label>'
                 . '<label><span>Type <strong>' . \eel_accounts\Support\Utf8::html($confirmationPhrase)
                 . '</strong> to confirm</span>'
-                . '<input type="text" name="live_confirmation_phrase" required autocomplete="off"></label>'
+                . '<input class="input" type="text" name="live_confirmation_phrase" required autocomplete="off"></label>'
             : '';
 
         return $html
@@ -310,7 +304,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
             . 'class="settings-stack companies-house-transmit-form">'
             . $this->hidden($companyId, $accountingPeriodId, 'preflight_accounts')
             . $this->companyAuthenticationCodeField()
-            . '<button class="button" type="submit"'
+            . '<button class="button primary" type="submit"'
             . (!$schemaReady ? ' disabled aria-disabled="true"' : '')
             . '>Check Company Authentication Code</button></form>';
         return $html . '</section>';
@@ -441,7 +435,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
     private function companyAuthenticationCodeField(): string
     {
         return '<label><span>Company authentication code</span>'
-            . '<input type="password" name="company_auth_code" minlength="6" maxlength="6" '
+            . '<input class="input" type="password" name="company_auth_code" minlength="6" maxlength="6" '
             . 'pattern="[A-Za-z0-9]{6}" title="Enter exactly six letters or numbers." '
             . 'required autocomplete="off" autocapitalize="none" spellcheck="false">'
             . '<span class="helper">Enter exactly six letters or numbers.</span></label>';

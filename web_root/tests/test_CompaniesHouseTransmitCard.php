@@ -61,6 +61,10 @@ $harness->run(_companies_house_transmitCard::class, static function (
             $warnings = strpos($html, 'Transmission warnings');
             $harness->assertTrue($transmitPanel !== false && $warnings !== false && $transmitPanel < $warnings);
             $harness->assertTrue(str_contains($html, 'The submission is awaiting a Companies House status update.'));
+            $harness->assertFalse(str_contains(
+                $html,
+                'Enter the six-character company authentication code to transmit the prepared statutory accounts.'
+            ));
             $harness->assertFalse(str_contains($html, 'Send / continue Companies House filing'));
             $harness->assertFalse(str_contains($html, '>Transmit Company Accounts</button>'));
         }
@@ -110,11 +114,12 @@ $harness->run(_companies_house_transmitCard::class, static function (
 
             $harness->assertTrue(str_contains($html, 'Next submission number'));
             $harness->assertTrue(str_contains($html, '000001'));
-            $harness->assertTrue(str_contains(
-                $html,
-                '</div><div class="summary-grid"><div class="summary-card"><div class="summary-label">Next submission number</div>'
-            ));
+            $harness->assertTrue(str_contains($html, 'Last issued submission number'));
             $harness->assertTrue(str_contains($html, 'Companies House Connection'));
+            $harness->assertTrue(str_contains($html, 'summary-grid companies-house-connection-summary-grid'));
+            $harness->assertTrue(str_contains($html, 'summary-grid companies-house-prepared-transmission-summary-grid'));
+            $harness->assertFalse(str_contains($html, 'Review the active XML environment, presenter credentials and submission-number sequence before filing.'));
+            $harness->assertFalse(str_contains($html, 'Review the prepared Companies House iXBRL artifact and its filing readiness before transmission.'));
             $harness->assertTrue(str_contains($html, '>Test<'));
             $harness->assertTrue(str_contains($html, 'Configure Companies House XML environment'));
             $harness->assertTrue(str_contains($html, '<div class="summary-label">Credentials</div>'));
@@ -155,7 +160,7 @@ $harness->run(_companies_house_transmitCard::class, static function (
                 $harness->assertFalse(str_contains($html, 'Send / continue Companies House filing'));
             $harness->assertTrue(str_contains(
                 $html,
-                '<label><span>Company authentication code</span><input type="password"'
+                '<label><span>Company authentication code</span><input class="input" type="password"'
             ));
             $harness->assertTrue(str_contains($html, 'pattern="[A-Za-z0-9]{6}"'));
             $harness->assertTrue(str_contains($html, 'minlength="6" maxlength="6"'));

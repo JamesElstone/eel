@@ -3527,6 +3527,14 @@
   margin-block: 1rem;
 }
 
+.card-body .companies-house-connection-summary-grid {
+  grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+}
+
+.card-body .companies-house-prepared-transmission-summary-grid {
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+}
+
 .card-body .companies-house-transmit-form > label:not(.checkbox-row) {
   display: flex;
   flex-direction: column;

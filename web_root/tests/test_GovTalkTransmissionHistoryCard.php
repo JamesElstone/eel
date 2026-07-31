@@ -120,6 +120,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $harness->assertTrue(str_contains($html, 'Submission History'));
                     $harness->assertTrue(str_contains($html, '<th>Transaction ID</th>'));
                     $harness->assertTrue(str_contains($html, 'XML Exchange History'));
+                    $harness->assertTrue(str_contains(
+                        $html,
+                        'data-table-key="govtalk_xml_exchange_history"'
+                    ));
+                    $harness->assertTrue(str_contains($html, 'Apply Filters'));
+                    $harness->assertTrue(str_contains($html, 'Clear filters'));
+                    $harness->assertTrue(str_contains($html, '>CSV</button>'));
+                    $harness->assertTrue(str_contains($html, 'XML exchanges'));
                     $harness->assertTrue(str_contains($html, '000012'));
                     $harness->assertTrue(str_contains($html, 'Not allocated'));
                     $harness->assertTrue(str_contains($html, 'CompanyDataRequest'));

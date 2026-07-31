@@ -197,8 +197,9 @@ final class GovTalkTransmissionHistoryService
              LEFT JOIN companies_house_accounts_status_cycles cycle ON cycle.id = e.status_cycle_id
              LEFT JOIN hmrc_ct600_submissions h ON h.id = e.hmrc_submission_id
              WHERE ' . implode(' AND ', $where) . '
-             ORDER BY COALESCE(s.created_at, p.created_at, h.created_at, a.created_at) DESC,
-                      e.id ASC
+             ORDER BY CASE WHEN e.sent_at IS NULL THEN 1 ELSE 0 END ASC,
+                      e.sent_at DESC,
+                      e.id DESC
              LIMIT 1000',
             $params
         );

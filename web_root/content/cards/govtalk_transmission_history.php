@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 final class _govtalk_transmission_historyCard extends CardBaseFramework
 {
+    private const EXCHANGE_PAGE_SIZE = 10;
+
     public function key(): string { return 'govtalk_transmission_history'; }
 
     public function title(): string { return 'Transmission History'; }
@@ -112,6 +114,7 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
         return '<div class="settings-stack">'
             . $this->submissionTable($submissions)
             . $this->exchangeTable(
+                $context,
                 $companyId,
                 $exchanges,
                 $history
@@ -171,6 +174,7 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
     }
 
     private function exchangeTable(
+        array $context,
         int $companyId,
         array $exchanges,
         array $history
@@ -182,87 +186,104 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
                     . 'govtalk_transmission_history#govtalk-xml-exchanges">Show all conversations</a>'
                 : '')
             . '</div>';
-        $filters = $this->exchangeFilters($history);
         $warning = '<div class="notice warning">Exact outbound XML can contain presenter, company and HMRC authentication values. '
             . 'Downloads are private, integrity-checked and not cached.</div>';
-        if ($exchanges === []) {
-            return '<section class="panel-soft" id="govtalk-xml-exchanges">' . $heading
-                . $filters . $warning
-                . '<div class="helper">No GovTalk XML exchanges are recorded'
-                . ($selectedConversationId > 0 ? ' for this submission' : '')
-                . '.</div></section>';
-        }
+        $table = $this->exchangeHistoryTable($companyId, $exchanges, $history);
+        $pagination = HelperFramework::paginateArray(
+            $table->sortedRows(),
+            $this->paginationPage($context),
+            self::EXCHANGE_PAGE_SIZE
+        );
+        $hiddenFields = [
+            'page' => 'transmit',
+            'show_card' => $this->key(),
+            'history_authority' => (string)($history['authority'] ?? ''),
+            'history_environment' => (string)($history['environment'] ?? ''),
+            'history_conversation_authority' => (string)($history['conversation_authority'] ?? ''),
+            'history_conversation_id' => (string)($history['conversation_id'] ?? 0),
+            '_pagination' => '1',
+            '_invalidate_fact' => (string)($this->invalidationFacts()[0] ?? 'page.context'),
+            'cards[]' => [$this->key()],
+        ];
 
-        $rows = '';
-        foreach ($exchanges as $exchange) {
-            if (!is_array($exchange)) {
-                continue;
-            }
-            $outcome = trim((string)($exchange['display_outcome'] ?? ''));
-            $operationDetail = implode(' · ', array_filter([
-                trim((string)($exchange['request_qualifier'] ?? '')),
-                trim((string)($exchange['request_function'] ?? '')),
-            ], static fn(string $value): bool => $value !== ''));
-            $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html(
-                    (string)($exchange['authority_label'] ?? '')
-                )
-                . '</td><td>' . \eel_accounts\Support\Utf8::html(
-                    (string)($exchange['submission_reference'] ?? '')
-                )
-                . '</td><td>' . \eel_accounts\Support\Utf8::html(
-                    (string)($exchange['request_message_class'] ?? '')
-                )
-                . ($operationDetail !== ''
-                    ? '<div class="helper">' . \eel_accounts\Support\Utf8::html(
-                        $operationDetail
-                    ) . '</div>'
-                    : '')
-                . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($exchange['transaction_id'] ?? ''))
-                . (trim((string)($exchange['correlation_id'] ?? '')) !== ''
-                    ? '<div class="helper">Correlation: '
-                        . \eel_accounts\Support\Utf8::html(
-                            (string)$exchange['correlation_id']
-                        ) . '</div>'
-                    : '')
-                . '</td><td>' . \eel_accounts\Support\Utf8::html(
-                    $exchange['sent_at'] !== null
-                        ? $this->timestamp((string)$exchange['sent_at'])
-                        : 'Not sent'
-                )
-                . '</td><td>' . $this->downloadButton(
-                    $companyId,
-                    (int)$exchange['id'],
-                    'request',
-                    !empty($exchange['request_available'])
-                )
-                . '</td><td>' . \eel_accounts\Support\Utf8::html(
-                    $exchange['received_at'] !== null
-                        ? $this->timestamp((string)$exchange['received_at'])
-                        : '—'
-                )
-                . '</td><td>' . $this->downloadButton(
-                    $companyId,
-                    (int)$exchange['id'],
-                    'response',
-                    !empty($exchange['response_available'])
-                )
-                . '</td><td>' . \eel_accounts\Support\Utf8::html(
-                    trim((string)($exchange['display_http_status'] ?? '')) ?: '—'
-                )
-                . '</td><td>' . $this->govTalkErrors((array)($exchange['govtalk_errors'] ?? []))
-                . '</td><td><span class="badge ' . $this->badge((string)($exchange['exchange_state'] ?? '')) . '">'
-                . \eel_accounts\Support\Utf8::html($outcome !== '' ? $outcome : 'Unknown')
-                . '</span></td></tr>';
-        }
+        return '<section class="panel-soft" id="govtalk-xml-exchanges">' . $heading . $warning
+            . $table->visibleRows((array)$pagination['items'])
+                ->pagination($pagination, 'XML exchanges', $this->paginationPageField(), $hiddenFields)
+                ->render($context, $hiddenFields)
+            . '</section>';
+    }
 
-        return '<section class="panel-soft" id="govtalk-xml-exchanges">' . $heading
-            . $filters . $warning
-            . '<div class="table-scroll"><table><thead><tr><th>Authority</th>'
-            . '<th>Submission</th><th>Operation</th>'
-            . '<th>Transaction ID</th><th>Sent</th><th>Request XML</th><th>Received</th>'
-            . '<th>Response XML</th><th>HTTP Response Code</th><th>GovTalk Errors</th>'
-            . '<th>Outcome</th></tr></thead><tbody>'
-            . $rows . '</tbody></table></div></section>';
+    private function exchangeHistoryTable(int $companyId, array $exchanges, array $history): TableFramework
+    {
+        $empty = 'No GovTalk XML exchanges are recorded'
+            . ((int)($history['conversation_id'] ?? 0) > 0 ? ' for this submission.' : '.');
+
+        return \eel_accounts\Support\Utf8Table::make('govtalk_xml_exchange_history', $exchanges)
+            ->filename('govtalk-xml-exchange-history')
+            ->exports(true)
+            ->exportLimit(1000)
+            ->empty($empty)
+            ->classes(wrapperClass: 'table-scroll')
+            ->toolbarActions($this->exchangeFilters($history))
+            ->textColumn('authority_label', 'Authority')
+            ->textColumn('submission_reference', 'Submission')
+            ->column(
+                'operation',
+                'Operation',
+                html: static function (array $exchange): string {
+                    $details = implode(' · ', array_filter([
+                        trim((string)($exchange['request_qualifier'] ?? '')),
+                        trim((string)($exchange['request_function'] ?? '')),
+                    ], static fn(string $value): bool => $value !== ''));
+                    return \eel_accounts\Support\Utf8::html((string)($exchange['request_message_class'] ?? ''))
+                        . ($details !== ''
+                            ? '<div class="helper">' . \eel_accounts\Support\Utf8::html($details) . '</div>'
+                            : '');
+                },
+                export: static fn(array $exchange): string => (string)($exchange['request_message_class'] ?? '')
+            )
+            ->column(
+                'transaction_id',
+                'Transaction ID',
+                html: static function (array $exchange): string {
+                    $correlationId = trim((string)($exchange['correlation_id'] ?? ''));
+                    return \eel_accounts\Support\Utf8::html((string)($exchange['transaction_id'] ?? ''))
+                        . ($correlationId !== ''
+                            ? '<div class="helper">Correlation: '
+                                . \eel_accounts\Support\Utf8::html($correlationId) . '</div>'
+                            : '');
+                },
+                export: static fn(array $exchange): string => (string)($exchange['transaction_id'] ?? '')
+            )
+            ->column(
+                'sent_at',
+                'Sent',
+                html: fn(array $exchange): string => ($exchange['sent_at'] ?? null) !== null
+                    ? \eel_accounts\Support\Utf8::html($this->timestamp((string)$exchange['sent_at']))
+                    : 'Not sent',
+                export: static fn(array $exchange): string => (string)($exchange['sent_at'] ?? '')
+            )
+            ->column('request_xml', 'Request XML', html: fn(array $exchange): string => $this->downloadButton($companyId, (int)($exchange['id'] ?? 0), 'request', !empty($exchange['request_available'])), exportable: false)
+            ->column(
+                'received_at',
+                'Received',
+                html: fn(array $exchange): string => ($exchange['received_at'] ?? null) !== null
+                    ? \eel_accounts\Support\Utf8::html($this->timestamp((string)$exchange['received_at']))
+                    : '—',
+                export: static fn(array $exchange): string => (string)($exchange['received_at'] ?? '')
+            )
+            ->column('response_xml', 'Response XML', html: fn(array $exchange): string => $this->downloadButton($companyId, (int)($exchange['id'] ?? 0), 'response', !empty($exchange['response_available'])), exportable: false)
+            ->column('http_status', 'HTTP Response Code', html: static fn(array $exchange): string => \eel_accounts\Support\Utf8::html(trim((string)($exchange['display_http_status'] ?? '')) ?: '—'), export: static fn(array $exchange): string => (string)($exchange['display_http_status'] ?? ''))
+            ->column('govtalk_errors', 'GovTalk Errors', html: fn(array $exchange): string => $this->govTalkErrors((array)($exchange['govtalk_errors'] ?? [])), export: static fn(array $exchange): string => implode('; ', array_map(static fn(array $error): string => trim((string)($error['number'] ?? '')) . ': ' . implode('; ', (array)($error['texts'] ?? [])), array_filter((array)($exchange['govtalk_errors'] ?? []), 'is_array'))))
+            ->column(
+                'outcome',
+                'Outcome',
+                html: fn(array $exchange): string => '<span class="badge '
+                    . $this->badge((string)($exchange['exchange_state'] ?? '')) . '">'
+                    . \eel_accounts\Support\Utf8::html(trim((string)($exchange['display_outcome'] ?? '')) ?: 'Unknown')
+                    . '</span>',
+                export: static fn(array $exchange): string => trim((string)($exchange['display_outcome'] ?? '')) ?: 'Unknown'
+            );
     }
 
     private function downloadButton(
@@ -304,10 +325,10 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
                 . \eel_accounts\Support\Utf8::html($label) . '</option>';
         };
 
-        return '<form method="get" action="" class="settings-stack">'
+        return '<form method="get" action="" class="actions-row">'
             . '<input type="hidden" name="page" value="transmit">'
             . '<input type="hidden" name="show_card" value="govtalk_transmission_history">'
-            . '<div class="settings-grid two-col"><label>Authority<select name="history_authority">'
+            . '<label>Authority<select name="history_authority">'
             . $option('', 'All authorities', $authority)
             . $option('companies_house', 'Companies House', $authority)
             . $option('hmrc', 'HMRC', $authority)
@@ -316,11 +337,11 @@ final class _govtalk_transmission_historyCard extends CardBaseFramework
             . $option('TEST', 'TEST', $environment)
             . $option('TIL', 'TIL', $environment)
             . $option('LIVE', 'LIVE', $environment)
-            . '</select></label></div><div class="actions-row">'
-            . '<button class="button button-inline" type="submit">Apply filters</button>'
+            . '</select></label>'
+            . '<button class="button button-inline" type="submit">Apply Filters</button>'
             . '<a class="button button-inline" href="?page=transmit&amp;show_card='
             . 'govtalk_transmission_history#govtalk-xml-exchanges">Clear filters</a>'
-            . '</div></form>';
+            . '</form>';
     }
 
     private function govTalkErrors(array $errors): string

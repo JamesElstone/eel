@@ -16,6 +16,27 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         'has_director_advances_credits_or_guarantees',
         'has_financial_commitments_guarantees_or_contingencies',
     ];
+    private const APPROVED_DISCLOSURE_FIELDS = [
+        'accounting_standard',
+        'average_number_employees',
+        'principal_activity_sic_code',
+        'principal_activity_statement',
+        'entity_dormant',
+        'entity_trading_status',
+        'micro_entity_eligibility_confirmed',
+        'going_concern_basis_appropriate',
+        'has_material_off_balance_sheet_arrangements',
+        'has_director_advances_credits_or_guarantees',
+        'has_financial_commitments_guarantees_or_contingencies',
+        'accounts_approval_date',
+        'approving_director_id',
+        'approving_director_name',
+        'prepared_under_small_companies_regime',
+        'audit_exempt_section_477',
+        'directors_acknowledge_responsibilities',
+        'members_have_not_required_audit',
+        'companies_house_revised_accounts_public_register_confirmed',
+    ];
 
     public function key(): string { return 'ixbrl_accounts_disclosures'; }
 
@@ -108,9 +129,14 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         $yearEndLocked = !empty($result['year_end_locked']);
         $approvalCurrent = !empty($approvalStatus['current']) || (string)($approvalStatus['state'] ?? '') === 'current';
         $approvalBlockerNotice = $this->approvalBlockerNotice($approvalStatus);
-        $controlDisabled = !$yearEndLocked || $approvalCurrent;
+        $disclosuresMatchApproval = $this->disclosuresMatchApproval($approvalStatus, $display);
+        $approvalId = (int)(($approvalStatus['approval'] ?? [])['id'] ?? 0);
+        $hasApproval = $approvalCurrent || $approvalId > 0;
+        $disclosuresInitiallyLocked = $yearEndLocked
+            && $hasApproval
+            && ($approvalCurrent || $disclosuresMatchApproval);
+        $controlDisabled = !$yearEndLocked || $disclosuresInitiallyLocked;
         $disabledAttribute = $controlDisabled ? ' disabled aria-disabled="true"' : '';
-        $coreButtonDisabled = ' disabled' . ($controlDisabled ? ' aria-disabled="true"' : '');
         $missing = (array)($result['missing_labels'] ?? []);
         $periodEnd = (string)(($result['accounting_period'] ?? [])['period_end'] ?? '');
         $dateFormat = (string)($company['settings']['date_format'] ?? 'd/m/Y');
@@ -230,15 +256,19 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         $updatedByDisplay = $updatedBy !== '' ? $updatedBy : 'Not yet saved';
         $disclosureLockNotice = !$yearEndLocked
             ? '<div class="standout helper">Complete and lock Year End before confirming the accounts disclosures.</div>'
-            : ($approvalCurrent
-                ? '<div class="standout helper">The disclosure basis is approved and current. Re-open the affected workflow or make the approval stale before changing disclosures.</div>'
+            : ($disclosuresInitiallyLocked
+                ? '<div class="standout helper">The saved accounts disclosures still match the current approval'
+                    . ($approvalId > 0 ? ' #' . $approvalId : '')
+                    . '. They remain locked even when another part of the filing basis changes. Use Edit Accounts Disclosures only when the disclosure facts themselves need to change.</div>'
                 : '');
         return '<div class="settings-stack">'
             . $approvalBlockerNotice . '
-            <form method="post" action="?page=disclosures" data-ajax="true" data-ixbrl-trading-form="true" data-ixbrl-core-details-form="true">
+            <form method="post" action="?page=disclosures" data-ajax="true" data-ixbrl-trading-form="true" data-ixbrl-disclosures-form="true"
+                data-ixbrl-disclosures-can-edit="' . ($yearEndLocked ? '1' : '0') . '"
+                data-ixbrl-disclosures-initially-locked="' . ($disclosuresInitiallyLocked ? '1' : '0') . '">
             <input type="hidden" name="card_action" value="Ixbrl">
             ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-            <input type="hidden" name="intent" value="save_ixbrl_core_details">
+            <input type="hidden" name="intent" value="save_ixbrl_disclosures">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
             <input type="hidden" name="accounting_standard" value="FRS_105">
@@ -253,25 +283,25 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                     : '') . '
                 ' . $profileErrors . '
             ' . $disclosureLockNotice . '
-                    <div class="form-grid" data-state-fields="ixbrl_average_number_employees,ixbrl_principal_activity_sic_code,ixbrl_accounts_approval_date,ixbrl_approving_director_id" data-state-target="save_ixbrl_core_details">
+                    <div class="form-grid">
                     <div class="form-row full table-scroll">
                         <table><tbody>
                             <tr><th scope="row"><label>Accounting standard</label></th><td><input class="input" value="FRS 105" readonly' . $disabledAttribute . '></td></tr>
-                            <tr><th scope="row"><label for="ixbrl_average_number_employees">Average number of employees</label></th><td><input class="input" id="ixbrl_average_number_employees" name="average_number_employees" type="number" min="0" step="1" required value="' . \eel_accounts\Support\Utf8::html($this->nullableValue($display['average_number_employees'] ?? null)) . '" data-state-default="' . \eel_accounts\Support\Utf8::html($this->nullableValue($display['average_number_employees'] ?? null)) . '"' . $disabledAttribute . '></td></tr>
+                            <tr><th scope="row"><label for="ixbrl_average_number_employees">Average number of employees</label></th><td><input class="input" id="ixbrl_average_number_employees" name="average_number_employees" type="number" min="0" step="1" required value="' . \eel_accounts\Support\Utf8::html($this->nullableValue($display['average_number_employees'] ?? null)) . '" data-state-default="' . \eel_accounts\Support\Utf8::html($this->nullableValue($display['average_number_employees'] ?? null)) . '" data-ixbrl-disclosure-control="true"' . $disabledAttribute . '></td></tr>
                             <tr>
                                 <th scope="row"><label for="ixbrl_principal_activity_sic_code">Principal activity</label></th>
                                 <td>
-                                    <select class="select" id="ixbrl_principal_activity_sic_code" name="principal_activity_sic_code" required data-no-submit-on-change="true" data-principal-activity-select="true" data-state-default="' . \eel_accounts\Support\Utf8::html($selectedPrincipalActivityCode) . '"' . $disabledAttribute . '>
+                                    <select class="select" id="ixbrl_principal_activity_sic_code" name="principal_activity_sic_code" required data-no-submit-on-change="true" data-principal-activity-select="true" data-state-default="' . \eel_accounts\Support\Utf8::html($selectedPrincipalActivityCode) . '" data-ixbrl-disclosure-control="true"' . $disabledAttribute . '>
                                         ' . $principalActivityOptions . '
                                     </select>
                                     <div class="helper">Select the Companies House SIC activity used in the principal activity note.</div>
                                 </td>
                             </tr>
-                            <tr><th scope="row"><label for="ixbrl_accounts_approval_date">Accounts approval date</label></th><td><div class="actions-row actions-row-nowrap"><input class="input" id="ixbrl_accounts_approval_date" name="accounts_approval_date" type="date" required value="' . \eel_accounts\Support\Utf8::html((string)($display['accounts_approval_date'] ?? '')) . '" data-state-default="' . \eel_accounts\Support\Utf8::html((string)($display['accounts_approval_date'] ?? '')) . '"' . $disabledAttribute . '><button class="button primary" type="button" data-set-today-for="ixbrl_accounts_approval_date"' . $disabledAttribute . '>Today</button></div></td></tr>
+                            <tr><th scope="row"><label for="ixbrl_accounts_approval_date">Accounts approval date</label></th><td><div class="actions-row actions-row-nowrap"><input class="input" id="ixbrl_accounts_approval_date" name="accounts_approval_date" type="date" required value="' . \eel_accounts\Support\Utf8::html((string)($display['accounts_approval_date'] ?? '')) . '" data-state-default="' . \eel_accounts\Support\Utf8::html((string)($display['accounts_approval_date'] ?? '')) . '" data-ixbrl-disclosure-control="true"' . $disabledAttribute . '><button class="button primary" type="button" data-set-today-for="ixbrl_accounts_approval_date" data-ixbrl-disclosure-control="true"' . $disabledAttribute . '>Today</button></div></td></tr>
                             <tr>
                                 <th scope="row"><label for="ixbrl_approving_director_id">Director signing and approving the accounts</label></th>
                                 <td>
-                                    <select class="select" id="ixbrl_approving_director_id" name="approving_director_id" required data-state-default="' . ($selectedDirectorId > 0 ? $selectedDirectorId : '') . '"' . $disabledAttribute . '>
+                                    <select class="select" id="ixbrl_approving_director_id" name="approving_director_id" required data-state-default="' . ($selectedDirectorId > 0 ? $selectedDirectorId : '') . '" data-ixbrl-disclosure-control="true"' . $disabledAttribute . '>
                                         ' . $directorOptions . '
                                     </select>
                                     <div class="helper">The selected officer’s name is used as the approving and signing director in the generated iXBRL.</div>
@@ -300,15 +330,8 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                                 . '</div>') . '
                         <div class="helper">If a company is marked as not trading on ' . \eel_accounts\Support\Utf8::html($periodEndDisplay) . ', it automatically calculates Never Traded versus No Longer Trading status based on any historical Sales posted.</div>
                     </div>
-                    <div class="form-row full">
-                        <div class="actions-row actions-row-nowrap ixbrl-core-details-actions">
-                            <button class="button primary" id="save_ixbrl_core_details" type="submit"' . $coreButtonDisabled . '>Approve Company Accounts</button>
-                        </div>
-                    </div>
                     </div>
                 </section>
-            </form>
-                ' . $this->ct600AuthorisationPanel($companyId, $accountingPeriodId, $context, $approvalCurrent) . '
                 <div class="settings-stack">
                     <section class="panel-soft ixbrl-dormancy-summary">
                         <div class="status-head">
@@ -325,25 +348,35 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                         <div class="ixbrl-small-companies-detail">
                             ' . $smallCompaniesSummary . '
                         </div>
-                        ' . $this->yesNo('audit_exempt_section_477', 'Is the company claiming audit exemption under section 477 of the Companies Act 2006?', $display['audit_exempt_section_477'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
-                        ' . $this->yesNo('directors_acknowledge_responsibilities', 'Do the directors acknowledge their Companies Act responsibilities for the records and accounts?', $display['directors_acknowledge_responsibilities'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
-                        ' . $this->yesNo('members_have_not_required_audit', 'Do the relevant business voting parties confirm that no audit is required under section 476?', $display['members_have_not_required_audit'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
+                        ' . $this->yesNo('audit_exempt_section_477', 'Is the company claiming audit exemption under section 477 of the Companies Act 2006?', $display['audit_exempt_section_477'] ?? null, $controlDisabled) . '
+                        ' . $this->yesNo('directors_acknowledge_responsibilities', 'Do the directors acknowledge their Companies Act responsibilities for the records and accounts?', $display['directors_acknowledge_responsibilities'] ?? null, $controlDisabled) . '
+                        ' . $this->yesNo('members_have_not_required_audit', 'Do the relevant business voting parties confirm that no audit is required under section 476?', $display['members_have_not_required_audit'] ?? null, $controlDisabled) . '
                     </section>
                     <section class="panel-soft">
                         <h4 class="card-title">Eligibility and accounting basis</h4>
                         <div class="helper ixbrl-eligibility-helper">Sending of Accounts and Returns using this software will be blocked if either of the following two questions are No, as they are not supported.</div>
-                        ' . $this->yesNo('micro_entity_eligibility_confirmed', 'Is the company eligible to prepare these accounts as a micro-entity?', $display['micro_entity_eligibility_confirmed'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
-                        ' . $this->yesNo('going_concern_basis_appropriate', 'Is the business still a going-concern and continue to operate for the foreseeable future?', $display['going_concern_basis_appropriate'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
+                        ' . $this->yesNo('micro_entity_eligibility_confirmed', 'Is the company eligible to prepare these accounts as a micro-entity?', $display['micro_entity_eligibility_confirmed'] ?? null, $controlDisabled) . '
+                        ' . $this->yesNo('going_concern_basis_appropriate', 'Is the business still a going-concern and continue to operate for the foreseeable future?', $display['going_concern_basis_appropriate'] ?? null, $controlDisabled) . '
                     </section>
                     <section class="panel-soft">
                         <h4 class="card-title ixbrl-frs105-notes-title">FRS 105 Notes</h4>
-                        ' . $this->yesNo('has_material_off_balance_sheet_arrangements', 'Are there any material off-balance-sheet arrangements requiring disclosure?', $display['has_material_off_balance_sheet_arrangements'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId, 'Director and Participant Advances are calculated automatically from transactions. This is confirming no other legal agreements exist which create a liability.') . '
+                        ' . $this->yesNo('has_material_off_balance_sheet_arrangements', 'Are there any material off-balance-sheet arrangements requiring disclosure?', $display['has_material_off_balance_sheet_arrangements'] ?? null, $controlDisabled, false, $companyId, $accountingPeriodId, 'Director and Participant Advances are calculated automatically from transactions. This is confirming no other legal agreements exist which create a liability.') . '
                         ' . $this->directorLoanDisclosure($directorLoanDisclosure) . '
-                        ' . $this->yesNo('has_director_advances_credits_or_guarantees', 'Were there any director guarantees requiring disclosure?', $display['has_director_advances_credits_or_guarantees'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
-                        ' . $this->yesNo('has_financial_commitments_guarantees_or_contingencies', 'Are there any financial commitments, guarantees or contingencies requiring disclosure?', $display['has_financial_commitments_guarantees_or_contingencies'] ?? null, $controlDisabled, true, $companyId, $accountingPeriodId) . '
+                        ' . $this->yesNo('has_director_advances_credits_or_guarantees', 'Were there any director guarantees requiring disclosure?', $display['has_director_advances_credits_or_guarantees'] ?? null, $controlDisabled) . '
+                        ' . $this->yesNo('has_financial_commitments_guarantees_or_contingencies', 'Are there any financial commitments, guarantees or contingencies requiring disclosure?', $display['has_financial_commitments_guarantees_or_contingencies'] ?? null, $controlDisabled) . '
                     </section>
                     ' . $this->companiesHouseRevisedAccountsPanel($result, $display, $controlDisabled, $companyId, $accountingPeriodId) . '
                 </div>
+                <section class="panel-soft ixbrl-disclosure-edit-actions">
+                    <div class="helper">Changes are staged in this form and are not recorded until Save Accounts Disclosures is selected.</div>
+                    <div class="actions-row">
+                        <button class="button primary" type="button" data-ixbrl-disclosures-edit="true"' . (!$yearEndLocked || !$disclosuresInitiallyLocked ? ' disabled' : '') . '>Edit Accounts Disclosures</button>
+                        <button class="button primary" type="submit" data-ixbrl-disclosures-save="true" disabled>Save Accounts Disclosures</button>
+                        <button class="button secondary" type="button" data-ixbrl-disclosures-cancel="true"' . (!$yearEndLocked ? ' disabled' : '') . '>Cancel Changes</button>
+                    </div>
+                </section>
+            </form>
+                ' . $this->ct600AuthorisationPanel($companyId, $accountingPeriodId, $context, $approvalCurrent) . '
                 ' . $this->approvalPanel($approvalStatus, $companyId, $accountingPeriodId, $yearEndLocked) . '
         </div>';
     }
@@ -391,11 +424,11 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                 : 'Approve the complete filing basis to create immutable CT bases and the accounts fact snapshot.');
         $evidence = '';
         if ($approval !== []) {
-            $evidence = '<div class="helper">' . ($current ? 'Approval #' : 'Previous approval #') . (int)$approval['id']
-                . ' by ' . \eel_accounts\Support\Utf8::html((string)$approval['approved_by'])
-                . ' at ' . \eel_accounts\Support\Utf8::html((string)$approval['approved_at'])
-                . '; disclosure revision ' . (int)$approval['disclosure_revision']
-                . '; basis ' . \eel_accounts\Support\Utf8::html(substr((string)$approval['basis_hash'], 0, 16)) . '…</div>';
+            $evidence = '<div class="helper">' . ($current ? 'Approval #' : 'Previous approval #') . (int)($approval['id'] ?? 0)
+                . ' by ' . \eel_accounts\Support\Utf8::html((string)($approval['approved_by'] ?? ''))
+                . ' at ' . \eel_accounts\Support\Utf8::html((string)($approval['approved_at'] ?? ''))
+                . '; disclosure revision ' . (int)($approval['disclosure_revision'] ?? 0)
+                . '; basis ' . \eel_accounts\Support\Utf8::html(substr((string)($approval['basis_hash'] ?? ''), 0, 16)) . '…</div>';
         }
         $errors = '';
         foreach ((array)($status['errors'] ?? []) as $error) {
@@ -545,29 +578,43 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         $yesId = 'ixbrl_' . $name . '_yes';
         $noId = 'ixbrl_' . $name . '_no';
         $normalised = $value === null || $value === '' ? null : (int)$value;
-        $submitOnChange = $ajaxField ? ' data-submit-on-change="true"' : '';
 
-        $fieldset = '<fieldset class="panel-soft">
+        return '<fieldset class="panel-soft">
             <legend>' . \eel_accounts\Support\Utf8::html($label) . '</legend>
             ' . ($helper !== '' ? '<div class="helper ixbrl-question-helper">' . \eel_accounts\Support\Utf8::html($helper) . '</div>' : '') . '
             <div class="actions-row">
-                <label for="' . $yesId . '"><input id="' . $yesId . '" type="radio" name="' . \eel_accounts\Support\Utf8::html($name) . '" value="1" required' . ($normalised === 1 ? ' checked' : '') . ($disabled ? ' disabled aria-disabled="true"' : '') . $submitOnChange . '> Yes</label>
-                <label for="' . $noId . '"><input id="' . $noId . '" type="radio" name="' . \eel_accounts\Support\Utf8::html($name) . '" value="0" required' . ($normalised === 0 ? ' checked' : '') . ($disabled ? ' disabled aria-disabled="true"' : '') . $submitOnChange . '> No</label>
+                <label for="' . $yesId . '"><input id="' . $yesId . '" type="radio" name="' . \eel_accounts\Support\Utf8::html($name) . '" value="1" required data-ixbrl-disclosure-control="true"' . ($normalised === 1 ? ' checked' : '') . ($disabled ? ' disabled aria-disabled="true"' : '') . '> Yes</label>
+                <label for="' . $noId . '"><input id="' . $noId . '" type="radio" name="' . \eel_accounts\Support\Utf8::html($name) . '" value="0" required data-ixbrl-disclosure-control="true"' . ($normalised === 0 ? ' checked' : '') . ($disabled ? ' disabled aria-disabled="true"' : '') . '> No</label>
             </div>
         </fieldset>';
-        if (!$ajaxField) {
-            return $fieldset;
+    }
+
+    private function disclosuresMatchApproval(array $status, array $display): bool
+    {
+        $approval = is_array($status['approval'] ?? null) ? (array)$status['approval'] : [];
+        $basis = json_decode((string)($approval['basis_json'] ?? ''), true);
+        $approved = is_array($basis)
+            ? (array)(($basis['disclosures'] ?? [])['values'] ?? [])
+            : [];
+        if ($approved === []) {
+            return false;
         }
 
-        return '<form method="post" action="?page=disclosures" data-ajax="true">'
-            . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
-            . '<input type="hidden" name="card_action" value="Ixbrl">
-                <input type="hidden" name="intent" value="save_ixbrl_disclosure_field">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <input type="hidden" name="disclosure_field" value="' . \eel_accounts\Support\Utf8::html($name) . '">'
-            . $fieldset
-            . '</form>';
+        foreach (self::APPROVED_DISCLOSURE_FIELDS as $field) {
+            $approvedValue = $approved[$field] ?? null;
+            $currentValue = $display[$field] ?? null;
+            if (is_string($approvedValue) || is_string($currentValue)) {
+                if (trim((string)$approvedValue) !== trim((string)$currentValue)) {
+                    return false;
+                }
+                continue;
+            }
+            if ($approvedValue !== $currentValue) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function directorLoanDisclosure(array $summary): string

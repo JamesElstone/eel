@@ -235,6 +235,23 @@ final class _ixbrl_generationCard extends CardBaseFramework
             ? ucfirst($filingKind)
             : 'Unclassified';
         $submission = is_array($filing['submission'] ?? null) ? $filing['submission'] : null;
+        $activeSubmission = is_array($filing['active_submission'] ?? null)
+            ? (array)$filing['active_submission']
+            : null;
+        $activeSubmissionNotice = '';
+        if ($activeSubmission !== null
+            && (int)($activeSubmission['id'] ?? 0) !== (int)($submission['id'] ?? 0)) {
+            $activeIdentifier = trim((string)($activeSubmission['submission_number'] ?? ''));
+            $activeIdentifier = $activeIdentifier !== ''
+                ? $activeIdentifier
+                : '#' . (int)($activeSubmission['id'] ?? 0);
+            $activeSubmissionNotice = '<div class="standout helper">Companies House submission '
+                . \eel_accounts\Support\Utf8::html($activeIdentifier)
+                . ' remains ' . \eel_accounts\Support\Utf8::html(
+                    HelperFramework::labelFromKey((string)($activeSubmission['lifecycle'] ?? 'pending'), '_')
+                )
+                . ' against an earlier prepared basis. It remains available in GovTalk Transmission History and blocks another Companies House transmission, but it does not block generating the current artifact or HMRC filing set.</div>';
+        }
         $artifact = (array)($filing['prepared_artifact'] ?? []);
         $baseRun = (array)($context['ixbrl']['latest_run'] ?? []);
         $readiness = (array)($context['ixbrl']['readiness'] ?? []);
@@ -257,6 +274,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . '<h3 class="card-title">Companies House Accounting iXBRL</h3>'
                 . '<span class="badge muted">Not Generated</span></div>'
                 . '<div class="helper ixbrl-complete-filing-set-helper">Prepares the Companies House-specific accounts iXBRL from the approved filing basis. This does not transmit it, it creates the file it will send.</div>'
+                . $activeSubmissionNotice
                 . '<div class="summary-grid">'
                 . $this->metric('Generated At', 'Not Generated')
                 . $this->metric('Facts', '0')
@@ -310,6 +328,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($lifecycle, '_')) . '</span></div>'
             . '<div class="helper ixbrl-complete-filing-set-helper">This is the prepared Companies House '
             . \eel_accounts\Support\Utf8::html($filingLabel) . '-accounts iXBRL artifact. It has not been transmitted by this page.</div>'
+            . $activeSubmissionNotice
             . '<div class="summary-grid">'
             . $this->metric('Generated At', (string)($submission['prepared_at'] ?? ''))
             . $this->metric('Facts', (string)(int)($artifact['fact_count'] ?? $revisedValidation['fact_count'] ?? 0))

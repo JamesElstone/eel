@@ -38,6 +38,46 @@ $harness->run(_companies_house_transmitCard::class, static function (
 
     $harness->check(
         _companies_house_transmitCard::class,
+        'shows an older active submission separately from the current prepared artifact',
+        static function () use ($harness, $card): void {
+            $html = $card->render([
+                'company' => ['id' => 49, 'accounting_period_id' => 80],
+                'services' => [
+                    'companies_house_transmit_context' => [
+                        'feature' => ['mode' => 'TEST', 'credentials_configured' => true],
+                        'sequence' => [],
+                        'submission' => [
+                            'id' => 713,
+                            'lifecycle' => 'prepared',
+                            'filing_kind' => 'revised',
+                        ],
+                        'active_submission' => [
+                            'id' => 712,
+                            'submission_number' => '000002',
+                            'environment' => 'TEST',
+                            'lifecycle' => 'pending',
+                        ],
+                        'prepared_artifact' => ['state' => 'current', 'current' => true, 'filename' => 'current.xhtml'],
+                        'can_submit' => false,
+                        'submission_blockers' => [
+                            'Companies House submission 000002 is still active for an earlier prepared basis.',
+                        ],
+                    ],
+                    'companies_house_schema_status' => ['state' => ['ready' => true]],
+                ],
+            ]);
+
+            $harness->assertTrue(str_contains($html, 'Active earlier submission'));
+            $harness->assertTrue(str_contains($html, 'Submission number</div><div class="summary-value">000002'));
+            $harness->assertTrue(str_contains($html, 'Continue checking it in GovTalk Transmission History'));
+            $harness->assertTrue(str_contains($html, 'does not block preparation of the current Companies House or HMRC artifacts'));
+            $harness->assertTrue(str_contains($html, 'Transmit Company Accounts</button>'));
+            $harness->assertTrue(str_contains($html, 'disabled aria-disabled="true"'));
+        }
+    );
+
+    $harness->check(
+        _companies_house_transmitCard::class,
         'keeps the transmit panel visible and nests warnings for an active submission',
         static function () use ($harness, $card): void {
             $html = $card->render([
@@ -130,8 +170,6 @@ $harness->run(_companies_house_transmitCard::class, static function (
             $harness->assertTrue(str_contains($html, 'Companies House Connection'));
             $harness->assertTrue(str_contains($html, 'summary-grid companies-house-connection-summary-grid'));
             $harness->assertTrue(str_contains($html, 'summary-grid companies-house-prepared-transmission-summary-grid'));
-            $harness->assertFalse(str_contains($html, 'Review the active XML environment, presenter credentials and submission-number sequence before filing.'));
-            $harness->assertFalse(str_contains($html, 'Review the prepared Companies House iXBRL artifact and its filing readiness before transmission.'));
             $harness->assertTrue(str_contains($html, '>Test<'));
             $harness->assertTrue(str_contains($html, 'Configure Companies House XML environment'));
             $harness->assertTrue(str_contains(
@@ -192,14 +230,6 @@ $harness->run(_companies_house_transmitCard::class, static function (
             $harness->assertTrue(str_contains(
                 $html,
                 '<span class="helper">Enter exactly six letters or numbers.</span></label>'
-            ));
-            $harness->assertTrue(str_contains(
-                $html,
-                'Review the active XML environment, presenter credentials and submission-number sequence before filing.'
-            ));
-            $harness->assertTrue(str_contains(
-                $html,
-                'Review the prepared Companies House iXBRL artifact and its filing readiness before transmission.'
             ));
             $harness->assertTrue(str_contains($html, 'Original'));
             $harness->assertFalse(str_contains($html, $secret));
@@ -287,13 +317,12 @@ $harness->run(_companies_house_transmitCard::class, static function (
             $formPosition = strpos($html, 'class="settings-stack companies-house-transmit-form"');
             $warningPosition = strpos(
                 $html,
-                '<section class="panel-soft warn full settings-stack companies-house-warning-panel">',
-                is_int($formPosition) ? $formPosition : 0
+                '<section class="panel-soft warn full settings-stack companies-house-warning-panel">'
             );
             $buttonPosition = strpos($html, '>Transmit Company Accounts</button>');
-            $harness->assertTrue(is_int($formPosition));
-            $harness->assertTrue(is_int($warningPosition) && $warningPosition > $formPosition);
-            $harness->assertTrue(is_int($buttonPosition) && $buttonPosition > $warningPosition);
+            $harness->assertTrue(is_int($warningPosition));
+            $harness->assertTrue(is_int($formPosition) && $formPosition > $warningPosition);
+            $harness->assertTrue(is_int($buttonPosition) && $buttonPosition > $formPosition);
             $harness->assertTrue(preg_match(
                 '/<button class="button danger"[^>]*disabled aria-disabled="true"[^>]*>'
                     . 'Transmit Company Accounts<\/button>/',
@@ -421,7 +450,7 @@ $harness->run(_companies_house_transmitCard::class, static function (
                 $blocked = $card->render($renderContext);
                 $harness->assertTrue(str_contains(
                     $blocked,
-                    '<div class="summary-value">Refresh required</div>'
+                    '<span class="badge danger">Refresh required</span>'
                 ));
                 $harness->assertTrue(str_contains(
                     $blocked,
@@ -431,7 +460,7 @@ $harness->run(_companies_house_transmitCard::class, static function (
                 $harness->assertTrue(str_contains($blocked, 'href="?page=artefacts"'));
                 $harness->assertTrue(str_contains(
                     $blocked,
-                    '<button class="button" type="submit" disabled aria-disabled="true">'
+                    '<button class="button primary" type="submit" disabled aria-disabled="true">'
                         . 'Check Company Authentication Code</button>'
                 ));
                 $harness->assertTrue(preg_match(

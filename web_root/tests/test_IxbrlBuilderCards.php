@@ -241,15 +241,15 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertFalse(str_contains($html, 'These values are filing facts, not assumptions.'));
         $harness->assertTrue(str_contains($html, 'value="1"'));
         $harness->assertTrue(str_contains($html, 'value="2025-05-29"'));
-        $harness->assertTrue(str_contains($html, 'data-set-today-for="ixbrl_accounts_approval_date">Today</button>'));
+        $harness->assertTrue(str_contains($html, 'data-set-today-for="ixbrl_accounts_approval_date"'));
         $harness->assertTrue(str_contains($html, 'Was the company still trading on 31/05/2025?'));
         $harness->assertTrue(str_contains($html, 'If a company is marked as not trading on 31/05/2025, it automatically calculates Never Traded versus No Longer Trading status based on any historical Sales posted.'));
         $harness->assertFalse(str_contains($html, 'Previous trading is evidenced automatically'));
         $harness->assertFalse(str_contains($html, 'Trading status is calculated from these answers'));
-        $harness->assertTrue(str_contains($html, 'name="is_still_trading" value="1" required checked'));
+        $harness->assertTrue(preg_match('/name="is_still_trading" value="1"[^>]*checked/', $html) === 1);
         $harness->assertTrue(str_contains($html, 'Has the company ever traded?'));
         $harness->assertFalse(str_contains($html, 'name="entity_trading_status"'));
-        $harness->assertTrue(str_contains($html, '<select class="select" id="ixbrl_approving_director_id" name="approving_director_id" required data-state-default="17">'));
+        $harness->assertTrue(str_contains($html, '<select class="select" id="ixbrl_approving_director_id" name="approving_director_id" required data-state-default="17"'));
         $harness->assertTrue(str_contains($html, '<option value="17" selected>James Elstone</option>'));
         $harness->assertTrue(str_contains(
             $html,
@@ -289,13 +289,16 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertFalse(str_contains($html, 'name="prepared_under_small_companies_regime"'));
         $harness->assertFalse(str_contains($html, 'value="James Elstone"'));
         $harness->assertTrue(str_contains($html, 'Required'));
-        $harness->assertTrue(str_contains($html, 'Approve Company Accounts'));
-        $harness->assertTrue(str_contains($html, 'data-state-fields="ixbrl_average_number_employees,ixbrl_principal_activity_sic_code,ixbrl_accounts_approval_date,ixbrl_approving_director_id"'));
-        $harness->assertTrue(str_contains($html, 'data-ixbrl-core-details-form="true"'));
-        $harness->assertTrue(str_contains($html, 'name="intent" value="save_ixbrl_core_details"'));
-        $harness->assertTrue(str_contains($html, 'name="intent" value="save_ixbrl_disclosure_field"'));
-        $harness->assertTrue(str_contains($html, 'data-submit-on-change="true"'));
-        $saveButtonPosition = strpos($html, 'Approve Company Accounts');
+        $harness->assertFalse(str_contains($html, 'Approve Company Accounts'));
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosures-form="true"'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="save_ixbrl_disclosures"'));
+        $harness->assertFalse(str_contains($html, 'name="intent" value="save_ixbrl_core_details"'));
+        $harness->assertFalse(str_contains($html, 'name="intent" value="save_ixbrl_disclosure_field"'));
+        $harness->assertFalse(str_contains($html, 'data-submit-on-change="true"'));
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosures-edit="true"'));
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosures-save="true" disabled>Save Accounts Disclosures'));
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosures-cancel="true"'));
+        $saveButtonPosition = strpos($html, 'Save Accounts Disclosures');
         $corePanelEnd = $saveButtonPosition !== false ? strpos($html, '</form>', $saveButtonPosition) : false;
         $ct600AuthorisationPosition = strpos($html, 'Corporation Tax Return Authorisation');
         $harness->assertSame(true,
@@ -312,7 +315,7 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, '<th scope="row">Last updated by</th><td>Not yet saved</td>'));
         $harness->assertTrue(str_contains($html, '>Director signing and approving the accounts</label>'));
         $harness->assertTrue(str_contains($html, 'The selected officer’s name is used as the approving and signing director'));
-        $harness->assertTrue(str_contains($html, 'actions-row actions-row-nowrap ixbrl-core-details-actions'));
+        $harness->assertTrue(str_contains($html, 'ixbrl-disclosure-edit-actions'));
         $harness->assertTrue(str_contains($html, 'FRS 105 Notes'));
         $harness->assertTrue(str_contains($html, 'Companies House Revised Accounts'));
         $harness->assertTrue(str_contains($html, 'No Companies House revised-accounts disclosure is required'));
@@ -360,18 +363,9 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
             ]],
         ]);
 
-        $harness->assertTrue(str_contains(
-            $html,
-            'name="has_material_off_balance_sheet_arrangements" value="1" required checked'
-        ));
-        $harness->assertTrue(str_contains(
-            $html,
-            'name="micro_entity_eligibility_confirmed" value="1" required checked'
-        ));
-        $harness->assertTrue(str_contains(
-            $html,
-            'name="has_director_advances_credits_or_guarantees" value="0" required checked'
-        ));
+        $harness->assertTrue(preg_match('/name="has_material_off_balance_sheet_arrangements" value="1"[^>]*checked/', $html) === 1);
+        $harness->assertTrue(preg_match('/name="micro_entity_eligibility_confirmed" value="1"[^>]*checked/', $html) === 1);
+        $harness->assertTrue(preg_match('/name="has_director_advances_credits_or_guarantees" value="0"[^>]*checked/', $html) === 1);
         $harness->assertTrue(str_contains($html, 'cannot build accounts for this positive-note disclosure'));
         $harness->assertTrue(str_contains($html, '<th scope="row">Last updated on</th><td>2026-07-17 15:07:40</td>'));
         $harness->assertTrue(str_contains($html, '<th scope="row">Last updated by</th><td>James Elstone</td>'));
@@ -399,8 +393,8 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         ]);
 
         $harness->assertTrue(str_contains($html, 'Complete and lock Year End before confirming the accounts disclosures.'));
-        $harness->assertTrue(str_contains($html, 'name="is_still_trading" value="1" required disabled aria-disabled="true"'));
-        $harness->assertTrue(str_contains($html, 'type="submit" disabled aria-disabled="true"'));
+        $harness->assertTrue(preg_match('/name="is_still_trading" value="1"[^>]*disabled aria-disabled="true"/', $html) === 1);
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosures-save="true" disabled'));
     });
 
     $harness->check(_ixbrl_accounts_disclosuresCard::class, 'disables the disclosure approval controls once the current basis is approved', static function () use ($harness, $card): void {
@@ -427,6 +421,9 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, 'name="approval_note" rows="2" disabled aria-disabled="true"'));
         $harness->assertTrue(str_contains($html, '>I Approve this Statement of Fact</button>'));
         $harness->assertTrue(str_contains($html, 'type="submit" disabled aria-disabled="true"'));
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosures-initially-locked="1"'));
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosures-edit="true">Edit Accounts Disclosures'));
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosure-control="true" disabled aria-disabled="true"'));
         $harness->assertTrue(str_contains(
             $html,
             'name="declarant_authority" required data-state-default="" disabled aria-disabled="true"'
@@ -443,6 +440,45 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
             $html,
             'id="save_ct600_return_authorisation_button" type="submit" disabled aria-disabled="true"'
         ));
+    });
+
+    $harness->check(_ixbrl_accounts_disclosuresCard::class, 'keeps matching approved disclosures locked when another filing-basis section is stale', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'services' => [
+                'ixbrl_accounts_disclosures' => [
+                    'available' => true,
+                    'complete' => true,
+                    'stored' => true,
+                    'year_end_locked' => true,
+                    'disclosures' => ['accounting_standard' => 'FRS_105'],
+                    'suggested_disclosures' => [],
+                    'suggestion_sources' => [],
+                    'director_suggestions' => [],
+                    'accounting_period' => ['period_end' => '2025-12-31'],
+                    'trading_status_evidence' => ['has_previous_trading_evidence' => false],
+                    'dormancy' => ['calculated' => false],
+                ],
+                'ixbrl_filing_approval' => [
+                    'state' => 'stale',
+                    'current' => false,
+                    'can_approve' => true,
+                    'errors' => ['The accounts identity or figures changed after the previous filing approval.'],
+                    'approval' => [
+                        'id' => 57,
+                        'basis_json' => json_encode([
+                            'disclosures' => ['values' => ['accounting_standard' => 'FRS_105']],
+                        ], JSON_THROW_ON_ERROR),
+                    ],
+                ],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosures-initially-locked="1"'));
+        $harness->assertTrue(str_contains($html, 'still match the current approval #57'));
+        $harness->assertTrue(str_contains($html, 'name="average_number_employees" type="number"'));
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosure-control="true" disabled aria-disabled="true"'));
+        $harness->assertTrue(str_contains($html, 'Edit Accounts Disclosures'));
     });
 
     $harness->check(_ixbrl_accounts_disclosuresCard::class, 'renders Companies House revised accounts disclosure immediately after FRS 105 notes', static function () use ($harness, $card): void {
@@ -489,10 +525,11 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($projectJs, 'initialiseIxbrlTradingForms'));
         $harness->assertTrue(str_contains($projectJs, '[data-ixbrl-ever-traded-panel="true"]'));
         $harness->assertTrue(substr_count($projectJs, 'initialiseIxbrlTradingForms(') >= 3);
-        $harness->assertTrue(str_contains($projectJs, 'initialiseIxbrlCoreDetailsForms'));
-        $harness->assertTrue(str_contains($projectJs, '[data-principal-activity-select="true"]'));
-        $harness->assertTrue(str_contains($projectJs, 'activitySelected'));
-        $harness->assertTrue(substr_count($projectJs, 'initialiseIxbrlCoreDetailsForms(') >= 3);
+        $harness->assertTrue(str_contains($projectJs, 'initialiseIxbrlDisclosureForms'));
+        $harness->assertTrue(str_contains($projectJs, '[data-ixbrl-disclosures-form="true"]'));
+        $harness->assertTrue(str_contains($projectJs, 'initialState'));
+        $harness->assertTrue(str_contains($projectJs, 'form.reset()'));
+        $harness->assertTrue(substr_count($projectJs, 'initialiseIxbrlDisclosureForms(') >= 3);
     });
 });
 
@@ -926,6 +963,26 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             if ($buttonDisabled($ready, $label)) {
                 throw new RuntimeException('Expected the ready control to be enabled: ' . $label);
             }
+        }
+
+        $context['services']['companies_house_ixbrl']['filing_required'] = true;
+        $context['services']['companies_house_ixbrl']['filing_kind'] = 'revised';
+        $context['services']['companies_house_ixbrl']['active_submission'] = [
+            'id' => 49,
+            'submission_number' => '000002',
+            'lifecycle' => 'pending',
+        ];
+        $olderPending = $card->render($context);
+        $harness->assertTrue(str_contains(
+            $olderPending,
+            'Companies House submission 000002 remains Pending against an earlier prepared basis.'
+        ));
+        $harness->assertTrue(str_contains(
+            $olderPending,
+            'does not block generating the current artifact or HMRC filing set'
+        ));
+        if ($buttonDisabled($olderPending, 'Generate Companies House iXBRL')) {
+            throw new RuntimeException('An older pending submission must not block current artifact generation.');
         }
 
         $context['services']['companies_house_ixbrl']['can_prepare'] = false;

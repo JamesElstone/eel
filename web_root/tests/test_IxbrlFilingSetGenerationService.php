@@ -75,6 +75,45 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             \eel_accounts\Service\IxbrlFilingSetGenerationService::class,
+            'allows current-basis artifact preparation while an older Companies House submission is pending',
+            static function () use ($harness): void {
+                $service = new \eel_accounts\Service\IxbrlFilingSetGenerationService(
+                    readinessResolver: static fn(): array => [
+                        'can_generate' => true,
+                        'ready_for_filing' => true,
+                    ],
+                    periodProjectionResolver: static fn(): array => [
+                        'periods' => [['ct_period_id' => 7, 'sequence_no' => 1, 'status' => 'current']],
+                    ],
+                    companiesHouseResolver: static fn(): array => [
+                        'filing_required' => true,
+                        'filing_kind' => 'revised',
+                        'can_prepare' => true,
+                        'can_prepare_after_accounts_generation' => true,
+                        'preparation_blockers' => [],
+                        'prepared_artifact' => [],
+                        'active_submission' => [
+                            'id' => 49,
+                            'submission_number' => '000002',
+                            'lifecycle' => 'pending',
+                        ],
+                    ],
+                    computationStatusResolver: static fn(): array => ['ready' => true, 'fileable' => true],
+                    revisionReadinessResolver: static fn(): array => [
+                        'applicable' => true,
+                        'ready' => true,
+                    ],
+                );
+
+                $plan = $service->plan(49, 79);
+                $harness->assertTrue((bool)$plan['ready']);
+                $harness->assertSame('prepare', (string)$plan['companies_house']['state']);
+                $harness->assertSame([], (array)$plan['errors']);
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Service\IxbrlFilingSetGenerationService::class,
             'regenerates every artifact when the complete filing set is already current',
             static function () use ($harness): void {
                 $calls = ['accounts' => 0, 'validation' => 0, 'computation' => 0, 'ct600' => 0, 'companies_house' => 0];

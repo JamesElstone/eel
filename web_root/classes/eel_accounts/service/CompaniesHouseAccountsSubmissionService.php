@@ -55,8 +55,9 @@ final class CompaniesHouseAccountsSubmissionService
         $original = $this->exactOriginalDocument($selection);
         $eligibility = $this->eligibility($selection, $original);
         $readiness = $this->readiness($companyId, $accountingPeriodId);
-        $submission = $this->latestSubmission($companyId, $accountingPeriodId, $filingKind);
         $mode = AccountingConfigurationStore::companiesHouseAccountsFilingMode();
+        $environment = $mode === 'LIVE' ? 'LIVE' : 'TEST';
+        $latestSubmission = $this->latestSubmission($companyId, $accountingPeriodId, $filingKind);
         $featureEnabled = in_array($mode, ['TEST', 'LIVE'], true);
         $credentialsConfigured = $featureEnabled && $this->credentialsConfigured($mode);
         $protocolReady = $this->conversation()->schemaReady();
@@ -98,6 +99,20 @@ final class CompaniesHouseAccountsSubmissionService
             (array)$selection['accounting_period'],
             date('Y-m-d')
         );
+        $submission = $this->currentArtifactSubmission(
+            $companyId,
+            $accountingPeriodId,
+            $filingKind,
+            $environment,
+            (array)($readiness['filing_approval'] ?? [])
+        );
+        $activeSubmission = $this->activeSubmission(
+            $companyId,
+            $accountingPeriodId,
+            $filingKind,
+            $environment
+        );
+        $conversationSubmission = $activeSubmission ?? $submission ?? $latestSubmission;
 
         $preparationBlockers = [];
         if (!$classificationApproved || !in_array($filingKind, ['original', 'revised'], true)) {
@@ -140,13 +155,6 @@ final class CompaniesHouseAccountsSubmissionService
             $preparationBlockers[] = $ixbrlPreparationBlocker;
         }
 
-        $lifecycle = (string)($submission['lifecycle'] ?? '');
-        if (in_array($lifecycle, ['submitting', 'transport_unknown', 'pending', 'parked', 'accepted'], true)) {
-            $preparationBlockers[] = match ($lifecycle) {
-                'accepted' => 'Companies House has already accepted accounts for this filing basis.',
-                default => 'A Companies House accounts submission is already active and must be resolved before preparing another.',
-            };
-        }
         $canPrepareAfterAccountsGeneration = $preparationBlockers === []
             || ($ixbrlPreparationBlocker !== ''
                 && count($preparationBlockers) === 1
@@ -185,11 +193,18 @@ final class CompaniesHouseAccountsSubmissionService
         }
 
         $submissionBlockers = [];
+        $lifecycle = (string)($submission['lifecycle'] ?? '');
         if ($lifecycle !== 'prepared') {
             $submissionBlockers[] = trim((string)($submission['submission_number'] ?? '')) !== ''
                 ? 'The currently generated Companies House iXBRL has already been submitted. '
                     . 'To send a new submission regenerate the iXBRL on the Disclosure page.'
                 : 'Prepare and validate the Companies House accounts artifact before submission.';
+        }
+        if ($activeSubmission !== null
+            && (int)($activeSubmission['id'] ?? 0) !== (int)($submission['id'] ?? 0)) {
+            $submissionBlockers[] = 'Companies House submission '
+                . (trim((string)($activeSubmission['submission_number'] ?? '')) ?: '#' . (int)$activeSubmission['id'])
+                . ' is still active for an earlier prepared basis. Resolve it before transmitting another Companies House filing.';
         }
         if (!$featureEnabled) {
             $submissionBlockers[] = 'Companies House accounts filing is disabled until TEST credentials are issued.';
@@ -258,17 +273,20 @@ final class CompaniesHouseAccountsSubmissionService
             'preparation_checks' => $preparationChecks,
             'readiness' => $readiness,
             'submission' => $submission,
+            'active_submission' => $activeSubmission,
+            'latest_submission' => $latestSubmission,
+            'conversation_submission' => $conversationSubmission,
             'preflight' => $this->conversation()->latestAuthenticationCheck(
                 $companyId,
                 $accountingPeriodId,
                 $mode
             ),
-            'status_cycle' => $submission === null
+            'status_cycle' => $conversationSubmission === null
                 ? null
-                : $this->conversation()->latestStatusCycle((int)$submission['id']),
-            'exchanges' => $submission === null
+                : $this->conversation()->latestStatusCycle((int)$conversationSubmission['id']),
+            'exchanges' => $conversationSubmission === null
                 ? []
-                : $this->conversation()->exchanges((int)$submission['id']),
+                : $this->conversation()->exchanges((int)$conversationSubmission['id']),
             'prepared_artifact' => $preparedArtifact,
             'revised_validation' => $revisedValidation,
             'sequence' => $sequence,
@@ -316,8 +334,25 @@ final class CompaniesHouseAccountsSubmissionService
             }
         }
 
-        $submission = $this->latestSubmission($companyId, $accountingPeriodId);
-        $filingKind = strtolower(trim((string)($submission['filing_type'] ?? '')));
+        $classification = $this->filingClassification($companyId, $accountingPeriodId);
+        $filingKind = strtolower(trim((string)($classification['filing_kind'] ?? '')));
+        $environment = $mode === 'LIVE' ? 'LIVE' : 'TEST';
+        $approvalStatus = (new IxbrlAccountsFilingApprovalService())
+            ->statusForReadModel($companyId, $accountingPeriodId);
+        $submission = $this->currentArtifactSubmission(
+            $companyId,
+            $accountingPeriodId,
+            $filingKind,
+            $environment,
+            $approvalStatus
+        );
+        $activeSubmission = $this->activeSubmission(
+            $companyId,
+            $accountingPeriodId,
+            $filingKind,
+            $environment
+        );
+        $latestSubmission = $this->latestSubmission($companyId, $accountingPeriodId, $filingKind);
         $preparedArtifact = $submission === null
             ? []
             : $this->preparedArtifactDisplayState($submission);
@@ -325,6 +360,12 @@ final class CompaniesHouseAccountsSubmissionService
         $submissionBlockers = [];
         if ($lifecycle !== 'prepared') {
             $submissionBlockers[] = 'Prepare and validate the Companies House accounts artifact before submission.';
+        }
+        if ($activeSubmission !== null
+            && (int)($activeSubmission['id'] ?? 0) !== (int)($submission['id'] ?? 0)) {
+            $submissionBlockers[] = 'Companies House submission '
+                . (trim((string)($activeSubmission['submission_number'] ?? '')) ?: '#' . (int)$activeSubmission['id'])
+                . ' is still active for an earlier prepared basis. Resolve it before transmitting another Companies House filing.';
         }
         if (!$featureEnabled) {
             $submissionBlockers[] = 'Companies House accounts filing is disabled until TEST credentials are issued.';
@@ -369,6 +410,8 @@ final class CompaniesHouseAccountsSubmissionService
             ],
             'filing_kind' => $filingKind,
             'submission' => $submission,
+            'active_submission' => $activeSubmission,
+            'latest_submission' => $latestSubmission,
             'prepared_artifact' => $preparedArtifact,
             'preflight' => $this->conversation()->latestAuthenticationCheck($companyId, $accountingPeriodId, $mode),
             'sequence' => $sequence,
@@ -1312,6 +1355,20 @@ final class CompaniesHouseAccountsSubmissionService
         }
         $filingKind = (string)($submission['filing_type'] ?? 'revised');
         $filingKind = in_array($filingKind, ['original', 'revised'], true) ? $filingKind : 'accounts';
+        $activeSubmission = $this->activeSubmission(
+            (int)$submission['company_id'],
+            (int)$submission['accounting_period_id'],
+            $filingKind,
+            $mode
+        );
+        if ($activeSubmission !== null && (int)$activeSubmission['id'] !== $submissionId) {
+            return $this->failure(
+                'Companies House submission '
+                . (trim((string)($activeSubmission['submission_number'] ?? ''))
+                    ?: '#' . (int)$activeSubmission['id'])
+                . ' is still active for an earlier prepared basis. Resolve it before transmitting another Companies House filing.'
+            );
+        }
         $filingLabel = $filingKind . '-accounts';
         $this->reportProgress(
             $progress,
@@ -3374,6 +3431,104 @@ final class CompaniesHouseAccountsSubmissionService
              ' . $filingFilter . '
              ORDER BY id DESC LIMIT 1',
             $params
+        );
+
+        return is_array($row) ? $this->normaliseSubmission($row) : null;
+    }
+
+    private function currentArtifactSubmission(
+        int $companyId,
+        int $accountingPeriodId,
+        string $filingKind,
+        string $environment,
+        array $approvalStatus
+    ): ?array {
+        if (!\InterfaceDB::tableExists(self::SUBMISSIONS_TABLE)
+            || !\InterfaceDB::tableExists('ixbrl_generation_runs')) {
+            return null;
+        }
+        $filingKind = strtolower(trim($filingKind));
+        if (!in_array($filingKind, ['original', 'revised'], true)) {
+            return null;
+        }
+        $environment = strtoupper(trim($environment));
+        if (!in_array($environment, ['TEST', 'LIVE'], true)) {
+            return null;
+        }
+
+        $state = strtolower(trim((string)($approvalStatus['state'] ?? '')));
+        $approval = is_array($approvalStatus['approval'] ?? null)
+            ? (array)$approvalStatus['approval']
+            : [];
+        $approvalId = (int)($approval['id'] ?? 0);
+        $approvalHash = strtolower(trim((string)($approval['basis_hash'] ?? '')));
+        if ($state !== 'current' || $approvalId <= 0 || preg_match('/^[a-f0-9]{64}$/D', $approvalHash) !== 1) {
+            return null;
+        }
+
+        $row = \InterfaceDB::fetchOne(
+            'SELECT submission.*
+             FROM ' . self::SUBMISSIONS_TABLE . ' submission
+             INNER JOIN ixbrl_generation_runs run
+                ON run.id = submission.ixbrl_generation_run_id
+             WHERE submission.company_id = :company_id
+               AND submission.accounting_period_id = :accounting_period_id
+               AND submission.filing_type = :filing_type
+               AND submission.environment = :environment
+               AND submission.artifact_path IS NOT NULL
+               AND submission.artifact_path <> :empty_path
+               AND run.filing_approval_id = :approval_id
+               AND run.filing_approval_hash = :approval_hash
+             ORDER BY submission.id DESC
+             LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'filing_type' => $filingKind,
+                'environment' => $environment,
+                'empty_path' => '',
+                'approval_id' => $approvalId,
+                'approval_hash' => $approvalHash,
+            ]
+        );
+
+        return is_array($row) ? $this->normaliseSubmission($row) : null;
+    }
+
+    private function activeSubmission(
+        int $companyId,
+        int $accountingPeriodId,
+        string $filingKind,
+        string $environment
+    ): ?array {
+        if (!\InterfaceDB::tableExists(self::SUBMISSIONS_TABLE)) {
+            return null;
+        }
+        $filingKind = strtolower(trim($filingKind));
+        if (!in_array($filingKind, ['original', 'revised'], true)) {
+            return null;
+        }
+        $environment = strtoupper(trim($environment));
+        if (!in_array($environment, ['TEST', 'LIVE'], true)) {
+            return null;
+        }
+
+        $row = \InterfaceDB::fetchOne(
+            'SELECT *
+             FROM ' . self::SUBMISSIONS_TABLE . '
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND filing_type = :filing_type
+               AND environment = :environment
+               AND lifecycle IN (\'submitting\', \'transport_unknown\', \'pending\', \'parked\')
+             ORDER BY id DESC
+             LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'filing_type' => $filingKind,
+                'environment' => $environment,
+            ]
         );
 
         return is_array($row) ? $this->normaliseSubmission($row) : null;

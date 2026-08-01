@@ -77,6 +77,9 @@ final class _companies_house_transmitCard extends CardBaseFramework
         $feature = (array)($model['feature'] ?? []);
         $sequence = (array)($model['sequence'] ?? []);
         $submission = is_array($model['submission'] ?? null) ? $model['submission'] : null;
+        $activeSubmission = is_array($model['active_submission'] ?? null)
+            ? (array)$model['active_submission']
+            : null;
         $filingKind = strtolower(trim((string)($submission['filing_kind'] ?? $model['filing_kind'] ?? '')));
         $artifact = (array)($model['prepared_artifact'] ?? []);
         $preflight = is_array($model['preflight'] ?? null) ? (array)$model['preflight'] : null;
@@ -162,6 +165,24 @@ final class _companies_house_transmitCard extends CardBaseFramework
             $warningMessages[] = 'Accounts transmission is blocked because ' . $schemaError;
         }
         $html .= '</section>';
+        if ($activeSubmission !== null
+            && (int)($activeSubmission['id'] ?? 0) !== (int)($submission['id'] ?? 0)) {
+            $activeIdentifier = trim((string)($activeSubmission['submission_number'] ?? ''));
+            $activeIdentifier = $activeIdentifier !== ''
+                ? $activeIdentifier
+                : '#' . (int)($activeSubmission['id'] ?? 0);
+            $activeLifecycle = strtolower(trim((string)($activeSubmission['lifecycle'] ?? 'pending')));
+            $html .= '<section class="panel-soft warn companies-house-active-earlier-submission">'
+                . '<div class="status-head"><h3 class="card-title">Active earlier submission</h3>'
+                . '<span class="badge ' . $this->badge($activeLifecycle) . '">'
+                . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($activeLifecycle, '_'))
+                . '</span></div><div class="summary-grid">'
+                . $this->metric('Submission number', $activeIdentifier)
+                . $this->metric('Environment', (string)($activeSubmission['environment'] ?? $feature['mode'] ?? ''))
+                . '</div><div class="helper">This immutable submission belongs to an earlier prepared basis. '
+                . 'Continue checking it in GovTalk Transmission History. It blocks another Companies House transmission, '
+                . 'but does not block preparation of the current Companies House or HMRC artifacts.</div></section>';
+        }
         $html .= $this->submitForm(
             $companyId,
             $accountingPeriodId,

@@ -1138,49 +1138,78 @@
         });
     }
 
-    function initialiseIxbrlCoreDetailsForms(root = document) {
-        const forms = root.querySelectorAll ? root.querySelectorAll('[data-ixbrl-core-details-form="true"]') : [];
+    function initialiseIxbrlDisclosureForms(root = document) {
+        const forms = root.querySelectorAll ? root.querySelectorAll('[data-ixbrl-disclosures-form="true"]') : [];
 
         forms.forEach((form) => {
-            if (!(form instanceof HTMLFormElement) || form.dataset.ixbrlCoreDetailsBound === '1') {
+            if (!(form instanceof HTMLFormElement) || form.dataset.ixbrlDisclosuresBound === '1') {
                 return;
             }
-            const stateSection = form.querySelector('[data-state-target="save_ixbrl_core_details"][data-state-fields]');
-            const activity = form.querySelector('[data-principal-activity-select="true"]');
-            const button = form.querySelector('#save_ixbrl_core_details');
-            if (!(stateSection instanceof HTMLElement)
-                || !(activity instanceof HTMLSelectElement)
-                || !(button instanceof HTMLButtonElement)) {
-                return;
-            }
-
-            const fieldIds = String(stateSection.dataset.stateFields || '')
-                .split(',')
-                .map((value) => value.trim())
-                .filter((value) => value !== '');
-            const fields = fieldIds
-                .map((fieldId) => form.querySelector(`#${CSS.escape(fieldId)}`))
-                .filter((field) => field instanceof HTMLInputElement || field instanceof HTMLSelectElement);
-            if (fields.length !== fieldIds.length) {
+            const controls = Array.from(form.querySelectorAll('[data-ixbrl-disclosure-control="true"]'))
+                .filter((control) => control instanceof HTMLInputElement
+                    || control instanceof HTMLSelectElement
+                    || control instanceof HTMLTextAreaElement
+                    || control instanceof HTMLButtonElement);
+            const editButton = form.querySelector('[data-ixbrl-disclosures-edit="true"]');
+            const saveButton = form.querySelector('[data-ixbrl-disclosures-save="true"]');
+            const cancelButton = form.querySelector('[data-ixbrl-disclosures-cancel="true"]');
+            if (controls.length === 0
+                || !(editButton instanceof HTMLButtonElement)
+                || !(saveButton instanceof HTMLButtonElement)
+                || !(cancelButton instanceof HTMLButtonElement)) {
                 return;
             }
 
-            const defaults = new Map();
-            fields.forEach((field) => {
-                defaults.set(field, String(field.dataset.stateDefault ?? field.value));
-            });
+            const canEdit = form.dataset.ixbrlDisclosuresCanEdit === '1';
+            const initiallyLocked = form.dataset.ixbrlDisclosuresInitiallyLocked === '1';
+            const valueControls = controls.filter((control) => !(control instanceof HTMLButtonElement));
+            const state = () => valueControls.map((control) => {
+                if (control instanceof HTMLInputElement
+                    && (control.type === 'radio' || control.type === 'checkbox')) {
+                    return `${control.name}:${control.value}:${control.checked ? '1' : '0'}`;
+                }
+                return `${control.name}:${control.value}`;
+            }).join('|');
+            const initialState = state();
+
+            const setEditing = (editing) => {
+                form.dataset.ixbrlDisclosuresEditing = editing ? '1' : '0';
+                controls.forEach((control) => {
+                    control.disabled = !editing || !canEdit;
+                    if (control.disabled) {
+                        control.setAttribute('aria-disabled', 'true');
+                    } else {
+                        control.removeAttribute('aria-disabled');
+                    }
+                });
+                form.dispatchEvent(new CustomEvent('ixbrl-disclosures-edit-state'));
+            };
             const sync = () => {
-                const changed = fields.some((field) => String(field.value) !== defaults.get(field));
-                const activitySelected = String(activity.value || '').trim() !== '' && activity.checkValidity();
-                button.disabled = activity.disabled || !activitySelected || !changed;
+                const editing = form.dataset.ixbrlDisclosuresEditing === '1';
+                const changed = state() !== initialState;
+                editButton.disabled = !canEdit || !initiallyLocked || editing;
+                saveButton.disabled = !canEdit || !editing || !changed || !form.checkValidity();
+                cancelButton.disabled = !canEdit || (!changed && (!initiallyLocked || !editing));
             };
 
-            fields.forEach((field) => {
-                field.addEventListener('input', sync);
-                field.addEventListener('change', sync);
+            valueControls.forEach((control) => {
+                control.addEventListener('input', sync);
+                control.addEventListener('change', sync);
             });
+            editButton.addEventListener('click', () => {
+                setEditing(true);
+                sync();
+                valueControls.find((control) => !control.disabled)?.focus({ preventScroll: true });
+            });
+            cancelButton.addEventListener('click', () => {
+                form.reset();
+                setEditing(!initiallyLocked);
+                sync();
+            });
+
+            form.dataset.ixbrlDisclosuresBound = '1';
+            setEditing(canEdit && !initiallyLocked);
             window.setTimeout(sync, 0);
-            form.dataset.ixbrlCoreDetailsBound = '1';
         });
     }
 
@@ -1200,8 +1229,9 @@
                 return;
             }
 
-            const formLocked = stillTradingControls.every((control) => control instanceof HTMLInputElement && control.disabled);
             const sync = () => {
+                const formLocked = form.dataset.ixbrlDisclosuresEditing === '0'
+                    || stillTradingControls.every((control) => control instanceof HTMLInputElement && control.disabled);
                 const selected = stillTradingControls.find((control) => control instanceof HTMLInputElement && control.checked);
                 const showEverTraded = selected instanceof HTMLInputElement && selected.value === '0';
                 panel.classList.toggle('is-hidden', !showEverTraded);
@@ -1217,6 +1247,7 @@
 
             form.dataset.ixbrlTradingBound = '1';
             stillTradingControls.forEach((control) => control.addEventListener('change', sync));
+            form.addEventListener('ixbrl-disclosures-edit-state', sync);
             sync();
         });
     }
@@ -1435,7 +1466,7 @@
     initialiseTransactionCategorisationAutosave(document);
     initialiseTransactionAutoApprovalControls(document);
     initialiseYearEndStateForms(document);
-    initialiseIxbrlCoreDetailsForms(document);
+    initialiseIxbrlDisclosureForms(document);
     initialiseIxbrlTradingForms(document);
     initialiseParticipatorLoanTermsForms(document);
     restoreStoredCardMaximizedStates(document);
@@ -1459,7 +1490,7 @@
                     initialiseTransactionCategorisationAutosave(node);
                     initialiseTransactionAutoApprovalControls(node);
                     initialiseYearEndStateForms(node);
-                    initialiseIxbrlCoreDetailsForms(node);
+                    initialiseIxbrlDisclosureForms(node);
                     initialiseIxbrlTradingForms(node);
                     initialiseParticipatorLoanTermsForms(node);
                     restoreStoredCardMaximizedStates(node);

@@ -34,8 +34,60 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertTrue(is_string($source));
                 $harness->assertTrue(str_contains(
                     (string)$source,
-                    'The currently generated Companies House iXBRL has already been submitted. '
-                    . 'To send a new submission regenerate the iXBRL on the Disclosure page.'
+                    'The currently generated Companies House iXBRL has already been submitted.'
+                ));
+                $harness->assertTrue(str_contains(
+                    (string)$source,
+                    'To send a new submission regenerate the iXBRL on the Disclosure page.'
+                ));
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'separates the current approval artifact from an older active submission',
+            static function () use ($harness): void {
+                $method = new ReflectionMethod(
+                    \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
+                    'fetchContext'
+                );
+                $source = file($method->getFileName());
+                $harness->assertTrue(is_array($source));
+                $body = implode('', array_slice(
+                    $source,
+                    $method->getStartLine() - 1,
+                    $method->getEndLine() - $method->getStartLine() + 1
+                ));
+                $harness->assertTrue(str_contains($body, 'currentArtifactSubmission('));
+                $harness->assertTrue(str_contains($body, 'activeSubmission('));
+                $harness->assertTrue(str_contains($body, "'active_submission' => \$activeSubmission"));
+                $harness->assertTrue(str_contains($body, "'latest_submission' => \$latestSubmission"));
+                $harness->assertFalse(str_contains(
+                    $body,
+                    'already active and must be resolved before preparing another'
+                ));
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'enforces the older active-submission lock in the transmission service',
+            static function () use ($harness): void {
+                $method = new ReflectionMethod(
+                    \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
+                    'submitRevision'
+                );
+                $source = file($method->getFileName());
+                $harness->assertTrue(is_array($source));
+                $body = implode('', array_slice(
+                    $source,
+                    $method->getStartLine() - 1,
+                    $method->getEndLine() - $method->getStartLine() + 1
+                ));
+                $harness->assertTrue(str_contains($body, 'activeSubmission('));
+                $harness->assertTrue(str_contains(
+                    $body,
+                    'is still active for an earlier prepared basis. Resolve it before transmitting another Companies House filing.'
                 ));
             }
         );

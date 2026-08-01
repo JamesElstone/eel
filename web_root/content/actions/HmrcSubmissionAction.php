@@ -33,6 +33,7 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
             'hmrc_retry_test',
             'hmrc_retry_live',
             'hmrc_generate_request',
+            'hmrc_recover_acknowledgement',
             'hmrc_poll',
         ], true)) {
             return $this->result(false, ['Unknown Corporation Tax submission action.'], [], $changedFacts);
@@ -42,6 +43,15 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
             return $this->result(
                 false,
                 ['Developer options must be enabled to generate an unsent HMRC GovTalk request file.'],
+                [],
+                $changedFacts
+            );
+        }
+        if ($intent === 'hmrc_recover_acknowledgement'
+            && !(bool)AppConfigurationStore::get('developer_options', false)) {
+            return $this->result(
+                false,
+                ['Developer Options must be enabled to recover an archived HMRC acknowledgement.'],
                 [],
                 $changedFacts
             );
@@ -111,8 +121,20 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
                         $changedFacts
                     );
                 }
-                $progress->report('Preparing to check the pending HMRC conversation…', 10);
-                $command = $service->poll($submissionId, $actor, $report);
+                if ($intent === 'hmrc_recover_acknowledgement') {
+                    $progress->report(
+                        'Preparing to verify the archived HMRC acknowledgement without transmitting…',
+                        10
+                    );
+                    $command = $service->recoverArchivedAcknowledgement(
+                        $submissionId,
+                        $actor,
+                        $report
+                    );
+                } else {
+                    $progress->report('Preparing to check the pending HMRC conversation…', 10);
+                    $command = $service->poll($submissionId, $actor, $report);
+                }
             }
             if (!empty($command['success'])) {
                 $progress->report(
@@ -213,8 +235,11 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
             return 'The HMRC GovTalk request file was generated without transmission'
                 . ($path !== '' ? ': ' . $path : '.');
         }
+        if ($intent === 'hmrc_recover_acknowledgement') {
+            return 'The archived HMRC acknowledgement was verified. Use Check Submission Status to continue the existing conversation.';
+        }
         if (!empty($command['needs_poll'])) {
-            return 'HMRC acknowledged the submission. Use Check HMRC status after the requested polling interval.';
+            return 'HMRC acknowledged the submission. Use Check Submission Status after the requested polling interval.';
         }
         $outcome = strtolower(trim((string)($command['business_outcome']
             ?? ($command['submission']['business_outcome'] ?? '')

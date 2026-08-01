@@ -321,10 +321,15 @@ final class GovTalkProtocolConversationService
         string $state,
         string $outcomeCode = '',
         string $outcomeSummary = '',
-        string $error = ''
+        string $error = '',
+        string $correlationId = ''
     ): void {
         if (!$this->schemaReady() || trim($transactionId) === '') {
             return;
+        }
+        $correlationId = strtoupper(trim($correlationId));
+        if ($correlationId !== '' && preg_match('/^[0-9A-F]{1,32}$/D', $correlationId) !== 1) {
+            throw new \InvalidArgumentException('The GovTalk correlation ID is invalid.');
         }
         $allowed = [
             'prepared', 'sent', 'received', 'succeeded', 'rejected',
@@ -336,6 +341,7 @@ final class GovTalkProtocolConversationService
         \InterfaceDB::prepareExecute(
             'UPDATE ' . self::EXCHANGES . '
              SET exchange_state = :state,
+                 correlation_id = COALESCE(:correlation_id, correlation_id),
                  outcome_code = :outcome_code,
                  outcome_summary = :outcome_summary,
                  error_summary = :error,
@@ -345,6 +351,7 @@ final class GovTalkProtocolConversationService
                AND transaction_id = :transaction_id',
             [
                 'state' => $state,
+                'correlation_id' => $correlationId !== '' ? $correlationId : null,
                 'outcome_code' => trim($outcomeCode) !== '' ? trim($outcomeCode) : null,
                 'outcome_summary' => trim($outcomeSummary) !== ''
                     ? trim($outcomeSummary)

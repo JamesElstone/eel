@@ -9,7 +9,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $reflection = new ReflectionClass(
             \eel_accounts\Client\HmrcCtTransactionEngineTransportInterface::class
         );
-        foreach (['configurationStatus', 'prepareSubmissionRequest', 'submit', 'poll', 'delete'] as $method) {
+        foreach (['configurationStatus', 'prepareSubmissionRequest', 'submit', 'poll', 'delete', 'parseArchivedResponse'] as $method) {
             $h->assertTrue($reflection->hasMethod($method));
         }
     }

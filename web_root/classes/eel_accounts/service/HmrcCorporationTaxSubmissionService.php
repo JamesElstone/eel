@@ -587,6 +587,251 @@ final class HmrcCorporationTaxSubmissionService
         return $this->applyConversationResult($submissionId, $result, $actor, true);
     }
 
+    public function recoverArchivedAcknowledgement(
+        int $submissionId,
+        int|string|null $actor = null,
+        ?callable $progress = null
+    ): array {
+        $report = static function (string $message, int $percent) use ($progress): void {
+            if ($progress !== null) {
+                $progress($message, $percent);
+            }
+        };
+        $report('Verifying the uncertain HMRC submission and archived exchange…', 15);
+        $submission = $this->fetchById($submissionId);
+        if (!is_array($submission)) {
+            return $this->failure('The HMRC submission does not exist.');
+        }
+        if ((string)$submission['protocol_state'] !== 'transport_uncertain') {
+            return $this->failure(
+                'This HMRC submission no longer has an uncertain acknowledgement to recover.',
+                $submissionId,
+                $submission
+            );
+        }
+        $transactionId = strtoupper(trim((string)($submission['transaction_id'] ?? '')));
+        $exchange = \InterfaceDB::fetchOne(
+            'SELECT e.*, a.company_id AS archive_company_id,
+                    a.accounting_period_id AS archive_accounting_period_id,
+                    a.environment AS archive_environment
+             FROM govtalk_protocol_exchanges e
+             INNER JOIN transmission_archives a ON a.id = e.transmission_archive_id
+             WHERE e.authority = :authority
+               AND e.hmrc_submission_id = :submission_id
+               AND e.operation = :operation
+               AND e.transaction_id = :transaction_id
+             ORDER BY e.id DESC
+             LIMIT 1',
+            [
+                'authority' => 'hmrc',
+                'submission_id' => $submissionId,
+                'operation' => 'submit',
+                'transaction_id' => $transactionId,
+            ]
+        );
+        if (!is_array($exchange)
+            || (int)($exchange['archive_company_id'] ?? 0) !== (int)$submission['company_id']
+            || (int)($exchange['archive_accounting_period_id'] ?? 0) !== (int)$submission['accounting_period_id']
+            || strtoupper((string)($exchange['archive_environment'] ?? '')) !== (string)$submission['environment']) {
+            return $this->failure(
+                'The archived HMRC acknowledgement is not bound to this submission.',
+                $submissionId,
+                $submission
+            );
+        }
+        $statusCode = (int)($exchange['response_status_code'] ?? 0);
+        if ($statusCode < 200 || $statusCode >= 300) {
+            return $this->failure(
+                'Only a successful HTTP GovTalk response can be recovered as an acknowledgement.',
+                $submissionId,
+                $submission
+            );
+        }
+
+        $report('Checking the archived HMRC response integrity…', 35);
+        try {
+            $evidence = $this->govTalk->evidenceFileForCompany(
+                (int)$submission['company_id'],
+                (int)$exchange['id'],
+                'response'
+            );
+        } catch (\Throwable $exception) {
+            return $this->failure(
+                'The archived HMRC acknowledgement could not be verified: ' . $exception->getMessage(),
+                $submissionId,
+                $submission
+            );
+        }
+        $submissionResponseHash = strtolower(trim((string)($submission['response_sha256'] ?? '')));
+        $submissionResponsePath = realpath((string)($submission['response_body_path'] ?? ''));
+        $evidenceResponsePath = realpath((string)$evidence['path']);
+        if ($submissionResponseHash === ''
+            || !hash_equals($submissionResponseHash, (string)$evidence['sha256'])
+            || !is_string($submissionResponsePath)
+            || !is_string($evidenceResponsePath)
+            || strcasecmp($submissionResponsePath, $evidenceResponsePath) !== 0) {
+            return $this->failure(
+                'The submission and exchange do not reference the same archived HMRC response.',
+                $submissionId,
+                $submission
+            );
+        }
+        $responseXml = file_get_contents((string)$evidence['path']);
+        if (!is_string($responseXml) || $responseXml === '') {
+            return $this->failure(
+                'The archived HMRC acknowledgement is empty.',
+                $submissionId,
+                $submission
+            );
+        }
+
+        $report('Reprocessing the archived response without contacting HMRC…', 55);
+        try {
+            $parsed = $this->transport->parseArchivedResponse(
+                $responseXml,
+                'submit',
+                (string)$submission['environment'],
+                '',
+                $transactionId
+            );
+        } catch (\Throwable $exception) {
+            return $this->failure(
+                'The archived HMRC response could not be parsed safely: ' . $exception->getMessage(),
+                $submissionId,
+                $submission
+            );
+        }
+        if (empty($parsed['success']) || (string)($parsed['protocol_state'] ?? '') !== 'acknowledged') {
+            return $this->failure(
+                'The archived HMRC response is not a valid acknowledgement: '
+                    . trim((string)($parsed['error'] ?? 'protocol validation failed.')),
+                $submissionId,
+                $submission
+            );
+        }
+        $correlationId = strtoupper(trim((string)($parsed['correlation_id'] ?? '')));
+        $responseEndpoint = trim((string)($parsed['response_endpoint'] ?? ''));
+        $pollInterval = (int)($parsed['poll_interval'] ?? 0);
+        if ($correlationId === '' || $responseEndpoint === '' || $pollInterval <= 0) {
+            return $this->failure(
+                'The archived HMRC acknowledgement has incomplete polling instructions.',
+                $submissionId,
+                $submission
+            );
+        }
+        $receivedAtValue = trim((string)($exchange['received_at'] ?? ''));
+        try {
+            if ($receivedAtValue === '') {
+                throw new \RuntimeException('Missing response receipt timestamp.');
+            }
+            $receivedAt = new \DateTimeImmutable(
+                $receivedAtValue,
+                new \DateTimeZone('UTC')
+            );
+        } catch (\Throwable) {
+            return $this->failure(
+                'The archived HMRC acknowledgement has no verifiable response receipt timestamp.',
+                $submissionId,
+                $submission
+            );
+        }
+        $nextPoll = $receivedAt->modify('+' . $pollInterval . ' seconds');
+
+        $report('Restoring the HMRC polling conversation and audit trail…', 80);
+        try {
+            \InterfaceDB::transaction(function () use (
+                $submissionId,
+                $submissionResponseHash,
+                $transactionId,
+                $correlationId,
+                $responseEndpoint,
+                $pollInterval,
+                $nextPoll,
+                $statusCode,
+                $submission,
+                $actor
+            ): void {
+                $statement = \InterfaceDB::prepareExecute(
+                    'UPDATE ' . self::SUBMISSIONS . '
+                     SET status = :status,
+                         protocol_state = :protocol_state,
+                         business_outcome = :business_outcome,
+                         hmrc_correlation_id = :correlation_id,
+                         response_endpoint = :response_endpoint,
+                         poll_interval_seconds = :poll_interval,
+                         next_poll_at = :next_poll_at,
+                         hmrc_response_code = :response_code,
+                         hmrc_response_summary = :response_summary,
+                         updated_at = :updated_at
+                     WHERE id = :id
+                       AND protocol_state = :expected_state
+                       AND response_sha256 = :response_sha256',
+                    [
+                        'status' => 'submitting',
+                        'protocol_state' => 'awaiting_poll',
+                        'business_outcome' => 'none',
+                        'correlation_id' => $correlationId,
+                        'response_endpoint' => $responseEndpoint,
+                        'poll_interval' => $pollInterval,
+                        'next_poll_at' => $nextPoll->format('Y-m-d H:i:s'),
+                        'response_code' => $statusCode,
+                        'response_summary' => 'HMRC acknowledgement recovered from verified archived evidence; polling is required.',
+                        'updated_at' => $this->sqlNow(),
+                        'id' => $submissionId,
+                        'expected_state' => 'transport_uncertain',
+                        'response_sha256' => $submissionResponseHash,
+                    ]
+                );
+                if ($statement->rowCount() !== 1) {
+                    throw new \RuntimeException(
+                        'The HMRC submission changed before its acknowledgement could be recovered.'
+                    );
+                }
+                $this->govTalk->completeExchange(
+                    'hmrc',
+                    (string)$submission['environment'],
+                    $transactionId,
+                    'succeeded',
+                    'acknowledged',
+                    'HMRC acknowledgement recovered from verified archived evidence.',
+                    '',
+                    $correlationId
+                );
+                $this->event(
+                    $submissionId,
+                    'info',
+                    'The archived HMRC acknowledgement was verified and the polling conversation was restored.',
+                    [
+                        'transaction_id' => $transactionId,
+                        'correlation_id' => $correlationId,
+                        'response_endpoint' => $responseEndpoint,
+                        'poll_interval_seconds' => $pollInterval,
+                    ]
+                );
+                $this->recordEvidenceOutcome(
+                    $submissionId,
+                    'hmrc_acknowledgement_recovered',
+                    'success',
+                    $actor,
+                    [
+                        'transaction_id' => $transactionId,
+                        'correlation_id' => $correlationId,
+                    ]
+                );
+            });
+        } catch (\Throwable $exception) {
+            return $this->failure(
+                'The archived HMRC acknowledgement could not be recovered: ' . $exception->getMessage(),
+                $submissionId,
+                $this->fetchById($submissionId)
+            );
+        }
+        $this->syncArchiveLifecycle($submissionId);
+        $remaining = max(0, $nextPoll->getTimestamp() - $this->now()->getTimestamp());
+
+        return $this->commandResult($submissionId, true, [], true, $remaining);
+    }
+
     private function submitMode(
         int $companyId,
         int $ctPeriodId,
@@ -1960,6 +2205,13 @@ final class HmrcCorporationTaxSubmissionService
         $row['needs_poll'] = (string)($row['protocol_state'] ?? '') === 'awaiting_poll';
         $row['cleanup_pending'] = (string)($row['protocol_state'] ?? '') === 'delete_pending';
         $row['uncertain'] = (string)($row['protocol_state'] ?? '') === 'transport_uncertain';
+        $responseCode = (int)($row['hmrc_response_code'] ?? 0);
+        $row['acknowledgement_recovery_available'] = $row['uncertain']
+            && $responseCode >= 200
+            && $responseCode < 300
+            && trim((string)($row['transaction_id'] ?? '')) !== ''
+            && trim((string)($row['response_body_path'] ?? '')) !== ''
+            && preg_match('/^[a-f0-9]{64}$/D', strtolower(trim((string)($row['response_sha256'] ?? '')))) === 1;
         try {
             $row['transmission_archive'] = $this->archives->find(
                 (int)($row['company_id'] ?? 0),
@@ -2348,7 +2600,8 @@ final class HmrcCorporationTaxSubmissionService
             $state,
             $outcomeCode,
             $summary,
-            $summary
+            $summary,
+            (string)($result['correlation_id'] ?? '')
         );
     }
 
@@ -2565,6 +2818,7 @@ final class HmrcCorporationTaxSubmissionService
                 'hmrc_rejected' => 'HMRC rejected the frozen filing package.',
                 'hmrc_gateway_rejected' => 'HMRC Gateway rejected the request before opening a filing conversation.',
                 'hmrc_acknowledged' => 'HMRC acknowledged the frozen filing package.',
+                'hmrc_acknowledgement_recovered' => 'A verified archived HMRC acknowledgement restored the polling conversation.',
                 default => 'The HMRC transmission outcome is uncertain.',
             },
             ['submission_id' => $submissionId] + $context

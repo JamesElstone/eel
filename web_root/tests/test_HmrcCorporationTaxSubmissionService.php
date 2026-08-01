@@ -14,9 +14,13 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
     /** @var list<array<string,mixed>> */
     public array $deleteResponses = [];
 
+    /** @var list<array<string,mixed>> */
+    public array $archivedResponses = [];
+
     public int $submitCalls = 0;
     public int $pollCalls = 0;
     public int $deleteCalls = 0;
+    public int $archivedParseCalls = 0;
     public bool $credentialsPlaceholder = false;
     private int $exchangeSequence = 0;
     /** @var list<string> */
@@ -25,6 +29,8 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
     public array $submittedBodies = [];
     /** @var list<string> */
     public array $submittedEnvironments = [];
+    /** @var list<string> */
+    public array $polledEndpoints = [];
 
     public function configurationStatus(string $environment): array
     {
@@ -100,6 +106,7 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
         ?string $transactionId = null
     ): array {
         $this->pollCalls++;
+        $this->polledEndpoints[] = $responseEndpoint;
         $request = $this->request('poll', $environment, $correlationId, $transactionId);
         $conversation->captureRequest($request);
         $conversation->markSendStarted($request);
@@ -126,6 +133,22 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
         $response = array_shift($this->deleteResponses) ?? $this->failure('Missing fake delete response.');
         $response['transaction_id'] = (string)$request['transaction_id'];
         $conversation->captureResponse($this->response($request, $response));
+        return $response;
+    }
+
+    public function parseArchivedResponse(
+        string $responseXml,
+        string $operation,
+        string $environment,
+        string $expectedCorrelationId,
+        string $expectedTransactionId
+    ): array {
+        unset($responseXml, $operation, $environment, $expectedCorrelationId);
+        $this->archivedParseCalls++;
+        $response = array_shift($this->archivedResponses)
+            ?? $this->failure('Missing fake archived response.');
+        $response['transaction_id'] = $expectedTransactionId;
+        $response['response_transaction_id'] = (string)($response['response_transaction_id'] ?? '');
         return $response;
     }
 
@@ -737,16 +760,21 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
 
         $h->check(
             \eel_accounts\Service\HmrcCorporationTaxSubmissionService::class,
-            'blocks blind retry after a transport-uncertain submit',
+            'blocks blind retry and recovers a verified archived acknowledgement without retransmission',
             static function () use ($h): void {
                 $companyId = 98611;
                 $accountingPeriodId = 98612;
                 $ctPeriodId = 98613;
                 foreach ([
                     [
-                        'INSERT INTO companies (id, company_name, is_active, created_at)
-                         VALUES (:id, :name, 1, :created_at)',
-                        ['id' => $companyId, 'name' => 'HMRC Uncertain Test Limited', 'created_at' => '2026-07-19 11:00:00'],
+                        'INSERT INTO companies (id, company_name, company_number, is_active, created_at)
+                         VALUES (:id, :name, :number, 1, :created_at)',
+                        [
+                            'id' => $companyId,
+                            'name' => 'HMRC Uncertain Test Limited',
+                            'number' => '09861100',
+                            'created_at' => '2026-07-19 11:00:00',
+                        ],
                     ],
                     [
                         'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end, created_at)
@@ -828,6 +856,15 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'filing_body_xml' => $body,
                         'source_manifest' => $manifest,
                         'body_sha256' => $bodyHash,
+                        'accounts_ixbrl_path' => 'fixture/accounts.html',
+                        'accounts_run_id' => 1,
+                        'accounts_sha256' => str_repeat('a', 64),
+                        'computations_ixbrl_path' => 'fixture/computations.html',
+                        'computation_run_id' => 2,
+                        'computations_sha256' => str_repeat('b', 64),
+                        'year_end_locked_at' => '2026-07-19 11:00:00',
+                        'irmark' => 'UNCERTAIN',
+                        'schema_version' => 'V3/V1.994',
                         'validation' => ['mode' => $mode],
                         'approval_declaration' => [
                             'declarant_name' => 'Jane Director',
@@ -847,22 +884,31 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'errors' => [],
                     ];
                     $transport = new HmrcCtTestTransport();
+                    $acknowledgementXml = '<GovTalkMessage xmlns="http://www.govtalk.gov.uk/CM/envelope">'
+                        . '<EnvelopeVersion>2.0</EnvelopeVersion><Header><MessageDetails>'
+                        . '<Class>HMRC-CT-CT600</Class><Qualifier>acknowledgement</Qualifier><Function>submit</Function>'
+                        . '<TransactionID/><CorrelationID>D3C2B9E5F98449A19863D934273FA052</CorrelationID>'
+                        . '<ResponseEndPoint PollInterval="10">https://test-transaction-engine.tax.service.gov.uk/poll</ResponseEndPoint>'
+                        . '</MessageDetails><SenderDetails/></Header><GovTalkDetails><Keys/></GovTalkDetails><Body/></GovTalkMessage>';
                     $transport->submitResponses[] = [
                         'success' => false,
                         'pre_send_failure' => false,
                         'transport_unknown' => true,
                         'protocol_state' => 'failed',
                         'business_outcome' => null,
-                        'status_code' => 0,
+                        'status_code' => 200,
                         'headers' => [],
-                        'response_xml' => '',
+                        'response_xml' => $acknowledgementXml,
                         'errors' => [],
-                        'error' => 'Connection timed out after request transmission.',
+                        'error' => 'MISSING_TRANSACTION_ID: HMRC response omitted the transaction ID.',
                     ];
+                    $clock = '2026-07-19 11:00:00';
                     $service = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService(
                         $transport,
                         null,
-                        static fn(): string => '2026-07-19 11:00:00',
+                        static function () use (&$clock): string {
+                            return $clock;
+                        },
                         test_register_cleanup_path(
                             test_tmp_directory() . DIRECTORY_SEPARATOR . 'hmrc-uncertain-' . bin2hex(random_bytes(4))
                         ),
@@ -872,12 +918,104 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     );
                     $first = $service->submitTest($companyId, $ctPeriodId, 42);
                     $h->assertFalse((bool)$first['success']);
-                    return;
                     $h->assertSame('transport_uncertain', $first['protocol_state']);
                     $second = $service->submitTest($companyId, $ctPeriodId, 42);
                     $h->assertFalse((bool)$second['success']);
                     $h->assertTrue(str_contains(implode(' ', $second['errors']), 'uncertain'));
                     $h->assertSame(1, $transport->submitCalls);
+
+                    $transport->archivedResponses[] = [
+                        'success' => true,
+                        'protocol_state' => 'acknowledged',
+                        'business_outcome' => null,
+                        'correlation_id' => 'D3C2B9E5F98449A19863D934273FA052',
+                        'response_endpoint' => 'https://test-transaction-engine.tax.service.gov.uk/poll',
+                        'poll_interval' => 10,
+                        'errors' => [],
+                        'error' => '',
+                    ];
+                    $recovered = $service->recoverArchivedAcknowledgement(
+                        (int)$first['submission_id'],
+                        42
+                    );
+                    $h->assertTrue((bool)$recovered['success']);
+                    $h->assertSame('awaiting_poll', $recovered['protocol_state']);
+                    $h->assertTrue((bool)$recovered['needs_poll']);
+                    $h->assertSame(1, $transport->archivedParseCalls);
+                    $h->assertSame(1, $transport->submitCalls);
+                    $h->assertSame(0, $transport->pollCalls);
+                    $h->assertSame(1, (int)InterfaceDB::fetchColumn(
+                        'SELECT COUNT(*) FROM hmrc_ct600_submissions WHERE company_id = :company_id',
+                        ['company_id' => $companyId]
+                    ));
+                    $persisted = InterfaceDB::fetchOne(
+                        'SELECT protocol_state, hmrc_correlation_id, response_endpoint,
+                                poll_interval_seconds, next_poll_at, idempotency_key
+                         FROM hmrc_ct600_submissions WHERE id = :id',
+                        ['id' => (int)$first['submission_id']]
+                    );
+                    $h->assertSame('awaiting_poll', $persisted['protocol_state']);
+                    $h->assertSame(
+                        'D3C2B9E5F98449A19863D934273FA052',
+                        $persisted['hmrc_correlation_id']
+                    );
+                    $h->assertSame(
+                        'https://test-transaction-engine.tax.service.gov.uk/poll',
+                        $persisted['response_endpoint']
+                    );
+                    $h->assertSame(10, (int)$persisted['poll_interval_seconds']);
+                    $h->assertTrue(trim((string)$persisted['next_poll_at']) !== '');
+                    $h->assertTrue(trim((string)$persisted['idempotency_key']) !== '');
+                    $exchange = InterfaceDB::fetchOne(
+                        'SELECT exchange_state, outcome_code, correlation_id
+                         FROM govtalk_protocol_exchanges
+                         WHERE hmrc_submission_id = :submission_id AND operation = :operation',
+                        ['submission_id' => (int)$first['submission_id'], 'operation' => 'submit']
+                    );
+                    $h->assertSame('succeeded', $exchange['exchange_state']);
+                    $h->assertSame('acknowledged', $exchange['outcome_code']);
+                    $h->assertSame(
+                        'D3C2B9E5F98449A19863D934273FA052',
+                        $exchange['correlation_id']
+                    );
+
+                    $repeated = $service->recoverArchivedAcknowledgement(
+                        (int)$first['submission_id'],
+                        42
+                    );
+                    $h->assertFalse((bool)$repeated['success']);
+                    $h->assertSame(1, $transport->archivedParseCalls);
+
+                    $tooEarly = $service->poll((int)$first['submission_id'], 42);
+                    $h->assertFalse((bool)$tooEarly['success']);
+                    $h->assertTrue((bool)$tooEarly['needs_poll']);
+                    $h->assertSame(0, $transport->pollCalls);
+
+                    $transport->pollResponses[] = [
+                        'success' => true,
+                        'pre_send_failure' => false,
+                        'transport_unknown' => false,
+                        'protocol_state' => 'acknowledged',
+                        'business_outcome' => null,
+                        'correlation_id' => 'D3C2B9E5F98449A19863D934273FA052',
+                        'response_endpoint' => 'https://test-transaction-engine.tax.service.gov.uk/poll',
+                        'poll_interval' => 10,
+                        'cleanup_required' => false,
+                        'status_code' => 200,
+                        'headers' => [],
+                        'response_xml' => '<GovTalkMessage>Acknowledged again</GovTalkMessage>',
+                        'body_xml' => '',
+                        'errors' => [],
+                        'error' => '',
+                    ];
+                    $clock = (string)$persisted['next_poll_at'];
+                    $polled = $service->poll((int)$first['submission_id'], 42);
+                    $h->assertTrue((bool)$polled['success']);
+                    $h->assertSame(1, $transport->pollCalls);
+                    $h->assertSame(
+                        ['https://test-transaction-engine.tax.service.gov.uk/poll'],
+                        $transport->polledEndpoints
+                    );
                 } finally {
                     InterfaceDB::prepareExecute('DELETE FROM companies WHERE id = :id', ['id' => $companyId]);
                 }

@@ -56,7 +56,7 @@ final class HmrcCtTransactionEngineEnvironment
         $parts = parse_url($endpoint);
         $scheme = is_array($parts) ? strtolower((string)($parts['scheme'] ?? '')) : '';
         $host = is_array($parts) ? strtolower((string)($parts['host'] ?? '')) : '';
-        $path = is_array($parts) ? rtrim((string)($parts['path'] ?? ''), '/') : '';
+        $path = is_array($parts) ? (string)($parts['path'] ?? '') : '';
         $port = is_array($parts) && isset($parts['port']) ? (int)$parts['port'] : 443;
 
         if (
@@ -75,6 +75,6 @@ final class HmrcCtTransactionEngineEnvironment
             );
         }
 
-        return (string)$profile['poll_url'];
+        return $endpoint;
     }
 }

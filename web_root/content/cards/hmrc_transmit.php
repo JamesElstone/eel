@@ -146,10 +146,6 @@ final class _hmrc_transmitCard extends CardBaseFramework
         $latestTil = (array)($period['latest_til_attempt'] ?? $period['latest_test'] ?? []);
         $latestLive = (array)($period['latest_live_attempt'] ?? $period['latest_live'] ?? []);
         $pending = (array)($period['pending_submission'] ?? []);
-        $pendingId = (int)($pending['submission_id'] ?? $pending['id'] ?? 0);
-        $pendingState = strtolower(trim((string)($pending['protocol_state'] ?? '')));
-        $canPoll = !$controlsDisabled && $pendingId > 0 && (!empty($pending['needs_poll'])
-            || in_array($pendingState, ['awaiting_poll', 'delete_pending'], true));
         [$badgeClass, $badgeLabel] = $this->periodBadge($period);
 
         $irmark = trim((string)($latestLive['irmark'] ?? $latestTil['irmark'] ?? $latestTest['irmark'] ?? ''));
@@ -212,32 +208,7 @@ final class _hmrc_transmitCard extends CardBaseFramework
             $controlsDisabled,
             $credentialsConfigured
         );
-        if ($canPoll) {
-            $html .= '<div class="form-row-actions">'
-                . $this->pollForm($companyId, $accountingPeriodId, $ctPeriodId, $pendingId, $pending)
-                . '</div>';
-        }
-
         return $html . '</section>';
-    }
-
-    private function pollForm(
-        int $companyId,
-        int $accountingPeriodId,
-        int $ctPeriodId,
-        int $submissionId,
-        array $pending
-    ): string {
-        $pollAfter = (int)($pending['poll_after_seconds'] ?? $pending['poll_interval_seconds'] ?? 0);
-        $label = (string)($pending['protocol_state'] ?? '') === 'delete_pending'
-            ? 'Complete HMRC cleanup'
-            : ($pollAfter > 0 ? 'Check HMRC status (after ' . $pollAfter . 's)' : 'Check HMRC status');
-
-        return '<form method="post" action="?page=transmit" data-ajax="true">'
-            . $this->hiddenFields($companyId, $accountingPeriodId, $ctPeriodId)
-            . '<input type="hidden" name="intent" value="hmrc_poll">'
-            . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
-            . '<button class="button" type="submit">' . \eel_accounts\Support\Utf8::html($label) . '</button></form>';
     }
 
     private function submissionForm(

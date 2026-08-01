@@ -39,5 +39,28 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 ));
             }
         );
+        $harness->check(
+            \eel_accounts\Service\GovTalkTransmissionHistoryService::class,
+            'exposes recovery only for verifiable uncertain HMRC acknowledgements',
+            static function () use ($harness, $service): void {
+                $method = new ReflectionMethod($service, 'hmrcAcknowledgementRecoveryAvailable');
+                $method->setAccessible(true);
+                $eligible = [
+                    'protocol_state' => 'transport_uncertain',
+                    'hmrc_response_code' => 200,
+                    'transaction_id' => 'AD907A5A3D1804FB27577E1CCD9C95C9',
+                    'response_body_path' => 'archive/response.xml',
+                    'response_sha256' => str_repeat('a', 64),
+                ];
+
+                $harness->assertTrue((bool)$method->invoke($service, $eligible));
+                $nonUncertain = $eligible;
+                $nonUncertain['protocol_state'] = 'awaiting_poll';
+                $harness->assertFalse((bool)$method->invoke($service, $nonUncertain));
+                $invalidHash = $eligible;
+                $invalidHash['response_sha256'] = 'invalid';
+                $harness->assertFalse((bool)$method->invoke($service, $invalidHash));
+            }
+        );
     }
 );

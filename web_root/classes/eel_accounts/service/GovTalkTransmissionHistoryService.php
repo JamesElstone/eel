@@ -55,6 +55,7 @@ final class GovTalkTransmissionHistoryService
                 'authority' => 'companies_house',
                 'authority_label' => 'Companies House',
                 'conversation_id' => $submissionId,
+                'ct_period_id' => 0,
                 'submission_reference' => trim((string)(
                     $submission['submission_number'] ?? ''
                 )) ?: 'Not sent',
@@ -63,10 +64,12 @@ final class GovTalkTransmissionHistoryService
                 'filing_type' => ucfirst((string)($submission['filing_kind'] ?? 'accounts')),
                 'environment' => (string)($submission['environment'] ?? ''),
                 'transaction_id' => (string)($submission['transaction_id'] ?? ''),
+                'correlation_id' => '',
                 'prepared_at' => $submission['prepared_at'] ?? null,
                 'submitted_at' => $submission['submitted_at'] ?? null,
                 'latest_status' => $this->companiesHouseStatus($submission),
                 'status_key' => (string)($submission['lifecycle'] ?? ''),
+                'acknowledgement_recovery_available' => false,
                 'sort_at' => (string)(
                     $submission['submitted_at']
                         ?? $submission['prepared_at']
@@ -111,10 +114,12 @@ final class GovTalkTransmissionHistoryService
                     trim((string)($submission['ct_period_start'] ?? '')),
                     trim((string)($submission['ct_period_end'] ?? '')),
                 ], static fn(string $value): bool => $value !== ''));
+                $recoveryAvailable = $this->hmrcAcknowledgementRecoveryAvailable($submission);
                 $rows[] = [
                     'authority' => 'hmrc',
                     'authority_label' => 'HMRC',
                     'conversation_id' => $submissionId,
+                    'ct_period_id' => (int)($submission['ct_period_id'] ?? 0),
                     'submission_reference' => $remoteReference !== ''
                         ? $remoteReference
                         : $this->submissionCounter($submissionId),
@@ -124,10 +129,12 @@ final class GovTalkTransmissionHistoryService
                     )),
                     'environment' => (string)($submission['environment'] ?? ''),
                     'transaction_id' => (string)($submission['transaction_id'] ?? ''),
+                    'correlation_id' => (string)($submission['hmrc_correlation_id'] ?? ''),
                     'prepared_at' => $submission['created_at'] ?? null,
                     'submitted_at' => $submission['submitted_at'] ?? null,
                     'latest_status' => $this->hmrcStatus($submission),
                     'status_key' => (string)($submission['protocol_state'] ?? ''),
+                    'acknowledgement_recovery_available' => $recoveryAvailable,
                     'sort_at' => (string)(
                         $submission['submitted_at']
                             ?? $submission['created_at']
@@ -374,6 +381,21 @@ final class GovTalkTransmissionHistoryService
         }
 
         return $this->label((string)($submission['protocol_state'] ?? 'unknown'));
+    }
+
+    private function hmrcAcknowledgementRecoveryAvailable(array $submission): bool
+    {
+        $responseCode = (int)($submission['hmrc_response_code'] ?? 0);
+
+        return (string)($submission['protocol_state'] ?? '') === 'transport_uncertain'
+            && $responseCode >= 200
+            && $responseCode < 300
+            && trim((string)($submission['transaction_id'] ?? '')) !== ''
+            && trim((string)($submission['response_body_path'] ?? '')) !== ''
+            && preg_match(
+                '/^[a-f0-9]{64}$/D',
+                strtolower(trim((string)($submission['response_sha256'] ?? '')))
+            ) === 1;
     }
 
     private function exchangeSubmissionReference(array $row): string

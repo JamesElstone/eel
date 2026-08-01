@@ -50,4 +50,12 @@ interface HmrcCtTransactionEngineTransportInterface
         GovTalkConversationContext $conversation,
         ?string $transactionId = null
     ): array;
+
+    public function parseArchivedResponse(
+        string $responseXml,
+        string $operation,
+        string $environment,
+        string $expectedCorrelationId,
+        string $expectedTransactionId
+    ): array;
 }

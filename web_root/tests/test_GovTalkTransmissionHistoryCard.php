@@ -66,6 +66,21 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                                 'latest_status' => 'Pending',
                                 'prepared_at' => '2026-07-30 00:15:00',
                                 'submitted_at' => '2026-07-30 00:18:00',
+                            ], [
+                                'authority' => 'hmrc',
+                                'authority_label' => 'HMRC',
+                                'conversation_id' => 4,
+                                'ct_period_id' => 7,
+                                'submission_reference' => '000004',
+                                'filing_context' => 'CT600 - 2024-10-01 to 2025-09-30',
+                                'filing_type' => 'Original',
+                                'environment' => 'TEST',
+                                'transaction_id' => 'HMRC-TXN-4',
+                                'correlation_id' => 'HMRC-CORR-4',
+                                'status_key' => 'awaiting_poll',
+                                'latest_status' => 'Awaiting HMRC poll',
+                                'prepared_at' => '2026-07-30 00:20:00',
+                                'submitted_at' => '2026-07-30 00:21:00',
                             ]],
                             'govtalk_exchange_history' => [[
                                 'id' => 82,
@@ -104,6 +119,22 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                                     'locations' => [],
                                 ]],
                                 'display_outcome' => 'Presenter authorisation failed',
+                            ], [
+                                'id' => 83,
+                                'authority_label' => 'HMRC',
+                                'submission_reference' => '000004',
+                                'operation' => 'poll',
+                                'request_message_class' => 'HMRC-CT-CT600',
+                                'transaction_id' => 'HMRC-EX-TXN',
+                                'correlation_id' => 'HMRC-EX-CORR',
+                                'exchange_state' => 'succeeded',
+                                'sent_at' => '2026-07-30 00:22:02',
+                                'received_at' => '2026-07-30 00:22:03',
+                                'request_available' => false,
+                                'response_available' => false,
+                                'display_http_status' => '200 OK',
+                                'govtalk_errors' => [],
+                                'display_outcome' => 'Acknowledged',
                             ]],
                         ],
                     ];
@@ -112,7 +143,18 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         . $exchangeCard->title() . $exchangeCard->render($context);
 
                     $harness->assertTrue(str_contains($html, 'Submission History'));
-                    $harness->assertTrue(str_contains($html, '<th>Transaction ID</th>'));
+                    $harness->assertTrue(str_contains(
+                        $html,
+                        '<th>Transaction / Correlation ID</th>'
+                    ));
+                    $harness->assertTrue(str_contains(
+                        $html,
+                        'HMRC-TXN-4<div class="helper">HMRC-CORR-4</div>'
+                    ));
+                    $harness->assertTrue(str_contains(
+                        $html,
+                        'HMRC-EX-TXN<div class="helper">HMRC-EX-CORR</div>'
+                    ));
                     $harness->assertTrue(str_contains($html, '<th>Filing / Period</th>'));
                     $harness->assertTrue(str_contains(
                         $html,
@@ -165,17 +207,105 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ));
                     $harness->assertTrue(str_contains($html, 'name="cards[]" value="govtalk_exchanges"'));
                     $harness->assertFalse(str_contains($html, 'name="cards[]" value="govtalk_transmission_history"'));
-                    $harness->assertTrue(str_contains($html, 'Get Submission Status'));
+                    $harness->assertFalse(str_contains($html, 'Get Submission Status'));
+                    $harness->assertSame(2, substr_count($html, 'Check Submission Status'));
                     $harness->assertTrue(str_contains(
                         $html,
                         '<form method="post" action="?page=transmit" data-ajax="true">'
                     ));
-                    $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit">Get Submission Status</button>'));
+                    $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit">Check Submission Status</button>'));
                     $harness->assertTrue(str_contains(
                         $html,
                         'name="intent" value="refresh_accounts_status"'
                     ));
+                    $harness->assertTrue(str_contains(
+                        $html,
+                        'name="intent" value="hmrc_poll"'
+                    ));
+                    $harness->assertTrue(str_contains($html, 'name="ct_period_id" value="7"'));
                     $harness->assertFalse(str_contains($html, 'name="company_auth_code"'));
+
+                    $tableMethod = new ReflectionMethod($exchangeCard, 'exchangeHistoryTable');
+                    $tableMethod->setAccessible(true);
+                    /** @var TableFramework $table */
+                    $table = $tableMethod->invoke(
+                        $exchangeCard,
+                        49,
+                        $context['services']['govtalk_exchange_history'],
+                        $context['govtalk_history']
+                    );
+                    $harness->assertTrue(str_contains(
+                        $table->exportCsv(),
+                        "HMRC-EX-TXN\nHMRC-EX-CORR"
+                    ));
+                } finally {
+                    AppConfigurationStore::set('developer_options', (bool)$previous);
+                }
+            }
+        );
+
+        $harness->check(
+            _govtalk_transmission_historyCard::class,
+            'renders recoverable HMRC acknowledgement as a developer-only danger action',
+            static function () use ($harness, $card): void {
+                $context = [
+                    'company' => ['id' => 49, 'accounting_period_id' => 79],
+                    'services' => [
+                        'govtalk_submission_history' => [[
+                            'authority' => 'hmrc',
+                            'authority_label' => 'HMRC',
+                            'conversation_id' => 4,
+                            'ct_period_id' => 7,
+                            'submission_reference' => '000004',
+                            'filing_context' => 'CT600 — 2023-09-05 to 2023-09-30',
+                            'filing_type' => 'Original',
+                            'environment' => 'TEST',
+                            'transaction_id' => 'AD907A5A3D1804FB27577E1CCD9C95C9',
+                            'correlation_id' => '',
+                            'status_key' => 'transport_uncertain',
+                            'latest_status' => 'Transmission outcome uncertain',
+                            'prepared_at' => '2026-08-01 00:55:39',
+                            'submitted_at' => '2026-08-01 00:55:40',
+                            'acknowledgement_recovery_available' => true,
+                        ]],
+                    ],
+                ];
+                $previous = AppConfigurationStore::get('developer_options', false);
+                try {
+                    AppConfigurationStore::set('developer_options', false);
+                    $standard = $card->render($context);
+                    $harness->assertFalse(str_contains(
+                        $standard,
+                        'name="intent" value="hmrc_recover_acknowledgement"'
+                    ));
+
+                    AppConfigurationStore::set('developer_options', true);
+                    $developer = $card->render($context);
+                    $harness->assertTrue(str_contains(
+                        $developer,
+                        'name="intent" value="hmrc_recover_acknowledgement"'
+                    ));
+                    $harness->assertTrue(str_contains(
+                        $developer,
+                        '<button class="button button-inline danger" type="submit" title="Developer only"'
+                    ));
+                    $harness->assertTrue(str_contains(
+                        $developer,
+                        'data-chicken-button-class="button danger"'
+                    ));
+                    foreach ([
+                        'name="card_action" value="HmrcSubmission"',
+                        'name="company_id" value="49"',
+                        'name="accounting_period_id" value="79"',
+                        'name="ct_period_id" value="7"',
+                        'name="submission_id" value="4"',
+                    ] as $field) {
+                        $harness->assertTrue(str_contains($developer, $field));
+                    }
+                    $harness->assertTrue(str_contains(
+                        $developer,
+                        'No information will be sent to HMRC by this recovery action.'
+                    ));
                 } finally {
                     AppConfigurationStore::set('developer_options', (bool)$previous);
                 }

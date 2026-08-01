@@ -36,6 +36,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'LIVE'
                 );
                 $h->assertSame('https://transaction-engine.tax.service.gov.uk/poll', $endpoint);
+                $explicitPortEndpoint = 'https://transaction-engine.tax.service.gov.uk:443/poll';
+                $h->assertSame(
+                    $explicitPortEndpoint,
+                    \eel_accounts\Client\HmrcCtTransactionEngineEnvironment::responseEndpoint(
+                        $explicitPortEndpoint,
+                        'LIVE'
+                    )
+                );
                 try {
                     \eel_accounts\Client\HmrcCtTransactionEngineEnvironment::responseEndpoint(
                         'https://transaction-engine.tax.service.gov.uk/poll?target=other',

@@ -97,13 +97,24 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
         $services = (array)($context['services'] ?? []);
         $submissions = (array)($services['govtalk_submission_history'] ?? []);
 
+        $developerOptions = (bool)AppConfigurationStore::get('developer_options', false);
 
         return '<div class="settings-stack">'
-            . $this->submissionTable($submissions, $companyId, $accountingPeriodId)
+            . $this->submissionTable(
+                $submissions,
+                $companyId,
+                $accountingPeriodId,
+                $developerOptions
+            )
             . '</div>';
     }
 
-    private function submissionTable(array $submissions, int $companyId, int $accountingPeriodId): string
+    private function submissionTable(
+        array $submissions,
+        int $companyId,
+        int $accountingPeriodId,
+        bool $developerOptions
+    ): string
     {
         if ($submissions === []) {
             return '<section class="panel-soft">'
@@ -116,9 +127,32 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
             }
             $submissionId = (int)($submission['conversation_id'] ?? 0);
             $authority = (string)($submission['authority'] ?? '');
-            $statusAction = $authority === 'companies_house'
-                && strtolower(trim((string)($submission['status_key'] ?? ''))) === 'pending'
-                ? $this->getSubmissionStatusButton($companyId, $accountingPeriodId, $submissionId)
+            $statusKey = strtolower(trim((string)($submission['status_key'] ?? '')));
+            $statusAction = '';
+            if ($authority === 'companies_house' && $statusKey === 'pending') {
+                $statusAction = $this->checkCompaniesHouseSubmissionStatusButton(
+                    $companyId,
+                    $accountingPeriodId,
+                    $submissionId
+                );
+            } elseif ($authority === 'hmrc'
+                && in_array($statusKey, ['awaiting_poll', 'delete_pending'], true)) {
+                $statusAction = $this->checkHmrcSubmissionStatusButton(
+                    $companyId,
+                    $accountingPeriodId,
+                    (int)($submission['ct_period_id'] ?? 0),
+                    $submissionId
+                );
+            }
+            $recoveryAction = $authority === 'hmrc'
+                && $developerOptions
+                && !empty($submission['acknowledgement_recovery_available'])
+                ? $this->recoverHmrcAcknowledgementButton(
+                    $companyId,
+                    $accountingPeriodId,
+                    (int)($submission['ct_period_id'] ?? 0),
+                    $submissionId
+                )
                 : '';
             $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html(
                     (string)($submission['authority_label'] ?? '')
@@ -135,8 +169,9 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
                 . '</div></td><td>' . \eel_accounts\Support\Utf8::html(
                     (string)($submission['environment'] ?? '')
                 )
-                . '</td><td>' . \eel_accounts\Support\Utf8::html(
-                    trim((string)($submission['transaction_id'] ?? '')) ?: '—'
+                . '</td><td>' . $this->identifierPair(
+                    (string)($submission['transaction_id'] ?? ''),
+                    $authority === 'hmrc' ? (string)($submission['correlation_id'] ?? '') : ''
                 )
                 . '</td><td>' . \eel_accounts\Support\Utf8::html($this->timestamp((string)($submission['prepared_at'] ?? '')))
                 . '</td><td>' . \eel_accounts\Support\Utf8::html($this->timestamp((string)($submission['submitted_at'] ?? '')))
@@ -155,17 +190,17 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
                 . \eel_accounts\Support\Utf8::html($authority) . '">'
                 . '<input type="hidden" name="history_conversation_id" value="' . $submissionId . '">'
                 . '<button class="button primary" type="submit">View conversation</button></form>'
-                . $statusAction . '</td></tr>';
+                . $statusAction . $recoveryAction . '</td></tr>';
         }
 
         return '<section class="panel-soft">'
             . '<div class="table-scroll"><table><thead><tr><th>Authority</th><th>Submission</th>'
-            . '<th>Filing / Period</th><th>Environment</th><th>Transaction ID</th><th>Prepared</th>'
+            . '<th>Filing / Period</th><th>Environment</th><th>Transaction / Correlation ID</th><th>Prepared</th>'
             . '<th>Submitted</th><th>Latest status</th>'
             . '<th>Actions</th></tr></thead><tbody>' . $rows . '</tbody></table></div></section>';
     }
 
-    private function getSubmissionStatusButton(
+    private function checkCompaniesHouseSubmissionStatusButton(
         int $companyId,
         int $accountingPeriodId,
         int $submissionId
@@ -181,7 +216,60 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
             . '<input type="hidden" name="company_id" value="' . $companyId . '">'
             . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
             . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
-            . '<button class="button primary" type="submit">Get Submission Status</button></form>';
+            . '<button class="button primary" type="submit">Check Submission Status</button></form>';
+    }
+
+    private function checkHmrcSubmissionStatusButton(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        int $submissionId
+    ): string {
+        if ($companyId <= 0
+            || $accountingPeriodId <= 0
+            || $ctPeriodId <= 0
+            || $submissionId <= 0) {
+            return '';
+        }
+
+        return '<form method="post" action="?page=transmit" data-ajax="true" class="actions-row">'
+            . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+            . '<input type="hidden" name="card_action" value="HmrcSubmission">'
+            . '<input type="hidden" name="intent" value="hmrc_poll">'
+            . '<input type="hidden" name="company_id" value="' . $companyId . '">'
+            . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
+            . '<input type="hidden" name="ct_period_id" value="' . $ctPeriodId . '">'
+            . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
+            . '<button class="button primary" type="submit">Check Submission Status</button></form>';
+    }
+
+    private function recoverHmrcAcknowledgementButton(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        int $submissionId
+    ): string {
+        if ($companyId <= 0
+            || $accountingPeriodId <= 0
+            || $ctPeriodId <= 0
+            || $submissionId <= 0) {
+            return '';
+        }
+
+        return '<form method="post" action="?page=transmit" data-ajax="true" class="actions-row">'
+            . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+            . '<input type="hidden" name="card_action" value="HmrcSubmission">'
+            . '<input type="hidden" name="intent" value="hmrc_recover_acknowledgement">'
+            . '<input type="hidden" name="company_id" value="' . $companyId . '">'
+            . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
+            . '<input type="hidden" name="ct_period_id" value="' . $ctPeriodId . '">'
+            . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
+            . '<button class="button button-inline danger" type="submit" title="Developer only" '
+            . 'data-chicken-check="true" data-chicken-title="Recover HMRC acknowledgement" '
+            . 'data-chicken-message="Verify the archived HMRC response and restore polling for this existing submission?'
+            . '&lt;br&gt;&lt;br&gt;No information will be sent to HMRC by this recovery action." '
+            . 'data-chicken-confirm-text="Recover Acknowledgement" '
+            . 'data-chicken-button-class="button danger">Recover HMRC Acknowledgement</button></form>';
     }
 
     protected function exchangeTable(
@@ -254,16 +342,22 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
             )
             ->column(
                 'transaction_id',
-                'Transaction ID',
+                'Transaction / Correlation ID',
                 html: static function (array $exchange): string {
+                    $transactionId = trim((string)($exchange['transaction_id'] ?? ''));
                     $correlationId = trim((string)($exchange['correlation_id'] ?? ''));
-                    return \eel_accounts\Support\Utf8::html((string)($exchange['transaction_id'] ?? ''))
+                    return \eel_accounts\Support\Utf8::html($transactionId !== '' ? $transactionId : '—')
                         . ($correlationId !== ''
-                            ? '<div class="helper">Correlation: '
+                            ? '<div class="helper">'
                                 . \eel_accounts\Support\Utf8::html($correlationId) . '</div>'
                             : '');
                 },
-                export: static fn(array $exchange): string => (string)($exchange['transaction_id'] ?? '')
+                export: static function (array $exchange): string {
+                    return implode("\n", array_filter([
+                        trim((string)($exchange['transaction_id'] ?? '')),
+                        trim((string)($exchange['correlation_id'] ?? '')),
+                    ], static fn(string $value): bool => $value !== ''));
+                }
             )
             ->column(
                 'sent_at',
@@ -410,6 +504,17 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
         }
 
         return $items !== '' ? '<ul class="helper">' . $items . '</ul>' : '—';
+    }
+
+    private function identifierPair(string $transactionId, string $correlationId): string
+    {
+        $transactionId = trim($transactionId);
+        $correlationId = trim($correlationId);
+
+        return \eel_accounts\Support\Utf8::html($transactionId !== '' ? $transactionId : '—')
+            . ($correlationId !== ''
+                ? '<div class="helper">' . \eel_accounts\Support\Utf8::html($correlationId) . '</div>'
+                : '');
     }
 
     protected function timestamp(string $value): string

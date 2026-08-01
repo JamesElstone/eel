@@ -411,7 +411,7 @@ $harness->run(_hmrc_transmitCard::class, static function (
         $harness->assertFalse(str_contains($html, 'name="intent" value="hmrc_poll"'));
     });
 
-    $harness->check(_hmrc_transmitCard::class, 'shows status polling only for a pending submission', static function () use ($harness, $card): void {
+    $harness->check(_hmrc_transmitCard::class, 'leaves pending submission status actions to transmission history', static function () use ($harness, $card): void {
         $base = [
             'company' => ['id' => 49, 'accounting_period_id' => 79],
             'services' => ['hmrc_ct600_status' => [
@@ -436,13 +436,29 @@ $harness->run(_hmrc_transmitCard::class, static function (
             'poll_after_seconds' => 30,
         ];
         $pending = $card->render($base);
-        $harness->assertTrue(str_contains($pending, 'name="intent" value="hmrc_poll"'));
-        $harness->assertTrue(str_contains($pending, 'name="submission_id" value="901"'));
-        $harness->assertTrue(str_contains($pending, 'Check HMRC status (after 30s)'));
+        $harness->assertFalse(str_contains($pending, 'name="intent" value="hmrc_poll"'));
+        $harness->assertFalse(str_contains($pending, 'Check HMRC status'));
+        $harness->assertFalse(str_contains($pending, 'Check Submission Status'));
 
         $base['services']['hmrc_ct600_status']['periods'][0]['pending_submission']['protocol_state'] = 'transport_uncertain';
         $uncertain = $card->render($base);
         $harness->assertFalse(str_contains($uncertain, 'name="intent" value="hmrc_poll"'));
+        $harness->assertFalse(str_contains($uncertain, 'name="intent" value="hmrc_recover_acknowledgement"'));
+
+        $base['services']['hmrc_ct600_status']['periods'][0]['pending_submission']['acknowledgement_recovery_available'] = true;
+        $previous = AppConfigurationStore::get('developer_options', false);
+        try {
+            AppConfigurationStore::set('developer_options', true);
+            $recoverable = $card->render($base);
+            $harness->assertFalse(str_contains($recoverable, 'Recover HMRC acknowledgement'));
+            $harness->assertFalse(str_contains(
+                $recoverable,
+                'name="intent" value="hmrc_recover_acknowledgement"'
+            ));
+            $harness->assertFalse(str_contains($recoverable, 'name="intent" value="hmrc_poll"'));
+        } finally {
+            AppConfigurationStore::set('developer_options', (bool)$previous);
+        }
     });
 });
 
@@ -513,17 +529,17 @@ $harness->run(HmrcSubmissionAction::class, static function (
         ));
     });
 
-    $harness->check(HmrcSubmissionAction::class, 'exposes only the Test LIVE request-file and Poll command intents', static function () use ($harness): void {
+    $harness->check(HmrcSubmissionAction::class, 'exposes only the Test LIVE request-file recovery and Poll command intents', static function () use ($harness): void {
         $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content'
             . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'HmrcSubmissionAction.php');
         foreach ([
             'hmrc_submit_test', 'hmrc_submit_live',
             'hmrc_retry_test', 'hmrc_retry_live',
-            'hmrc_generate_request', 'hmrc_poll',
+            'hmrc_generate_request', 'hmrc_recover_acknowledgement', 'hmrc_poll',
         ] as $intent) {
             $harness->assertTrue(str_contains($source, "'" . $intent . "'"));
         }
-        foreach (['->submitTest(', '->submitLive(', '->generateRequestFile(', '->poll(', '->status('] as $call) {
+        foreach (['->submitTest(', '->submitLive(', '->generateRequestFile(', '->recoverArchivedAcknowledgement(', '->poll(', '->status('] as $call) {
             $harness->assertTrue(str_contains($source, $call));
         }
         foreach (['declaration_name', 'declaration_status', 'declaration_confirmed', 'authority_confirmed',
@@ -547,6 +563,10 @@ $harness->run(HmrcSubmissionAction::class, static function (
             $harness->assertTrue(str_contains($source, $securityGate));
         }
         $harness->assertTrue(str_contains($source, "AppConfigurationStore::get('developer_options', false)"));
+        $harness->assertTrue(str_contains(
+            $source,
+            'Developer Options must be enabled to recover an archived HMRC acknowledgement.'
+        ));
         $harness->assertFalse(str_contains($source, "return 'web_app';"));
         $harness->assertFalse((bool)preg_match('/stream_context_create|curl_exec|file_get_contents\s*\(\s*[\'\"]https?:/i', $source));
     });

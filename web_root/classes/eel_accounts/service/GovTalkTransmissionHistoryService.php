@@ -69,7 +69,8 @@ final class GovTalkTransmissionHistoryService
                 'submitted_at' => $submission['submitted_at'] ?? null,
                 'latest_status' => $this->companiesHouseStatus($submission),
                 'status_key' => (string)($submission['lifecycle'] ?? ''),
-                'acknowledgement_recovery_available' => false,
+                'response_reprocess_available' => false,
+                'response_reprocess_exchange_id' => 0,
                 'sort_at' => (string)(
                     $submission['submitted_at']
                         ?? $submission['prepared_at']
@@ -114,7 +115,7 @@ final class GovTalkTransmissionHistoryService
                     trim((string)($submission['ct_period_start'] ?? '')),
                     trim((string)($submission['ct_period_end'] ?? '')),
                 ], static fn(string $value): bool => $value !== ''));
-                $recoveryAvailable = $this->hmrcAcknowledgementRecoveryAvailable($submission);
+                $reprocessExchangeId = $this->hmrcResponseReprocessExchangeId($submission);
                 $rows[] = [
                     'authority' => 'hmrc',
                     'authority_label' => 'HMRC',
@@ -134,7 +135,8 @@ final class GovTalkTransmissionHistoryService
                     'submitted_at' => $submission['submitted_at'] ?? null,
                     'latest_status' => $this->hmrcStatus($submission),
                     'status_key' => (string)($submission['protocol_state'] ?? ''),
-                    'acknowledgement_recovery_available' => $recoveryAvailable,
+                    'response_reprocess_available' => $reprocessExchangeId > 0,
+                    'response_reprocess_exchange_id' => $reprocessExchangeId,
                     'sort_at' => (string)(
                         $submission['submitted_at']
                             ?? $submission['created_at']
@@ -383,19 +385,130 @@ final class GovTalkTransmissionHistoryService
         return $this->label((string)($submission['protocol_state'] ?? 'unknown'));
     }
 
-    private function hmrcAcknowledgementRecoveryAvailable(array $submission): bool
+    private function hmrcResponseReprocessExchangeId(array $submission): int
     {
-        $responseCode = (int)($submission['hmrc_response_code'] ?? 0);
+        $contract = $this->hmrcResponseReprocessContract($submission);
+        if ($contract === null) {
+            return 0;
+        }
+        $submissionId = (int)($submission['id'] ?? 0);
+        $transactionId = trim((string)($submission['transaction_id'] ?? ''));
+        $environment = strtoupper(trim((string)($submission['environment'] ?? '')));
+        if ($submissionId <= 0 || $transactionId === '' || $environment === '') {
+            return 0;
+        }
+        $exchange = \InterfaceDB::fetchOne(
+            'SELECT e.*,
+                    a.authority AS archive_authority,
+                    a.environment AS archive_environment,
+                    a.company_id AS archive_company_id,
+                    a.accounting_period_id AS archive_accounting_period_id,
+                    a.submission_reference AS archive_submission_reference
+             FROM govtalk_protocol_exchanges e
+             INNER JOIN transmission_archives a ON a.id = e.transmission_archive_id
+             WHERE e.authority = :authority
+               AND e.hmrc_submission_id = :submission_id
+               AND e.operation = :operation
+               AND e.environment = :environment
+               AND e.transaction_id = :transaction_id
+             ORDER BY e.id DESC
+             LIMIT 1',
+            [
+                'authority' => 'hmrc',
+                'submission_id' => $submissionId,
+                'operation' => $contract['operation'],
+                'environment' => $environment,
+                'transaction_id' => $transactionId,
+            ]
+        );
 
-        return (string)($submission['protocol_state'] ?? '') === 'transport_uncertain'
-            && $responseCode >= 200
-            && $responseCode < 300
-            && trim((string)($submission['transaction_id'] ?? '')) !== ''
-            && trim((string)($submission['response_body_path'] ?? '')) !== ''
-            && preg_match(
-                '/^[a-f0-9]{64}$/D',
-                strtolower(trim((string)($submission['response_sha256'] ?? '')))
-            ) === 1;
+        return is_array($exchange)
+            && $this->hmrcResponseReprocessEligible($submission, $exchange, $contract)
+                ? (int)($exchange['id'] ?? 0)
+                : 0;
+    }
+
+    /** @return array{operation:string,path_column:string,hash_column:string}|null */
+    private function hmrcResponseReprocessContract(array $submission): ?array
+    {
+        return match (strtolower(trim((string)($submission['protocol_state'] ?? '')))) {
+            'transport_uncertain' => [
+                'operation' => 'submit',
+                'path_column' => 'response_body_path',
+                'hash_column' => 'response_sha256',
+            ],
+            'awaiting_poll' => [
+                'operation' => 'poll',
+                'path_column' => 'response_body_path',
+                'hash_column' => 'response_sha256',
+            ],
+            'delete_pending' => [
+                'operation' => 'delete',
+                'path_column' => 'cleanup_response_path',
+                'hash_column' => 'cleanup_response_sha256',
+            ],
+            default => null,
+        };
+    }
+
+    /** @param array{operation:string,path_column:string,hash_column:string} $contract */
+    private function hmrcResponseReprocessEligible(
+        array $submission,
+        array $exchange,
+        array $contract
+    ): bool {
+        $submissionId = (int)($submission['id'] ?? 0);
+        $environment = strtoupper(trim((string)($submission['environment'] ?? '')));
+        $transactionId = trim((string)($submission['transaction_id'] ?? ''));
+        $submissionPath = trim((string)($submission[$contract['path_column']] ?? ''));
+        $submissionHash = strtolower(trim((string)(
+            $submission[$contract['hash_column']] ?? ''
+        )));
+        $exchangePath = trim((string)($exchange['response_path'] ?? ''));
+        $exchangeHash = strtolower(trim((string)($exchange['response_sha256'] ?? '')));
+        $statusCode = (int)($exchange['response_status_code'] ?? 0);
+        if ($submissionId <= 0
+            || (int)($exchange['id'] ?? 0) <= 0
+            || (string)($exchange['authority'] ?? '') !== 'hmrc'
+            || (int)($exchange['hmrc_submission_id'] ?? 0) !== $submissionId
+            || (string)($exchange['operation'] ?? '') !== $contract['operation']
+            || strtoupper(trim((string)($exchange['environment'] ?? ''))) !== $environment
+            || trim((string)($exchange['transaction_id'] ?? '')) !== $transactionId
+            || !in_array((string)($exchange['exchange_state'] ?? ''), [
+                'failed', 'transport_unknown', 'received',
+            ], true)
+            || $statusCode < 200
+            || $statusCode >= 300
+            || $submissionPath === ''
+            || $exchangePath === ''
+            || preg_match('/^[a-f0-9]{64}$/D', $submissionHash) !== 1
+            || preg_match('/^[a-f0-9]{64}$/D', $exchangeHash) !== 1
+            || !hash_equals($submissionHash, $exchangeHash)
+            || !$this->sameEvidencePath($submissionPath, $exchangePath)
+            || !$this->available($exchangePath, $exchangeHash)) {
+            return false;
+        }
+
+        return (string)($exchange['archive_authority'] ?? '') === 'hmrc'
+            && strtoupper(trim((string)($exchange['archive_environment'] ?? ''))) === $environment
+            && (int)($exchange['archive_company_id'] ?? 0) === (int)($submission['company_id'] ?? 0)
+            && (int)($exchange['archive_accounting_period_id'] ?? 0)
+                === (int)($submission['accounting_period_id'] ?? 0)
+            && (string)($exchange['archive_submission_reference'] ?? '')
+                === 'submission-' . $this->submissionCounter($submissionId);
+    }
+
+    private function sameEvidencePath(string $left, string $right): bool
+    {
+        if ($left === $right) {
+            return true;
+        }
+        $leftReal = realpath($left);
+        $rightReal = realpath($right);
+
+        return is_string($leftReal)
+            && is_string($rightReal)
+            && strcasecmp($leftReal, $rightReal) === 0;
     }
 
     private function exchangeSubmissionReference(array $row): string

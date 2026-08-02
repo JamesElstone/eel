@@ -372,6 +372,99 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         (string)$failedRow['govtalk_errors_json'],
                         'Authorisation Failure'
                     ));
+                    $sharedConversation = new \eel_accounts\Service\GovTalkProtocolConversationService(
+                        $archive
+                    );
+                    $finalErrors = [
+                        [
+                            'raised_by' => 'Gateway',
+                            'number' => '3001',
+                            'type' => 'business',
+                            'texts' => [
+                                'The filing failed departmental validation.',
+                                'Review the Department’s detailed response.',
+                            ],
+                            'locations' => ['/GovTalkMessage/Body'],
+                            'scope' => 'envelope',
+                        ],
+                        [
+                            'raised_by' => 'ChRIS',
+                            'number' => 'xbrl.ixbrl.FormatUndefined',
+                            'type' => 'business',
+                            'texts' => ['The transformation format is undefined.'],
+                            'locations' => ['Accounts', 'Computations'],
+                            'scope' => 'department',
+                        ],
+                    ];
+                    $sharedConversation->completeExchange(
+                        'companies_house',
+                        'TEST',
+                        'STATE3',
+                        'rejected',
+                        'rejected',
+                        'Departmental validation failed',
+                        'Departmental validation failed',
+                        '',
+                        $finalErrors
+                    );
+                    $storedFinalErrors = (string)InterfaceDB::fetchColumn(
+                        'SELECT govtalk_errors_json
+                         FROM govtalk_protocol_exchanges
+                         WHERE transaction_id = :transaction_id',
+                        ['transaction_id' => 'STATE3']
+                    );
+                    $harness->assertSame(
+                        $finalErrors,
+                        json_decode($storedFinalErrors, true, 512, JSON_THROW_ON_ERROR)
+                    );
+
+                    $sharedConversation->completeExchange(
+                        'companies_house',
+                        'TEST',
+                        'STATE3',
+                        'failed',
+                        'failed',
+                        'No replacement supplied',
+                        'No replacement supplied'
+                    );
+                    $harness->assertSame(
+                        $storedFinalErrors,
+                        (string)InterfaceDB::fetchColumn(
+                            'SELECT govtalk_errors_json
+                             FROM govtalk_protocol_exchanges
+                             WHERE transaction_id = :transaction_id',
+                            ['transaction_id' => 'STATE3']
+                        )
+                    );
+                    $harness->assertThrows(
+                        static fn() => $sharedConversation->completeExchange(
+                            'companies_house',
+                            'TEST',
+                            'STATE3',
+                            'failed',
+                            structuredErrors: [[
+                                'raised_by' => 'Gateway',
+                                'texts' => 'Not a list',
+                            ]]
+                        ),
+                        InvalidArgumentException::class
+                    );
+                    $sharedConversation->completeExchange(
+                        'companies_house',
+                        'TEST',
+                        'STATE3',
+                        'succeeded',
+                        structuredErrors: []
+                    );
+                    $harness->assertSame(
+                        '[]',
+                        (string)InterfaceDB::fetchColumn(
+                            'SELECT govtalk_errors_json
+                             FROM govtalk_protocol_exchanges
+                             WHERE transaction_id = :transaction_id',
+                            ['transaction_id' => 'STATE3']
+                        )
+                    );
                     InterfaceDB::prepareExecute(
                         'UPDATE govtalk_protocol_exchanges
                          SET govtalk_errors_json = NULL

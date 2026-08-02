@@ -98,7 +98,9 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         string $operation,
         string $environment,
         string $expectedCorrelationId,
-        string $expectedTransactionId
+        string $expectedOriginalSubmissionTransactionId,
+        string $expectedTransactionId,
+        array $boundConversationTransactionIds = []
     ): array {
         $operation = strtolower(trim($operation));
         if (!in_array($operation, ['submit', 'poll', 'delete'], true)) {
@@ -106,11 +108,14 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         }
         $profile = HmrcCtTransactionEngineEnvironment::profile($environment);
         $expectedCorrelationId = strtoupper(trim($expectedCorrelationId));
-        $expectedTransactionId = strtoupper(trim($expectedTransactionId));
-        if ($expectedTransactionId === ''
-            || preg_match('/^[0-9A-F]{1,32}$/D', $expectedTransactionId) !== 1) {
-            throw new \InvalidArgumentException('The archived HMRC request transaction ID is invalid.');
-        }
+        $expectedOriginalSubmissionTransactionId = $this->requiredTransactionId(
+            $expectedOriginalSubmissionTransactionId,
+            'archived HMRC original submission transaction ID'
+        );
+        $expectedTransactionId = $this->requiredTransactionId(
+            $expectedTransactionId,
+            'archived HMRC request transaction ID'
+        );
         if ($expectedCorrelationId !== ''
             && preg_match('/^[0-9A-F]{1,32}$/D', $expectedCorrelationId) !== 1) {
             throw new \InvalidArgumentException('The archived HMRC correlation ID is invalid.');
@@ -121,7 +126,9 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
             $operation,
             $profile,
             $expectedCorrelationId,
-            $expectedTransactionId
+            $expectedOriginalSubmissionTransactionId,
+            $expectedTransactionId,
+            $boundConversationTransactionIds
         );
         $endpoint = $operation === 'submit'
             ? (string)$profile['submission_url']
@@ -136,8 +143,13 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
             ),
             $parsed
         );
-        $credentials = $this->credentials($profile);
-        $secrets = $this->secretValues($credentials);
+        try {
+            $secrets = $this->secretValues($this->credentials($profile));
+        } catch (\Throwable) {
+            // Archived responses are immutable evidence and must remain
+            // processable if credentials are absent or have since rotated.
+            $secrets = [];
+        }
         $result['errors'] = $this->redactPayload((array)($result['errors'] ?? []), $secrets);
         $result['error'] = $this->redactText((string)($result['error'] ?? ''), $secrets);
 
@@ -235,6 +247,8 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
             (string)$profile['submission_url'],
             $profile,
             $transactionId,
+            $transactionId,
+            [],
             '',
             $this->secretValues($credentials),
             $conversation
@@ -305,14 +319,25 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         string $responseEndpoint,
         string $environment,
         GovTalkConversationContext $conversation,
-        ?string $transactionId = null
+        string $expectedOriginalSubmissionTransactionId,
+        ?string $transactionId = null,
+        array $boundConversationTransactionIds = []
     ): array {
         $profile = null;
         try {
             $profile = HmrcCtTransactionEngineEnvironment::profile($environment);
             $correlationId = $this->correlationId($correlationId);
+            $expectedOriginalSubmissionTransactionId = $this->requiredTransactionId(
+                $expectedOriginalSubmissionTransactionId,
+                'original submission transaction ID'
+            );
             $transactionId = $this->transactionId($transactionId);
-            $endpoint = HmrcCtTransactionEngineEnvironment::responseEndpoint(
+            $boundConversationTransactionIds = $this->boundTransactionIds(
+                $boundConversationTransactionIds,
+                $expectedOriginalSubmissionTransactionId,
+                $transactionId
+            );
+            $endpoint = HmrcCtTransactionEngineEnvironment::pollEndpoint(
                 $responseEndpoint,
                 $environment
             );
@@ -340,6 +365,8 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
             $endpoint,
             $profile,
             $transactionId,
+            $expectedOriginalSubmissionTransactionId,
+            $boundConversationTransactionIds,
             $correlationId,
             [],
             $conversation
@@ -351,14 +378,25 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         string $responseEndpoint,
         string $environment,
         GovTalkConversationContext $conversation,
-        ?string $transactionId = null
+        string $expectedOriginalSubmissionTransactionId,
+        ?string $transactionId = null,
+        array $boundConversationTransactionIds = []
     ): array {
         $profile = null;
         try {
             $profile = HmrcCtTransactionEngineEnvironment::profile($environment);
             $correlationId = $this->correlationId($correlationId);
+            $expectedOriginalSubmissionTransactionId = $this->requiredTransactionId(
+                $expectedOriginalSubmissionTransactionId,
+                'original submission transaction ID'
+            );
             $transactionId = $this->transactionId($transactionId);
-            $endpoint = HmrcCtTransactionEngineEnvironment::responseEndpoint(
+            $boundConversationTransactionIds = $this->boundTransactionIds(
+                $boundConversationTransactionIds,
+                $expectedOriginalSubmissionTransactionId,
+                $transactionId
+            );
+            $endpoint = HmrcCtTransactionEngineEnvironment::followUpEndpoint(
                 $responseEndpoint,
                 $environment
             );
@@ -386,6 +424,8 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
             $endpoint,
             $profile,
             $transactionId,
+            $expectedOriginalSubmissionTransactionId,
+            $boundConversationTransactionIds,
             $correlationId,
             [],
             $conversation
@@ -475,6 +515,18 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         if (!preg_match('/^[0-9A-F]{1,32}$/D', $transactionId)) {
             throw new \InvalidArgumentException(
                 'HMRC transaction ID must contain 1 to 32 hexadecimal characters.'
+            );
+        }
+
+        return $transactionId;
+    }
+
+    private function requiredTransactionId(string $transactionId, string $label): string
+    {
+        $transactionId = strtoupper(trim($transactionId));
+        if (preg_match('/^[0-9A-F]{1,32}$/D', $transactionId) !== 1) {
+            throw new \InvalidArgumentException(
+                'HMRC ' . $label . ' must contain 1 to 32 hexadecimal characters.'
             );
         }
 
@@ -671,6 +723,8 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         string $endpoint,
         array $profile,
         string $transactionId,
+        string $expectedOriginalSubmissionTransactionId,
+        array $boundConversationTransactionIds,
         string $correlationId,
         array $secrets,
         GovTalkConversationContext $conversation
@@ -731,7 +785,9 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
                 $operation,
                 $profile,
                 $correlationId,
-                $transactionId
+                $expectedOriginalSubmissionTransactionId,
+                $transactionId,
+                $boundConversationTransactionIds
             )
         );
         $result = array_replace(
@@ -803,9 +859,15 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         string $operation,
         array $profile,
         string $expectedCorrelationId,
-        string $expectedTransactionId
-    ): array
-    {
+        string $expectedOriginalSubmissionTransactionId,
+        string $expectedTransactionId,
+        array $boundConversationTransactionIds = []
+    ): array {
+        $boundConversationTransactionIds = $this->boundTransactionIds(
+            $boundConversationTransactionIds,
+            $expectedOriginalSubmissionTransactionId,
+            $expectedTransactionId
+        );
         if ($xml === '' || strlen($xml) > $this->maxResponseBytes) {
             throw new \RuntimeException('HMRC Transaction Engine response is empty or too large.');
         }
@@ -835,30 +897,70 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         $correlationId = strtoupper($this->childText($xpath, $details, 'CorrelationID'));
         $responseNode = $this->child($xpath, $details, 'ResponseEndPoint');
         $responseEndpoint = $responseNode instanceof \DOMElement ? trim($responseNode->textContent) : '';
+        $rawPollInterval = null;
         $pollInterval = null;
         if ($responseNode instanceof \DOMElement && $responseNode->hasAttribute('PollInterval')) {
-            $raw = trim($responseNode->getAttribute('PollInterval'));
-            if ($raw !== '' && !preg_match('/^[0-9]+$/D', $raw)) {
-                throw new \RuntimeException('HMRC returned an invalid poll interval.');
-            }
-            $pollInterval = $raw === '' ? null : max($this->minimumPollInterval, (int)$raw);
+            $rawPollInterval = trim($responseNode->getAttribute('PollInterval'));
         }
         if ($correlationId !== '' && !preg_match('/^[0-9A-F]{1,32}$/D', $correlationId)) {
             throw new \RuntimeException('HMRC returned an invalid correlation ID.');
         }
 
-        $errors = $this->errors($xpath);
+        $govTalkErrors = $this->govTalkErrors($xpath);
+        $departmentErrors = $this->departmentErrors($xpath);
+        $errors = array_merge($govTalkErrors, $departmentErrors);
+        $departmentErrorCount = count($departmentErrors);
+        $isAcknowledgement = $operation !== 'delete' && in_array(
+            $qualifier,
+            ['acknowledgement', 'acknowledgment'],
+            true
+        ) && $function === 'submit';
+        $isFinalResponse = $operation !== 'delete'
+            && $qualifier === 'response'
+            && $function === 'submit';
+        $isProtocolError = $qualifier === 'error';
+        $isSubmitError = $isProtocolError && $function === 'submit';
+        $isDepartmentRejection = $isSubmitError
+            && $this->hasDepartmentBusinessError($govTalkErrors);
+        $isGatewayError = $isProtocolError
+            && $this->hasRaisedBy($govTalkErrors, 'Gateway');
+        $isDeleteResponse = $operation === 'delete'
+            && $qualifier === 'response'
+            && $function === 'delete';
+        $deleteNotFound = $operation === 'delete'
+            && $isGatewayError
+            && in_array($function, ['submit', 'delete'], true)
+            && $this->hasError($govTalkErrors, '2000');
+
+        if (!$isDeleteResponse && !$deleteNotFound && $rawPollInterval !== null) {
+            if ($rawPollInterval !== '' && !preg_match('/^[0-9]+$/D', $rawPollInterval)) {
+                throw new \RuntimeException('HMRC returned an invalid poll interval.');
+            }
+            $pollInterval = $rawPollInterval === ''
+                ? null
+                : max($this->minimumPollInterval, (int)$rawPollInterval);
+        }
+
         if (
             $operation === 'submit'
             && $expectedCorrelationId === ''
             && $class === 'UndefinedClass'
-            && $qualifier === 'error'
-            && $function === 'submit'
-            && $responseTransactionId === ''
+            && $isSubmitError
+            && $isGatewayError
+            && ($responseTransactionId === ''
+                || hash_equals($expectedTransactionId, $responseTransactionId))
             && $correlationId === ''
-            && parse_url($responseEndpoint, PHP_URL_PATH) === '/submission'
-            && $this->hasFatalGatewayGovTalkError($xpath)
+            && $this->hasFatalError($govTalkErrors)
         ) {
+            $validatedEndpoint = HmrcCtTransactionEngineEnvironment::followUpEndpoint(
+                $responseEndpoint,
+                (string)$profile['environment']
+            );
+            if (parse_url($validatedEndpoint, PHP_URL_PATH) !== '/submission') {
+                throw new \RuntimeException(
+                    'HMRC pre-conversation rejection returned an invalid response endpoint.'
+                );
+            }
             // Authentication and other fatal Gateway rejections happen before
             // HMRC opens a filing conversation. In that response class HMRC
             // deliberately returns UndefinedClass, blank protocol IDs and the
@@ -878,25 +980,80 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
                 'qualifier' => $qualifier,
                 'function' => $function,
                 'errors' => $errors,
+                'departmental_error_count' => $departmentErrorCount,
                 'body_xml' => $this->bodyXml($document, $xpath),
-                'error' => $this->errorMessage($errors),
+                'error' => $this->errorMessage($errors, $departmentErrorCount),
             ];
         }
-        if ($responseEndpoint !== '') {
-            $responseEndpoint = HmrcCtTransactionEngineEnvironment::responseEndpoint(
-                $responseEndpoint,
-                (string)$profile['environment']
+
+        $requiresPollEndpoint = $isAcknowledgement
+            || ($operation === 'poll'
+                && $isGatewayError
+                && $expectedCorrelationId !== '');
+        $requiresFollowUpEndpoint = $isFinalResponse
+            || $isDepartmentRejection
+            || ($operation === 'delete'
+                && $isGatewayError
+                && $expectedCorrelationId !== ''
+                && !$deleteNotFound);
+        if ($isDeleteResponse || $deleteNotFound) {
+            // A successful DELETE closes the conversation. HMRC documents the
+            // returned endpoint as having no further protocol significance.
+            $responseEndpoint = '';
+            $pollInterval = null;
+        } elseif ($requiresPollEndpoint) {
+            if ($responseEndpoint === '') {
+                $errors[] = $this->clientError(
+                    'MISSING_RESPONSE_ENDPOINT',
+                    'HMRC acknowledgement omitted its polling endpoint.'
+                );
+            } else {
+                $responseEndpoint = HmrcCtTransactionEngineEnvironment::pollEndpoint(
+                    $responseEndpoint,
+                    (string)$profile['environment']
+                );
+            }
+        } elseif ($requiresFollowUpEndpoint) {
+            if ($responseEndpoint === '') {
+                $errors[] = $this->clientError(
+                    'MISSING_RESPONSE_ENDPOINT',
+                    'HMRC response omitted its follow-up endpoint.'
+                );
+            } else {
+                $responseEndpoint = HmrcCtTransactionEngineEnvironment::followUpEndpoint(
+                    $responseEndpoint,
+                    (string)$profile['environment']
+                );
+            }
+        } else {
+            // Do not persist or act on an endpoint from an unexpected shape.
+            $responseEndpoint = '';
+        }
+        if (($requiresPollEndpoint || $requiresFollowUpEndpoint) && $pollInterval === null) {
+            $errors[] = $this->clientError(
+                'MISSING_POLL_INTERVAL',
+                $requiresPollEndpoint
+                    ? 'HMRC acknowledgement omitted its polling interval.'
+                    : 'HMRC response omitted its follow-up interval.'
             );
         }
 
+        $allowedResponseTransactionIds = [$expectedTransactionId];
+        if ($isFinalResponse || $isDepartmentRejection) {
+            $allowedResponseTransactionIds = [$expectedOriginalSubmissionTransactionId];
+        } elseif ($isGatewayError) {
+            $allowedResponseTransactionIds = $boundConversationTransactionIds;
+        }
         if ($responseTransactionId !== '' && (
             !preg_match('/^[0-9A-F]{1,32}$/D', $responseTransactionId)
-            || !hash_equals($expectedTransactionId, $responseTransactionId)
-        )
-        ) {
+            || !$this->matchesAnyTransactionId(
+                $responseTransactionId,
+                $allowedResponseTransactionIds
+            )
+        )) {
             $errors[] = $this->clientError(
                 'RESPONSE_TRANSACTION_MISMATCH',
-                'HMRC response transaction ID did not match the request.'
+                'HMRC response transaction ID did not match the expected GovTalk exchange.'
             );
         }
         if ($class !== (string)$profile['class']) {
@@ -905,8 +1062,10 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
                 'HMRC response class did not match the selected filing environment.'
             );
         }
-        $expectedFunction = $operation === 'delete' ? 'delete' : 'submit';
-        if ($function !== $expectedFunction) {
+        $functionMatches = $operation === 'delete'
+            ? ($function === 'delete' || ($function === 'submit' && $isGatewayError))
+            : $function === 'submit';
+        if (!$functionMatches) {
             $errors[] = $this->clientError(
                 'RESPONSE_FUNCTION_MISMATCH',
                 'HMRC response function did not match the request.'
@@ -921,42 +1080,26 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
                 'HMRC response correlation ID did not match the open conversation.'
             );
         }
-        if (in_array($qualifier, ['acknowledgement', 'acknowledgment'], true)
-            && $function === 'submit') {
-            if ($responseEndpoint === '') {
-                $errors[] = $this->clientError(
-                    'MISSING_RESPONSE_ENDPOINT',
-                    'HMRC acknowledgement omitted its polling endpoint.'
-                );
-            }
-            if ($pollInterval === null) {
-                $errors[] = $this->clientError(
-                    'MISSING_POLL_INTERVAL',
-                    'HMRC acknowledgement omitted its polling interval.'
-                );
-            }
-        }
 
         $protocolState = 'failed';
         $businessOutcome = null;
         $success = false;
         $cleanupRequired = false;
-        $deleteNotFound = false;
-        if (
-            in_array($qualifier, ['acknowledgement', 'acknowledgment'], true)
-            && $function === 'submit'
-            && $errors === []
-        ) {
-            if ($correlationId === '') {
-                $errors[] = $this->clientError(
-                    'MISSING_CORRELATION_ID',
-                    'HMRC acknowledgement omitted its correlation ID.'
-                );
-            } else {
-                $protocolState = 'acknowledged';
-                $success = true;
+        if ($isAcknowledgement && !$this->hasClientProtocolError($errors)) {
+            // An acknowledgement carrying application errors is not a valid
+            // instruction to continue the conversation.
+            if ($errors === []) {
+                if ($correlationId === '') {
+                    $errors[] = $this->clientError(
+                        'MISSING_CORRELATION_ID',
+                        'HMRC acknowledgement omitted its correlation ID.'
+                    );
+                } else {
+                    $protocolState = 'acknowledged';
+                    $success = true;
+                }
             }
-        } elseif ($qualifier === 'response' && $function === 'submit') {
+        } elseif ($isFinalResponse) {
             if ($correlationId === '') {
                 $errors[] = $this->clientError(
                     'MISSING_CORRELATION_ID',
@@ -967,23 +1110,21 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
             $businessOutcome = $errors === [] ? 'accepted' : 'rejected';
             $success = $errors === [];
             $cleanupRequired = $correlationId !== '';
-        } elseif ($qualifier === 'error' && $function === 'submit') {
-            if ($this->isGatewaySubmissionError($errors)) {
-                $protocolState = 'submission_error';
-            } else {
-                $protocolState = $correlationId === '' ? 'failed' : 'final_response';
-                $businessOutcome = 'rejected';
-                $cleanupRequired = $correlationId !== '';
-            }
-        } elseif ($qualifier === 'response' && $function === 'delete' && $errors === []) {
-            $protocolState = 'deleted';
-            $success = true;
-        } elseif ($qualifier === 'error' && $function === 'delete') {
-            $deleteNotFound = $this->hasError($errors, '2000');
+        } elseif ($isDepartmentRejection) {
+            $protocolState = $correlationId === '' ? 'failed' : 'final_response';
+            $businessOutcome = 'rejected';
+            $cleanupRequired = $correlationId !== '';
+        } elseif ($isGatewayError) {
             if ($deleteNotFound) {
                 $protocolState = 'deleted';
                 $success = true;
+            } else {
+                $protocolState = 'submission_error';
+                $cleanupRequired = $operation === 'delete';
             }
+        } elseif ($isDeleteResponse && $errors === []) {
+            $protocolState = 'deleted';
+            $success = true;
         }
         if (!$success && $errors === []) {
             $errors[] = $this->clientError(
@@ -991,23 +1132,15 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
                 'HMRC Transaction Engine returned an unexpected response.'
             );
         }
-        foreach ($errors as $error) {
-            if ((string)($error['raised_by'] ?? '') !== 'Client') {
-                continue;
-            }
-            $number = (string)($error['number'] ?? '');
-            if (in_array($number, [
-                'RESPONSE_CLASS_MISMATCH', 'RESPONSE_FUNCTION_MISMATCH',
-                'RESPONSE_CORRELATION_MISMATCH', 'MISSING_CORRELATION_ID',
-                'RESPONSE_TRANSACTION_MISMATCH', 'MISSING_RESPONSE_ENDPOINT',
-                'MISSING_POLL_INTERVAL',
-            ], true)) {
-                $success = false;
-                $protocolState = 'failed';
-                $businessOutcome = null;
-                $cleanupRequired = false;
-                break;
-            }
+        if ($this->hasClientProtocolError($errors)) {
+            $success = false;
+            $protocolState = 'failed';
+            $businessOutcome = null;
+            $cleanupRequired = false;
+        }
+        if ($success && $protocolState === 'deleted') {
+            $responseEndpoint = '';
+            $pollInterval = null;
         }
 
         return [
@@ -1024,14 +1157,40 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
             'qualifier' => $qualifier,
             'function' => $function,
             'errors' => $errors,
+            'departmental_error_count' => $departmentErrorCount,
             'body_xml' => $this->bodyXml($document, $xpath),
-            'error' => $success ? '' : $this->errorMessage($errors),
+            'error' => $success
+                ? ''
+                : $this->errorMessage($errors, $departmentErrorCount),
         ];
     }
 
-    private function errors(\DOMXPath $xpath): array
+    private function govTalkErrors(\DOMXPath $xpath): array
     {
-        $nodes = $xpath->query('//*[local-name()="Error"]');
+        $nodes = $xpath->query(
+            '/*[local-name()="GovTalkMessage"]/*[local-name()="GovTalkDetails"]'
+            . '/*[local-name()="GovTalkErrors"]/*[local-name()="Error"]'
+        );
+
+        return $this->normalisedErrors($xpath, $nodes, 'govtalk');
+    }
+
+    private function departmentErrors(\DOMXPath $xpath): array
+    {
+        $nodes = $xpath->query(
+            '/*[local-name()="GovTalkMessage"]/*[local-name()="Body"]'
+            . '/*[local-name()="ErrorResponse"]/*[local-name()="Error"]'
+        );
+
+        return $this->normalisedErrors($xpath, $nodes, 'department');
+    }
+
+    /** @param false|\DOMNodeList $nodes */
+    private function normalisedErrors(
+        \DOMXPath $xpath,
+        false|\DOMNodeList $nodes,
+        string $source
+    ): array {
         $errors = [];
         if ($nodes === false) {
             return $errors;
@@ -1046,9 +1205,10 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
                 $texts = $description === '' ? [] : [$description];
             }
             $errors[] = [
+                'source' => $source,
                 'raised_by' => $this->childText($xpath, $node, 'RaisedBy'),
                 'number' => $this->childText($xpath, $node, 'Number'),
-                'type' => strtolower($this->childText($xpath, $node, 'Type')),
+                'type' => $this->childText($xpath, $node, 'Type'),
                 'texts' => $texts,
                 'locations' => $this->childTexts($xpath, $node, 'Location'),
             ];
@@ -1060,6 +1220,7 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
     private function clientError(string $number, string $message): array
     {
         return [
+            'source' => 'client',
             'raised_by' => 'Client',
             'number' => $number,
             'type' => 'protocol',
@@ -1170,12 +1331,77 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         return false;
     }
 
-    private function isGatewaySubmissionError(array $errors): bool
+    /** @param list<string> $allowed */
+    private function matchesAnyTransactionId(string $transactionId, array $allowed): bool
+    {
+        foreach ($allowed as $expected) {
+            if ($expected !== '' && hash_equals($expected, $transactionId)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<int,mixed> $bound
+     * @return list<string>
+     */
+    private function boundTransactionIds(
+        array $bound,
+        string $originalSubmissionTransactionId,
+        string $currentTransactionId
+    ): array {
+        $normalised = [];
+        foreach (array_merge(
+            $bound,
+            [$originalSubmissionTransactionId, $currentTransactionId]
+        ) as $transactionId) {
+            if (!is_string($transactionId)) {
+                throw new \InvalidArgumentException(
+                    'A bound HMRC conversation transaction ID is invalid.'
+                );
+            }
+            $transactionId = strtoupper(trim($transactionId));
+            if (preg_match('/^[0-9A-F]{1,32}$/D', $transactionId) !== 1) {
+                throw new \InvalidArgumentException(
+                    'A bound HMRC conversation transaction ID is invalid.'
+                );
+            }
+            $normalised[$transactionId] = true;
+        }
+
+        return array_keys($normalised);
+    }
+
+    private function hasRaisedBy(array $errors, string $raisedBy): bool
+    {
+        foreach ($errors as $error) {
+            if (strcasecmp(trim((string)($error['raised_by'] ?? '')), $raisedBy) === 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function hasFatalError(array $errors): bool
+    {
+        foreach ($errors as $error) {
+            if (strtolower(trim((string)($error['type'] ?? ''))) === 'fatal') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function hasDepartmentBusinessError(array $errors): bool
     {
         foreach ($errors as $error) {
             if (
-                strcasecmp(trim((string)($error['raised_by'] ?? '')), 'Gateway') === 0
-                && strtolower(trim((string)($error['type'] ?? ''))) === 'fatal'
+                strcasecmp(trim((string)($error['raised_by'] ?? '')), 'Department') === 0
+                && in_array((string)($error['number'] ?? ''), ['3000', '3001'], true)
             ) {
                 return true;
             }
@@ -1184,22 +1410,12 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         return false;
     }
 
-    private function hasFatalGatewayGovTalkError(\DOMXPath $xpath): bool
+    private function hasClientProtocolError(array $errors): bool
     {
-        $nodes = $xpath->query(
-            '/*[local-name()="GovTalkMessage"]/*[local-name()="GovTalkDetails"]'
-            . '/*[local-name()="GovTalkErrors"]/*[local-name()="Error"]'
-        );
-        if ($nodes === false) {
-            return false;
-        }
-        foreach ($nodes as $node) {
-            if (!$node instanceof \DOMElement) {
-                continue;
-            }
+        foreach ($errors as $error) {
             if (
-                strcasecmp($this->childText($xpath, $node, 'RaisedBy'), 'Gateway') === 0
-                && strtolower($this->childText($xpath, $node, 'Type')) === 'fatal'
+                strcasecmp(trim((string)($error['raised_by'] ?? '')), 'Client') === 0
+                && strtolower(trim((string)($error['type'] ?? ''))) === 'protocol'
             ) {
                 return true;
             }
@@ -1208,22 +1424,37 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         return false;
     }
 
-    private function errorMessage(array $errors): string
+    private function errorMessage(array $errors, int $departmentErrorCount = 0): string
     {
-        $messages = [];
+        $primary = null;
         foreach ($errors as $error) {
-            $number = trim((string)($error['number'] ?? ''));
-            foreach ((array)($error['texts'] ?? []) as $text) {
+            if (strcasecmp(trim((string)($error['raised_by'] ?? '')), 'Client') === 0) {
+                $primary = $error;
+                break;
+            }
+            $primary ??= $error;
+        }
+        $message = '';
+        if (is_array($primary)) {
+            $number = trim((string)($primary['number'] ?? ''));
+            foreach ((array)($primary['texts'] ?? []) as $text) {
                 $text = trim((string)$text);
                 if ($text !== '') {
-                    $messages[] = ($number === '' ? '' : $number . ': ') . $text;
+                    $message = ($number === '' ? '' : $number . ': ') . $text;
+                    break;
                 }
             }
         }
+        if ($message === '') {
+            $message = 'HMRC Transaction Engine rejected the request.';
+        }
+        if ($departmentErrorCount > 0) {
+            $message .= ' ' . $departmentErrorCount . ' departmental validation '
+                . ($departmentErrorCount === 1 ? 'error was' : 'errors were')
+                . ' returned.';
+        }
 
-        return $messages !== []
-            ? implode(' ', array_values(array_unique($messages)))
-            : 'HMRC Transaction Engine rejected the request.';
+        return $message;
     }
 
     private function baseResult(
@@ -1256,6 +1487,7 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
             'qualifier' => '',
             'function' => '',
             'errors' => [],
+            'departmental_error_count' => 0,
             'request_xml' => '',
             'request_sha256' => '',
             'request_bytes' => 0,

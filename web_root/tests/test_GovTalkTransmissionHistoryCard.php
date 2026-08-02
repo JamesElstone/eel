@@ -246,7 +246,58 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             _govtalk_transmission_historyCard::class,
-            'renders recoverable HMRC acknowledgement as a developer-only danger action',
+            'exports every structured GovTalk error field in deterministic readable form',
+            static function () use ($harness): void {
+                $exchangeCard = new _govtalk_exchangesCard();
+                $errors = [[
+                    'source' => 'body',
+                    'scope' => 'departmental',
+                    'raised_by' => 'Department',
+                    'number' => '3001',
+                    'type' => 'fatal',
+                    'texts' => [
+                        'The submission contains errors, review every detail.',
+                        'Second diagnostic text',
+                    ],
+                    'locations' => ['', '/Accounts/BalanceSheet', '/Computation/Tax'],
+                ], [
+                    'raised_by' => 'Gateway',
+                    'number' => '1046',
+                    'type' => 'fatal',
+                    'texts' => ['Authentication Failure'],
+                    'locations' => [],
+                ]];
+                $expected = 'Error 1 | RaisedBy: Department | Number: 3001 | Type: fatal'
+                    . ' | Source: body | Scope: departmental'
+                    . ' | Text 1: The submission contains errors, review every detail.'
+                    . ' | Text 2: Second diagnostic text'
+                    . ' | Location 1: /Accounts/BalanceSheet'
+                    . ' | Location 2: /Computation/Tax'
+                    . "\nError 2 | RaisedBy: Gateway | Number: 1046 | Type: fatal"
+                    . ' | Text 1: Authentication Failure';
+
+                $exportMethod = new ReflectionMethod($exchangeCard, 'govTalkErrorsExport');
+                $exportMethod->setAccessible(true);
+                $harness->assertSame($expected, $exportMethod->invoke($exchangeCard, $errors));
+
+                $tableMethod = new ReflectionMethod($exchangeCard, 'exchangeHistoryTable');
+                $tableMethod->setAccessible(true);
+                /** @var TableFramework $table */
+                $table = $tableMethod->invoke($exchangeCard, 49, [[
+                    'authority_label' => 'HMRC',
+                    'submission_reference' => '000004',
+                    'request_message_class' => 'HMRC-CT-CT600',
+                    'transaction_id' => 'POLL-TXN',
+                    'govtalk_errors' => $errors,
+                    'display_outcome' => 'Rejected',
+                ]], []);
+                $harness->assertTrue(str_contains($table->exportCsv(), '"' . $expected . '"'));
+            }
+        );
+
+        $harness->check(
+            _govtalk_transmission_historyCard::class,
+            'renders an eligible archived HMRC response as a developer-only danger action',
             static function () use ($harness, $card): void {
                 $context = [
                     'company' => ['id' => 49, 'accounting_period_id' => 79],
@@ -266,7 +317,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                             'latest_status' => 'Transmission outcome uncertain',
                             'prepared_at' => '2026-08-01 00:55:39',
                             'submitted_at' => '2026-08-01 00:55:40',
-                            'acknowledgement_recovery_available' => true,
+                            'response_reprocess_available' => true,
+                            'response_reprocess_exchange_id' => 25,
                         ]],
                     ],
                 ];
@@ -276,14 +328,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $standard = $card->render($context);
                     $harness->assertFalse(str_contains(
                         $standard,
-                        'name="intent" value="hmrc_recover_acknowledgement"'
+                        'name="intent" value="hmrc_reprocess_response"'
                     ));
 
                     AppConfigurationStore::set('developer_options', true);
                     $developer = $card->render($context);
                     $harness->assertTrue(str_contains(
                         $developer,
-                        'name="intent" value="hmrc_recover_acknowledgement"'
+                        'name="intent" value="hmrc_reprocess_response"'
                     ));
                     $harness->assertTrue(str_contains(
                         $developer,
@@ -299,13 +351,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         'name="accounting_period_id" value="79"',
                         'name="ct_period_id" value="7"',
                         'name="submission_id" value="4"',
+                        'name="exchange_id" value="25"',
                     ] as $field) {
                         $harness->assertTrue(str_contains($developer, $field));
                     }
                     $harness->assertTrue(str_contains(
                         $developer,
-                        'No information will be sent to HMRC by this recovery action.'
+                        'Nothing will be sent to HMRC by this action.'
                     ));
+                    $harness->assertTrue(str_contains($developer, '>Reprocess Response</button>'));
+                    $harness->assertFalse(str_contains($developer, 'hmrc_recover_acknowledgement'));
                 } finally {
                     AppConfigurationStore::set('developer_options', (bool)$previous);
                 }

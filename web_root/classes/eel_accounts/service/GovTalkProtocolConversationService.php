@@ -53,6 +53,12 @@ final class GovTalkProtocolConversationService
             },
             fn(array $response): array => $this->captureResponse($identity, $response),
             function (string $state, string $error, array $result) use ($identity): void {
+                $structuredErrors = $result['govtalk_errors'] ?? null;
+                if ($structuredErrors !== null && !is_array($structuredErrors)) {
+                    throw new \InvalidArgumentException(
+                        'The final GovTalk structured errors must be an array.'
+                    );
+                }
                 $this->completeExchange(
                     $identity['authority'],
                     $identity['environment'],
@@ -60,7 +66,9 @@ final class GovTalkProtocolConversationService
                     $state,
                     $this->outcomeCode($result),
                     $this->outcomeSummary($result),
-                    $error
+                    $error,
+                    '',
+                    $structuredErrors
                 );
             },
             function (string $transactionId, string $error) use ($identity): void {
@@ -314,6 +322,9 @@ final class GovTalkProtocolConversationService
         ];
     }
 
+    /**
+     * @param list<array<string,mixed>>|null $structuredErrors
+     */
     public function completeExchange(
         string $authority,
         string $environment,
@@ -322,7 +333,8 @@ final class GovTalkProtocolConversationService
         string $outcomeCode = '',
         string $outcomeSummary = '',
         string $error = '',
-        string $correlationId = ''
+        string $correlationId = '',
+        ?array $structuredErrors = null
     ): void {
         if (!$this->schemaReady() || trim($transactionId) === '') {
             return;
@@ -338,10 +350,17 @@ final class GovTalkProtocolConversationService
         if (!in_array($state, $allowed, true)) {
             throw new \InvalidArgumentException('The GovTalk exchange state is invalid.');
         }
+        $structuredErrorsJson = $structuredErrors !== null
+            ? $this->structuredErrorsJson($structuredErrors)
+            : null;
         \InterfaceDB::prepareExecute(
             'UPDATE ' . self::EXCHANGES . '
              SET exchange_state = :state,
                  correlation_id = COALESCE(:correlation_id, correlation_id),
+                 govtalk_errors_json = CASE
+                     WHEN :replace_structured_errors = 1 THEN :structured_errors_json
+                     ELSE govtalk_errors_json
+                 END,
                  outcome_code = :outcome_code,
                  outcome_summary = :outcome_summary,
                  error_summary = :error,
@@ -352,6 +371,8 @@ final class GovTalkProtocolConversationService
             [
                 'state' => $state,
                 'correlation_id' => $correlationId !== '' ? $correlationId : null,
+                'replace_structured_errors' => $structuredErrors !== null ? 1 : 0,
+                'structured_errors_json' => $structuredErrorsJson,
                 'outcome_code' => trim($outcomeCode) !== '' ? trim($outcomeCode) : null,
                 'outcome_summary' => trim($outcomeSummary) !== ''
                     ? trim($outcomeSummary)
@@ -369,6 +390,56 @@ final class GovTalkProtocolConversationService
             $transactionId,
             $state
         );
+    }
+
+    /**
+     * @param list<array<string,mixed>> $structuredErrors
+     */
+    private function structuredErrorsJson(array $structuredErrors): string
+    {
+        if (!array_is_list($structuredErrors)) {
+            throw new \InvalidArgumentException(
+                'The final GovTalk structured errors must be a list.'
+            );
+        }
+        $scalarFields = ['raised_by', 'number', 'type', 'source', 'scope'];
+        $listFields = ['texts', 'locations'];
+        foreach ($structuredErrors as $error) {
+            if (!is_array($error) || array_is_list($error)) {
+                throw new \InvalidArgumentException(
+                    'Each final GovTalk structured error must be an object.'
+                );
+            }
+            foreach ($scalarFields as $field) {
+                if (array_key_exists($field, $error) && !is_string($error[$field])) {
+                    throw new \InvalidArgumentException(
+                        'The final GovTalk structured error field ' . $field
+                            . ' must be a string.'
+                    );
+                }
+            }
+            foreach ($listFields as $field) {
+                if (!array_key_exists($field, $error)) {
+                    continue;
+                }
+                if (!is_array($error[$field]) || !array_is_list($error[$field])) {
+                    throw new \InvalidArgumentException(
+                        'The final GovTalk structured error field ' . $field
+                            . ' must be a list.'
+                    );
+                }
+                foreach ($error[$field] as $value) {
+                    if (!is_string($value)) {
+                        throw new \InvalidArgumentException(
+                            'The final GovTalk structured error field ' . $field
+                                . ' must contain only strings.'
+                        );
+                    }
+                }
+            }
+        }
+
+        return Utf8::json($structuredErrors, JSON_THROW_ON_ERROR);
     }
 
     public function markEvidenceIncomplete(

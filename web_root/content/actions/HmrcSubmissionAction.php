@@ -22,6 +22,7 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
         $accountingPeriodId = (int)$request->input('accounting_period_id', 0);
         $ctPeriodId = (int)$request->input('ct_period_id', 0);
         $submissionId = (int)$request->input('submission_id', 0);
+        $exchangeId = (int)$request->input('exchange_id', 0);
 
         $contextError = $this->accountingContextError($companyId, $accountingPeriodId);
         if ($contextError !== null) {
@@ -33,7 +34,7 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
             'hmrc_retry_test',
             'hmrc_retry_live',
             'hmrc_generate_request',
-            'hmrc_recover_acknowledgement',
+            'hmrc_reprocess_response',
             'hmrc_poll',
         ], true)) {
             return $this->result(false, ['Unknown Corporation Tax submission action.'], [], $changedFacts);
@@ -47,11 +48,11 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
                 $changedFacts
             );
         }
-        if ($intent === 'hmrc_recover_acknowledgement'
+        if ($intent === 'hmrc_reprocess_response'
             && !(bool)AppConfigurationStore::get('developer_options', false)) {
             return $this->result(
                 false,
-                ['Developer Options must be enabled to recover an archived HMRC acknowledgement.'],
+                ['Developer Options must be enabled to reprocess an archived HMRC response.'],
                 [],
                 $changedFacts
             );
@@ -121,13 +122,22 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
                         $changedFacts
                     );
                 }
-                if ($intent === 'hmrc_recover_acknowledgement') {
+                if ($intent === 'hmrc_reprocess_response') {
+                    if ($exchangeId <= 0) {
+                        return $this->result(
+                            false,
+                            ['Select the archived HMRC exchange to reprocess.'],
+                            [],
+                            $changedFacts
+                        );
+                    }
                     $progress->report(
-                        'Preparing to verify the archived HMRC acknowledgement without transmitting…',
+                        'Preparing to reprocess the archived HMRC response without transmitting…',
                         10
                     );
-                    $command = $service->recoverArchivedAcknowledgement(
+                    $command = $service->reprocessArchivedResponse(
                         $submissionId,
+                        $exchangeId,
                         $actor,
                         $report
                     );
@@ -235,8 +245,8 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
             return 'The HMRC GovTalk request file was generated without transmission'
                 . ($path !== '' ? ': ' . $path : '.');
         }
-        if ($intent === 'hmrc_recover_acknowledgement') {
-            return 'The archived HMRC acknowledgement was verified. Use Check Submission Status to continue the existing conversation.';
+        if ($intent === 'hmrc_reprocess_response') {
+            return 'The archived HMRC response was reprocessed locally. Nothing was sent to HMRC.';
         }
         if (!empty($command['needs_poll'])) {
             return 'HMRC acknowledged the submission. Use Check Submission Status after the requested polling interval.';

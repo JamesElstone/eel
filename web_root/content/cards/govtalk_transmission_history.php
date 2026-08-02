@@ -144,14 +144,16 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
                     $submissionId
                 );
             }
-            $recoveryAction = $authority === 'hmrc'
+            $reprocessAction = $authority === 'hmrc'
                 && $developerOptions
-                && !empty($submission['acknowledgement_recovery_available'])
-                ? $this->recoverHmrcAcknowledgementButton(
+                && !empty($submission['response_reprocess_available'])
+                && (int)($submission['response_reprocess_exchange_id'] ?? 0) > 0
+                ? $this->reprocessHmrcResponseButton(
                     $companyId,
                     $accountingPeriodId,
                     (int)($submission['ct_period_id'] ?? 0),
-                    $submissionId
+                    $submissionId,
+                    (int)$submission['response_reprocess_exchange_id']
                 )
                 : '';
             $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html(
@@ -190,7 +192,7 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
                 . \eel_accounts\Support\Utf8::html($authority) . '">'
                 . '<input type="hidden" name="history_conversation_id" value="' . $submissionId . '">'
                 . '<button class="button primary" type="submit">View conversation</button></form>'
-                . $statusAction . $recoveryAction . '</td></tr>';
+                . $statusAction . $reprocessAction . '</td></tr>';
         }
 
         return '<section class="panel-soft">'
@@ -243,33 +245,36 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
             . '<button class="button primary" type="submit">Check Submission Status</button></form>';
     }
 
-    private function recoverHmrcAcknowledgementButton(
+    private function reprocessHmrcResponseButton(
         int $companyId,
         int $accountingPeriodId,
         int $ctPeriodId,
-        int $submissionId
+        int $submissionId,
+        int $exchangeId
     ): string {
         if ($companyId <= 0
             || $accountingPeriodId <= 0
             || $ctPeriodId <= 0
-            || $submissionId <= 0) {
+            || $submissionId <= 0
+            || $exchangeId <= 0) {
             return '';
         }
 
         return '<form method="post" action="?page=transmit" data-ajax="true" class="actions-row">'
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="HmrcSubmission">'
-            . '<input type="hidden" name="intent" value="hmrc_recover_acknowledgement">'
+            . '<input type="hidden" name="intent" value="hmrc_reprocess_response">'
             . '<input type="hidden" name="company_id" value="' . $companyId . '">'
             . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
             . '<input type="hidden" name="ct_period_id" value="' . $ctPeriodId . '">'
             . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
+            . '<input type="hidden" name="exchange_id" value="' . $exchangeId . '">'
             . '<button class="button button-inline danger" type="submit" title="Developer only" '
-            . 'data-chicken-check="true" data-chicken-title="Recover HMRC acknowledgement" '
-            . 'data-chicken-message="Verify the archived HMRC response and restore polling for this existing submission?'
-            . '&lt;br&gt;&lt;br&gt;No information will be sent to HMRC by this recovery action." '
-            . 'data-chicken-confirm-text="Recover Acknowledgement" '
-            . 'data-chicken-button-class="button danger">Recover HMRC Acknowledgement</button></form>';
+            . 'data-chicken-check="true" data-chicken-title="Reprocess archived HMRC response" '
+            . 'data-chicken-message="Reprocess this archived HMRC response locally and apply its strictly verified protocol result?'
+            . '&lt;br&gt;&lt;br&gt;Nothing will be sent to HMRC by this action." '
+            . 'data-chicken-confirm-text="Reprocess Response" '
+            . 'data-chicken-button-class="button danger">Reprocess Response</button></form>';
     }
 
     protected function exchangeTable(
@@ -378,7 +383,16 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
             )
             ->column('response_xml', 'Response XML', html: fn(array $exchange): string => $this->downloadButton($companyId, (int)($exchange['id'] ?? 0), 'response', !empty($exchange['response_available'])), exportable: false)
             ->column('http_status', 'HTTP Response Code', html: static fn(array $exchange): string => \eel_accounts\Support\Utf8::html(trim((string)($exchange['display_http_status'] ?? '')) ?: '—'), export: static fn(array $exchange): string => (string)($exchange['display_http_status'] ?? ''))
-            ->column('govtalk_errors', 'GovTalk Errors', html: fn(array $exchange): string => $this->govTalkErrors((array)($exchange['govtalk_errors'] ?? [])), export: static fn(array $exchange): string => implode('; ', array_map(static fn(array $error): string => trim((string)($error['number'] ?? '')) . ': ' . implode('; ', (array)($error['texts'] ?? [])), array_filter((array)($exchange['govtalk_errors'] ?? []), 'is_array'))))
+            ->column(
+                'govtalk_errors',
+                'GovTalk Errors',
+                html: fn(array $exchange): string => $this->govTalkErrors(
+                    (array)($exchange['govtalk_errors'] ?? [])
+                ),
+                export: fn(array $exchange): string => $this->govTalkErrorsExport(
+                    (array)($exchange['govtalk_errors'] ?? [])
+                )
+            )
             ->column(
                 'outcome',
                 'Outcome',
@@ -504,6 +518,44 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
         }
 
         return $items !== '' ? '<ul class="helper">' . $items . '</ul>' : '—';
+    }
+
+    protected function govTalkErrorsExport(array $errors): string
+    {
+        $lines = [];
+        $errorNumber = 0;
+        foreach ($errors as $error) {
+            if (!is_array($error)) {
+                continue;
+            }
+            $errorNumber++;
+            $fields = [
+                'Error ' . $errorNumber,
+                'RaisedBy: ' . (string)($error['raised_by'] ?? ''),
+                'Number: ' . (string)($error['number'] ?? ''),
+                'Type: ' . (string)($error['type'] ?? ''),
+            ];
+            foreach (['source' => 'Source', 'scope' => 'Scope'] as $key => $label) {
+                $value = trim((string)($error[$key] ?? ''));
+                if ($value !== '') {
+                    $fields[] = $label . ': ' . $value;
+                }
+            }
+            foreach (array_values((array)($error['texts'] ?? [])) as $index => $text) {
+                $fields[] = 'Text ' . ($index + 1) . ': ' . (string)$text;
+            }
+            $locationNumber = 0;
+            foreach ((array)($error['locations'] ?? []) as $location) {
+                if (trim((string)$location) === '') {
+                    continue;
+                }
+                $locationNumber++;
+                $fields[] = 'Location ' . $locationNumber . ': ' . (string)$location;
+            }
+            $lines[] = implode(' | ', $fields);
+        }
+
+        return implode("\n", $lines);
     }
 
     private function identifierPair(string $transactionId, string $correlationId): string

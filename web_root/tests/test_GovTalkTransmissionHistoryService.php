@@ -41,25 +41,95 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         );
         $harness->check(
             \eel_accounts\Service\GovTalkTransmissionHistoryService::class,
-            'exposes recovery only for verifiable uncertain HMRC acknowledgements',
+            'selects only the current strictly bound HMRC response for reprocessing',
             static function () use ($harness, $service): void {
-                $method = new ReflectionMethod($service, 'hmrcAcknowledgementRecoveryAvailable');
-                $method->setAccessible(true);
-                $eligible = [
-                    'protocol_state' => 'transport_uncertain',
-                    'hmrc_response_code' => 200,
-                    'transaction_id' => 'AD907A5A3D1804FB27577E1CCD9C95C9',
-                    'response_body_path' => 'archive/response.xml',
-                    'response_sha256' => str_repeat('a', 64),
+                $contractMethod = new ReflectionMethod($service, 'hmrcResponseReprocessContract');
+                $contractMethod->setAccessible(true);
+                $eligibleMethod = new ReflectionMethod($service, 'hmrcResponseReprocessEligible');
+                $eligibleMethod->setAccessible(true);
+                $responsePath = tempnam(test_tmp_directory(), 'hmrc-history-response-');
+                if (!is_string($responsePath)) {
+                    throw new RuntimeException('Unable to create response evidence fixture.');
+                }
+                file_put_contents($responsePath, '<GovTalkMessage/>');
+                $responseHash = hash_file('sha256', $responsePath);
+                if (!is_string($responseHash)) {
+                    throw new RuntimeException('Unable to hash response evidence fixture.');
+                }
+                $submission = [
+                    'id' => 4,
+                    'company_id' => 49,
+                    'accounting_period_id' => 79,
+                    'protocol_state' => 'awaiting_poll',
+                    'environment' => 'TEST',
+                    'transaction_id' => '54B1C98A7BC69A5135435909056F65D1',
+                    'response_body_path' => $responsePath,
+                    'response_sha256' => $responseHash,
+                ];
+                $exchange = [
+                    'id' => 25,
+                    'authority' => 'hmrc',
+                    'hmrc_submission_id' => 4,
+                    'operation' => 'poll',
+                    'environment' => 'TEST',
+                    'transaction_id' => '54B1C98A7BC69A5135435909056F65D1',
+                    'exchange_state' => 'failed',
+                    'response_status_code' => 200,
+                    'response_path' => $responsePath,
+                    'response_sha256' => $responseHash,
+                    'archive_authority' => 'hmrc',
+                    'archive_environment' => 'TEST',
+                    'archive_company_id' => 49,
+                    'archive_accounting_period_id' => 79,
+                    'archive_submission_reference' => 'submission-000004',
                 ];
 
-                $harness->assertTrue((bool)$method->invoke($service, $eligible));
-                $nonUncertain = $eligible;
-                $nonUncertain['protocol_state'] = 'awaiting_poll';
-                $harness->assertFalse((bool)$method->invoke($service, $nonUncertain));
-                $invalidHash = $eligible;
-                $invalidHash['response_sha256'] = 'invalid';
-                $harness->assertFalse((bool)$method->invoke($service, $invalidHash));
+                try {
+                    $contract = $contractMethod->invoke($service, $submission);
+                    $harness->assertSame('poll', (string)$contract['operation']);
+                    $harness->assertTrue((bool)$eligibleMethod->invoke(
+                        $service,
+                        $submission,
+                        $exchange,
+                        $contract
+                    ));
+
+                    $transport = $submission;
+                    $transport['protocol_state'] = 'transport_uncertain';
+                    $harness->assertSame(
+                        'submit',
+                        (string)$contractMethod->invoke($service, $transport)['operation']
+                    );
+                    $cleanup = $submission;
+                    $cleanup['protocol_state'] = 'delete_pending';
+                    $harness->assertSame(
+                        'delete',
+                        (string)$contractMethod->invoke($service, $cleanup)['operation']
+                    );
+                    $closed = $submission;
+                    $closed['protocol_state'] = 'closed';
+                    $harness->assertSame(null, $contractMethod->invoke($service, $closed));
+
+                    foreach ([
+                        ['transaction_id', 'UNRELATED'],
+                        ['exchange_state', 'succeeded'],
+                        ['response_status_code', 500],
+                        ['archive_environment', 'LIVE'],
+                        ['archive_submission_reference', 'submission-000005'],
+                        ['response_sha256', str_repeat('a', 64)],
+                    ] as [$key, $value]) {
+                        $invalid = $exchange;
+                        $invalid[$key] = $value;
+                        $harness->assertFalse((bool)$eligibleMethod->invoke(
+                            $service,
+                            $submission,
+                            $invalid,
+                            $contract
+                        ));
+                    }
+                } finally {
+                    @unlink($responsePath);
+                }
             }
         );
     }

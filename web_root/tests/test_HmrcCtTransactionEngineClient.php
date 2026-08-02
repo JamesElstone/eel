@@ -259,7 +259,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         'response',
                         'submit',
                         'CAFE1234',
-                        '',
+                        '<ResponseEndPoint PollInterval="10">https://transaction-engine.tax.service.gov.uk/submission</ResponseEndPoint>',
                         '<GovTalkDetails><Keys/></GovTalkDetails>',
                         '<Body><SubmissionReference xmlns="urn:test">HMRC-REF-1</SubmissionReference></Body>'
                     ),
@@ -274,9 +274,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         ''
                     ),
                 ];
+                $capturedUrls = [];
                 $client = new \eel_accounts\Client\HmrcCtTransactionEngineClient(
-                    static function (array $request) use (&$responses): array {
-                        unset($request);
+                    static function (array $request) use (&$responses, &$capturedUrls): array {
+                        $capturedUrls[] = (string)$request['url'];
                         return ['status_code' => 200, 'headers' => [], 'body' => array_shift($responses)];
                     },
                     $credentials,
@@ -287,7 +288,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'CAFE1234',
                     'https://transaction-engine.tax.service.gov.uk/poll',
                     'TIL',
-                    $conversation('TIL', $beforeSend, $afterReceive)
+                    $conversation('TIL', $beforeSend, $afterReceive),
+                    'ABCDEF1234567890'
                 );
                 $h->assertTrue((bool)$poll['success']);
                 $h->assertSame('final_response', $poll['protocol_state']);
@@ -296,12 +298,17 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
                 $delete = $client->delete(
                     'CAFE1234',
-                    'https://transaction-engine.tax.service.gov.uk/poll',
+                    'https://transaction-engine.tax.service.gov.uk/submission',
                     'TIL',
-                    $conversation('TIL', $beforeSend, $afterReceive)
+                    $conversation('TIL', $beforeSend, $afterReceive),
+                    'ABCDEF1234567890'
                 );
                 $h->assertTrue((bool)$delete['success']);
                 $h->assertSame('deleted', $delete['protocol_state']);
+                $h->assertSame([
+                    'https://transaction-engine.tax.service.gov.uk/poll',
+                    'https://transaction-engine.tax.service.gov.uk/submission',
+                ], $capturedUrls);
             }
         );
 
@@ -348,11 +355,307 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'submit',
                     'TEST',
                     '',
+                    'ABCDEF1234567890',
                     'ABCDEF1234567890'
                 );
                 $h->assertTrue((bool)$reparsed['success']);
                 $h->assertSame('acknowledged', $reparsed['protocol_state']);
                 $h->assertSame('', $reparsed['response_transaction_id']);
+            }
+        );
+
+        $h->check(
+            \eel_accounts\Client\HmrcCtTransactionEngineClient::class,
+            'reprocesses the exact HMRC 3001 poll shape as a final business rejection',
+            static function () use ($h, $credentials, $transactionId): void {
+                $originalTransactionId = 'AD907A5A3D1804FB27577E1CCD9C95C9';
+                $pollTransactionId = '54B1C98A7BC69A5135435909056F65D1';
+                $correlationId = 'D3C2B9E5F98449A19863D934273FA052';
+                $accountsError = '<Error><RaisedBy>ChRIS</RaisedBy><Number>0</Number>'
+                    . '<Type>xbrl.ixbrl.FormatUndefined</Type>'
+                    . '<Text>Accounts transformation format is undefined.</Text>'
+                    . '<Location>Accounts</Location></Error>';
+                $computationsError = '<Error><RaisedBy>ChRIS</RaisedBy><Number>0</Number>'
+                    . '<Type>xbrl.ixbrl.FormatUndefined</Type>'
+                    . '<Text>Computations transformation format is undefined.</Text>'
+                    . '<Location>Computations</Location></Error>';
+                $fixture = '<?xml version="1.0" encoding="UTF-8"?>'
+                    . '<GovTalkMessage xmlns="http://www.govtalk.gov.uk/CM/envelope">'
+                    . '<EnvelopeVersion>2.0</EnvelopeVersion><Header><MessageDetails>'
+                    . '<Class>HMRC-CT-CT600</Class><Qualifier>error</Qualifier><Function>submit</Function>'
+                    . '<TransactionID>' . $originalTransactionId . '</TransactionID>'
+                    . '<CorrelationID>' . $correlationId . '</CorrelationID>'
+                    . '<ResponseEndPoint PollInterval="10">https://test-transaction-engine.tax.service.gov.uk/submission</ResponseEndPoint>'
+                    . '<Transformation>XML</Transformation></MessageDetails><SenderDetails/></Header>'
+                    . '<GovTalkDetails><Keys/><GovTalkErrors><Error>'
+                    . '<RaisedBy>Department</RaisedBy><Number>3001</Number><Type>business</Type>'
+                    . '<Text>The submission failed departmental business logic.</Text><Location/>'
+                    . '</Error></GovTalkErrors></GovTalkDetails><Body>'
+                    . '<ErrorResponse xmlns="http://www.govtalk.gov.uk/CM/errorresponse" SchemaVersion="2.0">'
+                    . '<Application><MessageCount>69</MessageCount></Application>'
+                    . str_repeat($accountsError, 68) . $computationsError
+                    . '</ErrorResponse></Body></GovTalkMessage>';
+                $client = new \eel_accounts\Client\HmrcCtTransactionEngineClient(
+                    static function (array $request): array {
+                        unset($request);
+                        throw new RuntimeException('Archived parsing must not contact HMRC.');
+                    },
+                    $credentials,
+                    $transactionId
+                );
+
+                $result = $client->parseArchivedResponse(
+                    $fixture,
+                    'poll',
+                    'TEST',
+                    $correlationId,
+                    $originalTransactionId,
+                    $pollTransactionId
+                );
+
+                $h->assertFalse((bool)$result['success']);
+                $h->assertSame('final_response', $result['protocol_state']);
+                $h->assertSame('rejected', $result['business_outcome']);
+                $h->assertTrue((bool)$result['cleanup_required']);
+                $h->assertSame($pollTransactionId, $result['transaction_id']);
+                $h->assertSame($originalTransactionId, $result['response_transaction_id']);
+                $h->assertSame($correlationId, $result['correlation_id']);
+                $h->assertSame(
+                    'https://test-transaction-engine.tax.service.gov.uk/submission',
+                    $result['response_endpoint']
+                );
+                $h->assertSame(10, $result['poll_interval']);
+                $h->assertSame(69, $result['departmental_error_count']);
+                $h->assertSame(70, count((array)$result['errors']));
+                $h->assertSame('govtalk', $result['errors'][0]['source']);
+                $h->assertSame([], $result['errors'][0]['locations']);
+                $h->assertSame('department', $result['errors'][1]['source']);
+                $h->assertSame('xbrl.ixbrl.FormatUndefined', $result['errors'][1]['type']);
+                $h->assertSame(['Accounts'], $result['errors'][1]['locations']);
+                $h->assertSame(['Computations'], $result['errors'][69]['locations']);
+                $h->assertTrue(str_contains((string)$result['error'], '3001:'));
+                $h->assertTrue(str_contains((string)$result['error'], '69 departmental validation errors'));
+                $h->assertFalse(str_contains((string)$result['error'], 'transformation format'));
+
+                $wrongOriginal = $client->parseArchivedResponse(
+                    $fixture,
+                    'poll',
+                    'TEST',
+                    $correlationId,
+                    'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+                    $pollTransactionId
+                );
+                $h->assertFalse((bool)$wrongOriginal['success']);
+                $h->assertSame('failed', $wrongOriginal['protocol_state']);
+                $h->assertTrue(str_contains(
+                    strtolower((string)$wrongOriginal['error']),
+                    'transaction id'
+                ));
+            }
+        );
+
+        $h->check(
+            \eel_accounts\Client\HmrcCtTransactionEngineClient::class,
+            'applies current and original transaction IDs by response type and handles delete 2000',
+            static function () use ($h, $credentials, $transactionId, $response): void {
+                $original = 'AD907A5A3D1804FB27577E1CCD9C95C9';
+                $current = '54B1C98A7BC69A5135435909056F65D1';
+                $correlation = 'D3C2B9E5F98449A19863D934273FA052';
+                $client = new \eel_accounts\Client\HmrcCtTransactionEngineClient(
+                    static fn(array $request): array => [],
+                    $credentials,
+                    $transactionId
+                );
+                $acknowledgement = static function (string $responseTransactionId) use (
+                    $response,
+                    $correlation
+                ): string {
+                    return $response(
+                        'HMRC-CT-CT600',
+                        'acknowledgement',
+                        'submit',
+                        $correlation,
+                        '<ResponseEndPoint PollInterval="10">https://test-transaction-engine.tax.service.gov.uk/poll</ResponseEndPoint>',
+                        '<GovTalkDetails><Keys/></GovTalkDetails>',
+                        '<Body/>',
+                        $responseTransactionId
+                    );
+                };
+                $validAcknowledgement = $client->parseArchivedResponse(
+                    $acknowledgement($current),
+                    'poll',
+                    'TEST',
+                    $correlation,
+                    $original,
+                    $current
+                );
+                $h->assertTrue((bool)$validAcknowledgement['success']);
+                $wrongAcknowledgement = $client->parseArchivedResponse(
+                    $acknowledgement($original),
+                    'poll',
+                    'TEST',
+                    $correlation,
+                    $original,
+                    $current
+                );
+                $h->assertSame('failed', $wrongAcknowledgement['protocol_state']);
+
+                $deleteResponse = $response(
+                    'HMRC-CT-CT600',
+                    'response',
+                    'delete',
+                    $correlation,
+                    '<ResponseEndPoint PollInterval="not-used">https://attacker.example/delete</ResponseEndPoint>',
+                    '<GovTalkDetails><Keys/></GovTalkDetails>',
+                    '<Body/>',
+                    $current
+                );
+                $deleted = $client->parseArchivedResponse(
+                    $deleteResponse,
+                    'delete',
+                    'TEST',
+                    $correlation,
+                    $original,
+                    $current
+                );
+                $h->assertTrue((bool)$deleted['success']);
+                $h->assertSame('deleted', $deleted['protocol_state']);
+                $h->assertSame('', $deleted['response_endpoint']);
+                $h->assertSame(null, $deleted['poll_interval']);
+
+                $gateway2000 = '<GovTalkDetails><Keys/><GovTalkErrors><Error>'
+                    . '<RaisedBy>Gateway</RaisedBy><Number>2000</Number><Type>fatal</Type>'
+                    . '<Text>The correlation ID is no longer known.</Text><Location/>'
+                    . '</Error></GovTalkErrors></GovTalkDetails>';
+                $deleteNotFound = $client->parseArchivedResponse(
+                    $response(
+                        'HMRC-CT-CT600',
+                        'error',
+                        'delete',
+                        $correlation,
+                        '',
+                        $gateway2000,
+                        '<Body/>',
+                        $original
+                    ),
+                    'delete',
+                    'TEST',
+                    $correlation,
+                    $original,
+                    $current
+                );
+                $h->assertTrue((bool)$deleteNotFound['success']);
+                $h->assertTrue((bool)$deleteNotFound['delete_not_found']);
+                $h->assertSame('deleted', $deleteNotFound['protocol_state']);
+                $h->assertSame($current, $deleteNotFound['transaction_id']);
+                $h->assertSame($original, $deleteNotFound['response_transaction_id']);
+                $h->assertSame('', $deleteNotFound['response_endpoint']);
+                $h->assertSame(null, $deleteNotFound['poll_interval']);
+
+                $retryableDeleteError = '<GovTalkDetails><Keys/><GovTalkErrors><Error>'
+                    . '<RaisedBy>Gateway</RaisedBy><Number>5000</Number><Type>fatal</Type>'
+                    . '<Text>The delete request may be retried.</Text><Location/>'
+                    . '</Error></GovTalkErrors></GovTalkDetails>';
+                $deleteRetry = $client->parseArchivedResponse(
+                    $response(
+                        'HMRC-CT-CT600',
+                        'error',
+                        'delete',
+                        $correlation,
+                        '<ResponseEndPoint PollInterval="10">https://test-transaction-engine.tax.service.gov.uk/submission</ResponseEndPoint>',
+                        $retryableDeleteError,
+                        '<Body/>',
+                        $current
+                    ),
+                    'delete',
+                    'TEST',
+                    $correlation,
+                    $original,
+                    $current
+                );
+                $h->assertFalse((bool)$deleteRetry['success']);
+                $h->assertSame('submission_error', $deleteRetry['protocol_state']);
+                $h->assertTrue((bool)$deleteRetry['cleanup_required']);
+                $h->assertSame(
+                    'https://test-transaction-engine.tax.service.gov.uk/submission',
+                    $deleteRetry['response_endpoint']
+                );
+                $h->assertSame(10, $deleteRetry['poll_interval']);
+
+                $previousPoll = 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC';
+                $retryableGatewayError = '<GovTalkDetails><Keys/><GovTalkErrors><Error>'
+                    . '<RaisedBy>Gateway</RaisedBy><Number>5000</Number><Type>fatal</Type>'
+                    . '<Text>The follow-on request may be retried.</Text><Location/>'
+                    . '</Error></GovTalkErrors></GovTalkDetails>';
+                $boundGatewayResponse = static function (string $endpoint) use (
+                    $response,
+                    $correlation,
+                    $retryableGatewayError,
+                    $previousPoll
+                ): string {
+                    return $response(
+                        'HMRC-CT-CT600',
+                        'error',
+                        'submit',
+                        $correlation,
+                        '<ResponseEndPoint PollInterval="10">' . $endpoint . '</ResponseEndPoint>',
+                        $retryableGatewayError,
+                        '<Body/>',
+                        $previousPoll
+                    );
+                };
+                $boundGateway = $client->parseArchivedResponse(
+                    $boundGatewayResponse('https://test-transaction-engine.tax.service.gov.uk/poll'),
+                    'poll',
+                    'TEST',
+                    $correlation,
+                    $original,
+                    $current,
+                    [$previousPoll]
+                );
+                $h->assertFalse((bool)$boundGateway['success']);
+                $h->assertSame('submission_error', $boundGateway['protocol_state']);
+                $h->assertSame($current, $boundGateway['transaction_id']);
+                $h->assertSame($previousPoll, $boundGateway['response_transaction_id']);
+                $h->assertSame(
+                    'https://test-transaction-engine.tax.service.gov.uk/poll',
+                    $boundGateway['response_endpoint']
+                );
+                $unboundGateway = $client->parseArchivedResponse(
+                    $boundGatewayResponse('https://test-transaction-engine.tax.service.gov.uk/poll'),
+                    'poll',
+                    'TEST',
+                    $correlation,
+                    $original,
+                    $current
+                );
+                $h->assertSame('failed', $unboundGateway['protocol_state']);
+                $h->assertThrows(
+                    static fn(): array => $client->parseArchivedResponse(
+                        $boundGatewayResponse('https://test-transaction-engine.tax.service.gov.uk/submission'),
+                        'poll',
+                        'TEST',
+                        $correlation,
+                        $original,
+                        $current,
+                        [$previousPoll]
+                    ),
+                    InvalidArgumentException::class
+                );
+
+                $wrongDeleteTransaction = $client->parseArchivedResponse(
+                    str_replace(
+                        '<TransactionID>' . $current . '</TransactionID>',
+                        '<TransactionID>' . $original . '</TransactionID>',
+                        $deleteResponse
+                    ),
+                    'delete',
+                    'TEST',
+                    $correlation,
+                    $original,
+                    $current
+                );
+                $h->assertSame('failed', $wrongDeleteTransaction['protocol_state']);
             }
         );
 
@@ -378,6 +681,41 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $h->assertFalse((bool)$result['success']);
                 $h->assertTrue((bool)$result['transport_unknown']);
                 $h->assertFalse(str_contains((string)$result['error'], 'LIVE-PASSWORD'));
+            }
+        );
+
+        $h->check(
+            \eel_accounts\Client\HmrcCtTransactionEngineClient::class,
+            'reprocesses immutable archived responses without requiring current credentials',
+            static function () use ($h, $transactionId, $response): void {
+                $client = new \eel_accounts\Client\HmrcCtTransactionEngineClient(
+                    static fn(array $request): array => [],
+                    static function (string $environment): array {
+                        unset($environment);
+                        throw new RuntimeException('Credentials are no longer available.');
+                    },
+                    $transactionId
+                );
+                $archived = $response(
+                    'HMRC-CT-CT600',
+                    'acknowledgement',
+                    'submit',
+                    'D3C2B9E5F98449A19863D934273FA052',
+                    '<ResponseEndPoint PollInterval="10">https://test-transaction-engine.tax.service.gov.uk/poll</ResponseEndPoint>',
+                    '<GovTalkDetails><Keys/></GovTalkDetails>',
+                    '<Body/>',
+                    ''
+                );
+                $parsed = $client->parseArchivedResponse(
+                    $archived,
+                    'submit',
+                    'TEST',
+                    '',
+                    'ABCDEF1234567890',
+                    'ABCDEF1234567890'
+                );
+                $h->assertTrue((bool)$parsed['success']);
+                $h->assertSame('acknowledged', $parsed['protocol_state']);
             }
         );
 
@@ -492,7 +830,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                             'error',
                             'submit',
                             'CAFE1234',
-                            '',
+                            '<ResponseEndPoint PollInterval="10">https://transaction-engine.tax.service.gov.uk/poll</ResponseEndPoint>',
                             $gatewayError,
                             '<Body/>',
                             ''
@@ -506,7 +844,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'CAFE1234',
                     'https://transaction-engine.tax.service.gov.uk/poll',
                     'TIL',
-                    $conversation('TIL', $beforeSend, $afterReceive)
+                    $conversation('TIL', $beforeSend, $afterReceive),
+                    'ABCDEF1234567890'
                 );
                 $h->assertFalse((bool)$result['success']);
                 $h->assertSame('submission_error', $result['protocol_state']);
@@ -527,7 +866,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                             'HMRC-CT-CT600-TIL',
                             'response',
                             'submit',
-                            'DEADBEEF'
+                            'DEADBEEF',
+                            '<ResponseEndPoint PollInterval="10">https://transaction-engine.tax.service.gov.uk/submission</ResponseEndPoint>'
                         ),
                     ],
                     $credentials,
@@ -538,7 +878,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'CAFE1234',
                     'https://transaction-engine.tax.service.gov.uk/poll',
                     'TIL',
-                    $conversation('TIL', $beforeSend, $afterReceive)
+                    $conversation('TIL', $beforeSend, $afterReceive),
+                    'ABCDEF1234567890'
                 );
                 $h->assertFalse((bool)$result['success']);
                 $h->assertSame('failed', $result['protocol_state']);
@@ -561,7 +902,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                             'response',
                             'submit',
                             'CAFE1234',
-                            '',
+                            '<ResponseEndPoint PollInterval="10">https://transaction-engine.tax.service.gov.uk/submission</ResponseEndPoint>',
                             '<GovTalkDetails><Keys/></GovTalkDetails>',
                             '<Body/>',
                             ''
@@ -574,7 +915,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'CAFE1234',
                     'https://transaction-engine.tax.service.gov.uk/poll',
                     'TIL',
-                    $conversation('TIL', $beforeSend, $afterReceive)
+                    $conversation('TIL', $beforeSend, $afterReceive),
+                    'ABCDEF1234567890'
                 );
                 $h->assertTrue((bool)$accepted['success']);
                 $h->assertSame('final_response', $accepted['protocol_state']);
@@ -590,7 +932,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                             'response',
                             'submit',
                             'CAFE1234',
-                            '',
+                            '<ResponseEndPoint PollInterval="10">https://transaction-engine.tax.service.gov.uk/submission</ResponseEndPoint>',
                             '<GovTalkDetails><Keys/></GovTalkDetails>',
                             '<Body/>',
                             'DEADBEEF'
@@ -603,7 +945,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'CAFE1234',
                     'https://transaction-engine.tax.service.gov.uk/poll',
                     'TIL',
-                    $conversation('TIL', $beforeSend, $afterReceive)
+                    $conversation('TIL', $beforeSend, $afterReceive),
+                    'ABCDEF1234567890'
                 );
                 $h->assertFalse((bool)$mismatched['success']);
                 $h->assertSame('failed', $mismatched['protocol_state']);
@@ -631,7 +974,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'CAFE1234',
                     'https://attacker.example/poll',
                     'LIVE',
-                    $conversation('LIVE', $beforeSend, $afterReceive)
+                    $conversation('LIVE', $beforeSend, $afterReceive),
+                    'ABCDEF1234567890'
                 );
                 $h->assertFalse((bool)$result['success']);
                 $h->assertTrue((bool)$result['pre_send_failure']);
@@ -641,7 +985,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $h->check(
             \eel_accounts\Client\HmrcCtTransactionEngineClient::class,
-            'requires complete environment-bound acknowledgement polling instructions',
+            'requires complete environment-bound acknowledgement and final-response instructions',
             static function () use ($h, $credentials, $transactionId, $response): void {
                 $client = new \eel_accounts\Client\HmrcCtTransactionEngineClient(
                     static fn(array $request): array => [],
@@ -666,6 +1010,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'submit',
                     'TEST',
                     '',
+                    'ABCDEF1234567890',
                     'ABCDEF1234567890'
                 );
                 $h->assertFalse((bool)$missingEndpoint['success']);
@@ -682,6 +1027,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'submit',
                     'TEST',
                     '',
+                    'ABCDEF1234567890',
                     'ABCDEF1234567890'
                 );
                 $h->assertFalse((bool)$missingCorrelation['success']);
@@ -698,6 +1044,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         'submit',
                         'TEST',
                         '',
+                        'ABCDEF1234567890',
                         'ABCDEF1234567890'
                     ),
                     RuntimeException::class
@@ -710,7 +1057,69 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         'submit',
                         'TEST',
                         '',
+                        'ABCDEF1234567890',
                         'ABCDEF1234567890'
+                    ),
+                    InvalidArgumentException::class
+                );
+
+                $departmentError = '<GovTalkDetails><Keys/><GovTalkErrors><Error>'
+                    . '<RaisedBy>Department</RaisedBy><Number>3000</Number><Type>business</Type>'
+                    . '<Text>Department validation failed.</Text>'
+                    . '</Error></GovTalkErrors></GovTalkDetails>';
+                $finalError = static function (string $details) use (
+                    $response,
+                    $departmentError
+                ): string {
+                    return $response(
+                        'HMRC-CT-CT600',
+                        'error',
+                        'submit',
+                        'CAFE1234',
+                        $details,
+                        $departmentError,
+                        '<Body/>',
+                        'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+                    );
+                };
+                $missingFollowUp = $client->parseArchivedResponse(
+                    $finalError(''),
+                    'poll',
+                    'TEST',
+                    'CAFE1234',
+                    'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+                    'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
+                );
+                $h->assertSame('failed', $missingFollowUp['protocol_state']);
+                $h->assertTrue(str_contains(
+                    strtolower((string)$missingFollowUp['error']),
+                    'follow-up endpoint'
+                ));
+                $missingFollowUpInterval = $client->parseArchivedResponse(
+                    $finalError(
+                        '<ResponseEndPoint>https://test-transaction-engine.tax.service.gov.uk/submission</ResponseEndPoint>'
+                    ),
+                    'poll',
+                    'TEST',
+                    'CAFE1234',
+                    'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+                    'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
+                );
+                $h->assertSame('failed', $missingFollowUpInterval['protocol_state']);
+                $h->assertTrue(str_contains(
+                    strtolower((string)$missingFollowUpInterval['error']),
+                    'follow-up interval'
+                ));
+                $h->assertThrows(
+                    static fn(): array => $client->parseArchivedResponse(
+                        $finalError(
+                            '<ResponseEndPoint PollInterval="10">https://transaction-engine.tax.service.gov.uk/submission</ResponseEndPoint>'
+                        ),
+                        'poll',
+                        'TEST',
+                        'CAFE1234',
+                        'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+                        'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
                     ),
                     InvalidArgumentException::class
                 );

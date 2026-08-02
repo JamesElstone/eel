@@ -31,7 +31,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             \eel_accounts\Client\HmrcCtTransactionEngineEnvironment::class,
             'accepts only the selected environments documented poll endpoint',
             static function () use ($h): void {
-                $endpoint = \eel_accounts\Client\HmrcCtTransactionEngineEnvironment::responseEndpoint(
+                $endpoint = \eel_accounts\Client\HmrcCtTransactionEngineEnvironment::pollEndpoint(
                     'https://transaction-engine.tax.service.gov.uk/poll',
                     'LIVE'
                 );
@@ -39,13 +39,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $explicitPortEndpoint = 'https://transaction-engine.tax.service.gov.uk:443/poll';
                 $h->assertSame(
                     $explicitPortEndpoint,
-                    \eel_accounts\Client\HmrcCtTransactionEngineEnvironment::responseEndpoint(
+                    \eel_accounts\Client\HmrcCtTransactionEngineEnvironment::pollEndpoint(
                         $explicitPortEndpoint,
                         'LIVE'
                     )
                 );
                 try {
-                    \eel_accounts\Client\HmrcCtTransactionEngineEnvironment::responseEndpoint(
+                    \eel_accounts\Client\HmrcCtTransactionEngineEnvironment::pollEndpoint(
                         'https://transaction-engine.tax.service.gov.uk/poll?target=other',
                         'LIVE'
                     );
@@ -53,6 +53,29 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 } catch (InvalidArgumentException) {
                     // Expected.
                 }
+                $h->assertSame(
+                    'https://transaction-engine.tax.service.gov.uk/submission',
+                    \eel_accounts\Client\HmrcCtTransactionEngineEnvironment::followUpEndpoint(
+                        'https://transaction-engine.tax.service.gov.uk/submission',
+                        'LIVE'
+                    )
+                );
+                $h->assertThrows(
+                    static fn(): string =>
+                        \eel_accounts\Client\HmrcCtTransactionEngineEnvironment::pollEndpoint(
+                            'https://transaction-engine.tax.service.gov.uk/submission',
+                            'LIVE'
+                        ),
+                    InvalidArgumentException::class
+                );
+                $h->assertThrows(
+                    static fn(): string =>
+                        \eel_accounts\Client\HmrcCtTransactionEngineEnvironment::followUpEndpoint(
+                            'https://test-transaction-engine.tax.service.gov.uk/submission',
+                            'LIVE'
+                        ),
+                    InvalidArgumentException::class
+                );
             }
         );
     }

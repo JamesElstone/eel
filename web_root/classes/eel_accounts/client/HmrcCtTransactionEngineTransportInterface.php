@@ -40,7 +40,9 @@ interface HmrcCtTransactionEngineTransportInterface
         string $responseEndpoint,
         string $environment,
         GovTalkConversationContext $conversation,
-        ?string $transactionId = null
+        string $expectedOriginalSubmissionTransactionId,
+        ?string $transactionId = null,
+        array $boundConversationTransactionIds = []
     ): array;
 
     public function delete(
@@ -48,7 +50,9 @@ interface HmrcCtTransactionEngineTransportInterface
         string $responseEndpoint,
         string $environment,
         GovTalkConversationContext $conversation,
-        ?string $transactionId = null
+        string $expectedOriginalSubmissionTransactionId,
+        ?string $transactionId = null,
+        array $boundConversationTransactionIds = []
     ): array;
 
     public function parseArchivedResponse(
@@ -56,6 +60,8 @@ interface HmrcCtTransactionEngineTransportInterface
         string $operation,
         string $environment,
         string $expectedCorrelationId,
-        string $expectedTransactionId
+        string $expectedOriginalSubmissionTransactionId,
+        string $expectedTransactionId,
+        array $boundConversationTransactionIds = []
     ): array;
 }

@@ -21,6 +21,7 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
     public int $pollCalls = 0;
     public int $deleteCalls = 0;
     public int $archivedParseCalls = 0;
+    public ?Closure $archivedParseHook = null;
     public bool $credentialsPlaceholder = false;
     private int $exchangeSequence = 0;
     /** @var list<string> */
@@ -31,6 +32,18 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
     public array $submittedEnvironments = [];
     /** @var list<string> */
     public array $polledEndpoints = [];
+    /** @var list<string> */
+    public array $polledOriginalTransactions = [];
+    /** @var list<list<string>> */
+    public array $polledBoundTransactions = [];
+    /** @var list<string> */
+    public array $deletedEndpoints = [];
+    /** @var list<string> */
+    public array $deletedOriginalTransactions = [];
+    /** @var list<list<string>> */
+    public array $deletedBoundTransactions = [];
+    /** @var list<list<string>> */
+    public array $archivedBoundTransactions = [];
 
     public function configurationStatus(string $environment): array
     {
@@ -103,10 +116,14 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
         string $responseEndpoint,
         string $environment,
         \eel_accounts\Client\GovTalkConversationContext $conversation,
-        ?string $transactionId = null
+        string $expectedOriginalSubmissionTransactionId,
+        ?string $transactionId = null,
+        array $boundConversationTransactionIds = []
     ): array {
         $this->pollCalls++;
         $this->polledEndpoints[] = $responseEndpoint;
+        $this->polledOriginalTransactions[] = $expectedOriginalSubmissionTransactionId;
+        $this->polledBoundTransactions[] = $boundConversationTransactionIds;
         $request = $this->request('poll', $environment, $correlationId, $transactionId);
         $conversation->captureRequest($request);
         $conversation->markSendStarted($request);
@@ -124,9 +141,14 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
         string $responseEndpoint,
         string $environment,
         \eel_accounts\Client\GovTalkConversationContext $conversation,
-        ?string $transactionId = null
+        string $expectedOriginalSubmissionTransactionId,
+        ?string $transactionId = null,
+        array $boundConversationTransactionIds = []
     ): array {
         $this->deleteCalls++;
+        $this->deletedEndpoints[] = $responseEndpoint;
+        $this->deletedOriginalTransactions[] = $expectedOriginalSubmissionTransactionId;
+        $this->deletedBoundTransactions[] = $boundConversationTransactionIds;
         $request = $this->request('delete', $environment, $correlationId, $transactionId);
         $conversation->captureRequest($request);
         $conversation->markSendStarted($request);
@@ -141,12 +163,26 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
         string $operation,
         string $environment,
         string $expectedCorrelationId,
-        string $expectedTransactionId
+        string $expectedOriginalSubmissionTransactionId,
+        string $expectedTransactionId,
+        array $boundConversationTransactionIds = []
     ): array {
-        unset($responseXml, $operation, $environment, $expectedCorrelationId);
+        unset(
+            $responseXml,
+            $operation,
+            $environment,
+            $expectedCorrelationId,
+            $expectedOriginalSubmissionTransactionId
+        );
         $this->archivedParseCalls++;
+        $this->archivedBoundTransactions[] = $boundConversationTransactionIds;
         $response = array_shift($this->archivedResponses)
             ?? $this->failure('Missing fake archived response.');
+        $hook = $this->archivedParseHook;
+        $this->archivedParseHook = null;
+        if ($hook instanceof Closure) {
+            $hook();
+        }
         $response['transaction_id'] = $expectedTransactionId;
         $response['response_transaction_id'] = (string)($response['response_transaction_id'] ?? '');
         return $response;
@@ -560,8 +596,8 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'business_outcome' => 'accepted',
                         'transaction_id' => 'ABCDEF1234567890',
                         'correlation_id' => 'CAFE1234',
-                        'response_endpoint' => 'https://transaction-engine.tax.service.gov.uk/poll',
-                        'poll_interval' => null,
+                        'response_endpoint' => 'https://transaction-engine.tax.service.gov.uk/submission',
+                        'poll_interval' => 10,
                         'cleanup_required' => true,
                         'status_code' => 200,
                         'headers' => [],
@@ -648,14 +684,29 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     $h->assertTrue((bool)$polled['success']);
                     $h->assertSame('delete_pending', $polled['protocol_state']);
                     $h->assertSame('til_validated', $polled['business_outcome']);
-                    $h->assertTrue((array)$polled['warnings'] !== []);
                     $h->assertSame(2, $transport->pollCalls);
+                    $h->assertSame(0, $transport->deleteCalls);
+
+                    $tooEarlyCleanup = $service->poll($submissionId, 42);
+                    $h->assertFalse((bool)$tooEarlyCleanup['success']);
+                    $h->assertTrue((bool)$tooEarlyCleanup['needs_poll']);
+                    $h->assertSame(0, $transport->deleteCalls);
+
+                    $now = '2026-07-19 10:00:20';
+                    $cleanupFailed = $service->poll($submissionId, 42);
+                    $h->assertFalse((bool)$cleanupFailed['success']);
+                    $h->assertSame('delete_pending', $cleanupFailed['protocol_state']);
                     $h->assertSame(1, $transport->deleteCalls);
 
+                    $now = '2026-07-19 10:00:30';
                     $cleaned = $service->poll($submissionId, 42);
                     $h->assertTrue((bool)$cleaned['success']);
                     $h->assertSame('closed', $cleaned['protocol_state']);
                     $h->assertSame(2, $transport->deleteCalls);
+                    $h->assertSame([
+                        'https://transaction-engine.tax.service.gov.uk/submission',
+                        'https://transaction-engine.tax.service.gov.uk/submission',
+                    ], $transport->deletedEndpoints);
                     $cleanedRow = InterfaceDB::fetchOne(
                         'SELECT cleanup_attempts FROM hmrc_ct600_submissions WHERE id = :id',
                         ['id' => $submissionId]
@@ -719,8 +770,8 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'business_outcome' => 'accepted',
                         'transaction_id' => 'ABCDEF1234567890',
                         'correlation_id' => 'BEEF5678',
-                        'response_endpoint' => 'https://transaction-engine.tax.service.gov.uk/poll',
-                        'poll_interval' => null,
+                        'response_endpoint' => 'https://transaction-engine.tax.service.gov.uk/submission',
+                        'poll_interval' => 10,
                         'cleanup_required' => true,
                         'status_code' => 200,
                         'headers' => [],
@@ -744,8 +795,12 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     $live = $service->submitLive($companyId, $ctPeriodId, 42);
                     $h->assertTrue((bool)$live['success']);
                     $h->assertSame('live_accepted', $live['business_outcome']);
-                    $h->assertSame('closed', $live['protocol_state']);
+                    $h->assertSame('delete_pending', $live['protocol_state']);
                     $h->assertSame($submissionId, (int)$live['submission']['test_submission_id']);
+                    $now = '2026-07-19 10:00:40';
+                    $liveCleaned = $service->poll((int)$live['submission_id'], 42);
+                    $h->assertTrue((bool)$liveCleaned['success']);
+                    $h->assertSame('closed', $liveCleaned['protocol_state']);
                     $h->assertSame(['TIL', 'LIVE'], $transport->submittedEnvironments);
                     $h->assertSame(2, count($transport->submittedBodies));
                     $h->assertSame(
@@ -760,7 +815,7 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
 
         $h->check(
             \eel_accounts\Service\HmrcCorporationTaxSubmissionService::class,
-            'blocks blind retry and recovers a verified archived acknowledgement without retransmission',
+            'blocks blind retry and reprocesses a verified archived acknowledgement without retransmission',
             static function () use ($h): void {
                 $companyId = 98611;
                 $accountingPeriodId = 98612;
@@ -903,15 +958,16 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'error' => 'MISSING_TRANSACTION_ID: HMRC response omitted the transaction ID.',
                     ];
                     $clock = '2026-07-19 11:00:00';
+                    $artifactRoot = test_register_cleanup_path(
+                        test_tmp_directory() . DIRECTORY_SEPARATOR . 'hmrc-uncertain-' . bin2hex(random_bytes(4))
+                    );
                     $service = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService(
                         $transport,
                         null,
                         static function () use (&$clock): string {
                             return $clock;
                         },
-                        test_register_cleanup_path(
-                            test_tmp_directory() . DIRECTORY_SEPARATOR . 'hmrc-uncertain-' . bin2hex(random_bytes(4))
-                        ),
+                        $artifactRoot,
                         $package,
                         $resolver,
                         xmlEnvironmentResolver: static fn(): string => 'LIVE'
@@ -924,6 +980,114 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     $h->assertTrue(str_contains(implode(' ', $second['errors']), 'uncertain'));
                     $h->assertSame(1, $transport->submitCalls);
 
+                    $submissionId = (int)$first['submission_id'];
+                    $submitExchange = InterfaceDB::fetchOne(
+                        'SELECT e.id, e.transaction_id, e.exchange_state,
+                                e.request_path, e.response_path,
+                                e.transmission_archive_id, a.submission_reference
+                         FROM govtalk_protocol_exchanges e
+                         INNER JOIN transmission_archives a ON a.id = e.transmission_archive_id
+                         WHERE e.hmrc_submission_id = :submission_id AND e.operation = :operation',
+                        ['submission_id' => $submissionId, 'operation' => 'submit']
+                    );
+                    $h->assertTrue(is_array($submitExchange));
+                    $exchangeId = (int)$submitExchange['id'];
+                    $stateSnapshot = static fn(): array => (array)InterfaceDB::fetchOne(
+                        'SELECT status, protocol_state, transaction_id, response_body_path,
+                                response_sha256, recovery_attempts
+                         FROM hmrc_ct600_submissions WHERE id = :id',
+                        ['id' => $submissionId]
+                    );
+                    $beforeNegativeChecks = $stateSnapshot();
+
+                    $wrongExchange = $service->reprocessArchivedResponse(
+                        $submissionId,
+                        $exchangeId + 999999,
+                        42
+                    );
+                    $h->assertFalse((bool)$wrongExchange['success']);
+                    $h->assertSame($beforeNegativeChecks, $stateSnapshot());
+
+                    $responsePath = (string)$submitExchange['response_path'];
+                    $originalResponseBytes = (string)file_get_contents($responsePath);
+                    try {
+                        file_put_contents($responsePath, $originalResponseBytes . '<tampered/>');
+                        $tamperedResponse = $service->reprocessArchivedResponse(
+                            $submissionId,
+                            $exchangeId,
+                            42
+                        );
+                        $h->assertFalse((bool)$tamperedResponse['success']);
+                        $h->assertSame($beforeNegativeChecks, $stateSnapshot());
+                    } finally {
+                        file_put_contents($responsePath, $originalResponseBytes);
+                    }
+
+                    $requestPath = (string)$submitExchange['request_path'];
+                    $originalRequestBytes = (string)file_get_contents($requestPath);
+                    try {
+                        file_put_contents($requestPath, $originalRequestBytes . '<tampered/>');
+                        $tamperedRequest = $service->reprocessArchivedResponse(
+                            $submissionId,
+                            $exchangeId,
+                            42
+                        );
+                        $h->assertFalse((bool)$tamperedRequest['success']);
+                        $h->assertSame($beforeNegativeChecks, $stateSnapshot());
+                    } finally {
+                        file_put_contents($requestPath, $originalRequestBytes);
+                    }
+
+                    InterfaceDB::prepareExecute(
+                        'UPDATE transmission_archives
+                         SET submission_reference = :reference WHERE id = :id',
+                        [
+                            'reference' => 'submission-999999',
+                            'id' => (int)$submitExchange['transmission_archive_id'],
+                        ]
+                    );
+                    try {
+                        $wrongArchive = $service->reprocessArchivedResponse(
+                            $submissionId,
+                            $exchangeId,
+                            42
+                        );
+                        $h->assertFalse((bool)$wrongArchive['success']);
+                        $h->assertSame($beforeNegativeChecks, $stateSnapshot());
+                    } finally {
+                        InterfaceDB::prepareExecute(
+                            'UPDATE transmission_archives
+                             SET submission_reference = :reference WHERE id = :id',
+                            [
+                                'reference' => (string)$submitExchange['submission_reference'],
+                                'id' => (int)$submitExchange['transmission_archive_id'],
+                            ]
+                        );
+                    }
+
+                    InterfaceDB::prepareExecute(
+                        'UPDATE hmrc_ct600_submissions
+                         SET protocol_state = :state WHERE id = :id',
+                        ['state' => 'ready', 'id' => $submissionId]
+                    );
+                    $staleSnapshot = $stateSnapshot();
+                    $stale = $service->reprocessArchivedResponse(
+                        $submissionId,
+                        $exchangeId,
+                        42
+                    );
+                    $h->assertFalse((bool)$stale['success']);
+                    $h->assertSame($staleSnapshot, $stateSnapshot());
+                    InterfaceDB::prepareExecute(
+                        'UPDATE hmrc_ct600_submissions
+                         SET protocol_state = :state WHERE id = :id',
+                        ['state' => 'transport_uncertain', 'id' => $submissionId]
+                    );
+                    $h->assertSame(0, $transport->archivedParseCalls);
+                    $h->assertSame(1, $transport->submitCalls);
+                    $h->assertSame(0, $transport->pollCalls);
+                    $h->assertSame(0, $transport->deleteCalls);
+
                     $transport->archivedResponses[] = [
                         'success' => true,
                         'protocol_state' => 'acknowledged',
@@ -934,14 +1098,53 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'errors' => [],
                         'error' => '',
                     ];
-                    $recovered = $service->recoverArchivedAcknowledgement(
+                    $transport->archivedParseHook = static function () use ($exchangeId): void {
+                        InterfaceDB::prepareExecute(
+                            'UPDATE govtalk_protocol_exchanges
+                             SET exchange_state = :state WHERE id = :id',
+                            ['state' => 'prepared', 'id' => $exchangeId]
+                        );
+                    };
+                    $exchangeChangedDuringParse = $service->reprocessArchivedResponse(
+                        $submissionId,
+                        $exchangeId,
+                        42
+                    );
+                    $h->assertFalse((bool)$exchangeChangedDuringParse['success']);
+                    $h->assertSame($beforeNegativeChecks, $stateSnapshot());
+                    $h->assertSame(1, $transport->archivedParseCalls);
+                    InterfaceDB::prepareExecute(
+                        'UPDATE govtalk_protocol_exchanges
+                         SET exchange_state = :state WHERE id = :id',
+                        [
+                            'state' => (string)$submitExchange['exchange_state'],
+                            'id' => $exchangeId,
+                        ]
+                    );
+
+                    $transport->archivedResponses[] = [
+                        'success' => true,
+                        'protocol_state' => 'acknowledged',
+                        'business_outcome' => null,
+                        'correlation_id' => 'D3C2B9E5F98449A19863D934273FA052',
+                        'response_endpoint' => 'https://test-transaction-engine.tax.service.gov.uk/poll',
+                        'poll_interval' => 10,
+                        'errors' => [],
+                        'error' => '',
+                    ];
+                    $recovered = $service->reprocessArchivedResponse(
                         (int)$first['submission_id'],
+                        $exchangeId,
                         42
                     );
                     $h->assertTrue((bool)$recovered['success']);
                     $h->assertSame('awaiting_poll', $recovered['protocol_state']);
                     $h->assertTrue((bool)$recovered['needs_poll']);
-                    $h->assertSame(1, $transport->archivedParseCalls);
+                    $h->assertSame(2, $transport->archivedParseCalls);
+                    $h->assertSame(
+                        [(string)$submitExchange['transaction_id']],
+                        $transport->archivedBoundTransactions[1]
+                    );
                     $h->assertSame(1, $transport->submitCalls);
                     $h->assertSame(0, $transport->pollCalls);
                     $h->assertSame(1, (int)InterfaceDB::fetchColumn(
@@ -967,7 +1170,7 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     $h->assertTrue(trim((string)$persisted['next_poll_at']) !== '');
                     $h->assertTrue(trim((string)$persisted['idempotency_key']) !== '');
                     $exchange = InterfaceDB::fetchOne(
-                        'SELECT exchange_state, outcome_code, correlation_id
+                        'SELECT exchange_state, outcome_code, correlation_id, transaction_id
                          FROM govtalk_protocol_exchanges
                          WHERE hmrc_submission_id = :submission_id AND operation = :operation',
                         ['submission_id' => (int)$first['submission_id'], 'operation' => 'submit']
@@ -979,12 +1182,13 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         $exchange['correlation_id']
                     );
 
-                    $repeated = $service->recoverArchivedAcknowledgement(
+                    $repeated = $service->reprocessArchivedResponse(
                         (int)$first['submission_id'],
+                        $exchangeId,
                         42
                     );
                     $h->assertFalse((bool)$repeated['success']);
-                    $h->assertSame(1, $transport->archivedParseCalls);
+                    $h->assertSame(2, $transport->archivedParseCalls);
 
                     $tooEarly = $service->poll((int)$first['submission_id'], 42);
                     $h->assertFalse((bool)$tooEarly['success']);
@@ -992,30 +1196,141 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     $h->assertSame(0, $transport->pollCalls);
 
                     $transport->pollResponses[] = [
-                        'success' => true,
+                        'success' => false,
                         'pre_send_failure' => false,
                         'transport_unknown' => false,
-                        'protocol_state' => 'acknowledged',
+                        'protocol_state' => 'failed',
                         'business_outcome' => null,
                         'correlation_id' => 'D3C2B9E5F98449A19863D934273FA052',
-                        'response_endpoint' => 'https://test-transaction-engine.tax.service.gov.uk/poll',
-                        'poll_interval' => 10,
-                        'cleanup_required' => false,
                         'status_code' => 200,
                         'headers' => [],
-                        'response_xml' => '<GovTalkMessage>Acknowledged again</GovTalkMessage>',
+                        'response_xml' => '<GovTalkMessage>Archived departmental rejection</GovTalkMessage>',
                         'body_xml' => '',
                         'errors' => [],
-                        'error' => '',
+                        'error' => 'The archived poll response could not yet be verified.',
                     ];
                     $clock = (string)$persisted['next_poll_at'];
                     $polled = $service->poll((int)$first['submission_id'], 42);
-                    $h->assertTrue((bool)$polled['success']);
+                    $h->assertFalse((bool)$polled['success']);
+                    $h->assertSame('awaiting_poll', $polled['protocol_state']);
                     $h->assertSame(1, $transport->pollCalls);
                     $h->assertSame(
                         ['https://test-transaction-engine.tax.service.gov.uk/poll'],
                         $transport->polledEndpoints
                     );
+                    $h->assertSame(
+                        [(string)$exchange['transaction_id']],
+                        $transport->polledOriginalTransactions
+                    );
+                    $h->assertSame(
+                        [[(string)$exchange['transaction_id']]],
+                        $transport->polledBoundTransactions
+                    );
+
+                    $pollExchange = InterfaceDB::fetchOne(
+                        'SELECT id, transaction_id, response_path, response_sha256
+                         FROM govtalk_protocol_exchanges
+                         WHERE hmrc_submission_id = :submission_id AND operation = :operation
+                         ORDER BY id DESC LIMIT 1',
+                        ['submission_id' => (int)$first['submission_id'], 'operation' => 'poll']
+                    );
+                    $h->assertTrue(is_array($pollExchange));
+                    $responsePath = (string)$pollExchange['response_path'];
+                    $responseHash = hash_file('sha256', $responsePath);
+                    $exchangeCount = (int)InterfaceDB::fetchColumn(
+                        'SELECT COUNT(*) FROM govtalk_protocol_exchanges WHERE hmrc_submission_id = :submission_id',
+                        ['submission_id' => (int)$first['submission_id']]
+                    );
+                    $fileCount = iterator_count(new RecursiveIteratorIterator(
+                        new RecursiveDirectoryIterator($artifactRoot, FilesystemIterator::SKIP_DOTS)
+                    ));
+                    $departmentErrors = [[
+                        'raised_by' => 'Department',
+                        'number' => '3001',
+                        'type' => 'fatal',
+                        'texts' => ['The submission failed HMRC business validation.'],
+                        'locations' => [],
+                        'scope' => 'envelope',
+                    ]];
+                    for ($detail = 1; $detail <= 69; $detail++) {
+                        $departmentErrors[] = [
+                            'raised_by' => 'ChRIS',
+                            'number' => 'BR-' . str_pad((string)$detail, 3, '0', STR_PAD_LEFT),
+                            'type' => 'error',
+                            'texts' => ['Detailed Corporation Tax validation error ' . $detail . '.'],
+                            'locations' => ['/CompanyTaxReturn/Error[' . $detail . ']'],
+                            'scope' => 'department',
+                        ];
+                    }
+                    $transport->archivedResponses[] = [
+                        'success' => false,
+                        'protocol_state' => 'final_response',
+                        'business_outcome' => 'rejected',
+                        'correlation_id' => 'D3C2B9E5F98449A19863D934273FA052',
+                        'response_transaction_id' => (string)$exchange['transaction_id'],
+                        'response_endpoint' => 'https://test-transaction-engine.tax.service.gov.uk/submission',
+                        'poll_interval' => 10,
+                        'cleanup_required' => true,
+                        'body_xml' => '<ErrorResponse><Error><Number>3001</Number></Error></ErrorResponse>',
+                        'errors' => $departmentErrors,
+                        'error' => 'HMRC error 3001: the filing was rejected with 69 detailed business-rule errors.',
+                    ];
+                    $reprocessed = $service->reprocessArchivedResponse(
+                        (int)$first['submission_id'],
+                        (int)$pollExchange['id'],
+                        42
+                    );
+                    $h->assertTrue((bool)$reprocessed['success']);
+                    $h->assertSame('rejected', $reprocessed['status']);
+                    $h->assertSame('delete_pending', $reprocessed['protocol_state']);
+                    $h->assertSame('rejected', $reprocessed['business_outcome']);
+                    $h->assertTrue(str_contains(
+                        implode(' ', (array)$reprocessed['warnings']),
+                        'View the GovTalk conversation'
+                    ));
+                    $h->assertSame(3, $transport->archivedParseCalls);
+                    $h->assertSame(
+                        [
+                            (string)$exchange['transaction_id'],
+                            (string)$pollExchange['transaction_id'],
+                        ],
+                        $transport->archivedBoundTransactions[2]
+                    );
+                    $h->assertSame(1, $transport->pollCalls);
+                    $h->assertSame(0, $transport->deleteCalls);
+                    $rejected = InterfaceDB::fetchOne(
+                        'SELECT status, protocol_state, business_outcome, transaction_id,
+                                hmrc_correlation_id, response_endpoint, poll_interval_seconds,
+                                next_poll_at, idempotency_key
+                         FROM hmrc_ct600_submissions WHERE id = :id',
+                        ['id' => (int)$first['submission_id']]
+                    );
+                    $h->assertSame('rejected', $rejected['status']);
+                    $h->assertSame('delete_pending', $rejected['protocol_state']);
+                    $h->assertSame('rejected', $rejected['business_outcome']);
+                    $h->assertSame((string)$pollExchange['transaction_id'], $rejected['transaction_id']);
+                    $h->assertSame('D3C2B9E5F98449A19863D934273FA052', $rejected['hmrc_correlation_id']);
+                    $h->assertSame('https://test-transaction-engine.tax.service.gov.uk/submission', $rejected['response_endpoint']);
+                    $h->assertSame(10, (int)$rejected['poll_interval_seconds']);
+                    $h->assertTrue(trim((string)$rejected['next_poll_at']) !== '');
+                    $h->assertTrue(trim((string)$rejected['idempotency_key']) !== '');
+                    $completedPollExchange = InterfaceDB::fetchOne(
+                        'SELECT exchange_state, outcome_code, correlation_id, govtalk_errors_json
+                         FROM govtalk_protocol_exchanges WHERE id = :id',
+                        ['id' => (int)$pollExchange['id']]
+                    );
+                    $h->assertSame('rejected', $completedPollExchange['exchange_state']);
+                    $h->assertSame('rejected', $completedPollExchange['outcome_code']);
+                    $h->assertSame('D3C2B9E5F98449A19863D934273FA052', $completedPollExchange['correlation_id']);
+                    $h->assertSame(70, count((array)json_decode((string)$completedPollExchange['govtalk_errors_json'], true)));
+                    $h->assertSame($exchangeCount, (int)InterfaceDB::fetchColumn(
+                        'SELECT COUNT(*) FROM govtalk_protocol_exchanges WHERE hmrc_submission_id = :submission_id',
+                        ['submission_id' => (int)$first['submission_id']]
+                    ));
+                    $h->assertSame($fileCount, iterator_count(new RecursiveIteratorIterator(
+                        new RecursiveDirectoryIterator($artifactRoot, FilesystemIterator::SKIP_DOTS)
+                    )));
+                    $h->assertSame($responseHash, hash_file('sha256', $responsePath));
                 } finally {
                     InterfaceDB::prepareExecute('DELETE FROM companies WHERE id = :id', ['id' => $companyId]);
                 }

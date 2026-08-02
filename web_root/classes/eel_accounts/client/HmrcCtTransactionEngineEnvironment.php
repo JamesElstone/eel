@@ -45,12 +45,39 @@ final class HmrcCtTransactionEngineEnvironment
     }
 
     /** Accept only the documented poll endpoint in the selected environment. */
-    public static function responseEndpoint(string $endpoint, string $environment): string
+    public static function pollEndpoint(string $endpoint, string $environment): string
     {
+        return self::validatedEndpoint($endpoint, $environment, ['/poll'], 'poll');
+    }
+
+    /**
+     * Accept only a documented same-environment endpoint returned for the
+     * next protocol operation. HMRC can direct final-response cleanup back to
+     * /submission even though acknowledgements must direct polling to /poll.
+     */
+    public static function followUpEndpoint(string $endpoint, string $environment): string
+    {
+        return self::validatedEndpoint(
+            $endpoint,
+            $environment,
+            ['/poll', '/submission'],
+            'follow-up'
+        );
+    }
+
+    /** @param list<string> $allowedPaths */
+    private static function validatedEndpoint(
+        string $endpoint,
+        string $environment,
+        array $allowedPaths,
+        string $purpose
+    ): string {
         $profile = self::profile($environment);
         $endpoint = trim($endpoint);
         if ($endpoint === '') {
-            return (string)$profile['poll_url'];
+            throw new \InvalidArgumentException(
+                'HMRC ' . $purpose . ' endpoint is missing.'
+            );
         }
 
         $parts = parse_url($endpoint);
@@ -63,7 +90,7 @@ final class HmrcCtTransactionEngineEnvironment
             !is_array($parts)
             || $scheme !== 'https'
             || $host !== strtolower((string)$profile['allowed_host'])
-            || $path !== '/poll'
+            || !in_array($path, $allowedPaths, true)
             || $port !== 443
             || isset($parts['user'])
             || isset($parts['pass'])
@@ -71,7 +98,8 @@ final class HmrcCtTransactionEngineEnvironment
             || isset($parts['fragment'])
         ) {
             throw new \InvalidArgumentException(
-                'HMRC response endpoint is outside the selected Transaction Engine environment.'
+                'HMRC ' . $purpose
+                . ' endpoint is outside the selected Transaction Engine environment.'
             );
         }
 

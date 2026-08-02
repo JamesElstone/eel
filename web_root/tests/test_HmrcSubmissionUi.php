@@ -443,17 +443,18 @@ $harness->run(_hmrc_transmitCard::class, static function (
         $base['services']['hmrc_ct600_status']['periods'][0]['pending_submission']['protocol_state'] = 'transport_uncertain';
         $uncertain = $card->render($base);
         $harness->assertFalse(str_contains($uncertain, 'name="intent" value="hmrc_poll"'));
-        $harness->assertFalse(str_contains($uncertain, 'name="intent" value="hmrc_recover_acknowledgement"'));
+        $harness->assertFalse(str_contains($uncertain, 'name="intent" value="hmrc_reprocess_response"'));
 
-        $base['services']['hmrc_ct600_status']['periods'][0]['pending_submission']['acknowledgement_recovery_available'] = true;
+        $base['services']['hmrc_ct600_status']['periods'][0]['pending_submission']['response_reprocess_available'] = true;
+        $base['services']['hmrc_ct600_status']['periods'][0]['pending_submission']['response_reprocess_exchange_id'] = 25;
         $previous = AppConfigurationStore::get('developer_options', false);
         try {
             AppConfigurationStore::set('developer_options', true);
             $recoverable = $card->render($base);
-            $harness->assertFalse(str_contains($recoverable, 'Recover HMRC acknowledgement'));
+            $harness->assertFalse(str_contains($recoverable, 'Reprocess Response'));
             $harness->assertFalse(str_contains(
                 $recoverable,
-                'name="intent" value="hmrc_recover_acknowledgement"'
+                'name="intent" value="hmrc_reprocess_response"'
             ));
             $harness->assertFalse(str_contains($recoverable, 'name="intent" value="hmrc_poll"'));
         } finally {
@@ -529,17 +530,131 @@ $harness->run(HmrcSubmissionAction::class, static function (
         ));
     });
 
-    $harness->check(HmrcSubmissionAction::class, 'exposes only the Test LIVE request-file recovery and Poll command intents', static function () use ($harness): void {
+    $harness->check(
+        HmrcSubmissionAction::class,
+        'enforces developer mode and an explicitly bound exchange for archived response reprocessing',
+        static function () use ($harness, $action): void {
+            $adminUserId = (int)(InterfaceDB::fetchColumn(
+                'SELECT id FROM users WHERE role_id = :role_id ORDER BY id LIMIT 1',
+                ['role_id' => RoleAssignmentService::ADMIN_ROLE_ID]
+            ) ?: 0);
+            $period = InterfaceDB::fetchOne(
+                'SELECT c.id AS company_id, c.company_name, c.company_number,
+                        ap.id AS accounting_period_id, ctp.id AS ct_period_id
+                 FROM corporation_tax_periods ctp
+                 INNER JOIN companies c ON c.id = ctp.company_id
+                 INNER JOIN accounting_periods ap ON ap.id = ctp.accounting_period_id
+                 WHERE ctp.status <> :status
+                 ORDER BY ctp.id
+                 LIMIT 1',
+                ['status' => 'superseded']
+            );
+            if ($adminUserId <= 0 || !is_array($period)) {
+                $harness->skip('An administrator and CT period fixture are required.');
+            }
+
+            $previousDeveloperOptions = AppConfigurationStore::get('developer_options', false);
+            $context = new \eel_accounts\Service\AccountingContextService();
+            try {
+                authenticateTestSession($adminUserId);
+                $context->setPageContext(
+                    (int)$period['company_id'],
+                    (string)$period['company_name'],
+                    (string)$period['company_number'],
+                    (int)$period['accounting_period_id']
+                );
+                $session = new SessionAuthenticationService();
+                $session->startSession();
+                $csrfToken = $session->csrfToken();
+                $request = static function (array $overrides) use ($period, $csrfToken): RequestFramework {
+                    return new RequestFramework(
+                        [],
+                        array_merge([
+                            'card_action' => 'HmrcSubmission',
+                            'intent' => 'hmrc_reprocess_response',
+                            'csrf_token' => $csrfToken,
+                            'company_id' => (string)$period['company_id'],
+                            'accounting_period_id' => (string)$period['accounting_period_id'],
+                            'ct_period_id' => (string)$period['ct_period_id'],
+                            'submission_id' => '999999',
+                            'exchange_id' => '25',
+                        ], $overrides),
+                        [
+                            'REQUEST_METHOD' => 'POST',
+                            'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest',
+                            'HTTP_ACCEPT' => 'application/json',
+                        ],
+                        [],
+                        ['X-AntiFraud-Client-Device-ID' => testCurrentAntiFraudDeviceId()],
+                        null
+                    );
+                };
+
+                AppConfigurationStore::set('developer_options', false);
+                $disabled = $action->handle($request([]), createTestPageServiceFramework());
+                $harness->assertFalse($disabled->isSuccess());
+                $harness->assertTrue(str_contains(
+                    (string)($disabled->flashMessages()[0]['message'] ?? ''),
+                    'Developer Options must be enabled'
+                ));
+
+                InterfaceDB::beginTransaction();
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO hmrc_ct600_submissions
+                        (company_id, accounting_period_id, ct_period_id, mode, environment,
+                         status, protocol_state, business_outcome, submission_type)
+                     VALUES
+                        (:company_id, :accounting_period_id, :ct_period_id, :mode, :environment,
+                         :status, :protocol_state, :business_outcome, :submission_type)',
+                    [
+                        'company_id' => (int)$period['company_id'],
+                        'accounting_period_id' => (int)$period['accounting_period_id'],
+                        'ct_period_id' => (int)$period['ct_period_id'],
+                        'mode' => 'TEST',
+                        'environment' => 'TEST',
+                        'status' => 'submitting',
+                        'protocol_state' => 'awaiting_poll',
+                        'business_outcome' => 'none',
+                        'submission_type' => 'original',
+                    ]
+                );
+                $submissionId = (int)(InterfaceDB::fetchColumn('SELECT LAST_INSERT_ID()') ?: 0);
+                $harness->assertTrue($submissionId > 0);
+
+                AppConfigurationStore::set('developer_options', true);
+                foreach (['', 'not-an-exchange'] as $exchangeId) {
+                    $missing = $action->handle($request([
+                        'submission_id' => (string)$submissionId,
+                        'exchange_id' => $exchangeId,
+                    ]), createTestPageServiceFramework());
+                    $harness->assertFalse($missing->isSuccess());
+                    $harness->assertSame(
+                        'Select the archived HMRC exchange to reprocess.',
+                        (string)($missing->flashMessages()[0]['message'] ?? '')
+                    );
+                }
+            } finally {
+                if (InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
+                }
+                AppConfigurationStore::set('developer_options', (bool)$previousDeveloperOptions);
+                $context->clearPageContext();
+                clearAuthenticatedTestSession();
+            }
+        }
+    );
+
+    $harness->check(HmrcSubmissionAction::class, 'exposes only the Test LIVE request-file response-reprocessing and Poll command intents', static function () use ($harness): void {
         $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content'
             . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'HmrcSubmissionAction.php');
         foreach ([
             'hmrc_submit_test', 'hmrc_submit_live',
             'hmrc_retry_test', 'hmrc_retry_live',
-            'hmrc_generate_request', 'hmrc_recover_acknowledgement', 'hmrc_poll',
+            'hmrc_generate_request', 'hmrc_reprocess_response', 'hmrc_poll',
         ] as $intent) {
             $harness->assertTrue(str_contains($source, "'" . $intent . "'"));
         }
-        foreach (['->submitTest(', '->submitLive(', '->generateRequestFile(', '->recoverArchivedAcknowledgement(', '->poll(', '->status('] as $call) {
+        foreach (['->submitTest(', '->submitLive(', '->generateRequestFile(', '->reprocessArchivedResponse(', '->poll(', '->status('] as $call) {
             $harness->assertTrue(str_contains($source, $call));
         }
         foreach (['declaration_name', 'declaration_status', 'declaration_confirmed', 'authority_confirmed',
@@ -565,7 +680,12 @@ $harness->run(HmrcSubmissionAction::class, static function (
         $harness->assertTrue(str_contains($source, "AppConfigurationStore::get('developer_options', false)"));
         $harness->assertTrue(str_contains(
             $source,
-            'Developer Options must be enabled to recover an archived HMRC acknowledgement.'
+            'Developer Options must be enabled to reprocess an archived HMRC response.'
+        ));
+        $harness->assertTrue(str_contains($source, '$exchangeId = (int)$request->input(\'exchange_id\', 0)'));
+        $harness->assertTrue(str_contains(
+            $source,
+            'reprocessArchivedResponse(' . PHP_EOL . '                        $submissionId,' . PHP_EOL . '                        $exchangeId,'
         ));
         $harness->assertFalse(str_contains($source, "return 'web_app';"));
         $harness->assertFalse((bool)preg_match('/stream_context_create|curl_exec|file_get_contents\s*\(\s*[\'\"]https?:/i', $source));
